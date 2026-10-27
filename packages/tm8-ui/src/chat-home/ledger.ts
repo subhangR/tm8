@@ -86,6 +86,36 @@ export interface LedgerCreate {
   spawned: boolean;
   /** A spawned session's model id, from the spawn's own result. */
   model?: string;
+  /** What is INSIDE a content kind (doc, artifact, drawing), read from the
+   *  create's own args — the receipt row's thumbnail and second line. */
+  preview?: LedgerPreview;
+}
+
+/** A content create's preview, all of it from the create call's args. */
+export interface LedgerPreview {
+  /** The doc's first prose line, or the artifact's description. */
+  line?: string;
+  /** A doc's word count. */
+  words?: number;
+  /** A doc's first lines as shapes for its thumbnail: heading or not, and
+   *  how long, as a fraction of the longest. */
+  outline?: readonly { heading: boolean; width: number }[];
+  /** An artifact's bundle size and entry file. */
+  files?: number;
+  entrypoint?: string;
+  /** A drawing's element counts and its first boxes, in drawing units. */
+  shapes?: number;
+  connectors?: number;
+  boxes?: readonly { type: string; x: number; y: number; w: number; h: number }[];
+}
+
+/** One link this conversation drew (`edges.create`). */
+export interface LedgerEdge {
+  srcId: string;
+  dstId: string;
+  type: string;
+  messageId: EntityId;
+  seq: number;
 }
 
 /** One status transition this conversation caused. */
@@ -133,6 +163,8 @@ export interface TurnLedger {
   /** Non-status edits, in call order. The transcript draws ONE quiet line for
    *  them all, at the first one's position. */
   edits: readonly LedgerEdit[];
+  /** Links drawn this turn, in call order. */
+  edges: readonly LedgerEdge[];
   /** True when this turn did nothing to the graph — the views draw no ledger
    *  at all rather than an empty row. */
   empty: boolean;
@@ -215,6 +247,26 @@ const EDIT_OPS: Readonly<Record<string, string | null>> = {
 };
 /** A form's open/closed/cancelled lifecycle, under its own verb and id key. */
 const FORM_TRANSITION_OPS = new Set(['forms.transition']);
+const EDGE_OPS = new Set(['edges.create']);
+
+/**
+ * A write whose accepted outcome this fold records — a birth, a spawn, a
+ * status move, an edit, a link — or a `doc_update`. The chat's receipt draws
+ * exactly these, so its step list can leave them out (and only them).
+ */
+export function isLedgerWrite(name: string, args: unknown): boolean {
+  const operation = operationOf(args);
+  if (isCreateTool(name) || bareToolName(name) === 'doc_update') return true;
+  if (operation === null) return false;
+  return (
+    CREATE_OPS.has(operation) ||
+    SPAWN_OPS.has(operation) ||
+    DISPATCH_OPS.has(operation) ||
+    isStatusOp(operation) ||
+    EDGE_OPS.has(operation) ||
+    Object.prototype.hasOwnProperty.call(EDIT_OPS, operation)
+  );
+}
 
 const MCP_ERROR_SCHEMA = 'tm8.mcp.error.v1';
 const RECEIPT_SCHEMA = 'tm8.receipt.v1';
@@ -274,6 +326,7 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
     const creates: LedgerCreate[] = [];
     const transitions: LedgerTransition[] = [];
     const edits: LedgerEdit[] = [];
+    const edges: LedgerEdge[] = [];
 
     for (const part of projectTurnParts(turn.parts)) {
       if (part.kind !== 'tool') continue;
@@ -322,6 +375,12 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
       if (operation && DISPATCH_OPS.has(operation)) {
         const spawned = dispatcherSpawnedFrom(part, turn.messageId);
         if (spawned) recordCreate(spawned, creates);
+        continue;
+      }
+
+      if (operation && EDGE_OPS.has(operation)) {
+        const edge = edgeFrom(part, turn.messageId);
+        if (edge) edges.push(edge);
         continue;
       }
 
@@ -382,8 +441,13 @@ export function buildChatLedger(turns: readonly ChatTurn[]): ChatLedger {
       creates,
       transitions,
       edits,
+      edges,
       empty:
-        readIds.length === 0 && creates.length === 0 && transitions.length === 0 && edits.length === 0,
+        readIds.length === 0 &&
+        creates.length === 0 &&
+        transitions.length === 0 &&
+        edits.length === 0 &&
+        edges.length === 0,
     });
   }
 
@@ -538,18 +602,116 @@ function createdFrom(
   /* `form_create` answers `{formId, …}` with no entity object to walk. */
   const id = produced?.id ?? (tool === 'form_create' ? firstId(envelopeOf(part.result)?.formId) : null);
   if (!id) return null;
+  const kind = str(input?.kind) ?? produced?.kind ?? TOOL_KIND[tool] ?? null;
+  const preview = previewOf(kind, input);
   return {
     id,
-    kind: str(input?.kind) ?? produced?.kind ?? TOOL_KIND[tool] ?? null,
+    kind,
     /* The ARGS title first: it is what the agent wrote, whole. A receipt's
-       echo is clamped at 80 characters, and real task titles run past it. */
-    title: str(input?.title) ?? str(input?.name) ?? produced?.title ?? null,
+       echo is clamped at 80 characters, and real task titles run past it. A
+       memory has no title at all: its statement is what it says. */
+    title: str(input?.title) ?? str(input?.name) ?? produced?.title ?? clip(str(input?.statement)) ?? null,
     parentId: produced?.parentId !== undefined ? produced.parentId : str(input?.parentId),
     subjectId: firstId(input?.attachTo),
     messageId,
     seq: part.seq,
     spawned: false,
+    ...(preview ? { preview } : {}),
   };
+}
+
+function clip(text: string | null, max = 120): string | null {
+  if (!text) return null;
+  const line = text.trim().split('\n')[0]!.trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** Markdown down to the words a reader sees on one line. */
+function plainLine(line: string): string {
+  return line
+    .replace(/^\s*(?:[-*+>|]|\d+\.)\s*/, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~]+/g, '')
+    .replace(/\|/g, ' ')
+    .trim();
+}
+
+const OUTLINE_LINES = 6;
+const OUTLINE_MEASURE = 48;
+const DRAWING_BOXES = 24;
+const CONNECTORS = new Set(['arrow', 'line']);
+
+/**
+ * What a content create holds, from its args: a doc's first line, size and
+ * outline; an artifact's description and bundle; a drawing's elements. Null
+ * for every other kind, and for a create whose args carried none of it.
+ */
+function previewOf(kind: string | null, input: Record<string, unknown> | null): LedgerPreview | null {
+  if (!input) return null;
+  if (kind === 'doc') {
+    const text = str(input.body) ?? str(record(input.content)?.body);
+    if (!text) return null;
+    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !/^(?:```|---|\|?\s*:?-{3})/.test(l));
+    const first = lines.find((l) => !l.startsWith('#'));
+    /* A paragraph is several lines on the page: wrapped at a page's measure,
+       so a one-paragraph doc still looks like a page of text. */
+    const shown: { heading: boolean; len: number }[] = [];
+    for (const l of lines) {
+      const heading = l.startsWith('#');
+      let len = plainLine(l.replace(/^#+\s*/, '')).length;
+      do {
+        shown.push({ heading, len: Math.min(len, OUTLINE_MEASURE) });
+        len -= OUTLINE_MEASURE;
+      } while (!heading && len > 0 && shown.length < OUTLINE_LINES);
+      if (shown.length >= OUTLINE_LINES) break;
+    }
+    const longest = OUTLINE_MEASURE;
+    const words = text.replace(/[#*_`>|-]+/g, ' ').match(/\S+/g)?.length ?? 0;
+    return {
+      ...(first ? { line: clip(plainLine(first))! } : {}),
+      words,
+      outline: shown.map((l) => ({ heading: l.heading, width: Math.max(0.15, Math.min(1, l.len / longest)) })),
+    };
+  }
+  if (kind === 'artifact') {
+    const files = Array.isArray(input.files)
+      ? input.files.length
+      : Array.isArray(record(input.manifest)?.files)
+        ? (record(input.manifest)!.files as unknown[]).length
+        : undefined;
+    const entrypoint = str(input.entrypoint) ?? str(record(input.manifest)?.entrypoint);
+    const line = clip(str(input.description));
+    if (files === undefined && !entrypoint && !line) return null;
+    return { ...(line ? { line } : {}), ...(files !== undefined ? { files } : {}), ...(entrypoint ? { entrypoint } : {}) };
+  }
+  if (kind === 'drawing') {
+    const elements = record(input.content)?.elements;
+    if (!Array.isArray(elements)) return null;
+    let shapes = 0;
+    let connectors = 0;
+    const boxes: { type: string; x: number; y: number; w: number; h: number }[] = [];
+    for (const raw of elements) {
+      const el = record(raw);
+      if (!el || el.isDeleted === true) continue;
+      const type = str(el.type) ?? 'rectangle';
+      if (CONNECTORS.has(type)) connectors += 1;
+      else if (type !== 'text') shapes += 1;
+      const [x, y, w, h] = [el.x, el.y, el.width, el.height].map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0));
+      if (boxes.length < DRAWING_BOXES && type !== 'text') boxes.push({ type, x: x!, y: y!, w: w!, h: h! });
+    }
+    return { shapes, connectors, boxes };
+  }
+  return null;
+}
+
+/** An accepted `edges.create`: its two ends and its type, from the args. */
+function edgeFrom(part: ToolPart, messageId: EntityId): LedgerEdge | null {
+  const b = body(part.args);
+  const srcId = str(b?.srcId);
+  const dstId = str(b?.dstId);
+  const type = str(b?.type);
+  if (!srcId || !dstId || !type) return null;
+  return { srcId, dstId, type, messageId, seq: part.seq };
 }
 
 function spawnedFrom(part: ToolPart, messageId: EntityId): LedgerCreate | null {

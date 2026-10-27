@@ -42,6 +42,9 @@ export const LINK_REFUSED_COMMANDS: readonly (readonly string[])[] = [
   ['server'],
   ['doctor'],
   ['link'],
+  ['space-link'],
+  // Describes THIS session; through a link it would print the target Space beside home's session.
+  ['whoami'],
 ];
 
 function refusedCommand(path: readonly string[]): readonly string[] | undefined {
@@ -83,6 +86,14 @@ export async function routeThroughSpaceLink(
   if (!needsLink(ctx, home)) return ctx;
   const ref = (ctx.space as { value: string }).value;
 
+  // A reference is made FROM home: `--link` names the linked Space, not `--space`.
+  if (path[0] === 'entity' && path[1] === 'ref' && path[2] === 'add') {
+    throw new CliError(
+      `\`tm8 entity ref add\` runs in this session's Space; --space ${ref} would run it inside the linked Space`,
+      EXIT_USAGE,
+      { hint: `name the linked Space with --link: \`tm8 entity ref add <entity-id> <target-entity-id> --link ${ref}\`` },
+    );
+  }
   const refused = refusedCommand(path);
   if (refused) {
     throw new CliError(
@@ -108,7 +119,13 @@ export async function routeThroughSpaceLink(
     throw new CliError(
       `no space link from this session's Space to ${JSON.stringify(ref)}; ask your human to run \`tm8 link add\``,
       EXIT_NOT_FOUND,
-      { hint: 'a human in this Space runs `tm8 link add <target-space-id>` then `tm8 link login <alias|link-id>`' },
+      {
+        hint:
+          (views && views.length > 0
+            ? `this Space links to: ${views.map((v) => v.mine?.alias ?? v.id).join(', ')} (\`tm8 link list\`); `
+            : 'this Space has no space links yet; ') +
+          'a human in this Space runs `tm8 link add <target-space-id>` then `tm8 link login <alias|link-id>`',
+      },
     );
   }
   const link: SpaceLinkRoute = { homeSpaceId: home, linkId: view.id, targetSpaceId: view.targetSpaceId };

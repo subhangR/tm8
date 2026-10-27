@@ -46,7 +46,10 @@
  */
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useOverlayEntry } from '../stores/overlayHistory';
+import { LAYER_EXIT_MS, layerMotionAllowed, useDragDismiss } from './layerMotion';
 import { useMobileSurface } from './surface';
+import { useModalFocus } from './useModalFocus';
 
 export interface MobileSheetProps {
   /**
@@ -57,7 +60,8 @@ export interface MobileSheetProps {
   readonly title: ReactNode;
 
   /**
-   * Called for every dismissal route — the ✕, the backdrop, Escape. ONE
+   * Called for every dismissal route — the ✕, the backdrop, Escape, Android
+   * Back and a drag down on the head. ONE
    * callback rather than one per gesture, so a host cannot wire the button and
    * silently leave Escape doing nothing.
    */
@@ -103,8 +107,45 @@ export function MobileSheet({ title, onDismiss, children, size = 'default', test
    * dismiss that occasionally does not happen, which reads as a flaky sheet
    * rather than as a dependency bug.
    */
-  const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
+  /*
+   * BACK DISMISSES THE SHEET (task t-layers). The open sheet holds one
+   * same-URL history entry; Back pops it and `onDismiss` runs. Every other
+   * route goes through `close`, which dismisses now and takes the entry off,
+   * so a sheet closed by ✕ leaves no Back press behind it.
+   */
+  const close = useOverlayEntry(sheetHost !== null, onDismiss);
+  const dismissRef = useRef(close);
+  dismissRef.current = close;
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocus(rootRef, sheetHost !== null, { scope: '.msheet__body' });
+
+  /*
+   * DRAG THE HEAD DOWN TO DISMISS (audit D1). The grabber has always drawn
+   * the promise; this keeps it. Only the head drags, so the body's own scroll
+   * never has to guess whether a downward swipe meant "scroll" or "close". The
+   * panel continues from where the finger left it, then the sheet dismisses.
+   */
+  useDragDismiss(panelRef, {
+    direction: 'down',
+    handle: '.msheet__head',
+    enabled: sheetHost !== null,
+    onDismiss: (_offset, panel) => {
+      if (!layerMotionAllowed()) {
+        dismissRef.current();
+        return;
+      }
+      panel.style.transition = `transform ${LAYER_EXIT_MS - 20}ms var(--pn-ease-standard)`;
+      panel.style.transform = 'translateY(100%)';
+      const scrim = rootRef.current;
+      if (scrim) {
+        scrim.style.transition = `opacity ${LAYER_EXIT_MS - 20}ms var(--pn-ease-standard)`;
+        scrim.style.opacity = '0';
+      }
+      setTimeout(() => dismissRef.current(), LAYER_EXIT_MS - 20);
+    },
+  });
 
   /*
    * ESCAPE, BOUND AT THE DOCUMENT.
@@ -141,19 +182,20 @@ export function MobileSheet({ title, onDismiss, children, size = 'default', test
    */
   const onBackdrop = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target === e.currentTarget) onDismiss();
+      if (e.target === e.currentTarget) close();
     },
-    [onDismiss],
+    [close],
   );
 
   if (!sheetHost) return null;
 
   return createPortal(
-    <div className="msheet" onClick={onBackdrop} data-testid={testId ?? 'mobile-sheet'}>
+    <div ref={rootRef} className="msheet" onClick={onBackdrop} data-testid={testId ?? 'mobile-sheet'}>
       {/* `aria-modal` is a CLAIM, and it is true here: the backdrop covers the
           frame, including the tab bar, so nothing behind it is reachable by a
           tap. It would be a lie on a sheet that stopped short of the chrome. */}
       <div
+        ref={panelRef}
         className="msheet__panel"
         data-size={size}
         role="dialog"
@@ -162,12 +204,12 @@ export function MobileSheet({ title, onDismiss, children, size = 'default', test
       >
         <div className="msheet__head">
           {/* The grabber is decorative — it is the affordance that says "this
-              slides", drawn for the eye. The ✕ beside it is the real control,
-              because a drag-to-dismiss this does not implement must not be the
-              ONLY way out. */}
+              slides", drawn for the eye, and dragging the head down does
+              dismiss. The ✕ beside it stays the real control, because a
+              gesture must never be the ONLY way out. */}
           <span className="msheet__grip" aria-hidden="true" />
           <span className="msheet__title">{title}</span>
-          <button type="button" className="msheet__close" aria-label="Close sheet" onClick={onDismiss}>
+          <button type="button" className="msheet__close" aria-label="Close sheet" onClick={close}>
             ✕
           </button>
         </div>

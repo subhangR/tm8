@@ -8,6 +8,7 @@ verification specific to it.
 | Foundation | [`foundation/`](foundation/) | [`FOUNDATION-VERIFICATION.md`](foundation/FOUNDATION-VERIFICATION.md) |
 | Entity memory | [`memory/`](memory/) | [`MEMORY-DESIGN-FINAL.md`](memory/MEMORY-DESIGN-FINAL.md) |
 | Worktrees | [`worktrees/`](worktrees/) | [`WORKTREE-DESIGN.md`](worktrees/WORKTREE-DESIGN.md) |
+| Tools | [`tools/`](tools/) | [`TOOLS-DESIGN.md`](tools/TOOLS-DESIGN.md), [`BRIEF-TOOLS.md`](tools/BRIEF-TOOLS.md) |
 | Artifacts | [`artifacts/`](artifacts/) | [`ARTIFACTS-DESIGN.md`](artifacts/ARTIFACTS-DESIGN.md) |
 | Derived edges | [`graph/`](graph/) | [`README.md`](graph/README.md) |
 | Voice channels | [`voice/`](voice/) | [`VOICE-CHANNELS-PLAN.md`](voice/VOICE-CHANNELS-PLAN.md) |

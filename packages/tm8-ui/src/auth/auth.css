@@ -1651,6 +1651,18 @@
   max-width: calc(100vw - 24px);
   z-index: 80;
 }
+/* INLINE (the Work rail): the host's popover is the card, so the menu drops
+   its own placement and chrome and just fills it. */
+.cv2-root .auth-menu--inline {
+  position: static;
+  width: min(320px, calc(100vw - 24px));
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: auto;
+}
+.cv2-root .auth-menu--inline .auth-menu__head .auth-server__text,
 .cv2-root .auth-menu--anchored .auth-menu__head .auth-server__text {
   flex: 1 1 auto;
 }

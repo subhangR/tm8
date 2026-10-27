@@ -1,0 +1,168 @@
+/* Settings → MCP tokens (§10.7). Section-owned, per the section contract §5:
+   every class is prefixed `set-mcpt`, and nothing here edits `settings.css`.
+   Tokens only (§6) — `src/hex-ban.test.ts` walks this file. */
+
+.set-mcpt { display: flex; flex-direction: column; gap: 12px; }
+/* The UA's 1em paragraph margins doubled every gap this module sets — measured
+   in real Chrome at 1508x882, where a row's two warning lines sat ~16px apart
+   under a 5px row gap. Every gap here is owned by its flex container. */
+.set-mcpt p { margin: 0; }
+.set-mcpt__muted { font-size: 10.5px; line-height: 1.5; color: var(--pn-ink-3); }
+.set-mcpt__notice { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-run); }
+.set-mcpt__fail { font-size: 10.5px; line-height: 1.5; color: var(--pn-block); }
+
+/* The two things a member must be told before they mint one (§10.7 page copy). */
+.set-mcpt__warning {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--pn-wait) 40%, transparent);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+
+/* --- the list ------------------------------------------------------------ */
+
+.set-mcpt__list { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.set-mcpt__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 11px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+}
+/* An expired or revoked row is still readable — it is the row you came to
+   revoke — so it loses weight, never contrast. */
+.set-mcpt__row[data-state='revoked'],
+.set-mcpt__row[data-state='expired'] { opacity: 0.7; }
+.set-mcpt__row[data-state='expiring'] { border-color: color-mix(in srgb, var(--pn-wait) 45%, transparent); }
+
+.set-mcpt__row-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.set-mcpt__row-head > .set-mcpt__name { margin-right: 3px; }
+.set-mcpt__name { font-size: 12px; font-weight: 600; color: var(--pn-ink); }
+.set-mcpt__cell { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-3); }
+.set-mcpt__sep { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }
+.set-mcpt__row-head > .set-ghost,
+.set-mcpt__revoked { margin-left: auto; }
+.set-mcpt__revoked { font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600; color: var(--pn-ink-4); }
+
+.set-mcpt__warn { font-size: 10.5px; line-height: 1.5; }
+.set-mcpt__warn--warn { color: var(--pn-wait); }
+.set-mcpt__warn--info { color: var(--pn-info); }
+
+.set-mcpt__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+.set-mcpt__actions { display: flex; align-items: center; gap: 7px; }
+
+/* --- the form ----------------------------------------------------------- */
+
+.set-mcpt__form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 13px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+.set-mcpt__label { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--pn-ink-2); }
+.set-mcpt__label input {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--pn-ink);
+  padding: 5px 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.set-mcpt__fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+}
+.set-mcpt__fieldset legend { font-size: 10.5px; font-weight: 600; color: var(--pn-ink-2); padding: 0 4px; }
+.set-mcpt__radio,
+.set-mcpt__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+.set-mcpt__spaces {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* §3: a bounded pane, never `flex: 1` inside the section's one scroller. */
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+}
+
+/* --- the show-once panel ------------------------------------------------ */
+
+.set-mcpt__once {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 13px;
+  background: var(--pn-surface);
+  border: 1px solid color-mix(in srgb, var(--pn-brand) 45%, transparent);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+.set-mcpt__once-head { font-size: 11px; line-height: 1.5; color: var(--pn-ink-2); }
+.set-mcpt__once-foot { font-size: 10.5px; font-weight: 600; color: var(--pn-wait); }
+.set-mcpt__secret-row { display: flex; align-items: center; gap: 8px; }
+.set-mcpt__secret {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink);
+  padding: 6px 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.set-mcpt__snippet { display: flex; flex-direction: column; gap: 5px; }
+.set-mcpt__snippet-head { display: flex; align-items: center; gap: 8px; }
+.set-mcpt__snippet-client { font-size: 11px; font-weight: 600; color: var(--pn-ink); }
+.set-mcpt__snippet-head > .set-ghost { margin-left: auto; }
+.set-mcpt__code {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  overflow-x: auto;
+  white-space: pre;
+}

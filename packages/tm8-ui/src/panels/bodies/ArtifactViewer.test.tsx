@@ -157,6 +157,39 @@ describe('artifact viewer — honest refusals, zero iframes', () => {
 });
 
 describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
+  it('a NEW revision published while open is listed and flagged, and the frame stays pinned', async () => {
+    const rows = (top: number): ArtifactRevisionsList => ({
+      revisions: Array.from({ length: top }, (_, i) => ({ ...revisionRows().revisions[0]!, revisionNumber: top - i })),
+    });
+    const listArtifactRevisions = vi.fn(async () => rows(3));
+    const previewArtifact = vi.fn(async (_id: string, input: ArtifactsPreviewStartInput) =>
+      session({ revisionNumber: input.revisionNumber ?? 3 }),
+    );
+    const commands = { previewArtifact, listArtifactRevisions };
+    const at = (n: number) => ({ ...DETAIL, state: { ...(DETAIL.state as object), revisionNumber: n } }) as typeof DETAIL;
+    const { findByLabelText, findByTestId, getByText, queryByTestId, rerender } =
+      render(<GenericBody detail={at(3)} blocks={BLOCKS} commands={commands} />);
+    await findByLabelText('revision');
+    await waitFor(() => expect(previewArtifact).toHaveBeenCalledTimes(1));
+    expect(queryByTestId('artifact-new-revision')).toBeNull();
+
+    // The host's live re-read hands over the same artifact at revision 4.
+    listArtifactRevisions.mockImplementation(async () => rows(4));
+    rerender(<GenericBody detail={at(4)} blocks={BLOCKS} commands={commands} />);
+    const flag = await findByTestId('artifact-new-revision');
+    expect(listArtifactRevisions).toHaveBeenCalledTimes(2);
+    getByText('rev 4 ✓ — new');
+    expect(((await findByLabelText('revision')) as HTMLSelectElement).value).toBe('3');
+    expect(previewArtifact).toHaveBeenCalledTimes(1);
+
+    // Showing it is the reader's choice.
+    fireEvent.click(flag);
+    await waitFor(() => expect(previewArtifact).toHaveBeenLastCalledWith(
+      DETAIL.id, expect.objectContaining({ revisionNumber: 4 }),
+    ));
+    await waitFor(() => expect(queryByTestId('artifact-new-revision')).toBeNull());
+  });
+
   it('lists revisions, marks the current one, and re-mints the selected one', async () => {
     const listArtifactRevisions = vi.fn(async () => revisionRows());
     const previewArtifact = vi.fn(async (_id: string, input: ArtifactsPreviewStartInput) =>

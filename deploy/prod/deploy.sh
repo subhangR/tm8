@@ -3,6 +3,14 @@
 # tm8 PROD deploy — ONE command: build this checkout from scratch, migrate the
 # prod database, and (re)start prod on 7777 / 7778.
 #
+# NOT A SERVER RECIPE. "prod" here is the maintainer's LAPTOP stable node
+# (7777/7778, database tm8_stable on 5442, build in ~/.local/share/tm8-stable), run as
+# the logged-in user from a checkout — not the `prod` slot of
+# deploy/environments.sh (17777, tm8_prod, /opt/tm8/prod) that install.sh
+# builds. To set up or upgrade a server, use install.sh and
+# docs/ops/OPERATOR-GUIDE.md; to ship a ref to the tm8.sh hosts, use
+# deploy/utho/deploy.sh.
+#
 #   bun run prod                       # or: ./deploy/prod/deploy.sh
 #   ./deploy/prod/deploy.sh --rollback # swap the previous build back in
 #   ./deploy/prod/deploy.sh --restart  # restart the current build, no rebuild
@@ -483,7 +491,8 @@ if (( DO_MIGRATE )); then
   # From NEXT, so the migration files are exactly the ones this build expects.
   # The server does NOT auto-migrate at boot. Forward-only and checksum-locked:
   # a file edited after it was applied is a loud error here, not silent drift.
-  (cd "$NEXT" && TM8_DATABASE_URL="$TM8_DATABASE_URL" "$TM8_NODE_BIN" db/migrate.mjs up) \
+  # --i-mean-prod: this IS the prod database (5442); migrate.mjs refuses 5442 without it.
+  (cd "$NEXT" && TM8_DATABASE_URL="$TM8_DATABASE_URL" "$TM8_NODE_BIN" db/migrate.mjs up --i-mean-prod) \
     || die "migration failed — prod is STOPPED and $LIVE is still the old build.
        Fix the migration, then re-run. Restore with:
          pg_restore -c -d '$TM8_DATABASE_URL' \"\$(cat $TM8_PROD_BACKUP_DIR/LAST_PROD_BACKUP)\"

@@ -214,7 +214,7 @@ export const DRAWING_HELP: KindHelpModule = {
       'attached_to:outgoing': 'The drawing hangs off a task or anything else it explains. The only way to sit beside work, since a drawing can only be parented by another drawing.',
       'contains:incoming': 'A collection files the drawing with its peers. Taking it out deletes the edge, never the drawing.',
       'anchored_to:incoming': 'Messages hang on the drawing, so the argument about the diagram lives next to the diagram.',
-      'created_in:outgoing': 'The work session the drawing was made in, as the client reported it.',
+      'authored_from:outgoing': 'The work session the drawing was made during, recorded by the server.',
       relates_to: 'The general link, when a sketch touches something it neither explains nor belongs to.',
     },
     spotlight: ['task', 'collection', 'message', 'work_session'],

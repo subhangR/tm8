@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { RibbonMark } from './RibbonMark';
+import { RibbonMark, ribbonPhase } from './RibbonMark';
 
 /**
  * jsdom loads no stylesheets and rasterizes nothing, so no test here can see
@@ -121,5 +121,38 @@ describe('RibbonMark', () => {
     expect(again.querySelector('polygon')?.getAttribute('points')).toBe(
       first.querySelector('polygon')?.getAttribute('points'),
     );
+  });
+
+  /**
+   * The `eclipse` finish (the tm8 brand mark). jsdom resolves no tokens, so
+   * this runs on the fallback poles, which mirror the light theme. What it can
+   * see is the contract the finish exists for: at rest the band carries BOTH
+   * poles at once — a near-black half and a near-white half — rather than one
+   * grey, and the lighting still varies within each half.
+   */
+  it('splits the band into a black half and a white half under the eclipse finish', () => {
+    const { container } = render(<RibbonMark finish="eclipse" animated={false} />);
+    const lum = Array.from(container.querySelectorAll('polygon')).map((p) => {
+      const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(p.getAttribute('fill') ?? '');
+      expect(m).not.toBeNull();
+      return (Number(m![1]) + Number(m![2]) + Number(m![3])) / 3;
+    });
+    expect(lum.filter((v) => v < 90).length).toBeGreaterThan(40);
+    expect(lum.filter((v) => v > 180).length).toBeGreaterThan(40);
+    expect(new Set(lum.map(Math.round)).size).toBeGreaterThan(20);
+  });
+
+  it('leaves every other mount on the ink finish by default', () => {
+    const ink = render(<RibbonMark animated={false} />).container;
+    const eclipse = render(<RibbonMark finish="eclipse" animated={false} />).container;
+    expect(ink.querySelector('polygon')?.getAttribute('fill')).not.toBe(
+      eclipse.querySelector('polygon')?.getAttribute('fill'),
+    );
+  });
+
+  it('swings the phase rest → turn → rest over one loop', () => {
+    expect(ribbonPhase(0)).toBeCloseTo(0);
+    expect(ribbonPhase(1)).toBeCloseTo(1);
+    expect(ribbonPhase(2)).toBeCloseTo(0);
   });
 });

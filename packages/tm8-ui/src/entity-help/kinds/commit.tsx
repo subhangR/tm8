@@ -6,7 +6,7 @@
  * same row (`record_session_commit`, 082, from the commit recorder; and
  * `link_commit`, 017, from `tm8 task link-commit`), one observer that fills
  * it in (`apply_commit_facts`, 081), and one reader that turns it back into a
- * name (`project blame`, via the `created_in` edge). The story is told along
+ * name (`project blame`, via the `authored_from` edge). The story is told along
  * that life, not along a status column it does not have.
  *
  * SIGNATURE MOMENT — THE STITCH. One SHA sits alone; then the three threads
@@ -86,7 +86,7 @@ function Stitch() {
         <code style={shaChip}>{SHA}</code>
       </Reveal>
       <Stagger start={700} step={520} className="eh-prose" itemClassName="eh-prose">
-        <Thread edge="created_in →">
+        <Thread edge="authored_from →">
           the work session whose lane produced it, recorded without anyone asking
         </Thread>
         <Thread edge="← tracks">the task that says this is the work it asked for</Thread>
@@ -141,7 +141,7 @@ export const COMMIT_HELP: KindHelpModule = {
           <>
             <p>
               The commit recorder walks every active worktree that has a session, about once a minute, and records
-              each commit the lane has made beyond its base. That is how a commit gets its <code>created_in</code>{' '}
+              each commit the lane has made beyond its base. That is how a commit gets its <code>authored_from</code>{' '}
               edge to the session that wrote it, before anything is pushed.
             </p>
             <p>
@@ -182,7 +182,7 @@ export const COMMIT_HELP: KindHelpModule = {
         body: (
           <p>
             <code>tm8 project blame</code> runs git blame on one file and joins each line&rsquo;s commit to the session
-            that produced it through <code>created_in</code>. A commit with no recorded session gets no name at all.
+            that produced it through <code>authored_from</code>. A commit with no recorded session gets no name at all.
             Absent provenance is shown as absent, never filled in from a similar-looking author or a nearby timestamp.
           </p>
         ),
@@ -246,7 +246,7 @@ export const COMMIT_HELP: KindHelpModule = {
         narrative: (
           <p>
             Blame a file and every hunk arrives with the session behind its commit, where one was recorded. To walk
-            the other way, from a commit to its session, read its <code>created_in</code> edge.
+            the other way, from a commit to its session, read its <code>authored_from</code> edge.
           </p>
         ),
         commands: ['project blame', 'edge list'],
@@ -254,7 +254,7 @@ export const COMMIT_HELP: KindHelpModule = {
           '# which session produced each line of this file',
           'tm8 project blame <project-id> packages/ui/src/panel.tsx',
           '# and from one commit, straight to its session',
-          'tm8 edge list --source <commit-id> --type created_in',
+          'tm8 edge list --source <commit-id> --type authored_from',
         ],
       },
     ],
@@ -263,15 +263,15 @@ export const COMMIT_HELP: KindHelpModule = {
   constellation: {
     intro: (
       <p>
-        A commit is small and well connected. Look for <code>created_in</code> first: it is the edge that turns a hash
+        A commit is small and well connected. Look for <code>authored_from</code> first: it is the edge that turns a hash
         into authorship. Then <code>tracks</code>, which is a task saying this is the work it asked for. The rest place
         the commit in a project and a lane.
       </p>
     ),
 
     notes: {
-      'created_in:outgoing':
-        'The session that produced this commit, stamped by the commit recorder. Project blame reads this edge and nothing else.',
+      'authored_from:outgoing':
+        'The session this commit was made during, recorded by the server when the commit recorder stamps it. Project blame reads this edge and nothing else.',
       'tracks:incoming': 'A task that claims this commit as its implementation, drawn by task link-commit.',
       'in_project:outgoing': 'The project this commit belongs to, set when a link names one.',
       'in_worktree:outgoing': 'A lane this commit is filed under, when someone draws the edge. The recorder ties commits to sessions, not to worktrees.',

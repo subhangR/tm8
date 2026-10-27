@@ -1,0 +1,50 @@
+import { expect, test } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
+
+test('session attention stays in the strip across desktop and short viewports', async ({ page }, testInfo) => {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 500 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/e2e/terminal-attention-harness.html?quiet');
+    const stage = page.getByTestId('terminal-stage');
+    await expect(stage).toBeVisible();
+    const quietBounds = await stage.boundingBox();
+    const controls = await page.locator('.tws-astrip button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') ?? button.getAttribute('title') ?? button.textContent));
+    await page.goto('/e2e/terminal-attention-harness.html');
+    const trigger = page.getByTestId('entity-attention-control');
+    await expect(trigger).toHaveAccessibleName('Attention: 4 pending requests');
+    await expect(page.getByTestId('session-waiting-banner')).toHaveCount(0);
+    await expect(page.locator('.att-block-dock')).toHaveCount(0);
+    const pendingBounds = await stage.boundingBox();
+    expect(pendingBounds).toEqual(quietBounds);
+    const bodyBounds = await page.getByTestId('terminal-body').boundingBox();
+    expect(pendingBounds!.y).toBe(bodyBounds!.y);
+    await expect(page.locator('.tws-astrip').getByTestId('entity-attention-control')).toBeVisible();
+    expect(await page.locator('.tws-astrip button:not([data-testid="entity-attention-control"])').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') ?? button.getAttribute('title') ?? button.textContent))).toEqual(controls);
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}-terminal-strip.png`) });
+    await trigger.click();
+    const pop = page.getByTestId('entity-attention-popover');
+    await expect(pop.locator('[data-attention-root]')).toHaveCount(3);
+    await expect(pop.getByTestId('attention-block-row')).toHaveCount(4);
+    await expect(pop.getByText('Sibling request affected by Resolve all')).toBeVisible();
+    await expect(pop.getByText('Unrelated document notification')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}-attention-roots.png`) });
+    const taskA = pop.locator('[data-attention-root]').filter({ hasText: 'Session request rolled up to task A' });
+    await taskA.getByTestId('attention-block-resolve').click();
+    await expect(trigger).toHaveAccessibleName('Attention: 2 pending requests');
+    await expect(pop.locator('[data-attention-root]')).toHaveCount(2);
+    await expect(pop.getByText('Session-local decision')).toBeVisible();
+    await expect(pop.getByText('Session raised this on task B')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.width}-resolved-one-root.png`) });
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+    expect(await stage.boundingBox()).toEqual(quietBounds);
+    const measurementPath = testInfo.outputPath(`${viewport.width}-layout-measurements.json`);
+    writeFileSync(measurementPath, JSON.stringify({ viewport, quietBounds, pendingBounds, bodyBounds, controls }, null, 2));
+    await testInfo.attach(`${viewport.width}-layout-measurements.json`, { path: measurementPath, contentType: 'application/json' });
+  }
+  await page.evaluate(() => { location.hash = location.hash.replace(/tab=[^&]+/, 'tab=doc-layout-spec'); });
+  await expect(page.locator('.att-block-dock').getByTestId('attention-block')).toBeVisible();
+  await expect(page.getByText('Unrelated document notification')).toBeVisible();
+  await expect(page.getByTestId('entity-attention-control')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('unrelated-document-unchanged.png') });
+});

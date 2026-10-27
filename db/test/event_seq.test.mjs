@@ -31,6 +31,7 @@ import {
   claimsFor,
   literal,
   ok,
+  postMessageSql,
   rootClaims,
   rows,
   runAsync,
@@ -73,7 +74,7 @@ test('seq is monotonic, gapless and starts at 1 for sequential writers', () => {
   assertContiguousFromOne(before, 'space A after world building');
 
   for (let i = 0; i < 5; i += 1) {
-    ok(`select public.post_message(${uuid(w.channelA)}, 'sequential ${i}')`, { claims: w.claimsA });
+    ok(postMessageSql(w.channelA, `sequential ${i}`), { claims: w.claimsA });
   }
   const after = seqsOf(w.spaceA, w.claimsA);
   assertContiguousFromOne(after, 'space A after 5 sequential posts');
@@ -103,7 +104,7 @@ test('a rolled-back writer leaves NO gap: the number is returned, not burned', a
     `begin;\n` +
       `select set_config('tm8.identity_id', ${literal(w.identityA)}, true);\n` +
       `select set_config('tm8.actor_id', ${literal(w.memberA)}, true);\n` +
-      `select public.post_message(${uuid(w.channelA)}, 'never committed');\n` +
+      `${postMessageSql(w.channelA, 'never committed')};\n` +
       `rollback;\n`,
   );
   assert.ok(rolledBack.ok, `the rolled-back script itself should not error:\n${rolledBack.stderr}`);
@@ -120,7 +121,7 @@ test('a rolled-back writer leaves NO gap: the number is returned, not burned', a
   );
 
   // ...and the next committed writer reuses the numbers the aborted one took.
-  ok(`select public.post_message(${uuid(w.channelA)}, 'after the rollback')`, { claims: w.claimsA });
+  ok(postMessageSql(w.channelA, 'after the rollback'), { claims: w.claimsA });
   assertContiguousFromOne(
     seqsOf(w.spaceA, w.claimsA),
     'space A after a rolled-back writer and a committed one',
@@ -135,7 +136,7 @@ test('CONCURRENT writers in one space: no duplicates, no gaps, 8 connections int
     Array.from({ length: WRITERS }, (_, writer) => {
       const statements = Array.from(
         { length: POSTS_PER_WRITER },
-        (_, i) => `select public.post_message(${uuid(w.channelA)}, 'w${writer}-p${i}');`,
+        (_, i) => `${postMessageSql(w.channelA, `w${writer}-p${i}`)};`,
       ).join('\n');
       return runAsync(statements, { claims: w.claimsA });
     }),
@@ -169,7 +170,7 @@ test('seq order IS commit order: an open writer BLOCKS a concurrent writer in th
     `begin;\n` +
       `select set_config('tm8.identity_id', ${literal(w.identityA)}, true);\n` +
       `select set_config('tm8.actor_id', ${literal(w.memberA)}, true);\n` +
-      `select public.post_message(${uuid(w.channelA)}, 'T1 holds the lock');\n` +
+      `${postMessageSql(w.channelA, 'T1 holds the lock')};\n` +
       `select pg_sleep(${HOLD_MS / 1000});\n` +
       `commit;\n`,
   );
@@ -177,7 +178,7 @@ test('seq order IS commit order: an open writer BLOCKS a concurrent writer in th
   // T2 starts while T1 is mid-transaction and must WAIT for it.
   await new Promise((r) => setTimeout(r, 250));
   const t2Started = Date.now();
-  const t2 = await runAsync(`select public.post_message(${uuid(w.channelA)}, 'T2 waits')`, {
+  const t2 = await runAsync(postMessageSql(w.channelA, 'T2 waits'), {
     claims: w.claimsA,
   });
   const t2Elapsed = Date.now() - t2Started;
@@ -224,14 +225,14 @@ test('the per-space lock does NOT serialise across spaces', async () => {
     `begin;\n` +
       `select set_config('tm8.identity_id', ${literal(w.identityA)}, true);\n` +
       `select set_config('tm8.actor_id', ${literal(w.memberA)}, true);\n` +
-      `select public.post_message(${uuid(w.channelA)}, 'A holds its own space');\n` +
+      `${postMessageSql(w.channelA, 'A holds its own space')};\n` +
       `select pg_sleep(${HOLD_MS / 1000});\n` +
       `commit;\n`,
   );
 
   await new Promise((r) => setTimeout(r, 250));
   const startedB = Date.now();
-  const inB = await runAsync(`select public.post_message(${uuid(w.channelB)}, 'B is unaffected')`, {
+  const inB = await runAsync(postMessageSql(w.channelB, 'B is unaffected'), {
     claims: w.claimsB,
   });
   const elapsedB = Date.now() - startedB;
@@ -259,7 +260,7 @@ test('a poller at a cursor never misses an event while writers are running', asy
   const writers = Promise.all(
     Array.from({ length: 4 }, (_, i) =>
       runAsync(
-        Array.from({ length: 3 }, (_, j) => `select public.post_message(${uuid(w.channelA)}, 'poll-${i}-${j}');`).join('\n'),
+        Array.from({ length: 3 }, (_, j) => `${postMessageSql(w.channelA, `poll-${i}-${j}`)};`).join('\n'),
         { claims: w.claimsA },
       ),
     ),

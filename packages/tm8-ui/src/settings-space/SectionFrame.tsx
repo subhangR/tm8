@@ -31,7 +31,17 @@
  * the invite list. Prose and forms always want it: without the cap, the roles
  * legend rendered as a single 2800px line on the reporter's display.
  */
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
+import { SETTINGS_SCOPE_CHIP, type SettingsScope } from './nav';
+
+/**
+ * WHO THIS SECTION'S CHANGES REACH, for the header chip (settings redesign,
+ * 2026-10-18). Provided by the host that mounts the section — `SettingsShell`
+ * from the nav model, `NodeAdminPage` as `server` — so no section body has to
+ * restate its own scope, and an injected section built in another module gets
+ * the chip without an edit to that module.
+ */
+export const SectionScopeContext = createContext<SettingsScope | null>(null);
 
 export interface SectionFrameProps {
   /** The section heading. Use the `heading` from `SETTINGS_SECTIONS`, not a re-typed copy. */
@@ -66,6 +76,11 @@ export interface SectionFrameProps {
   pad?: boolean;
   /** Marks the scroller for tests that need to assert on THIS section's body. */
   bodyTestId?: string;
+  /**
+   * Overrides the scope chip the host provides (`SectionScopeContext`). `null`
+   * draws none. Leave it unset: the nav model is the one place scope is said.
+   */
+  scope?: SettingsScope | null;
   children: ReactNode;
 }
 
@@ -75,12 +90,20 @@ export function SectionFrame({
   measure = true,
   pad = true,
   bodyTestId,
+  scope: scopeProp,
   children,
 }: SectionFrameProps) {
+  const provided = useContext(SectionScopeContext);
+  const scope = scopeProp === undefined ? provided : scopeProp;
   return (
-    <section className="set-section">
+    <section className="set-section" data-scope={scope ?? undefined}>
       <div className="set-section__head">
         <span className="set-section__title">{title}</span>
+        {scope ? (
+          <span className="set-scope-chip" data-scope={scope} data-testid="section-scope" title={`Changes here affect: ${SETTINGS_SCOPE_CHIP[scope].toLowerCase()}`}>
+            {SETTINGS_SCOPE_CHIP[scope]}
+          </span>
+        ) : null}
         <div className="set-section__grow" />
         {action}
       </div>

@@ -85,7 +85,14 @@ describe('a worker whose coordinator is a chat', () => {
 
     expect(result.manifest.coordinator).toEqual({ sessionId: CHAT_ID, kind: 'chat' });
 
-    const { system } = composePrompt(result.manifest, { sessionId: result.sessionId });
+    // v2 (the default since 2026-10-13) carries the kind on the coordination block.
+    const v2 = composePrompt(result.manifest, { sessionId: result.sessionId }).system;
+    expect(v2).toContain(`<coordination coordinator_session="${CHAT_ID}" kind="chat">`);
+    expect(v2).toContain(`--to ${CHAT_ID}`);
+    expect(v2).toMatch(/A CHAT spawned you and is waiting on a durable answer/);
+
+    // A stored v1 manifest still renders the v1 sentence.
+    const { system } = composePrompt({ ...result.manifest, promptVersion: '1' }, { sessionId: result.sessionId });
     expect(system).toContain(`<coordinator_session_id>${CHAT_ID}</coordinator_session_id>`);
     expect(system).toContain('<coordinator_kind>chat</coordinator_kind>');
     expect(system).toMatch(/A CHAT spawned you/);
@@ -108,7 +115,10 @@ describe('a worker whose coordinator is a chat', () => {
       sessionId: CHAT_ID,
       kind: 'work_session',
     });
-    const { system } = composePrompt(result.manifest, { sessionId: result.sessionId });
+    const v2 = composePrompt(result.manifest, { sessionId: result.sessionId }).system;
+    expect(v2).toContain(`<coordination coordinator_session="${CHAT_ID}" kind="work_session">`);
+    expect(v2).not.toMatch(/A CHAT spawned you/);
+    const { system } = composePrompt({ ...result.manifest, promptVersion: '1' }, { sessionId: result.sessionId });
     expect(system).toContain('<coordinator_kind>work_session</coordinator_kind>');
     expect(system).not.toMatch(/A CHAT spawned you/);
   });

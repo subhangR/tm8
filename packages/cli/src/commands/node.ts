@@ -15,12 +15,19 @@
  * reports the mode and names where the switch lives, and offers no way to move
  * it.
  */
-import type { AccountDisableResult, AuthClaimStatusResult } from '@tm8/contract';
+import type {
+  AccountDisableResult,
+  AuthClaimStatusResult,
+  NodeAccountListView,
+  PathGrantListView,
+  PathGrantView,
+} from '@tm8/contract';
 
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
+import { assertKnownOptions } from './entity.js';
 
 async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.args.length > 0) throw new CliError('usage: tm8 node mode', EXIT_USAGE);
@@ -35,6 +42,12 @@ async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
         ? 'single-player: a loopback caller with no credential is resolved as the owner, so there is no gate on the Server\'s own machine.'
         : 'multiplayer: the loopback auto-owner arm is off; everyone signs in, everywhere.',
     );
+    // Absent on a Server that predates 282: say nothing rather than guess.
+    if (r.projectIsolation === 'shared') {
+      lines.push('projects: shared — folders are used in place and one folder may serve several spaces (loopback-only node).');
+    } else if (r.projectIsolation === 'isolated') {
+      lines.push('projects: isolated — a folder belongs to one space; members browse node paths only through a path grant (tm8 node path-grant).');
+    }
     lines.push(
       '',
       'read-only: the mode is server config (TM8_NODE_MODE), not something this command can flip.',
@@ -75,7 +88,110 @@ async function nodeAccountDisable(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function grantLine(g: PathGrantView): string {
+  const who = g.grantee ? g.grantee.username : g.accountId;
+  const state = g.revokedAt ? `revoked ${g.revokedAt}` : `granted ${g.grantedAt}`;
+  return `${g.id}  ${who}  ${g.rootPath}  ${state}${g.note ? `  — ${g.note}` : ''}`;
+}
+
+function renderGrants(view: PathGrantListView, empty: string): string {
+  return view.grants.length === 0 ? empty : view.grants.map(grantLine).join('\n');
+}
+
+/** `node account list` — `node.accounts.list`: who a path grant can be addressed to. */
+async function nodeAccountList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []);
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 node account list', EXIT_USAGE);
+  const data = await observedInvoke<NodeAccountListView>(clientFor(cmd.ctx), 'node.accounts.list');
+  cmd.out.data(data, (r) => r.accounts
+    .map((a) => `${a.accountId}  ${a.username}${a.displayName ? ` (${a.displayName})` : ''}  ${a.status}${a.isNodeAdmin ? '  node admin' : ''}`)
+    .join('\n'));
+  return EXIT_OK;
+}
+
+/**
+ * `node path-grant list [--include-revoked]` — `node.pathGrants.list`.
+ *
+ * Path grants (migration 282): a node admin lets one account browse one
+ * filesystem root and select a folder under it. Node admins hold every
+ * TM8_PROJECT_ROOTS entry implicitly, so they never appear here.
+ */
+async function pathGrantList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['include-revoked']);
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 node path-grant list [--include-revoked]', EXIT_USAGE);
+  const data = await observedInvoke<PathGrantListView>(clientFor(cmd.ctx), 'node.pathGrants.list', {
+    query: cmd.options.bool('include-revoked') ? { includeRevoked: 'true' } : {},
+  });
+  cmd.out.data(data, (r) => renderGrants(r, 'no path grants on this node'));
+  return EXIT_OK;
+}
+
+/**
+ * `node path-grant add <account-id|username> <path> [--note <text>]` —
+ * `node.pathGrants.create`. The server realpaths the path and refuses one
+ * outside TM8_PROJECT_ROOTS; granting the same root again re-opens it.
+ */
+async function pathGrantAdd(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['note', 'mutation-id']);
+  const [who, rootPath] = cmd.args;
+  if (cmd.args.length !== 2 || !who || !rootPath) {
+    throw new CliError('usage: tm8 node path-grant add <account-id|username> <path> [--note <text>]', EXIT_USAGE);
+  }
+  const client = clientFor(cmd.ctx);
+  let accountId = who;
+  if (!UUID_RE.test(who)) {
+    const { accounts } = await observedInvoke<NodeAccountListView>(client, 'node.accounts.list');
+    const match = accounts.find((a) => a.username.toLowerCase() === who.toLowerCase());
+    if (!match) {
+      throw new CliError(`no account named ${who} on this node`, EXIT_USAGE, { hint: 'tm8 node account list' });
+    }
+    accountId = match.accountId;
+  }
+  const note = cmd.options.value('note');
+  const data = await observedInvoke<PathGrantView>(client, 'node.pathGrants.create', {
+    body: {
+      accountId,
+      rootPath,
+      ...(note ? { note } : {}),
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    },
+  });
+  cmd.out.data(data, (g) => `granted  ${grantLine(g)}`);
+  return EXIT_OK;
+}
+
+/** `node path-grant revoke <grant-id>` — `node.pathGrants.revoke`. Re-granting re-opens it. */
+async function pathGrantRevoke(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']);
+  const grantId = cmd.args[0];
+  if (cmd.args.length !== 1 || !grantId) {
+    throw new CliError('usage: tm8 node path-grant revoke <grant-id>', EXIT_USAGE);
+  }
+  const data = await observedInvoke<PathGrantView>(clientFor(cmd.ctx), 'node.pathGrants.revoke', {
+    params: { grantId },
+    body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, (g) => `revoked  ${grantLine(g)}`);
+  return EXIT_OK;
+}
+
+/** `node path-grant mine` — `identity.pathGrants.list`: the roots you may browse. */
+async function pathGrantMine(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []);
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 node path-grant mine', EXIT_USAGE);
+  const data = await observedInvoke<PathGrantListView>(clientFor(cmd.ctx), 'identity.pathGrants.list');
+  cmd.out.data(data, (r) => renderGrants(r, 'no folder on this node is granted to you; a node admin grants one with tm8 node path-grant add'));
+  return EXIT_OK;
+}
+
 export const NODE_COMMANDS: CommandModule[] = [
   { path: ['node', 'mode'], run: nodeMode },
   { path: ['node', 'account', 'disable'], run: nodeAccountDisable },
+  { path: ['node', 'account', 'list'], run: nodeAccountList },
+  { path: ['node', 'path-grant', 'list'], run: pathGrantList },
+  { path: ['node', 'path-grant', 'add'], run: pathGrantAdd },
+  { path: ['node', 'path-grant', 'revoke'], run: pathGrantRevoke },
+  { path: ['node', 'path-grant', 'mine'], run: pathGrantMine },
 ];

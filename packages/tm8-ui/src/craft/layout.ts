@@ -24,14 +24,18 @@
  *   3. dummies       — a long edge gets a slot in every rank it crosses, so it
  *                      is routed THROUGH the gaps between cards, never under one
  *   4. order         — barycenter sweeps, lane-major, keeping the ordering
- *                      with the fewest crossings
+ *                      with the fewest crossings, then transpose (swap
+ *                      neighbours while that removes crossings)
  *   5. coordinates   — columns per rank; across-axis positions by weighted
  *                      isotonic regression (exact least squares under the
  *                      "cards may not overlap and keep their order" constraint)
- *   6. route         — ports spread along card sides; one private vertical
- *                      track per edge per gap
- *   7. labels        — greedy, on the route's own segments, avoiding every
- *                      card and every placed label; no slot ⇒ null (hover)
+ *   6. route         — ports spread along card sides; one private track per
+ *                      jog per gap, TRACK apart, the gap grown to hold them
+ *   7. labels        — greedy, on a straight run of the route (flow-axis runs
+ *                      first), avoiding every card, every placed label and
+ *                      every other wire; no slot ⇒ null (hover)
+ * Drawing: `roundedPath` (elbows) or `curvedPath` (an S-curve per jog) over
+ * the same points — TB with curves is the blueprint default.
  * Pinned nodes (the row's stored `layout`) take part in ranking and ordering
  * so their neighbours land sensibly, then keep exactly their stored position;
  * any edge touching one is routed by the generic router.
@@ -70,7 +74,14 @@ export interface LayoutOptions {
   /** Space reserved at the start of each lane band for its header. */
   laneHeader?: number;
   pad?: number;
+  /**
+   * How the routes will be DRAWN: 'curved' turns each jog into an S-curve
+   * (`curvedPath`), so labels keep clear of the curved stretch too.
+   */
+  edgeStyle?: LayoutEdgeStyle;
 }
+
+export type LayoutEdgeStyle = 'orthogonal' | 'curved';
 
 export interface Point { x: number; y: number }
 export interface Box { x: number; y: number; width: number; height: number }
@@ -98,6 +109,14 @@ export interface LayoutResult {
 }
 
 const DEFAULTS = { rankGap: 120, nodeGap: 28, laneGap: 24, laneHeader: 28, pad: 24 };
+/* TB gaps carry labels on their short vertical runs, not along them: tighter. */
+const TB_RANK_GAP = 96;
+/** Spacing between the private jog tracks of one gap — parallel runs never stack. */
+const TRACK = 14;
+/** The straight run kept free between a card side and the first track (room for a label). */
+const MIN_STUB = 30;
+/** How far an S-curve reaches along the runs either side of its jog. */
+export const CURVE_REACH = 28;
 const DUMMY_SIZE = 14;
 const ORDER_SWEEPS = 12;
 const COORD_PASSES = 8;
@@ -124,7 +143,7 @@ export function layoutGraph(
   options: LayoutOptions = {},
 ): LayoutResult {
   const dir = options.direction ?? 'LR';
-  const rankGap = options.rankGap ?? DEFAULTS.rankGap;
+  const rankGap = options.rankGap ?? (options.direction === 'TB' ? TB_RANK_GAP : DEFAULTS.rankGap);
   const nodeGap = options.nodeGap ?? DEFAULTS.nodeGap;
   const pad = options.pad ?? DEFAULTS.pad;
   const lanesOn = options.lanes !== undefined && options.lanes !== null;
@@ -348,17 +367,45 @@ export function layoutGraph(
   }
   best.forEach((layer, r) => { layers[r] = layer; });
   index();
+  /* Transpose: swap neighbours in a layer (same lane) while that removes
+     crossings with the layers either side — what barycenter alone misses
+     when two nodes tie or pull against each other. */
+  if (bestCrossings > 0) {
+    const pairCost = (a: string, b: string) => {
+      let c = 0;
+      for (const nbrs of [up, down]) {
+        const na = nbrs.get(a) ?? [];
+        const nb = nbrs.get(b) ?? [];
+        na.forEach((x) => nb.forEach((y) => { if ((pos.get(x) as number) > (pos.get(y) as number)) c += 1; }));
+      }
+      return c;
+    };
+    for (let round = 0, improved = true; improved && round < ORDER_SWEEPS; round += 1) {
+      improved = false;
+      layers.forEach((layer) => {
+        for (let i = 0; i + 1 < layer.length; i += 1) {
+          const a = layer[i] as string;
+          const b = layer[i + 1] as string;
+          if ((verts.get(a) as V).lane !== (verts.get(b) as V).lane) continue;
+          if (pairCost(b, a) < pairCost(a, b)) {
+            layer[i] = b;
+            layer[i + 1] = a;
+            pos.set(a, i + 1);
+            pos.set(b, i);
+            improved = true;
+          }
+        }
+      });
+    }
+    const c = countCrossings();
+    if (c <= bestCrossings) bestCrossings = c;
+    else {
+      best.forEach((layer, r) => { layers[r] = [...layer]; });
+      index();
+    }
+  }
 
   // ── 5. Coordinates ───────────────────────────────────────────────────────────
-  /* u: one column per rank, as wide as its widest card. */
-  const colSize = layers.map((layer) => Math.max(0, ...layer.map((id) => (verts.get(id) as V).su)));
-  const colStart: number[] = [];
-  colSize.forEach((size, r) => {
-    colStart.push(r === 0 ? pad : (colStart[r - 1] as number) + (colSize[r - 1] as number) + rankGap);
-    void size;
-  });
-  const uOf = (v: V) => (colStart[v.rank] as number) + ((colSize[v.rank] as number) - v.su) / 2;
-
   /* v: lane-local tops by weighted isotonic regression, then lane bands. */
   const laneCount = Math.max(1, laneList.length);
   const laneTop = new Array<number>(laneCount).fill(0);
@@ -421,6 +468,67 @@ export function layoutGraph(
   if (Number.isFinite(minTop) && minTop > 0 && !lanesOn) verts.forEach((v) => { v.v -= minTop; });
   restack();
 
+  const pinnedKeys = new Set(nodes.filter((n) => n.pinned && Number.isFinite(n.pinned.x) && Number.isFinite(n.pinned.y)).map((n) => n.key));
+  /* Ports: each card side spreads its edges, sorted by where the other end is. */
+  const layered = oriented.filter((e) => !pinnedKeys.has(e.tail) && !pinnedKeys.has(e.head));
+  const outPorts = new Map<string, Map<string, number>>();
+  const inPorts = new Map<string, Map<string, number>>();
+  const spread = (owner: string, list: { edge: string; along: number }[], into: Map<string, Map<string, number>>) => {
+    const v = verts.get(owner) as V;
+    const top = (laneTop[v.lane] as number) + v.v;
+    list.sort((a, b) => a.along - b.along || (a.edge < b.edge ? -1 : 1));
+    const m = new Map<string, number>();
+    list.forEach((item, i) => m.set(item.edge, top + (v.sv * (i + 1)) / (list.length + 1)));
+    into.set(owner, m);
+  };
+  const byTail = new Map<string, { edge: string; along: number }[]>();
+  const byHead = new Map<string, { edge: string; along: number }[]>();
+  layered.forEach((e) => {
+    const chain = chains.get(e.key) as string[];
+    const next = verts.get(chain[1] as string) as V;
+    const prev = verts.get(chain[chain.length - 2] as string) as V;
+    byTail.set(e.tail, [...(byTail.get(e.tail) ?? []), { edge: e.key, along: center(next) }]);
+    byHead.set(e.head, [...(byHead.get(e.head) ?? []), { edge: e.key, along: center(prev) }]);
+  });
+  byTail.forEach((list, owner) => spread(owner, list, outPorts));
+  byHead.forEach((list, owner) => spread(owner, list, inPorts));
+
+  /* Jogs: where a layered route has to step across the flow, gap by gap.
+     Known before the columns are, so a gap is sized to the tracks it holds. */
+  interface Jog { edge: string; gap: number; va: number; vb: number }
+  const jogs: Jog[] = [];
+  const steps = new Map<string, { gap: number; va: number; vb: number }[]>();
+  layered.forEach((e) => {
+    const chain = chains.get(e.key) as string[];
+    const list: { gap: number; va: number; vb: number }[] = [];
+    let vCur = outPorts.get(e.tail)?.get(e.key) as number;
+    const vIn = inPorts.get(e.head)?.get(e.key) as number;
+    for (let i = 1; i < chain.length; i += 1) {
+      const node = verts.get(chain[i] as string) as V;
+      const target = i === chain.length - 1 ? vIn : center(node);
+      /* A sub-pixel jog is noise from the placement; stay straight. */
+      const vNext = Math.abs(target - vCur) <= 0.5 ? vCur : target;
+      list.push({ gap: node.rank - 1, va: vCur, vb: vNext });
+      if (vNext !== vCur) jogs.push({ edge: e.key, gap: node.rank - 1, va: vCur, vb: vNext });
+      vCur = vNext;
+    }
+    steps.set(e.key, list);
+  });
+  const gapJogs = new Map<number, Jog[]>();
+  jogs.forEach((j) => gapJogs.set(j.gap, [...(gapJogs.get(j.gap) ?? []), j]));
+
+  /* A gap holding many tracks grows so they keep TRACK apart with a straight
+     run either side; a quiet gap stays at rankGap. */
+  const gapSize = layers.map((_, r) => Math.max(rankGap, ((gapJogs.get(r)?.length ?? 0) - 1) * TRACK + 2 * MIN_STUB));
+  /* u: one column per rank, as wide as its widest card. */
+  const colSize = layers.map((layer) => Math.max(0, ...layer.map((id) => (verts.get(id) as V).su)));
+  const colStart: number[] = [];
+  colSize.forEach((size, r) => {
+    colStart.push(r === 0 ? pad : (colStart[r - 1] as number) + (colSize[r - 1] as number) + (gapSize[r - 1] as number));
+    void size;
+  });
+  const uOf = (v: V) => (colStart[v.rank] as number) + ((colSize[v.rank] as number) - v.su) / 2;
+
   /* To final x/y. */
   const toXY = (u: number, v: number): Point => (LR ? { x: u, y: v } : { x: v, y: u });
   const result = new Map<string, LayoutNodeResult>();
@@ -472,75 +580,37 @@ export function layoutGraph(
   // ── 6. Route ─────────────────────────────────────────────────────────────────
   const cards: Box[] = [...result.values()];
   const routes = new Map<string, LayoutEdgeResult>();
-  const pinnedKeys = new Set(nodes.filter((n) => result.get(n.key)?.pinned).map((n) => n.key));
 
-  /* Ports: each card side spreads its edges, sorted by where the other end is. */
-  const layered = oriented.filter((e) => !pinnedKeys.has(e.tail) && !pinnedKeys.has(e.head));
-  const outPorts = new Map<string, Map<string, number>>();
-  const inPorts = new Map<string, Map<string, number>>();
-  const spread = (owner: string, list: { edge: string; along: number }[], into: Map<string, Map<string, number>>) => {
-    const v = verts.get(owner) as V;
-    const top = (laneTop[v.lane] as number) + v.v;
-    list.sort((a, b) => a.along - b.along || (a.edge < b.edge ? -1 : 1));
-    const m = new Map<string, number>();
-    list.forEach((item, i) => m.set(item.edge, top + (v.sv * (i + 1)) / (list.length + 1)));
-    into.set(owner, m);
-  };
-  const byTail = new Map<string, { edge: string; along: number }[]>();
-  const byHead = new Map<string, { edge: string; along: number }[]>();
-  layered.forEach((e) => {
-    const chain = chains.get(e.key) as string[];
-    const next = verts.get(chain[1] as string) as V;
-    const prev = verts.get(chain[chain.length - 2] as string) as V;
-    byTail.set(e.tail, [...(byTail.get(e.tail) ?? []), { edge: e.key, along: center(next) }]);
-    byHead.set(e.head, [...(byHead.get(e.head) ?? []), { edge: e.key, along: center(prev) }]);
-  });
-  byTail.forEach((list, owner) => spread(owner, list, outPorts));
-  byHead.forEach((list, owner) => spread(owner, list, inPorts));
-
-  /* Abstract polylines first (so tracks can be assigned per gap), then tracks. */
-  interface Jog { edge: string; gap: number; va: number; vb: number }
-  const jogs: Jog[] = [];
+  /* Abstract polylines (jog points get their track below). */
   const abstract = new Map<string, { u: number; v: number | null; gap?: number }[]>();
   layered.forEach((e) => {
     const chain = chains.get(e.key) as string[];
     const t = verts.get(e.tail) as V;
     const h = verts.get(e.head) as V;
     const pts: { u: number; v: number | null; gap?: number }[] = [];
-    const vOut = outPorts.get(e.tail)?.get(e.key) as number;
-    const vIn = inPorts.get(e.head)?.get(e.key) as number;
-    pts.push({ u: uOf(t) + t.su, v: vOut });
-    let vCur = vOut;
-    for (let i = 1; i < chain.length; i += 1) {
-      const node = verts.get(chain[i] as string) as V;
-      const gap = node.rank - 1;
-      const target = i === chain.length - 1 ? vIn : center(node);
-      /* A sub-pixel jog is noise from the placement; stay straight. */
-      const vNext = Math.abs(target - vCur) <= 0.5 ? vCur : target;
-      pts.push({ u: (colStart[gap] as number) + (colSize[gap] as number), v: vCur });
-      if (Math.abs(vNext - vCur) > 0.5) {
-        jogs.push({ edge: e.key, gap, va: vCur, vb: vNext });
-        pts.push({ u: NaN, v: vCur, gap }, { u: NaN, v: vNext, gap });
-      }
-      pts.push({ u: colStart[node.rank] as number, v: vNext });
-      if (i < chain.length - 1) pts.push({ u: (colStart[node.rank] as number) + (colSize[node.rank] as number), v: vNext });
-      vCur = vNext;
-    }
-    pts.push({ u: uOf(h), v: vCur });
+    const list = steps.get(e.key) as { gap: number; va: number; vb: number }[];
+    pts.push({ u: uOf(t) + t.su, v: list[0]?.va ?? 0 });
+    list.forEach(({ gap, va, vb }, k) => {
+      const node = verts.get(chain[k + 1] as string) as V;
+      pts.push({ u: (colStart[gap] as number) + (colSize[gap] as number), v: va });
+      if (vb !== va) pts.push({ u: NaN, v: va, gap }, { u: NaN, v: vb, gap });
+      pts.push({ u: colStart[node.rank] as number, v: vb });
+      if (k < list.length - 1) pts.push({ u: (colStart[node.rank] as number) + (colSize[node.rank] as number), v: vb });
+    });
+    pts.push({ u: uOf(h), v: list[list.length - 1]?.vb ?? 0 });
     abstract.set(e.key, pts);
   });
-  /* One private track per jog per gap. Downward jogs take tracks left→right
-     in top order, upward ones right→left: nested jogs then never cross. */
+  /* One private track per jog per gap, TRACK apart, centred in the gap.
+     Downward jogs take tracks in top order, upward ones in reverse: nested
+     jogs then never cross. */
   const track = new Map<string, number>();
-  const gaps = new Map<number, Jog[]>();
-  jogs.forEach((j) => gaps.set(j.gap, [...(gaps.get(j.gap) ?? []), j]));
-  gaps.forEach((list, gap) => {
-    const start = (colStart[gap] as number) + (colSize[gap] as number);
-    const width = rankGap;
+  gapJogs.forEach((list, gap) => {
+    const mid = (colStart[gap] as number) + (colSize[gap] as number) + (gapSize[gap] as number) / 2;
+    const spacing = Math.min(TRACK, (gapSize[gap] as number) / (list.length + 1));
     const downs = list.filter((j) => j.vb > j.va).sort((a, b) => b.va - a.va || a.vb - b.vb);
     const ups = list.filter((j) => j.vb < j.va).sort((a, b) => a.va - b.va || b.vb - a.vb);
     const ordered = [...downs, ...ups];
-    ordered.forEach((j, i) => track.set(`${j.edge}\u0000${gap}`, start + (width * (i + 1)) / (ordered.length + 1)));
+    ordered.forEach((j, i) => track.set(`${j.edge}\u0000${gap}`, mid + (i - (ordered.length - 1) / 2) * spacing));
   });
   layered.forEach((e) => {
     const pts = (abstract.get(e.key) as { u: number; v: number | null; gap?: number }[])
@@ -561,10 +631,17 @@ export function layoutGraph(
 
   // ── 7. Labels ────────────────────────────────────────────────────────────────
   const taken: Box[] = cards.map((c) => inflate(c, 2));
+  const wires: { p: Point; q: Point; edge: string }[] = [];
+  routes.forEach((route, key) => route.points.forEach((p, i) => {
+    const q = route.points[i + 1];
+    if (q) wires.push({ p, q, edge: key });
+  }));
+  const bendClear = options.edgeStyle === 'curved' ? CURVE_REACH : CORNER;
   edges.forEach((e) => {
     const route = routes.get(e.key) as LayoutEdgeResult;
     if (!e.label) return;
-    route.labelBox = placeLabel(route.points, e.label, taken);
+    const others = wires.filter((w) => w.edge !== e.key);
+    route.labelBox = placeLabel(route.points, e.label, taken, others, LR, bendClear);
     if (route.labelBox) taken.push(inflate(route.labelBox, 2));
   });
 
@@ -829,28 +906,100 @@ function searchRoute(a: Box, b: Box, cards: Box[]): Point[] | null {
 }
 
 /**
- * Greedy label placement: try the middle of each segment (longest first),
- * then its thirds; the first box clear of every card and every placed label
- * wins. Null means no clear slot — the UI shows the label on hover instead of
- * stacking it on top of something.
+ * Greedy label placement on the route's STRAIGHT runs: a label sits whole on
+ * one segment, clear of its bends (`bendClear`) and its arrowhead, never on a
+ * card, a placed label, or another edge's wire — so never on a crossing.
+ * Runs along the flow are tried first (in TB the short vertical stubs and
+ * long through-runs, where parallel edges are spread apart), longest first,
+ * middle out. Null means no clear slot — the UI shows the label on hover
+ * instead of stacking it on top of something.
  */
-function placeLabel(points: Point[], size: { width: number; height: number }, taken: Box[]): Box | null {
-  const segments: { p: Point; q: Point; len: number; i: number }[] = [];
+function placeLabel(
+  points: Point[],
+  size: { width: number; height: number },
+  taken: Box[],
+  wires: readonly { p: Point; q: Point }[],
+  LR: boolean,
+  bendClear: number,
+): Box | null {
+  const ARROW = 12;
+  const PORT = 4;
+  const segments: { p: Point; q: Point; len: number; i: number; flow: boolean }[] = [];
   for (let i = 0; i + 1 < points.length; i += 1) {
     const p = points[i] as Point;
     const q = points[i + 1] as Point;
-    segments.push({ p, q, len: Math.abs(p.x - q.x) + Math.abs(p.y - q.y), i });
+    const horizontal = Math.abs(p.y - q.y) < 0.01;
+    segments.push({ p, q, len: Math.abs(p.x - q.x) + Math.abs(p.y - q.y), i, flow: horizontal === LR });
   }
-  segments.sort((a, b) => b.len - a.len || a.i - b.i);
-  for (const t of [0.5, 0.33, 0.67]) {
-    for (const s of segments) {
-      const cx = s.p.x + (s.q.x - s.p.x) * t;
-      const cy = s.p.y + (s.q.y - s.p.y) * t;
-      const box = { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height };
-      if (!taken.some((b) => overlaps(b, box))) return box;
+  const last = segments.length - 1;
+  const clear = (box: Box) => !taken.some((b) => overlaps(b, box))
+    && !wires.some((w) => segmentHitsBox(w.p, w.q, inflate(box, 1)));
+  const boxAt = (cx: number, cy: number): Box => ({ x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height });
+  const ordered = [...segments].sort((a, b) => Number(b.flow) - Number(a.flow) || b.len - a.len || a.i - b.i);
+  for (const s of ordered) {
+    const horizontal = Math.abs(s.p.y - s.q.y) < 0.01;
+    const half = horizontal ? size.width / 2 : size.height / 2;
+    const from = (s.i === 0 ? PORT : bendClear) + half;
+    const to = s.len - (s.i === last ? ARROW : bendClear) - half;
+    if (to < from) continue;
+    for (const t of [0.5, 0.3, 0.7, 0.15, 0.85, 0, 1]) {
+      const at = (from + (to - from) * t) / (s.len || 1);
+      const box = boxAt(s.p.x + (s.q.x - s.p.x) * at, s.p.y + (s.q.y - s.p.y) * at);
+      if (clear(box)) return box;
     }
   }
   return null;
+}
+
+/**
+ * An SVG path for a CURVED route: every jog (a cross-axis step between two
+ * parallel runs) becomes one S-curve reaching `reach` along the runs either
+ * side; any other corner is rounded as in `roundedPath`. Same points, so the
+ * route's guarantees (ports, clear of cards) hold to within the curve.
+ */
+export function curvedPath(points: readonly Point[], reach = CURVE_REACH): string {
+  if (points.length === 0) return '';
+  const f = (n: number) => Math.round(n * 10) / 10;
+  const unit = (a: Point, b: Point) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / len, y: (b.y - a.y) / len, len };
+  };
+  const first = points[0] as Point;
+  let d = `M ${f(first.x)} ${f(first.y)}`;
+  /* How much of the segment starting at points[i] the previous curve used. */
+  let used = 0;
+  let i = 1;
+  while (i < points.length) {
+    const p = points[i] as Point;
+    const prev = points[i - 1] as Point;
+    const next = points[i + 1];
+    if (!next) {
+      d += ` L ${f(p.x)} ${f(p.y)}`;
+      break;
+    }
+    const after = points[i + 2];
+    const inDir = unit(prev, p);
+    const jog = unit(p, next);
+    const outDir = after ? unit(next, after) : null;
+    const isJog = outDir !== null && Math.abs(inDir.x - outDir.x) < 0.01 && Math.abs(inDir.y - outDir.y) < 0.01
+      && Math.abs(inDir.x * jog.x + inDir.y * jog.y) < 0.01;
+    if (isJog && outDir && after) {
+      const a = Math.min(reach, Math.max(0, inDir.len - used));
+      const b = Math.min(reach, outDir.len / (i + 2 === points.length - 1 ? 1 : 2));
+      const start = { x: p.x - inDir.x * a, y: p.y - inDir.y * a };
+      const end = { x: next.x + outDir.x * b, y: next.y + outDir.y * b };
+      d += ` L ${f(start.x)} ${f(start.y)} C ${f(p.x)} ${f(p.y)} ${f(next.x)} ${f(next.y)} ${f(end.x)} ${f(end.y)}`;
+      used = b;
+      i += 2;
+      continue;
+    }
+    const outLen = jog.len;
+    const r = Math.min(CORNER, Math.max(0, inDir.len - used) / 2, outLen / 2);
+    d += ` L ${f(p.x - inDir.x * r)} ${f(p.y - inDir.y * r)} Q ${f(p.x)} ${f(p.y)} ${f(p.x + jog.x * r)} ${f(p.y + jog.y * r)}`;
+    used = r;
+    i += 1;
+  }
+  return d;
 }
 
 /** An SVG path through orthogonal points with rounded corners. */

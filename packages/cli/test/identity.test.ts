@@ -10,8 +10,8 @@
  *   its human view must keep the ids a follow-up needs (`--as` takes a member
  *     id, and the memberships are where those ids come from).
  *
- * `run.ts` already turns a typed `whoami` into a RetiredCommandError pointing
- * here; that is the router's test, not this file's.
+ * `tm8 whoami` (commands/discoverability.ts) composes this read with the
+ * session facts the CLI holds; that is tested in discoverability.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';

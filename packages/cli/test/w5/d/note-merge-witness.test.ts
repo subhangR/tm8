@@ -150,7 +150,7 @@ async function taskWithStoredNote(label: string): Promise<string> {
     throw new Error(`entity create failed (${created.status}): ${JSON.stringify(created.body)}`);
   }
   await post(`/v2/entities/${id}/commands/work`, {
-    status: 'working', note: STORED, clientMutationId: `w5d-store-${label}`,
+    status: 'working', claim: true, note: STORED, clientMutationId: `w5d-store-${label}`,
   });
   // THE POSITIVE CONTROL, asserted rather than assumed: without it, every
   // "AFTER is null" below is equally consistent with "there was never a note".

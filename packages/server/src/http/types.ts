@@ -52,6 +52,8 @@ export interface RequestIdentity {
    * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
    * an agent holding its owner's credential. Absent ⇒ refused.
    */
+  /** Verified immutable API scope on the auth session; absent preserves existing write scope. */
+  apiScope?: 'read' | 'write';
   authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;
@@ -64,6 +66,9 @@ export interface RequestIdentity {
    * why `messages.post` and `execution.spawn` may treat it as provenance.
    */
   runtimeChatId?: string;
+  /** Verified runtime token generation; evidence only, SQL checks current rows. */
+  runtimeEpoch?: number;
+  runtimeNativeGeneration?: number;
   /**
    * The one space this session may act in (226 `auth_sessions.space_id`),
    * bound as `tm8.session_space_id`. Set for agent kinds and for a human

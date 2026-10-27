@@ -88,7 +88,12 @@ export interface PtyWsConnectionOptions {
   missedPongLimit?: number;
   idleTimeoutMs?: number;
   absoluteTimeoutMs?: number;
+  /** Soft slow-consumer cap; crossing it starts the grace timer (see `send`). */
   maxBufferedBytes?: number;
+  /** How long the queue may stay over `maxBufferedBytes` before the peer is dropped. */
+  slowConsumerGraceMs?: number;
+  /** Hard cap on queued bytes; a write that would exceed it drops the peer at once. */
+  hardMaxBufferedBytes?: number;
   maxInputBytes?: number;
   maxControlBytes?: number;
   maxMessagesPerWindow?: number;
@@ -107,6 +112,15 @@ export const DEFAULT_PTY_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60_000;
  * it on its own replay.
  */
 export const DEFAULT_PTY_MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
+/**
+ * Grace window for a viewer whose queue sits over the soft cap. A tab that is
+ * briefly slow (GC pause, main-thread stall, a wifi hiccup) drains well inside
+ * this; one that stays over it is genuinely wedged. 3s matches Agent
+ * Orchestrator's interim fix (their PR #6232).
+ */
+export const DEFAULT_PTY_SLOW_CONSUMER_GRACE_MS = 3_000;
+/** Hard ceiling as a multiple of the soft cap — the memory bound during grace. */
+export const DEFAULT_PTY_HARD_BUFFER_MULTIPLIER = 4;
 export const DEFAULT_PTY_MAX_INPUT_BYTES = 64 * 1024;
 export const DEFAULT_PTY_MAX_CONTROL_BYTES = 4 * 1024;
 
@@ -140,6 +154,10 @@ export class PtyWsConnection {
   private readonly idleTimeoutMs: number;
   private readonly absoluteTimeoutMs: number;
   private readonly maxBufferedBytes: number;
+  private readonly hardMaxBufferedBytes: number;
+  private readonly slowConsumerGraceMs: number;
+  private graceTimer: NodeJS.Timeout | null = null;
+  private readonly onDrain = (): void => this.checkDrained();
   private readonly maxInputBytes: number;
   private readonly maxControlBytes: number;
   private readonly maxMessagesPerWindow: number;
@@ -165,6 +183,13 @@ export class PtyWsConnection {
     this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_PTY_IDLE_TIMEOUT_MS;
     this.absoluteTimeoutMs = opts.absoluteTimeoutMs ?? DEFAULT_PTY_ABSOLUTE_TIMEOUT_MS;
     this.maxBufferedBytes = opts.maxBufferedBytes ?? DEFAULT_PTY_MAX_BUFFERED_BYTES;
+    // Never below the soft cap: a hard ceiling under it would turn the grace
+    // window back into the old instant kill.
+    this.hardMaxBufferedBytes = Math.max(
+      this.maxBufferedBytes,
+      opts.hardMaxBufferedBytes ?? this.maxBufferedBytes * DEFAULT_PTY_HARD_BUFFER_MULTIPLIER,
+    );
+    this.slowConsumerGraceMs = opts.slowConsumerGraceMs ?? DEFAULT_PTY_SLOW_CONSUMER_GRACE_MS;
     this.maxInputBytes = opts.maxInputBytes ?? DEFAULT_PTY_MAX_INPUT_BYTES;
     this.maxControlBytes = opts.maxControlBytes ?? DEFAULT_PTY_MAX_CONTROL_BYTES;
     this.decoder = new FrameDecoder(Math.max(this.maxInputBytes, this.maxControlBytes));
@@ -200,16 +225,26 @@ export class PtyWsConnection {
    * on exactly this split: it sends output as Buffers and `{type:'exit'}` as a
    * JSON string through the same sink.
    *
-   * KNOWN-UNBOUNDED (shared TODO with maestro): there is NO backpressure policy
-   * here. We write straight through and ignore `socket.write()`'s false return,
-   * matching maestro, which has no `bufferedAmount` check either. What bounds
-   * things today is upstream: 16ms coalescing bounds frame RATE, the 64KB
-   * force-flush bounds frame SIZE, the 1MiB ring bounds REPLAY size, and the
-   * client's visibility driver suspends offscreen sockets so a backgrounded
-   * fleet stops sending at all. NOT bounded: an active-but-wedged tab holding
-   * many live streams. The agreed fix for both repos is the appliedOffset
-   * ACK/credit-window; it must land in maestro and here together, so this is
-   * left deliberately identical rather than forked early.
+   * BACKPRESSURE — INTERIM POLICY (shared TODO with maestro). There is no
+   * flow control: we write straight through and never pause the producer, so
+   * a wedged viewer can only be DROPPED, never slowed. What we bound is how
+   * much a viewer may make us hold, in two tiers (see `writeBounded`):
+   *   - soft cap (`maxBufferedBytes`): crossing it starts a grace timer
+   *     (`slowConsumerGraceMs`, default 3s) instead of killing on the spot.
+   *     If the socket drains back under the cap first, the timer is
+   *     cancelled and nothing is lost; if it is still over when the timer
+   *     fires, the peer is closed ('slow consumer') exactly as before.
+   *   - hard ceiling (`hardMaxBufferedBytes`, default 4x the soft cap): a
+   *     write that would push the queue past it closes the peer immediately,
+   *     so per-connection memory stays bounded even inside the grace window.
+   * Dropping is safe because the client reconnects at its offset and gets an
+   * honest gap marker. Upstream still bounds the rest: 16ms coalescing bounds
+   * frame RATE, the 64KB force-flush bounds frame SIZE, the 1MiB ring bounds
+   * REPLAY size, and the client's visibility driver suspends offscreen
+   * sockets. STILL NOT SOLVED: a viewer that is persistently slower than its
+   * stream is disconnected (and reconnects) rather than throttled. The agreed
+   * fix for both repos is the appliedOffset ACK/credit-window; it must land in
+   * maestro and here together, so it is deliberately not built here.
    */
   send(data: Buffer | string): void {
     if (this.state !== PTY_SOCKET_STATE.open) return;
@@ -224,6 +259,7 @@ export class PtyWsConnection {
     this.state = PTY_SOCKET_STATE.closing;
     this.stopHeartbeat();
     this.stopLifetimeTimers();
+    this.stopGrace();
     try {
       this.socket.write(encodeCloseFrame(code, reason));
       this.socket.end();
@@ -356,12 +392,12 @@ export class PtyWsConnection {
   }
 
   private writeBounded(frame: Buffer): boolean {
-    if ((this.socket.writableLength ?? 0) + frame.length > this.maxBufferedBytes) {
-      this.close(CLOSE_CODE.policyViolation, 'slow consumer');
-      this.socket.destroy();
-      this.finish();
+    const queued = (this.socket.writableLength ?? 0) + frame.length;
+    if (queued > this.hardMaxBufferedBytes) {
+      this.dropSlowConsumer();
       return false;
     }
+    if (queued > this.maxBufferedBytes) this.startGrace();
     try {
       // `write()` returning false is ordinary backpressure, NOT a slow
       // consumer: the frame IS queued, the socket merely holds more than its
@@ -369,7 +405,7 @@ export class PtyWsConnection {
       // after queueing any large attach replay, discarding the replay the
       // client had just been promised in `attached` — so every reopen of a
       // session past a few hundred KB of output painted live Claude Code
-      // diffs onto a blank terminal. The byte cap above is the bound.
+      // diffs onto a blank terminal. The two byte caps above are the bound.
       this.socket.write(frame);
       return true;
     } catch {
@@ -377,6 +413,42 @@ export class PtyWsConnection {
       this.finish();
       return false;
     }
+  }
+
+  /**
+   * Over the soft cap: give the peer `slowConsumerGraceMs` to drain. Idempotent
+   * while a window is already running — the deadline is NOT pushed back by
+   * further writes, or a viewer that never catches up would never be dropped.
+   */
+  private startGrace(): void {
+    if (this.graceTimer !== null) return;
+    const timer = setTimeout(() => {
+      this.graceTimer = null;
+      this.socket.off('drain', this.onDrain);
+      if (this.state !== PTY_SOCKET_STATE.open) return;
+      if ((this.socket.writableLength ?? 0) > this.maxBufferedBytes) this.dropSlowConsumer();
+    }, this.slowConsumerGraceMs);
+    timer.unref?.();
+    this.graceTimer = timer;
+    this.socket.on('drain', this.onDrain);
+  }
+
+  private checkDrained(): void {
+    if ((this.socket.writableLength ?? 0) <= this.maxBufferedBytes) this.stopGrace();
+  }
+
+  private stopGrace(): void {
+    if (this.graceTimer !== null) {
+      clearTimeout(this.graceTimer);
+      this.graceTimer = null;
+    }
+    this.socket.off('drain', this.onDrain);
+  }
+
+  private dropSlowConsumer(): void {
+    this.close(CLOSE_CODE.policyViolation, 'slow consumer');
+    this.socket.destroy();
+    this.finish();
   }
 
   private consumeRate(bytes: number): boolean {
@@ -426,6 +498,7 @@ export class PtyWsConnection {
     this.state = PTY_SOCKET_STATE.closed;
     this.stopHeartbeat();
     this.stopLifetimeTimers();
+    this.stopGrace();
     if (this.closeFired) return;
     this.closeFired = true;
     this.handlers.onClose?.();

@@ -24,6 +24,7 @@ import {
   build,
   defaultRoute,
   dropNoticeText,
+  homeAsTabs,
   normalize,
   parse,
   redirect,
@@ -37,6 +38,7 @@ import {
   type RouterTarget,
 } from '../routes';
 import { reconcileScreenStacks } from './backContract';
+import { recordInbound, recordPush, recordReplace } from './phoneHistory';
 
 /** WLT §5.2 / SPEC-FINAL: three pins, no more. */
 export const MAX_PINNED = 3;
@@ -669,6 +671,12 @@ export interface RouterSyncOptions {
   onNotice?: (notice: RouteNotice) => void;
   /** No addressable space in the hash ⇒ the space picker renders. */
   onSpacePicker?: () => void;
+  /**
+   * Whether bare `/home` reads as the tabs view (`homeAsTabs`) — true on the
+   * three-mode desktop, where Home IS the tabs view, so its own address reads
+   * back without a redirect. Asked per read: the shell can change under it.
+   */
+  homeIsTabs?: () => boolean;
 }
 
 export type RouteNotice =
@@ -721,10 +729,11 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
       const text = dropNoticeText(outcome.dropped);
       if (text) notice({ kind: 'dropped', classes: outcome.dropped, text });
     }
+    const route = opts.homeIsTabs?.() ? homeAsTabs(outcome.route) : outcome.route;
 
     applying = true;
     try {
-      navStore.getState().hydrate(outcome.route);
+      navStore.getState().hydrate(route);
       /*
        * THE ADDRESS LEADS THE SCREEN STACK — but ONLY here, and "here" is the
        * whole rule. This path runs for back, forward, a pasted hash and a
@@ -755,6 +764,9 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
        * silent mis-seed, which is the failure class hardest to see.
        */
       reconcileScreenStacks(navStore.getState().view);
+      /* The phone's ‹ reads this projection (stores/phoneHistory.ts): an
+         inbound address is a Back, a Forward, or a fresh start. */
+      recordInbound(navStore.getState().view);
     } finally {
       applying = false;
     }
@@ -776,6 +788,8 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
     }
     lastWritten = outcome.hash;
     target.setHash(outcome.hash, { replace });
+    if (replace) recordReplace(state.view);
+    else recordPush(state.view);
   };
 
   const unsubscribeTarget = target.subscribe((hash) => {

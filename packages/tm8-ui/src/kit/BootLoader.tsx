@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { RibbonMark, type RibbonMotion } from './RibbonMark';
+import { useCallback, useRef, type ReactNode } from 'react';
+import { RibbonMark, ribbonPhase, useRibbonClock, type RibbonMotion } from './RibbonMark';
 
 /**
  * BootLoader — the centred wait state for BOOT, and boot only.
@@ -21,6 +21,15 @@ import { RibbonMark, type RibbonMotion } from './RibbonMark';
  * The mark is the tm8 figure-8, drawn as a Möbius ribbon in pseudo-3D and
  * turning on its own axis — the product's own glyph doing the waiting, rather
  * than a generic arc. See `RibbonMark` for the port and for what it costs.
+ *
+ * It wears the `eclipse` finish (black and white, split by a travelling
+ * terminator, each half swinging halfway to the opposite pole over the loop),
+ * and the letters swing with it: black → mid-grey → black on light, the exact
+ * reverse on dark, reaching the halfway point at the turnaround. They ride the ribbon's own clock rather than a CSS animation of
+ * the same length, because a CSS clock starts when the element mounts and the
+ * ribbon's starts when the first mark subscribes — two clocks that would drift
+ * apart by however long boot took to paint. The phase is written straight to
+ * a custom property, so the letters cost no React render per frame.
  *
  * Honesty, same as every other wait state here: `role="status"` + a live
  * region, so a screen reader is told the workspace is loading rather than
@@ -48,6 +57,11 @@ export function BootLoader({
    */
   motion?: RibbonMotion;
 }) {
+  const letters = useRef<HTMLSpanElement>(null);
+  const onTick = useCallback((t: number) => {
+    letters.current?.style.setProperty('--kit-boot-phase', ribbonPhase(t).toFixed(3));
+  }, []);
+  useRibbonClock(onTick);
   return (
     <div className="kit-boot" role="status" aria-live="polite" data-testid="boot-loader">
       {/* The wordmark, with the ribbon as its 8 — so boot shows the product's
@@ -55,8 +69,10 @@ export function BootLoader({
           the label below is what a reader is given, and the letters here would
           otherwise be announced as a bare "tm". */}
       <div className="kit-boot__mark" aria-hidden="true">
-        <span className="kit-boot__letters">tm</span>
-        <RibbonMark className="kit-boot__ribbon" layout="wordmark" motion={motion} />
+        <span ref={letters} className="kit-boot__letters">
+          tm
+        </span>
+        <RibbonMark className="kit-boot__ribbon" layout="wordmark" motion={motion} finish="eclipse" />
       </div>
       <span className="kit-boot__label">{label}</span>
       {detail ? <span className="kit-boot__detail">{detail}</span> : null}

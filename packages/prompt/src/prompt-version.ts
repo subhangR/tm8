@@ -11,9 +11,9 @@
  * Distinct from `manifestVersion`, which versions the manifest DOCUMENT shape,
  * and from the `<tm8_system_prompt version="1.0">` attribute, which is a frame
  * detail the agent sees. This one is the analytics tag. `'2'` is the layered
- * frame of spec ca8d §2 (`composePromptV2`); the Interaction
- * Profile picks between them (`promptVersionFor`) — callers take the value
- * from this module, never a literal.
+ * frame of spec ca8d §2 (`composePromptV2`); `promptVersionFor` picks
+ * between them by mode — callers take the value from this module, never a
+ * literal.
  */
 export const PROMPT_VERSIONS = ['1', '2'] as const;
 
@@ -26,24 +26,23 @@ export const PROMPT_VERSION_V1: PromptVersion = '1';
 export const PROMPT_VERSION_V2: PromptVersion = '2';
 
 /**
- * What a launch is stamped with when nothing selects otherwise.
+ * What a NEW launch is stamped with: v2, for every agent mode.
  *
- * Still v1, deliberately (spec ca8d §5, Q14): v2 flips to the default only
- * after the §6.2 behavioural evaluation passes, and v1 is then kept for one
- * release. Until then a session reaches v2 only through a profile that opts in.
+ * Subhang's ruling of 2026-10-13 ("everything to be using v2 prompts") made v2
+ * the default ahead of the spec ca8d §6.2 evaluation that §5 had gated it on.
+ * No Interaction Profile is consulted: `promptPolicy.kernelTemplate` no longer
+ * selects the frame.
  */
-export const DEFAULT_PROMPT_VERSION: PromptVersion = PROMPT_VERSION_V1;
+export const DEFAULT_PROMPT_VERSION: PromptVersion = PROMPT_VERSION_V2;
 
 /**
- * The profile value that opts a launch into v2: `promptPolicy.kernelTemplate`.
+ * What a manifest WITHOUT a stamp reads as: v1.
  *
- * Selection rides the Interaction Profile (Q14) because a pin is immutable for
- * the session's whole life, so every session is on exactly one variant and the
- * A/B split falls out of which profile a teammate or space is given. The field
- * already exists (core default ships `tm8.core.v1`) and is a free string on
- * both validators, so opting in needs a profile draft, not a migration.
+ * A manifest written before the stamp existed was booted on the v1 frame, and
+ * re-rendering a stored manifest must reproduce what that session was given —
+ * so an absent stamp is the legacy frame, never the current default.
  */
-export const KERNEL_TEMPLATE_V2 = 'tm8.core.v2';
+export const LEGACY_PROMPT_VERSION: PromptVersion = PROMPT_VERSION_V1;
 
 /** The modes v2 covers: all five, since the layered prompt (task 01a0d465). */
 export const PROMPT_V2_MODES: readonly string[] = [
@@ -55,19 +54,11 @@ export const PROMPT_V2_MODES: readonly string[] = [
 ];
 
 /**
- * The version a launch is booted with, from its mode and its resolved profile
- * snapshot. Reads `agentProjection.promptPolicy.kernelTemplate` tolerantly: an
- * absent or unknown template, or a mode outside v2's scope, is the default.
+ * The version a launch is booted with, from its mode: v2 for every mode v2
+ * covers, and v1 for anything else (a mode with no v2 frame specified).
  */
-export function promptVersionFor(input: {
-  mode: string | null | undefined;
-  profileSnapshot?: unknown;
-}): PromptVersion {
-  if (!input.mode || !PROMPT_V2_MODES.includes(input.mode)) return DEFAULT_PROMPT_VERSION;
-  const at = (v: unknown, key: string): unknown =>
-    typeof v === 'object' && v !== null ? (v as Record<string, unknown>)[key] : undefined;
-  const template = at(at(at(input.profileSnapshot, 'agentProjection'), 'promptPolicy'), 'kernelTemplate');
-  return template === KERNEL_TEMPLATE_V2 ? PROMPT_VERSION_V2 : DEFAULT_PROMPT_VERSION;
+export function promptVersionFor(input: { mode: string | null | undefined }): PromptVersion {
+  return input.mode && PROMPT_V2_MODES.includes(input.mode) ? DEFAULT_PROMPT_VERSION : PROMPT_VERSION_V1;
 }
 
 export function isPromptVersion(value: unknown): value is PromptVersion {

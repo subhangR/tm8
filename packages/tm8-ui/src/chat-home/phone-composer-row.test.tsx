@@ -253,29 +253,40 @@ describe('the composer row is shorter and cannot overflow', () => {
   });
 
   /**
-   * HINGES ON: `overscroll-behavior-x: contain` on the phone's `.tch-picks`.
-   *
-   * Without it a horizontal flick that reaches either end of the settings strip
-   * CHAINS to the ancestor — so an overshoot drags the transcript, and a swipe
-   * off the left edge can fire the browser's back gesture and take the writer's
-   * draft with it. This is the "make it smooth" half of the report and it is
-   * the one property no screenshot can show.
+   * SUPERSEDED RULING, STATED SO IT IS NOT RE-LITIGATED: the strip used to
+   * scroll sideways. Composer-states mockup §6 (t-composer) rules the foot is
+   * one row that never scrolls, with pills that ellipsize — and proves the
+   * worst case fits 322px at 360. Put `overflow-x: auto` back and this reds.
    */
-  it('contains the settings strip’s own scroll', () => {
-    const picks = ruleBody(".cv2-root[data-shell='mobile'] .tch-picks {");
-    expect(picks).toMatch(/overscroll-behavior-x:\s*contain/);
-    expect(picks).toMatch(/scroll-snap-type:\s*x proximity/);
-  });
-
-  /** The strip must stay a SCROLLER rather than becoming a wrapper: wrapping
-   *  buys width back by spending height, which is the trade this row is being
-   *  asked to stop making. */
-  it('keeps the strip one non-wrapping scrolling line', () => {
-    const picks = ruleBody(".cv2-root[data-shell='mobile'] .tch-picks {");
-    expect(picks).toMatch(/flex-wrap:\s*nowrap/);
-    expect(picks).toMatch(/overflow-x:\s*auto/);
+  it('keeps the foot one row with no sideways scroller', () => {
+    const picks = rulesFor(".cv2-root[data-shell='mobile'] .tch-picks");
+    expect(picks.length, 'one rule per selector — see the note on rulesFor').toBe(1);
+    expect(picks[0]).toMatch(/flex-wrap:\s*nowrap/);
+    expect(picks[0]).toMatch(/min-width:\s*0/);
+    expect(picks[0]).not.toMatch(/overflow-x:\s*auto/);
+    expect(picks[0]).not.toMatch(/scroll-snap-type/);
     const foot = ruleBody(".cv2-root[data-shell='mobile'] .ri-card__foot {");
     expect(foot).toMatch(/flex-wrap:\s*nowrap/);
+  });
+
+  /** The mockup's caps: mode 96, model 120, both 34px tall. These two numbers
+   *  are what make 328 the worst case, so they are the ones guarded. */
+  it('caps the mode pill at 96px and the model pill at 120px', () => {
+    expect(rulesFor(".cv2-root[data-shell='mobile'] .tch-picks .tch-pop__trigger")
+      .some((body) => /max-width:\s*96px/.test(body))).toBe(true);
+    expect(rulesFor(".cv2-root[data-shell='mobile'] .ri-card__foot > .tch-pick--model")
+      .some((body) => /max-width:\s*120px/.test(body))).toBe(true);
+    expect(CSS).toMatch(/\.tch-pick--model \.tch-pop__trigger \{[^}]*min-height:\s*34px/);
+  });
+
+  /** Send keeps the 44px target and draws a 34px disc inside it (5px padding,
+   *  content-box background). */
+  it('draws Send as a 34px disc inside the 44px target', () => {
+    const disc = rulesFor(".cv2-root[data-shell='mobile'] .tch-composer .ri-card__foot .tch-send");
+    expect(disc.length).toBe(1);
+    expect(disc[0]).toMatch(/width:\s*var\(--mobile-touch-min\)/);
+    expect(disc[0]).toMatch(/padding:\s*5px/);
+    expect(disc[0]).toMatch(/background-clip:\s*content-box/);
   });
 
   /** A trigger that can take 150px of a 366px card is how three of them stop

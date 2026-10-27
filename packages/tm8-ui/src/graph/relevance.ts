@@ -140,7 +140,8 @@ const EXPANSION_FANOUT = 6;
  * 88% at 24 hours — and 93% even with messages excluded. There are no natural
  * disjoint sets to show. The welders are hubs: at 7 days the top degrees are a
  * `work_session` at 237, a `team_member` at 130 and a `project` at 112, and
- * dropping one edge type alone (`created_in`) takes the 7-day component count
+ * dropping one edge type alone (`created_in`, since migrated into
+ * `authored_from`) takes the 7-day component count
  * from 51 to 189.
  *
  * Refusing to CLUSTER through them is what makes disjoint sets exist. Neither

@@ -741,6 +741,17 @@ export const ptyTransport = {
   },
 
   /**
+   * Input sent but not yet handed to the network, in bytes; -1 when the
+   * socket is not open. A bulk sender (the phone's build upload) paces on it,
+   * so a slow uplink cannot bunch its frames into one of the server's
+   * per-second input windows.
+   */
+  inputBacklog(id: string): number {
+    const ws = _sockets.get(id);
+    return ws && ws.readyState === WebSocket.OPEN ? ws.bufferedAmount : -1;
+  },
+
+  /**
    * Tell the server the grid size (a JSON text control frame).
    *
    * `force` asks the server to drive a SIGWINCH even when the geometry it

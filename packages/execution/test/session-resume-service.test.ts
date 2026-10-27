@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
-import { SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
+import { RESUME_FAILED_PREFIX, SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
 import { resolveAgentBinary } from '../src/spawn/manifest.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
@@ -110,14 +110,54 @@ describe('SpawnService.resume — guards and orchestration', () => {
     return error as SpawnError;
   }
 
-  it('refuses a session that is not in a terminal status', async () => {
-    graph.resumeInfo = { ...RESUME_INFO, status: 'running' };
+  it('refuses a session that is still spawning', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'spawning' };
     const error = await expectRefusal(
       serviceWith().resume(AUTH, { sessionId: SESSION_ID }),
       'conflict',
     );
-    expect(error.message).toContain("is 'running'");
+    expect(error.message).toContain("is 'spawning'");
     // Nothing was written: a refused resume must not touch the row.
+    expect(graph.resumes).toHaveLength(0);
+    expect(graph.transitions).toHaveLength(0);
+  });
+
+  // --- stale sessions: resume without waiting for the reaper -----------------
+
+  it.each(['running', 'idle'] as const)(
+    'marks a STALE %s session lost, then resumes it — no wait for the reaper',
+    async (status) => {
+      graph.resumeInfo = { ...RESUME_INFO, status, nodeId: NODE_ID };
+      graph.resumeReplayed = true;
+      const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID, clientMutationId: 'cmid-stale' });
+
+      expect(result.reused).toBe(true);
+      // The lost verdict is recorded BEFORE the resurrection RPC runs.
+      const lost = graph.transitions.filter((t) => t.sessionId === SESSION_ID);
+      expect(lost.map((t) => t.status)).toEqual(['failed']);
+      expect(lost[0]).toMatchObject({ endedKind: 'lost' });
+      expect(graph.resumes).toEqual([
+        { sessionId: SESSION_ID, clientMutationId: 'cmid-stale', nodeId: NODE_ID },
+      ]);
+    },
+  );
+
+  it('treats an unowned running row as this node\'s ghost', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'running', nodeId: null };
+    graph.resumeReplayed = true;
+    await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+    expect(graph.transitions.map((t) => t.status)).toEqual(['failed']);
+    expect(graph.resumes).toHaveLength(1);
+  });
+
+  it('refuses a running session ANOTHER node owns — its PTY may be live there', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'running', nodeId: 'node-elsewhere' };
+    const error = await expectRefusal(
+      serviceWith().resume(AUTH, { sessionId: SESSION_ID }),
+      'conflict',
+    );
+    expect(error.message).toContain('node-elsewhere');
+    expect(graph.transitions).toHaveLength(0);
     expect(graph.resumes).toHaveLength(0);
   });
 
@@ -259,6 +299,19 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(result.manifest.context?.groups?.memories).toEqual({ mode: 'default', reason: 'replay-invalid' });
   });
 
+  it('a resume that fails at spawn records "Failed to resume: <error>" (Spec D1 §9 scenario 29)', async () => {
+    // No agent binary on PATH: the preflight fails AFTER the RPC moved the row
+    // to spawning, which is exactly "a resume fails at spawn". The row still
+    // carries the previous run's ended kind, so the reason is what says so.
+    await expect(
+      serviceWith({ PATH: join(dataDir, 'no-bin'), HOME: dataDir }).resume(AUTH, { sessionId: SESSION_ID }),
+    ).rejects.toThrow();
+    const failed = graph.transitions.filter((t) => t.sessionId === SESSION_ID);
+    expect(failed.map((t) => t.status)).toEqual(['failed']);
+    expect(failed[0]!.endedReason).toMatch(new RegExp(`^${RESUME_FAILED_PREFIX}\\S`));
+    expect(failed[0]!.endedReason).toContain(failed[0]!.error!);
+  });
+
   it('does not boot a second child on a ledger replay', async () => {
     graph.resumeReplayed = true;
     await serviceWith().resume(AUTH, { sessionId: SESSION_ID, clientMutationId: 'cmid-1' });
@@ -360,7 +413,7 @@ describe('SpawnService.resume — guards and orchestration', () => {
     expect(result.manifest.launch.harness?.skillOverrides).toEqual(recorded);
   });
 
-  it('TM8_HARNESS_SURFACE=inherit resumes on the bare command: no trim, no --no-chrome, no record', async () => {
+  it('TM8_HARNESS_SURFACE=inherit keeps MCP isolated while omitting skill/plugin trim on resume', async () => {
     const configDir = join(dataDir, 'claude-home');
     await mkdir(join(configDir, 'skills', 'astro'), { recursive: true });
     await writeFile(join(configDir, 'skills', 'astro', 'SKILL.md'), '---\nname: astro\n---\n');
@@ -385,7 +438,8 @@ describe('SpawnService.resume — guards and orchestration', () => {
     }).resume(AUTH, { sessionId: SESSION_ID });
 
     expect(command).toContain("--resume 'pre-minted-claude-uuid'");
-    expect(command).not.toMatch(/--no-chrome|skillOverrides|--strict-mcp-config|enabledPlugins/);
+    expect(command).not.toMatch(/--no-chrome|skillOverrides|enabledPlugins/);
+    expect(command).toContain(`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`);
     expect(result.manifest.launch.harness).toEqual({ surface: 'inherit', surfaceSource: 'env' });
   });
 

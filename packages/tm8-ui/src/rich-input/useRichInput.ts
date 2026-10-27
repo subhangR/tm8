@@ -37,6 +37,7 @@ import { activeTrigger, commitTrigger, filterTriggerOptions } from './triggers';
 import type { ActiveTrigger, TriggerOption } from './triggers';
 import { extractReadableFiles } from './clipboardFiles';
 import { fileReference, spliceInto } from './caretInsert';
+import { isSendKey, useEnterSends } from './enterSends';
 
 export interface RichInputTriggerSpec<O extends TriggerOption = TriggerOption> {
   /** Single character, start-of-word (`@`, `/`). */
@@ -136,6 +137,8 @@ export interface RichInputAreaProps {
   onDrop(event: React.DragEvent<HTMLTextAreaElement>): void;
   'aria-controls': string | undefined;
   'aria-activedescendant': string | undefined;
+  /** `send` where Enter sends; `enter` on a phone, where Return is a newline. Only set with `onSend`. */
+  enterKeyHint?: 'send' | 'enter';
 }
 
 export interface RichInput {
@@ -151,6 +154,8 @@ export interface RichInput {
   openTrigger(sigil: string): void;
   /** Null when no attachments spec was declared. */
   attachments: RichInputAttachments | null;
+  /** False on a phone: Return is a newline there and only the Send button sends. */
+  enterSends: boolean;
 }
 
 export function useRichInput({
@@ -161,6 +166,7 @@ export function useRichInput({
   attachments,
   onKeyDown,
   onPaste,
+  onSend,
 }: {
   value: string;
   /** The host's draft setter — the hook never owns the text. */
@@ -172,8 +178,16 @@ export function useRichInput({
   onKeyDown?(event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   /** Host paste handling, called ONLY when no readable file was taken. */
   onPaste?(event: React.ClipboardEvent<HTMLTextAreaElement>): void;
+  /**
+   * Enter-to-send, decided HERE so every composer agrees (see `enterSends.ts`):
+   * plain Enter sends on a keyboard, never under Shift or an IME composition,
+   * and never on a phone, where Return is the only newline. The host's
+   * `onKeyDown` still sees every key the popover did not consume, first.
+   */
+  onSend?(): void;
 }): RichInput {
   const listboxId = useId();
+  const enterSends = useEnterSends();
   const [trigger, setTrigger] = useState<ActiveTrigger | null>(null);
   const [active, setActiveState] = useState(0);
 
@@ -426,6 +440,10 @@ export function useRichInput({
       }
     }
     onKeyDown?.(event);
+    if (onSend && !event.defaultPrevented && isSendKey(event, enterSends)) {
+      event.preventDefault();
+      onSend();
+    }
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -492,9 +510,11 @@ export function useRichInput({
       'aria-activedescendant': popover && filtered[activeIndex]
         ? `${listboxId}-${filtered[activeIndex].id}`
         : undefined,
+      ...(onSend ? { enterKeyHint: enterSends ? 'send' as const : 'enter' as const } : {}),
     },
     popover,
     openTrigger,
     attachments: attachmentsState,
+    enterSends,
   };
 }

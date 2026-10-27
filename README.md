@@ -6,6 +6,11 @@ Unified entity-graph rebuild of Maestro. Phase 1 (v1: the node) — one from-con
 
 **Documentation:** [`docs/README.md`](docs/README.md) is the map — ten sections, each with its own index. Paths changed on 2026-08-02; [`docs/MOVED-PATHS.md`](docs/MOVED-PATHS.md) translates the old ones.
 
+**Which install?** Using tm8 by yourself on a Mac: the **desktop app**. A
+long-running node on Linux, or one other people reach: the **server install**,
+then [`docs/ops/OPERATOR-GUIDE.md`](docs/ops/OPERATOR-GUIDE.md). Hacking on tm8
+itself: the server install's default `dev` slot.
+
 ## Desktop app — one command (macOS, Apple silicon)
 
 ```bash
@@ -20,7 +25,7 @@ skips the rebuild. If tm8 is already open, the command just focuses that
 window. Quitting the app stops its server and its Postgres; nothing else on the
 machine is touched.
 
-- **Needs:** macOS on Apple silicon, [bun](https://bun.sh), Node (current LTS), and network
+- **Needs:** macOS on Apple silicon, [bun](https://bun.sh), Node 22 (the major CI builds on), and network
   on the first run. No Postgres, Docker or service install.
 - **Its own node:** its own Postgres (socket-only, so it cannot collide with a
   dev cluster on 5442), an ephemeral HTTP port, and its data under
@@ -40,19 +45,25 @@ are all cut from the in-app ribbon mark by
 ./install.sh          # cluster, database, roles, migrations, build — then RUNS it
 ```
 
-Then open **http://127.0.0.1:4611**. That is the whole thing: it ends with the
+Needs **node 22** exactly (node-pty's prebuilds are proven on that major; the
+installer refuses others), bun, git and curl; it installs Postgres itself where it
+can. Then open **http://127.0.0.1:4611**. That is the whole thing: it ends with the
 server and the UI running in your terminal, having verified `/health` says
 `db:ok`. `--no-start` installs without starting; `--env prod --service` installs
 it as an always-on service instead (systemd on Linux, launchd on macOS — it comes
-back after a reboot). Idempotent — re-run it any time. `./install.sh --status`
+back after a reboot). On Linux that service install builds from `/opt/tm8/prod`,
+so clone there first. Idempotent — re-run it any time. `./install.sh --status`
 reports what is installed, migrated and running. Full guide: [`docs/ops/INSTALL.md`](docs/ops/INSTALL.md).
 
-**To run agents, the host needs a logged-in agent CLI.** tm8 stores no agent
-credential — a spawned session runs the machine's own `claude` or `codex` login.
-Install passes a warning if neither is present; `tm8 doctor` reports presence AND
-login. Without one, a spawn sits at `running` forever with the refusal only in
-the terminal. Install: `npm i -g @anthropic-ai/claude-code` then `claude` to log
-in (or `npm i -g @openai/codex` then `codex login`).
+**Agents need a login to run on.** Two ways, as in the desktop app: the
+machine's own `claude` or `codex` login (the node's credential, the default), or
+an account a member or a space connects under **Settings → Credentials**, which tm8
+stores encrypted. For the first, the login must belong to the OS user the node runs
+as: on a Linux service that is `tm8`, so `sudo -u tm8 -H claude auth login`. The
+installer warns when it is missing, `tm8 doctor` reports presence AND login, and a
+spawn on the node's login with none is refused with that command. Install:
+`npm i -g @anthropic-ai/claude-code` then `claude auth login` (or
+`npm i -g @openai/codex` then `codex login`).
 
 **Now what?** [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) — claim the
 node, make a Space, put an agent on a task and talk to it while it works. Every
@@ -114,3 +125,9 @@ canonical (ruled 2026-08-12) and now lives in exactly one place.
   `scripts/lib/ui.mjs`.
 - **`bun run build` is `tsc -b` ONLY.** The UI needs its own `vite build`. Skipping
   it ships a stale UI against a new server, with no error anywhere.
+
+## License
+
+tm8 is dual-licensed: open source under the GNU Affero General Public License v3.0
+only ([`LICENSE`](LICENSE)), with a commercial licence available from the copyright
+holders ([`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md)).

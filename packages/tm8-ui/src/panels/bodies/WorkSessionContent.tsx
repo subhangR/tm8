@@ -4,8 +4,9 @@ import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
 import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
-import { useMobileSurface } from '../../mobile';
+import { useMessagesDoor, useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
+import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
 import './work-session-content-phone.css';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
@@ -65,6 +66,7 @@ const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal', 'ch
 const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
   git: 'The worktree rail — status, diff, and the checkpoint, rollback, commit and merge verbs — has no phone arrangement. A diff read at this width is a diff misread. This session’s git facts are in the entity’s own detail.',
   debug: 'The session’s CLI journal is a wide monospace log for diagnosing an agent. It has no phone arrangement, and wrapping it to fit would not make it readable.',
+  context: 'The launch context is a long record of every selection that went into this session. It has no phone arrangement yet; open the session on a desktop to read it.',
   graph: 'The graph is refused on phones outright, at the route as well as here — so this is the same refusal you would meet by following a graph link, not a second opinion about it.',
 };
 
@@ -128,6 +130,11 @@ export interface WorkSessionContentProps {
    * for the same reason: unmounting is what stops its poll.
    */
   graph?: ReactNode;
+  /**
+   * The LAUNCH CONTEXT surface — every selection that went into this session's
+   * launch (task 01a122b9). Mounted only while selected, like Graph.
+   */
+  launchContext?: ReactNode;
   onSurfaceChange?: (surface: ContentSurface) => void;
   /**
    * USER RULING 2026-07-31 — the surface tabs belong "at the top row at the
@@ -149,7 +156,18 @@ export interface WorkSessionContentProps {
    * tests and any host without a bar still render.
    */
   switchSlot?: HTMLElement | null;
+  /**
+   * The phone's pending-forms banner, drawn directly under the surface row.
+   * The row is the page's top bar there (immersive hides the frame header),
+   * so a banner the panel drew above it read as sitting under the bar. Off
+   * the phone the panel keeps drawing it itself and this is ignored.
+   */
+  belowSwitch?: ReactNode;
 }
+
+/** The header's chevron and a speech bubble, on `VectorIcon`'s 16x16 grid. */
+const UP_ART = ['M10.4 3.6 5.6 8l4.8 4.4'];
+const MESSAGES_ART = ['M2.5 4.2c0-.9.7-1.7 1.7-1.7h7.6c.9 0 1.7.8 1.7 1.7v5.1c0 .9-.8 1.7-1.7 1.7H7l-3 2.5V11h.2c-1 0-1.7-.8-1.7-1.7Z'];
 
 /**
  * The work-session Content switch owns presentation only: which chip is
@@ -177,8 +195,10 @@ export function WorkSessionContent({
   debug,
   git,
   graph,
+  launchContext,
   onSurfaceChange,
   switchSlot = null,
+  belowSwitch = null,
 }: WorkSessionContentProps) {
   /*
    * ONE FORK, FROM THE HOST. Not `useShellKind()` and not a media query: the
@@ -187,7 +207,8 @@ export function WorkSessionContent({
    * chose the shell this body is rendering inside. Off the phone this is
    * `false` and every branch it guards is unreachable by construction.
    */
-  const { oneSurface } = useMobileSurface();
+  const { oneSurface, up } = useMobileSurface();
+  const messagesDoor = useMessagesDoor();
   const [immersive, setImmersive] = useState(true);
 
   // The offered surfaces, in fixed order. On a desktop Terminal is first and is
@@ -197,10 +218,10 @@ export function WorkSessionContent({
   // THE PHONE OFFERS THREE, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
   // three are refused rather than narrowed, and PHONE_REFUSED for each reason.
   const surfaces = useMemo<ContentSurface[]>(
-    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph']),
+    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph', 'context']),
     [oneSurface],
   );
-  const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+  const preferenceKey = preferenceKeyFor(viewerMemberId, sessionId);
   const initialSurface = useRef<ContentSurface | null>(null);
   if (initialSurface.current === null) {
     initialSurface.current = resolveInitialSurface({ requestedSurface, preferenceKey, oneSurface });
@@ -242,6 +263,12 @@ export function WorkSessionContent({
   const [refusalDismissed, setRefusalDismissed] = useState(false);
   const refusedSurface = refusalDismissed ? null : arrivalRefusal.current;
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
+  /* Told to the chrome outside this body (panel frame, title bar, action
+     strip): only the terminal surface stands in the always-dark scope. */
+  useEffect(() => {
+    reportShownSurface(sessionId, surface);
+  }, [sessionId, surface]);
+  useEffect(() => () => reportShownSurface(sessionId, null), [sessionId]);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [transcriptMounted, setTranscriptMounted] = useState(
     () => initialSurface.current === 'transcript',
@@ -419,6 +446,23 @@ export function WorkSessionContent({
         >
           {immersive ? '☰' : '⤢'}
         </button>
+        {/* THE HEADER'S ‹, REDRAWN HERE. Immersive hides the frame header so
+            the terminal keeps its height, and a pushed page without ‹ is a
+            page the reader can only leave by a gesture they may not know
+            (CONTRACT §5). Same action and label as the header's, beside the
+            ☰ exactly as it sits there. With details shown, the header is
+            back and carries its own. */}
+        {immersive && up ? (
+          <button
+            type="button"
+            className="pn-session-up"
+            aria-label={up.label}
+            data-testid="session-up"
+            onClick={up.run}
+          >
+            <VectorIcon paths={UP_ART} size={20} strokeWidth={1.6} />
+          </button>
+        ) : null}
         <div
           className="pn-surface-switch__tabs"
           role="tablist"
@@ -427,6 +471,27 @@ export function WorkSessionContent({
         >
           {tabs}
         </div>
+        {/* THE MESSAGES SECTION AS A DOOR (CONTRACT §5 ruling 8). Below the
+            body is under the composer dock on this page; a section above the
+            dock would take ~140px of a 520px screen from the terminal for
+            good. One 44px button with the count opens the Discussion sheet,
+            the same one "View all" opens, from either mode. */}
+        {messagesDoor ? (
+          <button
+            type="button"
+            className="pn-session-messages"
+            aria-label={messagesDoor.count > 0 ? `Messages, ${messagesDoor.count}` : 'Messages'}
+            data-testid="session-messages-open"
+            onClick={messagesDoor.open}
+          >
+            <VectorIcon paths={MESSAGES_ART} size={18} strokeWidth={1.5} />
+            {messagesDoor.count > 0 ? (
+              <span className="pn-session-messages__n" aria-hidden>
+                {messagesDoor.count > 99 ? '99+' : messagesDoor.count}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {/*
           THE FOUR THAT ARE NOT HERE, SAID OUT LOUD.
 
@@ -502,6 +567,7 @@ export function WorkSessionContent({
       data-arrangement={oneSurface ? 'phone' : 'desktop'}
     >
       {switchEl ? (ridesPanelBar && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
+      {oneSurface ? belowSwitch : null}
 
       {/*
         A ROUTE THAT NAMED A REFUSED SURFACE GETS AN ANSWER ABOUT THAT SURFACE.
@@ -642,9 +708,42 @@ export function WorkSessionContent({
                 what stops the connection poll. */}
             {surface === 'graph' ? graph : null}
           </div>
+          <div
+            id={panelId('context')}
+            role="tabpanel"
+            aria-labelledby={tabId('context')}
+            aria-hidden={surface !== 'context'}
+            className="pn-work-session-content__surface pn-work-session-content__surface--scroll"
+            data-active={surface === 'context' ? 'true' : 'false'}
+            data-testid="work-session-context-surface"
+          >
+            {surface === 'context' ? launchContext : null}
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+function preferenceKeyFor(viewerMemberId: string | null | undefined, sessionId: string): string {
+  return `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+}
+
+/**
+ * IS THIS SESSION ON ITS TERMINAL — the surface a mounted body reports, else
+ * the one it WILL open on (the same resolution it runs at mount). The chrome
+ * around the body reads this to choose its scope; see `sessionSurfaceShown.ts`.
+ */
+export function useSessionShowsTerminal(
+  sessionId: string | null | undefined,
+  viewerMemberId: string | null | undefined,
+  requestedSurface: ContentSurface | null = null,
+): boolean {
+  const { oneSurface } = useMobileSurface();
+  const shown = useShownSurface(sessionId);
+  if (!sessionId) return false;
+  return isDarkSurface(
+    shown ?? resolveInitialSurface({ requestedSurface, preferenceKey: preferenceKeyFor(viewerMemberId, sessionId), oneSurface }),
   );
 }
 

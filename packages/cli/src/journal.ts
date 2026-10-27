@@ -23,7 +23,9 @@
  * so the agent sees its cost while it can still be changed. Stderr only,
  * never stdout; printed only after the append succeeded; swallowed on any
  * failure; and never for `harness` records, whose fixtures must stay
- * byte-deterministic.
+ * byte-deterministic. `--quiet` suppresses it too: the line is a note, and
+ * callers that parse `--format json` often capture stderr with stdout (an
+ * agent's shell tool merges them), where the line would break `json.load`.
  *
  * THE GATE: no `TM8_JOURNAL_PATH` means no journal, and `createJournal` hands
  * back an inert sink. A human running `tm8` at their own terminal creates
@@ -111,8 +113,17 @@ export interface Journal {
    * context shape the agent saw (spec ca8d §6.3).
    */
   noteContextRead(schemaVersion: string | null): void;
-  /** Append the record. Safe to call more than once; only the first writes. */
-  finish(outcome: { path: readonly string[]; argv: readonly string[]; exitCode: number; error?: unknown }): void;
+  /**
+   * Append the record. Safe to call more than once; only the first writes.
+   * `quiet` (the parsed `--quiet`) suppresses the spend line, never the record.
+   */
+  finish(outcome: {
+    path: readonly string[];
+    argv: readonly string[];
+    exitCode: number;
+    error?: unknown;
+    quiet?: boolean;
+  }): void;
 }
 
 /** The no-op. Every method is a nothing, so callers never branch on `enabled`. */
@@ -200,13 +211,18 @@ class FileJournal implements Journal {
     argv: readonly string[];
     exitCode: number;
     error?: unknown;
+    quiet?: boolean;
   }): void {
     if (this.written) return;
     this.written = true;
     try {
       // Option values by name, then any minted token in any slot (`auth claim
       // tm8c_…` takes it positionally).
-      const argv = redactArgv(outcome.argv).map(redactTokens);
+      // Tool secret slots have arbitrary flag names. Even a REFUSED literal
+      // must not reach the journal, so omit the dynamic tail conservatively.
+      const sourceArgv = outcome.path[0] === 'tool' && ['run', 'secret', 'config'].includes(outcome.path[1] ?? '')
+        ? [...outcome.path, '<tool arguments omitted>'] : outcome.argv;
+      const argv = redactArgv(sourceArgv).map(redactTokens);
       // Direction, stated once so it cannot drift: what the agent TYPED is what
       // it emitted (its output tokens); what the CLI PRINTED is what lands in
       // its context next turn (its input tokens).
@@ -234,7 +250,10 @@ class FileJournal implements Journal {
           stderrChars: this.stderrChars,
           // Redacted at WRITE time, like argv. `truncated` below compares the
           // RAW samples, so a redaction cannot make a sample look cut.
-          stdoutSample: redactTokens(this.stdoutSample),
+          // Live PTY bytes are not redacted. Tool output can echo a secret;
+          // keep exact counts without persisting a second, unredacted tail.
+          stdoutSample: outcome.path[0] === 'tool' && outcome.path[1] === 'run'
+            ? '<tool output omitted>' : redactTokens(this.stdoutSample),
           stderrSample: redactTokens(this.stderrSample),
           truncated: this.stdoutChars > this.stdoutSample.length || this.stderrChars > this.stderrSample.length,
         },
@@ -254,7 +273,7 @@ class FileJournal implements Journal {
       mkdirSync(dirname(this.path), { recursive: true });
       // 0600 on create: the file is this session's, and nobody else's to read.
       appendFileSync(this.path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
-      if (journalClass === 'agent') this.emitSpendLine();
+      if (journalClass === 'agent' && !outcome.quiet) this.emitSpendLine();
     } catch {
       // A full disk, a read-only path, a serialisation failure: none of them
       // are the caller's problem and none of them may alter the exit code.

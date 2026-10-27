@@ -46,6 +46,10 @@
      fresh literal. (T0-2 spec AMBIGUITY 2: the two values may be drift rather
      than intent — resolving that is an integration-time question, and keeping
      both named is what makes it answerable.) */
+  /* The Claude spark's own orange (kit/AgentToolIcon.tsx). A vendor's brand
+     colour, not a palette step, so it re-themes by not re-theming: the
+     mark is Claude's in both themes. */
+  --pn-x-claude: #D97757;
   --pn-x-term-bg: #0D0B08;
   --pn-x-term-live-bg: #131009;
 
@@ -99,6 +103,12 @@
      that falls out, and the one that scopes any future use: --pn-line BOUNDS
      a component, this SEPARATES siblings within one. Never apply it blanket. */
   --pn-x-hairline-soft: #F0EDE4;
+  /* PAGE PLANE — what an entity page (task, doc, any tab body) sits on, and
+     the active tab that joins it. Light keeps the --pn-card plane it always
+     had; the dark block below drops it to --pn-paper so every page matches
+     Chat's near-black (`.tch-root`) instead of a lifted grey card. Raised
+     things ON the page (popovers, menus, inputs) stay --pn-card. */
+  --pn-x-page-bg: var(--pn-card);
   /* Dark Terminate hover. The canvas draws this one DARK-ONLY
      (`color:#DA7D6A` = --pn-block dark, `style-hover="color:#E89A89"`), so the
      LIGHT value here is a DERIVATION, not a measurement — block lifted toward
@@ -155,6 +165,19 @@
   --pn-x-dia-6: #B04F6D;
   --pn-x-dia-7: #7159AC;
   --pn-x-dia-8: #64707B;
+
+  /* The tm8 mark's two poles (BootLoader, BrandMark). Monochrome by
+     decision — the mark left the brass palette for black / white / silver
+     (task 01a14b96, variant "Eclipse × Moon phase"). REST is the pole the mark
+     starts and ends its loop on, TURN the one it reaches at the turnaround.
+     The dark theme swaps them below: the two themes are exact polar
+     opposites, black→white on light paper and white→black on dark, so the
+     move is always a full swing of contrast rather than a fade to grey.
+     Silver is the still BrandMark's single mid-tone metal — mid-ramp so
+     `shade` in RibbonMark has room to walk it both ways. */
+  --pn-x-mark-rest: #0C0D0F;
+  --pn-x-mark-turn: #F8F9FA;
+  --pn-x-mark-silver: #6F737B;
 }
 
 /* Dark counterparts. The terminal blacks do NOT flip — that is the whole
@@ -170,6 +193,9 @@
      — and #262117 IS the dark --pn-hover, exactly. So this DERIVES rather than
      restating the literal: one source, and it tracks any future ramp change. */
   --pn-x-hairline-soft: var(--pn-hover);
+  /* Subhang, 2026-10-20: dark entity pages read grey next to Chat. The page
+     plane is the paper, as Chat's is; see the light block. */
+  --pn-x-page-bg: var(--pn-paper);
   /* MEASURED (unlike the light counterpart above): T0-1 draws the Terminate
      hover only in dark, `style-hover="color:#E89A89"` over #DA7D6A. */
   --pn-x-block-hover: #E89A89;
@@ -189,4 +215,105 @@
   --pn-x-dia-6: #D47E9B;
   --pn-x-dia-7: #A997DB;
   --pn-x-dia-8: #98A2AD;
+  /* The mark's poles, swapped — see the light block. */
+  --pn-x-mark-rest: #F8F9FA;
+  --pn-x-mark-turn: #0C0D0F;
+}
+
+/* Game atlas: fixed toy-town art direction, shared by WebGL and studio UI.
+   Exact measured colours retained from the reviewed visual foundation. */
+:root {
+  --pn-game-hub-accent: #4f8c80;
+  --pn-game-hub-ground: #adc6a0;
+  --pn-game-taskland-accent: #d3a05e;
+  --pn-game-taskland-ground: #b9c69b;
+  --pn-game-office-accent: #719fa9;
+  --pn-game-office-ground: #b0c9b6;
+  --pn-game-library-accent: #ab826b;
+  --pn-game-library-ground: #bac6a2;
+  --pn-game-factory-accent: #7795ac;
+  --pn-game-factory-ground: #b2c0ae;
+  --pn-game-town-accent: #b9917b;
+  --pn-game-town-ground: #b2cba1;
+  --pn-game-working: #5f9d99;
+  --pn-game-blocked: #ce825d;
+  --pn-game-done: #6e9c63;
+  --pn-game-todo: #b8aa86;
+  --pn-game-review: #9a8db6;
+  --pn-game-selected-plot: #f6d991;
+  --pn-game-plot: #e5ddc1;
+  --pn-game-contact-shadow: #304b38;
+  --pn-game-compound-boundary: #688e69;
+  --pn-game-flag-post: #765947;
+  --pn-game-flag: #d98759;
+  --pn-game-hex-grid: #799b78;
+  --pn-game-island-side: #8eaaa0;
+  --pn-game-island-rim: #789f9c;
+  --pn-game-water: #b5d1cc;
+  --pn-game-dependency: #6685ae;
+  --pn-game-path: #e9dfc1;
+  --pn-game-evening-light: #ffd3a1;
+  --pn-game-noon-light: #fff8e9;
+  --pn-game-morning-light: #ffebc8;
+  --pn-game-sky: #c8ddd4;
+  --pn-game-hemisphere-sky: #fff6df;
+  --pn-game-hemisphere-ground: #698a82;
+  --pn-game-child-boundary: #819d75;
+  --pn-game-root-boundary: #f4eacd;
+  --pn-game-portal-pad: #e6ddbf;
+  --pn-game-legend-compound: #608e62;
+  --pn-game-legend-path: #e0cfa5;
+  --pn-game-prop-ink: #354b47;
+  --pn-game-prop-muted: #718077;
+  --pn-game-prop-surface: #ecead7;
+  --pn-game-prop-card: #fff7dc;
+  --pn-game-prop-line: #d4ceb7;
+  --pn-game-prop-line-strong: #aaa891;
+  --pn-game-prop-brand: #a5784f;
+  --pn-game-prop-run: #608954;
+  --pn-game-prop-info: #6b939e;
+  --pn-game-prop-block: #c47b55;
+  --pn-game-prop-wait: #bd9950;
+  --pn-game-prop-merged: #9384a5;
+  --pn-game-gallery-surface: #f3eddb;
+  --pn-game-gallery-ink: #22372e;
+  --pn-game-gallery-border: #9cae9d;
+  --pn-game-gallery-accent: #284e41;
+  --pn-game-gallery-ground: #e9eadb;
+  --pn-game-gallery-sky-light: #fff6dc;
+  --pn-game-gallery-ground-light: #7c9c85;
+  --pn-game-gallery-label: #20382d;
+  --pn-game-gallery-divider: #bcc8b5;
+  --pn-game-white: #ffffff;
+  --pn-game-ink: #263b3b;
+  --pn-game-muted: #687d79;
+  --pn-game-paper: #f7f7ef;
+  --pn-game-line: #d8ded3;
+  --pn-game-pill-border: #cad6c8;
+  --pn-game-pill-surface: #eaf0e1;
+  --pn-game-accent: #254c42;
+  --pn-game-field-surface: #fffdf7;
+  --pn-game-stage: #ceded4;
+  --pn-game-subtitle: #4e6760;
+  --pn-game-button-border: #becdc0;
+  --pn-game-button-surface: #fffcf2;
+  --pn-game-button-shadow: #163d2410;
+  --pn-game-legend-border: #d3dbcc;
+  --pn-game-legend-surface: #fffdf0e8;
+  --pn-game-inspect-surface: #fffdf3ef;
+  --pn-game-inspect-border: #c6d1c2;
+  --pn-game-inspect-shadow: #173c2715;
+  --pn-game-inspect-muted: #62756b;
+  --pn-game-label-ink: #263f35;
+  --pn-game-label-surface: #fffcf0eb;
+  --pn-game-label-border: #ffffffb0;
+  --pn-game-label-shadow: #263f3510;
+  --pn-game-label-muted: #698075;
+  --pn-game-selected-muted: #d7e8d9;
+  --pn-game-ready: #2d5845;
+  --pn-game-error-surface: #fff0d7;
+  --pn-game-error-border: #d29550;
+  --pn-game-hover-surface: #e8ede2;
+  --pn-game-loading-surface: #fffdf1;
+  --pn-game-switch-surface: #fffdf0;
 }

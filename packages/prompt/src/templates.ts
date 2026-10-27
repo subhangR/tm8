@@ -360,6 +360,23 @@ export interface TaskLinkedEntity {
 }
 
 /**
+ * The same instruction when the coordinator is a CHAT (176).
+ *
+ * Written as its own constant rather than a suffix because the first sentence
+ * of the original is now false in this case — the thing waiting is not a
+ * coordinator session, and a worker told to look for one will not find it. The
+ * COMMAND is deliberately identical: a chat is an anchor like any other, and
+ * suggesting otherwise would invent a second protocol that does not exist.
+ */
+export const COORDINATION_INSTRUCTION_CHAT =
+  'A CHAT spawned you and is waiting on a durable answer. Its id above is a chat ' +
+  'entity, not a work session, and `tm8 message send --to <coordinator-session-id> ' +
+  '"<body>"` reaches it exactly as it reaches a session: the message lands in the ' +
+  'chat transcript, runs the chat\'s next turn, and the human reading that chat sees ' +
+  'it. Send it the moment you complete or block. Never send that completion report ' +
+  'to the assignment or task anchor, and do not simply go idle.';
+
+/**
  * Bounded like the attachment manifest and for the same reasons. The count
  * cap and the name cap keep a heavily linked task well inside the
  * 16,384-byte assignmentSnapshot budget (16 rows at about 140 bytes of control
@@ -382,7 +399,12 @@ export function serializeLinkedEntity(item: TaskLinkedEntity): string {
     ' />';
 }
 
-function linkedManifest(all: readonly TaskLinkedEntity[], total: number, namedInIndex?: ReadonlySet<string>): {
+/**
+ * The `<linked>` block and its untrusted names. `taskId` (v2, where several
+ * tasks share one turn) says whose links these are; v1 nests the block inside
+ * each task's assignment and passes none.
+ */
+export function linkedManifest(all: readonly TaskLinkedEntity[], total: number, namedInIndex?: ReadonlySet<string>, taskId?: string): {
   control: string[];
   names: string;
 } {
@@ -391,7 +413,7 @@ function linkedManifest(all: readonly TaskLinkedEntity[], total: number, namedIn
   const shown = all.slice(0, LINKED_MANIFEST_MAX);
   const omitted = count - shown.length;
   const open =
-    `  <linked count="${count}"` +
+    `  <linked${taskId === undefined ? '' : ` task="${attr(taskId)}"`} count="${count}"` +
     (omitted > 0 ? ` omitted="${omitted}"` : '') +
     ' fetch_with="tm8 entity context &lt;entity-id&gt;">';
   const named = shown.flatMap((item) => {
@@ -605,7 +627,7 @@ export function serializeAttachmentEntry(file: Pick<SessionInputAttachment, 'fil
   return `    <file entity_id="${attr(file.fileEntityId)}" mime="${attr(file.mime)}" />`;
 }
 
-function attachmentManifest(all: readonly SessionInputAttachment[]): {
+export function attachmentManifest(all: readonly SessionInputAttachment[]): {
   control: string[];
   names: string;
 } {

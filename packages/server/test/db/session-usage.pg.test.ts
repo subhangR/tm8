@@ -177,7 +177,7 @@ describe('185 — record_work_session_usage', () => {
     expect(after.usage_recorded_at).not.toBeNull();
     expect(Number(after.version)).toBe(Number(before.version) + 1);
     // The ending it was written after is untouched: this is a different fact.
-    expect(after.ended_kind).toBe('completed');
+    expect(after.ended_kind).toBe('exited_clean'); // 301: the pre-301 spelling is stored as exited_clean
     expect(after.status).toBe('exited');
   });
 
@@ -205,7 +205,7 @@ describe('185 — record_work_session_usage', () => {
       q(`select public.record_work_session_usage($1,$2::jsonb,$3)`,
         [id, JSON.stringify(USAGE), 'claude_transcript']),
     );
-    expect((await readRow(id)).ended_kind).toBe('completed');
+    expect((await readRow(id)).ended_kind).toBe('exited_clean');
 
     // The single-writer claim is what execution_resume sets before it moves
     // the row back to 'spawning'; setting it here exercises exactly the

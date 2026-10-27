@@ -172,8 +172,6 @@
   min-width: 0;
 }
 
-.crf-crumb--graph { flex: 0 1 auto; max-width: 34%; }
-.crf-crumb--chat { flex: 0 1 auto; max-width: 30%; }
 
 .crf-pick {
   display: flex;
@@ -209,7 +207,6 @@
   min-width: 0;
 }
 
-.crf-crumb--chat .crf-pick__title { font-weight: 500; color: var(--pn-ink-2); }
 
 .crf-pick__meta {
   color: var(--pn-ink-3);
@@ -269,21 +266,7 @@
 
 /* Orchestrate — THE primary action of the studio, and the only brand-filled
    control on it, so the eye finds the committing verb without searching. */
-.crf-orchestrate {
-  flex: none;
-  height: 30px;
-  padding: 0 14px;
-  background: var(--pn-brand);
-  color: var(--pn-card);
-  border: 1px solid var(--pn-brand);
-  border-radius: var(--pn-r-md);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
 
-.crf-orchestrate:hover:not(:disabled) { filter: brightness(1.06); }
-.crf-orchestrate:disabled { opacity: 0.45; cursor: default; }
 
 .crf-crumb .crf-pop {
   top: calc(100% + 6px);
@@ -292,7 +275,6 @@
   width: min(380px, 80vw);
 }
 
-.crf-crumb--orch .crf-pop { left: auto; right: 0; width: min(440px, 90vw); }
 
 .crf-pop__row--new .crf-pop__row-title { color: var(--pn-brand); font-weight: 600; }
 
@@ -312,8 +294,36 @@
 
 .crf-btn:hover:not(:disabled) { border-color: var(--pn-ink-3); }
 .crf-btn:disabled { opacity: 0.45; cursor: default; }
-.crf-btn--primary { background: var(--pn-brand); border-color: var(--pn-brand); color: var(--pn-card); }
-.crf-btn--primary:hover:not(:disabled) { border-color: var(--pn-brand); filter: brightness(1.06); }
+/* PRIMARY = THE PAPER TILE (Subhang 2026-10-18): black and white like New
+   chat · New task (#1240) — paper fill, a hairline edge, a soft under-shadow;
+   pressed, the shadow turns inward. No brass, whatever the style; the ink
+   flips in the dark theme. */
+.crf-btn--primary {
+  --crf-tile-ink: black;
+  --crf-tile-paper: white;
+  --crf-tile-fill: var(--crf-tile-paper);
+  --crf-tile-edge: color-mix(in srgb, var(--crf-tile-ink) 18%, transparent);
+  background: var(--crf-tile-fill);
+  border: 1px solid var(--crf-tile-edge);
+  border-radius: 8px;
+  color: var(--crf-tile-ink);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--crf-tile-ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in srgb, black 30%, transparent);
+  transition: box-shadow 120ms ease-out, background-color 120ms ease;
+}
+[data-theme='dark'] .crf-btn--primary {
+  --crf-tile-ink: white;
+  --crf-tile-paper: black;
+  --crf-tile-fill: color-mix(in srgb, var(--crf-tile-ink) 8%, var(--crf-tile-paper));
+}
+.crf-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--crf-tile-ink) 4%, var(--crf-tile-fill));
+}
+.crf-btn--primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--crf-tile-ink) 6%, var(--crf-tile-fill));
+  box-shadow: inset 0 1px 2px color-mix(in srgb, black 22%, transparent);
+}
 
 .crf-sr {
   position: absolute;
@@ -767,6 +777,10 @@
 
 .crf-fade--right { right: 0; background: linear-gradient(to right, transparent, var(--pn-paper)); }
 .crf-fade--left { left: 0; background: linear-gradient(to left, transparent, var(--pn-paper)); }
+.crf-fade--up,
+.crf-fade--down { left: 0; right: 0; width: auto; height: 28px; }
+.crf-fade--up { top: 0; bottom: auto; background: linear-gradient(to top, transparent, var(--pn-paper)); }
+.crf-fade--down { bottom: 0; top: auto; background: linear-gradient(to bottom, transparent, var(--pn-paper)); }
 
 .crf-more {
   position: absolute;
@@ -788,6 +802,10 @@
 
 .crf-more--right { right: 6px; }
 .crf-more--left { left: 6px; top: 104px; }
+/* Vertical nudges sit in the left gutter (a top-to-bottom plan is centred
+   across the pane), clear of the find box above and the key below. */
+.crf-more--up { left: 6px; top: 56px; }
+.crf-more--down { left: 6px; top: auto; bottom: 56px; }
 .crf-more:hover { color: var(--pn-brand); border-color: var(--pn-brand); }
 
 .crf-minimap {
@@ -1034,25 +1052,8 @@
 .crf-finding__go { flex: none; font-size: var(--pn-fs-micro); color: var(--pn-brand); }
 
 /* == PRE-FLIGHT ============================================================= */
-.crf-pre__head { display: grid; gap: 2px; padding: 12px 14px 8px; border-bottom: 1px solid var(--pn-line); }
-.crf-pre__sum { font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
-.crf-pre__confirm { margin-top: 4px; font-size: var(--pn-fs-label); color: var(--pn-ink-2); }
-.crf-pre__confirm p { margin: 2px 0 0; }
-.crf-pre__confirm strong { color: var(--pn-wait); font-weight: 700; }
-.crf-pre__ok { margin: 0; padding: 14px; color: var(--pn-run); font-size: var(--pn-fs-sm); }
-.crf-pre__group { padding: 8px 10px 4px; }
-.crf-pre__h { margin: 0 0 6px; font-size: var(--pn-fs-tick); letter-spacing: 0.08em; text-transform: uppercase; color: var(--pn-ink-3); }
 
-.crf-pre__foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--pn-line);
-  background: var(--pn-surface);
-}
 
-.crf-pre__why { flex: 1; font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }
 
 /* == STATE CHIPS (shared by outline, table, inspector) ====================== */
 .crf-ol__tag {
@@ -1238,25 +1239,7 @@
 .crf-table__title:hover { color: var(--pn-brand); text-decoration: underline; }
 
 /* == THE EMPTY STATE THAT TEACHES =========================================== */
-.crf-teach {
-  margin: auto;
-  max-width: 520px;
-  padding: 32px 24px;
-  text-align: center;
-  font-family: var(--pn-ui);
-  color: var(--pn-ink-2);
-}
 
-.crf-teach__art { display: block; margin: 0 auto 18px; }
-.crf-teach__edge { stroke: var(--pn-ink-3); stroke-width: 1.4; fill: none; }
-.crf-teach__doc { fill: var(--pn-info-soft); stroke: var(--pn-info); stroke-dasharray: 4 3; }
-.crf-teach__task { fill: var(--pn-card); stroke: var(--pn-ink-3); stroke-dasharray: 4 3; }
-.crf-teach__avatar { fill: var(--pn-brand-soft); stroke: var(--pn-brand); }
-.crf-teach__memory { fill: var(--pn-pr-merged-soft); stroke: var(--pn-pr-merged); stroke-dasharray: 4 3; }
-.crf-teach__title { margin: 0 0 8px; font-size: var(--pn-fs-h2); font-family: var(--pn-serif); font-weight: 500; color: var(--pn-ink); }
-.crf-teach__lead { margin: 0 0 18px; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body, 1.55); }
-.crf-teach__lead strong { color: var(--pn-ink); font-weight: 600; }
-.crf-teach__try { margin: 0 0 8px; font-size: var(--pn-fs-micro); letter-spacing: 0.08em; text-transform: uppercase; color: var(--pn-ink-3); }
 .crf-teach__prompts { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 6px; text-align: left; }
 
 .crf-teach__prompt {

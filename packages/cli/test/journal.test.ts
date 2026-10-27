@@ -50,6 +50,18 @@ describe('the gate', () => {
 });
 
 describe('observing without participating', () => {
+  it('does not persist dynamic tool arguments or live output that can contain secrets', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    const wrapped = j.wrapStreams(sink);
+    wrapped.stdout('private-value');
+    j.finish({ path: ['tool', 'run'], argv: ['tool', 'run', 'demo', '--auth', 'private-value'], exitCode: 1 });
+    expect(readFileSync(path, 'utf8')).not.toContain('private-value');
+    const [record] = readRecords(path);
+    expect(record.command.argv).toEqual(['tool', 'run', '<tool arguments omitted>']);
+    expect(record.output.stdoutChars).toBe(13);
+    expect(record.output.stdoutSample).toBe('<tool output omitted>');
+  });
   it('forwards every byte to the real stream unchanged', () => {
     const path = tempJournal();
     const seen: string[] = [];
@@ -363,6 +375,16 @@ describe('the spend line (F8 visible spend)', () => {
         expect(text).toMatch(/6[67]% on re-fetches/);
       }
     }
+  });
+
+  it('--quiet suppresses the line but still writes the record', () => {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'agent' });
+    j.wrapStreams(sink).stdout('{}');
+    const argv = ['entity', 'get', 'x', '--format', 'json', '--quiet'];
+    const text = stderrDuring(() => j.finish({ path: ['entity', 'get'], argv, exitCode: 0, quiet: true }));
+    expect(text).toBe('');
+    expect(readRecords(path)).toHaveLength(1);
   });
 
   it('a harness invocation prints NOTHING — fixtures must stay byte-deterministic', () => {

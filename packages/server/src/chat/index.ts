@@ -1,12 +1,20 @@
 export { ChatOrchestrator, type ChatOrchestratorOptions } from './orchestrator.js';
 export {
   composeChatBootstrap,
+  composeChatHarnessFoundation,
+  createChatPreparedLaunchResolver,
   createChatLaunchConfigResolver,
+  createChatMcpSelectionResolver,
   chatAllowedTools,
   chatSystemPrompt,
   wrapExecutionAgentRuntime,
   TM8_CHAT_ALLOWED_TOOLS,
   type ChatLaunchComposition,
+  type ChatHarnessFoundation,
+  type ChatHarnessComposition,
+  type ChatPreparedLaunchInput,
+  type PreparedChatLaunch,
+  type ResolveChatPreparedLaunch,
 } from './compose.js';
 export { ChatTurnPublisher } from './publisher.js';
 export { registerChatHandlers, type ChatHandlerDeps } from './handlers.js';
@@ -23,6 +31,8 @@ export type {
   ChatLaunchConfig,
   ChatLaunchConfigInput,
   ResolveChatLaunchConfig,
+  ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
   StartAgentThreadInput,
   TurnItem,
 } from './runtime.js';

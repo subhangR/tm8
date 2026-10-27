@@ -1,0 +1,20 @@
+/* Asset catalog dev harness. Tokens only. */
+/* zoom 1: the app-wide 1.1 UI scale would make R3F measure a different box than it paints */
+.cv2-root.asset-catalog { zoom: 1; position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--pn-paper); color: var(--pn-ink); font: 13px/1.3 var(--pn-ui); }
+.cv2-root .asset-catalog__head { display: flex; gap: 18px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--pn-line); background: var(--pn-card); }
+.cv2-root .asset-catalog__head nav { display: flex; gap: 8px; }
+.cv2-root .asset-catalog__head a { color: var(--pn-ink-3); text-decoration: none; padding: 2px 8px; border-radius: 10px; }
+.cv2-root .asset-catalog__head a.is-on { color: var(--pn-ink); background: var(--pn-surface); border: 1px solid var(--pn-line-2); }
+.cv2-root .asset-catalog__head span { margin-left: auto; color: var(--pn-ink-3); }
+.cv2-root .asset-catalog__stage { position: relative; flex: 1; overflow: hidden; }
+.cv2-root .asset-catalog__canvas { position: absolute; inset: 0; }
+.cv2-root .asset-catalog__label { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; background: color-mix(in srgb, var(--pn-card) 88%, transparent); border: 1px solid var(--pn-line); box-shadow: 0 2px 8px color-mix(in srgb, var(--pn-ink) 14%, transparent); pointer-events: none; position: absolute; transform: translate(-50%, -50%); }
+.cv2-root .asset-catalog__label b { font-size: 11px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .asset-catalog__label i { font-size: 10px; font-style: normal; color: var(--pn-ink-3); }
+.cv2-root .asset-catalog__label em { font-size: 8px; font-style: normal; letter-spacing: .06em; color: var(--pn-info); }
+.cv2-root .asset-catalog__label em[data-tag='OWNER'] { color: var(--pn-run); }
+.cv2-root .asset-catalog__label em[data-tag='PROPOSAL'] { color: var(--pn-block); }
+.cv2-root .asset-catalog__label.is-small { padding: 1px 5px; }
+.cv2-root .asset-catalog__label.is-small b { font-size: 9px; }
+.cv2-root .asset-catalog__label.is-small i { display: none; }
+.cv2-root .asset-catalog__badge { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 9px; font-size: 10px; font-weight: 700; text-align: center; background: var(--pn-ink); color: var(--pn-card); position: absolute; transform: translate(-50%, -150%); pointer-events: none; }

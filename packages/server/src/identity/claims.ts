@@ -53,6 +53,11 @@ export interface ClaimBinding {
  * via_link_id` is written once by the issuing RPC and no verb updates it. It
  * only NARROWS — a link-bound caller is refused credential reads — so a stale
  * value can refuse, never admit.
+ *
+ * `workSessionId` is the eighth (299, Spec D1), on the same test:
+ * `auth_sessions.work_session_id` is written once by the issuing RPC. It names
+ * WHICH session a claim belongs to; it grants nothing, since every RPC that
+ * reads it has already authorised the caller as the teammate.
  */
 export const CLAIM_NAMES = {
   identityId: 'tm8.identity_id',
@@ -62,6 +67,8 @@ export const CLAIM_NAMES = {
   authKind: 'tm8.auth_kind',
   sessionSpaceId: 'tm8.session_space_id',
   viaLinkId: 'tm8.via_link',
+  workSessionId: 'tm8.work_session_id',
+  authSessionId: 'tm8.auth_session_id',
 } as const;
 
 /**
@@ -103,6 +110,8 @@ export function toClaimBindings(
   sessionSpaceId?: string,
   /** The space link the auth session descends from; omitted means none. */
   viaLinkId?: string,
+  /** Immutable token-row id, only after bearer verification. */
+  authSessionId?: string,
 ): ClaimBinding[] {
   const bindings: ClaimBinding[] = [
     { name: CLAIM_NAMES.identityId, value: claims.identityId },
@@ -112,6 +121,7 @@ export function toClaimBindings(
     { name: CLAIM_NAMES.authKind, value: authKind ?? '' },
     { name: CLAIM_NAMES.sessionSpaceId, value: sessionSpaceId ?? '' },
     { name: CLAIM_NAMES.viaLinkId, value: viaLinkId ?? '' },
+    { name: CLAIM_NAMES.authSessionId, value: authSessionId ?? '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });
@@ -136,6 +146,7 @@ export function anonymousClaimBindings(requestId?: string): ClaimBinding[] {
     { name: CLAIM_NAMES.authKind, value: '' },
     { name: CLAIM_NAMES.sessionSpaceId, value: '' },
     { name: CLAIM_NAMES.viaLinkId, value: '' },
+    { name: CLAIM_NAMES.authSessionId, value: '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });

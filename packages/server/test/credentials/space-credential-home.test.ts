@@ -13,7 +13,23 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+/*
+ * BUDGETS. The A6 cells poll a live file while a re-login swaps it repeatedly,
+ * so they are real filesystem work whose cost tracks host load.
+ *
+ * MEASURED on main 06f219db7, alone on an idle host: A6 anthropic 2012 ms and
+ * A6 openai 1431 ms, both passing. Under a loaded full check.sh the anthropic
+ * cell took 5049 ms against vitest's 5s default and failed by 49 ms, while its
+ * identical openai twin passed at 3684 ms — the clearest possible sign that the
+ * budget was measuring the host and not the swap. It also passes 3/3 alone and
+ * is byte-identical on main, so no assertion here is in doubt.
+ *
+ * Raised to this directory's server-wide convention rather than a bespoke
+ * number. No assertion is touched.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
+
 
 import { credentialHomeDir } from '../../src/credentials/agent-credential-home.js';
 import {
@@ -58,6 +74,34 @@ async function stageLogin(k: SpaceLoginHomeKey, ws: string, token: string): Prom
 }
 
 describe('t4-2 — the home path is allowlisted, and every level is 0700', () => {
+  it.each(['anthropic', 'openai'] as const)('Share to: a fresh %s login never copies or changes personal or other space logins', async (provider) => {
+    const filename = provider === 'anthropic' ? '.credentials.json' : 'auth.json';
+    const personalDir = join(credentialHomeDir(dataDir, 'personal-owner'), provider);
+    await mkdir(personalDir, { recursive: true, mode: 0o700 });
+    const personalPath = join(personalDir, filename);
+    await writeFile(personalPath, 'personal-refresh-token-canary', { mode: 0o600 });
+    const before = await stat(personalPath);
+    const original = key(provider);
+    const originalWs = randomUUID();
+    await stageLogin(original, originalWs, 'existing-space-login');
+    await homes.promote(original, originalWs, async () => true);
+    const originalPath = join(spaceLoginConfigDir(dataDir, original), filename);
+    const originalBytes = await readFile(originalPath);
+
+    const added = key(provider);
+    const addedWs = randomUUID();
+    await homes.ensureStaging(added, addedWs);
+    expect(await homes.stagingHasLogin(added, addedWs)).toBe(false);
+    await stageLogin(added, addedWs, 'new-independent-login');
+    await homes.promote(added, addedWs, async () => true);
+    await homes.remove(added);
+
+    expect(await readFile(personalPath, 'utf8')).toBe('personal-refresh-token-canary');
+    const after = await stat(personalPath);
+    expect([after.mtimeMs, after.ctimeMs, after.mode]).toEqual([before.mtimeMs, before.ctimeMs, before.mode]);
+    expect(await readFile(originalPath)).toEqual(originalBytes);
+  });
+
   it('lays out <dataDir>/credentials/spaces/<space>/<credential>/<provider>', () => {
     const k = key();
     expect(spaceLoginConfigDir(dataDir, k)).toBe(

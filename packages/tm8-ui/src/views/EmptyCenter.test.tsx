@@ -159,3 +159,35 @@ describe('the empty centre is wired honestly at its mount site', () => {
     }
   });
 });
+
+/** Spec D1 §5.7 — the roster groups follow the OUTCOME first. */
+describe('EmptyCenter — Spec D1 outcome groups', () => {
+  const s = (id: string, state: Record<string, unknown>): SessionRow => ({
+    id,
+    name: id,
+    provider: 'codex',
+    recordedStatus: state.status as SessionRow['recordedStatus'],
+    sessionState: { kind: 'work_session', ...state },
+  });
+
+  it('completed → Recently completed, stopped → Recently stopped, open + crashed → Needs attention', () => {
+    const rows = [
+      s('done-1', { status: 'exited', outcome: 'completed' }),
+      s('stopped-1', { status: 'exited', outcome: 'stopped' }),
+      s('crashed-1', { status: 'failed', endedKind: 'crashed' }),
+      s('live-1', { status: 'running' }),
+    ];
+    const view = render(
+      <EmptyCenter rows={rows} liveIds={['live-1']} livenessOf={(id) => (id === 'live-1' ? 'live' : 'not-running')} />,
+    );
+    const groupOf = (id: string) =>
+      view.container.querySelector(`[data-session-id="${id}"]`)?.closest('.shell-empty__group')?.getAttribute('data-testid')
+      ?? [...view.container.querySelectorAll('.shell-empty__group')]
+        .find((g) => g.textContent?.includes(id))?.getAttribute('data-testid');
+    expect(groupOf('done-1')).toBe('empty-session-group-completed');
+    expect(groupOf('stopped-1')).toBe('empty-session-group-stopped');
+    expect(groupOf('crashed-1')).toBe('empty-session-group-attention');
+    expect(groupOf('live-1')).toBe('empty-session-group-running');
+    expect(within(view.getByTestId('empty-session-group-attention')).getByText('crashed')).toBeTruthy();
+  });
+});

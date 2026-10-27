@@ -14,7 +14,7 @@
 import type { SessionTranscriptContext } from '@tm8/contract';
 import { useNow, useNowSeconds } from '../kit/time';
 import { formatContext } from '../transcript/context-reading';
-import { ContextChip } from '../transcript/SessionContextNumber';
+import { ContextChip, type Fit } from '../transcript/SessionContextNumber';
 
 /** As on the strip: past a minute the age reads in minutes, and the per-second clock rests. */
 const SECONDS_MATTER_MS = 60_000;
@@ -23,9 +23,11 @@ export interface ChatContextNumberProps {
   context: SessionTranscriptContext;
   /** Why the reading is no longer updating, or null while the runtime runs. */
   stale: string | null;
+  /** `stack` in the Workspace action strip; the header's `medium` otherwise. */
+  fit?: Fit;
 }
 
-export function ChatContextNumber({ context, stale }: ChatContextNumberProps) {
+export function ChatContextNumber({ context, stale, fit = 'medium' }: ChatContextNumberProps) {
   const coarse = useNow();
   const observed = Date.parse(context.observedAt ?? '');
   const young = stale === null && Number.isFinite(observed) && coarse - observed < SECONDS_MATTER_MS;
@@ -33,7 +35,7 @@ export function ChatContextNumber({ context, stale }: ChatContextNumberProps) {
   const reading = formatContext(context, Math.max(coarse, fine), { stale });
   return (
     <span className="tch-context">
-      <ContextChip reading={reading} fit="medium" testId="chat-context" />
+      <ContextChip reading={reading} fit={fit} testId={fit === 'stack' ? 'chat-context-strip' : 'chat-context'} />
     </span>
   );
 }

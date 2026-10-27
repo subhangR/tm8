@@ -54,6 +54,8 @@
  * caller who still passes one gets the ordinary unknown-option refusal quoting
  * the real syntax — which is now the honest answer.
  */
+import { CoreEntityKindSchema, normalizeKindAlias, WorkStatusSchema } from '@tm8/contract';
+
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -76,6 +78,7 @@ import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 import { renderStoryDetail } from '../story-render.js';
+import { renderCraftDetail } from '../craft-render.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -316,6 +319,11 @@ function renderEntity(dto: unknown): string {
   if (line !== '' && (dto as { kind?: unknown }).kind === 'story') {
     return renderStoryDetail(dto as Record<string, unknown>, line);
   }
+  // A craft's detail carries its ordered pages: text lists them after the
+  // summary (position, kind, title, id).
+  if (line !== '' && (dto as { kind?: unknown }).kind === 'craft') {
+    return renderCraftDetail(dto as Record<string, unknown>, line);
+  }
   return line === '' ? JSON.stringify(dto) : line;
 }
 
@@ -377,9 +385,11 @@ function renderContext(dto: unknown): string {
 
 async function entityGet(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity get', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, []);
+  assertKnownOptions(cmd, ['story-page']);
   const id = requireArg(cmd, 0, '<entity-id>');
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', { params: { id } });
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.get', {
+    params: { id }, query: cmd.options.bool('story-page') ? {} : { story: 'context' },
+  });
   // Bounded by default (see ../entity-bounded.ts): `--full` is the only thing
   // that sets receipts to 'full', so it doubles as the explicit escape hatch.
   // The human render reads one summary line either way.
@@ -467,8 +477,15 @@ async function entityFeed(cmd: CommandContext): Promise<ExitCode> {
 
 /** The closed section set — `EntityContextQuery.sections`, spelled once. */
 const CONTEXT_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
-/** The v2 section set (c904 §2.10): `summary` aliases `assignment`, `activity` is gone. */
-const CONTEXT_V2_SECTIONS = ['assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions'] as const;
+/**
+ * The v2 section set (c904 §2.10): the lists, then every core field a default
+ * v2 read returns (#12, #33). `summary` aliases `assignment`, `children` and
+ * `parent` alias `hierarchy`; `activity` is gone.
+ */
+const CONTEXT_V2_SECTIONS = [
+  'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
+] as const;
 
 /**
  * A byte-budget option, range-checked locally: the schema bounds are frozen
@@ -513,7 +530,8 @@ function contextSchema(cmd: CommandContext, defaultV2: boolean): WireSchema {
     return 'v1';
   }
   const v2Only = ['offset', 'cursor', 'edge-type'].some((flag) => cmd.options.value(flag) !== undefined)
-    || sections.includes('assignment') || sections.includes('blockers');
+    || sections.some((s) => (CONTEXT_V2_SECTIONS as readonly string[]).includes(s)
+      && !(CONTEXT_SECTIONS as readonly string[]).includes(s));
   if (v2Only) return 'v2';
   if (!defaultV2) return 'v1';
   return resolveWireSchema(cmd, {
@@ -580,8 +598,8 @@ export function contextQuery(cmd: CommandContext, rollout: { defaultV2?: boolean
   const edgeType = cmd.options.value('edge-type');
   const only = sections !== undefined && !sections.includes(',') ? sections : undefined;
   if (cursor !== undefined
-    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'blockers', 'connections', 'messages'].includes(only))) {
-    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages', EXIT_USAGE);
+    && !(schema === 'v2' && only !== undefined && ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'].includes(only))) {
+    throw new CliError('--cursor continues exactly one v2 section: --schema v2 --sections hierarchy|blockers|connections|messages|story', EXIT_USAGE);
   }
   if (edgeType !== undefined && !(schema === 'v2' && only === 'connections')) {
     throw new CliError('--edge-type filters the v2 connections section: --schema v2 --sections connections', EXIT_USAGE);
@@ -639,6 +657,37 @@ function contextSchemaVersion(data: unknown): string | null {
 
 // ── entity query (collections.query) ───────────────────────────────────────
 
+/** Kind spellings agents reach for that are not kinds, and the kind they mean. */
+const KIND_GUESSES: Readonly<Record<string, string>> = Object.freeze({
+  session: 'work_session', sessions: 'work_session', pr: 'pull_request', prs: 'pull_request',
+  tasks: 'task', docs: 'doc', messages: 'message', stories: 'story',
+});
+
+/**
+ * The Server's answer to a bad `--kind` is a bare `invalid_union`, and to a
+ * bad `--status` an enum list that does not say the filter is the WORK status.
+ * Agents reading a linked space asked for `--kind session`, `--status merged`
+ * on pull requests and `--status running` on sessions, and got nothing they
+ * could act on. Refuse here, naming what each flag accepts.
+ */
+function refuseUnknownQueryValues(kinds: readonly string[], status: readonly string[]): void {
+  for (const kind of kinds) {
+    if (CoreEntityKindSchema.safeParse(kind).success || (kind.startsWith('c:') && kind.length > 2)) continue;
+    const guess = KIND_GUESSES[kind.toLowerCase()];
+    throw new CliError(`--kind ${kind} is not a kind`, EXIT_USAGE, {
+      hint: guess ? `did you mean --kind ${guess}? \`tm8 kind list\` shows every kind` : '`tm8 kind list` shows every kind',
+    });
+  }
+  const allowed = WorkStatusSchema.options as readonly string[];
+  for (const value of status) {
+    if (allowed.includes(value)) continue;
+    throw new CliError(`--status ${value} is not a work status`, EXIT_USAGE, {
+      hint: `--status filters the work status (${allowed.join('|')}), which only tasks carry; `
+        + 'a pull request\'s or session\'s own state is not a query filter: query the kind and read each row\'s state',
+    });
+  }
+}
+
 /**
  * `CollectionQuery` is `.strict()`, so an empty `filters` object is a key the
  * caller never asked for and a shape the Server must then decide about. The
@@ -646,13 +695,25 @@ function contextSchemaVersion(data: unknown): string | null {
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'status', 'assignee', 'ready', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor']);
 
-  const kinds = cmd.options.values('kind');
+  const kinds = cmd.options.values('kind').map(normalizeKindAlias);
   const subtreeOf = cmd.options.value('subtree');
+  /* `--parent <id|none>` names the DIRECT parent (`CollectionQuery.parentId`);
+     `none` is the top level. `--roots` is that same `none`, spelled for the
+     question it answers (#16: "which stories are roots?"). */
+  const roots = cmd.options.bool('roots');
+  let parentId = nullableOption(cmd, 'parent');
+  if (roots) {
+    if (parentId !== undefined && parentId !== null) {
+      throw new CliError('--roots means --parent none; pass one or the other, not --roots with a parent id', EXIT_USAGE);
+    }
+    parentId = null;
+  }
   /* `--status`, NOT `--work-status` (phase 9's rename table). The flag names
      the `CollectionQuery.filters` member, and that member is `status` now. */
   const status = cmd.options.values('status');
+  refuseUnknownQueryValues(kinds, status);
   const assigneeIds = cmd.options.values('assignee');
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');
@@ -662,10 +723,15 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   if (status.length > 0) filters.status = status;
   if (assigneeIds.length > 0) filters.assigneeIds = assigneeIds;
   if (ready) filters.readyToPull = true;
+  const titleContains = cmd.options.value('title-contains');
+  const words = cmd.options.value('words');
+  if (titleContains !== undefined) filters.titleContains = titleContains;
+  if (words !== undefined) filters.words = words;
 
   const body: Record<string, unknown> = { spaceId: requireSpace(cmd.ctx) };
   if (kinds.length > 0) body.kinds = kinds;
   if (subtreeOf !== undefined) body.subtreeOf = subtreeOf;
+  if (parentId !== undefined) body.parentId = parentId;
   if (Object.keys(filters).length > 0) body.filters = filters;
   if (limit !== undefined) body.limit = limit;
   if (cursor !== undefined) body.cursor = cursor;
@@ -699,31 +765,9 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
     tuples.push({ type: raw.slice(0, eq), targetId: raw.slice(eq + 1) });
   }
 
-  // A session's own output is the thing its connection surface most obviously
-  // ought to show, and it did not: measured on prod before migration 066, 59
-  // docs existed, exactly ONE was linked to any session, and 45 had no edges at
-  // all. Sessions produce docs all day and the graph could not answer "what did
-  // this session make?" for any kind. So when this process IS a work session,
-  // everything it creates claims that session as its birthplace.
-  //
-  // THIS IS A CLAIM, NOT A FACT. Nothing verifies that the caller really is the
-  // session it names, which is why `created_in` stamps `props.origin =
-  // 'client_claim'` instead of the usual 'user' (066 §1) — a later reader must
-  // not mistake an assertion for something the Server recorded. The verified
-  // form is `authored_from`, and it needs the Server to DERIVE the session from
-  // a session-scoped token rather than be told; that is why it cannot be written
-  // from here. Until that lands this is the honest approximation.
-  //
-  // Skipped when the caller named `created_in` themselves: one entity has one
-  // birth session (`edges_created_in_source_idx`), so a second claim at a
-  // different target is refused by the database rather than silently preferred.
-  // An explicit flag beats an inferred one, and `--no-session-link` opts out
-  // entirely for an entity that should not be attributed to this session.
-  //
-  // NOTE: the automatic `created_in` link is deliberately NOT added here — see
-  // `linkCreatedInSession` below for why it cannot ride inside the create
-  // request. An EXPLICIT `--connect created_in=<id>` still travels here, which is
-  // why that function stands down when the caller named one.
+  // A session's own output is recorded by the SERVER as `authored_from`
+  // (entity -> work_session, 308), derived from the session-scoped token, so the
+  // client adds nothing here; `created_in` is deprecated and refuses new rows.
   const seen = new Set<string>();
   return tuples.filter((t) => {
     const key = `${t.type}\u0000${t.targetId}`;
@@ -733,99 +777,6 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
   });
 }
 
-/**
- * Claim this session as the birthplace of a just-created entity — BEST EFFORT,
- * as a SEPARATE request, and never fatal.
- *
- * WHY IT CANNOT RIDE INSIDE THE CREATE. It was written that way first, and it is
- * wrong: a connection in the create body is validated with the create, so an
- * unresolvable session does not degrade to a missing edge, it fails the WHOLE
- * CREATE. That broke 22 CLI integration tests with `not_found: entity <session>
- * not found` — the suites boot their own Server and database, `cli()` passes
- * `{...process.env}`, so `TM8_SESSION_ID` and `TM8_SPACE_ID` leak in from
- * whatever agent is running the suite while the target database has never heard
- * of that session. Guarding on `ctx.space.source === 'session'` did NOT fix it,
- * because the leaked value arrives as env and therefore reads as 'session' too.
- *
- * The same failure has a worse shape in production: `tm8 --server staging entity
- * create` run from a prod session is the Staging Steward's entire job, and its
- * session exists only on prod.
- *
- * So the rule the 065/066 database triggers already follow applies to the client
- * too: A DERIVED EDGE MUST NEVER TAKE DOWN THE OPERATION THAT CAUSED IT. The
- * entity is created first and committed; the claim is attempted after and its
- * failure is reported on stderr, not raised. A create that succeeded must not
- * report failure because a nicety did not land.
- *
- * The failure is WARNED rather than swallowed on purpose — silent absence is the
- * failure mode this whole change exists to remove, so trading a broken create
- * for an invisible one would be no progress at all.
- */
-async function linkCreatedInSession(
-  cmd: CommandContext,
-  created: unknown,
-  explicitConnections: ReadonlyArray<{ type: string; targetId: string }>,
-): Promise<{ ref?: ReceiptRef; warning?: ReceiptWarning }> {
-  const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return {};
-  if (cmd.options.bool('no-session-link')) return {};
-  // One entity has one birth session (`edges_created_in_source_idx`), so an
-  // explicit claim wins outright rather than racing the inferred one.
-  if (explicitConnections.some((c) => c.type === 'created_in')) return {};
-
-  // A server receipt names the new row as `id`; the full result as `entity.id`.
-  const entityId = isServerReceipt(created)
-    ? created.id
-    : (created as { entity?: { id?: unknown } } | null)?.entity?.id;
-  if (typeof entityId !== 'string' || entityId === '') return {};
-  if (entityId === sessionId) return {}; // nothing is born in itself
-
-  // A session id that is not a UUID can never be the benign cross-database
-  // answer the catch below swallows — it is a misconfigured TM8_SESSION_ID.
-  // The server reports it with the same not_found the benign case returns
-  // (22P02 maps to 404), so without this check the misconfiguration is
-  // indistinguishable from the harness leak and stays invisible forever.
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
-    const message =
-      `TM8_SESSION_ID ${JSON.stringify(sessionId)} is not a UUID, so the ` +
-      'created_in session link was not attempted. The entity was created.';
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_skipped', message } };
-  }
-
-  try {
-    const edge = await clientFor(cmd.ctx).invoke<unknown>('edges.create', {
-      body: {
-        srcId: entityId,
-        dstId: sessionId,
-        type: 'created_in',
-        clientMutationId: resolveMutationId(undefined),
-      },
-    });
-    // The receipt's `refs` is where a chained caller finds this edge (D2.4).
-    const edgeId = (edge as { edge?: { id?: unknown } } | null)?.edge?.id;
-    return typeof edgeId === 'string' ? { ref: { kind: 'edge', type: 'created_in', id: edgeId } } : {};
-  } catch (err) {
-    // `not_found` on the session is not a failure — it is the answer to a
-    // question we were right to ask. It means this invocation is not operating
-    // in its own session's world: the Space belongs to another database (the
-    // integration harness leaks TM8_SESSION_ID into suites that boot their own
-    // Server), or `--server` sent us to a node where the session does not exist.
-    // In that case NO edge is the correct outcome and there is nothing to report,
-    // which is also why a suite asserting `stderr: ''` on a clean create stays
-    // green.
-    //
-    // Anything else — forbidden, invalid_input, a transport failure, a 500 — is a
-    // claim we SHOULD have been able to record and could not, so it is surfaced.
-    // Silent absence is the exact failure mode this change exists to remove.
-    if (err instanceof ApiError && err.code === 'not_found') return {};
-    const message =
-      `could not record this entity as created in session ${sessionId} ` +
-      `(${err instanceof Error ? err.message : String(err)}). The entity was created.`;
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_failed', message } };
-  }
-}
 
 /** `--content <json-source>` is `Record<string, unknown>` — an array is a misread flag. */
 async function readContent(raw: string): Promise<Record<string, unknown>> {
@@ -858,12 +809,64 @@ export function headerTextOptions(cmd: CommandContext): Record<string, unknown> 
 /** The header flag names, for option allowlists. */
 export const HEADER_TEXT_OPTIONS = ['when-to-use', 'summary', 'keyword'] as const;
 
+/** The range `--estimate` accepts (owner, form 01a111f3-b612: any number 1-100). */
+export const ESTIMATE_MIN = 1;
+export const ESTIMATE_MAX = 100;
+
+/**
+ * `--criterion <text>...` and `--estimate <n>` on a task create: sugar for
+ * `content.acceptanceCriteria` (ids `ac1`, `ac2`… in flag order, unticked) and
+ * `content.pointsEstimate`, merged into whatever `--content` carried. Both are
+ * optional; nothing requires a task to have either. `undefined` when neither
+ * flag was passed, so the body is left exactly as `--content` made it.
+ */
+export function taskContentFlags(cmd: CommandContext, kind: string, content: unknown): Record<string, unknown> | undefined {
+  const criteria = cmd.options.values('criterion');
+  const estimateText = cmd.options.value('estimate');
+  if (criteria.length === 0 && estimateText === undefined) return undefined;
+  if (kind !== 'task') {
+    throw new CliError('--criterion and --estimate apply only to `entity create task`', EXIT_USAGE);
+  }
+  const merged: Record<string, unknown> = content !== null && typeof content === 'object' && !Array.isArray(content)
+    ? { ...(content as Record<string, unknown>) }
+    : {};
+  if (criteria.length > 0) {
+    if (merged.acceptanceCriteria !== undefined) {
+      throw new CliError('pass acceptance criteria either as --criterion or in --content, not both', EXIT_USAGE);
+    }
+    const blank = criteria.findIndex((text) => text.trim() === '');
+    if (blank !== -1) throw new CliError(`--criterion ${blank + 1} is empty`, EXIT_USAGE);
+    merged.acceptanceCriteria = criteria.map((text, i) => ({ id: `ac${i + 1}`, done: false, text: text.trim() }));
+  }
+  if (estimateText !== undefined) {
+    if (merged.pointsEstimate !== undefined) {
+      throw new CliError('pass the estimate either as --estimate or in --content, not both', EXIT_USAGE);
+    }
+    const estimate = Number(estimateText);
+    if (!Number.isInteger(estimate) || estimate < ESTIMATE_MIN || estimate > ESTIMATE_MAX) {
+      throw new CliError(`--estimate must be a whole number from ${ESTIMATE_MIN} to ${ESTIMATE_MAX}`, EXIT_USAGE, {
+        hint: `got \`${estimateText}\``,
+      });
+    }
+    merged.pointsEstimate = estimate;
+  }
+  return merged;
+}
+
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
-    'no-session-link', ...HEADER_TEXT_OPTIONS,
+    'no-session-link', 'criterion', 'estimate', ...HEADER_TEXT_OPTIONS,
   ]);
-  const kind = requireArg(cmd, 0, '<kind>');
+  const kind = normalizeKindAlias(requireArg(cmd, 0, '<kind>'));
+  // A space style is born only by `styles.push` (284): the Server refuses a
+  // generic create, and the refusal is more useful naming the door here than
+  // as an enum mismatch from the wire.
+  if (kind === 'style') {
+    throw new CliError('a space style is created only by publishing a personal style: `tm8 style push <personal-ref>`', EXIT_USAGE, {
+      hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
+    });
+  }
   const title = requireArg(cmd, 1, '<title>');
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
@@ -879,6 +882,8 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (position !== undefined) body.position = position;
   const content = cmd.options.value('content');
   if (content !== undefined) body.content = await readContent(content);
+  const taskContent = taskContentFlags(cmd, kind, body.content);
+  if (taskContent !== undefined) body.content = taskContent;
   const connections = initialConnections(cmd);
   if (connections.length > 0) body.connections = connections;
   const header = headerTextOptions(cmd);
@@ -889,19 +894,15 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
       query: receiptQuery('entity.create', cmd.out.receipts),
       body: withActor(cmd, body),
     }));
-  // After the create has landed, never before it — see linkCreatedInSession.
-  const claim = await linkCreatedInSession(cmd, data, connections);
+  // "Made during this session" is recorded by the SERVER as `authored_from`
+  // from the session-scoped token (308); the client no longer claims it.
   cmd.out.mutation('entity.create', data, renderCommandResult, () =>
-    successReceipt('entity.create', data, {
-      ...callerMutationId(cmd.options),
-      ...(claim.ref ? { refs: [claim.ref] } : {}),
-      ...(claim.warning ? { warnings: [claim.warning] } : {}),
-    }));
+    successReceipt('entity.create', data, callerMutationId(cmd.options)));
   return EXIT_OK;
 }
 
 async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'mutation-id']);
+  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
@@ -916,10 +917,16 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
   if (title !== undefined) body.title = title;
   const content = cmd.options.value('content');
   if (content !== undefined) body.content = await readContent(content);
+  // `--status` is sugar for `content.status` — a story's status door (288).
+  // The Server answers for kinds whose patch takes no status.
+  const status = cmd.options.value('status');
+  if (status !== undefined) {
+    body.content = { ...(body.content as Record<string, unknown> | undefined), status };
+  }
 
-  if (title === undefined && content === undefined) {
+  if (title === undefined && content === undefined && status === undefined) {
     throw new CliError('`tm8 entity update` needs something to change', EXIT_USAGE, {
-      hint: 'pass --title or --content',
+      hint: 'pass --title, --content or --status',
     });
   }
 

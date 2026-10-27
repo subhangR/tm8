@@ -52,11 +52,16 @@ describe('canvas navigation', () => {
   it('arrow keys move geometrically, starting from the first card in reading order', () => {
     const first = readingOrder(view)[0]!.key;
     expect(stepSelection(view, null, 'right')).toBe(first);
-    /* → from the brief lands on the task that consumes it, one stage right. */
-    expect(stepSelection(view, 'd-brief', 'right')).toBe('t-copy');
-    expect(stepSelection(view, 't-copy', 'left')).toBe('d-brief');
-    /* Nothing further right of the last stage: stay put, never jump away. */
-    expect(stepSelection(view, 't-ship', 'right')).toBe('t-ship');
+    /* ↓ from the brief lands on the task that consumes it, one stage down. */
+    expect(stepSelection(view, 'd-brief', 'down')).toBe('t-copy');
+    expect(stepSelection(view, 't-copy', 'up')).toBe('d-brief');
+    /* Nothing below the last stage: stay put, never jump away. */
+    expect(stepSelection(view, 't-ship', 'down')).toBe('t-ship');
+    /* Left to right, the same walk holds for a plan drawn LR. */
+    const lr = blueprintView(PLAN, undefined, { direction: 'LR' });
+    expect(stepSelection(lr, 'd-brief', 'right')).toBe('t-copy');
+    expect(stepSelection(lr, 't-copy', 'left')).toBe('d-brief');
+    expect(stepSelection(lr, 't-ship', 'right')).toBe('t-ship');
   });
 
   it('find matches titles, kinds and assignees, in reading order', () => {

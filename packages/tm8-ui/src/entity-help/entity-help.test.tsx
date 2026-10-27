@@ -10,7 +10,7 @@
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NOUNS, commands } from '@tm8/cli/discovery';
-import { EDGE_KINDS, collectionKinds, homeRootKinds, relationsOf } from '../domain';
+import { CUSTOM_KIND_FALLBACK, EDGE_KINDS, allKinds, homeRootKinds, relationsOf } from '../domain';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from './EntityHelpOverlay';
 import { commandByPath } from './catalog';
@@ -254,7 +254,7 @@ describe('the toolkit reads the live catalog', () => {
    * scene command, `toolkit.commands` path and demo line names a command the
    * catalog knows; every `toolkit.nouns` entry is a catalog noun; every
    * `constellation.notes` key is a relation the kind actually holds; every
-   * `spotlight` kind is a neighbour of the kind. The template's kind is
+   * `spotlight` kind is a registered kind and a neighbour of the kind. The template's kind is
    * `c:template`, so its kind-bound checks are skipped and everything
    * catalog-bound is held.
    */
@@ -287,7 +287,9 @@ describe('the toolkit reads the live catalog', () => {
     }
     if (relations) {
       const neighbours = new Set(neighboursOf(module.kind, relations).map((n) => n.kind));
-      const kinds = new Set(collectionKinds().map((k) => k.kind));
+      /* Any registered kind, anchored ones (message) included: neighboursOf seats
+       * every related kind in the constellation, not only the list-panel ones. */
+      const kinds = new Set(allKinds().filter((k) => k.kind !== CUSTOM_KIND_FALLBACK).map((k) => k.kind));
       for (const kind of module.constellation?.spotlight ?? []) {
         if (!kinds.has(kind)) problems.push(`${where}: spotlight names a non-kind ${kind}`);
         else if (!neighbours.has(kind)) problems.push(`${where}: spotlight names a non-neighbour ${kind}`);

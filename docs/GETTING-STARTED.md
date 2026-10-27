@@ -7,8 +7,10 @@ Every command below was run, in order, against a freshly installed node on
 for you, that is a bug in tm8 or in this file — not in your setup.
 
 **Not installed yet?** [`ops/INSTALL.md`](ops/INSTALL.md). Short version:
-`git clone`, `cd tm8`, `./install.sh`. It takes about a minute and a half and
-ends with the node running.
+`git clone`, `cd tm8`, `./install.sh`. It takes a few minutes and ends with the
+node running. It needs **node 22** (exactly that major), bun, git and curl, and
+installs Postgres if it can. Running a node other people reach? Read
+[`ops/OPERATOR-GUIDE.md`](ops/OPERATOR-GUIDE.md) as well.
 
 ---
 
@@ -50,11 +52,11 @@ is up:
 ```
   ┌─ THIS NODE IS UNCLAIMED ─────────────────────────────────────────
   │  No account here has a password yet, so nobody can sign in.
-  │  Claim it — from this machine or any other — at:
+  │  Claim it on this machine (another machine needs a proxy + TM8_PUBLIC_ORIGIN) at:
   │
   │    http://127.0.0.1:4610/#claim=tm8c_Xuhk3O8CY8ZhuPlGxgwRIgf8FCjPAuzMyHMUVlJr0Zs
   │
-  │  Also written to /Users/subhang/.tm8-dev/setup-token (0600).
+  │  Also written to /Users/you/.tm8-dev/data/setup-token (0600).
   │  The token is single-use and is burned the moment it is claimed.
   └──────────────────────────────────────────────────────────────────
 ```
@@ -72,25 +74,36 @@ claim it with the tm8c_… token from the Server's boot log or <dataDir>/setup-t
   tm8 auth claim --token <tm8c_…> --username <you> --password <password>
 ```
 
-> **Do not click the URL in that banner on the `dev` slot.** It names port
-> **4610**, which is the API; in `dev` it serves no page and you will get
-> nothing. The app is on **4611**. This is a real rough edge, not your mistake.
+> **On the `dev` slot, change the port in that link to 4611.** The banner names
+> **4610**, the API, which serves no page in `dev`; the app is on **4611**, and
+> the same `#claim=…` fragment works there:
+> `http://127.0.0.1:4611/#claim=tm8c_…`. (Slots that serve the built UI from the
+> server, `private` and `prod`, need no change.)
 
 Claim it either way — both do the same thing:
 
 ```bash
-tm8 auth claim --token "$(cat ~/.tm8-dev/setup-token)" --username you --password '<a password>'
+tm8 auth claim --token "$(cat ~/.tm8-dev/data/setup-token)" --username you --password '<a password>'
 ```
 
 …or open **http://127.0.0.1:4611**, and paste the `tm8c_…` token into the
 **SETUP TOKEN** field on the **“Claim this node.”** card.
 
+The token file lives in the node's data directory, `<TM8_DATA_DIR>/setup-token`.
+After `./install.sh` that is `~/.tm8-dev/data/` for `dev` (`~/.tm8-<slot>/data/`
+for other slots on a laptop, `/var/lib/tm8/<slot>/data/` on a server). A node
+started by `bun run dev` without the installer's env file uses `~/.tm8-dev/`
+itself.
+
 Claiming sets a password on the owner account that already exists — it does not
 create a second one, so everything already attributed to the owner stays yours —
 and signs you in.
 
-Pick a password you will keep. It is what you use to reach this node later from
-your phone or another laptop; on this machine you will rarely need it again.
+Pick a password you will keep. On this machine you will rarely need it again.
+It becomes the way in from your phone or another laptop once the node is
+reachable from them — which takes a proxy and `TM8_NODE_MODE=multi`, never a
+bare tunnel to a single-mode node. See
+[`ops/OPERATOR-GUIDE.md`](ops/OPERATOR-GUIDE.md#a-laptop-owner-letting-a-second-machine-in).
 
 ### After that, neither door asks again
 
@@ -226,10 +239,12 @@ are changing.
 
 ## 5. Put an agent on it
 
-**First, one prerequisite.** tm8 stores no agent credential of its own — a
-session runs *your machine's* `claude` or `codex` login. If neither is installed
-and logged in, a spawn sits at `running` forever and the refusal only ever
-appears inside the terminal. Check before you spawn:
+**First, one prerequisite: a login for the agent to run on.** By default a
+session runs *this machine's* `claude` or `codex` login (the node's credential).
+You can instead connect your own account, or a space's, under **Settings →
+Credentials** and launch on that. If the session would run on the node's login
+and there is none, the spawn is refused with the command that fixes it. Check
+before you spawn:
 
 ```bash
 tm8 doctor
@@ -240,8 +255,9 @@ tm8 doctor
   PASS  agent CLI: codex         codex → /Users/subhang/.local/bin/codex (authenticated (auth_mode=chatgpt))
 ```
 
-If it says otherwise: `npm i -g @anthropic-ai/claude-code` then `claude` to log
-in, or `npm i -g @openai/codex` then `codex login`.
+If it says otherwise: `npm i -g @anthropic-ai/claude-code` then `claude auth login`,
+or `npm i -g @openai/codex` then `codex login`. On a server the login must belong
+to the service user: `sudo -u tm8 -H claude auth login`.
 
 Now spawn:
 
@@ -409,8 +425,8 @@ tm8 help --query "spawn agent" # search by intent when you don't know the noun
 
 So you do not spend an afternoon looking for these:
 
-- **The claim link the server prints does not work on the `dev` slot** — it names
-  the API port, which serves no page there. Open 4611 and paste the token.
+- **The claim link the server prints names the API port on the `dev` slot** —
+  change 4610 to 4611 (see §1).
 - **A project can only be linked while creating a new Space.** Settings →
   Linked projects is a read-only inventory. Use `tm8 project link`.
 - **The New Session screen has no button yet.** It exists and it works — prompt
@@ -436,7 +452,8 @@ operation names (#313); and the Board has a **＋ New task** control (#316).
 | Understand the graph everything sits in | [`architecture/01-LAWS.md`](architecture/01-LAWS.md) |
 | Know what an agent is told at spawn | [`harness/AGENT-HARNESS-AND-COMMAND-DISCOVERY.md`](harness/AGENT-HARNESS-AND-COMMAND-DISCOVERY.md) |
 | See the whole operation catalog | [`api-and-cli/API-CATALOG-GROUPED-GUIDE.md`](api-and-cli/API-CATALOG-GROUPED-GUIDE.md) |
-| Add a second human | [`features/shared-workspace/03-MEMBER-GUIDE.md`](features/shared-workspace/03-MEMBER-GUIDE.md) |
+| Add a second human | [`identity/PROVISION-SECOND-ACCOUNT.md`](identity/PROVISION-SECOND-ACCOUNT.md) |
+| Run a node other people reach (proxy, TLS, backups, upgrades) | [`ops/OPERATOR-GUIDE.md`](ops/OPERATOR-GUIDE.md) |
 
 When something is wrong, start with **`tm8 doctor`** — eight checks: both agent
 CLIs and whether they are logged in, Postgres, the migration count, git, the

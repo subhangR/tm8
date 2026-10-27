@@ -62,12 +62,14 @@ import type {
   KindConfig,
   MembershipListControl,
   StateControl,
+  StateOption,
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
 import {
   KindIcon,
   PROCESS_CONTROL,
+  actionGlyph,
   SHARING_CONTROL,
   REASONS,
   getKind,
@@ -75,6 +77,9 @@ import {
   offWorkflowType,
   processControlFor,
   resolveAction,
+  sessionControlsFor,
+  sessionOutcomeOf,
+  isSessionState,
   sharingControlFor,
   sessionSharingOf,
   workflowRefusalText,
@@ -213,6 +218,15 @@ export interface ControlHost {
    * collapsed row where there is no state control to reach it through.
    */
   onComplete?: (entityId: string) => void;
+  /**
+   * SPEC D1 §5 — the session OUTCOME verbs: `complete-session` (the Complete
+   * dialog), `close-process` (Stop on a ✓ row), `dismiss-session`,
+   * `mark-lost`, and Terminate's dialog when the host routes it here. One
+   * prop for all of them, keyed on the verb, because they share one executor
+   * (`usePanelPrimaries.forEntity`). Absent ⇒ each renders its not-wired
+   * refusal, exactly as `onTerminate` absent does.
+   */
+  onSessionVerb?: (ref: ActionRef, entityId: string) => void;
   /**
    * THE TWO SHARING DIALS (187) — `execution.sessions.share`.
    *
@@ -397,7 +411,7 @@ export interface ControlHost {
  * this component exist. A verb named in neither list keeps its declared
  * position, between the ranked ones and the tail.
  */
-const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
+const RULED_ORDER: readonly ActionRef[] = ['complete', 'complete-session', 'run'];
 
 /**
  * The verbs that sit AFTER the anatomy's own affordances, hard right.
@@ -417,6 +431,18 @@ const RULED_ORDER: readonly ActionRef[] = ['complete', 'run'];
  * from the verbs that move a row through its life.
  */
 const TAIL_ORDER: readonly ActionRef[] = ['terminate'];
+
+/**
+ * SPEC D1 §5 — the verbs `RowActionCluster` hands to `onSessionVerb`. Kept
+ * beside `TAIL_ORDER` because they occupy the slots it orders on a session row.
+ */
+const SESSION_OUTCOME_VERBS: readonly ActionRef[] = [
+  'complete-session',
+  'close-process',
+  'dismiss-session',
+  'mark-lost',
+  'reopen-session',
+];
 
 /** Rank within `RULED_ORDER`; unnamed verbs sort after all named ones, stably. */
 const rankOf = (ref: ActionRef): number => {
@@ -505,8 +531,17 @@ export function RowActionCluster({
    * The 2→1 jitter when a hovered row dies is ACCEPTED, not designed around:
    * the shift is a welcome signal that the session just ended.
    */
-  const rowProcess = { category: row.category, liveness: props.livenessOf?.(row.id) };
+  const rowProcess = {
+    category: row.category,
+    liveness: props.livenessOf?.(row.id),
+    ...(isSessionState(row.state) ? { sessionState: row.state } : {}),
+  };
   const endedRun = declared.includes(PROCESS_CONTROL.running) && hasEnded(rowProcess);
+  /* SPEC D1 §5.2: a session row's verbs come from its outcome × process, not
+     from the one-slot swap below. Null for every other kind. */
+  const sessionVerbs = declared.includes(PROCESS_CONTROL.running)
+    ? sessionControlsFor([PROCESS_CONTROL.running], rowProcess)
+    : null;
 
   /* `sort` is stable in every engine this ships to (ES2019 requires it), which
      is what lets an unranked verb keep its declared position. */
@@ -521,16 +556,25 @@ export function RowActionCluster({
    */
   const shareMode = (row.state as unknown as Record<string, unknown>).shareMode;
 
-  const middle = declared
+  /* A session's Complete keeps the tick's ruled middle position (before Run);
+     its other outcome verbs take the tail slot Terminate held. */
+  const middle = (sessionVerbs
+    ? [
+        ...declared.filter((ref) => ref !== 'complete'),
+        ...(declared.includes('complete') ? sessionVerbs.filter((ref) => ref === 'complete-session') : []),
+      ]
+    : declared)
     .filter((ref) => !TAIL_ORDER.includes(ref))
     .filter((ref) => !(endedRun && ref === 'complete'))
     .sort((a, b) => rankOf(a) - rankOf(b))
     /* The sharing swap, for the same structural reason the tail swaps below:
        the registry can declare one ref and the row decides which half. */
     .map((ref) => sharingControlFor(ref, typeof shareMode === 'string' ? shareMode : undefined));
-  const tail = declared
-    .filter((ref) => TAIL_ORDER.includes(ref))
-    .map((ref) => processControlFor(ref, rowProcess));
+  const tail = sessionVerbs
+    ? sessionVerbs.filter((ref) => !(ref === 'complete-session' && declared.includes('complete')))
+    : declared
+      .filter((ref) => TAIL_ORDER.includes(ref))
+      .map((ref) => processControlFor(ref, rowProcess));
 
   /**
    * The dedicated executor for a verb the general `onAction` cannot perform.
@@ -552,6 +596,8 @@ export function RowActionCluster({
     if (ref === 'terminate' && props.onTerminate) return (_ref, id) => props.onTerminate?.(id);
     if (ref === 'resume' && props.onResume) return (_ref, id) => props.onResume?.(id);
     if (ref === 'complete' && props.onComplete) return (_ref, id) => props.onComplete?.(id);
+    /* Spec D1: the session outcome verbs share one executor. */
+    if (SESSION_OUTCOME_VERBS.includes(ref) && props.onSessionVerb) return (r, id) => props.onSessionVerb?.(r, id);
     return undefined;
   };
 
@@ -596,6 +642,19 @@ export function RowActionCluster({
       ) : null}
       {middle.map(verb)}
       {anatomyActions}
+      {/* Spec D1 §5.2: a completed session shows a FIXED check — the work is
+          done and cannot be unticked; reopening is the logged Resume (Q2 = B). */}
+      {sessionVerbs && sessionOutcomeOf(row.state) === 'completed' ? (
+        <span
+          className="lp__rowaction lp__rowaction--fixed"
+          data-testid="session-fixed-check"
+          role="img"
+          aria-label="Completed"
+          title="Completed — reopen it with Reopen (resume), not by unticking"
+        >
+          ✓
+        </span>
+      ) : null}
       {tail.map(verb)}
     </>
   );
@@ -660,8 +719,10 @@ export function EntityControlStrip({
   variant = 'lines',
   collapseEmptyDates = false,
   omitArchive = false,
+  omitMembership = false,
   inlineEditors = false,
   trailing,
+  stateOptionRefusal,
 }: {
   row: ControlSubject;
   props: ControlHost;
@@ -682,6 +743,12 @@ export function EntityControlStrip({
    * ejected onto a second line — landing a few pixels under `✕` Close.
    */
   omitArchive?: boolean;
+  /**
+   * The HOST draws collection membership itself. The task page does, in its
+   * COLLECTIONS section, so a second "In no collection or story" row among
+   * the properties said the same absence twice (task 01a15e22).
+   */
+  omitMembership?: boolean;
   /** Status and priority show their VALUE and open a picker on click. */
   inlineEditors?: boolean;
   /**
@@ -690,6 +757,8 @@ export function EntityControlStrip({
    * per-kind facts of its own (§15.2 — no kind literals in `panels/`).
    */
   trailing?: ReactNode;
+  /** The host's own reason a state option is refused — see `RowStateControl`. */
+  stateOptionRefusal?: (option: StateOption) => string | undefined;
 }) {
   const list = config.list;
   const control = list.stateControl;
@@ -792,6 +861,7 @@ export function EntityControlStrip({
               control={control}
               pill={config.panel.statusPill}
               inlineEditors={inlineEditors}
+              optionRefusal={stateOptionRefusal}
             />,
           )
         : null}
@@ -849,7 +919,7 @@ export function EntityControlStrip({
           )
         : null}
 
-      {list.membership
+      {list.membership && !omitMembership
         ? line(
             list.membership.label,
             <RowMembershipControl row={row} props={props} control={list.membership} />,
@@ -945,7 +1015,7 @@ function ChipMenu({
           setOpen((was) => !was);
         }}
       >
-        {current}
+        <span className="lp__chiplabel">{current}</span>
         <span className="lp__chipmenu__caret" aria-hidden>▾</span>
       </button>
       {open ? (
@@ -1419,11 +1489,13 @@ function RowAssignControl({
             ))
           : '♙'}
       </span>
-      {assigned.length === 0
-        ? control.emptyLabel
-        : assigned.length === 1
-          ? actorName(assigned[0])
-          : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      <span className="lp__chiplabel">
+        {assigned.length === 0
+          ? control.emptyLabel
+          : assigned.length === 1
+            ? actorName(assigned[0])
+            : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      </span>
     </span>
   );
 
@@ -1616,11 +1688,13 @@ export function RowMembershipControl({
     <span aria-hidden>{glyph}</span>
   ) : (
     <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
-      {names.length === 0
-        ? control.emptyLabel
-        : names.length === 1
-          ? names[0]
-          : `${names[0]} +${names.length - 1}`}
+      <span className="lp__chiplabel">
+        {names.length === 0
+          ? control.emptyLabel
+          : names.length === 1
+            ? names[0]
+            : `${names[0]} +${names.length - 1}`}
+      </span>
     </span>
   );
 
@@ -1789,11 +1863,21 @@ export function RowStateControl({
   variant = 'select',
   glyph,
   inlineEditors = false,
+  optionRefusal,
 }: {
   row: ControlSubject;
   props: ControlHost;
   /** Show the value and open the picker on click — see `ChipMenu`. */
   inlineEditors?: boolean;
+  /**
+   * A HOST-KNOWN PRECONDITION on one option, drawn as W4's narrowing is:
+   * disabled, with the reason in the option's own text. The detail panel uses
+   * it for the acceptance gate — an option routed through `complete` while
+   * criteria are still open (task 01a1163a, mockup r4: the Status field
+   * "refuses Done and says why"). Usability only: the server's gate is the
+   * real one, and a refusal it raises still surfaces as it always has.
+   */
+  optionRefusal?: (option: StateOption) => string | undefined;
   /** REQUIRED — see the note above; a kind with no state draws no control. */
   control: StateControl;
   /** The kind's existing value→word / value→tone map. The ONLY source for both. */
@@ -1855,6 +1939,13 @@ export function RowStateControl({
   const typeValue = workflowTypeOf(row.state);
   const barred = (id: string): boolean =>
     vocabulary !== null && id !== current && !vocabulary.includes(id);
+  /** Why `option` cannot be chosen, or null — the workflow first, then the host. */
+  const refusalOf = (option: StateOption): string | null =>
+    option.id === current
+      ? null
+      : barred(option.id)
+        ? `not in type ${typeValue}`
+        : optionRefusal?.(option) ?? null;
   /**
    * OFF-WORKFLOW is a DERIVED fact (owner ruling): the CURRENT status sits
    * outside the type's vocabulary — reachable by re-typing — and is flagged,
@@ -1930,7 +2021,8 @@ export function RowStateControl({
               >
                 {control.options.map((o) => {
                   const on = o.id === current;
-                  const off = barred(o.id);
+                  const why = refusalOf(o);
+                  const off = why !== null;
                   return (
                     <button
                       key={o.id}
@@ -1972,7 +2064,7 @@ export function RowStateControl({
                           from until the value is chosen. The mark stays where
                           it is a fact: on the trigger. */}
                       <span className="lp__assignopt-name">
-                        {off ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+                        {off ? `${wordFor(o.id)} — ${why}` : wordFor(o.id)}
                       </span>
                       <span className="lp__assignopt-mark" aria-hidden>
                         {on ? '✓' : ''}
@@ -2002,8 +2094,8 @@ export function RowStateControl({
           options={control.options.map((o) => ({
             id: o.id,
             label: wordFor(o.id),
-            disabled: barred(o.id),
-            reason: barred(o.id) ? `not in type ${typeValue}` : undefined,
+            disabled: refusalOf(o) !== null,
+            reason: refusalOf(o) ?? undefined,
           }))}
           onPick={(next) => {
             if (next === current) return;
@@ -2066,8 +2158,8 @@ export function RowStateControl({
           is already this option's label — so the suffix says only the part the
           label does not: which type is refusing. */}
       {control.options.map((o) => (
-        <option key={o.id} value={o.id} disabled={barred(o.id)}>
-          {barred(o.id) ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+        <option key={o.id} value={o.id} disabled={refusalOf(o) !== null}>
+          {refusalOf(o) !== null ? `${wordFor(o.id)} — ${refusalOf(o)}` : wordFor(o.id)}
         </option>
       ))}
     </select>
@@ -2135,11 +2227,11 @@ export function RowSharingControl({
   const headId = useId();
 
   const refuse = (reason: UnavailableReason) => (
-    <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
+    <DisabledIconControl label={def.label} glyph={actionGlyph(def)} reason={reason} />
   );
   if (!props.onShareSession) return refuse(NOT_WIRED_REASON);
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={def.label} glyph={def.icon} />;
+    return <CheckingPermission label={def.label} glyph={actionGlyph(def)} />;
   }
   const availability = def.availability({
     ...props.ctx,
@@ -2219,7 +2311,7 @@ export function RowSharingControl({
           setOpen((v) => !v);
         }}
       >
-        <span aria-hidden>{def.icon}</span>
+        <span aria-hidden>{actionGlyph(def)}</span>
       </button>
       {open && anchor
         ? createPortal(
@@ -2313,7 +2405,7 @@ export function RowAction({
 }) {
   const def = resolveAction(ref_);
   const wide = variant === 'wide';
-  const mark = glyph ?? def.icon;
+  const mark = glyph ?? actionGlyph(def);
   const ctx: ActionContext = {
     ...props.ctx,
     entityId: row.id,
@@ -2323,6 +2415,9 @@ export function RowAction({
     /* The row's OWN tab, so a verb can refuse itself on a finished row without
        a second seam question. See `ControlSubject.category`. */
     ...(row.category ? { category: row.category } : {}),
+    /* Spec D1: a session's process control asks its own status, not the
+       category (which now follows the outcome). */
+    ...(isSessionState(row.state) ? { sessionState: row.state } : {}),
   };
 
   /**

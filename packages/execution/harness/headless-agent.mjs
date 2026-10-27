@@ -43,6 +43,7 @@ const send = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let turn = 0;
 let hanging = false;
+let completeOnInterrupt = false;
 
 // Recorded stream shapes, keyed by turn text: `{ "<text>": [event, ...] }`.
 // A matching turn replays its events verbatim after `init` (see test/fixtures).
@@ -82,6 +83,10 @@ process.on('SIGINT', () => {
   if (!hanging) {
     process.exit(0);
     return;
+  }
+  if (completeOnInterrupt) {
+    send({type: 'result', subtype: 'success', is_error: false, result: 'natural success', session_id: nativeSessionId});
+    hanging = false; setTimeout(() => process.exit(0), 150); return;
   }
   hanging = false;
   spend({ inputTokens: 532, outputTokens: 17 }, 0.000617);
@@ -137,7 +142,8 @@ input.on('line', (line) => {
     process.stdout.write('this is not json\n');
     return;
   }
-  if (text === 'hang') {
+  if (text === 'hang' || text === 'cancel-success') {
+    completeOnInterrupt = text === 'cancel-success';
     hanging = true;
     send({
       type: 'assistant',

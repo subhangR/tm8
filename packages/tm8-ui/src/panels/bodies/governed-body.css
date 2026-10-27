@@ -355,3 +355,237 @@
 .cv2-root .gb-verb:focus-visible {
   background: var(--pn-hover);
 }
+
+/* ==========================================================================
+   THE PROJECT PAGE ADDITIONS (task 01a15a00): folder editing, the trust
+   switch, git status and the filterable work list. Tokens only.
+   ========================================================================== */
+
+.cv2-root .gb-path__glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .gb-path__hint {
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .gb-path__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .gb-path .gb-verb {
+  align-self: center;
+  flex: none;
+}
+
+.cv2-root .gb-verb--primary {
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+  color: var(--pn-card);
+}
+.cv2-root .gb-verb--primary:hover,
+.cv2-root .gb-verb--primary:focus-visible {
+  background: var(--pn-ink-2);
+}
+.cv2-root .gb-verb:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.cv2-root .gb-folder-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  min-width: 0;
+}
+.cv2-root .gb-folder-edit__row {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.cv2-root .gb-folder-edit__row input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 3px 6px;
+}
+.cv2-root .gb-folder-edit__row .gb-verb { align-self: center; }
+.cv2-root .gb-folder-edit__note,
+.cv2-root .gb-folder-edit__warn,
+.cv2-root .gb-folder-edit__error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .gb-folder-edit__warn { color: var(--pn-wait); }
+.cv2-root .gb-folder-edit__error { color: var(--pn-block); }
+.cv2-root .gb-folder-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.cv2-root .gb-trust__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .gb-trust__confirm p { margin: 0; }
+.cv2-root .gb-trust__confirm code {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  word-break: break-all;
+}
+.cv2-root .gb-trust__confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cv2-root .gb-git {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cv2-root .gb-git__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cv2-root .gb-git__refresh {
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.cv2-root .gb-git__refresh:hover { color: var(--pn-ink); }
+.cv2-root .gb-git__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  min-width: 0;
+}
+.cv2-root .gb-git__line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .gb-git__glyph { color: var(--pn-ink-3); }
+.cv2-root .gb-git__branch {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .gb-git__ab {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+}
+.cv2-root .gb-git__muted {
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .gb-git__subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .gb-git__stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .gb-work {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cv2-root .gb-work__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cv2-root .gb-work__chip {
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.cv2-root .gb-work__chip:hover { background: var(--pn-hover); }
+.cv2-root .gb-work__chip--on {
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+  color: var(--pn-card);
+}
+.cv2-root .gb-work__chip--on:hover { background: var(--pn-ink-2); }
+.cv2-root .gb-work__count { opacity: 0.7; }
+.cv2-root .gb-work__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cv2-root .gb-work__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .gb-work__row:hover,
+.cv2-root .gb-work__row:focus-visible { background: var(--pn-hover); }
+.cv2-root .gb-work__row--static { cursor: default; }
+.cv2-root .gb-work__glyph { flex: none; color: var(--pn-ink-3); }
+.cv2-root .gb-work__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink);
+}
+.cv2-root .gb-work__ago {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}

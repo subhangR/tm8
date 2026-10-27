@@ -50,6 +50,7 @@ import {
   PROVIDER_TEST_UNAVAILABLE,
   RESTORE_UNAVAILABLE,
 } from './reasons';
+import { useAlwaysDarkTheme } from '../theme/useAlwaysDarkTheme';
 
 /**
  * A provider row the HOST supplies. There is no registry read, so this lane
@@ -83,10 +84,11 @@ export interface NodeRoomProps {
 export function NodeRoom(props: NodeRoomProps) {
   const facts = useNodeFacts(props.port);
   const notes = props.notes ?? false;
+  const alwaysDarkTheme = useAlwaysDarkTheme();
   return (
     <div
       className="cv2-root fn-node"
-      data-theme="dark"
+      data-theme={alwaysDarkTheme}
       data-always-dark="true"
       data-testid="node-room"
     >

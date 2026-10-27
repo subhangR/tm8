@@ -88,7 +88,7 @@ const href = (id: string) => `/v2/files/${id}/download`;
 describe('feed message attachments', () => {
   it('renders an image inline once the host supplies a bytes resolver', () => {
     const view = renderRow([PNG, PDF], { downloadHref: href });
-    const row = view.getByTestId('chs-message-attachments');
+    const row = view.getByTestId('chat-turn-attachments');
     const image = row.querySelector('img');
     expect(image?.getAttribute('src')).toBe(href('ent-file-png'));
     expect(image?.getAttribute('alt')).toBe('screenshot.png');
@@ -99,13 +99,13 @@ describe('feed message attachments', () => {
   });
 
   it('never puts an SVG in an <img>, resolver or not', () => {
-    const row = renderRow([SVG], { downloadHref: href }).getByTestId('chs-message-attachments');
+    const row = renderRow([SVG], { downloadHref: href }).getByTestId('chat-turn-attachments');
     expect(row.querySelector('img')).toBeNull();
     expect(row.textContent).toContain('diagram.svg');
   });
 
   it('keeps the chip a host with no files seam always drew', () => {
-    const row = renderRow([PNG, PDF]).getByTestId('chs-message-attachments');
+    const row = renderRow([PNG, PDF]).getByTestId('chat-turn-attachments');
     expect(row.querySelector('img')).toBeNull();
     expect(row.textContent).toContain('screenshot.png');
     expect(row.textContent).toContain('image/png');
@@ -114,13 +114,13 @@ describe('feed message attachments', () => {
   it('opens the file entity from either face', () => {
     const onOpenEntity = vi.fn();
     const row = renderRow([PNG, PDF], { downloadHref: href, onOpenEntity })
-      .getByTestId('chs-message-attachments');
+      .getByTestId('chat-turn-attachments');
     (row.querySelector('button[aria-label="Open attachment screenshot.png"]') as HTMLButtonElement).click();
     (row.querySelector('button[aria-label="Open attachment spec.pdf"]') as HTMLButtonElement).click();
     expect(onOpenEntity.mock.calls.map(([id]) => id)).toEqual(['ent-file-png', 'ent-file-pdf']);
   });
 
   it('draws nothing at all for a message with no attachments', () => {
-    expect(renderRow([]).queryByTestId('chs-message-attachments')).toBeNull();
+    expect(renderRow([]).queryByTestId('chat-turn-attachments')).toBeNull();
   });
 });

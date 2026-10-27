@@ -183,7 +183,8 @@ describe('sessions inherit their tasks\' PRs (working_on second pass)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// TIER 1 — `created_in`, the PR's birth session (066). The tier the client
+// TIER 1 — `authored_from` (formerly `created_in`, 066), the PR's birth
+// session. The tier the client
 // never read, and the whole of the reported bug.
 // ---------------------------------------------------------------------------
 
@@ -198,14 +199,14 @@ function edgeOf(type: string, source: EntitySummary, target: EntitySummary, id: 
   return { ...tracks(source, target), id, type: type as EdgeView['type'] };
 }
 
-function createdIn(pr: EntitySummary, session: EntitySummary, id = 'edge-ci-1'): EdgeView {
-  return edgeOf('created_in', pr, session, id);
+function authoredFrom(pr: EntitySummary, session: EntitySummary, id = 'edge-ci-1'): EdgeView {
+  return edgeOf('authored_from', pr, session, id);
 }
 
-describe('created_in is tier 1 — provenance, not a branch name', () => {
+describe('authored_from is tier 1 — provenance, not a branch name', () => {
   it('puts a PR on its BIRTH SESSION with no task, no tracks edge and no branch anywhere', () => {
     const pr = pullRequest({ ciStatus: 'passing', state: 'merged' });
-    const index = indexLinkedPullRequests([pr, laneSession], [createdIn(pr, laneSession)]);
+    const index = indexLinkedPullRequests([pr, laneSession], [authoredFrom(pr, laneSession)]);
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({
       id: 'pr-1',
       lifecycle: 'merged',
@@ -221,30 +222,49 @@ describe('created_in is tier 1 — provenance, not a branch name', () => {
     expect(indexLinkedPullRequests([pr, laneSession], []).get('ws-lane-1')).toBeUndefined();
   });
 
-  it('reads created_in in ONE direction — the registry says PR -> session', () => {
+  it('reads authored_from in ONE direction — the registry says PR -> session', () => {
     // 066:63 registers src `*` -> dst `work_session`. A reversed edge would
     // mean a session was born in a PR; honouring it would be shape-guessing.
     const pr = pullRequest();
-    const reversed = edgeOf('created_in', laneSession, pr, 'edge-ci-rev');
+    const reversed = edgeOf('authored_from', laneSession, pr, 'edge-ci-rev');
     const index = indexLinkedPullRequests([pr, laneSession], [reversed]);
     expect(index.get('ws-lane-1')).toBeUndefined();
     expect(index.get('pr-1')).toBeUndefined();
   });
 
-  it('ignores a created_in edge whose source is not a pull request', () => {
+  it('ignores an authored_from edge whose source is not a pull request', () => {
     // The same edge type stamps docs, memories and commits. Only a PR draws
     // a PR chip.
     const doc = summary('doc-1', { kind: 'doc', format: 'markdown', childCount: 0 });
-    const index = indexLinkedPullRequests([doc, laneSession], [createdIn(doc, laneSession, 'e-doc')]);
+    const index = indexLinkedPullRequests([doc, laneSession], [authoredFrom(doc, laneSession, 'e-doc')]);
     expect(index.get('ws-lane-1')).toBeUndefined();
   });
 
-  it('resolves a live PR summary over the created_in edge\'s stale endpoint snapshot', () => {
+  it('ignores the session\'s MESSAGE and FORM authored_from rows', () => {
+    // After the created_in migration, `authored_from` into a session is mostly
+    // its own turns. None of them is a PR, so none draws a chip.
+    const message = summary('msg-1', { kind: 'message' });
+    const form = summary('form-1', { kind: 'form' });
+    const index = indexLinkedPullRequests(
+      [message, form, laneSession],
+      [authoredFrom(message, laneSession, 'e-msg'), authoredFrom(form, laneSession, 'e-form')],
+    );
+    expect(index.get('ws-lane-1')).toBeUndefined();
+  });
+
+  it('only a work_session target is a birth session — a chat target draws nothing', () => {
+    const pr = pullRequest();
+    const chat = summary('chat-1', { kind: 'chat' });
+    const index = indexLinkedPullRequests([pr, chat], [authoredFrom(pr, chat, 'e-chat')]);
+    expect(index.get('chat-1')).toBeUndefined();
+  });
+
+  it('resolves a live PR summary over the authored_from edge\'s stale endpoint snapshot', () => {
     const observerUpdate = pullRequest({ state: 'merged', ciStatus: 'passing', mergeState: 'clean' });
     const bootSnapshot = pullRequest({ state: 'open', ciStatus: null });
     const index = indexLinkedPullRequests(
       [observerUpdate, laneSession],
-      [createdIn(bootSnapshot, laneSession)],
+      [authoredFrom(bootSnapshot, laneSession)],
     );
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({
       lifecycle: 'merged', ciStatus: 'passing', attribution: 'authored',
@@ -253,7 +273,7 @@ describe('created_in is tier 1 — provenance, not a branch name', () => {
 
   it('a STALE endpoint still proves authorship even when its facts are discarded', () => {
     // The two orderings are independent: the live badge wins the FACTS, the
-    // weak created_in endpoint still wins the ATTRIBUTION.
+    // weak authored_from endpoint still wins the ATTRIBUTION.
     const workingTask = withBadges(task, {
       pullRequests: [badge({ state: 'merged', ciStatus: 'passing' })],
       workingActors: [{
@@ -264,7 +284,7 @@ describe('created_in is tier 1 — provenance, not a branch name', () => {
     });
     const index = indexLinkedPullRequests(
       [workingTask, laneSession],
-      [createdIn(pullRequest({ state: 'open', ciStatus: null }), laneSession)],
+      [authoredFrom(pullRequest({ state: 'open', ciStatus: null }), laneSession)],
     );
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({
       lifecycle: 'merged', ciStatus: 'passing', attribution: 'authored',
@@ -274,9 +294,9 @@ describe('created_in is tier 1 — provenance, not a branch name', () => {
   it('THE REPORTED BUG: four PRs on one branch land on four DIFFERENT sessions', () => {
     // The original screenshot, reduced. #324/#335/#340/#345 all carry head
     // `tm8/01a00bbd` and eleven sessions shared that checkout, so every
-    // branch-shaped rule put all four on all eleven. Their created_in edges
+    // branch-shaped rule put all four on all eleven. Their provenance edges
     // name four different sessions and are 1:1 by construction —
-    // `edges_created_in_source_idx` (066:82-83) is a UNIQUE index.
+    // (then `created_in`, held UNIQUE by 066:82-83; now `authored_from`).
     const numbers = [324, 335, 340, 345];
     const prs = numbers.map((n) => summary(`pr-${n}`, {
       kind: 'pull_request', repository: 'subhangR/tm8', number: n, state: 'merged',
@@ -286,7 +306,7 @@ describe('created_in is tier 1 — provenance, not a branch name', () => {
     const sessions = Array.from({ length: 11 }, (_, i) => summary(`ws-${i}`, {
       kind: 'work_session', status: 'running',
     }));
-    const edges = prs.map((pr, i) => createdIn(pr, sessions[i]!, `e-${i}`));
+    const edges = prs.map((pr, i) => authoredFrom(pr, sessions[i]!, `e-${i}`));
     const index = indexLinkedPullRequests([...prs, ...sessions], edges);
 
     // Each author gets exactly its own one.
@@ -381,14 +401,14 @@ describe('in_worktree is tier 2 — a worktree\'s branch, never a session\'s', (
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({ id: 'pr-1', attribution: 'authored' });
   });
 
-  it('created_in OUTRANKS in_worktree when they disagree about the claim', () => {
+  it('authored_from OUTRANKS in_worktree when they disagree about the claim', () => {
     // Both name the same session here, so the assertion is about RANK, not
     // routing: the settled attribution is `authored` either way, and the PR
     // appears exactly once.
     const pr = pullRequest({ headRef: 'tm8/abc12345' });
     const index = indexLinkedPullRequests(
       [pr, laneSession, worktree],
-      [inWorktree(laneSession, worktree), createdIn(pr, laneSession)],
+      [inWorktree(laneSession, worktree), authoredFrom(pr, laneSession)],
     );
     expect(index.get('ws-lane-1')).toHaveLength(1);
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({ attribution: 'authored' });
@@ -457,7 +477,7 @@ describe('attribution distinguishes inherited work from authored work', () => {
     const pr = pullRequest();
     const index = indexLinkedPullRequests(
       [task, pr, laneSession],
-      [createdIn(pr, laneSession), tracks(task, pr), workingOn(laneSession, task)],
+      [authoredFrom(pr, laneSession), tracks(task, pr), workingOn(laneSession, task)],
     );
     // laneSession authored it, so IT keeps `authored`...
     expect(index.get('ws-lane-1')?.[0]).toMatchObject({ attribution: 'authored' });
@@ -465,7 +485,7 @@ describe('attribution distinguishes inherited work from authored work', () => {
     const sibling = summary('ws-sibling', { kind: 'work_session', status: 'running' });
     const withSibling = indexLinkedPullRequests(
       [task, pr, laneSession, sibling],
-      [createdIn(pr, laneSession), tracks(task, pr),
+      [authoredFrom(pr, laneSession), tracks(task, pr),
         workingOn(laneSession, task), edgeOf('working_on', sibling, task, 'edge-wo-sib')],
     );
     expect(withSibling.get('ws-sibling')?.[0]).toMatchObject({ attribution: 'inherited' });
@@ -477,9 +497,9 @@ describe('attribution distinguishes inherited work from authored work', () => {
     // after `authored` silently downgrades a true claim.
     const pr = pullRequest();
     const authoredFirst: EdgeView[] = [
-      createdIn(pr, laneSession), tracks(task, pr), workingOn(laneSession, task)];
+      authoredFrom(pr, laneSession), tracks(task, pr), workingOn(laneSession, task)];
     const inheritedFirst: EdgeView[] = [
-      tracks(task, pr), workingOn(laneSession, task), createdIn(pr, laneSession)];
+      tracks(task, pr), workingOn(laneSession, task), authoredFrom(pr, laneSession)];
     for (const edges of [authoredFirst, inheritedFirst]) {
       expect(indexLinkedPullRequests([task, pr, laneSession], edges).get('ws-lane-1')?.[0])
         .toMatchObject({ attribution: 'authored' });

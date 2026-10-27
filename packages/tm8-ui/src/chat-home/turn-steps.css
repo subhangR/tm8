@@ -36,6 +36,7 @@
 .tch-steps__count { font-weight: 600; }
 .tch-steps__groups { min-width: 0; }
 .tch-steps__failed { color: var(--pn-block); }
+.tch-steps__retried { color: var(--pn-ink-3); }
 .tch-steps__caret { color: var(--pn-ink-4); }
 
 .tch-steps__earlier {
@@ -54,8 +55,7 @@
 .tch-steps__head:focus-visible,
 .tch-steps__earlier:focus-visible,
 .tch-steps__list:focus-visible,
-.tch-steps__thought-toggle:focus-visible,
-.tch-docedit__open:focus-visible {
+.tch-steps__thought-toggle:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 1px;
 }
@@ -143,39 +143,6 @@
   font-size: var(--pn-fs-fine);
   overflow-wrap: anywhere;
 }
-
-/* D11: `✎ Edited ¶ Runbook` — a quiet line, no card. */
-.tch-docedit {
-  display: flex;
-  gap: 5px;
-  align-items: baseline;
-  min-width: 0;
-  color: var(--pn-ink-2);
-  font-size: var(--pn-fs-fine);
-}
-
-.tch-docedit__glyph,
-.tch-docedit__kind { color: var(--pn-ink-3); font-family: var(--pn-mono); }
-
-.tch-docedit__title,
-.tch-docedit__open {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tch-docedit__open {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--pn-ink-2);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tch-docedit__open:hover { color: var(--pn-brand-2); text-decoration: underline; }
 
 @keyframes tch-step-pulse {
   0%, 100% { opacity: 1; }

@@ -45,6 +45,7 @@ import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { noticeStatusNudges } from '../status-nudge.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { Tm8Client } from '../client.js';
@@ -408,6 +409,8 @@ export async function postMessage(
   // the delivery outcome turns out to be.
   if (op === undefined) cmd.out.data(batch, renderBatch);
   else cmd.out.mutation(op, batch, renderBatch, () => successReceipt(op, batch, callerMutationId(cmd.options)));
+  noticeClosedRecipients(cmd, batch);
+  noticeStatusNudges(cmd, batch);
   if (wait === 'stored') return EXIT_OK;
 
   const messageIds = (Array.isArray(batch?.messages) ? batch.messages : [])
@@ -655,3 +658,21 @@ export const MESSAGE_COMMANDS: CommandModule[] = [
   },
   { path: ['message', 'delivery'], run: messageDelivery },
 ];
+
+/**
+ * D2 (owner ruling, 6 Oct): a message to a session with no live process is
+ * stored but not delivered, and the sender must SEE that — on stderr, in every
+ * output mode, never silenced by --quiet. The server's sentence is printed
+ * as-is; the receipt carries the same row as `NOT DELIVERED`.
+ */
+function noticeClosedRecipients(cmd: CommandContext, batch: unknown): void {
+  const rows = (batch as { delivery?: unknown } | null)?.delivery;
+  if (!Array.isArray(rows)) return;
+  for (const row of rows as Array<Record<string, unknown>>) {
+    if (row.reason !== 'recipient_session_closed') continue;
+    const detail = typeof row.detail === 'string'
+      ? row.detail
+      : `session ${String(row.targetWorkSessionId)} is closed; not delivered live`;
+    cmd.out.warn(`notice: ${detail}`);
+  }
+}

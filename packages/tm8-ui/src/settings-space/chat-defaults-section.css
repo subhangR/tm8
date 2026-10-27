@@ -80,3 +80,155 @@
   font-size: 11px;
   color: var(--pn-block);
 }
+
+/* --- phone (mockup 01a14cc4, "Chat defaults") ----------------------------
+   Only `phone` renders these classes, and only the stacked phone Settings
+   passes it, so none of this reaches the desktop table. One row per kind with
+   the pair stacked under the kind; the pickers are a sheet. */
+.set-chatdef__scope--phone {
+  display: block;
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-2);
+}
+.set-chatdef__scope--phone .set-chatdef__scope-head {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pn-ink);
+}
+
+.set-chatdef__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.set-chatdef__rows > li + li { border-top: 1px solid var(--pn-line); }
+.set-chatdef__row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.set-chatdef__row:active { background: var(--pn-hover); }
+.set-chatdef__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.set-chatdef__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+}
+.set-chatdef__text { flex: 1; min-width: 0; }
+.set-chatdef__row .set-chatdef__kind,
+.set-chatdef__pair {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-chatdef__row .set-chatdef__kind { font-size: var(--pn-fs-title); font-weight: 550; }
+.set-chatdef__pair { font-size: var(--pn-fs-sm); color: var(--pn-ink-3); }
+.set-chatdef__stale { color: var(--pn-wait); }
+.set-chatdef__chev { flex: none; font-size: var(--pn-fs-h3); color: var(--pn-ink-3); }
+
+/* The sheet's one child. `flex: none` so it is as tall as its options and the
+   sheet body scrolls it; the body's default would squeeze it to the body's
+   height and stack the pickers on top of each other. */
+.msheet__body > .set-chatdef__sheet {
+  flex: none;
+  padding: 4px 16px 0;
+}
+.set-chatdef__sheet-sub {
+  margin: 0 0 8px;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+.set-chatdef__picker {
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.set-chatdef__legend {
+  padding: 8px 0 4px;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-chatdef__opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.set-chatdef__opt:active { background: var(--pn-hover); }
+/* The radio stays in the tree for its semantics and keyboard; the check is
+   what is drawn. */
+.set-chatdef__opt input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+.set-chatdef__opt:has(input:focus-visible) { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.set-chatdef__check {
+  flex: none;
+  width: 18px;
+  color: var(--pn-brand);
+  font-size: var(--pn-fs-title);
+  text-align: center;
+}
+.set-chatdef__opt-text { flex: 1; min-width: 0; }
+.set-chatdef__opt-label,
+.set-chatdef__opt-hint { display: block; overflow-wrap: anywhere; }
+.set-chatdef__opt-label { font-size: var(--pn-fs-title); }
+.set-chatdef__opt-hint { font-size: var(--pn-fs-sm); color: var(--pn-ink-3); }
+.set-chatdef__save {
+  appearance: none;
+  /* Kept in reach: the model list is long, and a Save below thirty options is
+     a Save nobody finds. The paper band under it keeps options from showing
+     through the gap. */
+  position: sticky;
+  bottom: 0;
+  box-shadow: 0 12px 0 0 var(--pn-surface), 0 -8px 12px -4px var(--pn-surface);
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 12px 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font: inherit;
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  cursor: pointer;
+}
+.set-chatdef__save:disabled { opacity: 0.6; cursor: default; }
+.msheet .set-chatdef__refusal { font-size: var(--pn-fs-sm); }

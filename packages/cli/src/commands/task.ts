@@ -2,12 +2,13 @@
  * `tm8 task …` — the closed kind-command namespace for tasks (§4.5).
  *
  * EIGHT commands: `transition`, `complete`, `tick`, `gate`, `axis`, `link-pr`,
- * `link-commit`, `import-issue`. There is deliberately no `task create`,
- * `task get` or
- * `task list`: a task is an entity, so it is created, read and queried through
- * the universal entity commands. A parallel task noun would be a second way to
+ * `link-commit`, `import-issue`. There is deliberately no `task get` or
+ * `task list`: a task is an entity, so it is read and queried through the
+ * universal entity commands. A parallel task noun would be a second way to
  * say the same thing, drifting from the first. (`import-issue` is create-side
- * sugar, not a read path — see its docblock.)
+ * sugar, not a read path — see its docblock. `task create` exists as a pure
+ * alias of `entity create task`, registered in `./discoverability.ts`, because
+ * agents type it and an alias that delegates cannot drift.)
  *
  * WHY `complete` IS NOT A TRANSITION. `entities.commands.complete` is the only
  * operation that may write `done`: it alone checks acceptance criteria, writes
@@ -50,6 +51,7 @@ import {
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, receiptQuery, receiptRefId, successReceipt, type ReceiptWarning } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { noticeStatusNudges } from '../status-nudge.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -63,7 +65,7 @@ const TRANSITIONABLE = ['open', 'pulled', 'working', 'in_review', 'blocked', 'ca
 const WORK_STATUSES = [...TRANSITIONABLE, 'done'] as const;
 
 async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['mutation-id']);
+  assertKnownOptions(cmd, ['mutation-id', 'claim']);
   const id = requireArg(cmd, 0, '<task-id>');
   const status = requireArg(cmd, 1, `<status> (${TRANSITIONABLE.join('|')})`);
   if (!(WORK_STATUSES as readonly string[]).includes(status)) {
@@ -77,10 +79,35 @@ async function taskTransition(cmd: CommandContext): Promise<ExitCode> {
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.work', {
       params: { id },
       query: receiptQuery('task.transition', cmd.out.receipts),
-      body: withActor(cmd, { clientMutationId: mutationId, status }),
+      // Only `--claim` records the caller as working_on; a bare transition is
+      // a status change, so an auditor does not become the task's worker (#32).
+      body: withActor(cmd, { clientMutationId: mutationId, status, ...(cmd.options.bool('claim') ? { claim: true } : {}) }),
     }));
   cmd.out.mutation('task.transition', data, renderCommandResult, () =>
     successReceipt('task.transition', data, callerMutationId(cmd.options)));
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 task release <task-id> --note "<hand-off>"` (Spec D1 R4). Ends the
+ * caller's claim on the task — inside a session, the session's — and keeps the
+ * task's status. The note is the hand-off the next worker reads.
+ */
+async function taskRelease(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id', 'note']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const note = cmd.options.value('note');
+  if (note === undefined || note.trim().length === 0) {
+    throw new CliError('tm8 task release requires --note "<hand-off>"', EXIT_USAGE, {
+      hint: 'say where the work stands and what the next session needs',
+    });
+  }
+  const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.release', {
+    params: { id },
+    body: withActor(cmd, { clientMutationId: mutationId, note }),
+  });
+  cmd.out.data(data, renderCommandResult);
   return EXIT_OK;
 }
 
@@ -170,82 +197,14 @@ async function taskTick(cmd: CommandContext): Promise<ExitCode> {
         body: withActor(cmd, { clientMutationId: mutationId, expectedVersion, criterionIds, done }),
       }),
   );
+  // The caller's own actor id fills `--by` in the receipt's `next` (P0h): the
+  // same id `task complete`'s own hint names.
+  const actorId = cmd.ctx.actor?.value ?? (process.env.TM8_TEAM_MEMBER_ID?.trim() || undefined);
   cmd.out.mutation('task.tick', data, renderCommandResult, () =>
-    successReceipt('task.tick', data, { expectedVersion, ...callerMutationId(cmd.options) }));
+    successReceipt('task.tick', data, { expectedVersion, actorId, ...callerMutationId(cmd.options) }));
   return EXIT_OK;
 }
 
-/**
- * Claim this session as the LINKER of the artifact a link command touched —
- * best effort, separate request, never fatal (the same law `entity create`'s
- * session claim follows: a derived edge must never take down the operation
- * that caused it).
- *
- * WHY THIS EXISTS: the forge watcher resolves a PR's OWNING SESSION through
- * `created_in` on the pull_request entity first. `link_pull_request` records
- * the acting MEMBER but not the acting SESSION, so without this claim a PR
- * linked by an agent has no owning session and a CI-failure nudge has no
- * addressee — found live by the Tier 3 E2E rig, not by any mock.
- *
- * ROUTING POLICY, chosen not accidental: this edge makes the LINKER outrank a
- * branch-coding session (`created_in` beats `in_worktree` in
- * `pr_owning_session`'s confidence order). The linker declared interest in
- * the PR as a tracked object; the coder may be one of several sessions on
- * the branch. Liveness still outranks both.
- */
-interface ClaimOutcome {
-  /** A claim that should have landed and did not — a receipt warning. */
-  warning?: ReceiptWarning;
-}
-
-async function claimLinkedArtifactSession(
-  cmd: CommandContext,
-  data: unknown,
-  artifactKind: 'pull_request' | 'commit',
-): Promise<ClaimOutcome> {
-  const sessionId = cmd.ctx.sessionId;
-  if (sessionId === undefined) return {};
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return {};
-
-  // A server receipt names the artifact in `refs` (§9.9); the full result in `patches`.
-  const fromRefs = receiptRefId(data, artifactKind);
-  const patches = (data as { patches?: unknown } | null)?.patches;
-  const artifact = fromRefs !== undefined
-    ? { id: fromRefs }
-    : Array.isArray(patches)
-      ? patches.find(
-        (p): p is { id: string; kind: string } =>
-          typeof p === 'object' && p !== null &&
-          (p as { kind?: unknown }).kind === artifactKind &&
-          typeof (p as { id?: unknown }).id === 'string',
-      )
-      : undefined;
-  if (artifact === undefined) return {};
-
-  try {
-    await clientFor(cmd.ctx).invoke('edges.create', {
-      body: {
-        srcId: artifact.id,
-        dstId: sessionId,
-        type: 'created_in',
-        clientMutationId: resolveMutationId(undefined),
-      },
-    });
-    return {};
-  } catch (err) {
-    // `not_found` on the session is the benign cross-database answer (env
-    // leakage into a harness, or --server pointing elsewhere): no edge is the
-    // correct outcome. `conflict` means an earlier link already claimed a
-    // birth session — also correct, first claim wins. Anything else is a
-    // claim that should have landed, so it is warned, never raised.
-    if (err instanceof ApiError && (err.code === 'not_found' || err.code === 'conflict')) return {};
-    const message =
-      `could not record this session as the linker of ${artifact.id} ` +
-      `(${err instanceof Error ? err.message : String(err)}). The link itself landed.`;
-    cmd.out.warn(`note: ${message}`);
-    return { warning: { code: 'session_link_failed', message } };
-  }
-}
 
 /** `link-pr` and `link-commit` differ only in the operation they bind. */
 function linker(
@@ -268,20 +227,12 @@ function linker(
         query: receiptQuery(op, cmd.out.receipts),
         body: withActor(cmd, body),
       }));
-    // After the link has landed, never before it — see claimLinkedArtifactSession.
-    // The claim reads the artifact id from the Server's receipt refs, or from
-    // the full result's patches when the Server predates receipts, so it works
-    // the same whatever the caller asked to print (§9.9).
-    const claim = await claimLinkedArtifactSession(cmd, data, artifactKind);
-    // The claim's own edge is not a ref here, unlike `entity create`'s: the
-    // spec's link-pr receipt is the artifact and its `tracks` edge (§5), and
-    // nothing chains off the linker edge. A claim that failed IS reported.
+    // The linking session is recorded by the SERVER as the artifact's
+    // `authored_from` when that session's teammate made the mirror (308);
+    // `pr_owning_session` reads it first.
     cmd.out.mutation(op, data, renderCommandResult, () =>
-      successReceipt(op, data, {
-        url,
-        ...callerMutationId(cmd.options),
-        ...(claim.warning ? { warnings: [claim.warning] } : {}),
-      }));
+      successReceipt(op, data, { url, ...callerMutationId(cmd.options) }));
+    noticeStatusNudges(cmd, data);
     return EXIT_OK;
   };
 }
@@ -577,6 +528,7 @@ async function taskAxis(cmd: CommandContext): Promise<ExitCode> {
 
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
+  { path: ['task', 'release'], run: taskRelease },
   { path: ['task', 'complete'], run: taskComplete },
   { path: ['task', 'tick'], run: taskTick },
   { path: ['task', 'gate'], run: taskGate },

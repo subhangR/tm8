@@ -110,7 +110,7 @@ export const DIRECT_TOOLS: readonly DirectToolDefinition[] = [
   { name: 'session_transcript', description: 'Read the largest supported bounded worker transcript window.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), last: integerProp('Newest entries.', 1, 200) }, ['sessionId']), annotations: annotations(true) },
   { name: 'session_tail', description: 'Read the newest live transcript window for a worker session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), last: integerProp('Newest entries.', 1, 100) }, ['sessionId']), annotations: annotations(true) },
   { name: 'session_followup', description: 'Steer a worker by posting a durable message anchored to its session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), body: stringProp('Follow-up instruction.') }, ['sessionId', 'body']), annotations: annotations(false) },
-  { name: 'session_stop', description: 'Stop a running worker session.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), force: { type: 'boolean' } }, ['sessionId']), annotations: annotations(false, true) },
+  { name: 'session_stop', description: 'Stop a worker session. Its open work is stopped (claims released) unless outcome is complete.', inputSchema: objectSchema({ sessionId: stringProp('Work-session entity id.'), force: { type: 'boolean' }, outcome: { type: 'string', enum: ['stop', 'complete'] } }, ['sessionId']), annotations: annotations(false, true) },
   {
     name: 'explain_diagram',
     description: 'Present a bounded Mermaid diagram inline in Chat. This does not create a durable entity; use doc_create for a durable diagram.',
@@ -742,7 +742,14 @@ async function sessionFollowup(args: Record<string, unknown>, context: DirectToo
 async function sessionStop(args: Record<string, unknown>, context: DirectToolContext) {
   const sessionId = requiredString(args.sessionId, 'sessionId');
   await confinedEntity(context, sessionId, 'work_session');
-  const data = await context.transport.invoke('execution.terminate', { params: { id: sessionId }, body: { force: boolean(args.force, 'force') ?? false } });
+  // Spec D1 §4.2 (301): terminating an OPEN session must say what happens to
+  // its work. This tool is "stop", so the default is stop-without-completing;
+  // `outcome: 'complete'` completes it first. A completed session ignores it.
+  const outcome = args.outcome === 'complete' ? 'complete' : 'stop';
+  const data = await context.transport.invoke('execution.terminate', {
+    params: { id: sessionId },
+    body: { force: boolean(args.force, 'force') ?? false, outcome },
+  });
   return result('session_stop', { data });
 }
 

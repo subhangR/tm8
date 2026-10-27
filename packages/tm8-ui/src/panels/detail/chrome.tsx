@@ -2,7 +2,16 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail, EntityId, EntityState, SpaceId } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
-import { KindIcon, processControlFor, resolveAction, titleNormalizerFor } from '../../domain';
+import {
+  KindIcon,
+  actionGlyph,
+  processControlFor,
+  resolveAction,
+  sessionControlsFor,
+  sessionHeadline,
+  sessionRowWord,
+  titleNormalizerFor,
+} from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { useMobileSurface } from '../../mobile';
@@ -291,6 +300,19 @@ export function StatusPillFor({
    * breath ("running per record · unverified") — but it never wears the live
    * treatment on its own.
    */
+  /* SPEC D1 §5.6: a session's pill is its OUTCOME word first — Completed,
+     Stopped, Crashed: <reason>, Ready to complete — with the process folded
+     in ("Finished, still open"), from the same derivation as the list row. */
+  const sessionWord = sessionRowWord(detail.state, liveness);
+  if (sessionWord) {
+    const tone: PillTone = sessionWord.tone === 'done' ? 'run' : sessionWord.tone;
+    const label = sessionHeadline(detail.state, liveness) ?? sessionWord.word;
+    return (
+      <Pill tone={tone} title={sessionWord.reason ?? label}>
+        <span data-testid="session-panel-pill" data-session-case={sessionWord.case}>{label}</span>
+      </Pill>
+    );
+  }
   const treatment = liveness && config.list.liveTreatment ? config.list.liveTreatment(liveness) : null;
   if (treatment) {
     return (
@@ -375,6 +397,8 @@ export function panelActionContext(
     capabilities: ctx.capabilities ?? detail.capabilities,
     liveness: ctx.liveness ?? liveness,
     category: ctx.category ?? detail.category,
+    // Spec D1: the session's own state, so its verbs follow outcome × process.
+    sessionState: ctx.sessionState ?? detail.state,
   };
 }
 
@@ -395,6 +419,7 @@ export function ActionBar({
   onOpenLaunch,
   launchSubjectId,
   markPrimaries = false,
+  iconVerbs = false,
   primaryCounts,
 }: {
   config: KindConfig;
@@ -492,6 +517,13 @@ export function ActionBar({
    * draws the glyph and no number. Ignored on a marked bar, which has no room.
    */
   primaryCounts?: Partial<Record<ActionRef, number>> | undefined;
+  /**
+   * ICONS ONLY — the Workspace floating group (Subhang, feedback round 1).
+   * Every primary draws its glyph alone, named by its word (tooltip and
+   * accessible name); with `'lead'` the first takes the lead (brand) tone.
+   * Off by default: every other bar unchanged.
+   */
+  iconVerbs?: boolean | 'lead';
 }) {
   /**
    * THE PROCESS CONTROL, IN THE PANEL — the same one-slot swap the row cluster
@@ -508,10 +540,15 @@ export function ActionBar({
    * listing both would draw one live verb beside one permanently refused one.
    * A kind that never declares `terminate` is untouched by construction.
    */
-  const primaries = (config.panel.primaries ?? []).map((ref) => processControlFor(ref, ctx));
+  /* SPEC D1 §5.6: a session's slot expands to its outcome verbs — Complete ·
+     Terminate while working, Close process on a ✓ session, Resume · Complete
+     · Dismiss when interrupted. Every other kind keeps the one-slot swap. */
+  const declaredPrimaries = config.panel.primaries ?? [];
+  const primaries =
+    sessionControlsFor(declaredPrimaries, ctx) ?? declaredPrimaries.map((ref) => processControlFor(ref, ctx));
   return (
     <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar" ref={barRef}>
-      {primaries.map((ref) => (
+      {primaries.map((ref, index) => (
         <ActionButton
           key={ref}
           ref_={ref}
@@ -523,7 +560,8 @@ export function ActionBar({
             ? { onOpenLaunch, launchSubjectId }
             : {})}
           primary
-          mark={markPrimaries}
+          mark={Boolean(iconVerbs) || markPrimaries}
+          lead={iconVerbs === 'lead' && index === 0}
           count={primaryCounts?.[ref]}
         />
       ))}
@@ -621,6 +659,7 @@ function ActionButton({
   launchSubjectId,
   primary = false,
   mark = false,
+  lead = false,
   count,
 }: {
   ref_: ActionRef;
@@ -633,6 +672,8 @@ function ActionButton({
   primary?: boolean;
   /** Render the primary as its glyph rather than its word — see `markPrimaries`. */
   mark?: boolean;
+  /** The bar's lead verb (brand tone) — see `ActionBar.iconVerbs`. */
+  lead?: boolean;
   /** See `ActionBar.primaryCounts`. */
   count?: number | undefined;
 }) {
@@ -669,7 +710,7 @@ function ActionButton({
   const refusal = actionRefusal(ref_, ctx, wiring);
   if (refusal) {
     return (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={refusal}>
+      <DisabledIconControl label={def.label} glyph={actionGlyph(def)} reason={refusal}>
         {/* A marked primary is its glyph alone — `DisabledIconControl` already
             carries the label as the accessible name and draws the reason. */}
         {primary && !mark ? def.label : null}
@@ -706,6 +747,7 @@ function ActionButton({
       className={[
         primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb',
         primary && mark ? 'pn-btn--mark' : '',
+        primary && lead ? 'pn-btn--lead' : '',
         expanded ? 'pn-actions__verb--on' : '',
       ]
         .filter(Boolean)
@@ -728,10 +770,10 @@ function ActionButton({
       }}
     >
       {primary && mark ? (
-        <span aria-hidden>{def.icon}</span>
+        <span aria-hidden>{actionGlyph(def)}</span>
       ) : primary && count !== undefined ? (
         <>
-          <span aria-hidden>{def.icon} </span>
+          <span aria-hidden>{actionGlyph(def)} </span>
           {def.label}
           {count > 0 ? (
             <span className="pn-btn__count" data-testid={`panel-primary-count-${ref_}`}>
@@ -743,7 +785,9 @@ function ActionButton({
       ) : primary ? (
         def.label
       ) : (
-        `${def.icon} ${def.label}`
+        <>
+          {actionGlyph(def)} {def.label}
+        </>
       )}
     </button>
   );
@@ -874,7 +918,7 @@ export interface PanelMenuItem {
   /** Action ref or tab id — opaque to the menu, which never interprets it. */
   readonly id: string;
   readonly label: string;
-  readonly glyph?: string;
+  readonly glyph?: ReactNode;
   /** A count beside the label. `0` is a measured answer and renders. */
   readonly count?: number;
   /**
@@ -971,7 +1015,10 @@ export interface PanelMenuInput {
 export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
   const { config, ctx, counts, onSelectTab, onAction, wiredActions } = input;
 
-  const tabs: PanelMenuItem[] = PANEL_TABS.filter((t) => t.id !== 'content').map(({ id, label }) => {
+  /* A `composition: 'canvas'` body has no other tab to open: its connections
+     are the graph it draws and its messages are a section of it (task
+     01a101c5). Registry data, never a kind literal. */
+  const tabs: PanelMenuItem[] = (config.panel.composition === 'canvas' ? [] : PANEL_TABS.filter((t) => t.id !== 'content')).map(({ id, label }) => {
     const count = counts?.[id];
     return {
       id,
@@ -981,8 +1028,10 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
     };
   });
 
-  const primaries: PanelMenuItem[] = (config.panel.primaries ?? [])
-    .map((declared) => processControlFor(declared, ctx))
+  const primaries: PanelMenuItem[] = (
+    sessionControlsFor(config.panel.primaries ?? [], ctx)
+    ?? (config.panel.primaries ?? []).map((declared) => processControlFor(declared, ctx))
+  )
     .map((ref) => {
       const def = resolveAction(ref);
       const wiring = actionWiring(
@@ -1006,7 +1055,7 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
       return {
         id: ref,
         label: def.label,
-        ...(def.icon ? { glyph: def.icon } : {}),
+        ...(def.icon ? { glyph: actionGlyph(def) } : {}),
         ...(typeof count === 'number' ? { count } : {}),
         ...(reason
           ? { reason: captionOf(reason) }

@@ -11,7 +11,7 @@
  * Nothing here takes or returns a secret: a link's stored session never leaves
  * the server; the viewer sees only their own row's metadata (`mine`).
  */
-import type { EntityId, SpaceId, SpaceLinkView } from '@tm8/contract';
+import type { EntityId, SpaceId, SpaceLinkInboundAuditEntry, SpaceLinkInboundView, SpaceLinkView } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 
 /** A space the viewer could link to: one of their other memberships. */
@@ -30,6 +30,19 @@ export interface SpaceLinksPort {
   logout(linkId: string): Promise<SpaceLinkView>;
   remove(linkId: string): Promise<SpaceLinkView>;
   setSpawn(linkId: string, allowSpawn: boolean, spawnBudget?: number): Promise<SpaceLinkView>;
+  /**
+   * 278 (D2): the links INTO this space, for its admins. A non-admin is
+   * refused `forbidden` by the server and the section draws nothing for it.
+   * Absent (an older port), the section draws no inbound block.
+   */
+  inbound?: SpaceLinksInboundPort;
+}
+
+export interface SpaceLinksInboundPort {
+  list(): Promise<SpaceLinkInboundView[]>;
+  audit(linkId: string): Promise<SpaceLinkInboundAuditEntry[]>;
+  revoke(linkId: string): Promise<SpaceLinkInboundView>;
+  restore(linkId: string): Promise<SpaceLinkInboundView>;
 }
 
 export function spaceLinksPortFromSeam(
@@ -46,5 +59,11 @@ export function spaceLinksPortFromSeam(
     logout: (linkId) => seam.spaceLinks.logout(linkId as EntityId),
     remove: (linkId) => seam.spaceLinks.remove(linkId as EntityId),
     setSpawn: (linkId, allowSpawn, spawnBudget) => seam.spaceLinks.setSpawn(linkId as EntityId, allowSpawn, spawnBudget),
+    inbound: {
+      list: () => seam.spaceLinks.inbound.list(spaceId),
+      audit: (linkId) => seam.spaceLinks.inbound.audit(spaceId, linkId as EntityId),
+      revoke: (linkId) => seam.spaceLinks.inbound.revoke(spaceId, linkId as EntityId),
+      restore: (linkId) => seam.spaceLinks.inbound.restore(spaceId, linkId as EntityId),
+    },
   };
 }

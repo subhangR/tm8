@@ -18,6 +18,7 @@ import {
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
+  type CredentialsSharePort,
   type ServiceKeysPort,
 } from './port';
 import './credentials.css';
@@ -50,6 +51,7 @@ export interface CredentialsSectionProps {
    * logins when the host wires it; absent, the block is simply not shown.
    */
   serviceKeysPort?: ServiceKeysPort;
+  sharePort?: CredentialsSharePort;
 }
 
 interface ObservedStatus {
@@ -125,6 +127,7 @@ export function CredentialsSection({
   serverBaseUrl,
   onStatusRead,
   serviceKeysPort,
+  sharePort,
 }: CredentialsSectionProps) {
   const [observed, setObserved] = useState<ObservedStatus | null>(null);
 
@@ -173,7 +176,7 @@ export function CredentialsSection({
       ) : null}
 
       <div className="set-cred__shared">
-        <CredentialsProviderBlock port={observedPort} serverBaseUrl={serverBaseUrl} />
+        <CredentialsProviderBlock port={observedPort} serverBaseUrl={serverBaseUrl} sharePort={sharePort} />
       </div>
 
       {serviceKeysPort ? <ServiceKeysBlock port={serviceKeysPort} /> : null}

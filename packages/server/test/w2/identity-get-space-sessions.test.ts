@@ -37,6 +37,8 @@ class IdentityDb implements Db {
       query: async <R>(): Promise<R[]> => [],
       rpc: async <T>(fn: string): Promise<T> => {
         this.calls.push(fn);
+        // 284: identity.get also reads the caller's style prefs (no row yet).
+        if (fn === 'get_identity_style_prefs') return { prefs: null } as T;
         return CURRENT_IDENTITY as T;
       },
     };
@@ -90,8 +92,9 @@ describe('identity.get carries the node\'s space-sessions mode', () => {
     'TM8_SPACE_SESSIONS=%s: advertised as spaceSessions, next to the unchanged identity',
     async (mode) => {
       const { result, db } = await identityGet(mode);
-      expect(result).toEqual({ ...CURRENT_IDENTITY, spaceSessions: mode });
-      expect(db.calls).toEqual(['current_identity']);
+      expect(result).toEqual({ ...CURRENT_IDENTITY, spaceSessions: mode, stylePrefs: null });
+      // 284: the style prefs ride along on the same claims (styles spec §4.1).
+      expect(db.calls).toEqual(['current_identity', 'get_identity_style_prefs']);
     },
   );
 

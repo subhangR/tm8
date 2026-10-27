@@ -28,6 +28,19 @@ later" clause above is discharged. A document produced *after* this date titled
 MOBILE-DESIGN-BRIEF would be a new proposal to evaluate against this contract, not an
 authority this contract defers to.
 
+**Addendum, 2026-10-18 (owner rulings, mobile craft).** The full list is in
+`packages/tm8-ui/src/mobile/CONTRACT.md` §5 ("RULINGS"). They agree with §1 and with R15
+as written: Back is real history and is never intercepted, and a cold link's Up replaces
+with the kind's list. These are new:
+- Chips in a transcript or entity strip **push a full entity page** (no peek sheet). See
+  CONTRACT §4.
+- A drawer destination **resets the stack** to `[Chat, destination]`.
+- The stack is **capped at 12 entries and drops the oldest**. Each entry keeps its scroll
+  position and composer draft.
+- A link to the entry **directly below** acts as Back. Every other link pushes, and nothing
+  jumps several levels.
+- A home-made edge-swipe exists **only** under `display-mode: standalone` on iOS.
+
 **Applies to:** both shells. This is not a mobile rule that desktop happens to
 tolerate; it is one rule, and the phone is simply where it becomes visible.
 

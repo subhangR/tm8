@@ -245,11 +245,11 @@ describe('the waits are drawn when there is something to wait for', () => {
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} soloConversation />,
     );
     expect(view.getByTestId('chat-home-loading').textContent).toContain('Reading your conversations');
-    expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
+    expect(view.queryByText(/Ask anything\. The agent works with your graph/)).toBeNull();
 
     await act(async () => { release([]); });
     // An empty space really IS a new conversation — the greeting is honest now.
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/Ask anything\. The agent works with your graph/)).toBeTruthy());
   });
 
   /**
@@ -280,7 +280,7 @@ describe('the waits are drawn when there is something to wait for', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} soloConversation />,
     );
-    await waitFor(() => expect(view.getByText(/New conversation — pick a mode/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/Ask anything\. The agent works with your graph/)).toBeTruthy());
 
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Start something.' },
@@ -290,7 +290,7 @@ describe('the waits are drawn when there is something to wait for', () => {
     expect(view.getByTestId('chat-user-body').textContent).toContain('Start something.');
     expect(view.getByTestId('chat-turn-shell')).toBeTruthy();
     expect(view.getByTestId('chat-thinking')).toBeTruthy();
-    expect(view.queryByText(/New conversation — pick a mode/)).toBeNull();
+    expect(view.queryByText(/Ask anything\. The agent works with your graph/)).toBeNull();
     await act(async () => { release(); });
   });
 });

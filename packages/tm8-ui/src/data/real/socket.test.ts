@@ -72,7 +72,15 @@ describe('socket: control-frame encoding — exact bytes (server parses .strict(
   it('has NO way to send a presence frame at all (R8 — structural, not a comment)', () => {
     const { handle } = connected();
     expect(handle).not.toHaveProperty('presence');
-    expect(Object.keys(handle).sort()).toEqual(['close', 'isOpen', 'resume', 'subscribe', 'unsubscribe']);
+    expect(Object.keys(handle).sort()).toEqual(['close', 'isOpen', 'resume', 'sendWorkspace', 'subscribe', 'unsubscribe']);
+  });
+
+  it('the Workspace bridge sender carries workspace.* frames only (Spec C; R8 still holds)', () => {
+    const { ws, handle } = connected();
+    const sneaky = { type: 'presence.set', spaceId: 's', entityId: 'e', viewing: true, typing: false };
+    expect(handle.sendWorkspace(sneaky as never)).toBe(false);
+    expect(handle.sendWorkspace({ type: 'workspace.unregister', instanceId: 'i1' })).toBe(true);
+    expect(ws.frames()).toEqual([{ type: 'workspace.unregister', instanceId: 'i1' }]);
   });
 
   it('chunks past the 100-space frame cap — an over-long frame is refused WHOLE', () => {
@@ -191,6 +199,14 @@ describe('socket: parseFrame in isolation', () => {
     }).kind).toBe('chat-context');
     expect(parseFrame({ type: 'chat.context', chatId: 'r', context: null }).kind).toBe('malformed');
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 1 }).kind).toBe('event');
+  });
+
+  it('reads the craft workspace pushes (lane L3): one workspace, or the open set', () => {
+    const workspace = { craftId: 'c', revision: 1, state: { tabs: [], activeTabId: 'c' } };
+    expect(parseFrame({ type: 'craft.workspace', spaceId: 's', workspace }).kind).toBe('craft-workspace');
+    expect(parseFrame({ type: 'craft.workspaces', spaceId: 's', items: [workspace] }).kind).toBe('craft-workspace');
+    expect(parseFrame({ type: 'craft.workspace', spaceId: 's' }).kind).toBe('malformed');
+    expect(parseFrame({ type: 'craft.workspaces', items: [] }).kind).toBe('malformed');
   });
 
   it('seq 0 is a legal seq (falsy, and the mistake is easy)', () => {

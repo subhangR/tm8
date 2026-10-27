@@ -7,6 +7,7 @@
 //
 // Queries run SEQUENTIALLY: a `Querier` wraps one pooled client.
 import {
+  CollabError,
   STORY_FOLLOWED_EDGE_TYPES,
   STORY_FOLLOW_DEPTH,
   STORY_FOLLOW_LIMIT,
@@ -19,8 +20,10 @@ import {
   type StoryFeedMessage,
   type StoryGraphEdge,
   type StoryNode,
+  type StoryNodeCounts,
   type StoryPage,
   type StoryProgress,
+  type TaskProgress,
   type StoryRoot,
   type StorySession,
   type StoryState,
@@ -35,9 +38,12 @@ const ACTIVITY_LIMIT = 50;
 const MESSAGE_LIMIT = 50;
 const CHILD_STORY_LIMIT = 50;
 const LIVE_SESSION_STATUSES = new Set(['spawning', 'running', 'idle']);
+const ENDED_SESSION_STATUSES = new Set(['exited', 'failed']);
 const TEAM_MODES = new Set<TeamMemberMode>(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']);
 /** Edge types drawn between nodes: the followed set plus membership and blocking. */
-const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on'];
+// 330: `launched_by` is drawn (session -> its launcher) though not walked: it
+// took over the session -> session parent line the map used to draw.
+const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on', 'launched_by'];
 
 interface TrailRow {
   entity_id: string;
@@ -50,6 +56,16 @@ interface TrailRow {
   root_position: number | null;
 }
 
+/** 289: one root's tallies over what it CONTAINS (`internal.story_work`). */
+interface RootWorkRow {
+  root_id: string;
+  progress: StoryProgress;
+  task_progress: StoryProgress;
+  descendant_count: number;
+  /** 307: a task root's points-weighted subtree progress; null for other kinds. */
+  weighted: TaskProgress | null;
+}
+
 interface FactRow {
   id: string;
   kind: string;
@@ -59,6 +75,9 @@ interface FactRow {
   activity_at: Date | string | null;
   created_at: Date | string;
   ws_status: string | null;
+  /** 299: open | completed | stopped. */
+  ws_outcome?: string | null;
+  ws_model: string | null;
   ws_mode: string | null;
   tm_mode: string | null;
   blocked: boolean;
@@ -68,23 +87,26 @@ function category(raw: string | null): StatusCategory | null {
   return raw === 'to_do' || raw === 'in_progress' || raw === 'done' || raw === 'cancelled' ? raw : null;
 }
 
-function teamMode(raw: string | null): TeamMemberMode | null {
-  return raw !== null && TEAM_MODES.has(raw as TeamMemberMode) ? (raw as TeamMemberMode) : null;
+/**
+ * A row's category ON THE STORY. 174 files a crashed / restarted / OOM-killed
+ * session under in_progress so the board offers Resume; on a story that reads
+ * as work happening while liveSessionCount says 0 (#15). Here a session whose
+ * runtime has ended is terminal: in_progress means a live runtime.
+ */
+function storyCategory(f: { kind: string; status_category: string | null; ws_status: string | null; ws_outcome?: string | null }): StatusCategory | null {
+  if (f.kind === 'work_session') {
+    // 299 (Spec D1 §5.7): a completed session is done; a stopped one is
+    // cancelled; an OPEN one whose process ended (crashed, lost, ended without
+    // completing) counts toward nothing — it is neither progress nor live work.
+    if (f.ws_outcome === 'completed') return 'done';
+    if (f.ws_outcome === 'stopped') return 'cancelled';
+    if (ENDED_SESSION_STATUSES.has(f.ws_status ?? '')) return null;
+  }
+  return category(f.status_category);
 }
 
-/** MIRRORS `internal.story_tally` (283): disjoint bands, done + inProgress + toDo + blocked = work. */
-export function tallyStory(facts: readonly Pick<FactRow, 'status_category' | 'blocked'>[]): StoryProgress {
-  const t: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
-  for (const f of facts) {
-    switch (f.status_category) {
-      case 'cancelled': t.cancelled++; break;
-      case 'done': t.work++; t.done++; break;
-      case 'in_progress': t.work++; if (f.blocked) t.blocked++; else t.inProgress++; break;
-      case 'to_do': t.work++; if (f.blocked) t.blocked++; else t.toDo++; break;
-      default: break;
-    }
-  }
-  return t;
+function teamMode(raw: string | null): TeamMemberMode | null {
+  return raw !== null && TEAM_MODES.has(raw as TeamMemberMode) ? (raw as TeamMemberMode) : null;
 }
 
 function storyStateOf(raw: unknown): StoryState | null {
@@ -108,26 +130,90 @@ const STATUS_KEY_FROM = `
        left join public.pull_requests pr on pr.entity_id = e.id
        left join public.chats cht on cht.entity_id = e.id`;
 
-const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0 };
+const EMPTY_PROGRESS: StoryProgress = { work: 0, done: 0, inProgress: 0, toDo: 0, blocked: 0, cancelled: 0, staleInProgress: 0 };
 
-export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryPage> {
+/** Child-story pages share the browser's order but can continue beyond its preview. */
+export async function loadStoryChildren(
+  q: Querier,
+  storyId: string,
+  { limit = CHILD_STORY_LIMIT, afterId = null }: { limit?: number; afterId?: string | null } = {},
+): Promise<StoryChild[]> {
+  if (afterId !== null) {
+    const after = await q.query<{ id: string }>(
+      `select id from public.entities
+        where id = $2 and parent_id = $1 and kind = 'story' and deleted_at is null`,
+      [storyId, afterId],
+    );
+    if (after.length === 0) {
+      throw new CollabError('invalid_cursor', 'the childStories row this cursor resumes after is no longer on the story; re-read it');
+    }
+  }
+  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
+    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
+            coalesce(c.status_category, 'none') as status_name
+       from public.entities c join public.stories st on st.entity_id = c.id
+      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
+        ${afterId === null ? '' : `and (c.position, c.created_at, c.id) > (
+          select position, created_at, id from public.entities where id = $3
+        )`}
+      order by c.position, c.created_at, c.id
+      limit $2`,
+    afterId === null ? [storyId, limit] : [storyId, limit, afterId],
+  );
+  return children.map((c) => {
+    const s = storyStateOf(c.summary);
+    return {
+      id: c.id,
+      title: c.title,
+      status: c.status_name,
+      statusCategory: category(c.status_category),
+      itemCount: s?.itemCount ?? 0,
+      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
+      rollup: s?.rollup ?? EMPTY_PROGRESS,
+      liveSessionCount: s?.liveSessionCount ?? 0,
+      lastActivityAt: s?.lastActivityAt ?? null,
+    };
+  });
+}
+
+export async function loadStoryPage(
+  q: Querier,
+  storyId: string,
+  { childStories = true }: { childStories?: boolean } = {},
+): Promise<StoryPage> {
   const trail = await q.query<TrailRow>(
     `select entity_id, root_id, depth, via_id, edge_type, edge_id, direction, root_position
        from internal.story_trail($1)`,
     [storyId],
   );
   const itemIds = [...new Set(trail.map((r) => r.entity_id))];
+
+  // 289: a root's progress counts what it CONTAINS — itself and its hierarchy
+  // descendants, the rows `entity query --subtree` returns — never what the
+  // trail reaches sideways (a session's coordinator's tasks in other stories).
+  const rootWork = await q.query<RootWorkRow>(
+    `select w.root_id,
+            internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind in ('task', 'story'))) as progress,
+            internal.story_tally(array_agg(distinct w.entity_id) filter (where w.kind = 'task')) as task_progress,
+            (count(distinct w.entity_id) filter (where w.depth > 0))::int as descendant_count,
+            case when bool_or(w.depth = 0 and w.kind = 'task') then internal.task_progress(w.root_id) end as weighted
+       from internal.story_work($1) w
+      where w.root_id is not null
+      group by w.root_id`,
+    [storyId],
+  );
+  const workOf = new Map(rootWork.map((w) => [w.root_id, w]));
   const allIds = [storyId, ...itemIds];
 
   const facts = await q.query<FactRow>(
     `select e.id, e.kind, e.parent_id, e.status_category, ${STATUS_KEY_SQL} as status_name,
-            e.activity_at, e.created_at, ws.status as ws_status, ws.mode as ws_mode, tm.mode as tm_mode,
-            exists (
+            e.activity_at, e.created_at, ws.status as ws_status, ws.outcome as ws_outcome, ws.model as ws_model, ws.mode as ws_mode, tm.mode as tm_mode,
+            (coalesce(t.work_status = 'blocked', false) or exists (
               select 1 from public.edges dep
                where dep.src_id = e.id and dep.type = 'depends_on'
                  and coalesce((dep.props ->> 'hard')::boolean, true)
                  and not internal.is_resolved(dep.dst_id)
-            ) as blocked
+            )) as blocked
        from public.entities e${STATUS_KEY_FROM}
        left join public.team_members tm on tm.entity_id = e.id
       where e.id = any($1::uuid[]) and e.deleted_at is null`,
@@ -135,24 +221,27 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   );
   const factOf = new Map(facts.map((f) => [f.id, f]));
 
-  // Session -> persona (`participates_in`, team_member -> session), dispatch
-  // provenance (`dispatched_by`, session -> dispatcher session) and what each
-  // session is `working_on`. Read for every session in the trail even when the
-  // edge itself was not walked: the team layer is about the sessions.
+  // Session -> persona (`participates_in`, team_member -> session) and what
+  // each session is `working_on`, and who launched it (`launched_by`, 330;
+  // it replaced the parent_id lineage and `dispatched_by`). Read for every
+  // session in the trail even when the edge itself was not walked: the team
+  // layer is about the sessions.
   const sessionIds = facts.filter((f) => f.kind === 'work_session').map((f) => f.id);
   const sessionEdges = sessionIds.length === 0 ? [] : await q.query<{ src_id: string; dst_id: string; type: string }>(
     `select g.src_id, g.dst_id, g.type
        from public.edges g
       where (g.type = 'participates_in' and g.dst_id = any($1::uuid[]))
-         or (g.type in ('dispatched_by', 'working_on') and g.src_id = any($1::uuid[]))`,
+         -- 299: only ACTIVE claims put a session at a task (one robot per claim).
+         or (g.type = 'working_on' and g.src_id = any($1::uuid[]) and (g.props->>'endedAt') is null)
+         or (g.type = 'launched_by' and g.src_id = any($1::uuid[]))`,
     [sessionIds],
   );
   const personaOf = new Map<string, string>();
-  const dispatchedByOf = new Map<string, string>();
   const workingOn = new Map<string, string[]>();
+  const launchedBy = new Map<string, string>();
   for (const g of sessionEdges) {
     if (g.type === 'participates_in') personaOf.set(g.dst_id, g.src_id);
-    else if (g.type === 'dispatched_by') dispatchedByOf.set(g.src_id, g.dst_id);
+    else if (g.type === 'launched_by') launchedBy.set(g.src_id, g.dst_id);
     else if (factOf.has(g.dst_id)) workingOn.set(g.src_id, [...(workingOn.get(g.src_id) ?? []), g.dst_id]);
   }
 
@@ -170,20 +259,13 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     `select g.id, g.src_id, g.dst_id, g.type
        from public.edges g
       where g.src_id = any($1::uuid[]) and g.dst_id = any($1::uuid[]) and g.type = any($2::text[])
+        and (g.type <> 'working_on' or (g.props->>'endedAt') is null)
       order by g.created_at, g.id
       limit 2000`,
     [allIds, DRAWN_EDGE_TYPES],
   );
 
-  const children = await q.query<{ id: string; title: string; summary: unknown; status_category: string | null; status_name: string | null }>(
-    `select c.id, st.title, internal.story_summary(c.id) as summary, c.status_category,
-            coalesce(c.status_category, 'none') as status_name
-       from public.entities c join public.stories st on st.entity_id = c.id
-      where c.parent_id = $1 and c.kind = 'story' and c.deleted_at is null
-      order by c.position, c.created_at, c.id
-      limit ${CHILD_STORY_LIMIT}`,
-    [storyId],
-  );
+  const children = childStories ? await loadStoryChildren(q, storyId) : [];
 
   const activityRows = await q.query<{ id: string; created_at: Date | string; entity_id: string; verb: string; actor_id: string | null }>(
     `select a.id, a.created_at, a.entity_id, a.verb, a.actor_id
@@ -204,6 +286,36 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       limit ${MESSAGE_LIMIT}`,
     [feedAnchorIds],
   );
+
+  // Per-node counts (`StoryNode.counts`): two set-based queries over the
+  // page's ids — one `group by anchor_id`, one `group by entity_id` — never a
+  // query per node. The message predicate is the recentMessages window's
+  // (non-redacted, message row not deleted) with no limit, so a node's
+  // mailbox is whole even when the 50-row window shows none of it. The
+  // attention predicate is `internal.story_summary`'s (289) `pending` — open or
+  // acknowledged, target = the node — so the nodes sum to the summary's
+  // pendingAttentionCount.
+  const messageCountRows = feedAnchorIds.length === 0 ? [] : await q.query<{ anchor_id: string; n: number }>(
+    `select m.anchor_id, count(*)::int as n
+       from public.messages m
+       join public.entities me on me.id = m.entity_id and me.deleted_at is null
+      where m.anchor_id = any($1::uuid[]) and m.redacted_at is null
+      group by m.anchor_id`,
+    [feedAnchorIds],
+  );
+  const attentionCountRows = await q.query<{ entity_id: string; n: number }>(
+    `select ar.entity_id, count(*)::int as n
+       from public.attention_requests ar
+      where ar.entity_id = any($1::uuid[]) and ar.status in ('open', 'acknowledged')
+      group by ar.entity_id`,
+    [allIds],
+  );
+  const messageCountOf = new Map(messageCountRows.map((r) => [r.anchor_id, r.n]));
+  const attentionCountOf = new Map(attentionCountRows.map((r) => [r.entity_id, r.n]));
+  const countsOf = (id: string): StoryNodeCounts => ({
+    messages: messageCountOf.get(id) ?? 0,
+    pendingAttention: attentionCountOf.get(id) ?? 0,
+  });
 
   const parentRows = await q.query<{ id: string; title: string }>(
     `select p.id, st.title
@@ -247,19 +359,23 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     .filter((f) => f.kind === 'work_session' && f.id !== storyId)
     .sort((a, b) => (iso(a.created_at) < iso(b.created_at) ? -1 : iso(a.created_at) > iso(b.created_at) ? 1 : a.id < b.id ? -1 : 1));
   const signOf = new Map(orderedSessions.map((f, i) => [f.id, storyCallSign(i)]));
-  const isLive = (f: FactRow | undefined) => f?.kind === 'work_session' && LIVE_SESSION_STATUSES.has(f.ws_status ?? '');
+  // 299: live means a running process doing OPEN work. A completed session
+  // whose terminal is still open is finished, not live (Spec D1 §5.7).
+  const isLive = (f: FactRow | undefined) =>
+    f?.kind === 'work_session' && LIVE_SESSION_STATUSES.has(f.ws_status ?? '') && (f.ws_outcome ?? 'open') === 'open';
 
   const nodeOf = (f: FactRow, depth: number, rootIds: string[]): StoryNode => ({
     id: f.id,
     kind: f.kind,
     title: title(f.id),
     status: f.status_name,
-    statusCategory: category(f.status_category),
+    statusCategory: storyCategory(f),
     blocked: f.blocked,
     depth,
     rootIds,
     activityAt: isoOrNull(f.activity_at),
     createdAt: iso(f.created_at),
+    counts: countsOf(f.id),
     ...(f.kind === 'work_session' ? { live: isLive(f), callSign: signOf.get(f.id) ?? storyCallSign(0) } : {}),
   });
 
@@ -274,7 +390,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
   const rootsOut: StoryRoot[] = roots.map((r) => {
     const f = factOf.get(r.entity_id)!;
     const mine = visibleTrail.filter((t) => t.root_id === r.entity_id);
-    const mineFacts = [...new Set(mine.map((t) => t.entity_id))].map((id) => factOf.get(id)!).filter(Boolean);
+    const work = workOf.get(r.entity_id);
     const hierarchy = new Set<string>([r.entity_id]);
     const childIds: string[] = [];
     const trailItems: StoryTrailItem[] = [];
@@ -300,11 +416,13 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       kind: f.kind,
       title: title(r.entity_id),
       status: f.status_name,
-      statusCategory: category(f.status_category),
+      statusCategory: storyCategory(f),
       blocked: f.blocked,
       position: r.root_position,
-      progress: tallyStory(mineFacts),
-      taskProgress: tallyStory(mineFacts.filter((x) => x.kind === 'task')),
+      progress: work?.progress ?? EMPTY_PROGRESS,
+      taskProgress: work?.task_progress ?? EMPTY_PROGRESS,
+      descendantCount: work?.descendant_count ?? 0,
+      ...(work?.weighted ? { weighted: work.weighted } : {}),
       childIds,
       trail: trailItems,
     };
@@ -342,11 +460,15 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
       createdAt: iso(f.created_at),
       live: isLive(f),
       runtimeStatus: f.ws_status,
+      model: f.ws_model ?? null,
       teamMemberId: persona,
       mode: personaMode,
       taskIds,
       rootIds: rootIdsOf.get(f.id) ?? [],
-      dispatchedById: dispatchedByOf.get(f.id) ?? null,
+      dispatchedById: (() => {
+        const launcher = launchedBy.get(f.id);
+        return launcher && factOf.get(launcher)?.kind === 'work_session' ? launcher : null;
+      })(),
     };
   });
 
@@ -397,21 +519,6 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     });
   }
 
-  const childStories: StoryChild[] = children.map((c) => {
-    const s = storyStateOf(c.summary);
-    return {
-      id: c.id,
-      title: c.title,
-      status: c.status_name,
-      statusCategory: category(c.status_category),
-      itemCount: s?.itemCount ?? 0,
-      taskProgress: s?.taskProgress ?? EMPTY_PROGRESS,
-      rollup: s?.rollup ?? EMPTY_PROGRESS,
-      liveSessionCount: s?.liveSessionCount ?? 0,
-      lastActivityAt: s?.lastActivityAt ?? null,
-    };
-  });
-
   const activity: StoryActivityItem[] = activityRows.map((a) => ({
     id: a.id,
     at: iso(a.created_at),
@@ -448,7 +555,7 @@ export async function loadStoryPage(q: Querier, storyId: string): Promise<StoryP
     edges,
     sessions,
     team,
-    childStories,
+    childStories: children,
     activity,
     feedAnchorIds,
     recentMessages,

@@ -9,7 +9,7 @@
  *   lanes get the agent tool's trust bit only when trusted     execution spawn/workspace-trust.ts
  *   worktree = <root>/<project>/<worktree>, cut per session    execution WorktreeManager; migration 267
  *   contention = overlapping touched paths across lanes        server services/contention.ts
- *   blame / file-history join commits to sessions (created_in) catalog notes on `project blame` / `file-history`
+ *   blame / file-history join commits to sessions (authored_from) catalog notes on `project blame` / `file-history`
  *
  * NOT CLAIMED, on purpose: that the panel shows the path or the trust state,
  * or that Untrust and Unlink work from the panel. The governed body draws

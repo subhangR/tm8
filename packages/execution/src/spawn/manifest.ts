@@ -11,7 +11,6 @@ import {
   laneSkillOverrides,
   laneSkillPlan,
   pluginDecisions,
-  minimalMcpConfig,
   pluginSettings,
   readHintHookSettings,
   type ConfigHomeSkill,
@@ -19,7 +18,7 @@ import {
   type HarnessSurface,
   type HarnessSurfaceSource,
 } from './harness-surface.js';
-import { composePrompt, BudgetExceededError, BYTE_BUDGETS, contextBudgetOverrun, type PromptContextGroup, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
+import { composePrompt, BudgetExceededError, BYTE_BUDGETS, contextBudgetOverrun, taskContextReserveV2, type PromptContextGroup, promptVersionFor, utf8Bytes, serializeSkillIndex, serializeSkillIndexEntry, type FitContextIndexResult } from '@tm8/prompt';
 // @tm8/execution — launch-config precedence, cwd resolution, command building
 // and manifest composition. Pure functions: no I/O, no graph, no PTY, so every
 // precedence rule below is directly unit-testable.
@@ -65,24 +64,15 @@ import type {
   WorkdirMode,
 } from './types.js';
 import { SpawnError, isSpaceCredentialProvider } from './types.js';
+import { applyAgentCredentialEnv } from './agent-credential-injection.js';
 import {
   AGENT_CREDENTIAL_CONFIG_DIR_VAR,
-  AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
-  SPACE_CREDENTIAL_API_KEY_ENV,
-  SPACE_CREDENTIAL_SUPPRESSED_ENV_KEYS,
-  agentCredentialEnv,
   agentCredentialProviderFor,
   type AgentCredentialHome,
   type AgentCredentialProvider,
 } from './agent-credentials.js';
-// Type-only in the other direction: `api-key-credentials.ts` imports nothing
-// from this module at runtime, so this does not close the cycle the header of
-// `agent-credentials.ts` warns about between `manifest.ts` and `credential-env.ts`.
-import {
-  apiKeyBackendEnv,
-  isApiKeyCredentialProvider,
-} from '../credentials/api-key-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { assignMcpServerKeys } from '@tm8/contract';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -227,6 +217,15 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
 
 /** The resolved launch posture — one persona, one request, three links. */
 export interface ResolvedLaunchConfig {
+  /**
+   * Authorized references only; provider secrets never enter this object.
+   *
+   * `serverKey` is the connector's tool prefix (§4.2), written by
+   * `McpSessionBindings.bind` from the definition it resolved. Optional because
+   * a hand-built launch config (tests, embedders) has no resolver behind it;
+   * such a selection keeps the opaque `connector_<hex>` bridge name.
+   */
+  mcpSelections?: Array<{serverId: string; credentialId?: string; serverKey?: string}>;
   mode: AgentMode;
   model: string | null;
   agentTool: string;
@@ -575,6 +574,7 @@ export function resolveLaunchConfig(
     (asReadHints(env.TM8_READ_HINTS) ?? preferences.readHints ?? false);
 
   return {
+    ...(request.mcpSelections !== undefined ? {mcpSelections:request.mcpSelections} : {}),
     mode,
     model,
     agentTool,
@@ -1072,10 +1072,11 @@ export function buildAgentCommand(
   // ONE flag-level settings object for everything tm8 layers onto a lane
   // (Claude Code takes a single `--settings`); each feature adds its own key.
   const settings: Record<string, unknown> = {};
+  asMcpServers(launch.mcpServers);
+  args.push('--strict-mcp-config', '--mcp-config', shellQuote(JSON.stringify({mcpServers: connectorBridgeConfig(launch.mcpSelections)})));
   if (launch.harnessSurface !== 'inherit') {
     // The Artifact half is env, not argv: see `harnessSurfaceEnv`. Resume
     // builds on this same base command, so these flags survive `--resume`.
-    args.push('--strict-mcp-config', '--mcp-config', shellQuote(minimalMcpConfig(launch.mcpServers)));
     // Drops the ~4.1k-char Claude in Chrome prompt block for this lane only;
     // the operator's own Chrome setting is untouched.
     if (opts.noChrome !== false) args.push('--no-chrome');
@@ -1105,6 +1106,13 @@ export function buildCodexArgs(
   opts: { sandboxUnavailable?: boolean } = {},
 ): string[] {
   const args: string[] = [];
+  asMcpServers(launch.mcpServers);
+  args.push('-c', 'mcp_servers={}');
+  for (const [name, config] of Object.entries(connectorBridgeConfig(launch.mcpSelections))) {
+    args.push('-c', `mcp_servers.${name}.command=${JSON.stringify(config.command)}`);
+    args.push('-c', `mcp_servers.${name}.args=${JSON.stringify(config.args)}`);
+    args.push('-c', `mcp_servers.${name}.env_vars=["TM8_AGENT_TOKEN","TM8_SESSION_ID","TM8_BASE_URL"]`);
+  }
   if (launch.model) args.push('--model', launch.model);
 
   // Codex's approval prompts are the SAME unattended-hang hazard the Claude
@@ -1560,59 +1568,7 @@ export function composeEnv(
   // Placed AFTER the two copy loops on purpose: both are allowlists over
   // `parentEnv`, and a deliberate per-identity value must not be overwritable
   // by an inherited one if either list ever grows a name that collides.
-  if (credentialHome) {
-    Object.assign(env, agentCredentialEnv(credentialHome));
-    // C8 / ruling 13 — and this DELETE is the load-bearing half.
-    //
-    // Setting the config directory is not enough on a node whose own
-    // `ANTHROPIC_API_KEY` is forwarded by `AUTH_ENV_KEYS` a few lines above:
-    // measured against the real CLI, that key competes with — and with an
-    // unpopulated identity home outright beats — the member's own login, so the
-    // session would run on the node's key under the member's name with nothing
-    // red anywhere. Scoped to the connected provider only, so a member who has
-    // NOT connected keeps today's behaviour exactly.
-    for (const key of AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider]) {
-      delete env[key];
-    }
-
-    // API-KEY BACKEND ROUTING — LAST, AND THE ORDER IS THE CORRECTNESS.
-    //
-    // A member who has connected Kimi runs `claude` against Moonshot, and one
-    // who has connected Groq runs `codex` against Groq. Both are expressed the
-    // same way: point the tool's vendor SDK at a different base URL and give it
-    // the member's key. Nothing about the launch changes — same binary, same
-    // manifest, same session row — which is why this is four lines rather than
-    // a second spawn path.
-    //
-    // It must come after the suppression loop above, and for Groq that is not a
-    // stylistic preference: `OPENAI_API_KEY` is BOTH the node key we delete and
-    // the variable we set. Inject first and the delete silently removes the
-    // member's key, leaving a session pointed at Groq's base URL with no
-    // credential — a 401 far from here, with nothing in the environment to
-    // suggest why. Suppress first, then route, and the node's value is gone and
-    // the member's is the only one present.
-    //
-    // `apiKey` is absent for every file-shaped provider, so this branch is
-    // inert for them rather than conditional on a provider list that would need
-    // maintaining in a third place.
-    if (isApiKeyCredentialProvider(credentialHome.provider) && credentialHome.apiKey) {
-      Object.assign(env, apiKeyBackendEnv(credentialHome.provider, credentialHome.apiKey));
-    }
-
-    // A SPACE credential (design 01a0cfa8 §4), under the same law: every node
-    // value for the provider is deleted FIRST and the space's key set LAST
-    // (I4). For both providers the deleted name and the set name coincide, so
-    // reversing the two steps would delete the space key and leave the session
-    // keyless — or, with the order right but a node ANTHROPIC_AUTH_TOKEN left
-    // in place, running on the node's bearer under the space's name.
-    if (credentialHome.space) {
-      for (const key of SPACE_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider] ?? []) {
-        delete env[key];
-      }
-      const keyVar = SPACE_CREDENTIAL_API_KEY_ENV[credentialHome.provider];
-      if (keyVar && credentialHome.space.apiKey) env[keyVar] = credentialHome.space.apiKey;
-    }
-  }
+  if (credentialHome) applyAgentCredentialEnv(env, credentialHome);
 
   // GitHub is universal rather than agent-tool-specific. Apply after the env
   // copy loops and after XDG_CONFIG_HOME is redirected into the identity home,
@@ -1973,8 +1929,8 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   effectiveSkills.skipped.push(...(context.skippedSkills ?? []));
   const manifest: Tm8Manifest = redactSecretsDeep({
     manifestVersion: '1',
-    // v1 unless the pinned profile opts a worker into v2 (spec ca8d Q14).
-    promptVersion: promptVersionFor({ mode: launch.mode, profileSnapshot: interactionProfile.snapshot }),
+    // v2 for every agent mode (Subhang, 2026-10-13); no profile is consulted.
+    promptVersion: promptVersionFor({ mode: launch.mode }),
     sessionId,
     spaceId: context.spaceId,
     generatedAt: (input.now ?? new Date()).toISOString(),
@@ -2099,8 +2055,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   }
   // Measure the real non-index prompt once, then account for the exact escaped
   // serializer. This stays linear even when a deep equipment chain has no count cap.
+  // A v2 launch embeds its task context (DTO) at spawn, after this fit: the
+  // baseline renders only the degraded header, so the DTO's room is reserved.
   const baseline = composePrompt({ ...manifest, skills: [] }, { sessionId, baseUrl });
-  const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`);
+  const taskContextReserve = taskContextReserveV2(manifest);
+  const baseBytes = utf8Bytes(`${baseline.system}\n\n${baseline.task}`) + taskContextReserve;
   const dropped: ManifestSkillContext[] = [];
   let indexFit: FitContextIndexResult | null = null;
   if (input.contextIndex) {
@@ -2120,7 +2079,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       try {
         const p = composePrompt({ ...manifest, skills: manifest.skills.filter(skill => !gone.has(skill.entityId)), contextIndex: fit.index }, { sessionId, baseUrl });
         if (inline && referencesTaskBodies(p.task)) return Number.POSITIVE_INFINITY;
-        return utf8Bytes(`${p.system}\n\n${p.task}`);
+        return utf8Bytes(`${p.system}\n\n${p.task}`) + taskContextReserve;
       } catch (error) {
         if (error instanceof BudgetExceededError) return Number.POSITIVE_INFINITY;
         throw error;
@@ -2203,6 +2162,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null;
     manifest.launch.harness = laneHarnessRecord(launch, plugins, skillPlan?.record ?? null);
   }
+  // Outside the `input.harness` branch on purpose: the connector record is not
+  // a harness fact. Both surfaces get exactly the launch's selection (D4), and
+  // a codex lane gets one too.
+  const connectors = connectorManifestRecord(launch.mcpSelections);
+  if (connectors.length > 0) manifest.launch.connectors = connectors;
 
   // The launch-context audit (§6): ids and enums only, after every trim.
   manifest.context = {
@@ -2253,4 +2217,39 @@ export function resolveSessionTitle(
   const first = context.tasks[0];
   if (first) return first.title;
   return `${context.teamMember.name} session`;
+}
+
+/**
+ * Internal bridge configs contain UUIDs only, never raw definitions or
+ * credential material.
+ *
+ * The ENTRY NAME is the connector's server key (§4.2), so the model reads
+ * `mcp__gmail__search_messages`. `assignMcpServerKeys` is the one rule that
+ * names them, collisions included; `--connector <id>` stays a UUID, so the
+ * config still holds ids only.
+ */
+export function connectorBridgeConfig(selections: ResolvedLaunchConfig['mcpSelections']): Record<string,{command:string;args:string[]}> {
+  const result: Record<string,{command:string;args:string[]}> = {};
+  const keys = assignMcpServerKeys(selections ?? []);
+  for (const selection of selections ?? []) {
+    if (!/^[0-9a-f-]{36}$/i.test(selection.serverId)) throw new Error('Invalid MCP connector reference');
+    result[keys.get(selection.serverId)!] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
+  }
+  return result;
+}
+
+/**
+ * `manifest.launch.connectors`: the key -> id map the launcher was given (§4.2),
+ * sorted by key. Ids and names only — a bridge entry's argv is in
+ * `launch.command` and its credential is never anywhere. It is recorded for
+ * BOTH harness surfaces, because connectors do not depend on the surface (D4),
+ * and it is what the session debug view reads to say which tool prefix belongs
+ * to which connector (§10.6).
+ */
+export function connectorManifestRecord(
+  selections: ResolvedLaunchConfig['mcpSelections'],
+): { serverKey: string; serverId: string }[] {
+  const keys = assignMcpServerKeys(selections ?? []);
+  return [...keys].map(([serverId, serverKey]) => ({ serverKey, serverId }))
+    .sort((a, b) => (a.serverKey < b.serverKey ? -1 : a.serverKey > b.serverKey ? 1 : 0));
 }

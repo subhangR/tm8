@@ -96,9 +96,12 @@ export function stepSelection(view: BlueprintView, key: string | null, dir: NavD
   return best?.key ?? current.key;
 }
 
-/** Cards in the order a reader meets them: by flow stage, then top to bottom. */
+/** Cards in the order a reader meets them: by flow stage, then across it (left to right in TB, top to bottom in LR). */
 export function readingOrder(view: BlueprintView): readonly BlueprintCard[] {
-  return [...view.cards].sort((a, b) => (a.rank - b.rank) || (a.y - b.y) || (a.x - b.x));
+  const across = view.direction === 'LR'
+    ? (a: BlueprintCard, b: BlueprintCard) => (a.y - b.y) || (a.x - b.x)
+    : (a: BlueprintCard, b: BlueprintCard) => (a.x - b.x) || (a.y - b.y);
+  return [...view.cards].sort((a, b) => (a.rank - b.rank) || across(a, b));
 }
 
 /**

@@ -21,7 +21,8 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { REASONS } from '../domain';
 import { VectorIcon, ancestorPath, useTreeDisclosure, type TreeDisclosure } from '../kit';
-import type { CollectionMode, GroupByKey } from '../domain';
+import type { CollectionMode, GroupByKey, SortKey } from '../domain';
+import type { ListPick } from '../routes/types';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
 
@@ -98,6 +99,14 @@ export type MenuTarget =
        * `q.groupBy` (`status` | `assignee` | `axis:<name>`).
        */
       groupBy?: GroupByKey;
+      /**
+       * The phone list's sort and narrowing — route state for the same reason
+       * as `mode` (CONTRACT §5): a sorted, filtered list survives a reload and
+       * travels with a shared link. Carried as `q.sortBy` / `q.pick`. The
+       * desktop list does not read them yet; it carries them untouched.
+       */
+      sortBy?: SortKey;
+      pick?: ListPick;
     }
   | { type: 'entity'; ref: string; kind: string };
 

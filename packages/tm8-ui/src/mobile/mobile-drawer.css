@@ -58,7 +58,8 @@
   box-shadow: var(--pn-sh-pop);
 
   padding-top: var(--mobile-safe-top);
-  padding-bottom: var(--mobile-safe-bottom);
+  /* No padding-bottom: the foot clears the home indicator itself, inside its
+     own border, as the mockup draws it. */
   padding-inline-start: var(--mobile-safe-left);
 
   animation: mdrawer-in var(--pn-dur-base) var(--pn-ease-out);
@@ -68,6 +69,52 @@
   from {
     transform: translateX(-100%);
   }
+}
+
+/*
+ * THE EXIT (task t-layers). The shell keeps the drawer mounted for one
+ * `--pn-dur-base` after it closes (`usePresence`), so it slides back out the
+ * way it came instead of vanishing. A swipe hands over where the finger let
+ * go as `--mdrawer-drag`, so the exit continues the gesture rather than
+ * snapping the panel home first. While closing it takes no taps: the reader
+ * is already on their way to what they picked.
+ */
+.mdrawer[data-state='closing'] {
+  pointer-events: none;
+  animation: mdrawer-scrim-out var(--pn-dur-base) var(--pn-ease-standard) forwards;
+}
+
+.mdrawer[data-state='closing'] .mdrawer__panel {
+  animation: mdrawer-out var(--pn-dur-base) var(--pn-ease-standard) forwards;
+}
+
+@keyframes mdrawer-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes mdrawer-out {
+  from {
+    transform: translateX(var(--mdrawer-drag, 0px));
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/*
+ * SWIPE TO CLOSE (audit C4). Vertical stays the browser's, so the drawer
+ * still scrolls; horizontal comes to `useDragDismiss`. While the finger is
+ * down the panel follows it exactly, with no entry animation in the way.
+ */
+.mdrawer__panel {
+  touch-action: pan-y;
+}
+
+.mdrawer__panel[data-dragging] {
+  animation: none;
+  user-select: none;
 }
 
 /* ── THE HEAD ────────────────────────────────────────────────────────────── */
@@ -136,6 +183,17 @@
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-block: var(--pn-space-2);
+  /* No visible scrollbar on the phone (mockup v3); it still scrolls. */
+  scrollbar-width: none;
+  /* A scroll container starts a fresh touch-action chain, so the panel's
+     `pan-y` stops here: left as `auto`, the browser claims a horizontal
+     swipe begun on any row and sends `pointercancel`, and the drawer never
+     closes (verify F2). Vertical stays the browser's; horizontal is ours. */
+  touch-action: pan-y;
+}
+
+.mdrawer__scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .mdrawer__section + .mdrawer__section {
@@ -289,6 +347,34 @@
   border-radius: var(--pn-r-pill);
 }
 
+/*
+ * THE UNREAD DOT — the navigator drawer's unread mark (§8; QA finding 4,
+ * ruled 2026-10-17). A pin draws a number for the kind total and a mark for
+ * "something here is new", because in a fresh space the two numbers are the
+ * SAME number and "Tasks 9 9" reads as one figure printed twice.
+ *
+ * IT KEEPS THE PILL'S 20px SLOT. The totals form a column down the drawer and
+ * it has to stay a column: sizing the dot to the dot would let every row with
+ * unread pull its total 14px left of every row without.
+ *
+ * The brand fill is the pill's, undimmed. Unread is still a call to act; this
+ * changes how much it says, not how loudly.
+ */
+.mdrawer__unseen-dot {
+  flex: 0 0 auto;
+  min-inline-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.mdrawer__unseen-dot::before {
+  content: '';
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+}
+
 .mdrawer__empty {
   padding: var(--pn-space-2) var(--pn-space-3);
   font-family: var(--pn-ui);
@@ -296,12 +382,360 @@
   color: var(--pn-ink-3);
 }
 
+/* ── ＋ NEW CHAT ─────────────────────────────────────────────────────────
+   The one filled control in the drawer: the verb a reader opens it for. */
+
+.mdrawer__new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  inline-size: calc(100% - 2 * var(--pn-space-3));
+  min-block-size: 46px;
+  margin: var(--pn-space-1) var(--pn-space-3) var(--pn-space-3);
+  padding: 0 var(--pn-space-3);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__new:active {
+  background: var(--pn-brand-2);
+}
+
+.mdrawer__new:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+/* ── NEEDS YOU ───────────────────────────────────────────────────────────
+   The attention door, under New chat. It wears the wait tone, the same tone
+   the ☰'s dot takes when something is waiting on you. */
+
+.mdrawer__needs {
+  margin-block-end: var(--pn-space-1);
+}
+
+.mdrawer__needs-dot {
+  flex: 0 0 auto;
+  inline-size: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.mdrawer__needs-dot::before {
+  content: '';
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-wait);
+}
+
+.mdrawer__needs-count {
+  flex: 0 0 auto;
+  min-inline-size: 22px;
+  padding-inline: var(--pn-space-1);
+  display: inline-flex;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: var(--pn-r-pill);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── THE TREES ───────────────────────────────────────────────────────────
+   A kind header, collapsed by default; open, a branch of recent items. The
+   twisty turns from `aria-expanded`, so the accessible state and the drawn
+   one are one fact. */
+
+.mdrawer__trees,
+.mdrawer__branch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mdrawer__group + .mdrawer__group {
+  margin-top: var(--pn-space-1);
+}
+
+.mdrawer__kindhead {
+  inline-size: 100%;
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-3);
+  text-align: start;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__kindhead--quiet {
+  color: var(--pn-ink-2);
+  font-weight: 500;
+}
+
+.mdrawer__kindhead:active,
+.mdrawer__expand:active {
+  background: var(--pn-active);
+}
+
+.mdrawer__kindhead[aria-current] .mdrawer__name {
+  color: var(--pn-brand);
+}
+
+.mdrawer__kindhead:focus-visible,
+.mdrawer__expand:focus-visible,
+.mdrawer__seeall:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.mdrawer__twisty {
+  flex: 0 0 auto;
+  inline-size: 14px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+[aria-expanded='true'] > .mdrawer__twisty {
+  transform: rotate(90deg);
+}
+
+/* The open branch hangs off a hairline under its header, as in the mockup. */
+.mdrawer__branch {
+  margin-inline-start: calc(var(--pn-space-3) + 6px);
+  padding-inline-start: var(--pn-space-1);
+  border-inline-start: 1px solid var(--pn-line);
+  margin-block-end: var(--pn-space-1);
+}
+
+.mdrawer__itemrow {
+  display: flex;
+  align-items: stretch;
+}
+
+/* THE ▸ IS ITS OWN TARGET — full row height, so it meets the touch floor on
+   its smaller side without stealing width from the title. */
+.mdrawer__expand,
+.mdrawer__expand-spacer {
+  flex: 0 0 auto;
+  inline-size: 32px;
+  min-block-size: var(--mobile-touch-min);
+}
+
+.mdrawer__expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__row--item {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding-inline: var(--pn-space-1) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+}
+
+.mdrawer__row--item .mdrawer__title {
+  font-weight: 500;
+}
+
+.mdrawer__status {
+  flex: 0 0 auto;
+  padding: 1px var(--pn-space-2);
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--pn-idle);
+  background: var(--pn-idle-soft);
+}
+
+.mdrawer__status[data-tone='run'] {
+  color: var(--pn-run);
+  background: var(--pn-run-soft);
+}
+.mdrawer__status[data-tone='wait'] {
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+}
+.mdrawer__status[data-tone='block'] {
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+}
+.mdrawer__status[data-tone='info'] {
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+}
+.mdrawer__status[data-tone='brand'] {
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+
+.mdrawer__seeall {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: var(--mobile-touch-min);
+  padding: 0 var(--pn-space-3) 0 calc(32px + var(--pn-space-1));
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  text-align: start;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__branch .mdrawer__empty {
+  padding-inline-start: calc(32px + var(--pn-space-1));
+}
+
 /* ── THE FOOT ────────────────────────────────────────────────────────────── */
 
+/*
+ * FIXED BELOW THE SCROLL (task t-drawer-footer, mockup v3). The panel is a
+ * column and `.mdrawer__scroll` is its only flexible child, so the foot never
+ * scrolls with the trees however long they get.
+ */
 .mdrawer__foot {
   flex: 0 0 auto;
   border-top: 1px solid var(--pn-line);
-  padding-block: var(--pn-space-1);
+  padding: var(--pn-space-2) 10px calc(10px + var(--mobile-safe-bottom));
+}
+
+/* Four across, as drawn: three equal labelled buttons and a 44px avatar. */
+.mdrawer__footbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 44px;
+  gap: 6px;
+  align-items: center;
+}
+
+.mdrawer__footbtn {
+  min-inline-size: 0;
+  min-block-size: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--pn-space-1) 2px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  line-height: var(--pn-lh-tight);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__footbtn > span {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdrawer__footbtn:active,
+.mdrawer__footbtn[aria-current='page'] {
+  background: var(--pn-active);
+}
+
+/* Craft mode wears the accent, as the mockup sets it apart from its two
+   neighbours: it is the mode the product is named for, not a setting. */
+.mdrawer__footbtn[data-tone='craft'] {
+  color: var(--pn-brand);
+}
+
+.mdrawer__footbtn:focus-visible,
+.mdrawer__avatar:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* The target is the full 44px cell; the face drawn in it is 36px. */
+.mdrawer__avatar {
+  inline-size: 44px;
+  block-size: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__avatar-face {
+  inline-size: 36px;
+  block-size: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
 }
 
 /* Copy link, re-hosted from the phone header. The control brings its own
@@ -325,11 +759,14 @@
  */
 @media (prefers-reduced-motion: reduce) {
   .mdrawer,
-  .mdrawer__panel {
+  .mdrawer__panel,
+  .mdrawer[data-state='closing'],
+  .mdrawer[data-state='closing'] .mdrawer__panel {
     animation: none;
   }
 
-  .mdrawer__row {
+  .mdrawer__row,
+  .mdrawer__twisty {
     transition: none;
   }
 }

@@ -73,7 +73,7 @@ function detail(): Record<string, unknown> {
         { type: 'assigned_to', direction: 'outgoing', label: 'assigned_to', edges: [edge('assigned_to', 1)] },
         { type: 'relates_to', direction: 'outgoing', label: 'relates_to', edges: Array.from({ length: 20 }, (_, i) => edge('relates_to', i)) },
       ],
-      incoming: [{ type: 'created_in', direction: 'incoming', label: 'created_in', edges: [edge('created_in', 99)] }],
+      incoming: [{ type: 'authored_from', direction: 'incoming', label: 'authored_from', edges: [edge('authored_from', 99)] }],
       unresolvedHardDependencyCount: 0,
     },
   };
@@ -143,7 +143,7 @@ describe('entity get is bounded by default', () => {
     expect(b.hierarchy).toEqual({ parent: { id: 'p1', kind: 'task', title: 'Parent' }, depth: 2, children: 12, moreChildren: true });
     expect(b.edgeCounts).toEqual({
       outgoing: { assigned_to: 1, relates_to: 20 },
-      incoming: { created_in: 1 },
+      incoming: { authored_from: 1 },
       unresolvedHardDependencyCount: 0,
     });
     expect(b.next).toEqual({ relationships: `tm8 entity context ${ID}`, full: `tm8 entity get ${ID} --full` });
@@ -194,6 +194,9 @@ describe('help --query routes closeout intents to the exact command, first', () 
     ['update task content', ['entity update']],
     ['post result', ['message send']],
     ['report a blocker to the coordinator', ['message send']],
+    ['set status of story', ['entity update']],
+    ['mark a story done', ['entity update']],
+    ['change story state to in progress', ['entity update']],
   ];
   for (const [q, allowed] of CASES) {
     it(`"${q}"`, () => {
@@ -212,6 +215,14 @@ describe('help --query routes closeout intents to the exact command, first', () 
     expect(top?.command).toBe(expected);
     // The fallback names the fact that bites: the array is replaced wholesale.
     expect(tick?.candidates[1]?.example).toContain('REPLACED');
+  });
+
+  it('the story-status route names --status and says status is manual', () => {
+    const route = matchIntent('set status of story');
+    expect(route?.intent).toBe('set the status of a story');
+    expect(route?.candidates[0]?.example).toContain('--status');
+    expect(route?.candidates[0]?.example).toContain('never derived');
+    expect(matchIntent('report story status to the coordinator')?.intent).toBe('post a result or blocker');
   });
 
   it('never routes an unrelated query, and never duplicates the routed row', () => {
@@ -295,6 +306,8 @@ describe('root and noun help json state repeated fields once', () => {
     expect(await run(['help', 'entity', '--format', 'json'])).toBe(0);
     expect(out().trim().split('\n')).toHaveLength(1);
     // Measured before this change: 6,987 bytes, pretty. Now ~3.4 KB.
-    expect(Buffer.byteLength(out())).toBeLessThan(4500);
+    // 299 (Spec D1): 4,451 -> 4,612 with `task release` (an entities.* op, so
+    // listed under `entity`); the old ceiling left 49 bytes, less than any row.
+    expect(Buffer.byteLength(out())).toBeLessThan(4750);
   });
 });

@@ -19,6 +19,7 @@ import { LoopControls } from '../../loops/LoopControls';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';
+import { StoryMessagesSlot } from '../../story/messages-slot';
 import { QuestionnaireBlock } from '../../forms/QuestionnaireBlock';
 import { PeerRowsBlock } from './PeerRowsBlock';
 import { edgesOf } from './MemorySetBlock';
@@ -74,6 +75,7 @@ export function GenericBody({
   barSlot,
   serverBaseUrl,
   storySurface,
+  messagesSurface,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
@@ -82,6 +84,12 @@ export function GenericBody({
    * (`storySurfaceFor`). Absent ⇒ the block draws the row's static read.
    */
   storySurface?: ReactNode;
+  /**
+   * The panel's messages surface, for a `composition: 'canvas'` kind whose
+   * page draws its messages as a section rather than a tab (the story page,
+   * through `StoryMessagesSlot`). Absent ⇒ no section.
+   */
+  messagesSurface?: ReactNode;
   /** Same-origin route prefix, for the `managed` block's inline login terminal. */
   serverBaseUrl?: string;
   onOpenEntity?: (id: string) => void;
@@ -127,6 +135,7 @@ export function GenericBody({
   }
   return (
     <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
+      <StoryMessagesSlot.Provider value={messagesSurface ?? null}>
       {blocks.map((block, i) => (
         <ContentBlock
           key={`${block.block}:${i}`}
@@ -143,6 +152,7 @@ export function GenericBody({
           storySurface={storySurface}
         />
       ))}
+      </StoryMessagesSlot.Provider>
     </div>
   );
 }
@@ -196,6 +206,7 @@ function ContentBlock({
             detail={detail}
             commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
             onSaved={onSaved}
+            barSlot={barSlot ?? null}
           />
         );
       /* The story page. The host's live surface when it wired one, else the
@@ -612,7 +623,9 @@ function ArtifactPreviewBlock({
       () => { if (!cancelled) setRevisions(null); },
     );
     return () => { cancelled = true; };
-  }, [detail.id, listArtifactRevisions]);
+    // `currentRevision` too: a publish arrives as a fresh detail of the SAME
+    // id, and a list read once per id never offered the new revision at all.
+  }, [detail.id, currentRevision, listArtifactRevisions]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -634,6 +647,15 @@ function ArtifactPreviewBlock({
    * the page on screen is the review finding this line closes (F1).
    */
   const shownRevision = run.phase === 'running' ? run.revisionNumber : selectedRevision ?? currentRevision;
+  /*
+   * A revision NEWER than the frame on screen. The frame stays pinned — a
+   * publish never swaps the page under the reader — but the reader must be
+   * able to SEE that it exists, and a closed picker shows only the pinned one.
+   */
+  const newerRevision = currentRevision != null && shownRevision != null && currentRevision > shownRevision
+    && revisions?.some((r) => r.revisionNumber === currentRevision)
+    ? currentRevision
+    : null;
 
   const onDownload = async () => {
     if (!exportArtifactRevision) return;
@@ -705,7 +727,7 @@ function ArtifactPreviewBlock({
           className="pn-preview__revpick"
           aria-label="revision"
           title={revisionFacts || undefined}
-          value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+          value={String(shownRevision ?? revisions[0]!.revisionNumber)}
           onChange={(e) => setSelectedRevision(Number(e.target.value))}
         >
           {/* A `<select>` is as wide as its WIDEST OPTION, so " · current"
@@ -718,10 +740,21 @@ function ArtifactPreviewBlock({
               replaces is spelled out in the control's own tooltip. */}
           {revisions.map((r) => (
             <option key={r.revisionNumber} value={String(r.revisionNumber)}>
-              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}`}
+              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}${r.revisionNumber === newerRevision ? ' — new' : ''}`}
             </option>
           ))}
         </select>
+      ) : null}
+      {newerRevision !== null ? (
+        <button
+          type="button"
+          className="pn-preview__newrev"
+          data-testid="artifact-new-revision"
+          title={`Revision ${newerRevision} was published — show it`}
+          onClick={() => setSelectedRevision(newerRevision)}
+        >
+          {`rev ${newerRevision} new`}
+        </button>
       ) : null}
       {/* THE WORD IS THE ACCESSIBLE NAME, THE GLYPH IS THE BUTTON. Every one of
           these keeps `aria-label` and `title`, so `getByRole('button', { name })`

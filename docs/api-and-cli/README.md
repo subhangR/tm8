@@ -8,6 +8,7 @@ adds no operations of its own.
 | [`API-CATALOG-GROUPED-GUIDE.md`](API-CATALOG-GROUPED-GUIDE.md) | **Start here.** Every catalog operation, grouped and explained in prose |
 | [`CLI-GRAMMAR-REDESIGN.md`](CLI-GRAMMAR-REDESIGN.md) | The noun–verb grammar the CLI exposes, and why it is shaped that way |
 | [`CLI-SESSION-COMMAND-JOURNAL.md`](CLI-SESSION-COMMAND-JOURNAL.md) | The command journal: what a session's CLI calls record, and how to read them back |
+| [`TOOL-CLI.md`](TOOL-CLI.md) | Stored scripts: dynamic arguments, generated help, secrets, terminal runs and exit codes |
 
 ## The catalog is not here
 

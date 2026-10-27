@@ -33,9 +33,11 @@ export { serializeMemoryEntry, serializeSkillIndex, serializeSkillIndexEntry, ty
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { untrustedData } from './escape.js';
 import { renderStoryContext, type PromptStoryContext } from './story-context.js';
+import { renderDesignContext, type PromptDesignContext } from './design-context.js';
 import { composeKernel } from './kernel.js';
 import {
   acceptanceCriteriaOf,
+  COORDINATION_INSTRUCTION_CHAT,
   coordinatorBootstrapControl,
   coordinatorKindOf,
   dispatcherBootstrapControl,
@@ -44,8 +46,11 @@ import {
   type BootstrapControlFacts,
   type CoordinatorKind,
 } from './templates.js';
-import { DEFAULT_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
-import { composePromptV2, HEADER_AUTHORING_RULE, type TaskContextSnapshot } from './prompt-v2.js';
+import { LEGACY_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
+import {
+  composePromptV2, COORDINATOR_SUBTASK_RULE, HEADER_AUTHORING_RULE, PLACEMENT_RULE, type TaskContextSnapshot,
+} from './prompt-v2.js';
+import { WORKER_ROUTINE_V1 } from './worker-routine.js';
 
 /**
  * The harness surfaces (§5.2 kernel, §8.1 budgets, §14 templates, §18 escaping)
@@ -56,10 +61,12 @@ export * from './budgets.js';
 export * from './context-index.js';
 export * from './escape.js';
 export * from './story-context.js';
+export * from './design-context.js';
 export * from './kernel.js';
 export * from './prompt-version.js';
 export * from './templates.js';
 export * from './prompt-v2.js';
+export * from './worker-routine.js';
 
 export type AgentMode =
   | 'worker'
@@ -178,6 +185,11 @@ export interface PromptManifest {
    * read once at spawn. Rendered after the assignment on every frame.
    */
   story?: PromptStoryContext | null | undefined;
+  /**
+   * Run on a design (304): the design the primary task was derived from, its
+   * ordered pages and the standing Run instruction. Rendered after the story.
+   */
+  design?: PromptDesignContext | null | undefined;
 }
 
 export interface PromptRuntime {
@@ -206,7 +218,7 @@ export interface PromptEnvelope {
     spaceId: string | null;
     taskCount: number;
     commandCount: number;
-    /** The manifest's `promptVersion`, or the default when it predates the stamp. */
+    /** The manifest's `promptVersion`, or legacy v1 when it predates the stamp. */
     promptVersion: string;
   };
 }
@@ -310,9 +322,8 @@ const WORKER_IDENTITY_INSTRUCTION =
   'answer with `tm8 message reply <context_message_id> "<body>"` — the reply verb ' +
   'derives the thread and anchor from that message id, so your answer lands where ' +
   'the question was asked. Completion needs a verified result and a durable receipt — ' +
-  'your process exiting is not completion: close out with one `tm8 message send` ' +
-  'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
-  'questions, and next-session pointers.' +
+  'your process exiting is not completion.' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;
@@ -331,7 +342,7 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'polling events since your last seen seq tells you whether anything changed, and ' +
   'the context call\'s provenance.eventSeq is your baseline. Decompose your assigned work ' +
   'into scoped units with explicit inputs, outputs and deliverables, and plan the ' +
-  'order before you start. Delegate each unit with ' +
+  'order before you start. ' + COORDINATOR_SUBTASK_RULE + ' Delegate each unit with ' +
   '`tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
   '--mode coordinated-worker --context <brief>`; discover its spawn ' +
   'actions and the project associations first, and choose project, worktree or ' +
@@ -353,7 +364,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'worker. Verify each unit against its success criteria, record state ' +
   'through the owning domain command rather than announcing it, and close out ' +
   'with one `tm8 message send` on your assignment anchor integrating every ' +
-  'worker result — or naming the ones you could not collect.' +
+  'worker result — or naming the ones you could not collect. Terminating a worker ' +
+  'whose work is not completed needs `--stop` (abandon) or `--complete` (it is done).' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;
@@ -374,6 +387,7 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or task anchor. The message must carry outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
   'pointers. Do not go idle after finishing.' +
+  WORKER_ROUTINE_V1 +
   GIT_TRACKING_WORKER_INSTRUCTION +
   ' ' +
   HEADER_AUTHORING_RULE;
@@ -387,7 +401,8 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'polling events since your last seen seq tells you whether anything changed, and ' +
   'the context call\'s provenance.eventSeq is your baseline. ' +
   'Decompose that slice into scoped units ' +
-  'with explicit deliverables and verify each against its success criteria. Delegate ' +
+  'with explicit deliverables and verify each against its success criteria. ' +
+  COORDINATOR_SUBTASK_RULE + ' Delegate ' +
   'with `tm8 session spawn` and brief each child by messaging its work session; ' +
   'integrate every child result or report explicitly that you could not. IMPORTANT — ' +
   'your parent is waiting on a durable answer: when your slice completes or blocks, ' +
@@ -396,6 +411,8 @@ const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'Include outcome, verification and blockers, and do not go idle leaving the parent ' +
   'waiting.' +
   GIT_TRACKING_COORDINATOR_INSTRUCTION +
+  ' ' +
+  PLACEMENT_RULE +
   ' ' +
   HEADER_AUTHORING_RULE;
 
@@ -425,6 +442,8 @@ const DISPATCHER_IDENTITY_INSTRUCTION =
   'delete teammates, and you never change a teammate\'s persona or model — you ' +
   'select from the roster as it is. If no teammate fits, say so on the thread ' +
   'rather than inventing one or doing the task. ' +
+  PLACEMENT_RULE +
+  ' ' +
   HEADER_AUTHORING_RULE;
 
 // -- Frame instructions (v1 envelope) -----------------------------------------
@@ -444,23 +463,6 @@ export const COORDINATION_INSTRUCTION =
   'Send it with `tm8 message send --to <coordinator-session-id> "<body>"`, using the ' +
   'exact `coordinator_session_id` above, the moment you complete or block. Never send ' +
   'that completion report to the assignment or task anchor, and do not simply go idle.';
-
-/**
- * The same instruction when the coordinator is a CHAT (176).
- *
- * Written as its own constant rather than a suffix because the first sentence
- * of the original is now false in this case — the thing waiting is not a
- * coordinator session, and a worker told to look for one will not find it. The
- * COMMAND is deliberately identical: a chat is an anchor like any other, and
- * suggesting otherwise would invent a second protocol that does not exist.
- */
-export const COORDINATION_INSTRUCTION_CHAT =
-  'A CHAT spawned you and is waiting on a durable answer. Its id above is a chat ' +
-  'entity, not a work session, and `tm8 message send --to <coordinator-session-id> ' +
-  '"<body>"` reaches it exactly as it reaches a session: the message lands in the ' +
-  'chat transcript, runs the chat\'s next turn, and the human reading that chat sees ' +
-  'it. Send it the moment you complete or block. Never send that completion report ' +
-  'to the assignment or task anchor, and do not simply go idle.';
 
 /** The §14 instruction for a coordinator of the given kind. */
 export function coordinationInstructionFor(kind: CoordinatorKind): string {
@@ -855,8 +857,9 @@ export function composePrompt(
   const coordinatorSessionId = manifest.coordinator?.sessionId?.trim() || null;
   const coordinatorKind = coordinatorKindOf(manifest.coordinator?.kind);
   // A manifest written before the stamp existed was, by definition, booted on
-  // today's frame — so absent reads as the default rather than as unknown.
-  const promptVersion = manifest.promptVersion ?? DEFAULT_PROMPT_VERSION;
+  // the v1 frame — so absent reads as legacy, never as the current default
+  // (a re-render of a stored manifest must not change what it shows).
+  const promptVersion = manifest.promptVersion ?? LEGACY_PROMPT_VERSION;
 
   // A `manifestVersion: "2"` bootstrap manifest takes the harness path: the
   // §5.2 kernel and one §14 control block, with no persona/skill/memory frame
@@ -1050,8 +1053,11 @@ export function composePrompt(
   }
   // The story the primary task is part of. Its slot is remembered so the
   // budget check below can swap the full block for the compact one.
-  const story = tasks.length > 0 && manifest.story?.taskId === tasks[0]?.id ? manifest.story : null;
+  const story = manifest.story && (manifest.story.taskId === null || manifest.story.taskId === tasks[0]?.id) ? manifest.story : null;
   const storySlot = story ? t.push(renderStoryContext(story, true, sessionId)) - 1 : -1;
+  // The design the primary task was derived from (Run on a design).
+  const design = manifest.design && (manifest.design.taskId === null || manifest.design.taskId === tasks[0]?.id) ? manifest.design : null;
+  const designSlot = design ? t.push(renderDesignContext(design, true)) - 1 : -1;
   const directive = manifest.directive;
   if (directive?.message) {
     // A coordinator directive is another AGENT's prose. Subject and originating
@@ -1077,6 +1083,14 @@ export function composePrompt(
     && utf8Bytes(`${system}\n\n${t.join('\n')}`) > BYTE_BUDGETS.combinedInitialInjection
   ) {
     t[storySlot] = renderStoryContext(story, false);
+  }
+  // Then the design's page list shrinks to its ref; its instruction stays.
+  if (
+    design
+    && designSlot >= 0
+    && utf8Bytes(`${system}\n\n${t.join('\n')}`) > BYTE_BUDGETS.combinedInitialInjection
+  ) {
+    t[designSlot] = renderDesignContext(design, false);
   }
   const inlineTask = t.join('\n');
   let task = inlineTask;
@@ -1106,6 +1120,7 @@ export function composePrompt(
     }
     referenced.push(`  <note>${esc(TASK_BODIES_ELSEWHERE_NOTE)}</note>`);
     if (story) referenced.push(renderStoryContext(story, false));
+    if (design) referenced.push(renderDesignContext(design, false));
     if (directive?.message) {
       referenced.push(untrustedData({
         type: 'coordinator-directive',
