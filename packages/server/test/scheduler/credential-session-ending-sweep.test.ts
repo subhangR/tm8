@@ -1,5 +1,5 @@
 /**
- * The credential-session ending sweep TICK (367). The door's own behaviour —
+ * The credential-session ending sweep TICK (368). The door's own behaviour —
  * which rows it reaps and which it keeps — is proven against real Postgres in
  * test/db/credential-service.pg.test.ts; here: the tick calls the node-admin
  * door with the grace and batch, runs at boot, and reads honestly when idle.
