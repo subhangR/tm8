@@ -32,7 +32,7 @@
  * where one that silently rewrites every affected row's status gets found in a
  * quarter, by a customer.
  */
-import type { StatusCategory, WorkSessionStatus, WorkStatus } from '@tm8/contract';
+import type { StatusCategory, WorkSessionOutcome, WorkSessionStatus, WorkStatus } from '@tm8/contract';
 
 /**
  * `satisfies`, not a bare `as const`: this list is what `narrowWorkStatus()`
@@ -109,12 +109,20 @@ export const WORK_STATUS_CATEGORY: Record<WorkStatus, StatusCategory> = {
  *     `public.session_resume` a legal `done → to_do` REOPEN. Under
  *     `spawning → in_progress` a resume would be `done → in_progress`, which
  *     `internal.category_transition_allowed` refuses outright.
- *   `failed → done`     — the client's existing ruling, mirrored rather than
- *     made here (`SESSION_STATE_CONTROL` in the UI registry): failure is a
- *     runtime fact that gets a badge, and the run did reach its end. Nobody
- *     cancelled it. NO session status maps to `cancelled`, which is honest
- *     rather than an omission — nothing in the session lifecycle is a
- *     cancellation, and `terminate` produces `exited`.
+ *
+ * 299 (Spec D1 §3.2) REPLACED the rest of this table. A session's category now
+ * comes from its OUTCOME first and its process second:
+ *
+ *   outcome completed            → done
+ *   outcome stopped              → cancelled
+ *   outcome open, spawning       → to_do
+ *   outcome open, anything else  → in_progress
+ *
+ * So `exited`/`failed` are no longer `done`: an open session whose process
+ * ended is unfinished work someone has to resume, complete or stop (174's
+ * intent, extended to every ending). `SESSION_STATUS_CATEGORY` is the
+ * open-outcome column of that table; `sessionCategory` is the whole of it, and
+ * mirrors `internal.session_category` in 299.
  *
  * `Record<WorkSessionStatus, …>` is load-bearing for the same reason it is
  * above: a new status arm fails to compile until someone decides which bucket
@@ -124,9 +132,16 @@ export const SESSION_STATUS_CATEGORY: Record<WorkSessionStatus, StatusCategory> 
   spawning: 'to_do',
   running: 'in_progress',
   idle: 'in_progress',
-  exited: 'done',
-  failed: 'done',
+  exited: 'in_progress',
+  failed: 'in_progress',
 };
+
+/** Spec D1 §3.2: the outcome decides first. Mirrors `internal.session_category` (299). */
+export function sessionCategory(outcome: WorkSessionOutcome | null | undefined, status: WorkSessionStatus): StatusCategory {
+  if (outcome === 'completed') return 'done';
+  if (outcome === 'stopped') return 'cancelled';
+  return SESSION_STATUS_CATEGORY[status];
+}
 
 /**
  * Thrown when `tasks.work_status` holds a value the contract's `WorkStatus`

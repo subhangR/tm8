@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { REASONS, allKinds, deferredActions, processControlFor, resolveAction } from '../domain';
+import { REASONS, allKinds, deferredActions, processControlFor, resolveAction, sessionControlsFor } from '../domain';
 import { PANEL_PRIMARY_ACTIONS } from './usePanelPrimaries';
 import { ENTITY_VERB_ACTIONS } from './useEntityVerbs';
 import { CHAT_ABOUT_ACTIONS } from './useChatAbout';
@@ -185,9 +185,24 @@ describe('the dispatcher and the registry agree', () => {
    * — the swap has one definition and this guard consults it.
    */
   const ENDED = { category: 'done', liveness: 'not-running' } as const;
-  const drawablePrimaries = new Set(
-    [...declaredPrimaries].flatMap((ref) => [ref, processControlFor(ref, ENDED)]),
-  );
+  /* Spec D1 §5.6: a session's slot expands to its outcome verbs, so those
+     are drawable too — derived by running `sessionControlsFor` over one
+     session per (outcome, process) shape, never hand-listed. */
+  const SESSION_SHAPES = [
+    { status: 'running' },
+    { status: 'running', outcome: 'completed' },
+    { status: 'failed', endedKind: 'crashed' },
+    { status: 'exited', outcome: 'stopped' },
+    { status: 'exited', outcome: 'completed' },
+  ].map((shape) => ({ kind: 'work_session', ...shape }));
+  const drawablePrimaries = new Set([
+    ...[...declaredPrimaries].flatMap((ref) => [ref, processControlFor(ref, ENDED)]),
+    ...allKinds().flatMap((config) =>
+      SESSION_SHAPES.flatMap((sessionState) =>
+        [...(sessionControlsFor(config.panel.primaries ?? [], { sessionState, liveness: 'stale' }) ?? [])],
+      ),
+    ),
+  ]);
 
   it('the process control swap is what puts resume in reach, not a hand-added entry', () => {
     // Guard the guard: if the swap ever stops producing `resume`, the widened

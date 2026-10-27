@@ -9,6 +9,7 @@ import {
   encodeCursor,
   type ActorSummary,
   type CommandContext,
+  type EntitySeenResult,
   type InboxListQuery,
   type InboxMarkReadInput,
   type InboxRecipient,
@@ -454,6 +455,15 @@ export class W2InboxReadMarksService {
       if (!item) throw new CollabError('upstream_unavailable', 'notification mutation returned no row');
       return item;
     });
+  };
+
+  readonly markEntitySeen = async (ctx: RequestContext): Promise<EntitySeenResult> => {
+    const owner = await this.deps.owner();
+    const entityId = requireUuidParam(ctx, 'id');
+    const input = parseBody<CommandContext>(CommandContextSchema, ctx.body);
+    if (!input.clientMutationId) invalidInput('clientMutationId is required');
+    return this.deps.db.tx(claimsFor(owner, ctx, input), (q) =>
+      q.rpc<EntitySeenResult>('mark_entity_seen', [entityId, input.clientMutationId!]));
   };
 
   readonly upsertReadMark = async (ctx: RequestContext): Promise<ReadMarkResult> => {

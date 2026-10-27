@@ -119,11 +119,19 @@ export function teammateSubject(
   row: TeammateRow,
   env: NodeJS.ProcessEnv | null,
 ): ConfigSubjectView {
-  const prefs = memberLaunchPreferences(row.capabilities);
+  // Reading configuration must remain possible for legacy rows that the launch
+  // validator refuses. Never expose the raw MCP values: only names survive.
+  const raw = row.capabilities?.launch;
+  const launch = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? raw as Record<string, unknown> : {};
+  const prefs = memberLaunchPreferences({ ...row.capabilities, launch: { ...launch, mcpServers: undefined } });
+  const legacyMcpNames = launch.mcpServers && typeof launch.mcpServers === 'object' && !Array.isArray(launch.mcpServers)
+    ? Object.fromEntries(Object.keys(launch.mcpServers).map((name) => [name, {}])) : null;
   const persona: Record<string, unknown> = {
     // Every key the spawn path's parser returns, so a new launch key needs only
     // its registry row (which the registry test demands).
     ...Object.fromEntries(Object.entries(prefs).map(([key, value]) => [`capabilities.launch.${key}`, value])),
+    'capabilities.launch.mcpServers': legacyMcpNames,
     agent_tool: row.agent_tool,
     model: row.model,
     permission_mode: row.permission_mode,

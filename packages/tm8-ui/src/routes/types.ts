@@ -16,9 +16,14 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  * (add, rotate, sign in, remove) live in those sections and nowhere else.
  */
 export const SETTINGS_ROUTE_SECTIONS = [
-  'projects', 'menu', 'credentials', 'configs', 'space-credentials', 'space-links',
+  'overview', 'projects', 'menu', 'connectors', 'credentials', 'mcp-tokens', 'configs', 'space-credentials', 'space-links',
+  'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
+  'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
+  'node-credentials', 'filesystem-access',
 ] as const;
 export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
+export const NODE_ADMIN_ROUTE_SECTIONS = ['credentials', 'filesystem', 'accounts', 'configuration'] as const;
+export type NodeAdminRouteSection = (typeof NODE_ADMIN_ROUTE_SECTIONS)[number];
 
 /**
  * The three outer panel tabs, fixed order — the vocabulary of `t=`.
@@ -48,7 +53,7 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discu
  * clamp — and the panel that reads it is one component either way.
  */
 export type ContentSurface =
-  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph'
+  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph' | 'context'
   | 'screen' | 'logs';
 export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'terminal',
@@ -61,6 +66,10 @@ export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'git',
   'debug',
   'graph',
+  // A session's LAUNCH CONTEXT — every selection that went into its launch.
+  // It was a section of the Links page; with Links moved to the side column it
+  // is one of the session's own surfaces (task 01a122b9).
+  'context',
   // container (Design §13.1: content surfaces `screen | terminal | logs`)
   'screen',
   'logs',
@@ -94,6 +103,21 @@ export interface QValue {
   filters?: QueryFilter;
   sortBy?: SortKey;
   groupBy?: GroupByKey;
+  /**
+   * The phone list's narrowing, as the CHOICES the reader made rather than the
+   * filter they compile to: `cat` is a status-tab id (or `all` / `open`), `on`
+   * is `specId:optionId` pairs from the kind's own `list.filters`. Kept as
+   * choices because a filter cannot be read back into which boxes were ticked
+   * (a tab and an archived option both write `deleted`). Additive: a build
+   * that does not know `pick` ignores it and keeps `filters`/`sortBy`.
+   */
+  pick?: ListPick;
+}
+
+/** See `QValue.pick`. */
+export interface ListPick {
+  cat?: string;
+  on?: readonly string[];
 }
 
 /**
@@ -213,7 +237,8 @@ export type NavView =
     }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: SettingsRouteSection | null }
+  | { view: 'settings'; section: SettingsRouteSection | null; scope?: 'space' }
+  | { view: 'settings'; section: NodeAdminRouteSection | null; scope: 'node' }
   /*
    * The four screens that rendered from the rail with NO route line, added by
    * the 2026-08-14 amendment to WLT §2.1/§2.2.
@@ -235,8 +260,15 @@ export type NavView =
   /* The task Board (2026-08-16): a whole-centre kanban screen, flat segment,
      no parameters of its own — same posture as the four above. */
   | { view: 'board' }
-  /* The Craft studio (2026-08-16): whole-centre split pane, flat segment. */
-  | { view: 'craft' }
+  /*
+   * Craft (2026-08-16; the `design` kind 2026-10-06, renamed `craft` by 322).
+   * Bare `/craft` is the crafts home. `/craft/{craft}` opens one craft,
+   * `/craft/{craft}/{page}` a page of it, and `/craft/{craft}/{page}/{nestedPage}`
+   * a page of a craft that is itself a page (at most two page rows, so no deeper
+   * segment). Each key is present only when the one before it is: the codec
+   * drops a page without a craft, and a nested page without a page.
+   */
+  | { view: 'craft'; craftId?: EntityId; pageId?: EntityId }
   /*
    * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
    * even though Help is not in the default tab spine — its door is a bar
@@ -269,6 +301,14 @@ export type NavView =
    * migration and this member migrates into `MenuViewRef`.
    */
   | { view: 'boardV2' }
+  /*
+   * WORKSPACE TABS (2026-10-06, Spec A/B): the tabbed entity workspace.
+   * Route-only and client-added exactly like `boardV2`. `tab` is the entity
+   * id of the active tab (`?tab=`); absent while a draft, the chooser or no
+   * tab is active. `file` (`?fp=<projectId>&f=<path>`, 2026-10-07) is the
+   * active read-only project file tab instead; the path is project-relative.
+   */
+  | { view: 'tabs'; tab?: EntityId; file?: { projectId: string; path: string } }
   /*
    * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
    * prompt and spawns on it. Flat segment, no parameters.

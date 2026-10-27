@@ -32,7 +32,8 @@ import './session-context.css';
 /** The same cadence the Transcript surface polls a live session at. */
 export const CONTEXT_POLL_MS = 5_000;
 
-export type Fit = 'wide' | 'medium' | 'narrow';
+/** `stack` is the action strip's: one short line per figure, in a 40px column. */
+export type Fit = 'wide' | 'medium' | 'narrow' | 'stack';
 
 /** Bar widths (CSS px of `.pn-panelbar`) at which the reading gives up words. */
 export const FIT_WIDE_PX = 760;
@@ -87,7 +88,12 @@ export function SessionContextNumber({ seam, sessionId, live }: SessionContextNu
   // Measured off the BAR, not this element: the question is how much room the
   // row has, and this element's own width is the answer to a different one.
   // `clientWidth` is layout px, unaffected by the canvas's CSS zoom.
+  // In the Workspace action strip there is no bar: the reading stacks.
   useLayoutEffect(() => {
+    if (root.current?.closest('.tws-astrip')) {
+      setFit('stack');
+      return;
+    }
     const bar = root.current?.closest('.pn-panelbar');
     if (!(bar instanceof HTMLElement)) return;
     const measure = () => setFit(fitFor(bar.clientWidth));
@@ -137,6 +143,7 @@ export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps)
     parts.push(reading.used);
     if (reading.percent) parts.push(reading.percent);
     if (fit === 'wide' && reading.cache !== null) parts.push(`cache ${reading.cache}`);
+    if (fit === 'stack' && reading.cache !== null) parts.push(`c${reading.cache}`);
     const age = fit === 'wide' ? reading.age : reading.ageShort;
     if (age) parts.push(age);
   }
@@ -162,8 +169,22 @@ export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps)
         aria-controls={open ? detailsId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
-        {reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
-        {parts.join(' · ')}
+        {fit === 'stack'
+          ? /* One figure per line; the separators stay in the text (so the
+               strip's tooltip reads one line) and leave the layout. */
+            parts.map((part, i) => (
+              <span key={i} className="pn-context__line" data-line={i}>
+                {i === 0 && reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
+                {i > 0 ? <span className="pn-context__sep"> · </span> : null}
+                {part}
+              </span>
+            ))
+          : (
+            <>
+              {reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
+              {parts.join(' · ')}
+            </>
+          )}
       </button>
       {open ? (
         <div id={detailsId} className="pn-context__details" role="group" aria-label="Context details">

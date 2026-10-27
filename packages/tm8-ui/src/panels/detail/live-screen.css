@@ -1,0 +1,32 @@
+/* WATCH LIVE (LiveScreenButton.tsx) — green, and the dot blinks, so a test in
+   progress is told apart from every other verb in the bar at a glance. */
+.cv2-root .pn-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--pn-run);
+  border-radius: 999px;
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: pn-live-glow 1.2s ease-in-out infinite;
+}
+.cv2-root .pn-live:hover { background: var(--pn-run); color: var(--pn-card); }
+.cv2-root .pn-live:focus-visible { outline: 2px solid var(--pn-run); outline-offset: 2px; }
+.cv2-root .pn-live__dot { animation: pn-live-blink 1s steps(2, start) infinite; }
+
+@keyframes pn-live-blink { to { visibility: hidden; } }
+@keyframes pn-live-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--pn-run-soft); }
+  50% { box-shadow: 0 0 0 4px var(--pn-run-soft); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-live,
+  .cv2-root .pn-live__dot { animation: none; }
+}

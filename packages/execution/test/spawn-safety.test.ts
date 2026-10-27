@@ -156,7 +156,7 @@ describe('SpawnService spawn acknowledgement safety', () => {
     ).resolves.toMatchObject({ reused: false });
 
     expect(deliver).toHaveBeenCalledOnce();
-    expect(deliver.mock.calls[0]?.[1]).toContain('<tm8_task_prompt count="1">');
+    expect(deliver.mock.calls[0]?.[1]).toContain('<assignment task="66666666-6666-4666-8666-666666666666"');
     expect(graph.transitions.map((transition) => transition.status)).toEqual(['running']);
     expect(promptSettlement.cancel).not.toHaveBeenCalled();
   });
@@ -207,7 +207,7 @@ describe('SpawnService spawn acknowledgement safety', () => {
 
     // The assignment is in the command line...
     const spawned = vi.mocked(pty.spawnIfAbsent).mock.calls[0]?.[0];
-    expect(spawned?.command).toContain('<tm8_task_prompt count="1">');
+    expect(spawned?.command).toContain('<assignment task="66666666-6666-4666-8666-666666666666"');
     expect(spawned?.command).toContain('--append-system-prompt');
     // ...and nothing was typed into the terminal.
     expect(deliver).not.toHaveBeenCalled();

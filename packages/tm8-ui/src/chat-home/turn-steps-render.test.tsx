@@ -176,9 +176,14 @@ describe('failures are shown, once, where they happened', () => {
     ];
     const view = render(<TurnParts parts={parts} />);
     const errlines = view.getAllByTestId('chat-step-errline');
-    expect(errlines).toHaveLength(3);
+    expect(errlines).toHaveLength(2);
     for (const line of errlines) expect(line.textContent).not.toContain('retried');
-    // The same create, retried, still says so.
+    // The refused WRITE is its receipt's red row, with the server's reason.
+    const refused = view.getAllByTestId('chat-receipt-row').filter((row) => row.dataset.mark === 'failed');
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.textContent).toContain('Creating task “Alpha” failed');
+    expect(refused[0]!.textContent).toContain('parent not found');
+    // The same create, retried, is no row at all — only counted as retried.
     cleanup();
     const retried = render(
       <TurnParts
@@ -188,7 +193,10 @@ describe('failures are shown, once, where they happened', () => {
         ]}
       />,
     );
-    expect(retried.getByTestId('chat-step-errline').textContent).toContain('The agent retried');
+    expect(retried.queryByTestId('chat-step-errline')).toBeNull();
+    expect(retried.queryAllByTestId('chat-receipt-row')).toHaveLength(0);
+    expect(retried.getAllByTestId('chat-ledger-create')).toHaveLength(1);
+    expect(retried.getByTestId('chat-steps-head').textContent).toContain('2 steps · 1 retried');
   });
 
   it('claims no retry when a search in the same path looked for something ELSE', () => {
@@ -238,9 +246,13 @@ describe('failures are shown, once, where they happened', () => {
       { seq: 3, kind: 'done' },
     ];
     const view = render(<TurnParts parts={parts} />);
-    const errline = view.getByTestId('chat-step-errline');
-    expect(errline.textContent).toContain('failed: version conflict');
-    expect(errline.textContent).not.toContain('retried');
+    // A refused write is its receipt's red row, never a detached errline.
+    expect(view.queryByTestId('chat-step-errline')).toBeNull();
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('failed');
+    expect(row.textContent).toContain('version conflict');
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('1 failed');
+    expect(view.getByTestId('chat-steps-head').textContent).not.toContain('retried');
   });
 });
 
@@ -304,27 +316,28 @@ describe('order and interleaving', () => {
     ];
     const view = render(<TurnParts parts={parts} />);
     const kids = [...view.container.querySelector('.tch-parts')!.children].map((el) => el.getAttribute('data-testid') ?? el.className);
-    expect(kids).toEqual(['tch-ledger', 'chat-step-errline', 'chat-steps']);
+    expect(kids).toEqual(['chat-receipt', 'chat-step-errline', 'chat-steps']);
   });
 });
 
-describe('writes never fold; reads and commands do (D15 §4)', () => {
-  it('keeps each create its own line, and folds settled reads into a counted line', () => {
+describe('a drawn write is its receipt row, not a step line; reads and commands fold (D15 §4)', () => {
+  it('leaves a write the receipt draws out of the list, keeps one it cannot draw, and folds settled reads', () => {
     const parts: ChatTurnPart[] = [
       ...call(0, 'r1', 'Read', { file_path: '/r/a.ts' }, { result: 'x' }),
       ...call(3, 'r2', 'Read', { file_path: '/r/b.ts' }, { result: 'x' }),
       ...call(6, 'r3', 'Read', { file_path: '/r/c.ts' }, { result: 'x' }),
-      ...call(9, 'w1', 'mcp__tm8__tm8_act', { operation: 'entities.create', body: { kind: 'task', title: 'One' } }, { result: {} }),
+      ...call(9, 'w1', 'mcp__tm8__tm8_act', { operation: 'entities.create', body: { kind: 'task', title: 'One' } }, {
+        result: { entity: { id: TASK, kind: 'task', title: 'One' } },
+      }),
+      // No id came back: there is nothing to draw a row for, so it stays a step.
       ...call(12, 'w2', 'mcp__tm8__tm8_act', { operation: 'entities.create', body: { kind: 'task', title: 'Two' } }, { result: {} }),
     ];
     const view = render(<TurnParts parts={parts} />);
     const texts = lines(view.container).map((li) => li.textContent);
-    expect(texts).toEqual([
-      expect.stringContaining('Read 3 files'),
-      expect.stringContaining('Created task “One”'),
-      expect.stringContaining('Created task “Two”'),
-    ]);
-    expect(view.getByTestId('chat-steps-head').textContent).toMatch(/^5 steps · read 3 files, created 2 tasks/);
+    expect(texts).toEqual([expect.stringContaining('Read 3 files'), expect.stringContaining('Created task “Two”')]);
+    expect(view.getByTestId('chat-ledger-create').textContent).toContain('One');
+    // The header still counts every step, and names only what the list shows.
+    expect(view.getByTestId('chat-steps-head').textContent).toMatch(/^5 steps · read 3 files, created task “Two”/);
   });
 });
 
@@ -470,32 +483,38 @@ describe('reconnects and streaming', () => {
 });
 
 describe('doc tools (D17)', () => {
-  it('draws a settled doc_update as a quiet edit line that opens the doc', () => {
+  it('draws a settled doc_update as an edited receipt row that opens the doc — not a step line', () => {
     const opened: string[] = [];
     const parts: ChatTurnPart[] = [
       ...call(0, 'c1', 'mcp__tm8__doc_update', { docId: DOC, expectedVersion: 2, title: 'Runbook', body: '#' }, { result: {} }),
     ];
     const view = render(<TurnParts parts={parts} onOpenEntity={(id) => opened.push(id)} />);
-    const edit = view.getByTestId('chat-doc-edit');
-    expect(edit.textContent).toContain('Edited');
-    expect(edit.textContent).toContain('Runbook');
-    fireEvent.click(within(edit).getByRole('button', { name: 'Runbook' }));
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('edited');
+    expect(row.dataset.kind).toBe('doc');
+    expect(row.textContent).toContain('Runbook');
+    expect(within(row).getByTestId('chat-receipt-meta').textContent).toBe('titlebody');
+    fireEvent.click(within(row).getByRole('button'));
     expect(opened).toEqual([DOC]);
-    expect(lines(view.container)[0]!.textContent).toContain('Edited “Runbook”');
+    expect(lines(view.container)).toHaveLength(0);
   });
 
-  it('draws a running doc_create as a step line only — no card', () => {
+  it('draws a running doc_create as a pending receipt row — no card, no step line', () => {
     const view = render(<TurnParts parts={call(0, 'c1', 'mcp__tm8__doc_create', { title: 'Plan', body: '#' })} />);
-    expect(lines(view.container)[0]!.textContent).toContain('Creating doc “Plan”…');
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('pending');
+    expect(row.textContent).toContain('Creating doc “Plan”');
     expect(view.queryByTestId('chat-explanation-card')).toBeNull();
-    expect(view.queryByTestId('chat-doc-edit')).toBeNull();
+    expect(lines(view.container)).toHaveLength(0);
   });
 
-  it('draws no edit line for a doc_update that failed', () => {
+  it('draws a doc_update that failed as a red row, not an edit', () => {
     const parts = call(0, 'c1', 'mcp__tm8__doc_update', { docId: DOC, body: '#' }, { result: 'conflict', isError: true });
     const view = render(<TurnParts parts={parts} />);
-    expect(view.queryByTestId('chat-doc-edit')).toBeNull();
-    expect(view.getByTestId('chat-step-errline')).toBeTruthy();
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('failed');
+    expect(row.textContent).toContain('conflict');
+    expect(view.queryByTestId('chat-step-errline')).toBeNull();
   });
 });
 

@@ -145,7 +145,11 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
   log('');
   log('  ┌─ THIS NODE IS UNCLAIMED ─────────────────────────────────────────');
   log('  │  No account here has a password yet, so nobody can sign in.');
-  log('  │  Claim it — from this machine or any other — at:');
+  // "Or any other" machine was true only behind a proxy: a loopback node is
+  // unreachable from elsewhere, and its link names 127.0.0.1.
+  log(opts.url.includes('://127.0.0.1') || opts.url.includes('://localhost') || opts.url.includes('://[::1]')
+    ? '  │  Claim it on this machine (another machine needs a proxy + TM8_PUBLIC_ORIGIN) at:'
+    : '  │  Claim it from any browser that reaches this node at:');
   log('  │');
   log(`  │    ${claimUrl}`);
   log('  │');

@@ -21,11 +21,20 @@
  */
 import { assertWithinBudget, BYTE_BUDGETS, utf8Bytes } from './budgets.js';
 import { escapeAttr, untrustedData } from './escape.js';
-import { PROMPT_VERSION_V2 } from './prompt-version.js';
+import { PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
 import { serializeMemoryEntry } from './skill-index.js';
 import { serializeLaunchIndex } from './context-index.js';
 import { renderStoryContext } from './story-context.js';
-import { acceptanceCriteriaOf, coordinatorKindOf } from './templates.js';
+import { renderDesignContext } from './design-context.js';
+import {
+  acceptanceCriteriaOf,
+  attachmentManifest,
+  COORDINATION_INSTRUCTION_CHAT,
+  coordinatorKindOf,
+  linkedManifest,
+} from './templates.js';
+import { contextIndexNames } from './context-index.js';
+import { workerRoutineV2Rule } from './worker-routine.js';
 import type { AgentMode, PromptEnvelope, PromptManifest, PromptRuntime } from './index.js';
 
 /** The frame attribute the agent reads on the v2 envelope. */
@@ -66,6 +75,20 @@ export const HEADER_AUTHORING_RULE =
   "session may need, pass --when-to-use (when to open it, not its title: 'Open when changing " +
   "balance rounding', not 'Rounding doc') and --summary (what it holds) in the same create call.";
 
+// PLACEMENT_RULE lives in its own module so worker-routine.ts can use it
+// without an import cycle through this file (P0g).
+export { PLACEMENT_RULE } from './placement-rule.js';
+import { PLACEMENT_RULE } from './placement-rule.js';
+
+/**
+ * The coordinator's half of placement: a unit of the assignment is a subtask
+ * of it, created before its worker is spawned on it, so the work tree mirrors
+ * the delegation tree. v1 and v2 coordinator layers carry the same sentence.
+ */
+export const COORDINATOR_SUBTASK_RULE =
+  "Create each unit as a subtask of your task (`tm8 entity create task '<title>' " +
+  "--parent <your-task-id>`) and spawn its worker on that subtask.";
+
 /**
  * The base: what tm8 is, and the rules for every mode. Byte-identical in all
  * five modes, so it carries nothing a single mode needs.
@@ -92,6 +115,7 @@ export const BASE_PROMPT_V2 = [
     'with `tm8 task link-pr|link-commit <task-id> <url>`. Publish web pages with ' +
     "`tm8 artifact publish`, never your harness's artifact tool.",
   `4. ${HEADER_AUTHORING_RULE}`,
+  `5. ${PLACEMENT_RULE}`,
   '</tm8>',
 ].join('\n');
 
@@ -103,17 +127,13 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
     'You are a worker: you do the assigned task yourself.',
     "1. Do not spawn or delegate to other agents (tm8 sessions or your harness's " +
       'sub-agents) unless the task asks for it.',
-    '2. Finishing means: result verified; one closing message on the task (outcome, ' +
-      'entities touched, decisions, open questions); tick every met criterion with ' +
-      '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
-      '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
-      'If you cannot complete, say why on the task. Exiting or going idle is not finishing.',
+    workerRoutineV2Rule(2),
   ],
   coordinator: [
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
       'a closing message, not the work itself.',
     '1. Split the assignment into units, each with inputs, outputs and success criteria. ' +
-      'Do a unit yourself only when its brief would cost more than the work.',
+      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE}`,
     '2. Spawn each unit with `tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
       '--mode coordinated-worker --launch-project <project-id> --workdir worktree ' +
       '--base-ref origin/main --context "<brief>"`. Without `--mode coordinated-worker` ' +
@@ -131,6 +151,9 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
       '`tm8 task tick <task-id> <criterion-id>... --expect-version <n>`; then ' +
       '`tm8 task complete <task-id> --expect-version <version tick returned> --by <your team_member>`. ' +
       'Exiting or going idle is not finishing.',
+    '6. Then `tm8 session complete`. Terminate an unfinished worker with `--stop` or `--complete`. ' +
+      'Keep the status of each task you hold true, as in `tm8 help routine`: a task left ' +
+      '`working` with no live session is flagged.',
   ],
   dispatcher: [
     "You are this space's dispatcher, a resident router. Each request names a task; you " +
@@ -166,6 +189,16 @@ export function roleLayerV2(mode: AgentMode): string {
  * The coordinated modifier's text, with the coordinator's real session id in
  * the command: an agent copies a working command, never a placeholder.
  */
+/**
+ * The coordinated line when the coordinator is a CHAT (176): v1's sentence,
+ * with the chat's id in place of the placeholder. It REPLACES the session line
+ * rather than following it, because that line's "send to the task and to it"
+ * contradicts the chat rule of never sending the completion to the task.
+ */
+export function chatCoordinationLineV2(coordinatorSessionId: string): string {
+  return COORDINATION_INSTRUCTION_CHAT.replace(/<coordinator-session-id>/g, coordinatorSessionId);
+}
+
 export function coordinationLineV2(coordinatorSessionId: string): string {
   return (
     'A coordinator is waiting on you. Send every report and your closing message to ' +
@@ -288,6 +321,26 @@ export function primaryContextBudgetV2(tasks: readonly ManifestTask[]): number {
   return Math.max(0, BYTE_BUDGETS.assignmentSnapshot - cards);
 }
 
+/**
+ * Room the launch fit holds back for the embedded task context (DTO). Typical
+ * DTOs measure ~5 KiB; the full §5.3 cap would starve the context index, so the
+ * fit reserves this and the spawn path hands the DTO whatever is really left.
+ */
+export const TASK_CONTEXT_RESERVE_V2 = 8192;
+
+/**
+ * The bytes a launch's context fit must reserve for the DTO the spawn path
+ * embeds after the manifest is written: none unless the manifest renders the
+ * v2 frame with a primary task. The baseline the fit measures carries only the
+ * degraded header, so without this the index fills the room the DTO needs.
+ */
+export function taskContextReserveV2(manifest: PromptManifest): number {
+  const tasks = manifest.tasks ?? [];
+  if (manifest.promptVersion !== PROMPT_VERSION_V2 || tasks.length === 0) return 0;
+  if (!PROMPT_V2_MODES.includes(manifest.mode ?? 'worker')) return 0;
+  return Math.min(primaryContextBudgetV2(tasks), TASK_CONTEXT_RESERVE_V2);
+}
+
 // -- Composer -----------------------------------------------------------------
 
 function block(text: string, pad: string): string {
@@ -376,7 +429,7 @@ export function composePromptV2(
   if (coordinatorSessionId && (mode === 'coordinated-worker' || mode === 'coordinated-coordinator')) {
     layers.push(
       `<coordination coordinator_session="${escapeAttr(coordinatorSessionId)}" kind="${coordinatorKind}">` +
-        `${coordinationLineV2(esc(coordinatorSessionId))}</coordination>`,
+        `${(coordinatorKind === 'chat' ? chatCoordinationLineV2 : coordinationLineV2)(esc(coordinatorSessionId))}</coordination>`,
     );
   }
   s.push(...layers);
@@ -429,6 +482,24 @@ export function composePromptV2(
       }));
     }
     for (const other of tasks.slice(1)) t.push(untrustedJson('task-card', taskCardV2(other)));
+    // Files ride here, never in the index: the task's ticked files and the
+    // ones picked at launch, each once, with the command that downloads them.
+    const seen = new Set<string>();
+    const files = tasks.flatMap((task) => task.attachments ?? []).filter((file) => !seen.has(file.fileEntityId) && seen.add(file.fileEntityId));
+    if (files.length > 0) {
+      const manifest = attachmentManifest(files);
+      t.push(...manifest.control, manifest.names);
+    }
+    // Links picked at launch (the attach palette's references), per task, under
+    // the same caps as v1 and with the same declared "omitted" surplus. Titles
+    // the context index already names are not repeated.
+    const namedInIndex = contextIndexNames(manifest.contextIndex);
+    for (const task of tasks) {
+      if (Math.max(task.linkedTotal ?? 0, task.linked?.length ?? 0) === 0) continue;
+      const linked = linkedManifest(task.linked ?? [], task.linkedTotal ?? 0, namedInIndex, task.id);
+      t.push(...linked.control);
+      if (linked.names !== '') t.push(linked.names);
+    }
   } else {
     t.push(`<note>${esc(facts.noTaskNote)}</note>`);
   }
@@ -446,10 +517,17 @@ export function composePromptV2(
   // Spawn-on-story: the story the primary task is part of, after the
   // assignment. It never displaces the task's own context: past the combined
   // cap it shrinks to its ref.
-  const story = primary && manifest.story?.taskId === primary.id ? manifest.story : null;
+  const story = manifest.story && (manifest.story.taskId === null || manifest.story.taskId === primary?.id) ? manifest.story : null;
   if (story) {
     const draft = `${s.join('\n')}\n\n${[...t, renderStoryContext(story, true, facts.sessionId), '</tm8_task_prompt>'].join('\n')}`;
     t.push(renderStoryContext(story, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection, facts.sessionId));
+  }
+  // Run on a design (304): the design the primary task was derived from, after
+  // the story, under the same rule — past the cap its pages shrink to a ref.
+  const design = manifest.design && (manifest.design.taskId === null || manifest.design.taskId === primary?.id) ? manifest.design : null;
+  if (design) {
+    const draft = `${s.join('\n')}\n\n${[...t, renderDesignContext(design, true), '</tm8_task_prompt>'].join('\n')}`;
+    t.push(renderDesignContext(design, utf8Bytes(draft) <= BYTE_BUDGETS.combinedInitialInjection));
   }
   t.push('</tm8_task_prompt>');
 

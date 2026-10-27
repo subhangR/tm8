@@ -38,9 +38,10 @@ import type {
   SpaceCredentialProviderName,
   SpaceCredentialStoredProviderName,
   SpaceCredentialView,
+  SpaceCredentialShareView,
 } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
-import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, SpaceLoginTarget } from './space-port';
+import type { SpaceCredentialsPort, SpaceCredentialsViewer, SpaceLoginProvider, SpaceLoginTarget, SpaceShareCandidate } from './space-port';
 import {
   SHARED_SERVER_WARNING,
   SOURCE_WORD,
@@ -57,8 +58,11 @@ import {
   canManage,
   canMyDefault,
   canRevoke,
+  canSeeShares,
   canSeeUsage,
   canSetVisibility,
+  canShare,
+  isSharedWithMe,
   creatorLabel,
   ownerLabel,
   visibilityWord,
@@ -90,13 +94,19 @@ export interface SpaceCredentialsSectionProps {
    * there; this screen keeps create, add and policy. Absent, no row offers it.
    */
   onOpen?: (credentialId: string) => void;
+  /**
+   * The phone's arrangement (mockup 01a14cc4, tagged "status"): readiness and
+   * each credential's state, with no add, login, share, policy or per-row
+   * verb. Those are desktop work, and the section says so.
+   */
+  statusOnly?: boolean;
 }
 
 function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen }: SpaceCredentialsSectionProps) {
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen, statusOnly = false }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
@@ -153,6 +163,37 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 
   const groups = groupByProvider(rows ?? []);
 
+  if (statusOnly) {
+    return (
+      <SectionFrame title={heading}>
+        <div className="set-spc set-spc--status" data-testid="space-credentials" data-status-only="true">
+          <p className="set-spc__lede">
+            A launch reads yours, then the space&apos;s, then the node&apos;s. Status only on a phone:
+            adding keys, logging in, sharing and policy are on desktop.
+          </p>
+          <ReadinessPanel readiness={readiness} error={readinessError} statusOnly />
+          {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
+          {rows !== null
+            ? SPACE_STORED_PROVIDERS.map((provider) => (
+                <section key={provider} className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={SPACE_PROVIDER_NAME[provider]}>
+                  <h4 className="set-spc__group-title">{SPACE_PROVIDER_NAME[provider]}</h4>
+                  {groups[provider].length === 0 ? (
+                    <p className="set-spc__muted" data-testid={`space-cred-empty-${provider}`}>
+                      No {SPACE_PROVIDER_NAME[provider]} credential in this space yet.
+                    </p>
+                  ) : (
+                    <ul className="set-spc__list">
+                      {groups[provider].map((row) => <CredentialStatusRow key={row.id} row={row} viewer={viewer} />)}
+                    </ul>
+                  )}
+                </section>
+              ))
+            : null}
+        </div>
+      </SectionFrame>
+    );
+  }
+
   return (
     <SectionFrame title={heading}>
       <div className="set-spc" data-testid="space-credentials">
@@ -199,7 +240,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
  * takes the member to that provider's group, where adding a key or logging in
  * lives. Nothing here disables anything.
  */
-function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadinessView | null; error: string | null }) {
+function ReadinessPanel({ readiness, error, statusOnly = false }: { readiness: CredentialsSpaceReadinessView | null; error: string | null; statusOnly?: boolean }) {
   if (error) {
     return (
       <div className="set-spc__readiness" data-testid="space-cred-readiness-error" role="status">
@@ -213,7 +254,8 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
     group?.scrollIntoView?.({ block: 'start' });
     group?.focus();
   };
-  const connect = (provider: SpaceCredentialProviderName) => (
+  /* Status only: the connect jump lands on add/login controls that are not drawn. */
+  const connect = (provider: SpaceCredentialProviderName) => statusOnly ? null : (
     <button
       type="button"
       className="set-spc__readiness-connect"
@@ -448,6 +490,29 @@ function ProviderGroup({
   );
 }
 
+/** One credential's state and nothing to act on: the phone's status row. */
+function CredentialStatusRow({ row, viewer }: { row: SpaceCredentialView; viewer: SpaceCredentialsViewer | null }) {
+  const statusWord = row.status === 'stale' ? 'failed its last check' : row.status === 'pending' ? 'login not finished' : 'active';
+  const visibility = visibilityWord(row);
+  const sharedWithMe = isSharedWithMe(row, viewer);
+  return (
+    <li className={`set-spc__row set-spc__row--${row.status}`} data-testid={`space-cred-row-${row.id}`}>
+      <div className="set-spc__row-head">
+        <span className="set-spc__label">{row.label}</span>
+        {row.isDefault ? <span className="set-spc__badge set-spc__badge--default">default</span> : null}
+        {visibility ? <span className={`set-spc__badge set-spc__badge--${visibility}`}>{visibility}</span> : null}
+        {sharedWithMe ? <span className="set-spc__badge set-spc__badge--shared">shared with you</span> : null}
+        <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
+      </div>
+      <div className="set-spc__meta">
+        <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
+        {row.keyHint ? <span>ends …{row.keyHint}</span> : null}
+        <span>last used {formatWhen(row.lastUsedAt)}</span>
+      </div>
+    </li>
+  );
+}
+
 function CredentialRow({
   row,
   allRows,
@@ -476,6 +541,9 @@ function CredentialRow({
   const claimable = canClaim(row, viewer);
   const mine = canMyDefault(row, viewer);
   const usageAllowed = canSeeUsage(row, viewer);
+  const sharesVisible = canSeeShares(row, viewer);
+  const sharedWithMe = isSharedWithMe(row, viewer);
+  const [sharesOpen, setSharesOpen] = useState(false);
   const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private'>('idle');
   const [usage, setUsage] = useState<CredentialsSpaceUsageView | null>(null);
   const [draft, setDraft] = useState('');
@@ -529,6 +597,9 @@ function CredentialRow({
         {visibility ? (
           <span className={`set-spc__badge set-spc__badge--${visibility}`} data-testid={`space-cred-visibility-${row.id}`}>{visibility}</span>
         ) : null}
+        {sharedWithMe ? (
+          <span className="set-spc__badge set-spc__badge--shared" data-testid={`space-cred-shared-with-me-${row.id}`}>shared with you</span>
+        ) : null}
         <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
         {onOpen ? (
           <button type="button" className="cred-action" data-testid={`space-cred-open-${row.id}`}
@@ -544,7 +615,7 @@ function CredentialRow({
         <span>last used {formatWhen(row.lastUsedAt)}</span>
       </div>
 
-      {owner || claimable || mine || usageAllowed ? (
+      {owner || claimable || mine || usageAllowed || sharesVisible ? (
         <div className="cred-card__actions set-spc__actions" data-testid={`space-cred-owner-actions-${row.id}`}>
           {claimable ? (
             <button type="button" className="cred-action" aria-label={`Claim as mine ${row.label}`} disabled={busy !== null}
@@ -597,6 +668,13 @@ function CredentialRow({
               Clear my default
             </button>
           ) : null}
+          {sharesVisible ? (
+            <button type="button" className="cred-action" aria-expanded={sharesOpen}
+              aria-label={`${canShare(row, viewer) ? 'Share with member' : 'Shared with'} ${row.label}`} disabled={busy !== null}
+              onClick={() => setSharesOpen(!sharesOpen)}>
+              {sharesOpen ? 'Hide sharing' : canShare(row, viewer) ? 'Share with member' : 'Shared with'}
+            </button>
+          ) : null}
           {usageAllowed ? (
             <button type="button" className="cred-action" aria-expanded={usage !== null} aria-label={`Usage ${row.label}`} disabled={busy !== null}
               onClick={() => void toggleUsage()}>
@@ -627,6 +705,9 @@ function CredentialRow({
       ) : null}
 
       {usage ? <UsageList usage={usage} viewer={viewer} /> : null}
+      {sharesVisible && sharesOpen ? (
+        <SharesPanel row={row} port={port} canAdd={canShare(row, viewer)} onChanged={onChanged} />
+      ) : null}
 
       {manage || revoke ? (
         <div className="cred-card__actions set-spc__actions">
@@ -680,7 +761,9 @@ function CredentialRow({
         </div>
       ) : (
         <p className="set-spc__muted" data-testid={`space-cred-readonly-${row.id}`}>
-          {row.ownerAccountId
+          {sharedWithMe
+            ? 'Shared with you by its owner. You can launch with it or make it your default; only its owner can change it.'
+            : row.ownerAccountId
             ? row.visibility === 'private'
               ? 'Private to another member. Only its owner can launch with it or change it.'
               : 'You can launch with it. Only its owner can change it.'
@@ -733,6 +816,148 @@ function CredentialRow({
 
       <BusyAndFailure busy={busy} failure={failure} provider={row.provider} />
     </li>
+  );
+}
+
+/**
+ * 992: who a PRIVATE credential is shared with. The owner picks a member to
+ * share with; the owner or a space admin revokes a grant, which ends that
+ * member's sessions on it. Nothing here touches the credential itself.
+ */
+function SharesPanel({ row, port, canAdd, onChanged }: {
+  row: SpaceCredentialView;
+  port: SpaceCredentialsPort;
+  canAdd: boolean;
+  onChanged(message?: string): Promise<void>;
+}) {
+  const [shares, setShares] = useState<SpaceCredentialShareView[] | null>(null);
+  const [candidates, setCandidates] = useState<SpaceShareCandidate[]>([]);
+  const [pick, setPick] = useState('');
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<SpaceCredentialFailure | null>(null);
+  /** A revoke whose grant is gone but some of the grantee's sessions did not stop. */
+  const [unstopped, setUnstopped] = useState<{ accountId: string; name: string; count: number } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [list, members] = await Promise.all([
+        port.shares(row.id),
+        canAdd ? port.shareCandidates() : Promise.resolve([]),
+      ]);
+      setShares(list.shares);
+      setCandidates(members);
+    } catch (err) {
+      setFailure(failureOf(err));
+    }
+  }, [port, row.id, canAdd]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  /**
+   * Withdraw the share, then say what happened to the grantee's sessions. The
+   * grant is gone even when a kill failed; that case stays on screen with a
+   * retry (unshare re-lists the grantee's live sessions on every call), since
+   * the background sweep is a backstop, not proof the session stopped.
+   */
+  async function revoke(accountId: string, name: string): Promise<string> {
+    const result = await port.unshare(row.id, accountId);
+    const ended = result.terminatedAgentSessionIds.length;
+    const stuck = result.failures.filter((f) => f.sessionId !== row.id).length;
+    setUnstopped(stuck > 0 ? { accountId, name, count: stuck } : null);
+    const endedText = ended ? ` ${ended} session${ended === 1 ? '' : 's'} they launched with it ended.` : '';
+    if (stuck > 0) {
+      return `“${row.label}” is no longer shared with ${name}, but ${stuck} session${stuck === 1 ? '' : 's'} they launched with it could not be stopped yet.${endedText}`;
+    }
+    return `“${row.label}” is no longer shared with ${name}.${endedText}`;
+  }
+
+  async function act(work: () => Promise<string>) {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const message = await work();
+      setPick('');
+      setConfirming(null);
+      await load();
+      await onChanged(message);
+    } catch (err) {
+      setFailure(failureOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sharedIds = new Set((shares ?? []).map((s) => s.granteeMemberId).filter((id): id is string => !!id));
+  const open = candidates.filter((c) => !sharedIds.has(c.memberId));
+  const nameOf = (share: SpaceCredentialShareView) =>
+    share.granteeDisplayName ?? candidates.find((c) => c.memberId === share.granteeMemberId)?.name ?? 'a member';
+
+  return (
+    <div className="set-spc__shares" data-testid={`space-cred-shares-${row.id}`}>
+      {shares === null && failure === null ? <p className="set-spc__muted">Loading…</p> : null}
+      {shares !== null && shares.length === 0 ? (
+        <p className="set-spc__muted" data-testid={`space-cred-shares-empty-${row.id}`}>Not shared with anyone. Only you can launch with it. A member you share it with can launch with it, but never sees its key or opens its terminals.</p>
+      ) : null}
+      {shares !== null && shares.length > 0 ? (
+        <ul className="set-spc__share-list">
+          {shares.map((share) => (
+            <li key={share.granteeAccountId} data-testid={`space-cred-share-${row.id}-${share.granteeAccountId}`}>
+              <span>{nameOf(share)}{share.granteeMemberId === null ? ' (left the space)' : ''}</span>
+              {confirming === share.granteeAccountId ? (
+                <>
+                  <button type="button" className="cred-action set-spc__danger" disabled={busy}
+                    aria-label={`Confirm revoke ${nameOf(share)} ${row.label}`}
+                    onClick={() => void act(() => revoke(share.granteeAccountId, nameOf(share)))}>
+                    Revoke, and end their sessions on it
+                  </button>
+                  <button type="button" className="cred-action" aria-label={`Keep sharing ${nameOf(share)} ${row.label}`}
+                    onClick={() => setConfirming(null)}>Keep</button>
+                </>
+              ) : (
+                <button type="button" className="cred-action" disabled={busy}
+                  aria-label={`Revoke ${nameOf(share)} ${row.label}`}
+                  onClick={() => { setFailure(null); setConfirming(share.granteeAccountId); }}>
+                  Revoke
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {unstopped ? (
+        <div className="set-spc__muted" role="alert" data-testid={`space-cred-unstopped-${row.id}`}>
+          {unstopped.count} session{unstopped.count === 1 ? '' : 's'} {unstopped.name} launched with “{row.label}” could not be stopped. They can no longer start new ones.
+          {' '}<button type="button" className="cred-action" disabled={busy}
+            aria-label={`Retry stopping ${unstopped.name} sessions ${row.label}`}
+            onClick={() => void act(() => revoke(unstopped.accountId, unstopped.name))}>
+            Retry stopping their sessions
+          </button>
+        </div>
+      ) : null}
+      {canAdd ? (
+        <form className="set-spc__form" onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          const member = open.find((c) => c.memberId === pick);
+          if (!member) return;
+          void act(async () => {
+            const result = await port.share(row.id, member.memberId);
+            return result.shared
+              ? `“${row.label}” is shared with ${member.name}. They can launch with it; its key stays hidden and they cannot open its terminals.`
+              : `“${row.label}” was already shared with ${member.name}.`;
+          });
+        }}>
+          <select className="set-spc__input" aria-label={`Member to share ${row.label} with`} value={pick}
+            disabled={busy || open.length === 0} onChange={(e) => setPick(e.target.value)}>
+            <option value="">{open.length === 0 ? 'No other member to share with' : 'Choose a member…'}</option>
+            {open.map((c) => <option key={c.memberId} value={c.memberId}>{c.name}</option>)}
+          </select>
+          <button type="submit" className="cred-action cred-action--primary" aria-label={`Share ${row.label}`}
+            disabled={busy || !pick}>Share</button>
+        </form>
+      ) : null}
+      <BusyAndFailure busy={busy ? 'plain' : null} failure={failure} provider={row.provider} />
+    </div>
   );
 }
 

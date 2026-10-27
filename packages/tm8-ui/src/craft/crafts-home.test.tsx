@@ -1,0 +1,299 @@
+// @vitest-environment jsdom
+/**
+ * THE CRAFTS HOME (Craft → Crafts, item 9) and its doors (item 14).
+ *
+ *  · the grid: one card per craft, page-kind marks in page order (folding
+ *    past the cap), `N pages · N chats`, edited-ago, the running dot;
+ *  · ONE empty state, and a no-match line that is not a second one;
+ *  · + New craft creates through the source and opens the new craft;
+ *  · the seam source reads crafts (page kinds ride the summary) and counts chats by subject;
+ *  · every door into Craft resolves to bare `/craft` — the home.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
+import type { Seam } from '../data/seam';
+import { routeViewOf } from '../domain';
+import { build, defaultRoute } from '../routes/codec';
+import { CARD_PAGE_MARKS, CraftsHome } from './CraftsHome';
+import { craftsSourceFromSeam, fixtureCraftsSource, type CraftsSource } from './crafts-source';
+
+afterEach(() => cleanup());
+
+const NOW = Date.parse('2026-10-06T12:00:00Z');
+const id = (n: number) => `019f98a0-aaaa-bbbb-cccc-${String(n).padStart(12, '0')}` as EntityId;
+
+function seeded() {
+  return fixtureCraftsSource([
+    {
+      id: id(1),
+      title: 'Pricing launch',
+      pages: [{ kind: 'graph' }, { kind: 'doc' }, { kind: 'artifact' }],
+      chatCount: 2,
+      activityAt: '2026-10-06T11:55:00Z',
+      running: true,
+    },
+    { id: id(2), title: 'Passkeys', pages: [{ kind: 'graph' }], chatCount: 1, activityAt: '2026-10-04T12:00:00Z' },
+  ]);
+}
+
+describe('the Crafts home grid', () => {
+  it('draws one card per craft: marks, title, counts, edited-ago, running dot', async () => {
+    const view = render(<CraftsHome source={seeded()} onOpenCraft={() => {}} now={NOW} />);
+    await waitFor(() => expect(view.getAllByTestId('dsh-card')).toHaveLength(2));
+    const [first, second] = view.getAllByTestId('dsh-card');
+
+    expect([...first!.querySelectorAll('[data-kind]')].map((el) => el.getAttribute('data-kind'))).toEqual([
+      'graph',
+      'doc',
+      'artifact',
+    ]);
+    expect(first!.textContent).toContain('Pricing launch');
+    expect(first!.querySelector('[data-testid="dsh-card-meta"]')!.textContent).toBe('3 pages · 2 chats');
+    expect(first!.textContent).toContain('edited 5m ago');
+    expect(first!.querySelector('[data-testid="dsh-card-live"]')).not.toBeNull();
+
+    /* Singulars read as singulars, and no dot without a live session. */
+    expect(second!.querySelector('[data-testid="dsh-card-meta"]')!.textContent).toBe('1 page · 1 chat');
+    expect(second!.querySelector('[data-testid="dsh-card-live"]')).toBeNull();
+    expect(view.getByTestId('dsh-find')).toBeTruthy();
+    expect(view.queryByTestId('dsh-empty')).toBeNull();
+  });
+
+  it('folds page marks past the cap into +N', async () => {
+    const pages = Array.from({ length: CARD_PAGE_MARKS + 3 }, () => ({ kind: 'doc' as const }));
+    const source = fixtureCraftsSource([{ id: id(3), title: 'Big', pages }]);
+    const view = render(<CraftsHome source={source} onOpenCraft={() => {}} now={NOW} />);
+    await waitFor(() => view.getByTestId('dsh-card'));
+    const marks = view.getByTestId('dsh-card-pages');
+    expect(marks.querySelectorAll('[data-kind]')).toHaveLength(CARD_PAGE_MARKS);
+    expect(marks.textContent).toContain('+3');
+  });
+
+  it('shows ONE empty state for a space with no crafts, with no search box', async () => {
+    const view = render(<CraftsHome source={fixtureCraftsSource()} onOpenCraft={() => {}} />);
+    await waitFor(() => view.getByTestId('dsh-empty'));
+    expect(view.getAllByTestId('dsh-empty')).toHaveLength(1);
+    expect(view.queryByTestId('dsh-grid')).toBeNull();
+    expect(view.queryByTestId('dsh-find')).toBeNull();
+  });
+
+  it('filters by title; a search that matches nothing is one quiet line', async () => {
+    const view = render(<CraftsHome source={seeded()} onOpenCraft={() => {}} now={NOW} />);
+    await waitFor(() => expect(view.getAllByTestId('dsh-card')).toHaveLength(2));
+    fireEvent.change(view.getByTestId('dsh-find'), { target: { value: 'pass' } });
+    expect(view.getAllByTestId('dsh-card')).toHaveLength(1);
+    expect(view.getByTestId('dsh-card').textContent).toContain('Passkeys');
+    fireEvent.change(view.getByTestId('dsh-find'), { target: { value: 'zzz' } });
+    expect(view.getByTestId('dsh-no-match').textContent).toContain('zzz');
+    expect(view.queryByTestId('dsh-empty')).toBeNull();
+  });
+
+  it('says so when the list cannot load, and retries', async () => {
+    const list = vi.fn<CraftsSource['list']>().mockRejectedValueOnce(new Error('down')).mockResolvedValue([]);
+    const source: CraftsSource = { list, create: vi.fn(), subscribe: () => () => {} };
+    const view = render(<CraftsHome source={source} onOpenCraft={() => {}} />);
+    await waitFor(() => view.getByTestId('dsh-error'));
+    fireEvent.click(view.getByText('Try again'));
+    await waitFor(() => view.getByTestId('dsh-empty'));
+  });
+
+  it('opens a craft from its card', async () => {
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={seeded()} onOpenCraft={onOpen} now={NOW} />);
+    await waitFor(() => expect(view.getAllByTestId('dsh-card')).toHaveLength(2));
+    fireEvent.click(view.getAllByTestId('dsh-card')[1]!);
+    expect(onOpen).toHaveBeenCalledWith(id(2));
+  });
+
+  it('+ New craft creates the entity and navigates into it', async () => {
+    const source = fixtureCraftsSource();
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} />);
+    await waitFor(() => view.getByTestId('dsh-empty'));
+    fireEvent.click(view.getByTestId('dsh-new'));
+    /* It asks for a name first, on the default, selected. */
+    const field = view.getByTestId('dsh-new-name') as HTMLInputElement;
+    expect(field.value).toBe('Untitled craft');
+    expect(source.crafts).toHaveLength(0);
+    fireEvent.click(view.getByTestId('dsh-new-name-submit'));
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+    const created = onOpen.mock.calls[0]![0] as EntityId;
+    expect(source.crafts.map((d) => d.id)).toEqual([created]);
+    expect(source.crafts[0]!.title).toBe('Untitled craft');
+  });
+
+  it('+ New craft takes the typed name; Esc cancels without creating', async () => {
+    const source = seeded();
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} now={NOW} />);
+    await waitFor(() => view.getByTestId('dsh-grid'));
+    fireEvent.click(view.getByTestId('dsh-new'));
+    fireEvent.keyDown(view.getByTestId('dsh-new-name'), { key: 'Escape' });
+    expect(view.queryByTestId('dsh-new-name')).toBeNull();
+    expect(source.crafts).toHaveLength(2);
+
+    fireEvent.click(view.getByTestId('dsh-new'));
+    const field = view.getByTestId('dsh-new-name');
+    fireEvent.change(field, { target: { value: '  Checkout redesign ' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+    expect(source.crafts[0]!.title).toBe('Checkout redesign');
+  });
+
+  it('a card’s ⋯ → Rename edits its name in place', async () => {
+    const source = seeded();
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} now={NOW} />);
+    await waitFor(() => view.getByTestId('dsh-grid'));
+    fireEvent.click(view.getAllByTestId('dsh-card-more')[1]!);
+    fireEvent.click(view.getByTestId('dsh-card-rename-item'));
+    const field = view.getByTestId('dsh-card-rename') as HTMLInputElement;
+    expect(field.value).toBe('Passkeys');
+    fireEvent.change(field, { target: { value: 'Passkeys rollout' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(view.getByText('Passkeys rollout')).toBeTruthy());
+    expect(source.crafts.find((c) => c.id === id(2))!.title).toBe('Passkeys rollout');
+    /* Renaming never opened the craft. */
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed create and stays on the home', async () => {
+    const onNotice = vi.fn();
+    const onOpen = vi.fn();
+    const source: CraftsSource = {
+      list: async () => [],
+      create: async () => {
+        throw new Error('kind craft is not known');
+      },
+      rename: async () => {},
+      subscribe: () => () => {},
+    };
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} onNotice={onNotice} />);
+    await waitFor(() => view.getByTestId('dsh-empty'));
+    fireEvent.click(view.getByTestId('dsh-empty-new'));
+    fireEvent.click(view.getByTestId('dsh-new-name-submit'));
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('kind craft is not known'));
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('the seam-backed crafts source', () => {
+  const SPACE = 'space-1' as SpaceId;
+  function summary(over: Partial<EntitySummary> & Pick<EntitySummary, 'id' | 'kind'>): EntitySummary {
+    return {
+      spaceId: SPACE,
+      title: 'Row',
+      parentId: null,
+      position: 0,
+      visibility: 'space',
+      version: 1,
+      activityAt: '2026-10-06T00:00:00Z',
+      createdAt: '2026-10-06T00:00:00Z',
+      updatedAt: '2026-10-06T00:00:00Z',
+      deletedAt: null,
+      createdBy: { id: 'm', kind: 'member', displayName: 'M' },
+      counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
+      state: {},
+      badges: {},
+      ...over,
+    } as unknown as EntitySummary;
+  }
+
+  it('reads crafts, counts chats by subject and reads each card’s page kinds off its summary', async () => {
+    const craft = summary({
+      id: id(10),
+      kind: 'craft' as EntitySummary['kind'],
+      title: 'Launch',
+      state: { kind: 'craft', pageCount: 2, pageKinds: ['doc', 'graph'] } as unknown as EntitySummary['state'],
+      badges: { workingActors: [{}] } as unknown as EntitySummary['badges'],
+    });
+    const chats = [
+      summary({ id: id(20), kind: 'chat', state: { about: { id: id(10) } } as unknown as EntitySummary['state'] }),
+      summary({ id: id(21), kind: 'chat', state: { about: { id: id(10) } } as unknown as EntitySummary['state'] }),
+      summary({ id: id(22), kind: 'chat', state: { about: null } as unknown as EntitySummary['state'] }),
+    ];
+    const query = vi.fn(async (input: { kinds?: string[] }) => ({
+      page: { items: input.kinds?.[0] === 'craft' ? [craft] : chats },
+    }));
+    /* The summary carries the page kinds (304): no craft page, so no detail read. */
+    const entity = vi.fn();
+    const createEntity = vi.fn(async () => ({ entity: { id: id(40) } }));
+    const seam = { query, entity, commands: { createEntity }, onEvent: () => () => {} } as unknown as Seam;
+
+    const source = craftsSourceFromSeam(seam, SPACE);
+    expect(await source.list()).toEqual([
+      {
+        id: id(10),
+        title: 'Launch',
+        version: 1,
+        pageKinds: ['doc', 'graph'],
+        pageCount: 2,
+        chatCount: 2,
+        activityAt: '2026-10-06T00:00:00Z',
+        running: true,
+      },
+    ]);
+
+    expect(entity).not.toHaveBeenCalled();
+
+    expect(await source.create('Untitled craft')).toBe(id(40));
+    expect(createEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: 'craft', title: 'Untitled craft', spaceId: SPACE }));
+  });
+
+  it('renames a craft with a title patch at the card’s version', async () => {
+    const patchEntity = vi.fn(async () => ({}));
+    const seam = { commands: { patchEntity }, onEvent: () => () => {} } as unknown as Seam;
+    await craftsSourceFromSeam(seam, SPACE).rename(id(10), 'Launch v2', 4);
+    expect(patchEntity).toHaveBeenCalledWith(id(10), expect.objectContaining({ title: 'Launch v2', expectedVersion: 4 }));
+  });
+});
+
+describe('top-level crafts only', () => {
+  it('a craft that is a page of another is reached through its parent, not listed', async () => {
+    const source = fixtureCraftsSource([
+      { id: id(1), title: 'Pricing launch', pages: [{ kind: 'graph' }, { kind: 'craft', id: id(2) }] },
+      { id: id(2), title: 'Backend', pages: [{ kind: 'graph' }] },
+    ]);
+    const view = render(<CraftsHome source={source} onOpenCraft={() => {}} now={NOW} />);
+    await waitFor(() => view.getByText('Pricing launch'));
+    expect(view.queryByText('Backend')).toBeNull();
+  });
+
+  it('the seam source reads a detail only for crafts that hold a craft page, and drops their nested crafts', async () => {
+    const craft = (n: number, title: string, pageKinds: string[]) =>
+      ({
+        id: id(n),
+        kind: 'craft',
+        title,
+        activityAt: '2026-10-06T00:00:00Z',
+        state: { kind: 'craft', pageCount: pageKinds.length, pageKinds },
+        badges: {},
+      }) as unknown as EntitySummary;
+    const parent = craft(10, 'Pricing launch', ['graph', 'craft']);
+    const nested = craft(11, 'Backend', ['graph']);
+    const plain = craft(12, 'Passkeys', ['doc']);
+    const query = vi.fn(async (input: { kinds?: string[] }) => ({
+      page: { items: input.kinds?.[0] === 'craft' ? [parent, nested, plain] : [] },
+    }));
+    const entity = vi.fn(async () => ({
+      content: { description: '', pages: [{ id: id(30), kind: 'graph' }, { id: id(11), kind: 'craft' }] },
+    }));
+    const seam = { query, entity, commands: {}, onEvent: () => () => {} } as unknown as Seam;
+
+    const cards = await craftsSourceFromSeam(seam, 'space-1' as SpaceId).list();
+    expect(cards.map((card) => card.title)).toEqual(['Pricing launch', 'Passkeys']);
+    expect(cards[0]!.pageKinds).toEqual(['graph', 'craft']);
+    expect(entity).toHaveBeenCalledTimes(1);
+    expect(entity).toHaveBeenCalledWith(id(10));
+  });
+});
+
+describe('the doors into Craft land on the home (item 14)', () => {
+  it('the Craft view target — the view selector and the Workspace rail tool — is bare /craft', () => {
+    const view = routeViewOf({ type: 'view', ref: 'craft' });
+    expect(view).toStrictEqual({ view: 'craft' });
+    const SPACE = '019f98a0-1111-2222-3333-444455556666' as SpaceId;
+    expect(build(defaultRoute(SPACE, view!)).hash).toBe(`#/s/${SPACE}/craft`);
+  });
+});

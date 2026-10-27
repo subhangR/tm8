@@ -499,9 +499,16 @@ test('a credential login terminal is never nudged and never owns a PR', (t) => {
   const session = spawnSession('lane-a-credential');
   // Flip it to a credential terminal directly: 083's own door mints these, and
   // borrowing it here would couple this suite to that migration's call shape.
+  // 273 mints a credential terminal as none/'credential_login' (a pending one
+  // violates work_sessions_credential_pending_kind_check), and the binding has a
+  // single writer, so the fixture opens that writer's flag for this transaction.
   ok(
-    `update public.work_sessions set session_kind = 'credential' where entity_id = ${uuid(session)}`,
-    { url: OWNER_URL },
+    `select set_config('tm8.credential_binding_write', 'on', true);
+     update public.work_sessions
+        set session_kind = 'credential', credential_binding = 'none',
+            credential_none_reason = 'credential_login'
+      where entity_id = ${uuid(session)}`,
+    { url: OWNER_URL, singleTransaction: true },
   );
 
   // It must not be selected as an owner in the first place, which is the
@@ -568,7 +575,7 @@ test('an agent session is still selected once 083 is in the chain', (t) => {
 // delivered to terminals (019 mints the delivery intent, post_message does not).
 // =============================================================================
 
-/** Link a PR the way production does, so `created_in` provenance exists. */
+/** Link a PR the way production does, so `authored_from` provenance exists (308). */
 function linkPrOwnedBy(number, sessionId, sha) {
   const pr = linkPr(number);
   ok(`select public.record_session_commit(${uuid(sessionId)}, 'acme/forge', ${literal(sha)})`, {

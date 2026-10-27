@@ -1,0 +1,146 @@
+/* The craft's tab strip (CraftTabStrip.tsx): [pages ▾] then the person's tabs,
+   in the Workspace tab strip's look (tabstrip.css). */
+.cts-strip {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  height: 40px;
+  padding: 0 var(--pn-space-2) 0 0;
+  background: var(--pn-paper);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cts-strip__scroll {
+  flex: 0 1 auto;
+}
+.cts-tab:not([data-pinned]) {
+  cursor: grab;
+}
+/* The tab's main control is a real <button>: strip the native chrome. */
+.cts-tab .tws-ts-tab-main {
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+}
+/* The overview never closes: it is as wide as its title, no reserved slot. */
+.cts-tab[data-pinned] {
+  flex: none;
+  min-width: 0;
+  max-width: none;
+  padding-right: var(--pn-space-3);
+}
+.cts-tab[data-pinned] .tws-ts-slot {
+  display: none;
+}
+.cts-updated {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-brand);
+}
+
+/* [pages ▾]: a small tab stuck to the panel's left edge. */
+.cts-pages {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  border-right: 1px solid var(--pn-line);
+}
+.cts-pages__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-3);
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cts-pages__btn:hover,
+.cts-pages__btn[aria-expanded='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.cts-pages__count {
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.cts-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 260px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.cts-menu__page {
+  display: flex;
+  align-items: center;
+}
+.cts-menu__page > .cts-menu__kind {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cts-menu__kind {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.cts-menu__kind[data-open] {
+  font-weight: 600;
+}
+.cts-menu__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cts-menu__remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  opacity: 0;
+}
+.cts-menu__page:hover .cts-menu__remove,
+.cts-menu__remove:focus-visible {
+  opacity: 1;
+}
+.cts-menu__remove:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cts-menu__head,
+.cts-menu__hollow {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-2);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cts-menu__sep {
+  height: 1px;
+  margin: var(--pn-space-1) 0;
+  background: var(--pn-line);
+}

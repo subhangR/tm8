@@ -18,6 +18,7 @@
  *     be made lossy by a Phase-1 client.
  */
 import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
+import { isFileTabPath, isFileTabProjectId } from '@tm8/contract/workspace';
 import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../domain';
 import type { CollectionMode } from '../domain';
 import { decodeQ, encodeQ } from './q';
@@ -41,6 +42,7 @@ import {
   MAX_HASH_LENGTH,
   PANEL_TABS,
   SETTINGS_ROUTE_SECTIONS,
+  NODE_ADMIN_ROUTE_SECTIONS,
   emptyPanels,
 } from './types';
 
@@ -247,6 +249,27 @@ function parseQ(raw: string | null, onDrop: () => void): QValue | null {
  * param: anything unparseable is discarded ATOMICALLY and the canonical
  * default renders in its place.
  */
+type CraftView = Extract<NavView, { view: 'craft' }>;
+
+/** `/craft/…` segments → the craft view; ids only, cut at the first non-id. */
+function craftOf(segments: readonly string[]): CraftView {
+  const keys = ['craftId', 'pageId'] as const;
+  const view: CraftView = { view: 'craft' };
+  for (const [index, key] of keys.entries()) {
+    const segment = segments[index];
+    if (!segment || !ID_LIKE.test(segment)) break;
+    view[key] = segment as EntityId;
+  }
+  return view;
+}
+
+/** The craft view → its path after `/craft`, each id only under the one before it. */
+function craftPath(view: CraftView): string {
+  if (!view.craftId) return '';
+  if (!view.pageId) return `/${enc(view.craftId)}`;
+  return `/${enc(view.craftId)}/${enc(view.pageId)}`;
+}
+
 export function parse(hash: string): ParseOutcome {
   const dropped: DropClass[] = [];
   const drop = (cls: DropClass) => () => {
@@ -353,6 +376,24 @@ export function parse(hash: string): ParseOutcome {
   return { route: { spaceId, target, panels }, dropped };
 }
 
+/**
+ * Home, the tabs view. `?tab=` names the active entity tab; `?fp=&f=` an
+ * active project file tab (project id, relative path), held to the
+ * workspace's own file-tab rule. Lossy-tolerant like `?about=`: a value that
+ * does not fit is not carried.
+ */
+function tabsOf(query: Query): NavView {
+  const tab = query.get('tab');
+  if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
+  const rawProject = query.get('fp');
+  const rawPath = query.get('f');
+  const projectId = rawProject === null ? null : dec(rawProject);
+  const path = rawPath === null ? null : dec(rawPath);
+  return isFileTabProjectId(projectId) && isFileTabPath(path)
+    ? { view: 'tabs', file: { projectId, path } }
+    : { view: 'tabs' };
+}
+
 function parseTarget(
   rest: string[],
   query: Query,
@@ -413,6 +454,21 @@ function parseTarget(
           },
         };
       }
+      /* `/home` IS THE DESKTOP'S HOME, the tabs view (Craft redesign §2,
+         2026-10-10: Work was renamed Home and `/home` made canonical; `/work`
+         and `/tabs` decode to it below). A `?tab=` or `?fp=&f=` names a Home
+         tab and decodes straight to it, with any panel params (`?p=` …) kept
+         as they are: the tabs view writes `/home?tab=X&p=B` itself (a palette
+         pick of a kind Home does not host pushes B over tab X), so reload,
+         Back and Forward must read back X active with the same trail.
+         BARE `/home` decodes to the shared Home target too, because the phone
+         (D16) and the legacy desktop keep their chat Home there; the
+         three-mode desktop reads it as the tabs view at decode time instead
+         (`homeAsTabs`, applied by the router), so its own address reads back
+         without a redirect. */
+      if (rest[1] === undefined && (query.get('tab') !== null || query.get('fp') !== null)) {
+        return tabsOf(query);
+      }
       return { view: 'home' };
     }
     case 'feed':
@@ -439,8 +495,11 @@ function parseTarget(
       /* The task Board (2026-08-16) — same flat whole-centre posture. */
       return { view: 'board' };
     case 'craft':
-      /* The Craft studio (2026-08-16) — same flat whole-centre posture. */
-      return { view: 'craft' };
+      /* Craft (2026-08-16) — bare, the Designs home; then up to three ids
+         (design, page, nested page). Lossy-tolerant like `?about=`: the path
+         is cut at the first segment that is not plausibly an id, so a
+         mangled page still lands on its design. */
+      return craftOf(rest.slice(1));
     case 'help': {
       /* The Help shelf (2026-08-19), with an optional open plate (2026-08-20)
          in the `settings/{section}` shape. The slug is NOT checked against the
@@ -450,6 +509,12 @@ function parseTarget(
       const plate = rest[1];
       return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
     }
+    case 'work':
+    case 'tabs':
+      /* Home's former addresses (Work, D31; the tabs view, Spec B §7) are
+         permanent decode aliases — links to them are in chats and docs — and
+         `build` never emits them. */
+      return tabsOf(query);
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -467,11 +532,18 @@ function parseTarget(
       if (!voiceChannelId) return { view: 'home' };
       return { view: 'voice', voiceChannelId };
     }
+    case 'node-admin':
+      return { view: 'settings', scope: 'node', section: NODE_ADMIN_ROUTE_SECTIONS.find((s) => s === rest[1]) ?? null };
+    case 'space-admin':
     case 'settings': {
       const section = rest[1];
+      // Older links to node controls now go through the node page's guard.
+      if (rest[0] === 'settings' && (section === 'node-credentials' || section === 'filesystem-access')) {
+        return { view: 'settings', scope: 'node', section: section === 'node-credentials' ? 'credentials' : 'filesystem' };
+      }
       const known = SETTINGS_ROUTE_SECTIONS.find((candidate) => candidate === section);
-      if (known) return { view: 'settings', section: known };
-      return { view: 'settings', section: null };
+      const scope = rest[0] === 'space-admin' ? 'space' : undefined;
+      return { view: 'settings', section: known ?? null, ...(scope ? { scope } : {}) };
     }
     case 'channel': {
       const channelId = rest[1];
@@ -565,11 +637,13 @@ function pathOf(route: Route): string {
     case 'board':
       return `${base}/board`;
     case 'craft':
-      return `${base}/craft`;
+      return `${base}/craft${craftPath(t)}`;
     case 'help':
       return t.plate ? `${base}/help/${enc(t.plate)}` : `${base}/help`;
     case 'boardV2':
       return `${base}/board-v2`;
+    case 'tabs':
+      return `${base}/home`;
     case 'newSession':
       return `${base}/new-session`;
     case 'voice':
@@ -582,8 +656,10 @@ function pathOf(route: Route): string {
       return `${base}/k/${enc(t.slug)}`;
     case 'entity':
       return `${base}/e/${enc(t.entityId)}`;
-    case 'settings':
-      return t.section ? `${base}/settings/${t.section}` : `${base}/settings`;
+    case 'settings': {
+      const page = t.scope === 'space' ? 'space-admin' : t.scope === 'node' ? 'node-admin' : 'settings';
+      return t.section ? `${base}/${page}/${t.section}` : `${base}/${page}`;
+    }
   }
 }
 
@@ -633,6 +709,9 @@ export function build(route: Route): BuildOutcome {
     if (t.kinds) viewParams.push(['kinds', t.kinds.map(enc).join(',')]);
   } else if (t.view === 'channel') {
     if (t.msg) viewParams.push(['msg', enc(t.msg)]);
+  } else if (t.view === 'tabs') {
+    if (t.tab) viewParams.push(['tab', enc(t.tab)]);
+    else if (t.file) viewParams.push(['fp', enc(t.file.projectId)], ['f', enc(t.file.path)]);
   }
   if (route.panels.session) viewParams.push(['session', enc(route.panels.session)]);
   /* The chat slot rides with the VIEW params, outside every drop tier: it is
@@ -787,7 +866,139 @@ function dedupe(ids: readonly EntityId[]): EntityId[] {
   return out;
 }
 
+/**
+ * THE THREE-MODE DESKTOP'S READING OF BARE `/home` (Craft redesign §2): Home
+ * is the tabs view there, so a bare `/home` — exactly what the tabs view
+ * writes with no tab active — decodes to it directly. Anything carried with
+ * it (a trail, pins, a chat, a session) is left as the shared Home target, so
+ * `workRedirectOf` still opens it as tabs. The phone and the legacy desktop
+ * never ask; their bare `/home` is the chat Home.
+ */
+export function homeAsTabs(route: Route): Route {
+  if (route.target.view !== 'home' || route.target.root) return route;
+  const { stack, pinned, tabs, contentSurface, session, chat } = route.panels;
+  const carries =
+    stack.length > 0 || pinned.length > 0 || Object.keys(tabs).length > 0 ||
+    Object.keys(contentSurface).length > 0 || session !== null || chat !== null;
+  return carries ? route : { ...route, target: { view: 'tabs' } };
+}
+
 /** A route with nothing open — the canonical default for a space. */
 export function defaultRoute(spaceId: SpaceId, target: NavView = { view: 'home' }): Route {
   return { spaceId, target, panels: emptyPanels() };
+}
+
+// ---------------------------------------------------------------------------
+// Work redirects (D31: three desktop modes — Work · Design · Observe)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a retired DESKTOP address lands in Work (the tabs view), and what it
+ * opens there. ONE TABLE, so every inbound link — chats, docs, the server's
+ * `e/{id}` form links, Copy link from before D31 — is answered in one place.
+ *
+ * PURE AND NOT APPLIED HERE. The codec is shared with the phone, which keeps
+ * Home as its chat screen (D16), so parsing never rewrites these routes: the
+ * desktop branch of GateApp asks `workRedirectOf` and applies the answer with
+ * replace history. The phone never asks.
+ */
+export interface WorkRedirect {
+  /** The route to land on: Work, except Home's graph stage (Observe). */
+  to: NavView;
+  /** Entity ids to open as tabs, in order. Duplicates are already removed. */
+  open: EntityId[];
+  /** The tab to activate (one of `open`), or null to leave the active tab. */
+  activate: EntityId | null;
+  /** Ids walked before `activate`, oldest first: its seeded linked trail. */
+  trail: EntityId[];
+  /** The browser kind, as a URL slug; the caller resolves and checks it. */
+  browserSlug: string | null;
+  /** Open the activated tab's chat dock on this thread. */
+  chat: { thread: EntityId | 'new' } | null;
+  /**
+   * The route names a kind or an entity that Work may not host (`k/{slug}`,
+   * `e/{id}`). The caller redirects only when the kind is a Work kind and
+   * otherwise keeps the route — those screens still exist for other kinds.
+   */
+  onlyForWorkKinds: boolean;
+}
+
+const WORK: NavView = { view: 'tabs' };
+
+function uniq(ids: readonly (EntityId | null | undefined)[]): EntityId[] {
+  const out: EntityId[] = [];
+  for (const id of ids) if (id && !out.includes(id)) out.push(id);
+  return out;
+}
+
+/**
+ * The old panel params (`p`, `pin`, `t`, `session`, `ca`/`ct`) as tabs: every
+ * id they name opens, the stack's cursor (else its top, else the chat
+ * subject) activates, and the stack below the cursor is that tab's trail.
+ */
+function fromPanels(panels: PanelState, extra: Partial<WorkRedirect> = {}): WorkRedirect {
+  const { stack, pinned, cursor, session, chat } = panels;
+  const at = cursor && stack.includes(cursor) ? stack.indexOf(cursor) : stack.length - 1;
+  const top = at >= 0 ? stack[at]! : null;
+  const open = uniq([...pinned, ...stack, ...(Object.keys(panels.tabs) as EntityId[]), session, chat?.about]);
+  const activate = top ?? chat?.about ?? pinned[pinned.length - 1] ?? session ?? open[open.length - 1] ?? null;
+  return {
+    to: WORK,
+    open,
+    activate,
+    trail: top ? stack.slice(0, at) : [],
+    browserSlug: null,
+    chat: chat && chat.about === activate ? { thread: chat.thread } : null,
+    onlyForWorkKinds: false,
+    ...extra,
+  };
+}
+
+type RedirectRow<V extends NavView['view']> = (target: Extract<NavView, { view: V }>, panels: PanelState) => WorkRedirect;
+
+/** The table. A view with no row is not retired on the desktop and stays. */
+const WORK_REDIRECTS: { [V in NavView['view']]?: RedirectRow<V> } = {
+  /* Home: bare, `k/{slug}` (browser kind), `chat[/{id}]` (that chat as a tab;
+     `?about=` opens the subject with its dock), `?stage=graph` (Observe), and
+     its trail (`p` + `pc`) as a tab with a seeded linked trail. */
+  home: (target, panels) => {
+    const root = target.root;
+    if (root?.type === 'kind') return fromPanels(panels, { browserSlug: root.slug });
+    if (root?.type === 'chats') {
+      if (root.stage === 'graph') return { ...fromPanels(panels), to: { view: 'graph' } };
+      if (root.threadId) {
+        const base = fromPanels(panels);
+        const id = root.threadId as EntityId;
+        return { ...base, open: uniq([...base.open, id]), activate: id, trail: [], chat: null, browserSlug: 'chats' };
+      }
+      if (root.aboutId) {
+        const base = fromPanels(panels);
+        return { ...base, open: uniq([...base.open, root.aboutId]), activate: root.aboutId, trail: [], chat: { thread: 'new' } };
+      }
+      /* The Fleet stage has no Work twin: the sessions list is its nearest. */
+      return fromPanels(panels, { browserSlug: root.stage === 'fleet' ? 'sessions' : 'chats' });
+    }
+    return fromPanels(panels);
+  },
+  /* The old Work: its stack and pins become tabs, the top activated. */
+  workspace: (_target, panels) => fromPanels(panels),
+  board: (_target, panels) => fromPanels(panels),
+  boardV2: (_target, panels) => fromPanels(panels),
+  /* `k/{slug}`: Work with that kind in the browser, when Work hosts it. */
+  kind: (target, panels) => fromPanels(panels, { browserSlug: target.slug, onlyForWorkKinds: true }),
+  /* `e/{id}` and `e/{id}?full=1`: the entity as a tab, through the normal
+     open flow, when Work hosts its kind. */
+  entity: (target, panels) => {
+    const base = fromPanels(panels);
+    return { ...base, open: uniq([...base.open, target.entityId]), activate: target.entityId, trail: [], onlyForWorkKinds: true };
+  },
+};
+
+/**
+ * The Work redirect for a DESKTOP route, or null when the route is not
+ * retired (Work itself, Design, Observe, inbox, settings, help, new-session…).
+ */
+export function workRedirectOf(route: Route): WorkRedirect | null {
+  const row = WORK_REDIRECTS[route.target.view] as RedirectRow<NavView['view']> | undefined;
+  return row ? row(route.target, route.panels) : null;
 }

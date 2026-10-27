@@ -78,16 +78,36 @@ export function createStoryActions(seam: Seam, storyId: EntityId, opts: UseStory
     opts.onTold?.(results);
   };
 
-  const createTask = async (parentId: EntityId, title: string): Promise<EntityId> => {
-    const sid = await space();
-    if (parentId !== storyId) {
-      return createdId(await seam.commands.createTask({ ...ctx(), spaceId: sid, title, parentId }));
+  // A root create is two existing commands. Retain the created id if membership
+  // fails so retrying the same draft never creates a duplicate entity.
+  const pendingRoots = new Map<string, EntityId>();
+  const createUnder = async (parentId: EntityId, kind: 'task' | 'doc', title: string): Promise<EntityId> => {
+    const known = opts.view?.page.nodes.find(n => n.id === parentId);
+    const parentKind = parentId === storyId || opts.view?.page.childStories.some(c => c.id === parentId)
+      ? STORY_KIND : known?.kind ?? (await seam.entity(parentId)).kind;
+    const isStory = parentKind === STORY_KIND;
+    const key = JSON.stringify([parentId, kind, title]);
+    let id = pendingRoots.get(key);
+    if (!id) {
+      // tm8 hierarchy is same-kind. Cross-kind creation uses the atomic
+      // attachment door, so a document on a task is a real linked document.
+      const base = { ...ctx(), spaceId: await space(), title,
+        ...(isStory ? {} : parentKind === kind ? { parentId }
+          : { attachTo: { entityId: parentId, edgeType: 'attached_to' as const } }),
+      };
+      id = createdId(kind === TASK_KIND
+        ? await seam.commands.createTask(base)
+        : await seam.commands.createEntity({ ...base, kind, content: { kind, body: '', format: 'markdown' } }));
+      if (isStory) pendingRoots.set(key, id);
     }
-    // "+ task" on the story itself: a new task that is a root.
-    const id = createdId(await seam.commands.createTask({ ...ctx(), spaceId: sid, title }));
-    await seam.commands.addToCollection(storyId, { ...ctx(), entityId: id });
+    if (isStory) {
+      try { await seam.commands.addToCollection(parentId, { ...ctx(), entityId: id }); }
+      catch (e) { throw new Error(`Created ${id}, but could not add it to the story. Retry this draft to finish. ${e instanceof Error ? e.message : String(e)}`); }
+      pendingRoots.delete(key);
+    }
     return id;
   };
+  const createTask = (parentId: EntityId, title: string) => createUnder(parentId, 'task', title);
 
   const actions: StoryActions = {
     async add(req) {
@@ -122,6 +142,7 @@ export function createStoryActions(seam: Seam, storyId: EntityId, opts: UseStory
       }
     },
     createTask,
+    createDocument: (parentId, title) => createUnder(parentId, 'doc', title),
     async rename(entityId, title) {
       const current = await seam.entity(entityId);
       await seam.commands.patchEntity(entityId, { ...ctx(), expectedVersion: current.version, title });

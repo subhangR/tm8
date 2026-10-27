@@ -1,5 +1,8 @@
+import { loadMcpServer } from '../../../mcp/definitions.js';
+import { stillWorkingWarnings, withWarnings } from '../../../tracking/status-nudge.js';
 import { createHash } from 'node:crypto';
 
+import { loadContextV2 } from './feed-context-v2.js';
 import {
   CollabError,
   GraphContentInputSchema,
@@ -7,6 +10,8 @@ import {
   graphNodeKey,
   DrawingContentInputSchema,
   StoryContentInputSchema,
+  CraftContentInputSchema,
+  McpServerDefinitionSchema,
   decodeCursor,
   encodeCursor,
   isCollabError,
@@ -47,7 +52,8 @@ import {
   type HeaderRpcResult,
 } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
+import { claimsFor, commandEnvelope, limitOf, requireParam, requireUuidParam } from '../../context.js';
+import { resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   MICROS,
@@ -66,8 +72,9 @@ import {
 } from '../../entity-read.js';
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
+import { parentKindRefusal } from '../../placement-guidance.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
-import { projectForgeFacts } from '../../../tracking/pr-projection.js';
+import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
@@ -109,7 +116,24 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // generic restore would revive a server whose gate rows are gone. SQL refuses
   // the same doors (261 §8b re-creates 251 §10b's trigger with `server` added).
   'server',
+  // `style` (284, styles spec §3.3) is a READ-ONLY space style: born and
+  // re-versioned only by `styles.push`, removed only by `styles.remove` (space
+  // admin). There is no update door at all; 284's `delete_entity` refuses the
+  // kind in SQL too. The refusals name the right door (STYLE_LIFECYCLE_REMEDY).
+  'style',
 ]);
+
+/**
+ * The style kind's refusals say what to do instead (284). A space style is
+ * read-only BY DESIGN, not by a missing feature, so the error is an
+ * `invariant_violation` with the push / remove door named, rather than the
+ * generic "owned by the lifecycle" `forbidden`.
+ */
+const STYLE_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
+  'entities.create': 'space styles are created only by publishing a personal style; use `tm8 style push` (styles.push)',
+  'entities.patch': 'space styles are read-only; push a new version with `tm8 style push` (styles.push)',
+  'entities.delete': 'a space style is removed with `tm8 style remove` (styles.remove, space admin)',
+};
 // `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
 // of a memory parent lives at the data layer (056's entities trigger), because
 // this set is not checked at create/move time.
@@ -258,8 +282,8 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           number: contentNumber(content, 'number') ?? 0,
           state: contentString(content, 'state') ?? 'open',
           url: contentString(content, 'url') ?? undefined,
-          fetchedAt,
-          stale: fetchedAt === null,
+          ...projectTrackingFreshness(
+            contentString(content, 'state'), fetchedAt, contentString(content, 'last_polled_at', 'lastPolledAt')),
           // 103: entity_content carries the whole pull_requests row, so the two
           // forge facts arrive here with no query change.
           ...projectForgeFacts(content.ci_status, content.mergeable_state, content.head_ref),
@@ -774,6 +798,7 @@ async function buildUniversalDetail(
   q: Querier,
   id: string,
   viewerIdentityId: string,
+  storyPage = true,
 ): Promise<EntityDetail> {
   const row = await liveRow(q, id);
   const summary = (await loadUniversalSummaries(q, [row], viewerIdentityId))[0];
@@ -828,7 +853,10 @@ async function buildUniversalDetail(
   const unresolvedHardDependencyCount = connectionItems.filter((edge) =>
     edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
   ).length;
-  const hydrated = await hydrateDetail(q, row, summary.state, detailContent(row, enrichment), viewerIdentityId);
+  const detail = detailContent(row, enrichment);
+  const hydrated = !storyPage && detail.kind === 'story'
+    ? { state: summary.state, content: detail }
+    : await hydrateDetail(q, row, summary.state, detail, viewerIdentityId);
   const content = hydrated.content;
   return {
     ...summary,
@@ -989,6 +1017,9 @@ function normalizeReason(error: unknown): never {
 }
 
 function assertGenericLifecycle(kind: string, operation: string): void {
+  if (kind === 'style' && STYLE_LIFECYCLE_REMEDY[operation]) {
+    throw new CollabError('invariant_violation', STYLE_LIFECYCLE_REMEDY[operation]);
+  }
   if (RESTRICTED_LIFECYCLE_KINDS.has(kind)) {
     throw new CollabError('forbidden', `${operation} is owned by the ${kind} lifecycle`);
   }
@@ -1034,8 +1065,10 @@ const PATCH_CONTENT_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   // W10a: no member is patchable. The lifecycle refusal fires first; this is
   // the second lock, so a door that skipped it still forwards nothing.
   credential: [],
-  // 283: the prose; the title rides the envelope's `title`.
-  story: ['description'],
+  // 283: the prose; the title rides the envelope's `title`. 288: `status`, the
+  // story's only status door (a category or a state name; manual, never derived).
+  story: ['description', 'status'],
+  mcp_server: ['definition'],
 };
 
 function assertPatchContentMembers(
@@ -1160,6 +1193,17 @@ function storyContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
+function craftContent(content: Record<string, unknown>) {
+  const parsed = CraftContentInputSchema.safeParse(content);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new CollabError('invalid_input',
+      `craft content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`
+        + ' (pages are not content: add one with `tm8 collection add <craft-id> <entity-id>`)');
+  }
+  return parsed.data;
+}
+
 function softDrawingContent(content: Record<string, unknown>) {
   const parsed = DrawingContentInputSchema.safeParse(content);
   if (!parsed.success) {
@@ -1192,6 +1236,23 @@ function acceptanceCriteria(
       ...(done ? { doneAt } : {}),
     };
   });
+}
+
+/**
+ * "Made during a session" (Design Rules §2.3): `authored_from`, entity ->
+ * work_session or chat, recorded by the SERVER from the caller's verified work
+ * session or chat runtime (the bearer token), never asserted by a client (308;
+ * it replaces the CLI's unverified `created_in`; 327 adds chats). The RPC
+ * records only when that origin's teammate created the entity, so it is a
+ * no-op for a human caller, a foreign entity, or an entity that already has
+ * one. It is what the chat's created-here strip reads (`filters.createdIn`).
+ */
+export async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
+  const originId = ctx.identity.kind === 'bearer'
+    ? ctx.identity.workSessionId ?? ctx.identity.runtimeChatId ?? null
+    : null;
+  if (!originId || !entityId) return;
+  await q.rpc('record_authored_from', [entityId, originId]);
 }
 
 async function attachInitialConnections(
@@ -1281,16 +1342,42 @@ export class W2EntitiesCommandsTrackingService {
 
   readonly getEntity = async (ctx: RequestContext): Promise<EntityDetail> => {
     const owner = await this.deps.owner();
-    const id = requireUuidParam(ctx, 'id');
-    // Only `header` is read: the route took no query before, and it still
-    // ignores every other key. An unknown mode reads as the default and says
-    // so in `warnings` (instruct, don't refuse).
+    const reference = requireParam(ctx, 'id');
+    // Header projection and story reader mode are independent. Unknown header
+    // modes fall back to the default and report a warning.
     const { mode, warning } = headerReadMode(ctx.query.get('header'));
-    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => withHeader(q, await buildUniversalDetail(q, id, owner.identityId), mode));
+    const detail = await this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
+      const id = await resolveEntityReadId(q, reference);
+      const storyMode = ctx.query.get('story');
+      const detail = await buildUniversalDetail(q, id, owner.identityId, storyMode !== 'summary' && storyMode !== 'context');
+      if (storyMode === 'context' && detail.content.kind === 'story') {
+        const context = await loadContextV2(q, id, { sections: new Set(['story']), totalBytes: 16_384 });
+        // StoryContentSchema permits computed reader fields. The normal browser
+        // detail remains unchanged; CLI reads carry the budgeted context and its
+        // exact continuation commands instead of the hydrated 500-node page.
+        const content = { ...detail.content, context };
+        return withHeader(q, { ...detail, content }, mode);
+      }
+      return withHeader(q, detail, mode);
+    });
     return warning ? { ...detail, warnings: [warning] } : detail;
   };
 
+  /**
+   * P0f: a parent of another kind is refused by the DB trigger (001:398);
+   * the refusal is rewritten to name the edge to make instead.
+   */
   readonly createEntity = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
+    try {
+      return await this.createEntityInTx(ctx);
+    } catch (error) {
+      const input = ctx.body as CreateEntityInput;
+      const claims = claimsFor(await this.deps.owner(), ctx, commandEnvelope(ctx));
+      throw await parentKindRefusal(this.deps.db, claims, error, { kind: input.kind, parentId: input.parentId }) ?? error;
+    }
+  };
+
+  private readonly createEntityInTx = async (ctx: RequestContext): Promise<CommandResult | ServerReceipt> => {
     const owner = await this.deps.owner();
     const input = ctx.body as CreateEntityInput;
     const envelope = commandEnvelope(ctx);
@@ -1415,18 +1502,40 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'mcp_server': {
+          if ('definition' in content && Object.keys(content).some(key => key !== 'definition')) throw new CollabError('invalid_input', 'MCP content only accepts definition metadata');
+          const definition = McpServerDefinitionSchema.parse(content.definition ?? { ...content, name: input.title });
+          if (definition.name !== input.title) throw new CollabError('invalid_input', 'MCP entity title must match its definition name');
+          raw = await q.rpc('create_mcp_server_entity', [input.spaceId, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         case 'story': {
           // 283: zero new catalog rows, the drawing posture. `parentId` is a
           // parent STORY (same-kind hierarchy = child stories); putting a
           // thing IN a story is `collections.addItem`, never hierarchy.
           const story = storyContent(content);
+          if (story.status !== undefined) {
+            throw new CollabError('invalid_input',
+              'a story is born to_do; set its status after creation with `tm8 entity update <story-id> --status <status>`');
+          }
           raw = await q.rpc('create_story_entity', [input.spaceId, input.title, envelope.actorId ?? null,
             story.description ?? '',
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
+        case 'craft': {
+          // 304: zero new catalog rows, the story posture. A craft is born
+          // empty; its PAGES are `contains` edges put in through
+          // `collections.addItem`, never content and never hierarchy.
+          const craft = craftContent(content);
+          raw = await q.rpc('create_craft_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            craft.description ?? '',
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        }
         default:
           if (!input.kind.startsWith('c:')) {
+            assertGenericLifecycle(input.kind, 'entities.create');
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
           }
           raw = await q.rpc('create_custom_entity', [input.spaceId, input.kind, input.title,
@@ -1434,6 +1543,7 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
+      await recordAuthoredFrom(q, ctx, raw.entity?.id);
       // An authored header rides the create's transaction: the entity and its
       // header land together or not at all (headers design §3.1). On a kind
       // that stores none the create still succeeds, and says why (223).
@@ -1597,12 +1707,30 @@ export class W2EntitiesCommandsTrackingService {
               envelope.clientMutationId ?? null]);
             break;
           }
+          case 'mcp_server': {
+            if (Object.keys(content).some(key => key !== 'definition')) throw new CollabError('invalid_input', 'MCP content only accepts definition metadata');
+            const current = content.definition ?? (await loadMcpServer(q, id)).definition;
+            const definition = McpServerDefinitionSchema.parse(input.title ? { ...(current as object), name: input.title } : current);
+            raw = await q.rpc('update_mcp_server_entity', [id, input.expectedVersion, JSON.stringify(definition), envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+            break;
+          }
           case 'story': {
             // `null` MERGES: a rename sends only the title, and must not wipe
-            // the description it did not restate.
+            // the description it did not restate. `status` (288) is a
+            // category or a state name; the door resolves it and the status
+            // trigger rules the move. Manual, never derived from the trail.
             const story = storyContent(content);
             raw = await q.rpc('update_story_entity', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, story.description ?? null,
+              envelope.clientMutationId ?? null, story.status ?? null]);
+            break;
+          }
+          case 'craft': {
+            // `null` MERGES: a rename sends only the title. Pages move through
+            // `collections.addItem` (re-adding re-positions), not here.
+            const craft = craftContent(content);
+            raw = await q.rpc('update_craft_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, craft.description ?? null,
               envelope.clientMutationId ?? null]);
             break;
           }
@@ -1761,7 +1889,9 @@ export class W2EntitiesCommandsTrackingService {
           JSON.stringify(acceptanceCriteria({ acceptanceCriteria: merged }, envelope.actorId ?? null)),
           null, null, false, null, false,
           envelope.clientMutationId ?? null]);
-        const receipt = before ? await buildReceipt(q, 'task.tick', raw, { before }) : undefined;
+        const receipt = before
+          ? await buildReceipt(q, 'task.tick', raw, { before, actorId: envelope.actorId ?? null })
+          : undefined;
         return receipt ?? commandResult(q, raw, owner.identityId);
       });
     } catch (error) {
@@ -1790,7 +1920,7 @@ export class W2EntitiesCommandsTrackingService {
           details: { ...(error.details ?? {}), current },
         });
       }
-      throw error;
+      throw await parentKindRefusal(this.deps.db, claimsFor(owner, ctx, envelope), error, { id, parentId: input.parentId }) ?? error;
     }
   };
 
@@ -2016,8 +2146,17 @@ export class W2EntitiesCommandsTrackingService {
         const raw = await q.rpc<RpcCommandResult>('link_pull_request', [id, input.url,
           parsed.provider, parsed.repo, Number(parsed.identifier), input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+        const pr = await q.query<{ entity_id: string }>(
+          `select pr.entity_id from public.pull_requests pr
+             join public.entities e on e.id = pr.entity_id and e.deleted_at is null
+            where e.space_id = (select space_id from public.entities where id = $1)
+              and pr.repo = $2 and pr.number = $3 limit 1`,
+          [id, parsed.repo, Number(parsed.identifier)]);
+        await recordAuthoredFrom(q, ctx, pr[0]?.entity_id);
         const receipt = before ? await buildReceipt(q, 'task.link-pr', raw, { before }) : undefined;
-        return receipt ?? commandResult(q, raw, owner.identityId);
+        // P0g ac4: code linked on a task the calling session still holds in `working`.
+        const nudges = await stillWorkingWarnings(q, [id]);
+        return withWarnings(receipt ?? await commandResult(q, raw, owner.identityId), nudges);
       });
     } catch (error) {
       normalizeReason(error);
@@ -2036,8 +2175,17 @@ export class W2EntitiesCommandsTrackingService {
         const raw = await q.rpc<RpcCommandResult>('link_commit', [id, input.url,
           parsed.provider, parsed.repo, parsed.identifier, input.projectId ?? null,
           envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+        const commit = await q.query<{ entity_id: string }>(
+          `select c.entity_id from public.commits c
+             join public.entities e on e.id = c.entity_id and e.deleted_at is null
+            where e.space_id = (select space_id from public.entities where id = $1)
+              and c.repo = $2 and c.sha = lower($3) limit 1`,
+          [id, parsed.repo, parsed.identifier]);
+        await recordAuthoredFrom(q, ctx, commit[0]?.entity_id);
         const receipt = before ? await buildReceipt(q, 'task.link-commit', raw, { before }) : undefined;
-        return receipt ?? commandResult(q, raw, owner.identityId);
+        // P0g ac4: code linked on a task the calling session still holds in `working`.
+        const nudges = await stillWorkingWarnings(q, [id]);
+        return withWarnings(receipt ?? await commandResult(q, raw, owner.identityId), nudges);
       });
     } catch (error) {
       normalizeReason(error);

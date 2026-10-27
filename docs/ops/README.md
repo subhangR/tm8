@@ -4,6 +4,8 @@ Running tm8: configuring it, starting it, and the runbooks for the parts that bi
 
 | Document | What it is |
 |---|---|
+| [`INSTALL.md`](INSTALL.md) | `./install.sh`: what it does, its flags, the cluster it will and will not reuse, troubleshooting |
+| [`OPERATOR-GUIDE.md`](OPERATOR-GUIDE.md) | **Running a node other people reach.** systemd, the service user's agent login, single vs multi (and why an ssh tunnel is the owner on a single node), a Caddy/nginx proxy, TLS, claiming, backup/restore, upgrades |
 | [`CONFIG.md`](CONFIG.md) | **Start here.** Configuration, environments, and how to start it. Cited directly by `scripts/start.mjs`, `scripts/dev.mjs` and the sidecar source |
 | [`ENVIRONMENTS.md`](ENVIRONMENTS.md) | **PROD and STAGING are two different tm8's.** Read before pointing any CLI anywhere |
 | [`SIDECAR-PACKAGING.md`](SIDECAR-PACKAGING.md) | The Postgres sidecar: packaging and lifecycle. The major version here is pinned against CI |

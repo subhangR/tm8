@@ -32,6 +32,7 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
+import { projectRecordPort } from '../projects/project-record';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
@@ -53,7 +54,6 @@ import {
 import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
-import { facetsForAnatomy } from '../panels/list/row-view';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -72,7 +72,11 @@ import {
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { navStore } from '../stores/navStore';
-import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
+import { EntityFab, MessagesDoorProvider, MobileSheet, useMobileSurface, type MessagesDoor } from '../mobile';
+import { PhoneEntityList, openedFromList } from '../mobile-lists';
+import { MESSAGES_ON_PAGE, PhoneEntityPage, PhoneMessages, hasPhoneScreen } from '../mobile-pages';
+import type { SortKey } from '../domain';
+import type { ListPick } from '../routes/types';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
@@ -80,10 +84,12 @@ import { openEntityAndMarkRead } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
-import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
+import { useAddProjectSheet } from './useAddProjectSheet';
+import { AddProjectSheet, addProjectPort } from '../projects';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
@@ -91,6 +97,7 @@ import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { watchLiveFor } from './watchLive';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
@@ -99,7 +106,9 @@ import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { AuxEntityPanel } from './auxPanel';
+import { withEntityKind } from './openEntityOnPhone';
 import { representedThreadMessageCount } from './message-thread';
 import { useChatCounts } from '../entity-chat';
 
@@ -161,6 +170,19 @@ export interface EntityViewProps {
    */
   groupBy?: GroupByKey;
   onGroupBy?(groupBy: GroupByKey): void;
+  /**
+   * The PHONE list's sort and narrowing — route state (`MenuTarget.sortBy` /
+   * `.pick`), threaded like `groupBy`. Read only on the phone shell; the
+   * desktop list keeps its own chips.
+   */
+  sortBy?: SortKey;
+  pick?: ListPick;
+  onListPick?(next: { sortBy?: SortKey; pick?: ListPick }): void;
+  /**
+   * PUSH AN ENTITY'S PAGE on the phone (`openEntityOnPhone`) — the generic
+   * page's Linked rows use it. Phone only; the desktop never passes it.
+   */
+  onOpenEntityPage?(id: EntityId, kind: string): void;
 }
 
 /**
@@ -263,6 +285,30 @@ export function EntityView(props: EntityViewProps) {
   );
   const [aux, setAux] = useState<AuxTarget | null>(null);
   /*
+   * A REFERENCE INSIDE THE PANEL — a body link, a chip in the discussion, a
+   * story or graph node. The desktop opens it BESIDE the subject in the aux
+   * column. The phone pushes its full page (t-chips, CONTRACT §4: no peek
+   * sheet for entities), so Back returns to this page at the scroll left.
+   */
+  const openPhonePage = props.onOpenEntityPage;
+  const openRelated = (id: EntityId) => {
+    if (oneSurface && openPhonePage) {
+      /* A ref tapped inside the Discussion or Connections sheet leaves it,
+         AFTER the push: the push replaces the sheet's history marker, so
+         closing it then takes nothing off history. Closed first, its
+         `history.back()` would land after the push and undo it. */
+      withEntityKind(id, (ref) => data.detailOf(ref)?.kind, (ref) => data.seam.entity(ref), (ref, entityKind) => {
+        openPhonePage(ref, entityKind);
+        setAux(null);
+      });
+      return;
+    }
+    setAux({ sort: 'entity', id });
+  };
+  /** For memoized callers (the board's card press), always this render's. */
+  const openRelatedRef = useRef(openRelated);
+  openRelatedRef.current = openRelated;
+  /*
    * THE FOUR NARROWING CONTROLS, HELD HERE BECAUSE THEIR TRIGGERS MOVED HERE.
    *
    * `.lp__filterbar` is 101px of permanent chrome on a 844px phone — a fifth
@@ -277,9 +323,6 @@ export function EntityView(props: EntityViewProps) {
    * sheet, and two at once is two scrims.
    */
   const [picker, setPicker] = useState<ListPicker | null>(null);
-  /* Whether the cluster is expanded. Collapsed it is one thumb-sized button;
-     four permanently-drawn pills would occlude the rows they narrow. */
-  const [dialOpen, setDialOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PanelTab>('content');
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface>>({});
   /** In-flight read marks, so a double click on a row is one write. */
@@ -425,6 +468,8 @@ export function EntityView(props: EntityViewProps) {
     onError: notifyTerminateFailed,
      /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs (rendered at the root). */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor
@@ -542,7 +587,7 @@ export function EntityView(props: EntityViewProps) {
    */
   const selectFromList = useCallback((id: string) => {
     if (boardMode) {
-      openEntity(id as EntityId, (opened) => setAux({ sort: 'entity', id: opened }));
+      openEntity(id as EntityId, (opened) => openRelatedRef.current(opened));
       return;
     }
     setAux(null);
@@ -624,10 +669,18 @@ export function EntityView(props: EntityViewProps) {
   /* ONE `onAction` reaches the list panel, and two hooks perform verbs for it.
      Passing either alone would drop the other's verb back to
      disabled-with-reason — the defect both hooks were extracted to fix. */
+  /* THE PROJECTS LIST'S BIRTH SHEET (task 01a13574): Add project — a
+     folder, an upload or a GitHub clone. See `useAddProjectSheet`. */
+  const addProject = useAddProjectSheet({
+    spaceId: data.spaceId,
+    available: Boolean(data.seam.spaceProjects),
+  });
+  const addProjectSeamPort = useMemo(() => addProjectPort(data.seam, data.spaceId), [data.seam, data.spaceId]);
   const listActions = composeListActions([
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
     { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+        { onAction: addProject.onAction, wiredActions: addProject.wiredActions },
   ]);
 
   /**
@@ -766,8 +819,45 @@ export function EntityView(props: EntityViewProps) {
   ]);
   const chatCounts = useChatCounts(data.seam, selectedId);
 
-  const detailPanel = selectedId ? (
+  /*
+   * THE PHONE PAGE (CONTRACT §5 rulings 7-8). A kind with a v1 phone screen
+   * keeps the panel, and task, doc and session pages gain the Messages section
+   * below the body and above Linked. Every other kind is the generic entity
+   * page, whose Linked rows push their own pages.
+   */
+  const viewAllMessages = () => setAux({ sort: 'tab', tab: 'discussion' });
+  const phoneMessages =
+    oneSurface && selectedId && detail && MESSAGES_ON_PAGE.has(detail.kind) ? (
+      <PhoneMessages
+        className="pp-in-body"
+        messages={messages}
+        total={countMessages(detail, messages)}
+        onViewAll={viewAllMessages}
+      />
+    ) : undefined;
+  /* The same reading as a DOOR, for the session page: its terminal owns the
+     screen down to the composer dock, so the section above would land under
+     the dock. The terminal archetype skips the section and draws this in its
+     surface row (`WorkSessionContent`). */
+  const messagesCount = phoneMessages && detail ? countMessages(detail, messages) : null;
+  const messagesDoor = useMemo<MessagesDoor | null>(
+    () => (messagesCount === null ? null : { count: messagesCount, open: () => setAux({ sort: 'tab', tab: 'discussion' }) }),
+    [messagesCount],
+  );
+  const genericPage =
+    oneSurface && selectedId && detail && !hasPhoneScreen(detail.kind) ? (
+      <PhoneEntityPage
+        detail={detail}
+        connections={data.connectionsOf(selectedId)}
+        messages={messages}
+        onOpenEntity={(id, entityKind) => props.onOpenEntityPage?.(id as EntityId, entityKind)}
+        onViewAllMessages={viewAllMessages}
+      />
+    ) : null;
+
+  const detailPanel = genericPage ?? (selectedId ? (
     <EntityDetailPanel
+      {...(phoneMessages ? { beforeLinked: phoneMessages } : {})}
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
@@ -779,6 +869,8 @@ export function EntityView(props: EntityViewProps) {
          see `composePanelActions` for why neither can be passed alone. */
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       primaryCounts={chatCounts}
       memoryAuthoring={memoryWorkingSet.authoring}
       membershipAuthoring={membership.authoringFor(detail)}
@@ -821,7 +913,7 @@ export function EntityView(props: EntityViewProps) {
         viewerMemberId: props.viewerMemberId,
         nodeKey: data.nodeKey,
         skillOptions: data.skillOptions,
-        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onOpenEntity: (id) => openRelated(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
@@ -835,20 +927,21 @@ export function EntityView(props: EntityViewProps) {
         viewerMemberId: props.viewerMemberId,
         nodeKey: data.nodeKey,
         skillOptions: data.skillOptions,
-        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onOpenEntity: (id) => openRelated(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       }, 'discussion')}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, (id) => openRelated(id))}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       sessionContextSurface={detail ? sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
-      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
+      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => openRelated(id as EntityId))}
       storySurface={
         detail
-          ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates, {
+          ? storySurfaceFor(data.seam, selectedId, (id) => openRelated(id as EntityId), data.launch.teammates, {
               /* The aux column IS "beside the story" here; its subject is the
                  story's selection, so closing the column clears it. */
               selectedId: aux?.sort === 'entity' ? aux.id : null,
@@ -858,13 +951,14 @@ export function EntityView(props: EntityViewProps) {
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
-              setAux({ sort: 'entity', id: id as EntityId }),
+              openRelated(id as EntityId),
             )
           : undefined
       }
+      crossSpaceRefsSurface={detail ? crossSpaceRefsSurfaceFor(data.seam, selectedId) : undefined}
       launchContextSurface={
         detail
-          ? launchContextSurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }))
+          ? launchContextSurfaceFor(data.seam, selectedId, (id) => openRelated(id as EntityId))
           : undefined
       }
       messages={messages}
@@ -882,13 +976,14 @@ export function EntityView(props: EntityViewProps) {
          conflict card, and now the doc editor behind the reader archetype —
          is live only where the host hands down the seam's commands.
          AuthoringCommands is a structural subset, no cast. */
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       commands={data.seam.commands}
       onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}
       /* THE AUX ROUTE. A reference inside the body opens BESIDE the document
          rather than replacing it — the whole point of the third column. The
          subject of the screen is only ever changed from the left list. */
-      onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+      onOpenEntity={(id) => openRelated(id as EntityId)}
       activeTab={detailTab}
       onTabChange={(tab) => {
         if (AUX_TABS.has(tab)) setAux({ sort: 'tab', tab: tab as 'discussion' | 'connections' });
@@ -914,7 +1009,7 @@ export function EntityView(props: EntityViewProps) {
           }
         : {})}
     />
-  ) : null;
+  ) : null);
 
   /*
    * The aux column's CONTAINER, chosen by arrangement.
@@ -957,6 +1052,9 @@ export function EntityView(props: EntityViewProps) {
         '--ev-aux-min': `${EV_AUX_MIN}px`,
       } as React.CSSProperties}
     >
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs, at the root for the
+          same reason as the edit dialog below. */}
+      {primaries.dialog}
       {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
           fixed` over a scrim, so nesting it in the panel's own overflow
           context would clip it against a column it is supposed to cover. */}
@@ -1047,6 +1145,27 @@ export function EntityView(props: EntityViewProps) {
           </div>
         </div>
       )}
+      {addProject.isOpen && addProjectSeamPort && (
+        <div className="pn-ncs-scrim" role="presentation" onClick={addProject.close}>
+          <div
+            className="pn-ncs-host"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add project"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <AddProjectSheet
+              nodeLabel="this node"
+              port={addProjectSeamPort}
+              onAdded={(id) => {
+                addProject.close();
+                if (id) (selectFromList)(id as EntityId);
+              }}
+              onCancel={addProject.close}
+            />
+          </div>
+        </div>
+      )}
       {/* Same reason as the dialog above: fixed over a scrim, so it belongs at
           the view root and not inside the panel's overflow context. */}
       <MemoryComposer
@@ -1076,10 +1195,42 @@ export function EntityView(props: EntityViewProps) {
         unmount, which is a separate piece of work and not a side effect of
         hiding a column.
       */}
-      {oneSurface && selectedId ? null : (
+      {/*
+        THE PHONE LIST (t-lists). One row anatomy for every kind, built to the
+        phone entity-lists mockup, in place of the desktop tile list squeezed
+        to 390px. It reads through the SAME source the desktop list does —
+        `needsMeListSource` over `rowsFor` — so a "Needs me" filter means the
+        same rows on both shells. Its header carries ⚙ and ＋, which is why
+        the floating create button and the narrowing cluster below are gone
+        from this shell.
+      */}
+      {oneSurface && !selectedId ? (
+        <PhoneEntityList
+          config={config}
+          spaceId={data.spaceId}
+          {...needsMeListSource(attentionApi, kind, data, {
+            rowsFor: data.rowsFor(kind),
+            pageStateOf: data.pageStateOf(kind),
+            loadMore: data.loadMore(kind),
+          })}
+          {...(data.countsFor(kind)?.total !== undefined ? { total: data.countsFor(kind)!.total } : {})}
+          {...(data.viewerActor?.id ? { viewerActorId: data.viewerActor.id } : {})}
+          {...(props.pick !== undefined ? { pick: props.pick } : {})}
+          {...(props.sortBy !== undefined ? { sortBy: props.sortBy } : {})}
+          {...(props.onListPick ? { onPick: props.onListPick } : {})}
+          onOpen={selectFromList}
+          {...(config.list.quickCreate ? { onCreate: () => void createFlow.create() } : {})}
+          capabilitiesOf={data.capabilitiesOf}
+          onTerminate={primaries.terminate}
+          onComplete={rowLifecycle.complete}
+          onArchive={(id) => rowLifecycle.archive('archive', id)}
+        />
+      ) : null}
+      {oneSurface ? null : (
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
+          rowsForKind={data.rowsFor}
           /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
           {...needsMeListSource(attentionApi, kind, data, {
             rowsFor: data.rowsFor(kind),
@@ -1135,6 +1286,8 @@ export function EntityView(props: EntityViewProps) {
              WorkspaceView passed one. A verb with a dedicated prop is dead on
              every host that forgets it, so all three pass it now. */
           onTerminate={primaries.terminate}
+          onSessionVerb={primaries.sessionVerb}
+          onSessionBulk={primaries.sessionBulk}
           onShareSession={primaries.shareSession}
           onResume={primaries.resume}
           onSetValue={rowLifecycle.setValue}
@@ -1158,51 +1311,8 @@ export function EntityView(props: EntityViewProps) {
       </section>
       )}
 
-      {/*
-        ── THE FLOATING CREATE BUTTON (owner answers A–D, 2026-08-19) ────────
-        A. IN ADDITION TO THE HEADER'S ＋, not instead of it. `[◫ Kind ＋ ▾]` is
-           untouched. Two create affordances on a phone is the owner's explicit
-           choice: the header ＋ is where you look when you are ALREADY thinking
-           about the kind, and the FAB is where your thumb is when you have just
-           finished reading the list.
-
-        B. THE SAME VERB, NOT A SECOND CREATE PATH. `createFlow` is the very
-           `useNewTask` handle the header's ＋ performs, with the same
-           `onCreated` that opens the new entity with its title focused (D3).
-           Writing a second path here is how the two drift into making
-           differently-shaped entities.
-
-        C. ABSENT, NOT INERT, for a kind with no wired create. The gate is
-           `config.list.quickCreate` — REGISTRY DATA, and deliberately the same
-           expression `createSlot` is gated on six lines above, so the FAB and
-           the header ＋ can never disagree about whether this kind can be born.
-           Commits, worktrees and PRs are observed rather than authored, and a
-           refused FAB would be a permanent 56px control that exists to say no.
-           The header ＋ still refuses out loud with its reason; that sentence
-           is said once, where there is room for it.
-
-        D. ALWAYS VISIBLE. No hide-on-scroll: a control that disappears while
-           you read is a control you have to go looking for, and the list
-           reserves room for it so the last row is never trapped underneath
-           (see `.ev-fab` in `mobile-screens.css`).
-
-        ONE SURFACE ONLY. `oneSurface` is false on every desktop mount by
-        construction, so this whole branch is unreachable there — the seam's own
-        safety argument. And it is not drawn over an OPEN entity: at that point
-        the list is unmounted and the screen is the entity, where a create
-        button would make something the surface cannot show.
-      */}
-      {oneSurface && !selectedId && config.list.quickCreate ? (
-        <button
-          type="button"
-          className="ev-fab"
-          data-testid="entity-view-fab"
-          aria-label={`New ${config.label.toLowerCase()}`}
-          onClick={() => void createFlow.create()}
-        >
-          <span aria-hidden>＋</span>
-        </button>
-      ) : null}
+      {/* The phone's create is the list header's ＋ now (PhoneEntityList) —
+          the same `createFlow`, so there is still one create path. */}
 
       {/*
         ── THE ENTITY'S OWN FAB — what the phone's tab row became ────────────
@@ -1264,113 +1374,7 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : null}
 
-      {/*
-        ── THE NARROWING CLUSTER ────────────────────────────────────────────
-        The four verbs that used to be `.lp__filterbar`, a permanent 101px band
-        — a fifth of a 844px phone spent on controls that are touched once a
-        session, above a list that had 478px left for its rows. They float now,
-        collapsed to ONE button, and the band is gone from the chrome.
-
-        SEPARATE FROM THE CREATE FAB, not folded into it. Create is the verb a
-        thumb reaches for constantly and it stays ONE tap; putting it behind a
-        dial would tax the common action to pay for the rare ones. It is also
-        gated differently — a kind with no wired create still filters and sorts
-        — so one control gated on both would be wrong for half the kinds.
-
-        WORDS, NOT GLYPHS, unlike the lifecycle row. Those four are one axis
-        with an obvious order, which is what makes a glyph family readable;
-        these four are unrelated verbs over unrelated vocabularies, and a
-        funnel, a face, a folder and an arrow share nothing to read.
-
-        EACH ONE IS OFFERED ONLY WHEN IT HAS SOMETHING TO SAY — the same four
-        conditions `FilterRow` renders its chips under, read off the same
-        registry data, so the cluster and the (hidden) bar cannot disagree.
-      */}
-      {oneSurface && !selectedId ? (
-        <div className="ev-narrow" data-testid="entity-view-narrow">
-          {dialOpen ? (
-            <div className="ev-narrow__dial" role="group" aria-label="Narrow the list">
-              {config.list.filters.length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-filters"
-                  onClick={() => {
-                    setPicker('filters');
-                    setDialOpen(false);
-                  }}
-                >
-                  filter
-                </button>
-              ) : null}
-              {data.members.length > 1 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-people"
-                  onClick={() => {
-                    setPicker('people');
-                    setDialOpen(false);
-                  }}
-                >
-                  people
-                </button>
-              ) : null}
-              {config.list.membership && rowLifecycle.membershipSets !== undefined ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-sets"
-                  onClick={() => {
-                    setPicker('sets');
-                    setDialOpen(false);
-                  }}
-                >
-                  {config.list.membership.label.toLowerCase()}
-                </button>
-              ) : null}
-              {/* Not a narrowing, but the same picker register — it opens
-                  the same sheet the desktop's `View ▾` chip hangs. */}
-              {facetsForAnatomy(config.list.tile.anatomy).length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-view"
-                  onClick={() => {
-                    setPicker('view');
-                    setDialOpen(false);
-                  }}
-                >
-                  view
-                </button>
-              ) : null}
-              {config.list.sort.length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-sort"
-                  onClick={() => {
-                    setPicker('sort');
-                    setDialOpen(false);
-                  }}
-                >
-                  sort
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <button
-            type="button"
-            className="ev-narrow__toggle"
-            data-testid="entity-view-narrow-toggle"
-            aria-expanded={dialOpen}
-            aria-label={dialOpen ? 'Close narrowing options' : 'Narrow the list'}
-            onClick={() => setDialOpen((open) => !open)}
-          >
-            <NarrowGlyph open={dialOpen} />
-          </button>
-        </div>
-      ) : null}
+      {/* The narrowing cluster is the phone list's ⚙ sheet now (PhoneEntityList). */}
 
       {/* The detail column's drag handle — the control the panel it sizes
           hangs on, exactly as in the workspace. `side="right"` because the
@@ -1413,13 +1417,21 @@ export function EntityView(props: EntityViewProps) {
         every phone screen, and the phone is where that costs the most.
       */}
       {boardMode || (oneSurface && !selectedId) ? null : (
-        <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
+        <main
+          className="ev-detail"
+          aria-label={`${config.label} detail`}
+          data-testid="entity-view-detail"
+          /* Slides in from the right only when its own list row pushed it. */
+          {...(oneSurface && selectedId && openedFromList(data.spaceId, kind, selectedId)
+            ? { 'data-phone-enter': 'push' }
+            : {})}
+        >
           {/* The empty detail column is the space-wide triage list, not a
               placeholder: every entity waiting on a human, its requests
               combined into one row. Deliberately NOT filtered to `kind` —
               attention lives on entities, so a doc waiting on you must show
               while the Tasks list is open. */}
-          {detailPanel ?? (attentionApi ? (
+          {detailPanel ? <MessagesDoorProvider value={messagesDoor}>{detailPanel}</MessagesDoorProvider> : (attentionApi ? (
             /* Attention v2 (chapter 4): the SAME list as the top-bar popover.
                A host rendered without the shell's store shows an empty column. */
             <div className="att-centre" data-testid="attention-inbox">
@@ -1513,7 +1525,7 @@ export function EntityView(props: EntityViewProps) {
                   viewerMemberId: props.viewerMemberId,
                 }}
                 entityId={aux.id}
-                onOpenEntity={(id) => setAux({ sort: 'entity', id })}
+                onOpenEntity={(id) => openRelated(id)}
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (
@@ -1541,7 +1553,7 @@ export function EntityView(props: EntityViewProps) {
                 viewerMemberId: props.viewerMemberId,
                 nodeKey: data.nodeKey,
                 skillOptions: data.skillOptions,
-                onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+                onOpenEntity: (id) => openRelated(id),
                 onSwitchToTerminal: () => {
                   setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));
                 },
@@ -1550,14 +1562,14 @@ export function EntityView(props: EntityViewProps) {
               <ConnectionsTab
                 detail={detail}
                 connections={data.connectionsOf(detail.id)}
-                onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+                onOpenEntity={(id) => openRelated(id as EntityId)}
                 /* The same canvas the panel's own Connections tab offers. A
                    surface present in one column and missing from the other
                    would read as a defect in the entity rather than a choice
                    about this column — and the column is wide enough to be a
                    real second reading of the same edges. */
                 graph={graphSurfaceFor(data.seam, detail.id, data.livenessOf, (id) =>
-                  setAux({ sort: 'entity', id: id as EntityId }),
+                  openRelated(id as EntityId),
                 )}
               />
             ) : (
@@ -1596,28 +1608,3 @@ function auxSheetSize(aux: AuxTarget | null): 'default' | 'full' {
   return aux?.sort === 'tab' && aux.tab === 'discussion' ? 'full' : 'default';
 }
 
-/**
- * The narrowing cluster's own mark: a funnel closed, an ✕ open.
- *
- * SVG in a 16 viewBox with `currentColor`, the same idiom as the tile's
- * chevrons and the lifecycle row's rings, and for the same reason — a
- * typographic glyph sits on its own font's baseline, so `⌄` and `✕` land at
- * different optical heights inside one round button.
- *
- * The ✕ is right HERE and nowhere else in this cluster: this is a dismiss, and
- * the dismiss glyph is what this product already uses for one.
- */
-function NarrowGlyph({ open }: { open: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden focusable="false">
-      <path
-        d={open ? 'M4 4L12 12M12 4L4 12' : 'M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}

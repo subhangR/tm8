@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * TREE DISCLOSURE STATE — COLLAPSED BY DEFAULT, AND REMEMBERED.
@@ -103,43 +103,93 @@ function write(scope: string | null, ids: ReadonlySet<string>): void {
   }
 }
 
+export interface TreeDisclosureOptions {
+  /**
+   * OPT-IN (Workspace browser): a revealed ancestor is WRITTEN into the
+   * expanded set once, the first time it is revealed, and from then on only a
+   * toggle changes it. Without it a reveal lasts exactly as long as the
+   * selection, so (a) selecting a row elsewhere collapses the parent the
+   * viewer just saw open, unasked, and (b) the first toggle on a revealed-only
+   * parent adds it to a set it already reads as open from — nothing visible
+   * happens. With it, `toggle` flips what is DRAWN. Absent ⇒ the behaviour
+   * above, unchanged (Home still has (b)).
+   */
+  latchReveal?: boolean;
+}
+
+const NO_REVEAL: ReadonlySet<string> = new Set<string>();
+
 /**
  * @param scope  Storage scope, e.g. `list:task`. `null` keeps the state in
  *               memory for this mount only — for a tree with no stable
  *               identity to remember against.
  * @param revealed  Ancestors of the current selection. Read as expanded, never
- *                  written.
+ *                  written (unless `latchReveal`).
  */
 export function useTreeDisclosure(
   scope: string | null,
   revealed?: ReadonlySet<string>,
+  options?: TreeDisclosureOptions,
 ): TreeDisclosure {
+  const latch = options?.latchReveal === true;
   // Lazy initializer: one storage read per mount, not one per render.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => read(scope));
+  /* latchReveal: the revealed ids already written once. An id leaves this set
+     when it stops being revealed, so a later reveal (a deep link to a child
+     under a parent the viewer shut) opens it again. */
+  const latched = useRef(new Set<string>());
+  const revealedRef = useRef(revealed);
+  revealedRef.current = revealed;
+
+  useEffect(() => {
+    if (!latch) return;
+    const now = revealed ?? NO_REVEAL;
+    for (const id of [...latched.current]) if (!now.has(id)) latched.current.delete(id);
+    const fresh = [...now].filter((id) => !latched.current.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) latched.current.add(id);
+    setExpanded((prev) => {
+      if (fresh.every((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of fresh) next.add(id);
+      write(scope, next);
+      return next;
+    });
+  }, [latch, revealed, scope]);
 
   const toggle = useCallback(
     (id: string) => {
+      /* latchReveal: flip what is drawn — a revealed row not yet latched
+         reads open, so its first toggle shuts it. Read and latched here, not
+         in the updater, which must stay pure (StrictMode runs it twice). */
+      const revealedNow = latch && (revealedRef.current?.has(id) ?? false);
+      const pendingReveal = revealedNow && !latched.current.has(id);
+      if (revealedNow) latched.current.add(id);
       setExpanded((prev) => {
+        const open = prev.has(id) || pendingReveal;
         const next = new Set(prev);
         // Insertion order carries recency, which is what MAX_REMEMBERED trims
         // against — so a re-open moves the row to the end rather than keeping
         // its original position.
-        if (next.has(id)) next.delete(id);
+        if (open) next.delete(id);
         else next.add(id);
         write(scope, next);
         return next;
       });
     },
-    [scope],
+    [scope, latch],
   );
 
   return useMemo(
     () => ({
       expanded,
       toggle,
-      isExpanded: (id: string) => expanded.has(id) || (revealed?.has(id) ?? false),
+      isExpanded: latch
+        ? (id: string) =>
+            expanded.has(id) || ((revealed?.has(id) ?? false) && !latched.current.has(id))
+        : (id: string) => expanded.has(id) || (revealed?.has(id) ?? false),
     }),
-    [expanded, toggle, revealed],
+    [expanded, toggle, revealed, latch],
   );
 }
 

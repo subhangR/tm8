@@ -101,3 +101,5 @@ export { ALL_SETTINGS_REASONS } from './reasons';
 /** DEV-ONLY review surface — every frame, both themes. Never product. */
 export { SettingsBoard } from './SettingsBoard';
 export { SPECIMEN_INVITES, SPECIMEN_REDEEM, specimenMembers } from './specimen';
+
+export { SpaceAdminPage, SPACE_ADMIN_SECTIONS } from './SpaceAdminPage';

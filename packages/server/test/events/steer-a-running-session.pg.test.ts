@@ -251,9 +251,13 @@ describe('a message anchored to a running session reaches that session', () => {
     // A dead target still routes (the anchor class has no liveness filter), so
     // this is the shape most likely to be mistaken for success.
     const session = await spawnAttachedSession('steer a corpse');
-    await node.request('POST', `/v2/entities/${session.sessionId}/commands/terminate`, {
+    // Spec D1 §4.2 (302): terminating an OPEN session must say what happens to
+    // its work; `stop` is the plain "end it" this case means.
+    const terminated = await node.request('POST', `/v2/entities/${session.sessionId}/commands/terminate`, {
       clientMutationId: cmid(),
+      outcome: 'stop',
     });
+    expect(terminated.status, JSON.stringify(terminated.error)).toBeLessThan(300);
 
     // Wait for the durable transition rather than guessing at it: reserve()
     // reads `work_sessions.status`, so posting before it settles would test a

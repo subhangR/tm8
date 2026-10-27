@@ -1,9 +1,11 @@
 /**
- * THE ATTACH PALETTE (task 01a0cfb0; decisions on 01a0008f): one wrapping row
- * of small icon + label chips under the description. It holds the ＋ Attach
- * chip (the strip's existing upload / folder / drawing menu, handed in as
- * `attachChip`) and then one chip per registry row: Memories, Drawings, Docs,
- * Artifacts, Skills, Teammates, Sessions.
+ * THE ATTACH PALETTE (task 01a0cfb0; decisions on 01a0008f): one row under
+ * the description. It holds the ＋ Attach chip (the strip's existing upload /
+ * folder / drawing menu, handed in as `attachChip`) and then one ICON per
+ * registry row: Memories, Drawings, Docs, Artifacts, Skills, Teammates,
+ * Sessions (task 01a15e22: seven labelled chips wrapped onto two rows and
+ * read as the page's loudest thing). The label is the icon's tooltip and its
+ * accessible name, and stays in the DOM for both.
  *
  * A chip opens a picker for its one kind. The search runs ON THE SERVER, by
  * kind and by every typed word in the title or short description
@@ -80,20 +82,20 @@ export function AttachPalette({
         <span className="fn-palette__slot" key={row.kind}>
           <button
             type="button"
-            className="fn-chip"
+            className="fn-chip fn-chip--icon"
             data-testid="attach-palette-chip"
             data-kind={row.kind}
             aria-haspopup="dialog"
             aria-expanded={openKind === row.kind}
             aria-disabled={refusal ? true : undefined}
-            title={refusal ?? `Link ${row.label.toLowerCase()} to this entity`}
+            title={refusal ?? `Link ${row.label.toLowerCase()}`}
             onClick={(event) => {
               if (refusal) return event.preventDefault();
               setOpenKind((current) => (current === row.kind ? null : row.kind));
             }}
           >
             <span className="fn-chip__icon" aria-hidden><KindIcon kind={row.kind as never} /></span>
-            <span className="fn-chip__label">{row.label}</span>
+            <span className="fn-chip__label fn-chip__label--hidden">{row.label}</span>
           </button>
           {openRow === row && !refusal ? (
             <PalettePicker

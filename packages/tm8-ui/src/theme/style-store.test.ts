@@ -11,17 +11,23 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
-import { ATELIER_DARK, ATELIER_LIGHT } from '@tm8/contract';
+import { createElement } from 'react';
+import { act, render, renderHook } from '@testing-library/react';
+import { CHATGPT_DARK, CHATGPT_LIGHT } from '@tm8/contract';
 
 import {
   ACTIVE_STYLE_ELEMENT_ID,
+  EXTRA_STYLE_ELEMENT_ID,
+  STYLE_CACHE_KEY,
   __resetStyleStoreForTests,
   derivedTheme,
   getStyleState,
   installActiveStyle,
+  selectStyle,
+  subscribeStyle,
 } from './style-store';
 import { useTheme } from './useTheme';
+import { AlwaysDark } from '../terminal/AlwaysDark';
 
 type MediaListener = () => void;
 
@@ -61,7 +67,7 @@ describe('style store — first paint', () => {
   it('installs one sheet carrying the light built-in when nothing is stored and the OS is light', () => {
     installActiveStyle();
     expect(document.querySelectorAll(`#${ACTIVE_STYLE_ELEMENT_ID}`)).toHaveLength(1);
-    expect(sheet()).toContain(`--pn-paper: ${ATELIER_LIGHT.tokens['--pn-paper']};`);
+    expect(sheet()).toContain(`--pn-paper: ${CHATGPT_LIGHT.tokens['--pn-paper']};`);
     expect(derivedTheme()).toBe('light');
     expect(getStyleState().followOs).toBe(true);
   });
@@ -71,7 +77,7 @@ describe('style store — first paint', () => {
     __resetStyleStoreForTests();
     installActiveStyle();
     expect(derivedTheme()).toBe('dark');
-    expect(sheet()).toContain(`--pn-paper: ${ATELIER_DARK.tokens['--pn-paper']};`);
+    expect(sheet()).toContain(`--pn-paper: ${CHATGPT_DARK.tokens['--pn-paper']};`);
   });
 
   it('honours the legacy tm8ui.theme key over the OS, and stops following it', () => {
@@ -98,7 +104,40 @@ describe('style store — first paint', () => {
     installActiveStyle();
     const text = sheet();
     const darkRule = text.slice(text.indexOf('[data-always-dark="true"]'));
-    expect(darkRule).toContain(`--pn-paper: ${ATELIER_DARK.tokens['--pn-paper']};`);
+    expect(darkRule).toContain(`--pn-paper: ${CHATGPT_DARK.tokens['--pn-paper']};`);
+  });
+});
+
+describe('theme-color follows the painted style (audit E2)', () => {
+  const metas = () => Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'));
+
+  beforeEach(() => {
+    for (const m of metas()) m.remove();
+    /* What index.html ships: a light tag and an OS-dark tag. */
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<meta name="theme-color" content="#FBFAF6"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0A">',
+    );
+  });
+
+  it('collapses the first-paint pair to one tag carrying the light surface', () => {
+    installActiveStyle();
+    expect(metas()).toHaveLength(1);
+    expect(metas()[0]!.hasAttribute('media')).toBe(false);
+    expect(metas()[0]!.content).toBe(CHATGPT_LIGHT.tokens['--pn-surface']);
+  });
+
+  it('turns dark when the viewer chooses dark on a light OS, and back', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle('builtin:chatgpt-dark');
+    });
+    expect(metas()).toHaveLength(1);
+    expect(metas()[0]!.content).toBe(CHATGPT_DARK.tokens['--pn-surface']);
+    act(() => {
+      selectStyle('builtin:chatgpt-light');
+    });
+    expect(metas()[0]!.content).toBe(CHATGPT_LIGHT.tokens['--pn-surface']);
   });
 });
 
@@ -148,6 +187,149 @@ describe('an explicit data-theme that disagrees with the active style keeps its 
   });
 });
 
+describe('selectStyle — the "use" operation (spec §1.4)', () => {
+  const uuid = '01a0fc78-3974-73cc-9425-c8741062c673';
+  const extra = () => document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.textContent ?? null;
+  const personal = {
+    schemaVersion: 1 as const,
+    foundation: 'builtin:chatgpt-dark' as const,
+    vars: { '--pn-paper': '#101820' },
+    css: '.pn-chip { color: red; position: fixed }',
+  };
+
+  it('uses a built-in by ref, live, and stops following the OS', () => {
+    installActiveStyle();
+    const seen: string[] = [];
+    subscribeStyle((st) => seen.push(st.ref));
+    expect(selectStyle('builtin:chatgpt-dark')).toBe(true);
+    expect(getStyleState().ref).toBe('builtin:chatgpt-dark');
+    expect(getStyleState().followOs).toBe(false);
+    expect(derivedTheme()).toBe('dark');
+    expect(seen).toEqual(['builtin:chatgpt-dark']);
+  });
+
+  it('reads a retired Atelier ref as the ChatGPT built-in of the same mode', () => {
+    expect(selectStyle('builtin:atelier-dark')).toBe(true);
+    expect(getStyleState().ref).toBe('builtin:chatgpt-dark');
+    expect(selectStyle('builtin:atelier-light')).toBe(true);
+    expect(getStyleState().ref).toBe('builtin:chatgpt-light');
+  });
+
+  it('paints an old cache holding Atelier as ChatGPT on the first frame', () => {
+    localStorage.setItem(
+      STYLE_CACHE_KEY,
+      JSON.stringify({
+        docs: {
+          current: { ref: 'builtin:atelier-dark', doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null } },
+          dark: null,
+        },
+        hash: 'stale',
+        followOs: false,
+        revision: 0,
+        source: 'local',
+      }),
+    );
+    __resetStyleStoreForTests();
+    installActiveStyle();
+    expect(getStyleState().ref).toBe('builtin:chatgpt-dark');
+    expect(sheet()).toContain(`--pn-paper: ${CHATGPT_DARK.tokens['--pn-paper']};`);
+  });
+
+  it('uses a personal style from its document and runs its sanitized css', () => {
+    installActiveStyle();
+    expect(selectStyle(`personal:${uuid}`, personal)).toBe(true);
+    expect(sheet()).toContain('--pn-paper: #101820;');
+    expect(extra()).toBe('.cv2-root .pn-chip {\n  color: red;\n}\n');
+    /* The css sheet comes after the vars sheet, so a style's rules are never
+       out-ordered by its own variables. */
+    const ids = [...document.head.querySelectorAll('style')].map((e) => e.id);
+    expect(ids.indexOf(EXTRA_STYLE_ELEMENT_ID)).toBeGreaterThan(ids.indexOf(ACTIVE_STYLE_ELEMENT_ID));
+  });
+
+  it('does not run a space style\'s css unless the viewer opted in', () => {
+    installActiveStyle();
+    selectStyle(`space:${uuid}`, personal);
+    expect(sheet()).toContain('--pn-paper: #101820;');
+    expect(extra()).toBeNull();
+    selectStyle(`space:${uuid}`, personal, { trustCss: true });
+    expect(extra()).not.toBeNull();
+  });
+
+  it('removes the css sheet when the next style has none', () => {
+    installActiveStyle();
+    selectStyle(`personal:${uuid}`, personal);
+    selectStyle('builtin:chatgpt-light');
+    expect(extra()).toBeNull();
+  });
+
+  it('changes nothing for a malformed ref, an unknown built-in, or a user style without its document', () => {
+    installActiveStyle();
+    const before = getStyleState();
+    expect(selectStyle('nonsense' as never)).toBe(false);
+    expect(selectStyle('builtin:nope')).toBe(false);
+    expect(selectStyle(`personal:${uuid}`)).toBe(false);
+    expect(getStyleState()).toBe(before);
+  });
+});
+
+describe('always-dark scopes follow --pn-term-chrome', () => {
+  const uuid = '01a0fc78-3974-73cc-9425-c8741062c673';
+  const followDoc = (foundation: 'builtin:chatgpt-light' | 'builtin:chatgpt-dark') => ({
+    schemaVersion: 1 as const,
+    foundation,
+    vars: { '--pn-term-chrome': 'follow' },
+    css: null,
+  });
+  const scope = () => {
+    const { container } = render(createElement(AlwaysDark, null, createElement('span', null, 'term')));
+    return container.querySelector('[data-always-dark="true"]')!;
+  };
+  const mainSelector = () => sheet().slice(0, sheet().indexOf(' {'));
+
+  it('chrome dark (every built-in): the scope is stamped dark and painted by the always-dark rule — unchanged', () => {
+    installActiveStyle();
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    expect(el.matches(mainSelector())).toBe(false);
+    expect(sheet()).toContain('[data-always-dark="true"] .cv2-root {');
+  });
+
+  it('chrome follow under a light style: no dark stamp, the light rule reaches the scope, no always-dark rule', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:chatgpt-light'));
+    });
+    const el = scope();
+    expect(el.hasAttribute('data-theme')).toBe(false);
+    expect(el.matches(mainSelector())).toBe(true);
+    expect(sheet()).not.toContain('data-always-dark');
+  });
+
+  it('chrome follow under a dark style: stamped dark by the style, painted by the dark rule', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:chatgpt-dark'));
+    });
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    expect(el.matches(mainSelector())).toBe(true);
+  });
+
+  it('re-stamps live when the style changes under a mounted scope', () => {
+    installActiveStyle();
+    const el = scope();
+    expect(el.getAttribute('data-theme')).toBe('dark');
+    act(() => {
+      selectStyle(`personal:${uuid}`, followDoc('builtin:chatgpt-light'));
+    });
+    expect(el.hasAttribute('data-theme')).toBe(false);
+    act(() => {
+      selectStyle('builtin:chatgpt-light');
+    });
+    expect(el.getAttribute('data-theme')).toBe('dark');
+  });
+});
+
 describe('useTheme shim — same API, same behaviour', () => {
   it('reports the store theme and the system-default flag', () => {
     const { result } = renderHook(() => useTheme());
@@ -162,7 +344,7 @@ describe('useTheme shim — same API, same behaviour', () => {
     expect(result.current.theme).toBe('dark');
     expect(result.current.isSystemDefault).toBe(false);
     expect(localStorage.getItem('tm8ui.theme')).toBe('dark');
-    expect(sheet()).toContain(`--pn-paper: ${ATELIER_DARK.tokens['--pn-paper']};`);
+    expect(sheet()).toContain(`--pn-paper: ${CHATGPT_DARK.tokens['--pn-paper']};`);
   });
 
   it('toggle flips both ways', () => {

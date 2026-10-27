@@ -176,16 +176,16 @@ export function SessionsSection({ heading, scope, load, revoke, signOutHere }: S
             <tbody>
               {rows.map((row) => (
                 <tr key={row.sessionId} data-testid={`session-row-${row.sessionId}`}>
-                  {scope === 'space' ? <td>{row.owner.displayName ?? row.owner.identityId}</td> : null}
-                  <td>
+                  {scope === 'space' ? <td data-label="Who">{row.owner.displayName ?? row.owner.identityId}</td> : null}
+                  <td data-label="Kind">
                     {row.kind}
                     {row.current ? <span className="set-sessions__current"> · this browser</span> : null}
                   </td>
-                  <td>{sessionTime(row.createdAt)}</td>
-                  <td>{sessionTime(row.lastUsedAt)}</td>
-                  <td>{sessionLabel(row)}</td>
-                  <td>{ORIGIN_LABEL[row.origin]}</td>
-                  {scope === 'own' ? <td>{row.spaceName ?? 'any space'}</td> : null}
+                  <td data-label="Created">{sessionTime(row.createdAt)}</td>
+                  <td data-label="Last used">{sessionTime(row.lastUsedAt)}</td>
+                  <td data-label="Label">{sessionLabel(row)}</td>
+                  <td data-label="Origin">{ORIGIN_LABEL[row.origin]}</td>
+                  {scope === 'own' ? <td data-label="Space">{row.spaceName ?? 'any space'}</td> : null}
                   <td className="set-sessions__act-cell">
                     {revoke ? (
                       <>

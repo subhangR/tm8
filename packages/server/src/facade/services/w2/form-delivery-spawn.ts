@@ -102,9 +102,8 @@ async function resumeFor(row: ClaimedFormDelivery, ctx: NotLiveContext, spawner:
     return { kind: 'handled', reason: `session_${session.status}` };
   }
 
-  // Release FIRST: resume fires drain-on-live, and a row we still held would
-  // be skipped by it and wait for the tick.
-  await release(ctx, row, 'resuming');
+  // Keep the delivery lease while resume is in flight. Releasing it before
+  // the session becomes live lets another drain claim and resume it again.
   try {
     await spawner.resume(ctx.claims, { sessionId: row.workSessionId });
   } catch (error) {
@@ -118,7 +117,9 @@ async function resumeFor(row: ClaimedFormDelivery, ctx: NotLiveContext, spawner:
     }
     return failTransient(ctx, row, `resume_failed: ${describe(error)}`, false);
   }
-  // The first turn after resume: the ordinary live injection, under the claim.
+  // The live listener may have skipped our leased row. Release only after
+  // resume succeeds, then explicitly drain so the first turn is not delayed.
+  await release(ctx, row, 'resumed');
   await ctx.drainSession(row.workSessionId);
   return { kind: 'handled', reason: 'resumed' };
 }

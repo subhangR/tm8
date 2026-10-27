@@ -1,3 +1,4 @@
+import { projectRecordPort } from '../projects/project-record';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChannelTab,
@@ -15,7 +16,7 @@ import { KindIcon, getKind } from '../domain';
 import type { ActionRef } from '../domain';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
-import { usePanelPrimaries } from './usePanelPrimaries';
+import { panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
@@ -24,6 +25,7 @@ import type { ContentSurface } from '../routes';
 import { conversationSurfaceFor } from './conversationSurface';
 import './channel-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { watchLiveFor } from './watchLive';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
@@ -32,6 +34,7 @@ import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
@@ -74,6 +77,13 @@ export interface ChannelViewProps {
   /** The viewer, for the session chat beside the feed — same identity every
    *  other EntityDetailPanel host passes. */
   viewerMemberId?: string | null;
+  /**
+   * The phone's push (t-chips, CONTRACT §4 ruling 1): a feed chip, a pinned
+   * chip or a tab row opens the entity's FULL page, one push, so Back is this
+   * channel at the scroll left. Absent (the desktop) ⇒ the aside beside the
+   * feed, unchanged.
+   */
+  onOpenEntityPage?(id: EntityId): void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -90,6 +100,7 @@ export function ChannelView({
   onSpawn,
   onNotice,
   viewerMemberId,
+  onOpenEntityPage,
 }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
   /* The aside's terminal⇄chat request, per entity — the same memory
@@ -125,6 +136,8 @@ export function ChannelView({
       : {}),
     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
@@ -142,6 +155,9 @@ export function ChannelView({
     [channelId],
   );
   const [detailMode, setDetailMode] = useState<DetailMode>('aside');
+  /* What the channel's own surfaces open with: the page on the phone, the aside
+     here. The aside's panel keeps `setSelectedId`; on the phone it never opens. */
+  const openFromChannel = (id: EntityId) => (onOpenEntityPage ? onOpenEntityPage(id) : setSelectedId(id));
 
   /*
    * THE ASIDE IS DRAGGABLE, clamped against the feed's floor.
@@ -234,15 +250,20 @@ export function ChannelView({
   )) data.pull?.(selectedId);
 
   const entityPanel = selectedId ? (
+    <>
+    {primaries.dialog}
     <EntityDetailPanel
       detail={selectedDetail ?? null}
       serverBaseUrl={serverBaseUrl}
       loading={!selectedDetail}
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       host="stack"
       reasons={reasons}
       ctx={{ spaceId: data.spaceId, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       membershipAuthoring={membership.authoringFor(selectedDetail)}
       launch={launchPort}
       mergePr={mergePrPortFor(data.seam)}
@@ -250,6 +271,7 @@ export function ChannelView({
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, setSelectedId)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
@@ -258,6 +280,7 @@ export function ChannelView({
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}
+      crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId), data.launch.teammates)}
       attachments={attachments}
@@ -311,6 +334,7 @@ export function ChannelView({
         setDetailMode('aside');
       }}
     />
+    </>
   ) : null;
 
   if (selectedId && detailMode === 'full') {
@@ -347,7 +371,7 @@ export function ChannelView({
               <span className="chv-eyebrow">{`PINNED · ${content.pinned.length}`}</span>
               <div className="chv-shelf__items">
                 {content.pinned.map((item) => (
-                  <button key={item.id} type="button" className="chv-chip" onClick={() => setSelectedId(item.id)}>
+                  <button key={item.id} type="button" className="chv-chip" onClick={() => openFromChannel(item.id)}>
                     <span aria-hidden><KindIcon kind={item.kind} /></span>
                     {item.title}
                   </button>
@@ -406,7 +430,7 @@ export function ChannelView({
                   attachEntityOptions={feed.attachEntityOptions}
                   onStartAttachmentUpload={feed.startAttachmentUpload}
                   onLoadEarlier={feed.loadEarlier}
-                  onOpenEntity={(id) => setSelectedId(id)}
+                  onOpenEntity={openFromChannel}
                   threads={threadsEnabled}
                   anchorTitle={anchorTitle}
                   thread={feed.thread}
@@ -420,7 +444,7 @@ export function ChannelView({
                 key={`${channelId}:${activeTab}`}
                 seam={data.seam}
                 tab={tabs.find((tab) => tab.key === activeTab) ?? null}
-                onOpen={(id) => setSelectedId(id)}
+                onOpen={openFromChannel}
               />
             )}
           </div>

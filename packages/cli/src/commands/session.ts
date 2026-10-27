@@ -1,3 +1,4 @@
+import { mcpSelectionFlag } from './mcp.js';
 /**
  * `tm8 session liveness|spawn|terminate|attach` — the work-session lifecycle
  * (§4.13), projecting `execution.liveness`, `execution.spawn`,
@@ -465,6 +466,10 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
     REASONING_EFFORTS,
   );
   const taskIds = cmd.options.values('task');
+  const storyId = cmd.options.value('story');
+  if (storyId !== undefined && (taskIds.length > 0 || cmd.options.bool('force-new-task'))) {
+    throw new CliError('--story cannot be combined with --task or --force-new-task', EXIT_USAGE);
+  }
   const projectId = cmd.options.value('launch-project');
   const profileId = cmd.options.value('interaction-profile');
   const model = cmd.options.value('model');
@@ -483,6 +488,9 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // the spawner; an ordinary human shell has no session id and stays a root.
   if (cmd.ctx.sessionId) body.parentSessionId = cmd.ctx.sessionId;
   if (taskIds.length > 0) body.taskIds = taskIds;
+  if (storyId !== undefined) body.storyId = storyId;
+  const aboutId = cmd.options.value('about');
+  if (aboutId !== undefined) body.aboutEntityId = aboutId;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
   //
@@ -523,6 +531,8 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (reasoningEffort !== undefined) body.reasoningEffort = reasoningEffort;
   // Sent ONLY when named, like `accessMode`: an absent source is what lets a
   // child inherit its spawner's exact credential rather than re-resolving.
+  const mcpSelections = await mcpSelectionFlag(cmd);
+  if (mcpSelections !== undefined) body.mcpSelections = mcpSelections;
   const credentials = parseCredentialSourceFlags(cmd.options.values('credential-source'));
   if (credentials.credentialSource !== undefined) body.credentialSource = credentials.credentialSource;
   if (credentials.credentialSources !== undefined) body.credentialSources = credentials.credentialSources;
@@ -635,15 +645,85 @@ async function sessionResume(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `tm8 session complete [<work-session-id>] [--receipt <message-id>]
+ * [--keep-process | --close-process]` (Spec D1 §4.1). Settles the session's OUTCOME as
+ * completed: every claim must be done, in review, blocked or released first
+ * (`claims_open` lists the rest), and a close-out message on the anchor is the
+ * receipt — the latest one unless `--receipt` names it. Run from inside a
+ * session, the id defaults to that session (`TM8_SESSION_ID`). The process
+ * then closes (the server answers first) unless `--keep-process`, or it still
+ * has live sessions it launched — `--close-process` closes it anyway.
+ */
+async function sessionComplete(cmd: CommandContext): Promise<ExitCode> {
+  const id = cmd.args[0] ?? cmd.ctx.sessionId;
+  if (id === undefined || id.length === 0) {
+    throw new CliError('tm8 session complete requires a <work-session-id>', EXIT_USAGE, {
+      hint: 'inside a tm8 session it defaults to that session (TM8_SESSION_ID)',
+    });
+  }
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const receipt = cmd.options.value('receipt');
+  if (receipt !== undefined) body.receiptMessageId = receipt;
+  const keep = cmd.options.bool('keep-process');
+  const close = cmd.options.bool('close-process');
+  if (keep && close) {
+    throw new CliError('--keep-process and --close-process are exclusive', EXIT_USAGE, {
+      hint: 'the process closes by default; --keep-process leaves it open',
+    });
+  }
+  if (close) body.closeProcess = true;
+  if (keep) body.closeProcess = false;
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.complete', {
+    params: { id },
+    body,
+  });
+  cmd.out.data(data, renderCompleted);
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 session terminate` (Spec D1 §4.2). Terminate closes a PROCESS. While
+ * the session's work is open it also decides what happens to the work:
+ * `--stop` (end it without completing — claims released, Stopped tab; also
+ * the default) or `--complete` (run `session complete` first, then close). On a completed
+ * session neither is needed: it only closes the process. `--mark-lost`
+ * records a process that is already gone (the reaper, now).
+ */
 async function sessionTerminate(cmd: CommandContext): Promise<ExitCode> {
   const id = requireSessionId('session terminate', cmd.args[0]);
   requireConfirmation('session terminate', cmd);
+  const stop = cmd.options.bool('stop');
+  const complete = cmd.options.bool('complete');
+  const markLost = cmd.options.bool('mark-lost');
+  if ([stop, complete, markLost].filter(Boolean).length > 1) {
+    throw new CliError('--stop, --complete and --mark-lost are exclusive', EXIT_USAGE, {
+      hint: '--stop ends the work without completing; --complete completes it first; --mark-lost records a dead process',
+    });
+  }
 
   const mutationId = resolveMutationId(cmd.options.value('mutation-id'));
   const body: Record<string, unknown> = { clientMutationId: mutationId };
   // Sent only when asked: `ExecutionTerminateInput` is strict and a `false`
   // here would be a caller asserting something they did not ask for.
   if (cmd.options.bool('force')) body.force = true;
+  if (stop) body.outcome = 'stop';
+  if (complete) body.outcome = 'complete';
+  if (markLost) body.markLost = true;
+  const receipt = cmd.options.value('receipt');
+  if (receipt !== undefined) {
+    if (!complete) throw new CliError('--receipt goes with --complete', EXIT_USAGE);
+    body.receiptMessageId = receipt;
+  }
+  const note = cmd.options.value('note');
+  if (note !== undefined) {
+    if (!stop) throw new CliError('--note goes with --stop', EXIT_USAGE);
+    body.note = note;
+  }
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.terminate', { id, mutationId }), () =>
@@ -741,7 +821,7 @@ async function sessionAttach(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /** The subset of `StreamAttachGrant` this command reads. */
-interface StreamAttachGrantDto {
+export interface StreamAttachGrantDto {
   workSessionId?: unknown;
   url?: unknown;
   mode?: unknown;
@@ -852,7 +932,7 @@ async function streamTerminal(cmd: CommandContext, grant: StreamAttachGrantDto):
  * declares — an `http://` WebSocket URL is not a different opinion about the
  * endpoint, it is simply not dialable.
  */
-function grantSocketUrl(cmd: CommandContext, grant: StreamAttachGrantDto): string {
+export function grantSocketUrl(cmd: CommandContext, grant: StreamAttachGrantDto): string {
   const raw = grant.url;
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new CliError('the attach grant carried no stream url', EXIT_USAGE, {
@@ -908,6 +988,15 @@ function renderDispatched(dto: unknown): string {
   if (!r?.dispatcherSessionId) return JSON.stringify(dto);
   const spawned = r.dispatcherSpawned === true ? ' (dispatcher spawned)' : '';
   return `task ${String(r.taskId ?? '')}  dispatcher ${r.dispatcherSessionId}  ${String(r.delivery ?? '')}${spawned}`.trim();
+}
+
+function renderCompleted(dto: unknown): string {
+  const r = dto as { entity?: { id?: unknown }; outcome?: { receiptMessageId?: unknown; endedClaims?: unknown; alreadyCompleted?: unknown } | null };
+  const id = String(r?.entity?.id ?? '');
+  const o = r?.outcome;
+  if (!o) return `${id} completed`;
+  if (o.alreadyCompleted === true) return `${id} already completed (receipt ${String(o.receiptMessageId ?? '-')})`;
+  return `${id} completed  receipt ${String(o.receiptMessageId ?? '-')}  claims ended ${String(o.endedClaims ?? 0)}`;
 }
 
 function renderTerminated(dto: unknown): string {
@@ -989,6 +1078,7 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'dispatch'], run: sessionDispatch },
   { path: ['session', 'resume'], run: sessionResume },
+  { path: ['session', 'complete'], run: sessionComplete },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },
   { path: ['session', 'share'], run: sessionShare },

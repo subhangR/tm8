@@ -128,6 +128,7 @@ describe('one identity path (R2 / claims contract)', () => {
     'request_id',
     'acting_as',
     'client_mutation_id',
+    'api_scope', // Immutable verified bearer scope; Tools design9.7(a), bound only by db/client.ts.
     'auth_kind',
     // 227 (plan W0a): the space an agent session is pinned to. Caller
     // identity, not a side channel — it narrows what identity_id may reach.
@@ -136,6 +137,17 @@ describe('one identity path (R2 / claims contract)', () => {
     // identity, not a side channel — it only narrows (credential reads refuse
     // it), and like session_space_id only db/client.ts may bind it.
     'via_link',
+    // 301 (Spec D1): the work session an agent bearer was minted for. Caller
+    // identity — it names WHICH session a claim belongs to — and like the two
+    // above only db/client.ts may bind it.
+    'work_session_id',
+    // Immutable verified token-row reference. SQL re-reads generation ownership.
+    'auth_session_id',
+    // 306 (P0e): the in-process tracking job a transaction runs for. Bound
+    // ONLY by db/client.ts, from a closed list, never under a space pin; it
+    // widens only the tracking doors (internal.is_tracking_worker), and no
+    // request path sets it (tracking-clients.test.ts guards the setters).
+    'background_job',
   ] as const;
 
   const CLAIMS_BINDER = join(SRC, 'db', 'client.ts');

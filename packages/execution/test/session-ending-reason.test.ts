@@ -59,6 +59,20 @@ describe('a session records why it ended', () => {
   });
   afterEach(() => pty.shutdownAll());
 
+  it('records a normal nonzero tool exit as exited_clean while preserving its result', async () => {
+    service.adoptToolSession(AUTH, 'tool-nonzero');
+    await service.handlePtyExit('tool-nonzero', 'failed', { exitCode: 7, signal: null });
+    expect(endingFor(graph, 'tool-nonzero')).toMatchObject({ status: 'exited', kind: 'exited_clean' });
+    expect(graph.transitions.at(-1)?.exitCode).toBe(7);
+  });
+
+  it('keeps signal deaths of tools on the failure path', async () => {
+    service.adoptToolSession(AUTH, 'tool-signal');
+    await service.handlePtyExit('tool-signal', 'failed', { exitCode: 0, signal: 9 });
+    expect(endingFor(graph, 'tool-signal').status).toBe('failed');
+    expect(endingFor(graph, 'tool-signal').kind).not.toBe('exited_clean');
+  });
+
   // --- the shutdown sweep: the reason is OBSERVED, not inferred -------------
 
   it('annotates every live session from inside the dying process', async () => {
@@ -240,7 +254,7 @@ describe('a session records what it cost, after it records why it ended', () => 
 
     await svc.handlePtyExit('natural', 'completed', { exitCode: 0, signal: null });
 
-    expect(endingFor(graph, 'natural')).toMatchObject({ kind: 'completed', status: 'exited' });
+    expect(endingFor(graph, 'natural')).toMatchObject({ kind: 'exited_clean', status: 'exited' }); // Spec D1 (301): a clean exit, not completed work
     expect(graph.usageRecords).toHaveLength(1);
     expect(graph.usageRecords[0]?.afterTransitions).toBe(1);
     // The scratch cwd is re-derived from the data dir, exactly as execution.transcript does.

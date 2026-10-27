@@ -18,6 +18,7 @@
  * is drift protection across waves: that file is READ, never written.
  */
 import { describe, expect, it } from 'vitest';
+import { nounHelp } from '../src/discovery/help.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -40,7 +41,7 @@ import {
 } from '../src/discovery/operations.js';
 // READ-ONLY consumption of group 1's frozen kernel: the parser's own allowlists
 // are the ground truth for what a published flag can actually mean.
-import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/args.js';
+import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS, PATH_SCOPED_BOOLEANS } from '../src/args.js';
 // The unbound fact has two renderings; the pin at the bottom of this file drives
 // the REAL help renderer through the REAL Output rather than a copy of either.
 import { emitCommandHelp } from '../src/commands/help.js';
@@ -77,7 +78,7 @@ import { createOutput } from '../src/output.js';
 // MEASURED from this file's own failing run on the MERGED tree.
 // F2 adds skills.scan/list/show.
 // 203 -> 208: skills.roots/create/edit/equip/unequip (F4, #648). MEASURED on the merged tree.
-const EXPECTED_ROWS = 288 /* +1 chat.setModel (276, chat model switch). MEASURED. */ /* +1 credentials.space.readiness (credentials r1 S7; base-relative). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */; /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
+const EXPECTED_ROWS = 382 /* +2 chat.getMcpSelections, mcp.sessions.provenance (§10.4/§10.6, S6). MEASURED from this assertion's own failing run on the rebased head. */ /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357). MEASURED from this assertion's own failing run. */ /* +3 mcp.catalog.list, mcp.servers.request, chat.setMcpSelections (MCP connectors P0, 345). MEASURED from this assertion's own failing run. */ /* +1 mcp.audit.list (§5.6, 346). MEASURED. */ /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ /* request noun removed (325). MEASURED. */ /* +3 workspace.crafts.list|get|command (Craft L3). MEASURED. */ /* +1 entities.markSeen. */ /* +2 execution.gitCheckouts|gitCheckoutDiff (Changes for every session). MEASURED. */ /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +5 workspace.create|update|reorder|delete|switch (MW W2.1). MEASURED. */ /* +1 workspace.list (MW W1.2). MEASURED. */ /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */ /* +2 workspace.get|drafts.patch (Spec D). MEASURED. */ /* +3 workspace.instances.list|inspect|command (Spec C bridge). MEASURED. */ /* +1 spaceLinks.inbound.grant (W9c, 301). MEASURED. */ /* +3 credentials.space.share|unshare|shares (992). MEASURED. */ /* +15 styles.* + identity.stylePrefs.get|set + spaces.styleDefault.get|set (284). MEASURED. */ /* +3 entities.refs.list|add|remove (L3 cross-space refs, 279). MEASURED. */ /* +5 node.pathGrants.list|create|revoke, node.accounts.list, identity.pathGrants.list (282, path grants). MEASURED. */ /* +4 spaceLinks.inbound.* (278, D2). MEASURED. */ /* +1 chat.setModel (276, chat model switch). MEASURED. */ /* +1 credentials.space.readiness (credentials r1 S7; base-relative). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */; /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ // +1 events.changes (change feed step 3). MEASURED. // +10 credentials.space.* + node.credentials.* (SC-3). MEASURED. // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-9-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -199,7 +200,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // every other row in the session git rail. MEASURED from the failing run.
     // 194 -> 195 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): execution.gitStage is public, like every other row in the
     // session git rail. 187's row moved this to 194; gitStage takes it to 195. MEASURED.
-    expect(histogram).toEqual({ public: 284 /* +1 chat.setModel (276, chat model switch). MEASURED. */ /* +1 credentials.space.readiness (credentials r1 S7; base-relative). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-09-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
+    expect(histogram).toEqual({ public: 378 /* +2 chat.getMcpSelections, mcp.sessions.provenance (§10.4/§10.6, S6). MEASURED from this assertion's own failing run on the rebased head. */ /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357). MEASURED from this assertion's own failing run. */ /* +3 mcp.catalog.list, mcp.servers.request, chat.setMcpSelections (MCP connectors P0, 345). MEASURED from this assertion's own failing run. */ /* +1 mcp.audit.list (§5.6, 346). MEASURED. */ /* +1 chat.interrupt. MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ /* request noun removed (325). MEASURED. */ /* +3 workspace.crafts.list|get|command (Craft L3). MEASURED. */ /* +1 entities.markSeen. */ /* +2 execution.gitCheckouts|gitCheckoutDiff (Changes for every session). MEASURED. */ /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +5 workspace.create|update|reorder|delete|switch (MW W2.1). MEASURED. */ /* +1 workspace.list (MW W1.2). MEASURED. */ /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */ /* +2 workspace.get|drafts.patch (Spec D). MEASURED. */ /* +3 workspace.instances.list|inspect|command (Spec C bridge). MEASURED. */ /* +1 spaceLinks.inbound.grant (W9c, 301). MEASURED. */ /* +3 credentials.space.share|unshare|shares (992). MEASURED. */ /* +15 styles.* + identity.stylePrefs.get|set + spaces.styleDefault.get|set (284). MEASURED. */ /* +3 entities.refs.list|add|remove (L3 cross-space refs, 279). MEASURED. */ /* +5 node.pathGrants.list|create|revoke, node.accounts.list, identity.pathGrants.list (282, path grants). MEASURED. */ /* +4 spaceLinks.inbound.* (278, D2). MEASURED. */ /* +1 chat.setModel (276, chat model switch). MEASURED. */ /* +1 credentials.space.readiness (credentials r1 S7; base-relative). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +6 servers.* (W8, 261). MEASURED. */ /* +2 spaceLinks.invoke/audit (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 credentials.space.* (W10b). MEASURED. */ /* +7 spaceLinks.* (W6, 250/251). MEASURED. */ /* +1 node.metrics.get (status strip). MEASURED. */ /* W11: +4 (projects.link stays, decision 29) spaces.projects.list|create and gate.folders.list|create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */, /* +2 spaces.chatDefaults.get/set (entity chat G). MEASURED. */ /* +1 launch.defaults (I9b), on the merged tree. MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +13 forms.* (Forms W1). MEASURED. */ composite: 1, internal: 1, reserved: 2 }); /* +1 spaces.configs (task 01a0d350). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */ // +3 credentials.serviceKeys.* (Jev lane K). MEASURED. // // +1 launch.suggest (Jev lane F, 2026-9-23). MEASURED. /* +2 auth.sessions.list/revoke (W4). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
   });
 });
 
@@ -213,10 +214,16 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
  * With the count derived, that whole class of drift cannot recur.
  */
 const COMMANDLESS_OPERATIONS = [
+      // Tools server operations are discoverable before the CLI implementation lands.
+
       // Attention v2 S6: tm8's own conflict signal, reached only through the worktree rail.
       'attentionSignals.clear',
       'attentionSignals.raise',
       'bridge.fetchBlob',
+      // §10.4: `tm8 chat connectors` WRITES a thread's connectors; there is no
+      // terminal form of the read yet, and the gap is stated on the row in
+      // operations.ts rather than papered over with a shared command path.
+      'chat.getMcpSelections',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the
       // note said the CLI lane would add the noun — this is that lane, so the
@@ -255,6 +262,7 @@ const COMMANDLESS_OPERATIONS = [
       'credentials.space.spaceDefaultConsent',
       'credentials.space.usage',
       'credentials.status',
+      'entities.markSeen', // Only entity-list activation records seen state.
       // Launch v3 C: the launch card's dispatch-target drop-up; `session dispatch` needs no read.
       'execution.dispatchers',
       // The TEN execution.git* rows are deliberately commandless (see the
@@ -262,7 +270,11 @@ const COMMANDLESS_OPERATIONS = [
       // `tm8 session git-*`, and one action must not have two names.
       // 9 -> 10 (Changes screen Phase 1): `execution.gitStage` joins them for
       // the same reason — it is the index half of a verb the CLI already has.
+      // 10 -> 12: gitCheckouts/gitCheckoutDiff read a worktree-less session's
+      // own checkouts for the Changes rail; locally that is plain `git`.
       'execution.gitBranch',
+      'execution.gitCheckoutDiff',
+      'execution.gitCheckouts',
       'execution.gitCheckpoint',
       'execution.gitCherryPick',
       'execution.gitCommit',
@@ -280,6 +292,12 @@ const COMMANDLESS_OPERATIONS = [
       // Jev lane F: the launch-sheet API. Jev is UI-only (design 01a0cb80).
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
+      'mcp.proxy.request',
+      // §10.6: the session debug view's provenance read. A terminal rendering
+      // would be a bearer chain of bare uuids with nothing to resolve them
+      // against; `tm8 mcp audit` is the CLI's answer to what a session's
+      // connectors did.
+      'mcp.sessions.provenance',
       'node.credentials.policy.set',
       'node.credentials.status',
       // Status strip: host metrics are a desktop-UI read.
@@ -330,7 +348,7 @@ describe('the CLI command projection', () => {
     // `credentials.*` rows are deliberate and their reason is recorded beside
     // each: they are settings-screen operations, and adding CLI commands would
     // oblige four command implementations in the same change.
-    expect(commandless.sort()).toEqual(COMMANDLESS_OPERATIONS);
+    expect(commandless.sort()).toEqual([...COMMANDLESS_OPERATIONS].sort());
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -361,11 +379,12 @@ describe('the CLI command projection', () => {
     expect(upload?.operations).toEqual(['files.uploadInit', 'files.uploadComplete']);
   });
 
-  it('every noun in the index resolves to at least one command or operation', () => {
+  it('every noun in the index resolves to a command, operation or guide', () => {
     expect(NOUNS.length).toBeGreaterThanOrEqual(26);
     for (const noun of NOUNS) {
       const rows = DISCOVERY.filter((d) => d.noun === noun || d.command?.[0] === noun);
-      expect(rows.length, noun).toBeGreaterThan(0);
+      // An alias may own a noun outright (`whoami`): it resolves to its commands.
+      expect(rows.length + commandsForNoun(noun).length + (nounHelp(noun)?.guide?.length ?? 0), noun).toBeGreaterThan(0);
     }
   });
 
@@ -381,10 +400,12 @@ describe('the CLI command projection', () => {
     expect(commandsForNoun('task').map((c) => c.command).sort()).toEqual([
       'task axis',
       'task complete',
+      'task create',
       'task gate',
       'task import-issue',
       'task link-commit',
       'task link-pr',
+      'task release',
       'task tick',
       'task transition',
     ]);
@@ -579,8 +600,13 @@ describe('schema references are honest about what is bound', () => {
 // as a near-match while five silent Direction-B rows hide in the difference.
 // ───────────────────────────────────────────────────────────────────────────
 
-/** Any `expected*` key is an optimistic-concurrency guard. */
-const GUARD_FIELD = /^expected[A-Z]/;
+/**
+ * Any `expected*` key is an optimistic-concurrency guard, except
+ * `expectedWorkspaceId`: the workspace pin (API 01a115c4 §3.2 step 5) names a
+ * target, it guards no version. `expectedActiveWorkspaceId` (workspace.switch,
+ * F2) is the same kind of pin on the active pointer.
+ */
+const GUARD_FIELD = /^expected(?!(Active)?WorkspaceId$)[A-Z]/;
 
 /**
  * Unwrap to the underlying ZodObject through the wrappers the contract
@@ -619,12 +645,12 @@ function guardFieldsOf(exportName: string): Array<{ field: string; required: boo
  * Every guard flag a syntax string advertises, and whether it is REQUIRED.
  * Bracket depth is what distinguishes `--expect-version <n>` (required) from
  * `[--expect-source-version <n>]` (optional), so it is tracked rather than
- * assumed.
+ * assumed. `--expect-workspace` is the workspace pin, not a guard (GUARD_FIELD).
  */
 function guardFlagsIn(syntax: string): Array<{ flag: string; required: boolean }> {
   const out: Array<{ flag: string; required: boolean }> = [];
   let depth = 0;
-  const scan = /\[|\]|--expect[a-z-]*/g;
+  const scan = /\[|\]|--expect(?!-workspace\b)[a-z-]*/g;
   let m: RegExpExecArray | null;
   while ((m = scan.exec(syntax)) !== null) {
     if (m[0] === '[') depth++;
@@ -644,6 +670,18 @@ function guardFlagsIn(syntax: string): Array<{ flag: string; required: boolean }
  * hide whichever of them drifted.
  */
 const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
+  // 332: both carry an optional expectedConfigRevision guard.
+  'chat.setCredentials': 'SetChatCredentialsInputSchema',
+  'chat.setModel': 'SetChatModelInputSchema',
+  'tools.update': 'ToolUpdateInputSchema',
+  'tools.config.set': 'ToolConfigSetInputSchema',
+  'tools.config.unset': 'ToolConfigUnsetInputSchema',
+  'tools.secrets.bind': 'ToolSecretBindInputSchema',
+  'tools.secrets.unbind': 'ToolSecretUnbindInputSchema',
+  'tools.run': 'ToolRunInputSchema',
+
+  'mcp.servers.update': 'McpServerUpdateInputSchema',
+  'mcp.servers.delete': 'McpServerDeleteInputSchema',
   'attentionRequests.update': 'UpdateAttentionRequestInputSchema',
   'entities.patch': 'PatchEntityInputSchema',
   'entities.move': 'MoveEntityInputSchema',
@@ -671,6 +709,10 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'interactionProfiles.retire': 'RetireInteractionProfileInputSchema',
   'teamMembers.interactionProfile.setDefault': 'SetTeammateProfileDefaultInputSchema',
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
+  // Spec C bridge: an OPTIONAL runtime-revision guard, enforced by the window when supplied.
+  'workspace.command': 'WorkspaceCommandInputSchema',
+  // Craft L3: an OPTIONAL workspace-revision guard (`revision_conflict` when it is stale).
+  'workspace.crafts.command': 'CraftWorkspaceCommandInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
   // 187: the session sharing dials. `expectedVersion` is OPTIONAL on this DTO
@@ -700,6 +742,15 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'forms.transition': 'FormsTransitionInputSchema',
   // Attention v2 S4: withdraw's optional expectedVersion.
   'attentionRequests.withdraw': 'WithdrawAttentionRequestInputSchema',
+  // Styles (284, styles spec v8 §4). `delete`, `use` and `default` carry an
+  // OPTIONAL guard their syntax does not advertise; the three that advertise
+  // one are pinned in GUARD_PIN below.
+  'styles.personal.update': 'PersonalStyleUpdateInputSchema',
+  'styles.personal.delete': 'PersonalStyleDeleteInputSchema',
+  'styles.push': 'StylePushInputSchema',
+  'styles.remove': 'StyleRemoveInputSchema',
+  'identity.stylePrefs.set': 'StylePrefsSetInputSchema',
+  'spaces.styleDefault.set': 'SpaceStyleDefaultSetInputSchema',
 };
 
 /**
@@ -709,6 +760,19 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
  * quietly tolerated.
  */
 const GUARD_DTOS_BOUND_TO_NO_OPERATION = ['PatchTaskInputSchema'];
+
+/**
+ * Tools 1 introduces the frozen schemas before Tools 2 registers their API
+ * operations. Exempt each schema only while its specific catalog row is absent;
+ * once that row lands, Direction B requires the operation-to-DTO mapping.
+ */
+const GUARD_DTOS_AWAITING_CATALOG: Readonly<Record<string, string>> = {
+  ToolUpdateInputSchema: 'tools.update',
+  ToolConfigSetInputSchema: 'tools.config.set',
+  ToolConfigUnsetInputSchema: 'tools.config.unset',
+  ToolSecretBindInputSchema: 'tools.secrets.bind',
+  ToolSecretUnbindInputSchema: 'tools.secrets.unbind',
+};
 
 /**
  * Guard-bearing rows whose DTO lives on the SERVER, not in the contract, so
@@ -754,6 +818,12 @@ const PENDING_AMENDMENT: OperationName[] = [
   // delisted. The class is closed again.
 ];
 
+// These commands supply the version they loaded themselves. The run guard is
+// automatic; config and secret commands also accept an explicit override.
+// tool.test.ts measures the actual request body for each of these paths.
+const LOADED_VERSION_GUARDS: readonly OperationName[] = [
+  'tools.config.set', 'tools.config.unset', 'tools.secrets.bind', 'tools.secrets.unbind', 'tools.run',
+];
 describe('version guards: the projection and the frozen DTOs agree, both directions', () => {
   it('the schema side of the join is real — introspection finds the guard DTOs', () => {
     // Vacuity guard. If `objectShapeOf` ever stops unwrapping (a zod upgrade
@@ -776,6 +846,9 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // A DTO with no guard must report NONE, or Direction A can never fail.
     expect(guardFieldsOf('SavedViewInputSchema')).toEqual([]);
     expect(guardFieldsOf('SendHandoffInputSchema')).toEqual([]);
+    for (const schema of ['SetChatCredentialsInputSchema', 'SetChatModelInputSchema']) {
+      expect(guardFieldsOf(schema)).toEqual([{ field: 'expectedConfigRevision', required: false }]);
+    }
   });
 
   it('every guard-bearing contract DTO is reachable from the operation map', () => {
@@ -787,7 +860,11 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     const mapped = new Set(Object.values(DTO_BY_OPERATION));
     const unreachable = bearing
       .filter((n) => !mapped.has(n))
-      .filter((n) => !GUARD_DTOS_BOUND_TO_NO_OPERATION.includes(n));
+      .filter((n) => !GUARD_DTOS_BOUND_TO_NO_OPERATION.includes(n))
+      .filter((n) => {
+        const stagedOperation = GUARD_DTOS_AWAITING_CATALOG[n];
+        return stagedOperation === undefined || DISCOVERY.some((d) => d.operation === stagedOperation);
+      });
     expect(unreachable).toEqual([]);
   });
 
@@ -817,18 +894,20 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     const missing: OperationName[] = [];
     let swept = 0;
     for (const [operation, dto] of Object.entries(DTO_BY_OPERATION) as [OperationName, string][]) {
+      // A commandless API row has no CLI flag to advertise; its DTO still guards the API.
+      if (discoveryFor(operation).command === null) continue;
       if (!guardFieldsOf(dto).some((f) => f.required)) continue;
       swept++;
       const syntax = discoveryFor(operation).syntax;
       const flags = syntax === null ? [] : guardFlagsIn(syntax);
-      if (!flags.some((f) => f.required)) missing.push(operation);
+      if (!flags.some((f) => f.required) && !LOADED_VERSION_GUARDS.includes(operation)) missing.push(operation);
     }
     // Every mapped guard DTO is required, but two: entities.header.set's and
     // entities.header.clear's expectedVersion are optional (unguarded header
     // writes, lenient headers / migration 223), so they are not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(38); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
+    expect(swept).toBe(46 /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -839,7 +918,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     for (const d of DISCOVERY) {
       if (d.syntax === null) continue;
       compared++;
-      const advertises = guardFlagsIn(d.syntax).length > 0;
+      const advertises = guardFlagsIn(d.syntax).length > 0 || LOADED_VERSION_GUARDS.includes(d.operation);
       expect(d.versioning === 'expectedVersion', `${d.operation} ${d.syntax}`).toBe(advertises);
     }
     expect(compared).toBeGreaterThan(90);
@@ -875,6 +954,13 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
    * applied to the MAPPING rather than to membership.
    */
   const GUARD_PIN: ReadonlyArray<readonly [OperationName, string, string]> = [
+    ['tools.update', '--expect-version', 'expectedVersion'],
+    ['tools.config.set', '--expect-version', 'expectedVersion'],
+    ['tools.config.unset', '--expect-version', 'expectedVersion'],
+    ['tools.secrets.bind', '--expect-version', 'expectedVersion'],
+    ['tools.secrets.unbind', '--expect-version', 'expectedVersion'],
+    ['mcp.servers.update', '--expected-version', 'expectedVersion'],
+    ['mcp.servers.delete', '--expected-version', 'expectedVersion'],
     ['attentionRequests.update', '--expect-version', 'expectedVersion'],
     ['attentionRequests.withdraw', '--expect-version', 'expectedVersion'],
     ['entities.patch', '--expect-version', 'expectedVersion'],
@@ -894,6 +980,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['teamMembers.interactionProfile.setDefault', '--expect-version', 'expectedVersion'],
     ['handoffs.withdraw', '--expect-record-version', 'expectedRecordVersion'],
     ['spaces.interactionProfile.setDefault', '--expect-settings-revision', 'expectedSettingsRevision'],
+    ['workspace.command', '--expect-revision', 'expectedRevision'],
 
     // ── CONTAINERS (§14): eleven rows, one spelling, and four of them share a
     // DTO. `containers.start|stop|pause|resume` all carry
@@ -950,6 +1037,12 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['forms.questions.remove', '--expect-version', 'expectedVersion'],
     ['forms.questions.move', '--expect-version', 'expectedVersion'],
     ['forms.transition', '--expect-version', 'expectedVersion'],
+
+    // ── Styles (284): a personal edit guards the PERSONAL style's version
+    // (required); push and remove guard the SPACE style's entity version.
+    ['styles.personal.update', '--expect-version', 'expectedVersion'],
+    ['styles.push', '--expect-version', 'expectedVersion'],
+    ['styles.remove', '--expect-version', 'expectedVersion'],
   ];
 
   it('every guard row pins its flag to its frozen field — transposition-proof', () => {
@@ -972,7 +1065,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(42) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(actual.length).toBe(53 /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 
@@ -1062,7 +1155,8 @@ describe('flag parseability: what the projection publishes, the parser can repre
       for (const m of d.syntax.matchAll(/--([a-z][a-z0-9-]*)(?![^\s\]])(?!\s+(?:<|[a-z0-9_]+\|))/g)) {
         const flag = m[1]!;
         seen.add(flag);
-        if (!BOOLEAN_OPTIONS.has(flag) && !COMMAND_SCOPED_GLOBALS.has(flag)) {
+        if (!BOOLEAN_OPTIONS.has(flag) && !COMMAND_SCOPED_GLOBALS.has(flag)
+          && !PATH_SCOPED_BOOLEANS.get(flag)?.has(d.command?.join(' ') ?? '')) {
           unlisted.push(`${d.operation} --${flag}`);
         }
       }

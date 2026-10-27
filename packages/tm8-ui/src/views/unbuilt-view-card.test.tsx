@@ -26,6 +26,10 @@ import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
+
 const SPACE = FIXTURE_SPACE_ID;
 
 function installStorage(): void {

@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  isotonic, layoutGraph, roundedPath, segmentHitsBox,
+  curvedPath, isotonic, layoutGraph, roundedPath, segmentHitsBox,
   type Box, type LayoutEdgeInput, type LayoutNodeInput, type LayoutResult, type Point,
 } from './layout';
 
@@ -77,6 +77,18 @@ function assertInvariants(result: LayoutResult, nodes: LayoutNodeInput[], edges:
     boxes.forEach((b) => expect(overlaps(l, b)).toBe(false));
     labels.slice(i + 1).forEach((m) => expect(overlaps(l, m)).toBe(false));
   });
+  /* …and never on ANOTHER edge's wire, so never on a crossing. */
+  for (const e of edges) {
+    const box = result.edges.get(e.key)!.labelBox;
+    if (!box) continue;
+    for (const other of edges) {
+      if (other.key === e.key) continue;
+      const pts = result.edges.get(other.key)!.points;
+      for (let i = 0; i + 1 < pts.length; i += 1) {
+        expect(segmentHitsBox(pts[i]!, pts[i + 1]!, box), `${e.key}'s label sits on ${other.key}`).toBe(false);
+      }
+    }
+  }
 }
 
 /** Deterministic PRNG so "random" graphs are reproducible. */
@@ -263,6 +275,76 @@ describe('layoutGraph', () => {
     const elapsed = performance.now() - started;
     expect(elapsed).toBeLessThan(250);
     assertInvariants(r, nodes, edges);
+  });
+});
+
+describe('top-to-bottom routing', () => {
+  /* One source fanning out to four targets across one gap: four jogs. */
+  const nodes = ['s', 'a', 'b', 'c', 'd'].map((k) => node(k));
+  const edges = ['a', 'b', 'c', 'd'].map((k) => edge('s', k));
+
+  it('leaves a card at its bottom and enters the next at its top', () => {
+    const r = layoutGraph(nodes, edges, { direction: 'TB' });
+    const s = r.nodes.get('s')!;
+    edges.forEach((e) => {
+      const pts = r.edges.get(e.key)!.points;
+      const to = r.nodes.get(e.to)!;
+      expect(pts[0]!.y).toBeCloseTo(s.y + s.height, 5);
+      expect(pts[pts.length - 1]!.y).toBeCloseTo(to.y, 5);
+    });
+    assertInvariants(r, nodes, edges, 'TB');
+  });
+
+  it('gives every jog its own track, spaced apart — parallel runs never stack', () => {
+    const r = layoutGraph(nodes, edges, { direction: 'TB' });
+    const tracks = edges.flatMap((e) => {
+      const pts = r.edges.get(e.key)!.points;
+      /* A jog is a horizontal segment; its y is the track. */
+      return pts.slice(1).flatMap((q, i) => (Math.abs(q.y - pts[i]!.y) < 0.01 && Math.abs(q.x - pts[i]!.x) > 0.5 ? [q.y] : []));
+    }).sort((p, q) => p - q);
+    expect(tracks.length).toBeGreaterThanOrEqual(2);
+    for (let i = 0; i + 1 < tracks.length; i += 1) expect(tracks[i + 1]! - tracks[i]!).toBeGreaterThanOrEqual(10);
+  });
+
+  it('labels sit on straight runs along the flow when there is room', () => {
+    const r = layoutGraph(nodes, edges, { direction: 'TB', edgeStyle: 'curved' });
+    edges.forEach((e) => {
+      const box = r.edges.get(e.key)!.labelBox!;
+      expect(box, e.key).not.toBeNull();
+      const pts = r.edges.get(e.key)!.points;
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      const onVertical = pts.slice(1).some((q, i) => {
+        const p = pts[i]!;
+        return Math.abs(p.x - q.x) < 0.01 && Math.abs(p.x - cx) < 0.01 && cy > Math.min(p.y, q.y) && cy < Math.max(p.y, q.y);
+      });
+      expect(onVertical, `${e.key} label is on a vertical run`).toBe(true);
+    });
+  });
+
+  it('leaves no crossing that one neighbour swap would remove', () => {
+    /* a→d and b→c with a before b, c before d in input order: one swap clears it. */
+    const ns = ['a', 'b', 'c', 'd'].map((k) => node(k));
+    const es = [edge('a', 'd'), edge('b', 'c')];
+    for (const direction of ['LR', 'TB'] as const) {
+      expect(layoutGraph(ns, es, { direction }).crossings).toBe(0);
+    }
+  });
+});
+
+describe('curvedPath', () => {
+  it('turns a jog between two parallel runs into one S-curve, ending exactly on the last point', () => {
+    const d = curvedPath([{ x: 0, y: 0 }, { x: 0, y: 50 }, { x: 80, y: 50 }, { x: 80, y: 100 }]);
+    expect(d.startsWith('M 0 0')).toBe(true);
+    expect(d).toContain('C 0 50 80 50');
+    expect(d.match(/ C /g)?.length).toBe(1);
+    expect(d.endsWith('L 80 100')).toBe(true);
+  });
+
+  it('rounds an L-shaped corner instead, and draws a straight route straight', () => {
+    expect(curvedPath([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }])).toContain('Q 100 0');
+    expect(curvedPath([{ x: 0, y: 0 }, { x: 0, y: 90 }])).toBe('M 0 0 L 0 90');
+    expect(curvedPath([])).toBe('');
   });
 });
 

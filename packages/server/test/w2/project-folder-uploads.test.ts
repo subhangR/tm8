@@ -75,7 +75,10 @@ class FakeDb implements Db {
   }
 }
 
-function stagingDb(): FakeDb {
+const PROJECT_ENTITY = '88888888-8888-4888-8888-888888888888';
+
+/** `spaceAdmin`: what `internal.is_space_admin` answers for the caller (task 01a13574). */
+function stagingDb(options: { spaceAdmin?: boolean } = {}): FakeDb {
   const db = new FakeDb();
   db.rpcImpl = async <T>(_claims: DbClaims, fn: string, args: readonly unknown[]): Promise<T> => {
     if (fn === 'w2_init_file_upload') {
@@ -96,6 +99,10 @@ function stagingDb(): FakeDb {
       // W11 (234): the upload grants the gate's folder to its one space.
       return { spaceId: args[0], projectId: args[1] } as T;
     }
+    if (fn === 'register_space_folder') {
+      // 323: a space admin's register + grant + name, in one step.
+      return { spaceId: args[0], folderId: PROJECT, projectId: PROJECT_ENTITY, created: true } as T;
+    }
     throw new Error(`unexpected rpc: ${fn}`);
   };
   // Slot staging read: every requested slot is fully staged with the declared bytes.
@@ -109,6 +116,14 @@ function stagingDb(): FakeDb {
         staged_size_bytes: BODY.length,
         staged_checksum_sha256: CHECKSUM,
       })) as R[];
+    }
+    if (sql.includes('internal.is_space_admin')) return [{ admin: options.spaceAdmin === true }] as R[];
+    if (sql.includes('space_projects_for_caller')) {
+      return [{
+        project_id: PROJECT_ENTITY, folder_id: PROJECT, name: 'Imported', repo_url: null,
+        trust: 'untrusted', defaults: {}, materialized_version: 1,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }] as R[];
     }
     if (sql.includes('public.projects')) return [] as R[];
     throw new Error(`unexpected query: ${sql}`);
@@ -446,16 +461,16 @@ describe('projects.folderUploads security corrections', () => {
     return registry;
   }
 
-  it('C1: a non-node-admin caller is forbidden on init AND complete', async () => {
+  it('C1: a caller who is neither node admin nor space admin is forbidden on init AND complete', async () => {
     const adminRegistry = configuredWithOwner(stagingDb(), true);
     const nonAdminRegistry = configuredWithOwner(stagingDb(), false);
 
     await expect(handler(nonAdminRegistry, 'projects.folderUploads.init')(
       request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody() }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space admin/i) });
 
     // Open as the admin, then try to complete as the SAME identity with the
-    // admin bit gone — the refusal must be the node-admin gate, not the
+    // admin bit gone — the refusal must be the admin gate, not the
     // wrong-identity gate.
     const grant = await handler(adminRegistry, 'projects.folderUploads.init')(
       request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody() }),
@@ -465,7 +480,7 @@ describe('projects.folderUploads security corrections', () => {
         params: { folderUploadId: grant.folderUploadId },
         body: { clientMutationId: 'cmid-sec-1' },
       }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space admin/i) });
   });
 
   it('C1: a node-admin SESSION is admitted even though it is not the node owner', async () => {
@@ -485,29 +500,89 @@ describe('projects.folderUploads security corrections', () => {
     expect(grant.folderUploadId).toEqual(expect.any(String));
   });
 
-  it('C1: a bearer WITHOUT the node-admin flag is still forbidden, owner or not', async () => {
-    const registry = configuredWithOwner(stagingDb(), true);
+  it('C1: a bearer WITHOUT the node-admin flag who is not a space admin is still forbidden, owner or not', async () => {
+    const db = stagingDb();
+    const registry = configuredWithOwner(db, true);
     await expect(handler(registry, 'projects.folderUploads.init')(
       request('projects.folderUploads.init', {
         params: { spaceId: SPACE },
         body: initBody(),
         identity: { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: false },
       }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space admin/i) });
+    expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+  });
+
+  describe('a SPACE admin who is not a node admin (task 01a13574)', () => {
+    const spaceAdmin = { kind: 'bearer', identityId: 'a-space-admin', nodeAdmin: false } as RequestContext['identity'];
+
+    it('imports inside TM8_PROJECT_ROOTS and registers through register_space_folder, untrusted, with no path', async () => {
+      const db = stagingDb({ spaceAdmin: true });
+      const { registry, blobStore } = configured(db);
+      const grant = await handler(registry, 'projects.folderUploads.init')(
+        request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: spaceAdmin }),
+      ) as ProjectFolderUploadGrant;
+      await stageGrantBytes(blobStore, grant);
+
+      const result = await handler(registry, 'projects.folderUploads.complete')(
+        request('projects.folderUploads.complete', {
+          params: { folderUploadId: grant.folderUploadId },
+          body: { clientMutationId: 'cmid-sa-1' },
+          identity: spaceAdmin,
+        }),
+      ) as ProjectFolderUploadResult;
+
+      expect(result.project).toMatchObject({ id: PROJECT, projectEntityId: PROJECT_ENTITY, spaceId: SPACE });
+      expect(result.project.workingDir).toBeUndefined();
+      expect(await readFile(join(projectRoot, 'imported/src/data.bin'))).toEqual(BODY);
+      const rpcs = db.calls.filter((call) => call.kind === 'rpc');
+      expect(rpcs.map((call) => call.name)).not.toContain('create_project');
+      expect(rpcs.map((call) => call.name)).not.toContain('grant_folder');
+      const register = rpcs.find((call) => call.name === 'register_space_folder')!;
+      expect(register.args.slice(0, 3)).toEqual([SPACE, 'Imported', join(projectRoot, 'imported')]);
+      expect(register.args[5]).toBe('untrusted');
+      expect(register.claims.nodeAdmin).toBe(false);
+    });
+
+    it('is refused when the node does not set TM8_PROJECT_ROOTS, before any slot opens', async () => {
+      delete process.env.TM8_PROJECT_ROOTS;
+      const db = stagingDb({ spaceAdmin: true });
+      const { registry } = configured(db);
+      await expect(handler(registry, 'projects.folderUploads.init')(
+        request('projects.folderUploads.init', {
+          params: { spaceId: SPACE }, body: initBody({ destinationParent: '/' }), identity: spaceAdmin,
+        }),
+      )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'project_roots_unset' } });
+      expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+    });
+
+    it('is refused outside the roots and when asking for trust', async () => {
+      const db = stagingDb({ spaceAdmin: true });
+      const { registry } = configured(db);
+      const init = handler(registry, 'projects.folderUploads.init');
+      const outside = await tempDir('tm8-pfu-outside-');
+      await expect(init(request('projects.folderUploads.init', {
+        params: { spaceId: SPACE }, body: initBody({ destinationParent: outside }), identity: spaceAdmin,
+      }))).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(init(request('projects.folderUploads.init', {
+        params: { spaceId: SPACE }, body: initBody({ trust: 'trusted' }), identity: spaceAdmin,
+      }))).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'trust_requires_node_admin' } });
+      expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+    });
   });
 
   it('R845-F5: a node-admin session PINNED to a space is forbidden on init AND complete, before any write', async () => {
     // A folder import grants a gate folder (234's grant_folder), which
     // require_gate_admin refuses to a space-pinned session. The handler refuses
-    // it first, so no slot is opened and nothing lands on disk. The refusal is
-    // #848's (K6): a space-pinned session never holds node admin, so it is the
-    // node-admin refusal that fires, ahead of requireUnpinned.
+    // it first, so no slot is opened and nothing lands on disk. Since task
+    // 01a13574 the pin refusal is the first gate: a space admin may import too,
+    // so "not a node admin" is no longer a refusal by itself.
     const db = stagingDb();
     const registry = configuredWithOwner(db, true);
     const pinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true, sessionSpaceId: SPACE } as RequestContext['identity'];
     await expect(handler(registry, 'projects.folderUploads.init')(
       request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody(), identity: pinned }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
     expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
 
     const unpinned = { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true } as RequestContext['identity'];
@@ -521,7 +596,7 @@ describe('projects.folderUploads security corrections', () => {
         body: { clientMutationId: 'cmid-f5-pinned' },
         identity: pinned,
       }),
-    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin access is required/i) });
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/space-pinned/i) });
     expect(db.calls.length).toBe(callsBefore);
   });
 

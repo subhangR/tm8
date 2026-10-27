@@ -8,7 +8,7 @@
  * the commits the lane produced beyond its recorded base (argv git, local,
  * read-only), and records each through `public.record_session_commit` (082)
  * — which find-or-creates the commit mirror entity and stamps the
- * `created_in` edge commit → work_session.
+ * `authored_from` edge commit → work_session (308; it was `created_in`).
  *
  * From there provenance is ordinary graph data: "which session produced
  * commit X" is an edge read, and the 082 capture trigger has already put a

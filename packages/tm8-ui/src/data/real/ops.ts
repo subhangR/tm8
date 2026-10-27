@@ -38,6 +38,10 @@ import {
   type ServerProbeView,
   type ServerView,
   type SpaceLinkAuditEntry,
+  type SpaceLinkInboundAuditEntry,
+  type SpaceLinkInboundView,
+  type CrossSpaceRef,
+  type CrossSpaceRefRemoved,
   type CreateInviteInput,
   type InvitePreview,
   type InviteRedemption,
@@ -45,6 +49,8 @@ import {
   type SpaceInviteView,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  type UpdateMenuInput,
+  type EntityKindCreateInput,
   bindPath,
   type ActivityItem,
   type ArtifactPreviewSession,
@@ -86,11 +92,17 @@ import {
   type CredentialsSpacePolicyView,
   type CredentialsSpaceReadinessView,
   type CredentialsSpaceSetVisibilityResult,
+  type CredentialsSpaceShareResult,
+  type CredentialsSpaceSharesView,
+  type CredentialsSpaceUnshareResult,
   type CredentialsSpaceMyDefaultResult,
   type CredentialsSpaceUsageView,
   type SpaceCredentialVisibilityName,
   type NodeCredentialPolicyEntry,
   type NodeCredentialsStatusView,
+  type NodeAccountListView,
+  type PathGrantListView,
+  type PathGrantView,
   type NodeMetricsView,
   type SpaceCredentialProviderName,
   type SpaceCredentialStoredProviderName,
@@ -114,6 +126,8 @@ import {
   type ExecutionResumeInput,
   type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
+  type ExecutionCompleteInput,
+  type ReleaseInput,
   type FileUploadAbortInput,
   type FileUploadCompleteInput,
   type FileUploadGrant,
@@ -138,7 +152,12 @@ import {
   type ProjectFileBlame,
   type ProjectFileHistory,
   type ProjectCreateInput,
+  type ProjectUpdateInput,
   type ProjectDirectoryListing,
+  type ProjectCloneInput,
+  type ProjectCloneJob,
+  type SpaceProjectCreateInput,
+  type SpaceProject,
   type ProjectFileAttachInput,
   type ProjectFileReadResult,
   type ProjectFolderUploadAbortInput,
@@ -166,6 +185,8 @@ import {
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitDiff,
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
@@ -179,7 +200,7 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
-  type SetChatModelInput,
+  type SetChatModelInput, type SetChatCredentialsInput, type SetChatCredentialsResult, type InterruptChatResult,
   type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
@@ -190,6 +211,20 @@ import {
   type AuthSessionsRevokeResult,
   type ChatDefault,
   type ChatDefaultsView,
+  type PersonalStyleCreateInput,
+  type PersonalStyleUpdateInput,
+  type PersonalStylesListResult,
+  type PersonalStyleWriteResult,
+  type SpaceStyleDefaultView,
+  type SpaceStyleWriteResult,
+  type StyleDoc,
+  type StylePushInput,
+  type StylesResolveResult,
+  type StyleGetResult,
+  type StylePrefsGetResult,
+  type StylePrefsSetInput,
+  type StylePrefsSetResult,
+  type StylesListResult,
   type SpaceSummary,
   type TaskAxis,
   type TaskAxisInput,
@@ -206,12 +241,19 @@ import {
   type ClearEntityHeaderInput,
   type EntityHeaderResult,
   type EntityHeaderView,
+  type WorkspaceColor,
+  type WorkspaceListResult,
+  type CraftWorkspace,
+  type CraftWorkspaceCommandInput,
+  type CraftWorkspaceCommandResult,
+  type CraftWorkspaceListResult,
+  type WorkspaceManageResult,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
 import type { HttpClient, QueryParams } from './http';
-import type { AttentionV2Ops } from '../seam';
-import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
+import type { AttentionV2Ops, StyleVersionsPage } from '../seam';
+import type { ArtifactRevisionsList, BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, SessionCompleteResult, TranscriptOpts } from '../seam';
 
 /**
  * Fill in terminal geometry the caller did not state, so a server-hosted PTY
@@ -377,12 +419,90 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // -- craft-scoped workspaces (lane L3) ------------------------------------
+
+    listCraftWorkspaces(spaceId: SpaceId): Promise<CraftWorkspaceListResult> {
+      return http.call<CraftWorkspaceListResult>('workspace.crafts.list', { params: { spaceId } });
+    },
+
+    getCraftWorkspace(spaceId: SpaceId, craftId: string): Promise<CraftWorkspace> {
+      return http.call<CraftWorkspace>('workspace.crafts.get', { params: { spaceId, craftId } });
+    },
+
+    commandCraftWorkspace(spaceId: SpaceId, craftId: string, input: CraftWorkspaceCommandInput): Promise<CraftWorkspaceCommandResult> {
+      return http.call<CraftWorkspaceCommandResult>('workspace.crafts.command', { params: { spaceId, craftId }, body: input });
+    },
+
+    // -- multiple workspaces (API doc 01a115c4 §5) ---------------------------
+
+    listWorkspaces(spaceId: SpaceId): Promise<WorkspaceListResult> {
+      return http.call<WorkspaceListResult>('workspace.list', { params: { spaceId } });
+    },
+
+    createWorkspace(spaceId: SpaceId, input: { name?: string; color?: WorkspaceColor | null }): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.create', {
+        params: { spaceId },
+        body: { ...input, requestId: newId('wscreate') },
+      });
+    },
+
+    updateWorkspace(
+      spaceId: SpaceId,
+      workspaceId: string,
+      input: { name?: string; color?: WorkspaceColor | null },
+    ): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.update', {
+        params: { spaceId, workspaceId },
+        body: { ...input, requestId: newId('wsupdate') },
+      });
+    },
+
+    reorderWorkspace(spaceId: SpaceId, workspaceId: string, beforeWorkspaceId: string | null): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.reorder', {
+        params: { spaceId, workspaceId },
+        body: { requestId: newId('wsmove'), beforeWorkspaceId },
+      });
+    },
+
+    /** Body-less: `requestId` and `discard` travel in the query (§5.10). */
+    deleteWorkspace(spaceId: SpaceId, workspaceId: string, discard: boolean): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.delete', {
+        params: { spaceId, workspaceId },
+        query: { requestId: newId('wsdelete'), ...(discard ? { discard: 'true' } : {}) },
+      });
+    },
+
+    switchWorkspace(spaceId: SpaceId, workspaceId: string, expectedActiveWorkspaceId: string | null): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.switch', {
+        params: { spaceId, workspaceId },
+        body: {
+          requestId: newId('wsswitch'),
+          ...(expectedActiveWorkspaceId === null ? {} : { expectedActiveWorkspaceId }),
+        },
+      });
+    },
+
+    resolveWorkspacePrompt(spaceId: SpaceId, promptId: string, choice: 'accept' | 'decline', discard: boolean): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.prompts.resolve', {
+        params: { spaceId, promptId },
+        body: { requestId: newId('wsprompt'), choice, ...(discard ? { discard: true } : {}) },
+      });
+    },
+
     /** Node admin only: revoke every session of an account and stop its agents. */
     disableAccount(accountId: string): Promise<AccountDisableResult> {
       return http.call<AccountDisableResult>('accounts.disable', {
         params: { accountId },
         body: { clientMutationId: newId('acctdisable') },
       });
+    },
+
+    createEntityKind(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef> {
+      return http.call<EntityKindDef>('entityKinds.create', { params: { spaceId }, body: input });
+    },
+
+    updateMenu(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig> {
+      return http.call<MenuConfig>('spaces.menu.update', { params: { spaceId }, body: input });
     },
 
     updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {
@@ -621,6 +741,24 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    spaceCredentialsShare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceShareResult> {
+      return http.call<CredentialsSpaceShareResult>('credentials.space.share', {
+        params: { credentialId },
+        body: { granteeAccountId, clientMutationId: newId('spcredshare') },
+      });
+    },
+
+    spaceCredentialsUnshare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult> {
+      return http.call<CredentialsSpaceUnshareResult>('credentials.space.unshare', {
+        params: { credentialId, granteeAccountId },
+        body: { clientMutationId: newId('spcredunshare') },
+      });
+    },
+
+    spaceCredentialsShares(credentialId: string): Promise<CredentialsSpaceSharesView> {
+      return http.call<CredentialsSpaceSharesView>('credentials.space.shares', { params: { credentialId } });
+    },
+
     spaceCredentialsDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView> {
       return http.call<SpaceCredentialView>('credentials.space.spaceDefaultConsent', {
         params: { credentialId },
@@ -678,6 +816,37 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    // -- filesystem path grants (282; design doc 01a0fb62 §4) -----------------
+    // `node.*` rides the gate pass under enforce (auth/space-sessions.ts), which
+    // is what `require_gate_admin` needs; the caller's own list rides the pin.
+
+    nodePathGrantsList(includeRevoked = false): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('node.pathGrants.list', {
+        query: includeRevoked ? { includeRevoked: 'true' } : {},
+      });
+    },
+
+    nodePathGrantsCreate(accountId: string, rootPath: string, note?: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.create', {
+        body: { accountId, rootPath, ...(note ? { note } : {}), clientMutationId: newId('pathgrant') },
+      });
+    },
+
+    nodePathGrantsRevoke(grantId: string): Promise<PathGrantView> {
+      return http.call<PathGrantView>('node.pathGrants.revoke', {
+        params: { grantId },
+        body: { clientMutationId: newId('pathgrantrevoke') },
+      });
+    },
+
+    nodeAccountsList(): Promise<NodeAccountListView> {
+      return http.call<NodeAccountListView>('node.accounts.list');
+    },
+
+    myPathGrants(): Promise<PathGrantListView> {
+      return http.call<PathGrantListView>('identity.pathGrants.list');
+    },
+
     // -- space links (`spaceLinks.*`, W6) ------------------------------------
     // Every write is human-only server-side; no answer carries a stored session.
 
@@ -706,6 +875,43 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     /** Bare array: own rows, or every row for a home admin (260). */
     spaceLinksAudit(linkId: EntityId): Promise<SpaceLinkAuditEntry[]> {
       return http.call<SpaceLinkAuditEntry[]>('spaceLinks.audit', { params: { linkId } });
+    },
+
+    // 278 (D2): the target side, for an admin of `spaceId`.
+    spaceLinksInboundList(spaceId: SpaceId): Promise<SpaceLinkInboundView[]> {
+      return http.call<SpaceLinkInboundView[]>('spaceLinks.inbound.list', { params: { spaceId } });
+    },
+
+    spaceLinksInboundAudit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]> {
+      return http.call<SpaceLinkInboundAuditEntry[]>('spaceLinks.inbound.audit', {
+        params: { spaceId },
+        ...(linkId === undefined ? {} : { query: { linkId } }),
+      });
+    },
+
+    spaceLinksInboundMutate(
+      op: 'spaceLinks.inbound.revoke' | 'spaceLinks.inbound.restore',
+      spaceId: SpaceId,
+      linkId: EntityId,
+    ): Promise<SpaceLinkInboundView> {
+      return http.call<SpaceLinkInboundView>(op, {
+        params: { spaceId, linkId },
+        body: { clientMutationId: newId('splinkin') },
+      });
+    },
+
+    // -- cross-space references (`entities.refs.*`, L3, 279) -------------------
+    // The UI reads and removes; agents add through a link (`tm8 entity ref add`).
+
+    crossSpaceRefsList(entityId: EntityId): Promise<CrossSpaceRef[]> {
+      return http.call<CrossSpaceRef[]>('entities.refs.list', { params: { id: entityId } });
+    },
+
+    crossSpaceRefsRemove(entityId: EntityId, refId: string): Promise<CrossSpaceRefRemoved> {
+      return http.call<CrossSpaceRefRemoved>('entities.refs.remove', {
+        params: { id: entityId, refId },
+        body: { clientMutationId: newId('xsref') },
+      });
     },
 
     // -- remote servers (`servers.*`, W8) -------------------------------------
@@ -768,6 +974,92 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ChatDefaultsView>('spaces.chatDefaults.get', { params: { spaceId } });
     },
 
+    /** The caller's style prefs (`identity.stylePrefs.get`, styles spec §4.1); `prefs: null` = no row. */
+    stylePrefs(): Promise<StylePrefsGetResult> {
+      return http.call<StylePrefsGetResult>('identity.stylePrefs.get');
+    },
+
+    /** `identity.stylePrefs.set`: self only, `expectedRevision` guarded (0 = no row yet). */
+    setStylePrefs(input: Omit<StylePrefsSetInput, 'clientMutationId'>): Promise<StylePrefsSetResult> {
+      return http.call<StylePrefsSetResult>('identity.stylePrefs.set', {
+        body: { ...input, clientMutationId: newId('styleprefs') },
+      });
+    },
+
+    /** The space's default style (`spaces.styleDefault.get`); `revision: 0` = no row. */
+    styleDefault(spaceId: SpaceId): Promise<SpaceStyleDefaultView> {
+      return http.call<SpaceStyleDefaultView>('spaces.styleDefault.get', { params: { spaceId } });
+    },
+
+    /** One style by typed ref (`styles.get`): `builtin:*`, `space:<id>` or `personal:<id>`. */
+    style(ref: string): Promise<StyleGetResult> {
+      return http.call<StyleGetResult>('styles.get', { params: { ref } });
+    },
+
+    /** Built-ins then the space's styles (`styles.list`). */
+    styles(spaceId: SpaceId): Promise<StylesListResult> {
+      return http.call<StylesListResult>('styles.list', { params: { spaceId } });
+    },
+
+    /** The caller's personal styles (`styles.personal.list`). */
+    personalStyles(): Promise<PersonalStylesListResult> {
+      return http.call<PersonalStylesListResult>('styles.personal.list');
+    },
+
+    /** Copy a space style or built-in into a new personal style (`styles.pull`). */
+    pullStyle(ref: string, title?: string): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.pull', {
+        params: { ref },
+        body: { clientMutationId: newId('stylepull'), ...(title ? { title } : {}) },
+      });
+    },
+
+    /** `styles.personal.create`: a new personal style from a doc or `from` a ref. */
+    createPersonalStyle(input: Omit<PersonalStyleCreateInput, 'clientMutationId'>): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.create', {
+        body: { ...input, clientMutationId: newId('stylecreate') },
+      });
+    },
+
+    /** `styles.personal.update`: owner only, `expectedVersion` guarded. */
+    updatePersonalStyle(
+      id: string,
+      input: Omit<PersonalStyleUpdateInput, 'clientMutationId'>,
+    ): Promise<PersonalStyleWriteResult> {
+      return http.call<PersonalStyleWriteResult>('styles.personal.update', {
+        params: { id },
+        body: { ...input, clientMutationId: newId('styleupdate') },
+      });
+    },
+
+    /** `styles.personal.delete`: owner only. */
+    async deletePersonalStyle(id: string, expectedVersion?: number): Promise<void> {
+      await http.call<unknown>('styles.personal.delete', {
+        params: { id },
+        body: { clientMutationId: newId('styledelete'), ...(expectedVersion ? { expectedVersion } : {}) },
+      });
+    },
+
+    /** `styles.push`: first push creates the space style, later pushes re-version it. */
+    pushStyle(input: Omit<StylePushInput, 'clientMutationId'>): Promise<SpaceStyleWriteResult> {
+      return http.call<SpaceStyleWriteResult>('styles.push', {
+        body: { ...input, clientMutationId: newId('stylepush') },
+      });
+    },
+
+    /** `styles.resolve`: lint only, nothing stored. */
+    resolveStyleDoc(doc: StyleDoc): Promise<StylesResolveResult> {
+      return http.call<StylesResolveResult>('styles.resolve', { body: { doc } });
+    },
+
+    /** `entities.versions` on a space style: the push history, newest first. */
+    styleVersions(entityId: string, cursor?: string | null): Promise<StyleVersionsPage> {
+      return http.call<StyleVersionsPage>('entities.versions', {
+        params: { id: entityId },
+        query: { limit: '20', ...(cursor ? { cursor } : {}) },
+      });
+    },
+
     authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {
       return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
     },
@@ -819,6 +1111,23 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projectDirectories(path?: string): Promise<ProjectDirectoryListing> {
       return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
+    },
+
+    /** `?spaceId=`: a space admin browses the node's explicit TM8_PROJECT_ROOTS for that space. */
+    spaceProjectDirectories(spaceId: SpaceId, path?: string): Promise<ProjectDirectoryListing> {
+      return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { spaceId, path } });
+    },
+
+    addSpaceProject(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<SpaceProject> {
+      return http.call<SpaceProject>('spaces.projects.create', { params: { spaceId }, body: input });
+    },
+
+    cloneSpaceProject(spaceId: SpaceId, input: ProjectCloneInput): Promise<ProjectCloneJob> {
+      return http.call<ProjectCloneJob>('spaces.projects.clone', { params: { spaceId }, body: input });
+    },
+
+    spaceProjectCloneJob(spaceId: SpaceId, jobId: string): Promise<ProjectCloneJob> {
+      return http.call<ProjectCloneJob>('spaces.projects.cloneJobs.get', { params: { spaceId, jobId } });
     },
 
     projectFiles(projectId: ProjectId, path?: string): Promise<ProjectFileListing> {
@@ -892,6 +1201,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     createProject(input: ProjectCreateInput): Promise<ProjectResource> {
       return http.call<ProjectResource>('projects.create', { body: input });
+    },
+
+    /** Node admins only: a folder's path, name, trust or defaults (`projects.update`). */
+    updateProject(projectId: ProjectId, input: ProjectUpdateInput): Promise<ProjectResource> {
+      return http.call<ProjectResource>('projects.update', { params: { projectId }, body: input });
     },
 
     async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {
@@ -1001,6 +1315,20 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SessionGitDiff>('execution.gitDiff', {
         params: { workSessionId },
         query: { maxBytes: opts?.maxBytes, path: opts?.path, scope: opts?.scope },
+      });
+    },
+    gitCheckouts(workSessionId: EntityId): Promise<SessionCheckouts> {
+      return http.call<SessionCheckouts>('execution.gitCheckouts', { params: { workSessionId } });
+    },
+    gitCheckoutDiff(
+      workSessionId: EntityId,
+      checkout: string,
+      path: string,
+      opts?: { maxBytes?: number },
+    ): Promise<SessionCheckoutDiff> {
+      return http.call<SessionCheckoutDiff>('execution.gitCheckoutDiff', {
+        params: { workSessionId },
+        query: { checkout, path, maxBytes: opts?.maxBytes },
       });
     },
     gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
@@ -1322,6 +1650,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      * catalog carries `forms.responses.redeliver`.
      */
     forms: {
+      create(input) { return http.call('forms.create', { body: { ...input, clientMutationId: newId('form') } }); },
       update(formId, input) { return http.call('forms.update', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
       questionsAdd(formId, input) { return http.call('forms.questions.add', { params: { formId }, body: { ...input, clientMutationId: newId('form') } }); },
       questionsUpdate(formId, questionKey, input) { return http.call('forms.questions.update', { params: { formId, questionKey }, body: { ...input, clientMutationId: newId('form') } }); },
@@ -1414,8 +1743,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
 
     /** 276: `chat.setModel` — the chat is in the path, the model in the body. */
+    setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult> {
+      return http.call<SetChatCredentialsResult>('chat.setCredentials', { params: { id: chatId }, body: input });
+    },
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
       return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
+    },
+    interruptChat(chatId: EntityId): Promise<InterruptChatResult> {
+      return http.call<InterruptChatResult>('chat.interrupt', { params: { id: chatId }, body: {} });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */
@@ -1441,6 +1776,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       await http.call<unknown>('readMarks.upsert', {
         params: { anchorId },
         body: { clientMutationId: newId('mark') },
+      });
+    },
+
+    async markSeen(entityId: EntityId): Promise<void> {
+      await http.call<unknown>('entities.markSeen', {
+        params: { id: entityId },
+        body: { clientMutationId: newId('seen') },
       });
     },
 
@@ -1525,6 +1867,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
+    },
+
+    /** Spec D1 §4.1. The contract DTO verbatim; refusals pass through as `CollabError`. */
+    completeSession(id: EntityId, input: ExecutionCompleteInput): Promise<SessionCompleteResult> {
+      return http.call<SessionCompleteResult>('execution.complete', { params: { id }, body: input });
+    },
+
+    /** Spec D1 §6.3 R4 — "Hand off": end the caller's claim on a task with a note. */
+    releaseClaim(taskId: EntityId, input: ReleaseInput): Promise<CommandResult> {
+      return http.call<CommandResult>('entities.commands.release', { params: { id: taskId }, body: input });
     },
 
     /**

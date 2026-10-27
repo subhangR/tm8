@@ -1,0 +1,1095 @@
+/*
+ * Workspace view layout (Spec A §3, design log §1–§3). Tokens only; sizes on
+ * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-x-page-bg:
+ * --pn-card in light, --pn-paper in dark), raised (--pn-card + hairline + shadow).
+ */
+.tws-root {
+  /* The icon column is always 48px; the expanded rail (R36) widens to 200px
+     and pushes the browser. TabWorkspaceView picks one per state. */
+  --tws-rail-w-collapsed: 48px;
+  --tws-rail-w-expanded: 200px;
+  --tws-rail-w: var(--tws-rail-w-collapsed);
+  /* R27 (Subhang feedback 1): one top band, hairline at its foot. Sublime
+     tabs (task 01a11573): 40px read as a toolbar, so the band is 32px and
+     every control in it a 28px box 2px from each edge (labels share y = 16). */
+  --tws-header-h: 32px;
+  --tws-band-ctl: calc(var(--tws-header-h) - 4px);
+  /* The band sits a clear step darker than the content plane
+     (--pn-x-page-bg), so the active tab — the same plane, joined to the
+     content — reads as selected (task 01a11573: "white, and the tabs a tad
+     bit darker"). Hover and press step darker again. Dark uses the chrome's
+     --pn-surface, the one step below its --pn-paper page. */
+  --tws-band: var(--pn-active);
+  --tws-band-hover: color-mix(in srgb, var(--pn-active), var(--pn-line-2) 40%);
+  --tws-band-press: var(--pn-line-2);
+  --tws-band-line: var(--pn-line-2);
+  display: grid;
+  grid-template-columns: var(--tws-rail-w) var(--tws-browser-w, 320px) minmax(0, 1fr);
+  grid-template-rows: var(--tws-header-h) minmax(0, 1fr);
+  grid-template-areas:
+    'header header strip'
+    'rail browser content';
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  overflow: hidden;
+  position: relative;
+}
+/* THE PINNED-ONLY RAIL'S GRID (Subhang 2026-10-17): the rail runs the full
+   height and the list panel too — its own top row holds the tm8 mark — so
+   only the content column has the strip over it. Collapsed, the panel's track
+   is zero and the rail sits against the content. */
+.tws-root[data-pinned-rail]:not([data-expanded]) {
+  grid-template-areas:
+    'rail browser strip'
+    'rail browser content';
+}
+.tws-root[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr);
+}
+.tws-root[data-rail-animating] {
+  transition: grid-template-columns var(--pn-dur-base) var(--pn-ease-standard);
+}
+.tws-root[data-rail-animating] .tws-space-slot {
+  transition: margin-left var(--pn-dur-base) var(--pn-ease-standard);
+}
+.tws-root[data-expanded] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'strip'
+    'content';
+}
+
+.tws-left-header {
+  grid-area: header;
+  display: flex;
+  /* R27: every control is a --tws-band-ctl box centred in the band (2px above
+     and below, counting the hairline row), so labels share the tabs' centre. */
+  align-items: flex-start;
+  padding-top: 2px;
+  padding-right: var(--pn-space-3);
+  border-bottom: 1px solid var(--tws-band-line);
+  background: var(--tws-band); /* matches the strip band (Subhang feedback 6) */
+  min-width: 0;
+}
+/* The mark centres over the 48px icon column (x = 24) in both rail states (R36 §5). */
+.tws-mark-cell {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  width: var(--tws-rail-w-collapsed);
+  height: var(--tws-band-ctl);
+}
+.tws-mark {
+  color: var(--pn-ink);
+}
+/* Craft redesign §2 (2026-10-10): [mark][space] · [mode] · [mode switcher],
+   read left to right — the mode follows the space it is a mode of, and the
+   mode's own switcher follows the mode. Supersedes round 2 item 7, which
+   right-aligned the mode selector. */
+.tws-left-header .tws-view-select {
+  padding-left: var(--pn-space-2);
+}
+/* The pinned-only rail's mode, at the far end of the left header (over the
+   list column), right before the column edge. No middle dot: nothing sits
+   beside it. */
+.tws-left-mode {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+}
+.tws-left-header .tws-left-mode .tws-view-select::before {
+  content: none;
+}
+.tws-left-header .tws-view-select::before,
+.tws-mode-switcher-slot::before {
+  content: '·';
+  align-self: center;
+  padding-right: var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
+/* The mode's switcher (workspaces in Home, crafts in Craft — the craft
+   switcher plus its open-craft tabs) takes ALL the header width that is left
+   and is the first thing to shrink. No overflow clip here: the switchers'
+   popovers hang below the slot, so the content clips its own overflow. */
+.tws-mode-switcher-slot {
+  display: flex;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--tws-band-ctl);
+  padding-left: var(--pn-space-2);
+}
+.tws-mode-switcher-slot::before {
+  height: var(--tws-band-ctl);
+  display: flex;
+  align-items: center;
+}
+.tws-view-select {
+  position: relative;
+  display: flex;
+  flex: none;
+  height: var(--tws-band-ctl);
+}
+.tws-chevron {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.tws-space-slot {
+  display: flex;
+  justify-content: flex-start;
+  /* Its left edge follows the browser's 12px inset: rail width + 12 (R36 §5). */
+  margin-left: calc(var(--tws-rail-w) - var(--tws-rail-w-collapsed) + var(--pn-space-3));
+  min-width: 0;
+  height: var(--tws-band-ctl);
+}
+/* R4: the space switcher as a single-line quiet button; the server line is
+   in its tooltip. Max 140px with an ellipsis. */
+.tws-root .tws-space-slot .shell-switcher,
+.tws-root .tws-mode-switcher-slot .shell-switcher {
+  display: flex;
+  min-width: 0;
+  padding: 0;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet {
+  width: auto;
+  max-width: 140px;
+  min-width: var(--tws-band-ctl);
+  height: var(--tws-band-ctl);
+  justify-content: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet:hover {
+  background: var(--tws-band-hover);
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__space {
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__caret,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__caret {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+/* Below a 300px browser: the space initial in a 28px tile. */
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__monogram,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__monogram {
+  width: 28px;
+  height: 28px;
+  font-size: var(--pn-fs-sm);
+}
+.tws-root .tws-space-slot .shell-switcher__pop,
+.tws-root .tws-mode-switcher-slot .shell-switcher__pop {
+  top: calc(100% + var(--pn-space-1));
+  right: auto;
+  left: 0;
+}
+
+/* Expanded (Spec A §14): Restore · ⋯ at the strip's far left; the tabs
+   start 12px after it (the strip's 8px gap + 4px). */
+.tws-restore {
+  display: flex;
+  align-self: stretch;
+  align-items: flex-end;
+  gap: var(--pn-space-1);
+  flex: none;
+  margin-right: var(--pn-space-1);
+}
+
+.tws-strip {
+  grid-area: strip;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  min-width: 0;
+}
+.cv2-root[data-theme='dark'] .tws-root,
+[data-theme='dark'] .cv2-root .tws-root {
+  --tws-band: var(--pn-surface);
+  --tws-band-hover: var(--pn-active);
+  --tws-band-press: var(--pn-line);
+  --tws-band-line: var(--pn-line);
+}
+.tws-root[data-expanded] .tws-strip {
+  border-left: 0;
+}
+.tws-strip-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: var(--pn-space-1);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.tws-tab {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+  max-width: 220px;
+  color: var(--pn-ink-2);
+}
+.tws-tab[data-active] {
+  background: var(--pn-x-page-bg);
+  color: var(--pn-ink);
+}
+.tws-tab-main {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tws-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-tab-close {
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.tws-rail {
+  grid-area: rail;
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) 0 var(--pn-space-3);
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+}
+/* The rail never scrolls with the browser list; only a top group taller than
+   the window scrolls, inside itself, and the bottom group stays put. */
+.tws-rail-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.tws-rail-top::-webkit-scrollbar {
+  display: none;
+}
+/* The pinned-only rail's folded rest (`tm8.ui.navigator = 'rail'`): a wrapper
+   for the fold alone, so its rules and groups keep the top's own 12px gaps. */
+.tws-rail-rest {
+  display: contents;
+}
+/* The space menu hangs out of the rail over the panel: the rail must not
+   clip it (its scrolling top group keeps its own clip). */
+.tws-rail[data-pinned-only] {
+  overflow: visible;
+}
+/* The pinned-only rail's head: the tm8 mark, then the four modes. The
+   rail runs the full height, so the head starts in the strip's band. */
+.tws-rail-logo {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  align-items: center;
+  width: var(--tws-rail-w-collapsed);
+  /* The panel's title row is 44px under the same 8px top inset, so the mark
+     shares its centre line (Subhang 2026-10-17: heights misaligned). */
+  height: 44px;
+}
+.tws-rail-logo__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tws-rail-logo__btn:hover {
+  background: var(--pn-hover);
+}
+.tws-rail-modes {
+  flex: none;
+}
+.tws-rail-modes .tws-rail-icon svg {
+  width: 18px;
+  height: 18px;
+}
+/* A little tighter in the pinned-only rail (Subhang, 2026-10-17): 8px
+   between icons instead of 12. A hairline keeps 12px either side (8px gap +
+   4px margin), so the groups still read apart. */
+.tws-rail[data-pinned-only] .tws-rail-top,
+.tws-rail[data-pinned-only] .tws-rail-group {
+  gap: var(--pn-space-2);
+}
+.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule,
+.tws-rail[data-pinned-only] .tws-rail-rest > .tws-rail-rule {
+  margin-block: var(--pn-space-1);
+}
+.tws-rail-group,
+.tws-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tws-rail-bottom {
+  flex: none;
+  /* The three (Needs you · user · expand) sit as one cluster. */
+  gap: var(--pn-space-1);
+}
+/* THE THREE wear discs (Subhang, 2026-10-07), so the bottom never reads as
+   more kinds: Needs you on the attention yellow, the viewer's avatar in a
+   ring, expand on a quiet hairline circle. 28px, centred in the 36px cell. */
+.tws-rail-disc {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.tws-rail-disc[data-disc='attention'] {
+  border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+.tws-rail-disc[data-disc='user'] {
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-line-2);
+}
+.tws-rail-disc[data-disc='user'] > :not(svg) {
+  /* The 32px avatar drawn at 28, as R12 draws the account trigger's. */
+  flex: none;
+  transform: scale(0.875);
+}
+.tws-rail-btn[aria-expanded='true'] .tws-rail-disc[data-disc='user'] {
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-brand);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc {
+  border-color: var(--pn-line-2);
+}
+.tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc[data-disc='attention'] {
+  border-color: var(--pn-wait);
+}
+/* Overflow hints: a list taller than the column fades the edge that has more. */
+.tws-rail-top[data-more-below] {
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
+}
+.tws-rail-top[data-more-above] {
+  mask-image: linear-gradient(to top, black calc(100% - 32px), transparent);
+}
+.tws-rail-top[data-more-above][data-more-below] {
+  mask-image: linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent);
+}
+/* Hairlines: below Pinned and above the bottom group, 20px, centred on the
+   icon column. */
+.tws-rail-rule {
+  flex: none;
+  width: 20px;
+  height: 0;
+  margin: 0 0 0 calc((var(--tws-rail-w-collapsed) - 20px) / 2);
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+/* A rail row: 36×36 collapsed; expanded, the full row (6px side insets) with
+   the label after a 12px gap. The icon cell never moves: centre x = 24. */
+.tws-rail-btn {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  width: 36px;
+  height: 36px;
+  margin: 0 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.tws-rail[data-rail-expanded] .tws-rail-btn {
+  width: calc(100% - 12px);
+}
+.tws-rail-btn:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.tws-rail-btn:active {
+  background: var(--pn-active);
+}
+/* R36 §4: current = a 3×20 brand bar flush to the rail's left edge plus a
+   --pn-ink glyph, and NO fill (fills mean hover and pressed only). */
+.tws-rail-btn[aria-current='true'],
+.tws-rail-btn[aria-current='page'] {
+  color: var(--pn-ink);
+}
+.tws-rail-btn[aria-current='true']::before,
+.tws-rail-btn[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  transform: translateY(-50%);
+  background: var(--pn-brand);
+  border-radius: 0 1.5px 1.5px 0;
+}
+.tws-rail-icon {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+.tws-rail-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Labels fade in once the width has settled. */
+  animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
+}
+.tws-rail-btn[aria-current='true'] .tws-rail-label,
+.tws-rail-btn[aria-current='page'] .tws-rail-label {
+  color: var(--pn-ink);
+}
+/* R42 live counts (Tasks, Stories, Sessions, Chats only). Collapsed: the §4
+   badge geometry pinned 2px outside the button's top-right, run-tinted (brand
+   stays attention's). Expanded: a plain run number right-aligned in the row. */
+.tws-rail-count-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  box-sizing: border-box;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+/* Unseen entities sit above the LEFT of the icon in either rail width. */
+.tws-rail-unseen-badge {
+  position: absolute;
+  top: -2px;
+  left: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 1px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+/* Pinned-only rail (Subhang, 2026-10-17): new stays top-left, the in-progress
+   / running count drops to the BOTTOM-right corner, so the two never share
+   the top edge. */
+.tws-rail[data-pinned-only] .tws-rail-count-badge {
+  top: auto;
+  bottom: -2px;
+}
+.tws-rail-count {
+  flex: none;
+  margin-left: auto;
+  padding-right: var(--pn-space-3);
+  color: var(--pn-run);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes tws-label-in {
+  from {
+    opacity: 0;
+  }
+}
+.tws-rail-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+}
+
+/* R36 §3: the hold ring — 2px brand stroke on a rounded rect 2px outside the
+   36×36 box, filling clockwise from the top centre over 500ms; it holds and
+   fades after completing, and an early release removes it at once. */
+.tws-hold-ring {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--pn-brand);
+  stroke-width: 2;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+}
+.tws-rail-kind[data-hold] .tws-hold-ring {
+  opacity: 1;
+}
+.tws-rail-kind[data-hold='holding'] .tws-hold-ring {
+  animation: tws-hold-fill 500ms linear forwards;
+}
+.tws-rail-kind[data-hold='done'] .tws-hold-ring {
+  stroke-dashoffset: 0;
+  animation: tws-hold-fade var(--pn-dur-fast) linear var(--pn-dur-fast) forwards;
+}
+@keyframes tws-hold-fill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tws-hold-fade {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-root[data-rail-animating],
+  .tws-root[data-rail-animating] .tws-space-slot {
+    transition: none;
+  }
+  .tws-hold-ring {
+    display: none;
+  }
+}
+
+.tws-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+
+.tws-tip-anchor {
+  display: flex;
+}
+.tws-tip {
+  position: fixed;
+  z-index: 30;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tws-tip-kbd {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+/* The browser resizer (kit PanelResizer): an 8px hit zone centred on the
+   browser|content hairline, which turns --pn-line-2 on hover or drag. */
+.tws-resizer {
+  grid-area: browser;
+  justify-self: end;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  margin-right: -4px;
+}
+.tws-root .tws-resizer .kit-resizer__line {
+  background: transparent;
+}
+.tws-root .tws-resizer .kit-resizer:hover .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer:focus-visible .kit-resizer__line,
+.tws-root .tws-resizer .kit-resizer[data-resizing] .kit-resizer__line {
+  width: 1px;
+  background: var(--pn-line-2);
+}
+
+.tws-browser {
+  grid-area: browser;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+}
+.tws-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 var(--pn-space-3);
+}
+.tws-browser-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tws-content {
+  grid-area: content;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pn-x-page-bg);
+  overflow: hidden;
+}
+.tws-entity {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tws-entity-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.tws-entity-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.tws-floating {
+  position: absolute;
+  top: var(--pn-space-3);
+  right: var(--pn-space-3);
+  z-index: 2;
+  display: flex;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-sm);
+}
+.tws-trail {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--pn-space-6);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.tws-chat {
+  width: 380px;
+  border-left: 1px solid var(--pn-line);
+}
+.tws-body-stub,
+.tws-start,
+.tws-chooser {
+  padding: var(--pn-space-6);
+}
+.tws-start {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-8);
+}
+.tws-start-title {
+  margin: 0;
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+}
+.tws-quiet {
+  color: var(--pn-ink-3);
+}
+
+.tws-icon-btn,
+.tws-quiet-btn,
+.tws-new-btn {
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-icon-btn {
+  width: 36px;
+  padding: 0;
+  color: var(--pn-ink-3);
+}
+.tws-quiet-btn {
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+}
+.tws-new-btn {
+  height: 32px;
+  border: 1px solid var(--pn-line-2);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+.tws-new-btn:disabled {
+  color: var(--pn-ink-4);
+  border-color: var(--pn-line);
+  cursor: not-allowed;
+}
+.tws-icon-btn:hover,
+.tws-quiet-btn:hover,
+.tws-new-btn:hover:not(:disabled),
+.tws-tab-close:hover,
+.tws-menu-row:hover {
+  background: var(--pn-hover);
+}
+/* Text-entry fields are excluded: a caret already marks focus, and an inset
+   brand outline drew a second gold box inside every textarea/input. */
+.tws-root :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+.tws-menu,
+.tws-prompt {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-menu {
+  position: absolute;
+  top: 100%;
+  animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--pn-space-1);
+}
+.tws-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: none;
+  height: 36px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tws-menu-row[aria-checked='true'] {
+  background: var(--pn-active);
+}
+.tws-prompt {
+  position: absolute;
+  top: calc(var(--tws-header-h) + var(--pn-space-2));
+  right: var(--pn-space-3);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+}
+.tws-search {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+}
+
+@keyframes tws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tws-root * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* R34: controls on the darker band (left header, expanded-mode Restore cluster). */
+.tws-left-header button:hover,
+.tws-ts-leading button:hover {
+  background: var(--tws-band-hover);
+}
+.tws-left-header button:active,
+.tws-ts-leading button:active {
+  background: var(--tws-band-press);
+}
+/* The band's generic buttons shrink with it (task 01a11573). */
+.tws-left-header :is(.tws-icon-btn, .tws-quiet-btn),
+.tws-ts-leading :is(.tws-icon-btn, .tws-quiet-btn),
+.tws-ts-modes :is(.tws-icon-btn, .tws-quiet-btn) {
+  min-width: var(--tws-band-ctl);
+  height: var(--tws-band-ctl);
+}
+.tws-left-header .tws-icon-btn,
+.tws-ts-leading .tws-icon-btn {
+  width: var(--tws-band-ctl);
+}
+
+/* D31 / R39 — Needs you and Status in the rail's bottom group. */
+.tws-rail-pop-anchor {
+  position: relative;
+}
+.tws-rail-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  line-height: 14px;
+  text-align: center;
+}
+.tws-rail-run-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  box-shadow: 0 0 0 2px var(--pn-run-soft);
+}
+.tws-rail-readout {
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+}
+.tws-rail-pop {
+  position: fixed;
+  z-index: 20;
+  width: 360px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+  animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+/* THE ACCOUNT CARD (RailUser): status on top, then the account menu inline,
+   which brings its own rows and padding. */
+.tws-rail-pop[data-pop='user'] {
+  width: auto;
+  padding: 0;
+}
+.tws-rail-user-status {
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+}
+.tws-rail-user-fallback {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  padding: var(--pn-space-2);
+}
+.tws-rail-user-name {
+  padding: var(--pn-space-2);
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+/* The status strip, stacked: one segment per row. */
+.cv2-root .tws-rail-status-strip .status-strip {
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+/* Focused by a tab switch so ↑/↓ scroll the tab (contentScroll.ts); the tab
+   itself is the indication, not a ring around the whole content. */
+.tws-content:focus {
+  outline: none;
+}
+
+/*
+ * THE NAVIGATOR'S GRID (design doc 01a1465d-a2b7 §4, §10), behind
+ * `tm8.ui.navigator`. TWO columns instead of three: the one navigator column
+ * and the content. Added as an OVERRIDE on `[data-nav]` rather than edited
+ * into the base rule above, because the flag promises that with it off the
+ * three-column grid above is byte-for-byte what renders.
+ */
+.tws-root[data-nav] {
+  /* 300px default, 240–480 by the resizer (§4); `--tws-browser-w` is the
+     persisted field the width still rides on (see `navigatorFlag.ts`).
+     THREE TRACKS, TWO COLUMNS. The middle track exists for the top row alone:
+     the header spans tracks 1–2 and the content spans 2–3, so the body is
+     still the navigator column and the content beside it, to the pixel, while
+     the header is free to run past the column into the top row over the
+     content. Sized `auto`, so it is the header's own overflow and nothing
+     else: at a width where the header fits it collapses to 0 and this grid is
+     the two-column grid it replaced. See `.tws-left-header` below for why the
+     header needed it. */
+  grid-template-columns: var(--tws-nav-w, 300px) auto minmax(0, 1fr);
+  grid-template-areas:
+    'header header strip'
+    'nav content content';
+}
+/*
+ * THE HEADER READS IN FULL AT THE DEFAULT WIDTH (QA finding 1, ruled
+ * 2026-10-17).
+ *
+ * It used to span the navigator's track and nothing more, so at the 300px
+ * default its four children had 288px of content box to share and two of them
+ * ellipsised: the space name lost 24.5px (`Navigator QA` → `Naviga…`) and the
+ * mode's switcher 17.3px (`Mixed` → `M`) — measured in a browser, where
+ * `innerText` still reads the whole string and jsdom reports nothing wrong.
+ * Meanwhile ~1000px of the same row sat empty over the content. With the flag
+ * OFF the header already spans the rail AND the browser (48 + 300 = 348) and
+ * reads in full, so the truncation was the navigator's alone.
+ *
+ * The header now takes the width it needs and the strip starts after it. The
+ * cost is honest and visible: the band's right edge and the hairline under it
+ * no longer line up with the navigator | content boundary below while the
+ * header is overflowing. Narrowing the content to pad the header, or shrinking
+ * the type, would both be larger changes to a surface nobody asked us to
+ * change.
+ *
+ * CAPPED, because the space name is user data. A 60-character space must not
+ * push the tab strip off the far side of the screen, so the overhang stops at
+ * 180px and past that the switcher ellipsises again — the behaviour today,
+ * at a width where it is the only option left.
+ */
+/* `:not(.app-frame)` IS LOAD-BEARING, not tidiness. `AppFrame` (Craft,
+   Settings) renders `class="tws-root app-frame"` and sets `data-nav` too, and
+   its own `[data-nav]` grid (`app-frame.css`) already spans the header over
+   TWO tracks — 300 + 300 = 600px, which is why it never truncated and is not
+   what this fixes. Without the exclusion this `max-width` would clamp that
+   600px band to 480 and leave 120px of the header's own area unpainted. The
+   grid rule above needs no exclusion: `.tws-root.app-frame[data-nav]` is one
+   class more specific and wins on its own. */
+.tws-root[data-nav]:not(.app-frame) .tws-left-header {
+  max-width: calc(var(--tws-nav-w, 300px) + var(--tws-header-overhang-max, 180px));
+}
+/* COLLAPSED, THE OVERHANG IS ZERO. Everything but the mark is `display: none`
+   at 48px (see `navigator.css`), so the header's max-content contribution is
+   the 48px mark cell and the middle track collapses on its own — except for
+   the 12px right padding, which would hold the track open and jog the strip
+   12px off the column edge for nothing. */
+.tws-root[data-nav][data-nav-collapsed]:not(.app-frame) .tws-left-header {
+  max-width: var(--tws-nav-w, 300px);
+  padding-right: 0;
+}
+/* Full screen still hides the whole navigator, as it does today. */
+.tws-root[data-nav][data-expanded] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'strip'
+    'content';
+}
+/* The header spans the navigator's width; the mark stays centred on x = 24 and
+   the space switcher keeps the browser's 12px inset off the column edge. */
+.tws-root[data-nav] .tws-space-slot {
+  margin-left: var(--pn-space-3);
+}
+/* The resizer sits on the navigator | content hairline. The class is the
+   navigator's own: `AppFrame` can have a SECOND resizer for a panel column
+   beside the navigator (Craft), and the two must not claim one track. */
+.tws-root[data-nav] .tws-nav-resizer {
+  grid-area: nav;
+}
+/* The hosted list's own column border is the navigator's, not the browser's. */
+.tws-root[data-nav] .tws-nav {
+  border-right: 1px solid var(--pn-line);
+}

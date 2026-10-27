@@ -33,9 +33,18 @@ import {
   MAX_CONTROL_FRAME_SPACES,
   type DurableWorkspaceEvent,
   type SpaceId,
+  type WorkspaceAppliedFrame,
+  type WorkspaceBridgeCommandFrame,
   type WorkspaceControlAck,
+  type WorkspaceDraftFrame,
+  type WorkspaceDraftRejectedFrame,
+  type WorkspacePromptFrame,
+  type WorkspaceSummaryFrame,
+  type WorkspaceSwitchedFrame,
+  type WorkspaceStateFrame,
   type WorkspaceControlFrame,
 } from '@tm8/contract';
+import type { CraftWorkspaceFrame, CraftWorkspacesFrame } from '@tm8/contract';
 import {
   isChatContextFrame,
   isChatTurnFrame,
@@ -65,6 +74,32 @@ export interface WebSocketLike {
 
 export type WebSocketFactory = (url: string) => WebSocketLike;
 
+/** The client→server frames of the Workspace remote bridge (Spec C), and nothing else. */
+export type WorkspaceBridgeFrame = Extract<
+  WorkspaceControlFrame,
+  { type: 'workspace.register' | 'workspace.unregister' | 'workspace.result' | 'workspace.apply' | 'workspace.import' | 'workspace.draft.patch' }
+>;
+const BRIDGE_FRAME_TYPES: ReadonlySet<string> = new Set([
+  'workspace.register', 'workspace.unregister', 'workspace.result',
+  'workspace.apply', 'workspace.import', 'workspace.draft.patch',
+]);
+/** Spec D, node → window: the stored workspace and its drafts; and (capable windows) the switch and the list. */
+export type WorkspaceSyncFrame =
+  | WorkspaceStateFrame
+  | WorkspaceAppliedFrame
+  | WorkspaceDraftFrame
+  | WorkspaceSwitchedFrame
+  | WorkspaceSummaryFrame
+  | WorkspacePromptFrame
+  | WorkspaceDraftRejectedFrame;
+
+/**
+ * Lane L3, node → window: this identity's craft workspaces. `craft.workspace`
+ * after any commit to one craft's tabs; `craft.workspaces` (the whole list,
+ * position order) after `craft.open` / `craft.close` / `craft.move`.
+ */
+export type CraftWorkspacePushFrame = CraftWorkspaceFrame | CraftWorkspacesFrame;
+
 /** `WebSocket.OPEN`. Named rather than inlined so the fake reads the same. */
 export const WS_OPEN = 1;
 
@@ -79,6 +114,12 @@ export interface SocketHandlers {
   onChatContext?(frame: ChatContextFrame): void;
   /** THE only ack. Never silent — a refused space must not look like a quiet one. */
   onRefused(ack: WorkspaceControlAck): void;
+  /** Spec C: the node forwards a Workspace command to THIS window. */
+  onWorkspaceCommand?(frame: WorkspaceBridgeCommandFrame): void;
+  /** Spec D: the stored workspace (state / applied / draft) for this identity's windows. */
+  onWorkspaceSync?(frame: WorkspaceSyncFrame): void;
+  /** Lane L3: this identity's craft workspaces changed. */
+  onCraftWorkspacePush?(frame: CraftWorkspacePushFrame): void;
   /** Socket closed or errored. Fires at most once per socket. */
   onClose(): void;
   /**
@@ -94,6 +135,12 @@ export interface SocketHandle {
   unsubscribe(spaceIds: SpaceId[]): void;
   /** Replay `seq > since` for one space to this connection, then re-seed live delivery. */
   resume(spaceId: SpaceId, since: number): void;
+  /**
+   * Spec C: send one `workspace.*` control frame. False when the socket is not
+   * open. Typed AND checked to the `workspace.*` frames, so R8 still holds: no
+   * presence frame can leave through it.
+   */
+  sendWorkspace(frame: WorkspaceBridgeFrame): boolean;
   isOpen(): boolean;
   /** Idempotent. After this, no handler fires again for this socket. */
   close(): void;
@@ -128,6 +175,9 @@ export type ParsedFrame =
   | { kind: 'chat-turn'; frame: ChatTurnFrame }
   | { kind: 'chat-context'; frame: ChatContextFrame }
   | { kind: 'refused'; ack: WorkspaceControlAck }
+  | { kind: 'workspace-command'; frame: WorkspaceBridgeCommandFrame }
+  | { kind: 'workspace-sync'; frame: WorkspaceSyncFrame }
+  | { kind: 'craft-workspace'; frame: CraftWorkspacePushFrame }
   | { kind: 'presence' }
   | { kind: 'malformed'; reason: string };
 
@@ -149,6 +199,33 @@ export function parseFrame(raw: unknown): ParsedFrame {
       ...(typeof raw.spaceId === 'string' ? { spaceId: raw.spaceId } : {}),
     };
     return { kind: 'refused', ack };
+  }
+
+  // Spec C: a command for this window. Addressed by instance, never a durable event.
+  if (type === 'workspace.command') {
+    if (typeof raw.requestId !== 'string' || typeof raw.instanceId !== 'string' || typeof raw.command !== 'string') {
+      return { kind: 'malformed', reason: 'workspace.command missing requestId/instanceId/command' };
+    }
+    return { kind: 'workspace-command', frame: raw as unknown as WorkspaceBridgeCommandFrame };
+  }
+
+  // Spec D: the stored workspace, sent to this identity's own windows only.
+  if (
+    type === 'workspace.state' || type === 'workspace.applied' || type === 'workspace.draft'
+    || type === 'workspace.switched' || type === 'workspace.summary'
+    || type === 'workspace.prompt' || type === 'workspace.draft.rejected'
+  ) {
+    if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: `${type} has no spaceId` };
+    return { kind: 'workspace-sync', frame: raw as unknown as WorkspaceSyncFrame };
+  }
+
+  // Lane L3: the same identity-addressed route, for craft workspaces.
+  if (type === 'craft.workspace' || type === 'craft.workspaces') {
+    if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: `${type} has no spaceId` };
+    if (type === 'craft.workspace' ? !raw.workspace || typeof raw.workspace !== 'object' : !Array.isArray(raw.items)) {
+      return { kind: 'malformed', reason: `${type} has no ${type === 'craft.workspace' ? 'workspace' : 'items'}` };
+    }
+    return { kind: 'craft-workspace', frame: raw as unknown as CraftWorkspacePushFrame };
   }
 
   // R8: dropped here so no consumer downstream can ever observe one. The
@@ -200,6 +277,9 @@ export function openSocket(
       case 'chat-turn': handlers.onChatTurn?.(frame.frame); return;
       case 'chat-context': handlers.onChatContext?.(frame.frame); return;
       case 'refused': handlers.onRefused(frame.ack); return;
+      case 'workspace-command': handlers.onWorkspaceCommand?.(frame.frame); return;
+      case 'workspace-sync': handlers.onWorkspaceSync?.(frame.frame); return;
+      case 'craft-workspace': handlers.onCraftWorkspacePush?.(frame.frame); return;
       case 'presence': return;
       case 'malformed': handlers.onMalformed?.(parsed, frame.reason); return;
     }
@@ -226,6 +306,12 @@ export function openSocket(
     },
     resume(spaceId, since) {
       send({ type: 'resume', spaceId, since });
+    },
+    sendWorkspace(frame) {
+      if (!BRIDGE_FRAME_TYPES.has(frame.type)) return false;
+      if (closed || ws.readyState !== WS_OPEN) return false;
+      send(frame);
+      return true;
     },
     isOpen() {
       return !closed && ws.readyState === WS_OPEN;

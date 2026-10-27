@@ -1,0 +1,251 @@
+/**
+ * The Workspace view root, mounted by GateApp for the `tabs` route
+ * (Spec A §3, Spec B §7). Grid: left header | strip over rail | browser |
+ * content. Owns the runtime wiring: hooks, persistence, URL sync, dev hook.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useStore } from 'zustand';
+import { canCreateKind } from '../adapters/registry';
+import { getWorkspaceRuntime } from '../runtime/dispatch';
+import { installDevHook } from '../runtime/devHook';
+import { initPersistence } from '../runtime/persistence';
+import { initUrlSync, type RouteFile } from '../runtime/url';
+import { drainWorkArrival, onWorkArrival } from '../runtime/arrival';
+import { getRailStore } from '../runtime/railStore';
+import { getWorkspaceListStore } from '../bridge/workspaceList';
+import { NOTICE_TTL_MS } from '../../shell';
+import { PanelResizer } from '../../kit/PanelResizer';
+import { VectorIcon } from '../../kit/VectorIcon';
+import { isWorkspaceKind, type KindId } from '../runtime/types';
+import { Browser } from './Browser';
+import { Navigator } from './Navigator';
+import { browserBounds, isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
+import { ContentHost } from './ContentHost';
+import { useWorkspaceStore } from '../runtime/store';
+import { WorkspaceProvider, useWorkspace, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
+import { LeftHeader, ViewSelector } from './LeftHeader';
+import { ScopeRepairBanner } from './RestoreOffer';
+import { RevealPrompt } from './RevealPrompt';
+import { TabStrip } from './TabStrip';
+import { useAbandonedSweep } from './useAbandonedSweep';
+import { WorkspaceRail } from './WorkspaceRail';
+import { useWorkspaceKeys } from './useWorkspaceKeys';
+import './workspace.css';
+
+export interface TabWorkspaceViewProps {
+  viewerId: string;
+  spaceId: string;
+  /** The route's `?tab=` entity id, if any. */
+  routeTab?: string | undefined;
+  /** The route's `?fp=&f=` project file, if any. */
+  routeFile?: RouteFile | undefined;
+  gate: WorkspaceGateHandles;
+}
+
+export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate }: TabWorkspaceViewProps) {
+  const runtime = useMemo(() => getWorkspaceRuntime(viewerId, spaceId), [viewerId, spaceId]);
+  const layout = useWorkspaceStore(runtime.store, (s) => s.layout);
+  /* The icon rail's expanded flag pushes the browser: 48 → 200px. The width
+     transition runs only around a toggle, never during a browser drag. */
+  const railExpanded = useStore(getRailStore(spaceId), (s) => s.expanded);
+  /* THE MERGED NAVIGATOR (`tm8.ui.navigator`, design doc 01a1465d-a2b7): one
+     column in place of the rail + browser pair. Read once per mount — a flag
+     that changed under a live view would swap the whole left side mid-session,
+     and the flag is set from the console before a reload. */
+  const navigator = useMemo(() => isNavigatorEnabled(), []);
+  const navCollapsedStored = useStore(getRailStore(spaceId), (s) => s.collapsed);
+  const navCollapsed = navigator && (navCollapsedStored ?? false);
+  /* THE PINNED-ONLY RAIL (Subhang 2026-10-17): the rail runs the full height,
+     the list panel carries the tm8 mark in its own top row (no left header),
+     and « on that row collapses the panel to leave the rail alone. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
+  const panelCollapsed = pinnedRail && (navCollapsedStored ?? false);
+  const bounds = useMemo(() => browserBounds(), []);
+  const [railAnimating, setRailAnimating] = useState(false);
+  const railMounted = useRef(false);
+  useEffect(() => {
+    if (!railMounted.current) {
+      railMounted.current = true;
+      return;
+    }
+    setRailAnimating(true);
+    const timer = window.setTimeout(() => setRailAnimating(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [railExpanded]);
+
+  const { onNotice, navigateView } = gate;
+  useEffect(
+    () =>
+      runtime.setHooks({
+        canCreate: canCreateKind,
+        /* Spec C: tab/scope/layout commands from the bridge need this view. */
+        viewMounted: () => true,
+        toast: (toast) =>
+          onNotice({ id: `tws-${Date.now()}`, tone: 'info', title: toast.text, body: '', ttlMs: NOTICE_TTL_MS }),
+      }),
+    [runtime, onNotice],
+  );
+  useEffect(() => installDevHook(runtime), [runtime]);
+  useAbandonedSweep(runtime, gate.data);
+  useEffect(() => initPersistence(runtime, { viewerId, spaceId }), [runtime, viewerId, spaceId]);
+  /* The URL carries only an entity id; its kind comes from the data layer.
+     A cold id is fetched once and polled briefly (the read lands in `data`). */
+  const dataRef = useRef(gate.data);
+  dataRef.current = gate.data;
+  const resolveKind = useMemo(
+    () =>
+      async (entityId: string): Promise<KindId | undefined> => {
+        const kindNow = () => {
+          const kind = dataRef.current.detailOf(entityId)?.kind;
+          return isWorkspaceKind(kind) ? kind : undefined;
+        };
+        if (kindNow()) return kindNow();
+        dataRef.current.refetchDetail(entityId);
+        for (let waited = 0; waited < 8000; waited += 200) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          if (kindNow()) return kindNow();
+        }
+        return undefined;
+      },
+    [],
+  );
+  useEffect(
+    () => initUrlSync(runtime, { viewerId, spaceId, routeTab, routeFile, navigateView, resolveKind }),
+    // routeTab is read at mount; later changes arrive through hashchange (workstream I).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runtime, viewerId, spaceId, navigateView, resolveKind],
+  );
+  /* D31: a redirected address's other tabs, browser kind, trail and chat —
+     after the restore above, so a redirect never displaces the saved tabs. */
+  useEffect(() => {
+    const ctx = {
+      viewerId,
+      spaceId,
+      resolveKind,
+      titleOf: (id: string) => dataRef.current.detailOf(id)?.title ?? '',
+    };
+    drainWorkArrival(runtime, ctx);
+    return onWorkArrival(() => drainWorkArrival(runtime, ctx));
+  }, [runtime, viewerId, spaceId, resolveKind]);
+  /* Keyboard commands from the shell (tabs, drafts, browser, the tab's
+     controls) — installed AFTER the restore and arrivals above, so a command
+     queued from another view lands on the restored tabs. */
+  useWorkspaceKeys(runtime, onNotice);
+
+  const value = useMemo<WorkspaceContextValue>(
+    () => ({ runtime, store: runtime.store, dispatch: runtime.dispatch, viewerId, spaceId, gate }),
+    [runtime, viewerId, spaceId, gate],
+  );
+
+  /* The workspace switcher lives in the left header, which is not drawn while
+     the navigation is expanded away. `g w` there would set an open flag with
+     no switcher on screen — a latch that pops it open on restore — so an open
+     request brings the navigation back and the switcher shows at once. */
+  const switcherOpen = useStore(getWorkspaceListStore(viewerId, spaceId), (s) => s.open);
+  useEffect(() => {
+    if (layout.expanded && switcherOpen) {
+      runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'keyboard' });
+    }
+  }, [layout.expanded, switcherOpen, runtime]);
+
+  const setBrowserWidth = useCallback(
+    (browserWidth: number) =>
+      runtime.dispatch({ command: 'workspace.layout.set', args: { browserWidth: Math.round(browserWidth) }, source: 'click' }),
+    [runtime],
+  );
+
+  const style = {
+    '--tws-browser-w': `${layout.browserWidth}px`,
+    /* The navigator rides the same persisted width (§10: the stored field is
+       still `browserWidth`), and the collapsed strip is the rail's 48px. */
+    '--tws-nav-w': navCollapsed ? 'var(--tws-rail-w-collapsed)' : `${layout.browserWidth}px`,
+    '--tws-rail-w': railExpanded ? 'var(--tws-rail-w-expanded)' : 'var(--tws-rail-w-collapsed)',
+  } as CSSProperties;
+  return (
+    <WorkspaceProvider value={value}>
+      <div
+        className="tws-root"
+        data-expanded={layout.expanded || undefined}
+        data-nav={navigator || undefined}
+        data-nav-collapsed={navCollapsed || undefined}
+        data-pinned-rail={pinnedRail || undefined}
+        data-panel-collapsed={panelCollapsed || undefined}
+        data-rail-expanded={railExpanded || undefined}
+        data-rail-animating={railAnimating || undefined}
+        style={style}
+        data-testid="tab-workspace"
+      >
+        {layout.expanded || pinnedRail ? null : <LeftHeader />}
+        <TabStrip
+          leading={layout.expanded ? <RestoreNavigation /> : panelCollapsed ? <ShowPanel spaceId={spaceId} /> : undefined}
+        />
+        {/* ONE COLUMN OR TWO. With the navigator on, the kind's list is the
+            navigator's lower slot (§2); with it off, the rail and the browser
+            are the two columns they have always been. */}
+        {layout.expanded ? null : navigator ? (
+          <Navigator slot={<Browser />} />
+        ) : (
+          <>
+            <WorkspaceRail />
+            {panelCollapsed ? null : <Browser />}
+          </>
+        )}
+        {layout.expanded || navCollapsed || panelCollapsed ? null : (
+          <div className={navigator ? 'tws-resizer tws-nav-resizer' : 'tws-resizer'}>
+            <PanelResizer
+              side="left"
+              label={navigator ? 'Navigator' : 'Work browser'}
+              width={layout.browserWidth}
+              minWidth={bounds.min}
+              maxWidth={bounds.max}
+              onResize={setBrowserWidth}
+              onReset={() => setBrowserWidth(bounds.initial)}
+            />
+          </div>
+        )}
+        <ContentHost />
+        <ScopeRepairBanner />
+        <RevealPrompt />
+      </div>
+    </WorkspaceProvider>
+  );
+}
+
+/* "sidebar-show": a panel outline with its left column drawn in. */
+const SIDEBAR_SHOW_ART = ['M2.5 3.5h11v9h-11z', 'M6 3.5v9', 'M3.8 6h1M3.8 8h1'];
+
+/** The pinned-only rail's way back from a collapsed panel, at the strip's head. */
+export function ShowPanel({ spaceId }: { spaceId: string }) {
+  return (
+    <button
+      type="button"
+      className="tws-icon-btn"
+      aria-label="Show panel"
+      title="Show panel"
+      data-testid="tws-show-panel"
+      onClick={() => getRailStore(spaceId).getState().setCollapsed(false)}
+    >
+      <VectorIcon paths={SIDEBAR_SHOW_ART} size={16} />
+    </button>
+  );
+}
+
+/** Spec A §14: the strip's far-left cluster while the navigation is expanded away. */
+function RestoreNavigation() {
+  const { dispatch } = useWorkspace();
+  return (
+    <div className="tws-restore" role="group" aria-label="Navigation">
+      <button
+        type="button"
+        className="tws-icon-btn"
+        aria-label="Restore navigation"
+        title="Restore navigation"
+        data-testid="tws-restore"
+        onClick={() => dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' })}
+      >
+        <VectorIcon paths={SIDEBAR_SHOW_ART} size={16} />
+      </button>
+      <ViewSelector variant="more" />
+    </div>
+  );
+}

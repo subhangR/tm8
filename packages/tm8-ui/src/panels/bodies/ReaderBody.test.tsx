@@ -9,7 +9,7 @@ import type {
   EntityState,
   EntitySummary,
 } from '@tm8/contract';
-import { ReaderBody } from './ReaderBody';
+import { ReaderBody, withoutLeadingTitle } from './ReaderBody';
 
 /**
  * THE READER ARCHETYPE — T0-4 frame 2 "DOC" (oracle lines 325-361), with the
@@ -537,5 +537,22 @@ describe('the registry drives the additions, not a branch', () => {
   it('renders no notice when the registry declares none', () => {
     const { queryAllByTestId } = renderReader();
     expect(queryAllByTestId('reader-notice')).toHaveLength(0);
+  });
+});
+
+describe('withoutLeadingTitle', () => {
+  it('drops an opening # heading that only repeats the title', () => {
+    expect(withoutLeadingTitle('# Layout spec\n\nbody', 'Layout spec')).toBe('body');
+    expect(withoutLeadingTitle('\n#  Layout  **spec** #\r\nbody', 'layout spec')).toBe('body');
+  });
+
+  it('drops one that is the head of a longer title', () => {
+    expect(withoutLeadingTitle('# Ask Jev in chat — proposal\n\nbody', 'Ask Jev in chat — proposal (judge each prompt)')).toBe('body');
+  });
+
+  it('keeps every other opening', () => {
+    for (const source of ['# Background\n\nbody', '# Layout spec v2\n\nbody', '# Layout\n\nbody', '## Layout spec\n\nbody', 'Layout spec\n\nbody', 'body']) {
+      expect(withoutLeadingTitle(source, 'Layout spec')).toBe(source);
+    }
   });
 });

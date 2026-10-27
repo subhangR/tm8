@@ -211,6 +211,7 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
   'spaces.taskAxes.delete',
   'projects.link',
   'spaces.projects.create',
+  'spaces.projects.clone',
   'projects.unlink',
   'entityKinds.create',
   'entityKinds.update',
@@ -225,7 +226,10 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
 // refuses the kind outright (it is in RESTRICTED_LIFECYCLE_KINDS), so listing
 // it here would advertise an action the only door for it refuses. A container
 // is renamed through `containers.update`.
-const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
+// `story` is editable: title, description and — its only status door (288) —
+// `content.status`, so a story's action list must offer `entities.patch`.
+// `craft` (304) is editable: title and description.
+const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'story', 'craft']);
 // READING structure vs CHANGING it — one set could not answer both once
 // `container` arrived, and conflating them is how an action list comes to
 // advertise a verb the door refuses.
@@ -261,6 +265,18 @@ function operationParams(operation: OperationName): string[] {
 function structurallyAvailable(operation: OperationName, row: ActionContextRow): boolean {
   const live = row.deleted_at === null;
   switch (operation) {
+    case 'tools.get':
+    case 'tools.help':
+    case 'tools.update':
+    case 'tools.config.set':
+    case 'tools.config.unset':
+    case 'tools.secrets.bind':
+    case 'tools.secrets.unbind':
+    case 'tools.run':
+    case 'tools.runs.list':
+      return live && row.kind === 'tool';
+    case 'tools.runs.get':
+      return live && row.kind === 'work_session';
     case 'entities.get':
     case 'entities.activity':
     case 'entities.connections':
@@ -285,10 +301,12 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       // whose only outcome is a 403. `space_link` likewise (W6 review D1):
       // `spaceLinks.remove` is its only delete. `credential` and `server`
       // join for the same reason: `credentials.space.delete` (revoke) and
-      // `servers.remove` are their only deletes.
+      // `servers.remove` are their only deletes. `style` (284): a space style
+      // is removed only by `styles.remove`, which is space-admin only.
       return live && row.kind !== 'member' && row.kind !== 'project'
         && row.kind !== 'interaction_profile' && row.kind !== 'container'
-        && row.kind !== 'space_link' && row.kind !== 'credential' && row.kind !== 'server';
+        && row.kind !== 'space_link' && row.kind !== 'credential' && row.kind !== 'server'
+        && row.kind !== 'style';
     case 'entities.restore':
       return false;
     case 'entities.children':
@@ -398,6 +416,14 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
       return live && row.kind === 'server';
     case 'servers.remove':
       return live && row.kind === 'server' && row.server_can_remove === true;
+    // Space styles (284): read-only entities. Any member may read, export and
+    // pull one; removing it is the space admin's door (spec §7).
+    case 'styles.get':
+    case 'styles.export':
+    case 'styles.pull':
+      return live && row.kind === 'style';
+    case 'styles.remove':
+      return live && row.kind === 'style' && row.is_space_admin;
     default:
       return false;
   }
@@ -621,6 +647,8 @@ function kindRelevance(row: ActionContextRow): readonly OperationName[] {
       ];
     case 'server':
       return ['servers.get', 'servers.probe', 'servers.remove'];
+    case 'style':
+      return ['styles.get', 'styles.pull', 'styles.export', 'styles.remove', 'entities.versions'];
     case 'interaction_profile':
       return [
         'interactionProfiles.updateDraft',
@@ -821,7 +849,8 @@ async function discover(
     // never the filtered or ranked view: two views of the same capability
     // state must carry the same epoch, and a client comparing epochs must not
     // see a change that is only a change of presentation.
-    const authorized = registry.implemented().filter((operation) => isAvailable(operation, row));
+    const authorized = registry.implemented().filter((operation) =>
+      isAvailable(operation, row) && (ctx.identity.apiScope !== 'read' || getOperation(operation).kind === 'read')); 
     // The same allow-list as 083's `require_human_auth_kind()`: a `link`
     // session is NOT human. Joined with each binding's `humanOnly` into the
     // row's `refused`, once, here.

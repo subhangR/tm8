@@ -237,9 +237,9 @@ export function deriveSessionTransition(
     }
   }
 
-  if (event.type === 'edge.upsert' && event.edge.type === 'dispatched_by') {
-    // Stored direction is spawned -> dispatcher; the visible act is the
-    // inverse, dispatcher -> spawned.
+  // 330: `launched_by` (legacy `dispatched_by`) is stored launched -> launcher;
+  // the visible act is the inverse, launcher -> launched.
+  if (event.type === 'edge.upsert' && (event.edge.type === 'launched_by' || event.edge.type === 'dispatched_by')) {
     if (statusOf(event.edge.source) !== null && statusOf(event.edge.target) !== null) {
       return delegation(event.edge.source.id, event.edge.target.id, 'edge', prior);
     }

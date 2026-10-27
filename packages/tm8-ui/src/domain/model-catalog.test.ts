@@ -49,7 +49,11 @@ describe('defaults', () => {
   });
 
   it('groups by agent tool the way the picker asks for them', () => {
+    const claude = catalogModelsFor(NODE, 'claude-code').map((m) => m.model);
     const codex = catalogModelsFor(NODE, 'codex').map((m) => m.model);
+    expect(claude).toContain('claude-sonnet-5-5');
+    expect(claude).toContain('claude-haiku-5-5');
+    expect(codex).toContain('gpt-6.1-sol');
     expect(codex).toContain('gpt-5.6-sol');
     expect(codex).toContain('gpt-6-astra');
     expect(codex).not.toContain('claude-opus-5');

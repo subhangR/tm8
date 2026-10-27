@@ -297,6 +297,18 @@
   /* The serif's own side bearing already spaces the 8; without this the loop
      drifts right of the letters it belongs to. */
   margin-right: -0.04em;
+  /* Moon phase: BootLoader writes --kit-boot-phase (0 at rest, 1 at the
+     turnaround) from the ribbon's clock, and the letters swing with the band
+     — black toward white on light, white toward black on dark, because the
+     theme swaps the two tokens. HALFWAY only (50%, RibbonMark's POLE_SWING):
+     a full swing reached the paper's own colour and the letters vanished.
+     Rest is the pole that contrasts with the paper, so a still frame (reduced
+     motion, first paint) always reads. */
+  color: color-mix(
+    in srgb,
+    var(--pn-x-mark-turn) calc(var(--kit-boot-phase, 0) * 50%),
+    var(--pn-x-mark-rest)
+  );
 }
 
 /* The wordmark ribbon's design box is 360×520, so width follows from height at
@@ -397,7 +409,7 @@
    brand line does not reflow on load. */
 /* The wordmark reads as one word, so it is sized in `em` off whatever brand
    line hosts it — no pixel numbers here, and no type of its own: the letters
-   inherit family, weight and colour from the host. */
+   inherit family and weight from the host; colour is ink (see below). */
 .kit-brandmark {
   display: inline-flex;
   align-items: baseline;
@@ -405,6 +417,8 @@
 }
 .kit-brandmark__letters {
   letter-spacing: -0.01em;
+  /* Monochrome mark: the letters are ink, not the host's brand colour. */
+  color: var(--pn-ink);
 }
 /* The ribbon's wordmark box is 360×520, so width follows from height at that
    ratio. 0.93em is the design's own proportion — it set the box at 520 against
@@ -417,6 +431,12 @@
    leaves ~0.015em of overshoot below the baseline — the small overhang every
    round glyph needs to look level with flat-bottomed ones. */
 .kit-brandmark__eight {
+  /* The still 8 shows ONE metal, so it takes the mid-tone silver: `shade`
+     walks it to near-black and near-white across the band, which is the
+     black/white/silver of the turning mark compressed into one rest pose.
+     (The eclipse finish's two-metal split is not used here — at 11.5px one of
+     its halves always vanishes into the paper.) */
+  --pn-ribbon-ink: var(--pn-x-mark-silver);
   height: 0.93em;
   width: calc(0.93em * 360 / 520);
   position: relative;
@@ -466,3 +486,73 @@
 .cv2-root .kit-resizer:focus-visible {
   outline: none;
 }
+
+/* -- Fresh / leaving items (domain/freshEntities.ts, useFreshGlow) ---------
+   R40: a just-created entity's item carries a --pn-brand-soft tint, painted as
+   a background-image layer over its own fill (hover and selected still show
+   through), held 2s, then faded linearly to nothing by 30s. No ring, no outer
+   glow. `--pn-fresh-delay` is negative for an item that mounts mid-way.
+   R41: a just-deleted item is inert from the first frame, tinted
+   --pn-block-soft with its title struck in --pn-ink-3; it holds 800ms, then
+   fades and collapses over 1200ms, then the row is removed.
+   The doubled attribute out-ranks a tile's own `background` shorthand. */
+@property --pn-fresh-tint {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@keyframes pnFreshFade {
+  0%,
+  6.667% {
+    --pn-fresh-tint: var(--pn-brand-soft);
+  }
+  100% {
+    --pn-fresh-tint: transparent;
+  }
+}
+
+/* Only a `to`: the 800ms hold is the animation's delay, so every collapsing
+   property starts from the item's own value rather than interpolating through
+   the hold. */
+@keyframes pnLeaving {
+  to {
+    opacity: 0;
+    height: 0;
+    min-height: 0;
+    padding-block: 0;
+    margin-block: 0;
+  }
+}
+
+.cv2-root [data-fresh][data-fresh] {
+  background-image: linear-gradient(var(--pn-fresh-tint), var(--pn-fresh-tint));
+  animation: pnFreshFade 30s linear var(--pn-fresh-delay, 0ms) both;
+}
+
+.cv2-root [data-leaving][data-leaving] {
+  pointer-events: none;
+  overflow: hidden;
+  interpolate-size: allow-keywords;
+  background-image: linear-gradient(var(--pn-block-soft), var(--pn-block-soft));
+  text-decoration: line-through;
+  text-decoration-color: var(--pn-ink-3);
+  animation: pnLeaving 1200ms var(--pn-ease-standard) calc(800ms + var(--pn-fresh-delay, 0ms)) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A static tint, removed when the entry expires (30s / 1s). */
+  .cv2-root [data-fresh][data-fresh] {
+    animation: none;
+    background-image: linear-gradient(var(--pn-brand-soft), var(--pn-brand-soft));
+  }
+  .cv2-root [data-leaving][data-leaving] {
+    animation: none;
+  }
+}
+
+/* AgentToolIcon — the one drawing of an agent tool. The logos fill with
+   currentColor; Claude takes its own orange, Codex inherits the ink around
+   it. Glyph fallbacks (gemini, hermes, terminal, unknown) size from the font. */
+.kit-tool { flex: 0 0 auto; display: inline-block; vertical-align: middle; line-height: 1; }
+svg.kit-tool--claude { color: var(--pn-x-claude, var(--pn-brand)); }

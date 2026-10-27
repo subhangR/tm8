@@ -2,7 +2,7 @@
 /**
  * The task detail's git section, driven through the FIXTURE seam — proving
  * both sides at once, like SessionGitBody.test: the section's honesty rules
- * AND the fixture's tracks/created_in graph.
+ * AND the fixture's tracks/authored_from graph.
  *
  * CHIP CONSUMPTION IS PINNED HERE: the PR rows must render through Lane B's
  * `linked-pr-chips` testids — the day this section grows its own chip markup
@@ -39,7 +39,7 @@ describe('tracked artifacts', () => {
     expect(chips.getAttribute('data-placement')).toBe('detail');
     expect(screen.getByTestId('linked-pr').getAttribute('data-pr-number')).toBe('212');
 
-    // The commit lists sha + message, and the `created_in` session beside it.
+    // The commit lists sha + message, and the `authored_from` session beside it.
     const commits = screen.getByTestId('task-git-commits');
     expect(commits.textContent).toContain('9b1c2d3e4f');
     expect(commits.textContent).toContain('A0 foundation');

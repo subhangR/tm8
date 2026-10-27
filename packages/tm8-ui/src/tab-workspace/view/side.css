@@ -1,0 +1,523 @@
+/* The tab's side column — Links · Messages · Chat (task 01a122b9). The column
+   itself is `.tws-chat` (chat.css); this sheet is its header and the three
+   lists. Rows follow the left rail's grammar: 14px kind icon or 20px avatar,
+   a title line, a quiet second line, no cards and no borders between rows.
+   Tokens only, 4/8 grid. */
+
+/* --- Header: a segmented switch and a close, no hairline under it --- */
+.cv2-root .tws-side-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-2) var(--pn-space-1) var(--pn-space-3);
+}
+.cv2-root .tws-side-seg {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+}
+.cv2-root .tws-side-seg__tab {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv2-root .tws-side-seg__tab:hover {
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-side-seg__tab[aria-selected='true'] {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  box-shadow: 0 0 0 1px var(--pn-line);
+}
+.cv2-root .tws-side-seg__tab em {
+  font-style: normal;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-side-seg__tab:focus-visible,
+.cv2-root .tws-side-close:focus-visible,
+.cv2-root .tws-side-row__hit:focus-visible,
+.cv2-root .tws-side-chip:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-side-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .tws-side-close:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+/* --- Body: one section fills the rest of the column --- */
+.cv2-root .tws-side-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .tws-side-body > .ecp {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  background: var(--pn-surface);
+}
+.cv2-root .tws-side-messages,
+.cv2-root .tws-side-links {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .tws-side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2);
+}
+.cv2-root .tws-side-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  outline: none;
+}
+
+/* --- The row: the left rail's grammar --- */
+.cv2-root .tws-side-row__hit {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  padding: 6px var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .tws-side-row__hit:hover,
+.cv2-root .tws-side-row[data-kbd-cursor] > .tws-side-row__hit {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-side-row[data-current] > .tws-side-row__hit,
+.cv2-root .tws-side-row[data-open] > .tws-side-row__hit {
+  background: var(--pn-active);
+}
+.cv2-root .tws-side-row[data-pending] {
+  opacity: 0.6;
+}
+.cv2-root .tws-side-row__lead {
+  flex: none;
+  margin-top: 1px;
+}
+.cv2-root .tws-side-row__icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-side-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cv2-root .tws-side-row__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.cv2-root .tws-side-row__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.cv2-root .tws-side-row__when {
+  flex: none;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-side-row__preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--pn-fs-label);
+  line-height: 17px;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+.cv2-root .tws-side-row__meta {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-side-row__tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.cv2-root .tws-side-row__body {
+  padding: var(--pn-space-1) var(--pn-space-2) var(--pn-space-2) calc(20px + var(--pn-space-2) * 2);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+.cv2-root .tws-side-row__body .md-root > :first-child {
+  margin-top: 0;
+}
+.cv2-root .tws-side-row__body .md-root > :last-child {
+  margin-bottom: 0;
+}
+
+/* Relation pill and status: small, quiet, the tone only where it means something. */
+.cv2-root .tws-side-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-paper);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cv2-root .tws-side-pill[data-tone='block'] {
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+.cv2-root .tws-side-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.cv2-root .tws-side-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-ink-3);
+}
+.cv2-root .tws-side-status[data-tone='run'] { color: var(--pn-run); }
+.cv2-root .tws-side-status[data-tone='run'] i,
+.cv2-root .tws-side-status[data-tone='done'] i { background: var(--pn-run); }
+.cv2-root .tws-side-status[data-tone='todo'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--pn-ink-3); }
+.cv2-root .tws-side-status[data-tone='block'] { color: var(--pn-block); }
+.cv2-root .tws-side-status[data-tone='block'] i { background: var(--pn-block); }
+.cv2-root .tws-side-status[data-tone='info'] { color: var(--pn-info); }
+.cv2-root .tws-side-status[data-tone='info'] i { background: var(--pn-info); }
+.cv2-root .tws-side-status[data-tone='merged'] { color: var(--pn-pr-merged); }
+.cv2-root .tws-side-status[data-tone='merged'] i { background: var(--pn-pr-merged); }
+
+/* --- Links: family chips over the list --- */
+.cv2-root .tws-side-chips {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: var(--pn-space-1) var(--pn-space-3) var(--pn-space-2);
+}
+.cv2-root .tws-side-chip {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+.cv2-root .tws-side-chip:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-side-chip[aria-pressed='true'] {
+  border-color: var(--pn-line-2);
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-side-chip em {
+  font-style: normal;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+
+/* --- Messages: load earlier, and the one-row composer --- */
+.cv2-root .tws-side-more {
+  display: block;
+  margin: 0 auto var(--pn-space-2);
+  padding: 2px var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+.cv2-root .tws-side-more:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-side-composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pn-space-1);
+  margin: 0 var(--pn-space-2) var(--pn-space-2);
+  padding: 4px 4px 4px var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+}
+.cv2-root .tws-side-composer:focus-within {
+  border-color: var(--pn-line-2);
+}
+.cv2-root .tws-side-composer__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  padding: 3px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  line-height: 18px;
+}
+.cv2-root .tws-side-composer__input::placeholder {
+  color: var(--pn-ink-4);
+}
+.cv2-root .tws-side-composer__send {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand);
+  color: var(--pn-card);
+  cursor: pointer;
+}
+.cv2-root .tws-side-composer__send:disabled {
+  background: var(--pn-active);
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+
+/* --- States --- */
+.cv2-root .tws-side-empty {
+  margin: 0;
+  padding: var(--pn-space-6) var(--pn-space-4);
+  text-align: center;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-side-state {
+  padding: var(--pn-space-6) var(--pn-space-4);
+  text-align: center;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-side-state p {
+  margin: 0 0 var(--pn-space-2);
+}
+.cv2-root .tws-side-state__action {
+  padding: 4px var(--pn-space-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.cv2-root .tws-side-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2);
+}
+.cv2-root .tws-side-skeleton span {
+  height: 32px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+}
+
+/* --- Chat: the list toggle beside + New --- */
+.cv2-root .tws-side .ecp__list {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .tws-side .ecp__list:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-side .ecp__list[aria-pressed='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-side .ecp__body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Links: an entity peeked in the column, with its own breadcrumbs --- */
+.cv2-root .tws-peek {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .tws-peek-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2) var(--pn-space-1) var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .tws-peek-crumbs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.cv2-root .tws-peek-step {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.cv2-root .tws-peek-step:last-child {
+  flex: 1 1 auto;
+}
+.cv2-root .tws-peek-sep {
+  flex: none;
+  padding: 0 2px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .tws-peek-crumb {
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv2-root .tws-peek-crumb > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .tws-peek-crumb:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-peek-crumb[aria-current='page'] {
+  color: var(--pn-ink);
+  font-weight: 500;
+  cursor: default;
+}
+.cv2-root .tws-peek-step:not(:last-child) .tws-peek-crumb {
+  max-width: 96px;
+}
+.cv2-root .tws-peek-open {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .tws-peek-open:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-peek-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.cv2-root .tws-peek-body > .pn-panel {
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  border: 0;
+}

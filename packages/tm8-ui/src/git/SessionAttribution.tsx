@@ -3,7 +3,8 @@ import { Pill } from '../kit';
 
 /**
  * THE ATTRIBUTION OVERLAY, one honesty rule wearing one component. A commit's
- * session comes ONLY from the `created_in` provenance edge (082) — the server
+ * session comes ONLY from the `authored_from` provenance edge (082; it
+ * replaced the deprecated `created_in`) — the server
  * joins it, this component renders it. Three states, all named:
  *   · joined      → the session (and teammate when the graph names one), a
  *                   click-through to its panel when the host wired one;

@@ -35,7 +35,7 @@
  *     token carries its configuring human's claims (R-C), so a chat that could
  *     open chats could spend that human's authority on conversations they never
  *     asked for, each with a fresh 24h credential of its own. `start_chat`'s
- *     `require_human_or_link_auth_kind` (990) already refuses it in SQL; this
+ *     `require_human_or_link_auth_kind` (369) already refuses it in SQL; this
  *     is the readable layer, exactly as `credentials.ts` is layer 1 to that
  *     RPC's layer 2.
  *
@@ -77,7 +77,7 @@ import type { RequestContext } from '../http/types.js';
  * A refusal, not a scope check: there is no chat id on the request to compare
  * against, because the operation's whole purpose is to create one.
  */
-export const CHAT_OPERATIONS_CLOSED_TO_RUNTIME = ['chat.start', 'chat.setModel'] as const;
+export const CHAT_OPERATIONS_CLOSED_TO_RUNTIME = ['chat.start', 'chat.setModel', 'chat.setCredentials', 'chat.interrupt'] as const;
 
 /** The chat an `agent_runtime` bearer runs, or null for every other principal. */
 export function runtimeChatIdOf(ctx: RequestContext): string | null {

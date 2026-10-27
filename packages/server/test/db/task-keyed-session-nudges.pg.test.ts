@@ -124,7 +124,7 @@ async function seedSession(
     );
     await q(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by)
-       values ($1,$2,$3,'working_on',$5), ($1,$2,$4,'relates_to',$5)`,
+       values ($1,$2,$3,'working_on',$5), ($1,$4,$2,'participates_in',$5)`,
       [f.spaceId, sessionId, taskId, teammate, f.memberId],
     );
   });

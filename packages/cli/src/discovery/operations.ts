@@ -161,6 +161,82 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable' },
+  'tools.update': { cmd: ['tool', 'edit'], syn: 'tm8 tool edit <name|id> [--source <@file>] [--spec <@file>] [--runtime bash|python] [--description <text>] --expect-version <n> [--mutation-id <id>]', sum: 'Update a stored tool definition', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.get': { cmd: ['tool', 'show'], syn: 'tm8 tool show <name|id> [--source]', sum: 'Read a tool and its configured inputs', authz: 'entity', input: 'none', side: 'none' },
+  'tools.list': { cmd: ['tool', 'list'], syn: 'tm8 tool list [--words <text>] [--limit <count>] [--cursor <cursor>]', sum: 'List stored tools in a Space', authz: 'space', input: 'none', side: 'none' },
+  'tools.help': { cmd: ['tool', 'help'], syn: 'tm8 tool help <name|id>', sum: 'Read a tool input declaration', authz: 'entity', input: 'none', side: 'none' },
+  'tools.config.set': { cmd: ['tool', 'config', 'set'], syn: 'tm8 tool config set <name|id> <input> <value> [--expect-version <n>] [--mutation-id <id>]', sum: 'Set a configured tool input', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.config.unset': { cmd: ['tool', 'config', 'unset'], syn: 'tm8 tool config unset <name|id> <input> [--expect-version <n>] [--mutation-id <id>]', sum: 'Unset a configured tool input', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.bind': { cmd: ['tool', 'secret', 'set'], syn: 'tm8 tool secret set <name|id> <input> [--value-stdin | --credential-id <id>] [--label <text>] [--expect-version <n>] [--mutation-id <id>]', sum: 'Bind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.unbind': { cmd: ['tool', 'secret', 'unset'], syn: 'tm8 tool secret unset <name|id> <input> [--expect-version <n>] [--mutation-id <id>]', sum: 'Unbind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.run': { cmd: ['tool', 'run'], syn: 'tm8 tool run [--detach] [--keep-open | --close] [--cwd <dir>] [--mutation-id <id>] <name|id> [tool arguments...]', sum: 'Run the stored tool source', authz: 'entity', input: 'bound', side: 'execution', ver: 'expectedVersion', notes: ['Run options precede the tool name; every subsequent token belongs to the declared tool inputs, including --help and short flags', 'Secrets use --<input>-from-env <VAR> or a hidden TTY prompt; literal values on argv are refused', 'Attached output uses human format and returns the tool process exit code; structured formats require --detach', 'The CLI pins the version just loaded and prints a source-change notice before execution; keepOpen defaults to false']},
+  'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool', authz: 'entity', input: 'none', side: 'none' },
+  'tools.runs.get': { cmd: ['tool', 'run-show'], syn: 'tm8 tool run-show <session-id> [--output]', sum: 'Read a recorded tool run', authz: 'session', input: 'none', side: 'none' },
+
+  'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
+  'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
+  'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
+  'mcp.servers.update': {cmd: ['mcp','server','update'], syn: 'tm8 mcp server update <server-id> --expected-version <version> --input <@file|->', sum: 'Update MCP server', authz: 'entity', input: 'bound', ver: 'expectedVersion'},
+  'mcp.servers.delete': {cmd: ['mcp','server','delete'], syn: 'tm8 mcp server delete <server-id> --expected-version <version> [--input <@file|->]', sum: 'Delete MCP server', authz: 'entity', input: 'bound', ver: 'expectedVersion'},
+  'mcp.servers.import': {cmd: ['mcp','server','import'], syn: 'tm8 mcp server import [<id>] --input <@file|->', sum: 'Import MCP server', authz: 'space', input: 'bound'},
+  'mcp.servers.test': {cmd: ['mcp','server','test'], syn: 'tm8 mcp server test [<id>] --input <@file|->', sum: 'Test MCP server', authz: 'entity', input: 'bound'},
+  'mcp.credentials.list': {cmd: ['mcp','credential','list'], syn: 'tm8 mcp credential list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP credential', authz: 'entity', input: 'none'},
+  'mcp.credentials.readiness': {cmd: ['mcp','credential','readiness'], syn: 'tm8 mcp credential readiness [<id>]', sum: 'Readiness MCP credential', authz: 'entity', input: 'none'},
+  'mcp.credentials.create': {cmd: ['mcp','credential','create'], syn: 'tm8 mcp credential create [<id>] --input <@file|->', sum: 'Create MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.rotate': {cmd: ['mcp','credential','rotate'], syn: 'tm8 mcp credential rotate [<id>] --input <@file|->', sum: 'Rotate MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.revoke': {cmd: ['mcp','credential','revoke'], syn: 'tm8 mcp credential revoke [<id>] --input <@file|->', sum: 'Revoke MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.share': {cmd: ['mcp','credential','share'], syn: 'tm8 mcp credential share [<id>] --input <@file|->', sum: 'Share MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.unshare': {cmd: ['mcp','credential','unshare'], syn: 'tm8 mcp credential unshare [<id>] --input <@file|->', sum: 'Unshare MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.oauth.begin': {cmd: ['mcp','oauth','begin'], syn: 'tm8 mcp oauth begin [<id>] --input <@file|->', sum: 'Begin MCP oauth', authz: 'entity', input: 'bound'},
+  'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
+  'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
+  'mcp.audit.list': {cmd:['mcp','audit'], syn:'tm8 mcp audit [--session <id>] [--chat <id>] [--connector <id>] [--member <id>] [--outcome <started|succeeded|failed|denied|refreshed>] [--limit <count>] [--cursor <cursor>]', sum:'List MCP connector calls (admins: the Space; members: their own)', authz:'space', input:'none'},
+  'mcp.tokens.create': {cmd:['mcp','tokens','create'], syn:'tm8 mcp tokens create --label <name> [--space <id>]... [--all-spaces] [--expires-in-days <n>]',
+    sum:'Mint an MCP token for an external client — printed ONCE', authz:'server', input:'bound',
+    tags:['mcp','token','claude desktop','cursor','external','connector'],
+    notes:['the token acts as YOU: it reaches the connectors your member can use, in the spaces it lists, and nothing else',
+      'it is printed once and only its hash is stored — there is no command that shows it again',
+      '--all-spaces means every space you belong to NOW OR JOIN LATER; otherwise name them with --space (repeatable)',
+      'it is accepted on POST <origin>/mcp and refused on every other route, this CLI included',
+      'a connector appears to an external client only where an admin turned on "available to external MCP clients"']},
+  'mcp.tokens.list': {cmd:['mcp','tokens','list'], syn:'tm8 mcp tokens list',
+    sum:'List your MCP tokens (never their secrets)', authz:'server', input:'none',
+    tags:['mcp','token','external'],
+    notes:['yours only: a space admin cannot see or revoke another member\'s token — their lever is the membership',
+      'a revoked token is listed for a day, then drops off']},
+  'mcp.tokens.revoke': {cmd:['mcp','tokens','revoke'], syn:'tm8 mcp tokens revoke <token-id>',
+    sum:'Revoke one of your MCP tokens', authz:'server', input:'bound',
+    tags:['mcp','token','external','revoke'],
+    notes:['clients using it stop working immediately, including a call already in flight']},
+  /*
+   * NO CLI COMMAND: this is the data behind one block of the session debug view
+   * (§10.6), and reading it in a terminal would mean rendering a bearer chain
+   * of raw ids with no entity titles to resolve them against. `tm8 mcp audit`
+   * is the terminal's answer to "what did this session's connectors do".
+   */
+  'mcp.sessions.provenance': {cmd:null,
+    sum:'Read the provenance recorded for one session: the human root, the bearer chain, and whether that root is still admitted to every Space it crossed',
+    authz:'entity',input:'none',tags:['mcp','connector','provenance','root','chain','session','debug'],
+    reason:'the session debug view resolves the chain\'s ids to entities; a terminal rendering would be a list of bare uuids',
+    notes:['`recorded:false` is a real answer: the session has no provenance row — launched before the plan, or a chat still on Space defaults',
+      '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
+      '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
+      'human sessions only; a link caller is refused by the RPC itself']},
+  'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
+    tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
+    notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
+      'an entry is a PREFILL, not a connector: adding one still needs an admin (`mcp server create`) and every member still connects their own account',
+      '`requires:` carries what the provider demands of a client like tm8 — read it before the consent screen fails',
+      'an entry marked `coming soon` has no definition yet and cannot be added']},
+  'mcp.servers.request': {cmd:['mcp','server','request'], syn:'tm8 mcp server request --input <@file|-> ({"catalogId":"<id>"} or {"definition":{…}}, optional "note")',sum:'Ask the Space administrators to add a connector',authz:'space',input:'bound',
+    tags:['mcp','connector','request','ask','approve'],
+    notes:['for a member who is not an administrator: it creates the connector UNAPPROVED and raises an attention request on it',
+      'an unapproved connector is inert — it cannot be selected, bound or called, and nothing fetches its URL until an admin approves it',
+      'a catalog request names `catalogId` only; the server takes the definition from the catalog, so a request can never point somewhere else',
+      'an administrator approves with `mcp server update … approved=true`; the requester may withdraw with `entity delete` while it is still unapproved',
+      'human-authenticated only']},
+  'mcp.proxy.request': {cmd:null,sum:'Invoke MCP through the authorized session bridge',authz:'session',input:'bound',reason:'internal_session_bridge'},
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
     cmd: ['identity', 'get'],
@@ -181,6 +257,183 @@ const ROWS: Record<OperationName, Row> = {
       'writes only the caller\'s own profile: there is no flag naming another identity, and --as is refused',
       'the global id is a display claim in issuer:subject shape, never an authorization input',
     ],
+  },
+  // ── styles (styles spec 01a0fc22 v8 §4-§5, migration 284) ──────────────
+  // PERSONAL styles are the caller's own and edited in place; SPACE styles are
+  // read-only `style` entities born and re-versioned only by `style push`.
+  // References are typed: builtin:<slug>, personal:<uuid>, space:<uuid>.
+  'styles.personal.list': {
+    cmd: ['style', 'list'],
+    syn: 'tm8 style list [--space <space-id>] [--mine | --space-only] [--tag <tag>]',
+    sum: 'List your personal styles and, with a Space in context, the built-ins and that Space\'s styles',
+    authz: 'server',
+    input: 'none',
+    tags: ['theme', 'themes', 'styles', 'palette', 'personal'],
+    notes: [
+      'personal styles are visible to their owner only; nobody else can list them',
+      'without a Space in context only the personal half is listed; --space-only makes the Space required',
+    ],
+    examples: ['tm8 style list --space <space-id>', 'tm8 style list --mine --tag <tag>'],
+  },
+  'styles.personal.create': {
+    cmd: ['style', 'create'],
+    syn: 'tm8 style create <title> --foundation <builtin-ref> [--pn-<name>=<value>]... [--set <name>=<value>]... [--vars <json-source>] [--css <text-source>] [--tag <tag>]... [--description <text>] [--from <ref>] [--mutation-id <id>]',
+    sum: 'Create a personal style: a built-in foundation plus any --pn-* variables, private to you until you push it',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'new', 'author', 'personal', 'variables'],
+    notes: [
+      'a variable is written `--pn-<name>=<value>` (the `=` is required) or `--set <name>=<value>`; --vars takes a JSON object of the same keys',
+      '--from <ref> copies a built-in or a space style instead (the same copy `style pull` makes); <title> and --foundation are then optional',
+      'the server validates every value against the variable registry and returns warnings; nothing reaches the space until `tm8 style push`',
+    ],
+    examples: ['tm8 style create <title> --foundation <builtin-ref> --pn-brand=<colour>'],
+  },
+  'styles.personal.update': {
+    cmd: ['style', 'update'],
+    syn: 'tm8 style update <personal-ref> --expect-version <n> [--title <title>] [--description <text>|none] [--foundation <builtin-ref>] [--vars <json-source>] [--vars-replace <json-source>] [--css <text-source>|none] [--tag <tag>]... [--mutation-id <id>]',
+    sum: 'Edit a personal style you own in place; --vars is a merge patch where a null value removes the variable',
+    authz: 'server',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'edit', 'variables', 'merge'],
+    notes: [
+      '`tm8 style set` and `tm8 style unset` are the one-variable spellings of this operation',
+      'title, description, foundation, css and tags REPLACE; --vars-replace replaces the whole variable map',
+      'changing --foundation keeps every variable you set; only unset variables fall back differently',
+    ],
+    examples: ['tm8 style update <personal-ref> --expect-version <n> --title <title>'],
+  },
+  'styles.personal.delete': {
+    cmd: ['style', 'delete'],
+    syn: 'tm8 style delete <personal-ref> [--mutation-id <id>]',
+    sum: 'Delete a personal style you own; a space style pushed from it stays',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'remove'],
+    examples: ['tm8 style delete <personal-ref>'],
+  },
+  'styles.list': {
+    cmd: ['style', 'list'],
+    syn: 'tm8 style list [--space <space-id>] [--mine | --space-only] [--tag <tag>]',
+    sum: 'List the built-ins and a Space\'s styles, with the default, what you use, and the version and pusher of each',
+    authz: 'space',
+    input: 'none',
+    tags: ['theme', 'space', 'shared', 'default'],
+  },
+  'styles.get': {
+    cmd: ['style', 'get'],
+    syn: 'tm8 style get <ref> [--resolved]',
+    sum: 'Read one style — built-in, personal or space — as its document, warnings and hash',
+    authz: 'entity',
+    input: 'none',
+    tags: ['theme', 'show', 'read', 'variables'],
+    notes: [
+      '<ref> is builtin:<slug>, personal:<uuid> or space:<uuid>; a bare uuid is looked up as personal first, then space',
+      '--resolved adds the full resolved table: every --pn-* variable after the foundation fills the gaps',
+    ],
+    examples: ['tm8 style get <ref> --resolved'],
+  },
+  'styles.push': {
+    cmd: ['style', 'push'],
+    syn: 'tm8 style push <personal-ref> [--space <space-id>] [--to <space-ref>] [--expect-version <n>] [--title <title>] [--mutation-id <id>]',
+    sum: 'Publish a personal style to the Space: the first push creates a space style, a later push re-versions it live for everyone on it',
+    authz: 'space',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'publish', 'share', 'version', 'release'],
+    notes: [
+      'without --to, the target is the space style this personal style was last pushed as; a never-pushed style creates a new one',
+      'any active member may push a new version onto any space style; every version records who pushed it and `tm8 style versions` lists them',
+      '--expect-version guards the SPACE style\'s version: a push that raced another fails with version_conflict instead of overwriting it',
+    ],
+    examples: ['tm8 style push <personal-ref> --space <space-id>', 'tm8 style push <personal-ref> --to <space-ref> --expect-version <n>'],
+  },
+  'styles.pull': {
+    cmd: ['style', 'pull'],
+    syn: 'tm8 style pull <space-ref|builtin-ref> [--title <title>] [--mutation-id <id>]',
+    sum: 'Copy a space style or a built-in into a new personal style you can edit',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['theme', 'copy', 'fork', 'duplicate', 'customise'],
+    notes: ['the copy remembers where it came from and at which version, so a newer upstream version can be shown later'],
+    examples: ['tm8 style pull <space-ref> --title <title>'],
+  },
+  'styles.remove': {
+    cmd: ['style', 'remove'],
+    syn: 'tm8 style remove <space-ref> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Remove a space style (space admin); members on it keep rendering from their snapshot',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['theme', 'delete', 'admin', 'unpublish'],
+    examples: ['tm8 style remove <space-ref> --expect-version <n>'],
+  },
+  'styles.resolve': {
+    cmd: ['style', 'resolve'],
+    syn: 'tm8 style resolve <ref|json-source> [--strict]',
+    sum: 'Lint or preview a style document without saving it: the resolved table, warnings and clamps',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'lint', 'validate', 'preview', 'contrast'],
+    notes: [
+      'warnings go to stderr; --strict exits 2 when there is at least one',
+      'a <json-source> is a style document or {"doc": …}; nothing is stored',
+    ],
+    examples: ['tm8 style resolve <ref> --strict'],
+  },
+  'styles.export': {
+    cmd: ['style', 'export'],
+    syn: 'tm8 style export <ref> [--type css|json] [--only set|all]',
+    sum: 'Print a style as a .cv2-root { --pn-*: … } stylesheet or as a .tm8style.json document',
+    authz: 'entity',
+    input: 'none',
+    tags: ['theme', 'download', 'css', 'json', 'backup'],
+    notes: ['--only set prints the variables the style sets; --only all prints the whole resolved table'],
+    examples: ['tm8 style export <ref> --type css'],
+  },
+  'identity.stylePrefs.get': {
+    cmd: ['style', 'use'],
+    syn: 'tm8 style use [<ref>] [--dark <ref>|none] [--follow-os | --no-follow-os] [--trust-css] [--mutation-id <id>]',
+    sum: 'Read your current style choice: current, dark pairing and follow-OS',
+    authz: 'server',
+    input: 'none',
+    tags: ['theme', 'current', 'preference', 'me'],
+  },
+  'identity.stylePrefs.set': {
+    cmd: ['style', 'use'],
+    syn: 'tm8 style use [<ref>] [--dark <ref>|none] [--follow-os | --no-follow-os] [--trust-css] [--mutation-id <id>]',
+    sum: 'Choose the style you see, in every tab and every Space; with no arguments, print your current choice',
+    authz: 'server',
+    input: 'bound',
+    tags: ['theme', 'select', 'switch', 'preference', 'dark-mode'],
+    notes: [
+      'writes only your own preference: nobody can set another person\'s style, and --as is refused',
+      '--trust-css allows the named space style\'s custom css to run for you; variables apply without it',
+      'with no arguments it reads instead (identity.stylePrefs.get)',
+    ],
+    examples: ['tm8 style use <ref> --dark <ref> --follow-os'],
+  },
+  'spaces.styleDefault.get': {
+    cmd: ['style', 'default'],
+    syn: 'tm8 style default [<space-ref|builtin-ref>] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Read the Space\'s default style — what members who never chose one see',
+    authz: 'space',
+    input: 'none',
+    tags: ['theme', 'default', 'new-members'],
+  },
+  'spaces.styleDefault.set': {
+    cmd: ['style', 'default'],
+    syn: 'tm8 style default [<space-ref|builtin-ref>] [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Read or set the Space\'s default style (setting it is for human space admins)',
+    authz: 'space',
+    input: 'bound',
+    tags: ['theme', 'default', 'admin', 'new-members'],
+    notes: [
+      'only a space style or a built-in can be the default — a personal style is invisible to other members',
+      'agents cannot set it; with no <ref> the command reads the current default',
+    ],
+    examples: ['tm8 style default <space-ref> --space <space-id>'],
   },
   // ── auth (Identity v2 Stage 1: local accounts) ───────────────────────────
   'auth.signup': {
@@ -359,6 +612,59 @@ const ROWS: Record<OperationName, Row> = {
       'the account row and its memberships are kept, so what it wrote still renders',
       'links to this Server stored elsewhere go stale on their next 401',
     ],
+  },
+  // ── filesystem path grants (migration 282, doc 01a0fb62 §4) ──────────────
+  'node.accounts.list': {
+    cmd: ['node', 'account', 'list'],
+    syn: 'tm8 node account list',
+    sum: 'List every account on this Server — who a filesystem path grant can be addressed to',
+    authz: 'server',
+    input: 'none',
+    tags: ['account', 'node', 'admin', 'grant'],
+    notes: ['the caller must be an authenticated human node admin on a session not pinned to a space'],
+  },
+  'node.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'list'],
+    syn: 'tm8 node path-grant list [--include-revoked]',
+    sum: 'List the filesystem roots node admins granted to members for browsing and selecting project folders',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission'],
+    notes: [
+      'node admins hold every TM8_PROJECT_ROOTS entry implicitly; those are never listed',
+      'the caller must be an authenticated human node admin on a session not pinned to a space',
+    ],
+  },
+  'node.pathGrants.create': {
+    cmd: ['node', 'path-grant', 'add'],
+    syn: 'tm8 node path-grant add <account-id|username> <path> [--note <text>] [--mutation-id <id>]',
+    sum: 'Grant one member one filesystem root to browse and select project folders under',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'node', 'admin', 'permission', 'allow'],
+    notes: [
+      'the path is realpath\'d and must lie inside TM8_PROJECT_ROOTS; a symlink cannot widen it',
+      'granting the same root to the same account again re-opens a revoked grant',
+      'a grant lets the member browse and select; nothing reads files through it',
+    ],
+  },
+  'node.pathGrants.revoke': {
+    cmd: ['node', 'path-grant', 'revoke'],
+    syn: 'tm8 node path-grant revoke <grant-id> [--mutation-id <id>]',
+    sum: 'Revoke a filesystem path grant; the row is kept for the audit trail',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['path', 'grant', 'revoke', 'filesystem', 'node', 'admin'],
+  },
+  'identity.pathGrants.list': {
+    cmd: ['node', 'path-grant', 'mine'],
+    syn: 'tm8 node path-grant mine',
+    sum: 'List the filesystem roots a node admin granted you to browse and select project folders under',
+    authz: 'server',
+    input: 'none',
+    tags: ['path', 'grant', 'folder', 'filesystem', 'me'],
   },
   // ── credentials (Tier B per-member vendor credentials) ───────────────────
   //
@@ -547,6 +853,43 @@ const ROWS: Record<OperationName, Row> = {
       'private clears both default flags and kills every live session its owner did not launch',
     ],
   },
+  // 992 (task 01a10201): the first `credentials.*` rows with a command. Nothing
+  // in the security model changed to allow it — see the note above
+  // `credentials.status`: the Server admits a `cli` human and refuses an agent.
+  'credentials.space.share': {
+    cmd: ['credential', 'share'],
+    syn: 'tm8 credential share <space-credential-id> --member <account-or-member-id> [--mutation-id <id>]',
+    sum: 'Share a private space credential you own with one member of its space — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['credential', 'space', 'share', 'grant', 'member', 'settings'],
+    notes: [
+      'the member may then launch on it, pinned or as their own default; the stored key, its hint and the vendor login stay hidden from them',
+      'refused for a public or space-owned credential (every member may already use it), for yourself, and for anyone not an active member of the space',
+      'idempotent: sharing again answers `shared: false`',
+    ],
+  },
+  'credentials.space.unshare': {
+    cmd: ['credential', 'unshare'],
+    syn: 'tm8 credential unshare <space-credential-id> --member <account-or-member-id> --yes [--mutation-id <id>]',
+    sum: 'Stop sharing a private space credential with a member and stop their sessions on it — its owner or a space admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['credential', 'space', 'share', 'revoke', 'member', 'settings'],
+    notes: [
+      'clears their own default on it; every live session they launched on it is stopped',
+      'the credential itself, its visibility, defaults and everyone else\'s sessions are untouched',
+    ],
+  },
+  'credentials.space.shares': {
+    cmd: ['credential', 'shares'],
+    syn: 'tm8 credential shares <space-credential-id>',
+    sum: 'List who a private space credential is shared with — every grantee to its owner or an admin, else only your own row',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'space', 'share', 'member', 'audit', 'settings'],
+  },
   'credentials.space.spaceDefaultConsent': {
     cmd: null,
     sum: 'Let (or stop) a public credential you own serving as the space default — its owner, human sessions only',
@@ -661,12 +1004,13 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['link', 'space', 'cross-space', 'settings'],
     notes: [
-      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
+      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it — an agent sees it while its human is signed in on the link',
+      'address a linked Space with `tm8 --space <link-id|target-space-id|alias> …`; each link allows 120 calls a minute per sign-in',
     ],
   },
   'spaceLinks.add': {
     cmd: ['link', 'add'],
-    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    syn: 'tm8 link add <target-space-id> [--alias <alias>] [--target-server <server-id|name>] [--mutation-id <id>]',
     sum: 'Link another Space you are a Member of to this one — human sessions only',
     authz: 'space',
     input: 'bound',
@@ -676,7 +1020,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.login': {
     cmd: ['link', 'login'],
-    syn: 'tm8 link login <alias|link-id> [--mutation-id <id>]',
+    syn: 'tm8 link login <alias|link-id> [--pairing-code <code>] [--mutation-id <id>]',
     sum: 'Sign in to a linked Space: store your own 90-day session for it, sealed — human sessions only',
     authz: 'server',
     input: 'bound',
@@ -685,6 +1029,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'agents you launch may use it; nobody else can, and no response carries it',
       'an agent is refused by the Server; it asks its human to run this',
+      'a link to another server (W9c) signs in with --pairing-code: the code `tm8 link grant` printed there',
     ],
   },
   'spaceLinks.relogin': {
@@ -716,7 +1061,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaceLinks.setSpawn': {
     cmd: null,
-    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. Allow spawn is stored per link; it is enforced when cross-space spawn ships.',
+    sum: 'Set your own spawn switch and budget on a linked Space — human sessions only. With Allow spawn on, agents working for you may spawn, resume or dispatch sessions in the target through the link (no budget is enforced yet); off stops new ones.',
     authz: 'server',
     input: 'bound',
     side: 'durable',
@@ -735,6 +1080,7 @@ const ROWS: Record<OperationName, Row> = {
       'the CLI sends it for you: from a session, `--space <alias|space-id>` naming another Space routes every call of that command through it, and nothing else reaches the target',
       'the refused set is SPACE_LINK_REFUSED in @tm8/contract, prefix-matched plus exact entries (voice.token.create) on the exact catalog name, on the home server before anything is forwarded',
       'every call writes one audit row in the home Space; read it with spaceLinks.audit',
+      'a session you spawned through the link stays yours to follow: `tm8 --space <alias> session transcript|journal <child-id>` reads it and `tm8 --space <alias> message send --to <child-id>` talks to it; every other session\'s body is refused (session_body)',
     ],
   },
   'spaceLinks.audit': {
@@ -744,6 +1090,100 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'none',
     tags: ['link', 'cross-space', 'audit'],
+  },
+  // 278 (D2): the TARGET side. An admin of this Space sees the links INTO it,
+  // the calls made through them, and revokes or restores one. The admin check
+  // holds the session pin (D7): owning the home Space too changes nothing.
+  'spaceLinks.inbound.list': {
+    cmd: ['link', 'inbound'],
+    syn: 'tm8 link inbound',
+    sum: 'List the space links INTO this Space from other Spaces, with each Member who holds one — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'space', 'cross-space', 'admin', 'settings'],
+    notes: [
+      'creating a link needs no approval here; an admin sees it, reads its calls with `tm8 link inbound-audit`, and revokes it with `tm8 link revoke`',
+    ],
+  },
+  'spaceLinks.inbound.audit': {
+    cmd: ['link', 'inbound-audit'],
+    syn: 'tm8 link inbound-audit [<link-id|home-space-id>] [--limit <count>] [--before <timestamp>]',
+    sum: 'Read the calls other Spaces made INTO this Space through space links, newest first — admins of this Space only',
+    authz: 'space',
+    input: 'none',
+    tags: ['link', 'inbound', 'cross-space', 'audit', 'admin'],
+    notes: ['scoped to this Space: only calls whose target is this Space are returned'],
+  },
+  'spaceLinks.inbound.revoke': {
+    cmd: ['link', 'revoke'],
+    syn: 'tm8 link revoke <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Revoke a space link INTO this Space: every Member\'s stored session on it ends and no sign-in works until it is restored — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'revoke', 'cross-space', 'admin'],
+    notes: [
+      'an agent is refused by the Server; it asks its human to run this',
+      'owning the linking Space too is no exception: a revoked link refuses its owners\' sign-in as well',
+    ],
+  },
+  'spaceLinks.inbound.restore': {
+    cmd: ['link', 'restore'],
+    syn: 'tm8 link restore <link-id|home-space-id> [--mutation-id <id>]',
+    sum: 'Restore a revoked space link INTO this Space; each Member signs in again for themselves — human admins of this Space only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'restore', 'cross-space', 'admin'],
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+  },
+  // W9c (301): the target side of a link from ANOTHER server.
+  'spaceLinks.inbound.grant': {
+    cmd: ['link', 'grant'],
+    syn: 'tm8 link grant <home-space-id> [--label <name>] [--allow-spawn] [--mutation-id <id>]',
+    sum: 'Let a Space on another server act in this Space as you through a space link; prints a one-time pairing code for that server\'s `tm8 link login` — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['link', 'inbound', 'grant', 'remote', 'cross-space', 'server'],
+    notes: [
+      'needs TM8_REMOTE_SPACE_LINKS on, on this server and the home server; off, it is refused',
+      'the code is single use and expires in 10 minutes; only its hash is stored here',
+      'spawning through the link needs --allow-spawn here AND the home row\'s own spawn switch',
+    ],
+  },
+  'entities.refs.add': {
+    cmd: ['entity', 'ref', 'add'],
+    syn: 'tm8 entity ref add <entity-id> <target-entity-id> --link <alias|link-id|space-id> [--mutation-id <id>]',
+    sum: 'Point an entity in this Space at an entity in a linked Space — a cross-space reference, not an edge',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'link', 'cross-space', 'relate', 'relates_to', 'chip'],
+    notes: [
+      'an edge never crosses spaces (`edge create` across spaces is an invariant_violation); use this instead',
+      'needs YOUR human\'s space link to the target Space, signed in: no active link, no reference (`tm8 link list` shows them; a human runs `tm8 link add` and `tm8 link login`)',
+      'the target is read through the link first (one audited `entities.get` in `tm8 link audit`), and its kind and title are kept as the snapshot; adding the same target again refreshes it',
+      'name the link with --link, not the global --space: --space would run the whole command inside the linked Space',
+    ],
+    examples: ['tm8 entity ref add <entity-id> <target-entity-id> --link research'],
+  },
+  'entities.refs.list': {
+    cmd: ['entity', 'ref', 'list'],
+    syn: 'tm8 entity ref list <entity-id>',
+    sum: 'List an entity\'s references into linked Spaces — live when you can read the target, the snapshot otherwise',
+    authz: 'entity',
+    input: 'none',
+    tags: ['ref', 'reference', 'link', 'cross-space'],
+  },
+  'entities.refs.remove': {
+    cmd: ['entity', 'ref', 'remove'],
+    syn: 'tm8 entity ref remove <entity-id> <ref-id> [--mutation-id <id>]',
+    sum: 'Remove one cross-space reference from an entity',
+    authz: 'entity',
+    input: 'bound',
+    side: 'durable',
+    tags: ['ref', 'reference', 'cross-space'],
   },
   'node.credentials.status': {
     cmd: null,
@@ -1160,20 +1600,22 @@ const ROWS: Record<OperationName, Row> = {
   // ── universal entities ───────────────────────────────────────────────────
   'entities.get': {
     cmd: ['entity', 'get'],
-    syn: 'tm8 entity get <entity-id>',
+    syn: 'tm8 entity get <entity-id> [--story-page]',
     sum: 'Read one entity of any kind, with its current version',
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
     notes: [
       'json is BOUNDED by default: identity, version, state, content (long strings capped at 1000 chars, named in `truncated`), and edge/child COUNTS instead of connections and hierarchy; `--full` returns the old unbounded envelope',
+      'story reads include a bounded context trail with cursor continuation commands even with --full; --story-page explicitly loads the complete browser page',
+      'entity get and entity context accept a unique readable id prefix (at least 8 hex digits, with canonical hyphens or without); mutations still require full ids',
       'for relationships, messages, and acceptance ids read `tm8 entity context <entity-id>` (bounded, cursors) — a closeout never needs entity get',
     ],
     examples: ['tm8 entity get <entity-id> --format json', 'tm8 entity get <entity-id> --format json --full'],
   },
   'entities.create': {
     cmd: ['entity', 'create'],
-    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
@@ -1181,27 +1623,42 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+      'where it belongs (Design Rules §2.4) is decided by what the entity is about, not by the task you happen to be on: (1) part of an existing entity of the SAME kind → --parent <that-id>: a subtask under the task it breaks down, a sub-doc under the doc it details, a child story, a sub-session (find it with `tm8 entity query --kind <kind> --words "<terms>"` or the hierarchy in `tm8 entity context`); (2) part of nothing → a root (--parent none); (3) an umbrella for existing entities → create it, then `tm8 entity move <child-id> --parent <new-id> --position <n> --expect-version <n>` for each; (4) a cross-kind link is an edge, never a parent — a deliverable of a task gets `tm8 edge create <task-id> produces <new-id>`, an input or reference `--attach-to <task-id>`; (5) follow-up work is a root linked to its origin, not a subtask; (6) only roots go into a story (`tm8 collection add <story-id> <root-id>`), their children follow through the parent',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
+      'task sugar: --criterion <text> (repeatable) writes acceptanceCriteria with ids ac1, ac2… in flag order; --estimate <n> writes pointsEstimate, a whole number 1-100. Both are optional: add criteria when they help, and tick each one as it is met with `tm8 task tick`. Using a flag and the same field in --content is refused',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
-      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
+      "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
+      "craft content shape: {description} (title rides the envelope). A craft is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another craft): create the page, then `tm8 collection add <craft-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A craft never contains itself or a craft above it. Read the pages with `tm8 entity context <craft-id>`. DEPRECATED alias: the old kind name `design` is still accepted as input (never output) until 2027-01-08",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
-      'a header applies to team_member, doc, artifact, drawing, file, task and collection; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
+      'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create task "<title>" --criterion "<testable outcome>" --criterion "<another>" --estimate 3',
+      'tm8 entity create doc "<title>" --content @body.json && tm8 edge create <task-id> produces <new-doc-id>',
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
       'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
+      'tm8 entity create craft "<title>" --content \'{"description":"…"}\'',
     ],
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
-    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--mutation-id <id>]',
-    sum: 'Change an entity title or content under an optimistic version guard',
+    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--status <status>] [--mutation-id <id>]',
+    sum: 'Change an entity title, content or a story\'s status under an optimistic version guard',
     authz: 'entity',
     input: 'bound',
     ver: 'expectedVersion',
-    tags: ['edit', 'rename', 'patch'],
+    tags: ['edit', 'rename', 'patch', 'status', 'story', 'transition'],
+    notes: [
+      '--status <status> sets content.status. On a STORY it is the status door: to_do | in_progress | done | cancelled, or a state name of the story\'s workflow. The ruled workflow moves apply (to_do ⇄ in_progress → done, to_do → done, any → cancelled, done/cancelled → to_do; done → in_progress is refused, reopen through to_do); a refused move answers transition_not_allowed',
+      'a story\'s status is MANUAL: it is never derived from its contents. Its progress / taskProgress (in `tm8 entity context <story-id>`) are the derived signal, and the context points at this command when they disagree with the status',
+      'a task moves through `tm8 task transition` / `tm8 task complete`, not --status',
+    ],
+    examples: [
+      'tm8 entity update <story-id> --expect-version <n> --status in_progress',
+      'tm8 entity update <entity-id> --expect-version <n> --title "<title>"',
+    ],
   },
   'entities.header.set': {
     cmd: ['entity', 'header', 'set'],
@@ -1215,7 +1672,7 @@ const ROWS: Record<OperationName, Row> = {
       'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; every field is optional and nothing is refused for length — aim for --when-to-use ≤ 400 chars, --summary ≤ 600, --keyword ≤ 12 × ≤ 40; blank text is dropped',
       '--when-to-use is routing text, shown WHOLE to every later agent (never cut; past 400 chars the write warns header_long): the situation in which to open this, in one sentence — good: "Open when changing how balances are rounded"; bad: "Rounding policy doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it; it is cut at 600 and is the first thing a tight prompt leaves out',
       '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; none there means 0), never the entity\'s; omit it for last-writer-wins; a header write never moves the entity version',
-      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
+      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection, story; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
       're-saving unchanged text re-pins a stale header to the current body ("mark current")',
     ],
     examples: [
@@ -1431,6 +1888,8 @@ const ROWS: Record<OperationName, Row> = {
       'merges by criterion id on the Server: criteria not named are left as stored, so the whole acceptanceCriteria list is never restated',
       'an id the task does not carry is refused with the ids it does carry',
       'ids and the version are in `tm8 entity context <task-id>` (acceptance, acceptanceWrite)',
+      'tick each criterion the moment it is met, not all at the end: the receipt shows acceptance done/total and the ids still open',
+      'when the tick leaves nothing open, the receipt\'s `next` is the step to run: `tm8 task complete <task-id> --expect-version <n> --by <your actor id>`, or `tm8 task transition <task-id> in_review` on a task that carries the opt-in pr_merged gate',
     ],
     examples: [
       'tm8 task tick <task-id> f1 f2 --expect-version <n>',
@@ -1439,7 +1898,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.commands.work': {
     cmd: ['task', 'transition'],
-    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--mutation-id <id>]',
+    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--claim] [--mutation-id <id>]',
     sum: 'Move a task through its work lifecycle, short of completion',
     authz: 'entity',
     input: 'bound',
@@ -1447,6 +1906,22 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'enum values use their exact contract spelling, including `in_review`',
       'transition time is Server-owned; a client cannot backdate lifecycle history',
+      'changes only the status: the caller is recorded as working_on the task only with --claim (an edge the caller already holds follows the transition)',
+      'inside a tm8 session --claim is the SESSION\'s claim; claiming from a completed session reopens it (logged)',
+      'open and cancelled end every claim on the task (task_reset / task_cancelled); to hand off without changing the status, use `tm8 task release`',
+    ],
+  },
+  'entities.commands.release': {
+    cmd: ['task', 'release'],
+    syn: 'tm8 task release <task-id> --note <hand-off> [--mutation-id <id>]',
+    sum: 'Hand a task off: end your claim on it with a note, leaving its status as it is',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['release', 'handoff', 'hand-off', 'unclaim', 'claim'],
+    notes: [
+      'ends the caller\'s working_on claim (inside a session, the session\'s) with endReason released; the task keeps its status',
+      'the note is required: it is the hand-off the next worker reads',
+      'no active claim → invariant_violation / no_claim',
     ],
   },
   'entities.commands.pull': {
@@ -1516,7 +1991,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'bound',
     tags: ['link', 'relate', 'connect'],
-    notes: ['`props.origin` is Server-owned and never accepted from a client'],
+    notes: [
+      '`props.origin` is Server-owned and never accepted from a client',
+      'both ends must be in the same Space; to point at an entity in a linked Space use `tm8 entity ref add <entity-id> <target-entity-id> --link <alias>`',
+    ],
   },
   'edges.patch': {
     cmd: ['edge', 'update'],
@@ -1542,6 +2020,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'none',
     tags: ['schema', 'registry', 'relationships'],
+    notes: [
+      'each type prints its one-line meaning; a deprecated type names its replacement and refuses new rows',
+      '`tm8 help edge-type` says which edge each meaning uses and which ones the server records for you',
+    ],
   },
 
   // ── messages ─────────────────────────────────────────────────────────────
@@ -1630,6 +2112,63 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setCredentials': {
+    cmd: ['chat', 'credentials'], syn: 'tm8 chat credentials <chat-id> <auto|member|space|node> [--credential <space-credential-id>]',
+    sum: 'Choose model credentials for the next turns of a chat', authz: 'entity', input: 'bound',
+    tags: ['chat', 'credential', 'switch'],
+    notes: ['Human-only; policy and credential access are checked before use. Applies to the next claimed turn.',
+      'Switching account directories may reset native model context; stored tm8 messages survive.'],
+  },
+  'chat.interrupt': {
+    cmd: ['chat', 'stop'], syn: 'tm8 chat stop <chat-id>',
+    sum: "Stop a chat's running turn", authz: 'entity', input: 'bound',
+    tags: ['chat', 'stop', 'interrupt', 'cancel', 'turn'],
+    notes: ['ends the running turn only; turns queued behind it still run, because they are other messages — often other people\'s',
+      'a turn still preparing is stopped before its input is sent; `requested` means the turn will end and its done part says how',
+      '`not_running` means this node has no turn to stop for the chat',
+      'any member who can read the chat may stop it; an agent runtime credential is refused'],
+    examples: ['tm8 chat stop <chat-id>'],
+  },
+  'chat.setMcpSelections': {
+    cmd: ['chat', 'connectors'],
+    syn: 'tm8 chat connectors <chat-id> --input <json-source>  (an array of {serverId,credentialId?}, [] for none, null for defaults)',
+    sum: "Change a live chat's MCP connectors — applies from its next turn",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection'],
+    notes: [
+      'before this a chat\'s connectors were fixed at creation; this is the only way to change them afterwards',
+      'three distinct values: `null` goes back to the defaults resolved fresh each turn, `[]` turns every connector off, and a non-empty array REPLACES the selection',
+      'applies from the next turn: a turn already running keeps the connectors it was bound with',
+      'only the human who configures the chat may call it; an agent runtime credential is refused',
+    ],
+    examples: [
+      'tm8 chat connectors <chat-id> --input \'[{"serverId":"<server-id>"}]\'',
+      'tm8 chat connectors <chat-id> --input null',
+    ],
+  },
+  /*
+   * NO CLI COMMAND, and the gap is named rather than hidden: `tm8 chat
+   * connectors` is a WRITE, so a terminal cannot currently look at a thread's
+   * connectors without changing them. This door was added for §10.4's composer
+   * sheet, which has to know "Space defaults" from "Custom" before the user
+   * touches a toggle. A CLI read belongs with the rest of the `chat connectors`
+   * command (one path cannot serve two operations in this table), and is a
+   * follow-up rather than something to fake here.
+   */
+  'chat.getMcpSelections': {
+    cmd: null,
+    sum: "Read a chat's stored MCP connector selection — null means it is on the Space defaults, resolved fresh each turn",
+    authz: 'entity',
+    input: 'none',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection', 'defaults'],
+    reason: 'the terminal form of this read belongs on `tm8 chat connectors`, which today only writes; this door was added for the chat composer sheet',
+    notes: [
+      '`null` is the ANSWER and not a missing value: the thread has no stored row, so it uses the Space defaults resolved at each turn',
+      'a non-empty list, or `[]`, means a human chose it — since 354 a chat\'s own launch no longer writes its resolved defaults back',
+      'human sessions only, and a chat opened through a Space link is refused: a link chat gets no connectors',
+    ],
+  },
   'chat.setModel': {
     cmd: ['chat', 'model'],
     syn: 'tm8 chat model <chat-id> <model>',
@@ -1652,24 +2191,37 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
-    examples: ['tm8 entity query --kind task --assignee <actor-id> --status working'],
+    notes: [
+      '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
+      '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
+      '--status is the task work status (open|pulled|working|in_review|done|blocked|cancelled); a pull request\'s or session\'s own state is not a query filter',
+    ],
+    examples: [
+      'tm8 entity query --kind task --assignee <actor-id> --status working',
+      'tm8 entity query --space <space-id> --kind story --roots',
+      'tm8 entity query --kind story --parent <story-id>',
+    ],
   },
   'collections.addItem': {
     cmd: ['collection', 'add'],
-    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    syn: 'tm8 collection add <collection-id> <entity-id>... [--from-file <path|->] [--position <number>] [--mutation-id <id>]',
+    sum: 'Put an entity into a collection, a story or a craft — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list', 'story'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story', 'craft', 'page'],
     notes: [
+      'multiple ids or --from-file (whitespace-separated ids, - for stdin) run one membership write per id and return one receipt with per-id results; partial failures return a nonzero exit code, and the reported batch mutationId makes retries safe',
+      '--position is only valid for a single entity; bulk adds append in input order and deduplicate repeated ids',
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+      'only roots belong in a story: add the top of a family, never a child (it follows through its parent) and never something whose ancestor is already a root of the story',
+      'the container may also be a craft: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a craft cannot contain itself or a craft it is inside — see `tm8 entity context <craft-id>`',
     ],
     examples: [
       'tm8 collection add <collection-id> <entity-id>',
@@ -1679,12 +2231,14 @@ const ROWS: Record<OperationName, Row> = {
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection, a story or a craft — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin', 'story'],
+    tags: ['membership', 'curate', 'unpin', 'story', 'craft', 'page'],
     notes: [
+      'add and remove use tm8.receipt.v1 for agent callers; --full preserves the full result',
       'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+      'the container may also be a craft: removing takes a page out of the craft; the page entity is never deleted',
     ],
   },
   'graph.query': {
@@ -1826,7 +2380,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['git', 'history', 'log', 'file', 'revision', 'attribution', 'provenance'],
     notes: [
       'a READ — argv-only git log --follow; the path is a pathspec inside the project checkout, never a directory',
-      'each revision carries the created_in session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
+      'each revision carries the authored_from session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
     ],
   },
   'projects.file.blame': {
@@ -1838,7 +2392,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['git', 'blame', 'attribution', 'provenance', 'session', 'hunk'],
     notes: [
       'a READ — argv-only git blame --porcelain, bounded by --max-lines; the cut reports how many lines it holds back',
-      'attribution comes ONLY from the created_in edge; absent facts are absent claims',
+      'attribution comes ONLY from the authored_from edge; absent facts are absent claims',
     ],
   },
   'projects.update': {
@@ -1868,13 +2422,35 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.projects.create': {
     cmd: ['project', 'add'],
-    syn: 'tm8 project add <folder-id> [--name <name>] [--space <space-id>] [--mutation-id <id>]',
-    sum: "Name the Space's project on a folder granted to that Space",
+    syn: 'tm8 project add <folder-id> [--name <name>] | [--working-dir <absolute-path>] --name <name> [--ensure-working-dir] [--trust trusted|untrusted]  [--space <space-id>] [--mutation-id <id>]',
+    sum: "Name the Space's project on a folder granted to that Space, or register a folder on the node for it",
     authz: 'space',
     input: 'bound',
     notes: [
       'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
+      '--working-dir registers and grants a folder in one step; a Space admin who is not a node admin may do so only inside an explicitly configured TM8_PROJECT_ROOTS, and only untrusted',
+      'with neither <folder-id> nor --working-dir, --name alone creates the default folder ~/<name> on the node (refused if it already exists) and registers it the same way',
     ],
+  },
+  'spaces.projects.clone': {
+    cmd: ['project', 'clone'],
+    syn: 'tm8 project clone <github-repo> --dest <absolute-parent> [--dir <name>] [--name <name>] [--branch <branch>] [--trust trusted|untrusted] [--space <space-id>] [--mutation-id <id>]',
+    sum: "Clone a GitHub repository onto the node as a job and add it as one of the Space's projects",
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'answers 202 with the job at once; poll it with tm8 project clone-status <job-id>',
+      "credential order: the caller's GitHub login, then the Space's GitHub credential, then the node token where node policy allows it; the token never reaches the remote URL or a log",
+      'a Space admin who is not a node admin may clone only inside an explicitly configured TM8_PROJECT_ROOTS',
+    ],
+  },
+  'spaces.projects.cloneJobs.get': {
+    cmd: ['project', 'clone-status'],
+    syn: 'tm8 project clone-status <job-id> [--space <space-id>]',
+    sum: 'Read one clone job: queued, cloning, registering, succeeded (with the project) or failed (with why)',
+    authz: 'space',
+    input: 'none',
+    notes: ["only the job's own caller can read it; anyone else gets not_found"],
   },
   'gate.folders.list': {
     cmd: ['project', 'folders'],
@@ -1890,7 +2466,10 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Register a folder inside TM8_PROJECT_ROOTS, optionally granting it to one Space',
     authz: 'server',
     input: 'bound',
-    notes: ['gate (node) admins only; a folder is granted to at most one Space'],
+    notes: [
+      'gate (node) admins only; a folder is granted to at most one Space',
+      'a Space admin (or an agent session acting for one) uses tm8 project add --working-dir or tm8 project clone instead',
+    ],
   },
   'projects.unlink': {
     cmd: ['project', 'unlink'],
@@ -2052,6 +2631,14 @@ const ROWS: Record<OperationName, Row> = {
     input: 'unbound',
     notes: ['`inbox mark-read` owns notification state; `message mark-read` owns an anchor read cursor'],
   },
+  'entities.markSeen': {
+    cmd: null,
+    sum: 'Record the signed-in member activating an entity in a UI list',
+    authz: 'entity',
+    input: 'bound',
+    reason: 'ui_entity_list_only',
+    notes: ['Permanent personal seen state; invoked only by entity-list activation.'],
+  },
   'readMarks.upsert': {
     cmd: ['message', 'mark-read'],
     syn: 'tm8 message mark-read <anchor-entity-id> --through <message-id> [--mutation-id <id>]',
@@ -2186,10 +2773,232 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['online', 'who', 'typing'],
   },
 
+  // ── workspace remote bridge (Spec C, doc 01a1111d-589e) ───────────────────
+  'workspace.instances.list': {
+    cmd: ['workspace', 'instances'],
+    syn: 'tm8 workspace instances [--space <space-id>]',
+    sum: 'List your live Workspace windows in this Space (an agent sees its human’s)',
+    authz: 'space',
+    input: 'none',
+    tags: ['window', 'windows', 'browser', 'live', 'workspace', 'instance'],
+    notes: [
+      'only windows signed in as the caller’s own identity; an agent token carries its owner’s identity, so an agent sees the windows of the human it works for',
+      'no tab titles or ids here: `tm8 workspace inspect` returns the tabs',
+    ],
+    examples: ['tm8 workspace instances --space <space-id>'],
+  },
+  'workspace.inspect': {
+    cmd: ['workspace', 'inspect'],
+    syn: 'tm8 workspace inspect [--instance <instance-id>] [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
+    sum: 'Read a live Workspace window’s tabs, scope, active tab and layout',
+    authz: 'space',
+    input: 'none',
+    tags: ['tabs', 'window', 'workspace', 'state', 'scope'],
+    notes: [
+      'ids and kinds only, never draft or chat content; a fresh read every time',
+      'with no --instance the node picks your only live window, or your only focused one',
+    ],
+    examples: ['tm8 workspace inspect --instance <instance-id>'],
+  },
+  'workspace.command': {
+    cmd: ['workspace', 'command'],
+    syn: 'tm8 workspace command <command-name> [--args <json>] [--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
+    sum: 'Run one Workspace command in your live window (the verbs below are sugar for it)',
+    authz: 'space',
+    input: 'bound',
+    side: 'none',
+    ver: 'expectedVersion',
+    tags: ['tabs', 'window', 'workspace', 'remote', 'drive'],
+    notes: [
+      'the window runs the command exactly as its own UI would, with source `remote`; it cannot resolve the human’s choices, discard unsaved work or mark a draft clean',
+      'idempotent by --request-id: the same id and arguments return the recorded result; the same id with different arguments is refused (request_id_reused); after a timeout (no_reply, exit 7) retry with the same id',
+      'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict',
+    ],
+    examples: ['tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<task-id>"}\''],
+  },
+
+  'workspace.list': {
+    cmd: ['workspace', 'list'],
+    syn: 'tm8 workspace list [--space <space-id>]',
+    sum: 'List your workspaces in this Space: names, colors, which is active, tab and draft counts',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'workspaces', 'list', 'active'],
+    notes: [
+      'your own workspaces only (an agent lists the ones of the human it works for), in list order',
+      'never empty: with no stored workspace yet it lists the default "Main" with id null',
+    ],
+  },
+
+  'workspace.get': {
+    cmd: ['workspace', 'get'],
+    syn: 'tm8 workspace get [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
+    sum: 'Read your stored workspace in this Space: tabs, scope, layout, drafts (no window needed)',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'tabs', 'stored', 'drafts', 'state'],
+    notes: [
+      'your own workspace only (an agent reads the one of the human it works for); tabs whose entity you can no longer read are marked unavailable, never titled',
+      'revision 0 means you have no stored workspace in this Space yet',
+    ],
+    examples: ['tm8 workspace get --space <space-id>'],
+  },
+  // ── craft workspaces (Craft redesign doc 01a1255d §3, §4) ──────────────────
+  'workspace.crafts.list': {
+    cmd: ['workspace', 'crafts'],
+    syn: 'tm8 workspace crafts [list] [--space <space-id>]',
+    sum: 'List your craft workspaces in this Space: which crafts are open in your Craft top bar, in order',
+    authz: 'space',
+    input: 'none',
+    tags: ['craft', 'crafts', 'workspace', 'tabs', 'open', 'top bar'],
+    notes: [
+      'your own only (an agent lists the ones of the human it works for); a craft workspace is hidden from `tm8 workspace list` and its cap of 20',
+      'arrange the list with tm8 workspace crafts open|close <craft-id> and crafts move <craft-id> --before <craft-id|last> (at most 30 open: open_limit, exit 6)',
+    ],
+    examples: ['tm8 workspace crafts --space <space-id>'],
+  },
+  'workspace.crafts.get': {
+    cmd: ['workspace', 'crafts', 'get'],
+    syn: 'tm8 workspace --craft <craft-id> get  |  tm8 workspace crafts get <craft-id>',
+    sum: 'Read your tabs on one craft: the pinned overview first, then the pages you have open',
+    authz: 'space',
+    input: 'none',
+    tags: ['craft', 'workspace', 'tabs', 'pages', 'overview'],
+    notes: [
+      'revision 0 / no row yet: only the overview tab, which is the craft itself',
+      'a tab whose page has left the craft is dropped on read',
+    ],
+    examples: ['tm8 workspace --craft <craft-id> get'],
+  },
+  'workspace.crafts.command': {
+    cmd: ['workspace', 'crafts', 'command'],
+    syn: 'tm8 workspace --craft <craft-id> {tabs open <kind> <id> | tabs close <tab|entity> | tabs move <tab|entity> --before <tab|last> | tabs focus <tab|entity>}',
+    sum: "Open, close, reorder or focus tabs in your workspace for one craft (the human's own, or from a chat/session started on that craft)",
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['craft', 'workspace', 'tabs', 'open', 'close', 'move', 'focus', 'agent'],
+    notes: [
+      'a tab opens only on the craft or one of its direct pages (not_a_page, exit 6): add the page to the craft first; kinds: craft, graph, doc, artifact, drawing',
+      'the overview tab is pinned: never closed or moved, nothing goes before it (pinned, exit 6)',
+      'an agent may change a craft\'s tabs only from a chat or session started on that craft (forbidden / not_craft_session, exit 4)',
+      'also: tm8 workspace crafts open|close|move <craft-id> for the top bar, and crafts command <craft-id> <command> --args <json>; idempotent by --request-id',
+    ],
+    examples: [
+      'tm8 workspace --craft <craft-id> tabs open doc <doc-id>',
+      'tm8 workspace --craft <craft-id> tabs move <entity-id> --before last',
+    ],
+  },
+  'workspace.drafts.patch': {
+    cmd: ['workspace', 'drafts', 'set'],
+    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...] [--workspace <id|name>] [--expect-workspace <id>]',
+    sum: 'Write fields of an open draft in your workspace (per-field, last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'none',
+    tags: ['workspace', 'draft', 'form', 'field', 'value'],
+    notes: [
+      'the draft must be open as a draft tab (tm8 workspace drafts open <kind>); the human submits it, never this command',
+      'a value is parsed as JSON when it can be, else taken as text; the write marks the draft dirty, so a later close asks the human',
+      'each field reports the revision it now has; pass --base <name>=<revision> to learn (in `overwrote`) when you replaced someone else’s newer edit',
+    ],
+    examples: ['tm8 workspace drafts set <draft-id> --field title=<text>'],
+  },
+
+  // ── managing the list (API doc 01a115c4 §5.7–§5.11, §8.2) ─────────────────
+  'workspace.create': {
+    cmd: ['workspace', 'create'],
+    syn: 'tm8 workspace create [<name>] [--color <color>] [--before <ws>] [--request-id <id>]',
+    sum: 'Create a workspace in this Space; it never becomes the active one',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'workspaces', 'new', 'add'],
+    notes: [
+      'no name: "Workspace N", the lowest N from 2 not taken; names are 1–64 characters and unique per Space, ignoring case (workspace_name_taken, exit 6)',
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink, or none; at most 20 workspaces per Space (workspace_cap, exit 6)',
+      'creating never switches, for a human or an agent: switch with tm8 workspace use <ws>',
+      '<ws> is a workspace id or its name (case-insensitive); idempotent by --request-id',
+    ],
+    examples: ['tm8 workspace create <name> --color <color>'],
+  },
+  'workspace.update': {
+    cmd: ['workspace', 'rename'],
+    syn: 'tm8 workspace rename <ws> <name> [--request-id <id>]',
+    sum: 'Rename or recolour one of your workspaces (last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'rename', 'color', 'colour', 'label'],
+    notes: [
+      'an agent may rename and recolour too; the human sees who did it',
+      'the same name or colour again is no_op (exit 0)',
+      'recolour with `tm8 workspace color <ws> <color|none>`',
+    ],
+    examples: ['tm8 workspace rename <ws> <name>'],
+  },
+  'workspace.reorder': {
+    cmd: ['workspace', 'reorder'],
+    syn: 'tm8 workspace reorder <ws> (--before <ws> | --last) [--request-id <id>]',
+    sum: 'Move one of your workspaces in the list (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'order', 'move', 'reorder'],
+    notes: ['the order is the human\u2019s: an agent gets human_only (exit 4)'],
+    examples: ['tm8 workspace reorder <ws> --last'],
+  },
+  'workspace.delete': {
+    cmd: ['workspace', 'delete'],
+    syn: 'tm8 workspace delete <ws> [--discard] [--request-id <id>]',
+    sum: 'Delete one of your workspaces and its drafts',
+    authz: 'space',
+    input: 'none',
+    side: 'durable',
+    tags: ['workspace', 'delete', 'remove'],
+    notes: [
+      'deleting the active workspace first switches to the next one in the list (else the previous); the last one cannot go (last_workspace, exit 6)',
+      'unsaved drafts refuse it (rejected / unsaved_changes, exit 6) unless --discard',
+      'an agent may delete only a workspace it created that is not active and has no unsaved drafts; otherwise it asks the human (exit 16, prompt id) and --discard is ignored',
+      'a replay of the same --request-id returns the recorded result',
+    ],
+    examples: ['tm8 workspace delete <ws>'],
+  },
+  'workspace.switch': {
+    cmd: ['workspace', 'use'],
+    syn: 'tm8 workspace use <ws> [--request-id <id>]',
+    sum: 'Make one of your workspaces the active one; every open window follows',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'switch', 'use', 'active', 'activate'],
+    notes: [
+      'works with no window open; already active is no_op',
+      'from an agent it only asks: exit 16 with a prompt id, and the human chooses Switch or Stay; tm8 workspace list shows the outcome',
+      'if your prompt disappears from tm8 workspace list, treat it as not accepted and ask again',
+    ],
+    examples: ['tm8 workspace use <ws>'],
+  },
+  'workspace.prompts.resolve': {
+    cmd: ['workspace', 'prompts', 'resolve'],
+    syn: 'tm8 workspace prompts resolve <prompt-id> accept|decline [--discard] [--request-id <id>]',
+    sum: 'Answer an agent\u2019s switch or delete prompt (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'prompt', 'answer', 'switch', 'delete', 'approve'],
+    notes: [
+      'accept runs the switch or delete as the human; decline leaves everything as it is',
+      'an agent gets human_only (exit 4); a prompt already answered is prompt_resolved (exit 6), an unknown or expired one prompt_not_found (exit 5)',
+      'accepting a delete of a workspace with unsaved drafts needs --discard',
+    ],
+    examples: ['tm8 workspace prompts resolve <prompt-id> accept'],
+  },
+
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--about <entity-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -2197,6 +3006,9 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['launch', 'start', 'agent', 'delegate', 'pty', 'terminal'],
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
+      '--story anchors a session directly to a story without making a task; exclusive with --task and --force-new-task (the API also excludes newTask). The story context is injected and inherited by authenticated children',
+      '--about <entity-id> records session -[about]-> entity in the spawn itself (you must be able to read it); only that edge lets the session\'s agent command your workspace on a craft — an about edge added later does not; --about is for a person (browser or cli): an agent token gets 403 about_not_allowed',
+      'an agent does not pass --about: a craft chat\'s runtime that spawns under its own chat (parentSessionId = the chat, the default for a chat) binds the session to what the chat is about automatically; a session that merely names a craft chat as its parent is not bound',
       '`--context` is launch-manifest context, NOT a runtime prompt',
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
@@ -2298,13 +3110,42 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.terminate': {
     cmd: ['session', 'terminate'],
-    syn: 'tm8 session terminate <work-session-id> [--force] --yes [--mutation-id <id>]',
-    sum: 'End a work session; `--force` requests hard process termination after the same checks',
+    syn: 'tm8 session terminate <work-session-id> [--stop [--note <text>] | --complete [--receipt <message-id>] | --mark-lost] [--force] --yes [--mutation-id <id>]',
+    sum: 'Close a work session\'s process; while its work is open it is stopped unless you pass --complete',
     authz: 'session',
     input: 'bound',
     side: 'execution',
-    tags: ['kill', 'stop', 'end'],
-    notes: ['`--force` never broadens WHO may terminate a session; it only changes how the process is stopped'],
+    tags: ['kill', 'stop', 'end', 'close'],
+    notes: [
+      'on an OPEN session with neither --stop nor --complete the work is stopped, as with --stop',
+      '--stop: outcome stopped, claims released (session_stopped), the session can be resumed later',
+      '--complete: runs `session complete` first (claim check + receipt), then closes the process as exited_clean',
+      'on a completed session terminate only closes the process; the outcome stays completed',
+      '--mark-lost records a process that is already gone (failed / lost); refused while the process is live',
+      'an agent never terminates itself to finish: it runs `tm8 session complete`',
+      '`--force` never broadens WHO may terminate a session; it only changes how the process is stopped',
+    ],
+  },
+  'execution.complete': {
+    cmd: ['session', 'complete'],
+    syn: 'tm8 session complete [<work-session-id>] [--receipt <message-id>] [--keep-process | --close-process] [--mutation-id <id>]',
+    sum: 'Mark a session\'s work completed: claim check, then the close-out message as its receipt',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['complete', 'close-out', 'finish', 'done', 'receipt'],
+    notes: [
+      'inside a tm8 session the id defaults to that session (TM8_SESSION_ID)',
+      'every claim must be done, in_review, blocked, or released with `tm8 task release --note`; otherwise invariant_violation / claims_open lists them',
+      'the receipt is --receipt, or the latest message the session wrote on its anchor; none → receipt_required',
+      'remaining in_review/blocked claims end with session_completed and the receipt as their hand-off',
+      'the process then closes (exited_clean) — run from inside the session, right after the reply; claiming a new task or `tm8 session resume` reopens it, logged',
+      '--keep-process leaves the process open; it stays open too while sessions it launched are still live (auto-close closes it later), unless --close-process',
+    ],
+    examples: [
+      'tm8 message send --to <task-id> "<close-out>" && tm8 session complete',
+      'tm8 session complete <work-session-id> --receipt <message-id> --keep-process',
+    ],
   },
   'execution.streams.attach': {
     cmd: ['session', 'attach'],
@@ -2345,6 +3186,7 @@ const ROWS: Record<OperationName, Row> = {
       'token counts are BYTE-DERIVED ESTIMATES of text crossing the CLI boundary, not the model provider’s reported usage, and never the session’s token spend',
       'character counts are exact; the estimate is derived from them by the named estimator',
       'a session spawned before this feature, or one launched without journaling, answers `available: false` rather than an empty journal',
+      'through a space link (`--space <alias>` from a session) only a session that link spawned as you is readable; any other answers `space_link_refused` (session_body)',
     ],
   },
   'execution.launch': {
@@ -2385,6 +3227,24 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['git', 'diff', 'numstat', 'changes', 'worktree', 'review'],
     reason: 'cli_runs_git_locally',
     notes: ['the numstat digest is never cut; `diffTruncated` says when the unified text was'],
+  },
+  'execution.gitCheckouts': {
+    cmd: null,
+    sum: "Read the git checkouts inside a worktree-less session's own working directory: branch, commits ahead, changed files with +/-",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'changes', 'checkout', 'scratch', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['read-only: never takes the agent\'s index lock; a worktree session answers `available:false` (has_worktree)'],
+  },
+  'execution.gitCheckoutDiff': {
+    cmd: null,
+    sum: "Read one changed file's diff in a checkout `execution.gitCheckouts` listed",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'diff', 'checkout', 'scratch', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['checkout and path must both come from the listing; anything else is not_found'],
   },
   'execution.gitCheckpoint': {
     cmd: null,
@@ -2472,6 +3332,7 @@ const ROWS: Record<OperationName, Row> = {
       'tool ARGUMENTS and tool OUTPUT are never returned — only that a tool was called and its name — because tool bodies are where file contents and secrets travel',
       'a session whose agent has not written a transcript yet answers `available: false` with a reason, never an empty conversation',
       '`stuck` is a HEURISTIC over tool calls without prose, not a liveness signal; `session liveness` is the authority on whether anything is running',
+      'through a space link (`--space <alias>` from a session) only a session that link spawned as you is readable; any other answers `space_link_refused` (session_body)',
     ],
   },
   'execution.liveness': {
@@ -2647,12 +3508,13 @@ const ROWS: Record<OperationName, Row> = {
       'exactly eight flags bind — --schema, --sections, --total-bytes, --section-bytes, --offset, --actions-schema, --cursor, --edge-type (EntityContextQuery); --depth/--messages/--children never bound and are gone',
       'v2 only: --cursor continues ONE paged section (--sections hierarchy|blockers|connections|messages) and is copied verbatim from an omitted[] expand; --edge-type filters --sections connections to one edge type',
       'actions under v2 (agent default) are tm8.actions.v2 rows; cursors.actions continues in `tm8 action list --for <id> --cursor <c>`',
-      '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy, blockers, connections, messages, actions; v2 refuses --section-bytes. Without --schema the read is v2 (text, and agent-class --format json); --section-bytes or --sections activity alone select v1 (no body) with a stderr note; an unknown --edge-type is invalid_input listing the valid types',
+      '--schema v2 returns tm8.entity-context.v2 (compact rows, full acceptance text, omitted[]/notLoaded[]/errors[] with runnable expands); v2 sections are assignment (alias summary), hierarchy (aliases children, parent), blockers, connections, messages, actions, plus every core field the default read returns: acceptance (with acceptanceWrite, no body), header, assignees, gate, story, tasks, anchor (with parentMessage), attachments; the story card is never-drop but every list on it is one page (roots 10, the rest 5): each cut list has an omitted[] entry (story.roots, story.sessions, …) whose `--sections story --cursor` expand continues that list alone; v2 refuses --section-bytes. Without --schema the read is v2 (text, and agent-class --format json); --section-bytes or --sections activity alone select v1 (no body) with a stderr note; an unknown --edge-type is invalid_input listing the valid types',
       'v2 body ceiling: a body over ~15 KB arrives complete:false with an expand `--sections assignment --offset <N>` (UTF-8 bytes, server-filled; run it verbatim). A --total-bytes under the never-drop core is 422 context_budget_too_small (exit 2) and prints `next`, the retry rounded up to the KB',
       'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
       'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
+      'a craft prints its description as the body, then its pages in page order (position, kind, title, id)',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
@@ -3394,6 +4256,9 @@ const ROWS: Record<OperationName, Row> = {
  * collection` and `tm8 help task` both resolve.
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
+  tools: 'tool',
+  mcp: 'mcp',
+  workspace: 'workspace',
   identity: 'identity',
   auth: 'auth',
   serverConnections: 'server',
@@ -3458,6 +4323,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `servers.*` (W8, 261): the same `tm8 server` noun 044's rows used.
   // generator.ts nounForOperation says the same.
   servers: 'server',
+  // Styles (284, styles spec v8 §5). `identity.stylePrefs.*` and
+  // `spaces.styleDefault.*` keep their family nouns; their commands are
+  // `style use` and `style default`. generator.ts nounForOperation says the same.
+  styles: 'style',
 };
 
 function nounFor(operation: OperationName): string {
@@ -3509,7 +4378,16 @@ function exposureFor(operation: OperationName): Exposure {
  */
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
+// Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
+     JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
+  // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
+  // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
+  // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
+  // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
+  // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
+  // JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured for 276 (+chat.setModel, chat model switch) — RECOMPUTED from
   // JSON.stringify(OPERATIONS) by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for task 01a0e24d (+humanOnly on 33 rows: 24 credentials.*/node.credentials.*,
@@ -3560,7 +4438,23 @@ export const CATALOG_DIGEST =
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
-  'sha256:5513b56c1694d513b34b1c3435bf51f30d44c15336d87b759924d0bd0d53a09b';
+  // Re-measured for 282 (+node.pathGrants.list/create/revoke, node.accounts.list,
+  // identity.pathGrants.list; path grants) — RECOMPUTED, not adjusted.
+  // +4 spaceLinks.inbound.list|audit|revoke|restore (278, D2): read from the regenerated conformance manifest.
+  // +3 entities.refs.list|add|remove (L3 cross-space refs, 279): read from the regenerated conformance manifest.
+  // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
+  // Re-measured (main sync: cross-space + styles).
+  // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
+  // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
+  // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
+  // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
+  // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
+  // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
+  // Re-measured after the request noun's removal (-5 rows) — RECOMPUTED, not adjusted.
+  // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
+  // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
+  // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -3906,6 +4800,26 @@ const COMMAND_ALIASES = new Map<string, {
   // a `chats.postTurn` row would be a second way to ask a question
   // `collections.query` and `messages.post` already answer, on an entity kind
   // whose entire design is that it needs no special door except its birth.
+  // `mcp connect` is the one ALIAS the mcp noun needs, and it is an alias
+  // because the connector decides which door it is: an API-key connector takes
+  // a secret (mcp.credentials.create) and an OAuth one hands back a URL
+  // (mcp.oauth.begin). One verb over both is what a user means by "connect"; two
+  // catalog rows for it would be the same two doors with a worse name.
+  ['mcp connect', {
+    path: ['mcp', 'connect'],
+    syntax: 'tm8 mcp connect <server-id> [--shared] [--label <text>] [--input <@file|->]',
+    summary: 'Connect an account to a connector — an API key, or an OAuth authorization URL to open',
+    notes: [
+      'sugar over mcp.servers.get plus mcp.credentials.create or mcp.oauth.begin — it adds no catalog operation',
+      'the connector\u2019s own auth chooses the door: `api_key` needs --input @file or --input - (a secret never travels in argv), `oauth2` prints an authorization URL to open in a browser signed in to tm8',
+      '--shared connects on behalf of the whole Space rather than just you, and needs a Space admin; for an OAuth connector it is refused until this server can carry a scope through the redirect',
+      'a connector with auth `none` needs no connection at all and is refused as a usage error',
+    ],
+    examples: [
+      'tm8 mcp connect <server-id>',
+      'tm8 mcp connect <server-id> --shared --input @key.json',
+    ],
+  }],
   ['chat list', {
     path: ['chat', 'list'],
     syntax: 'tm8 chat list [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -3993,6 +4907,51 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 form wait <form-id> --timeout 600', 'tm8 form wait <form-id> --since <response-id> --format json'],
   }],
+  // `style set|unset` are the one-variable spellings of styles.personal.update
+  // (spec §5), `style import` is styles.personal.create fed from a file, and
+  // `style versions` is entities.versions on a space style. No catalog rows.
+  ['style set', {
+    path: ['style', 'set'],
+    syntax: 'tm8 style set <personal-ref> --pn-<name>=<value>... [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Set one or more variables on a personal style you own',
+    notes: [
+      'sugar over styles.personal.update with a merge patch — it adds no catalog operation',
+      'without --expect-version it reads the current version, writes, and retries ONCE on a version conflict; disjoint keys from two sessions both land',
+      'the `=` is required: a bare --pn-<name> is a variable NAME, which is what `style unset` takes',
+    ],
+    examples: ['tm8 style set <personal-ref> --pn-brand=<colour>'],
+  }],
+  ['style unset', {
+    path: ['style', 'unset'],
+    syntax: 'tm8 style unset <personal-ref> --pn-<name>... [--expect-version <n>] [--mutation-id <id>]',
+    summary: 'Remove variables from a personal style, so they fall back to its foundation',
+    notes: [
+      'sugar over styles.personal.update with each named variable set to null — it adds no catalog operation',
+      'without --expect-version it reads, writes and retries once on a version conflict, like `style set`',
+    ],
+    examples: ['tm8 style unset <personal-ref> --pn-paper'],
+  }],
+  ['style import', {
+    path: ['style', 'import'],
+    syntax: 'tm8 style import <file> --title <title> [--foundation <builtin-ref>] [--mutation-id <id>]',
+    summary: 'Create a personal style from a .css file\'s --pn-* declarations or a .tm8style.json document',
+    notes: [
+      'sugar over styles.personal.create — it adds no catalog operation',
+      'from CSS only the --pn-* custom properties are imported; the foundation defaults to builtin:atelier-light',
+      'what `tm8 style export` prints imports back unchanged',
+    ],
+    examples: ['tm8 style import <file> --title <title>'],
+  }],
+  ['style versions', {
+    path: ['style', 'versions'],
+    syntax: 'tm8 style versions <space-ref> [--limit <count>] [--cursor <cursor>]',
+    summary: 'The push history of a space style: one version per push, with who pushed it',
+    notes: [
+      'sugar over entities.versions on the space style — it adds no catalog operation',
+      'to restore an old version, pull the style into a personal copy, set it back, and push',
+    ],
+    examples: ['tm8 style versions <space-ref> --limit <count>'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -4004,6 +4963,94 @@ const COMMAND_ALIASES = new Map<string, {
     // No example: `tm8 node mode` takes no arguments, and every example must
     // carry a `<placeholder>` (help.test.ts) — a zero-arg command has none.
     examples: [],
+  }],
+  // ── cross-space discoverability (lane L1) ─────────────────────────────────
+  //
+  // Spellings agents reach for, each SUGAR over an operation that already has
+  // a command: no catalog row, no digest change. `space-link` is the `link`
+  // noun under the name the feature is called by; `task create` is
+  // `entity create task`; `teammate list` is the team_member query; `whoami`
+  // is `identity get` plus the session facts the CLI already holds locally.
+  ['space-link list', {
+    path: ['space-link', 'list'],
+    syntax: 'tm8 space-link list',
+    summary: 'List the Spaces this Space links to — alias of `tm8 link list`',
+    notes: [
+      'act in a linked Space with the global flag: `tm8 --space <alias|space-id> <command>`; every call goes through the link and is audited on the home Space',
+      'open to every Member of the home Space, agents included',
+    ],
+    examples: ['tm8 --space <alias> entity query --kind task'],
+  }],
+  ['space-link add', {
+    path: ['space-link', 'add'],
+    syntax: 'tm8 space-link add <target-space-id> [--alias <alias>] [--mutation-id <id>]',
+    summary: 'Link another Space you are a Member of to this one — alias of `tm8 link add`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link add <target-space-id> --alias <alias>'],
+  }],
+  ['space-link login', {
+    path: ['space-link', 'login'],
+    syntax: 'tm8 space-link login <alias|link-id> [--mutation-id <id>]',
+    summary: 'Sign in to a linked Space — alias of `tm8 link login`, human sessions only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
+    examples: ['tm8 space-link login <alias>'],
+  }],
+  ['space-link audit', {
+    path: ['space-link', 'audit'],
+    syntax: 'tm8 space-link audit <alias|link-id> [--limit <count>] [--before <timestamp>]',
+    summary: 'Read the audit of calls made through a space link — alias of `tm8 link audit`',
+    notes: [],
+    examples: ['tm8 space-link audit <alias> --limit <count>'],
+  }],
+  ['task create', {
+    path: ['task', 'create'],
+    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    summary: 'Create a task — alias of `tm8 entity create task`',
+    notes: [
+      'sugar over entities.create with kind task; every `entity create` flag works unchanged',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}}',
+      '--criterion <text> (repeatable, ids ac1, ac2… in order) and --estimate <n> (1-100) are optional sugar for acceptanceCriteria and pointsEstimate; tick each criterion as it is met with `tm8 task tick`',
+      'in a linked Space: `tm8 --space <alias> task create "<title>"`',
+    ],
+    examples: [
+      'tm8 task create "<title>" --parent <task-id>',
+      'tm8 task create "<title>" --criterion "<testable outcome>" --estimate 3',
+      'tm8 --space <alias> task create "<title>" --content \'{"description":"<text>"}\'',
+    ],
+  }],
+  ['teammate list', {
+    path: ['teammate', 'list'],
+    syntax: 'tm8 teammate list [--space <space-id|link-alias>] [--limit <count>] [--cursor <cursor>]',
+    summary: 'List the Teammates in a Space — sugar over `tm8 entity query --kind team_member`',
+    notes: [
+      'a Teammate id is what `--teammate`, `--as` and `tm8 session spawn` take',
+      'in a linked Space: `tm8 --space <alias> teammate list`',
+    ],
+    examples: ['tm8 --space <alias> teammate list --limit <count>'],
+  }],
+  ['whoami', {
+    path: ['whoami'],
+    syntax: 'tm8 whoami',
+    summary: 'Who and where this process is: session, Space, actor, access mode, and the identity the Server resolved',
+    notes: [
+      'sugar over identity.get plus the session facts this CLI already holds (TM8_* env and the session manifest)',
+      'access mode comes from the session manifest; outside a tm8 session it is absent',
+      'act in another Space with `tm8 --space <alias> <command>`; `tm8 link list` names the aliases',
+    ],
+    // No example: a zero-arg command has no `<placeholder>` (see `node mode`).
+    examples: [],
+  }],
+  // `workspace color` is the recolour spelling of `workspace.update`, the row
+  // `workspace rename` owns (API 01a115c4 §8.2).
+  ['workspace color', {
+    path: ['workspace', 'color'],
+    syntax: 'tm8 workspace color <ws> <color|none> [--request-id <id>]',
+    summary: 'Recolour one of your workspaces — the colour half of `workspace rename`\u2019s operation',
+    notes: [
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink; `none` clears it',
+      'the same colour again is no_op (exit 0)',
+    ],
+    examples: ['tm8 workspace color <ws> <color>'],
   }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
@@ -4060,6 +5107,12 @@ COMMAND_ORDER.splice(
 // but two of its three sub-verbs invoke `containers.computer`, so both
 // operations are named here and the command is as available as its WEAKEST.
 // The form lifecycle verbs sit right after `form open`, which the catalog row owns.
+// `mcp connect` reads the connector, then takes ONE of two doors. Availability
+// is the weakest of all three, because a caller cannot know in advance which
+// door their connector needs.
+COMMAND_OPS.set('mcp connect', ['mcp.servers.get', 'mcp.credentials.create', 'mcp.oauth.begin']);
+const mcpCatalogIndex = COMMAND_ORDER.indexOf('mcp catalog list');
+COMMAND_ORDER.splice(mcpCatalogIndex < 0 ? COMMAND_ORDER.length : mcpCatalogIndex + 1, 0, 'mcp connect');
 COMMAND_OPS.set('form close', ['forms.transition']);
 COMMAND_OPS.set('form cancel', ['forms.transition']);
 COMMAND_OPS.set('form reopen', ['forms.transition']);
@@ -4088,7 +5141,171 @@ COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post'
 COMMAND_OPS.set('worktree cherry-pick', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
 COMMAND_OPS.set('worktree branch', ['entities.get', 'edges.list', 'messages.post']);
 COMMAND_OPS.set('worktree stash', ['entities.get', 'edges.list', 'messages.post', 'attentionSignals.raise', 'attentionSignals.clear']);
+// The style verbs. `use` and `default` each project a read and a write; the
+// WRITE leads so the help header reports the durable side effect (the read is
+// the no-argument branch). `set`/`unset` follow `update`, `import` follows
+// `create`, and `versions` closes the noun.
+COMMAND_OPS.set('style use', ['identity.stylePrefs.set', 'identity.stylePrefs.get']);
+COMMAND_OPS.set('style default', ['spaces.styleDefault.set', 'spaces.styleDefault.get']);
+COMMAND_OPS.set('style set', ['styles.personal.update', 'styles.get']);
+COMMAND_OPS.set('style unset', ['styles.personal.update', 'styles.get']);
+COMMAND_OPS.set('style import', ['styles.personal.create']);
+COMMAND_OPS.set('style versions', ['entities.versions']);
+const styleUpdateIndex = COMMAND_ORDER.indexOf('style update');
+COMMAND_ORDER.splice(styleUpdateIndex < 0 ? COMMAND_ORDER.length : styleUpdateIndex + 1, 0, 'style set', 'style unset');
+const styleCreateIndex = COMMAND_ORDER.indexOf('style create');
+COMMAND_ORDER.splice(styleCreateIndex < 0 ? COMMAND_ORDER.length : styleCreateIndex + 1, 0, 'style import');
+COMMAND_ORDER.push('style versions');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
+// Lane L1 aliases: each is exactly as available as the operation it spells.
+COMMAND_OPS.set('space-link list', ['spaceLinks.list']);
+COMMAND_OPS.set('space-link add', ['spaceLinks.add']);
+COMMAND_OPS.set('space-link login', ['spaceLinks.login']);
+COMMAND_OPS.set('space-link audit', ['spaceLinks.audit']);
+const linkAuditIndex = COMMAND_ORDER.indexOf('link audit');
+COMMAND_ORDER.splice(
+  linkAuditIndex < 0 ? COMMAND_ORDER.length : linkAuditIndex + 1,
+  0,
+  'space-link list',
+  'space-link add',
+  'space-link login',
+  'space-link audit',
+);
+COMMAND_OPS.set('task create', ['entities.create']);
+const taskTransitionIndex = COMMAND_ORDER.indexOf('task transition');
+COMMAND_ORDER.splice(taskTransitionIndex < 0 ? COMMAND_ORDER.length : taskTransitionIndex, 0, 'task create');
+COMMAND_OPS.set('teammate list', ['collections.query']);
+const teammateIndex = COMMAND_ORDER.findIndex((k) => k.startsWith('teammate '));
+COMMAND_ORDER.splice(teammateIndex < 0 ? COMMAND_ORDER.length : teammateIndex, 0, 'teammate list');
+COMMAND_OPS.set('whoami', ['identity.get']);
+const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
+COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
+COMMAND_OPS.set('workspace color', ['workspace.update']);
+const workspaceRenameIndex = COMMAND_ORDER.indexOf('workspace rename');
+COMMAND_ORDER.splice(workspaceRenameIndex < 0 ? COMMAND_ORDER.length : workspaceRenameIndex + 1, 0, 'workspace color');
+
+// Workspace remote bridge (Spec C): every verb below is sugar over the ONE
+// `workspace.command` row, and is exactly as available as that row.
+const WORKSPACE_COMMON = '[--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
+const WORKSPACE_IDEMPOTENCY =
+  'idempotent by --request-id: the same id and arguments return the recorded result and never run twice; a reused id with other arguments is refused (request_id_reused)';
+const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict';
+// `--craft <craft-id>` sends these to that craft's workspace (workspace.crafts.command) instead.
+const CRAFT_TAB_VERBS = new Set(['workspace tabs open', 'workspace tabs close', 'workspace tabs move', 'workspace tabs activate']);
+const CRAFT_TAB_NOTE =
+  'with --craft <craft-id>: your workspace for that craft instead (workspace.crafts.command) — one <kind> <entity-id>, tabs named by tab id or entity id, --before <tab|last>';
+const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
+  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id>...] [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
+    'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
+    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it', 'several pairs open together or not at all: at most 50 tabs (tab_limit), and an entity you cannot read refuses the batch (entity_unavailable, unavailableEntityIds); the first opened tab is activated'],
+    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
+  ['workspace tabs close', `tm8 workspace tabs close <tab-id> ${WORKSPACE_COMMON}`,
+    'Close one tab (workspace.tabs.close); never discards unsaved work',
+    ['a dirty draft raises the in-window confirmation and exits 16: only the human can discard'],
+    ['tm8 workspace tabs close <tab-id>']],
+  ['workspace tabs close-visible', `tm8 workspace tabs close-visible [--except <tab-id>] ${WORKSPACE_COMMON}`,
+    'Close every visible tab (workspace.tabs.closeVisible)',
+    ['dirty drafts raise one in-window confirmation and nothing closes until the human answers (exit 16)'],
+    ['tm8 workspace tabs close-visible --except <tab-id>']],
+  ['workspace files open', `tm8 workspace files open <project-id> <path> [--preview] [--no-activate] ${WORKSPACE_COMMON}`,
+    'Open a project file as a read-only tab (workspace.files.open)',
+    ['<path> is relative to the project folder', 'kept by default; --preview replaces the one preview tab instead', 'an open tab for the same file is focused (and kept unless --preview), not duplicated', 'applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)'],
+    ['tm8 workspace files open <project-id> src/index.ts', 'tm8 workspace files open <project-id> README.md --preview --no-activate']],
+  ['workspace tabs activate', `tm8 workspace tabs activate <tab-id> ${WORKSPACE_COMMON}`,
+    'Bring a visible tab to the front (workspace.tabs.activate)',
+    ['needs a live window: focus is per window', 'refused (user_typing) while the human is typing in that window'],
+    ['tm8 workspace tabs activate <tab-id> --instance <instance-id>']],
+  ['workspace tabs move', `tm8 workspace tabs move <tab-id> [--before <tab-id>] ${WORKSPACE_COMMON}`,
+    'Reorder a tab; without --before it moves to the end (workspace.tabs.move)',
+    [],
+    ['tm8 workspace tabs move <tab-id> --before <other-tab-id>']],
+  ['workspace scope set', `tm8 workspace scope set mixed | by-type [<kind>...] [--kinds <a,b>] ${WORKSPACE_COMMON}`,
+    'Set the tab scope: Mixed, or By type with the given kinds (workspace.tabScope.set)',
+    ['by-type with no kinds restores the last By type selection'],
+    ['tm8 workspace scope set by-type <kind> <kind>', 'tm8 workspace scope set mixed --instance <instance-id>']],
+  ['workspace drafts open', `tm8 workspace drafts open <kind> ${WORKSPACE_COMMON}`,
+    'Open a creation draft tab (workspace.drafts.open); `work_session` is the new-session launch sheet',
+    ['opening a draft creates nothing: the human submits it'],
+    ['tm8 workspace drafts open <kind>']],
+  ['workspace browser set', `tm8 workspace browser set [--kind <kind>] [--search <text>] ${WORKSPACE_COMMON}`,
+    'Point the Workspace browser at a kind and search (workspace.browser.set)',
+    ['never touches tabs or scope'],
+    ['tm8 workspace browser set --kind <kind> --search <text>']],
+  ['workspace layout set', `tm8 workspace layout set [--expanded true|false] [--browser-width <px>] [--chat-width <px>] ${WORKSPACE_COMMON}`,
+    'Expand the content or resize the browser and chat panes (workspace.layout.set)',
+    ['widths are clamped: browser 280–480 px, chat 320–640 px'],
+    ['tm8 workspace layout set --expanded true --instance <instance-id>']],
+  ['workspace dialogs open', `tm8 workspace dialogs open palette|prompts|agentTools|newSpace|addServer ${WORKSPACE_COMMON}`,
+    'Open a registered dialog in your live window (workspace.dialogs.open)',
+    ['needs a live window', 'opening is not approving: a dialog opened remotely submits nothing', 'busy while another dialog or prompt is open; not_rendered when the window could not show it'],
+    ['tm8 workspace dialogs open palette --instance <instance-id>']],
+  ['workspace dialogs close', `tm8 workspace dialogs close <dialog-id> ${WORKSPACE_COMMON}`,
+    'Dismiss a registered dialog (workspace.dialogs.close); never submits it',
+    [],
+    ['tm8 workspace dialogs close <dialog-id>']],
+  ['workspace view set', `tm8 workspace view set tabs ${WORKSPACE_COMMON}`,
+    'Switch your window to the Workspace route so tab commands apply (workspace.view.set)',
+    ['needs a live window', 'the Workspace is the only target; other views are refused', 'does not raise or focus the browser window'],
+    ['tm8 workspace view set tabs --instance <instance-id>']],
+];
+for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
+  COMMAND_ALIASES.set(key, {
+    path: key.split(' '),
+    syntax,
+    summary,
+    notes: [...notes, ...(CRAFT_TAB_VERBS.has(key) ? [CRAFT_TAB_NOTE] : []), WORKSPACE_IDEMPOTENCY, WORKSPACE_EXIT],
+    examples,
+  });
+  COMMAND_OPS.set(key, ['workspace.command']);
+}
+{
+  const workspaceCommandIndex = COMMAND_ORDER.indexOf('workspace command');
+  COMMAND_ORDER.splice(
+    workspaceCommandIndex < 0 ? COMMAND_ORDER.length : workspaceCommandIndex + 1,
+    0,
+    ...WORKSPACE_VERBS.map(([key]) => key),
+  );
+}
+
+// Craft workspaces (Craft L3): the top-bar verbs are sugar over
+// `workspace.crafts.command` (`crafts list` over `workspace.crafts.list`), and
+// `tabs focus` is `tabs activate` under the name agents reach for. With
+// `--craft <craft-id>` every `workspace tabs` verb drives that craft's tabs.
+const CRAFT_COMMON = '[--space <space-id>] [--expect-revision <n>] [--request-id <id>]';
+const CRAFT_VERBS: Array<[string, OperationName[], string, string, string[], string[]]> = [
+  ['workspace crafts list', ['workspace.crafts.list'], 'tm8 workspace crafts list [--space <space-id>]',
+    'List your craft workspaces in this Space, open and closed, in top-bar order (same as `tm8 workspace crafts`)',
+    [],
+    ['tm8 workspace crafts list --space <space-id>']],
+  ['workspace crafts open', ['workspace.crafts.command'], `tm8 workspace crafts open <craft-id> [--before <craft-id|last>] ${CRAFT_COMMON}`,
+    'Put a craft in your Craft top bar (craft.open); its tabs are the ones you left',
+    ['at most 30 open crafts (open_limit, exit 6)', 'already open: no_op unless --before moves it'],
+    ['tm8 workspace crafts open <craft-id> --before <craft-id>']],
+  ['workspace crafts close', ['workspace.crafts.command'], `tm8 workspace crafts close <craft-id> ${CRAFT_COMMON}`,
+    'Take a craft out of your Craft top bar (craft.close); its tabs are kept for next time',
+    ['closing never changes the craft or its pages'],
+    ['tm8 workspace crafts close <craft-id>']],
+  ['workspace crafts move', ['workspace.crafts.command'], `tm8 workspace crafts move <craft-id> --before <craft-id|last> ${CRAFT_COMMON}`,
+    'Reorder a craft in your Craft top bar (craft.move)',
+    [],
+    ['tm8 workspace crafts move <craft-id> --before last']],
+  ['workspace tabs focus', ['workspace.crafts.command', 'workspace.command'], `tm8 workspace --craft <craft-id> tabs focus <tab|entity> ${CRAFT_COMMON}  |  tm8 workspace tabs focus <tab-id>`,
+    'Select a tab: in your workspace for a craft with --craft, else in your live Workspace window (same as `tabs activate`)',
+    ['with --craft a tab is named by its tab id or by the entity it shows', 'an agent may use --craft only from a chat or session started on that craft (forbidden / not_craft_session, exit 4)'],
+    ['tm8 workspace --craft <craft-id> tabs focus <entity-id>']],
+];
+for (const [key, ops, syntax, summary, notes, examples] of CRAFT_VERBS) {
+  COMMAND_ALIASES.set(key, { path: key.split(' '), syntax, summary, notes, examples });
+  COMMAND_OPS.set(key, ops);
+}
+{
+  const craftCommandIndex = COMMAND_ORDER.indexOf('workspace crafts command');
+  COMMAND_ORDER.splice(
+    craftCommandIndex < 0 ? COMMAND_ORDER.length : craftCommandIndex + 1,
+    0,
+    ...CRAFT_VERBS.map(([key]) => key),
+  );
+}
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that
@@ -4160,6 +5377,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  * EVERY public noun, so these are deliberately short.
  */
 const NOUN_SUMMARY: Record<string, string> = {
+  tool: 'Reusable scripts: declared inputs, generated help, configuration, secrets and recorded terminal runs',
   identity: 'Who this process is calling as',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',
@@ -4170,6 +5388,8 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
+  story: 'Stories: create, curate roots, read bounded context, and set status',
+  routine: 'The worker routine: claim, keep status true, tick, finish, close out, session complete',
   collection: 'Curated-set membership (add/remove), plus the Space-wide entity query (invoked as `entity query`)',
   chat: 'Chats with a teammate: start one, list them, read one, post a turn, and see its turn state',
   message: 'Durable messages — the only public communication action for text',
@@ -4190,16 +5410,28 @@ const NOUN_SUMMARY: Record<string, string> = {
   kind: 'The entity-kind registry, core and custom',
   handoff: 'Project a bounded entity snapshot into a work session',
   'interaction-profile': 'Interaction Profile lifecycle and defaults',
-  teammate: 'Teammate-scoped configuration',
+  teammate: 'Teammates: list them, and teammate-scoped configuration',
   voice: 'Mint LiveKit room-join grants for voice channels',
   artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
   container: 'Machines an agent runs in or drives: create, lifecycle, exec, surfaces, ports',
   form: 'Forms: ask humans structured questions and get the answers back in your session',
+  link: 'Space links to other Spaces; act in one with `tm8 --space <alias> <command>`',
+  'space-link': 'Alias of `link`: Space links; act in a linked Space with `tm8 --space <alias> <command>`',
+  whoami: 'This process\'s session, Space, actor and access mode',
+  style: 'UI styles: personal styles, push/pull to a Space, and the one you use',
+  workspace: 'Drive your own live Workspace window: tabs, scope, layout, dialogs',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
 export const NOUNS: readonly string[] = [
-  ...new Set([...BASE.map((r) => r.noun), ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : []))]),
+  ...new Set([
+    'story', // Guide-only topic: stories use universal entity and collection commands.
+    'routine', // Guide-only topic: the worker routine (P0g), from @tm8/prompt.
+    ...BASE.map((r) => r.noun),
+    ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : [])),
+    // An alias may introduce a noun (`space-link`, `whoami`); help must resolve it.
+    ...[...COMMAND_ALIASES.values()].map((a) => a.path[0] as string),
+  ]),
 ].sort();
 
 export function isNoun(noun: string): boolean {
@@ -4232,5 +5464,5 @@ export function commandlessForNoun(noun: string, from?: AvailabilityLedger): rea
 
 /** Nouns a caller can type at the top level, in root-help order. */
 export const PUBLIC_NOUNS: readonly string[] = NOUNS.filter(
-  (n) => commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
+  (n) => n === 'story' || commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
 );

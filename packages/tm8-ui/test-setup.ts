@@ -112,3 +112,14 @@ if (typeof document !== 'undefined') {
   const { configure } = await import('@testing-library/react');
   configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 }
+
+// jsdom has no layout engine. ProseMirror measures DOM ranges after selection
+// changes; provide the same empty geometry as unlaid-out element rectangles.
+if (typeof Range !== 'undefined') {
+  if (!Range.prototype.getBoundingClientRect) {
+    Range.prototype.getBoundingClientRect = () => new DOMRect();
+  }
+  if (!Range.prototype.getClientRects) {
+    Range.prototype.getClientRects = () => Object.assign([], { item: () => null });
+  }
+}

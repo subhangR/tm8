@@ -280,25 +280,22 @@ describe('worst-case budget (§7.3): 80-char title plus the longest per-op extra
   }, 120_000);
 });
 
-describe('chaining (§9.9): created_in still lands without --full', () => {
-  it('entity create and task link-pr record the session as birth/linker', async () => {
+describe('chaining (§9.9): no client-claimed session edge (308)', () => {
+  it('entity create and task link-pr chain no created_in; the server owns "made during"', async () => {
     const made = receiptOf(
       await cli(['entity', 'create', 'task', 'Receipt fixture chained', ...S(), '--parent', parentId, '--format', 'json'], server, agent({ TM8_SESSION_ID: sessionId })),
     );
-    const createdIn = (made.refs as Json[]).find((ref) => ref.type === 'created_in');
-    expect(createdIn).toMatchObject({ kind: 'edge' });
+    expect(((made.refs ?? []) as Json[]).find((ref) => ref.type === 'created_in')).toBeUndefined();
 
     const linked = receiptOf(
       await cli(['task', 'link-pr', String(made.id), 'https://github.com/example/receipts/pull/9', '--format', 'json'], server, agent({ TM8_SESSION_ID: sessionId })),
     );
     const prId = String((linked.refs as Json[]).find((ref) => ref.kind === 'pull_request')?.id);
 
-    // Independently: the PR's outgoing created_in edge points at the session.
+    // Independently: the PR carries no created_in edge (the type is retired).
     const pr = await cli(['entity', 'get', prId, '--format', 'json', '--full'], server);
-    const groups = (JSON.parse(pr.stdout) as { connections: { outgoing: { type: string; edges: { target: { id: string } }[] }[] } })
-      .connections.outgoing;
-    const targets = groups.filter((g) => g.type === 'created_in').flatMap((g) => g.edges.map((e) => e.target.id));
-    expect(targets).toContain(sessionId);
+    const groups = (JSON.parse(pr.stdout) as { connections: { outgoing: { type: string }[] } }).connections.outgoing;
+    expect(groups.map((g) => g.type)).not.toContain('created_in');
   }, 120_000);
 });
 

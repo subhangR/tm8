@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
+import type { Cursor, EdgeView, EntityId, EntitySummary, Page } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { Pill } from '../kit';
 import {
@@ -14,7 +14,9 @@ import './session-git.css';
  * THE SESSION'S GIT GRAPH FACTS — what the graph already knows about this
  * session's git life, answerable with or WITHOUT an operable worktree:
  *
- *   · commits this session produced (`created_in` edges, recorder-stamped);
+ *   · commits this session produced (incoming `authored_from` edges whose
+ *     source is a commit — the session's messages and forms ride the same
+ *     edge type and are skipped);
  *   · pull requests its work tracks (session → `working_on` → task →
  *     `tracks` → PR), rendered through Lane B's chips — consumed, not forked;
  *   · the lane entity itself (`in_worktree`), with its branch and status.
@@ -37,6 +39,15 @@ import './session-git.css';
  */
 
 const COMMIT_DISPLAY_CAP = 20;
+/** Page size of the incoming `authored_from` walk. */
+const AUTHORED_PAGE_SIZE = 100;
+/**
+ * Page cap of that walk. `authored_from` into a session is dominated by its
+ * MESSAGES (every turn carries one), so a single 100-row page can be all
+ * messages and hide every commit. The walk pages on until enough commits are
+ * found or this cap is reached — bounded, never a ledger dump.
+ */
+const AUTHORED_PAGE_CAP = 10;
 /** working_on fan-out guard — a session working five tasks is already odd. */
 const TASK_FANOUT_CAP = 5;
 
@@ -101,17 +112,34 @@ export function SessionGitFacts({ seam, sessionId, lane: laneFacts }: SessionGit
 
   const load = useCallback(async () => {
     try {
-      const [createdIn, inWorktree, workingOn] = await Promise.all([
-        seam.connections(sessionId, { types: ['created_in'], limit: 100 }),
+      const readCommits = async (): Promise<CommitRow[]> => {
+        const found: CommitRow[] = [];
+        let cursor: Cursor | null = null;
+        for (let page = 0; page < AUTHORED_PAGE_CAP; page += 1) {
+          const result: Page<EdgeView> = await seam.connections(sessionId, {
+            types: ['authored_from'],
+            direction: 'incoming',
+            limit: AUTHORED_PAGE_SIZE,
+            ...(cursor !== null ? { cursor } : {}),
+          });
+          for (const edge of result.items) {
+            // Only a commit SOURCE is a commit of this session; messages,
+            // forms, memories and docs share the edge type.
+            if (edge.target.id !== sessionId || edge.source.kind !== 'commit') continue;
+            const row = commitRowOf(edge.source);
+            if (row !== null) found.push(row);
+          }
+          cursor = result.nextCursor;
+          if (cursor === null || found.length > COMMIT_DISPLAY_CAP) break;
+        }
+        return found;
+      };
+
+      const [commits, inWorktree, workingOn] = await Promise.all([
+        readCommits(),
         seam.connections(sessionId, { types: ['in_worktree'], limit: 5 }),
         seam.connections(sessionId, { types: ['working_on'], limit: 10 }),
       ]);
-
-      const commits: CommitRow[] = [];
-      for (const edge of createdIn.items) {
-        const row = commitRowOf(peerOf(edge, sessionId));
-        if (row !== null) commits.push(row);
-      }
 
       let lane: LaneRow | null = null;
       for (const edge of inWorktree.items) {

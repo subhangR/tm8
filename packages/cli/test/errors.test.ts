@@ -59,6 +59,14 @@ describe('surfacing what the Server said', () => {
     expect(errorLines(new ApiError(409, 'conflict', 'stale', 'req_3', false, undefined))).toHaveLength(1);
   });
 
+  it('a rate limit that names retryAfterMs prints the wait before the retry advice', () => {
+    const limited = new ApiError(429, 'rate_limited', 'space link invoke rate exceeded for this link', 'req_4', true,
+      { retryAfterMs: 41_200 });
+    const lines = errorLines(limited);
+    expect(lines[1]).toBe('  retryAfter: 42s — wait that long before the next call');
+    expect(lines[2]).toContain('SAME --mutation-id');
+  });
+
   it('says what a 501 IS — a catalogued operation not built on this node', () => {
     const lines = errorLines(new ApiError(501, 'not_implemented', 'no handler', 'req_4', false, undefined));
     expect(lines[1]).toContain('not implemented on this node');

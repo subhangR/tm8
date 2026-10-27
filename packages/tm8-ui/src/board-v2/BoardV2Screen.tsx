@@ -62,6 +62,7 @@ import {
 } from './board-model';
 import { FilterSelect, type FilterOption } from './FilterSelect';
 import './board.css';
+import { useCustomKindsVersion } from '../data/custom-kinds';
 
 /** An unloaded roster is not an empty space, and must not read as one. */
 const ROSTER_EMPTY = 'The people and teammates for this space have not loaded yet.';
@@ -106,7 +107,8 @@ export function BoardV2Screen({
   lifecycleRef.current = lifecycle;
 
   const kind = getKind(kindName);
-  const kinds = useMemo(() => collectionKinds(), []);
+  const customKinds = useCustomKindsVersion();
+  const kinds = useMemo(() => collectionKinds(), [customKinds]);
 
   /* THE WORKFLOWS READ — `spaces.workflows.list`, once per space. A failure
      is a stated downgrade (category columns keep working off `filters.

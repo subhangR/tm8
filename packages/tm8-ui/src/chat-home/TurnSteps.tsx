@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { EntityId } from '@tm8/contract';
 import {
   stepsIn,
   type RunSummary,
@@ -105,6 +104,9 @@ export function TurnSteps({
           {head.summary.failed > 0 ? (
             <span className="tch-steps__failed">{` · ${head.summary.failed} failed`}</span>
           ) : null}
+          {head.summary.retried > 0 ? (
+            <span className="tch-steps__retried">{` · ${head.summary.retried} retried`}</span>
+          ) : null}
           <span className="tch-steps__caret" aria-hidden>{head.expanded ? '▾' : '▸'}</span>
         </button>
       ) : null}
@@ -199,37 +201,6 @@ export function StepErrorLine({ view, count = 1, retried = view.retried }: {
       {count > 1 ? ` ${count} times` : ''}
       {view.reason ? `: ${view.reason}` : ''}
       {retried ? ' · The agent retried' : ''}
-    </div>
-  );
-}
-
-/**
- * `✎ Edited ¶ Runbook` — a settled `doc_update`, as the quiet edit line D11
- * gives every non-status edit (D17 retired its durable-output card). The name
- * opens the doc where the host can open entities; otherwise it is text.
- */
-export function DocEditLine({
-  docId,
-  title,
-  onOpenEntity,
-}: {
-  docId: string | null;
-  title: string | null;
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
-}) {
-  const label = title ?? 'a doc';
-  return (
-    <div className="tch-docedit" data-testid="chat-doc-edit">
-      <span className="tch-docedit__glyph" aria-hidden>✎</span>
-      <span>Edited</span>
-      <span className="tch-docedit__kind" aria-hidden>¶</span>
-      {docId && onOpenEntity ? (
-        <button type="button" className="tch-docedit__open" onClick={() => onOpenEntity(docId as EntityId)}>
-          {label}
-        </button>
-      ) : (
-        <span className="tch-docedit__title">{label}</span>
-      )}
     </div>
   );
 }

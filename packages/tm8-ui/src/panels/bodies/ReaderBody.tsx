@@ -1,10 +1,12 @@
 import { useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { MD_HEADING_ATTR, Markdown, headingsIn, type DocHeading, type MarkdownFileHref } from '../../kit';
+import { useMobileSurface } from '../../mobile';
 import './reader-body.css';
 
 /**
@@ -84,9 +86,15 @@ export interface ReaderBodyProps {
    * `img` override, which never guesses a transport path.
    */
   fileHref?: MarkdownFileHref;
+  /**
+   * Where the outline renders instead of above the document (the Workspace
+   * action strip's Outline popover). Absent ⇒ in the flow, unchanged; null ⇒
+   * the host's slot is not mounted, so the outline is not drawn.
+   */
+  outlineSlot?: HTMLElement | null;
 }
 
-export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref }: ReaderBodyProps) {
+export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref, outlineSlot }: ReaderBodyProps) {
   /**
    * The search scope for an outline jump, and the reason it is a ref rather
    * than `document`. This body mounts more than once — two panels split on the
@@ -95,6 +103,7 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
    * `MD_HEADING_ATTR` for the same argument at the other end of the pairing.
    */
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const { oneSurface } = useMobileSurface();
 
   const onJumpToHeading = useCallback((slug: string) => {
     const root = rootRef.current;
@@ -129,7 +138,10 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
   const content = detail.content as unknown as Record<string, unknown>;
   const state = detail.state as unknown as Record<string, unknown>;
 
-  const source = firstString(content.body, content.description);
+  /* The phone names the doc in its header, so a body that opens by repeating
+     the title would say it twice above the first line of text. */
+  const fullSource = firstString(content.body, content.description);
+  const source = oneSurface && fullSource != null ? withoutLeadingTitle(fullSource, detail.title) : fullSource;
   const headings = headingsIn(source ?? '');
 
   const outlineSource = blocks.find((b) => b.block === 'items')?.params?.source;
@@ -154,7 +166,7 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
     .map((b) => (typeof b.params?.text === 'string' ? b.params.text : null))
     .filter((t): t is string => t != null);
 
-  const hasProse = (source ?? '').trim() !== '';
+  const hasProse = (fullSource ?? '').trim() !== '';
   if (outline.length === 0 && !hasProse && !(chapterCount != null && chapterCount > 0)) {
     /*
      * A designed empty. The facts line goes with it: an empty document has no
@@ -181,12 +193,29 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
       data-testid="reader-body"
       ref={rootRef}
     >
-      <Outline
-        entries={outline}
-        chapterCount={chapterCount}
-        onOpenEntity={onOpenEntity}
-        onJumpToHeading={onJumpToHeading}
-      />
+      {(() => {
+        const nav = (
+          <Outline
+            entries={outline}
+            chapterCount={chapterCount}
+            onOpenEntity={onOpenEntity}
+            onJumpToHeading={onJumpToHeading}
+          />
+        );
+        /* THE PHONE FOLDS THE OUTLINE (owner ruling 2026-10-19): a table of
+           contents above the text pushed the document below the fold. It is
+           one tap away, closed by default. */
+        if (outlineSlot === undefined && oneSurface && outline.length > 0) {
+          return (
+            <details className="rd-toc-fold" data-testid="reader-outline-fold">
+              <summary className="rd-toc-fold__summary">{`Contents · ${outline.length}`}</summary>
+              {nav}
+            </details>
+          );
+        }
+        if (outlineSlot === undefined) return nav;
+        return outlineSlot ? createPortal(nav, outlineSlot) : null;
+      })()}
 
       {/* THE DOCUMENT, RENDERED (user ruling 2026-07-31). This used to be a
           flat run of <p>/<blockquote> from a four-shape hand parser, which
@@ -218,6 +247,28 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
 }
 
 // ---------------------------------------------------------------------------
+
+const LEADING_H1 = /^\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/;
+/** What may follow the heading inside a longer title: a bracket or a dash, never a next word. */
+const TITLE_TAIL = /^\s*[([:—–|·-]/;
+const titleKey = (text: string) => text.replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * The body without an opening `# heading` that only repeats `title` — the
+ * title itself, or the head of a longer one ("Ask Jev in chat — proposal" under
+ * the title "Ask Jev in chat — proposal (judge each prompt…)"). Any other
+ * opening is the author's and is kept, so a body is never left without its
+ * first line unless that line is already on screen.
+ */
+export function withoutLeadingTitle(source: string, title: string): string {
+  const match = LEADING_H1.exec(source);
+  const heading = match ? titleKey(match[1]!) : '';
+  const key = titleKey(title);
+  const rest = key.slice(heading.length);
+  const repeats = heading !== '' && key.startsWith(heading) && (rest === '' || TITLE_TAIL.test(rest));
+  if (!match || !repeats) return source;
+  return source.slice(match[0].length).replace(/^\s*\n/, '');
+}
 
 interface OutlineEntry {
   key: string;

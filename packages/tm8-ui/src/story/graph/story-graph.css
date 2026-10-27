@@ -117,7 +117,60 @@
 
 /* Full screen: fill the parent, the canvas takes the rest and scrolls both ways. */
 .stg-card--fill { display: flex; flex-direction: column; height: 100%; margin: 0; }
+.stg-card--fill .stg-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .stg-card--fill .stg-scroll { flex: 1; min-height: 0; overflow: auto; }
+
+/* The canvas and its view controls (zoom, fit, full screen) pinned over its top-right corner. */
+.stg-stage { position: relative; }
+.stg-scroll { outline-offset: -2px; }
+.stg-card--fill .stg-scroll { overscroll-behavior: contain; }
+/* Zoomed inline: a bounded canvas that scrolls both ways, so a zoom holds the
+   point under the pointer instead of growing the card down the page. */
+.stg-card:not(.stg-card--fill) .stg-scroll--zoomed { overflow: auto; max-height: max(420px, 75vh); }
+.stg-scroll:focus-visible { outline: 1px solid var(--pn-brand); }
+.stg-scroll--panning { cursor: grabbing; user-select: none; }
+.stg-view {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-sm);
+}
+.stg-view__pct {
+  min-width: 42px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  cursor: pointer;
+}
+.stg-view__pct:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.stg-view__pct:disabled { cursor: default; }
+
+/* Full screen is a CSS state on this same card (the artifact viewer's, `ZoomableFigure`'s):
+   pinned over the app, Escape exits. Doubled class so it outranks the card's frame by arithmetic. */
+.stg-card.stg-card--max {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* The node popover is the page's, fixed at z 40: lift it over the full-screen card. */
+.cv2-root:has(.stg-card--max) .sp-pop { z-index: 61; }
 .stg-svg { display: block; width: 100%; height: auto; margin: 0 auto; }
 
 /* ---- edges ---- */
@@ -294,3 +347,100 @@
   vertical-align: 3px;
 }
 .stg-ln--cross { border-top-style: dashed; border-top-color: var(--pn-ink-4); }
+
+/* ---- FLOATING CHROME (task 01a101c5): the graph is the panel ----
+   The card loses its frame and its header rows; the story's header chip and
+   one row of view · hops · Filters float over the canvas's top-left corner,
+   stopping short of the panel's own floating verbs (`--pn-canvas-bar-w`,
+   published by the canvas panel). The zoom controls move to the bottom-left,
+   clear of both that bar and the playground's ＋ at the bottom-right. */
+.stg-card--float {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 0;
+  box-shadow: none;
+  container: stg-card / inline-size;
+}
+.stg-float {
+  position: absolute;
+  top: var(--pn-space-2);
+  left: var(--pn-space-3);
+  right: calc(var(--pn-canvas-bar-w, 0px) + var(--pn-space-2) + var(--pn-space-3));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+.stg-float__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  pointer-events: auto;
+}
+.stg-float .stg-seg,
+.stg-float .stg-hops,
+.stg-filters__btn {
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--pn-sh-sm);
+}
+.stg-float__warn {
+  padding: 2px 8px;
+  border-radius: var(--pn-r-sm);
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  white-space: normal;
+}
+/* The canvas starts under the floating chrome, so the first row of nodes is
+   not drawn beneath it; the paper itself still runs to the top edge. */
+.stg-card--float .stg-scroll { padding-top: calc(var(--stg-float-h, 80px) + var(--pn-space-3)); }
+.stg-card--float .stg-view { top: auto; right: auto; bottom: var(--pn-space-3); left: var(--pn-space-3); }
+/* Narrow: the chrome cannot share a row with the panel's verbs, so it drops
+   under them and takes the full width. */
+@container stg-card (max-width: 720px) {
+  .stg-float { top: calc(var(--pn-canvas-bar-h, 0px) + 2 * var(--pn-space-2)); right: var(--pn-space-3); }
+}
+/* Full screen hides the panel's verbs under the card: use the whole width. */
+.stg-card--max .stg-float { top: var(--pn-space-2); right: var(--pn-space-3); }
+
+/* the Filters button and its popover */
+.stg-filters { position: relative; display: inline-flex; }
+.stg-filters__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+.stg-filters__btn:hover,
+.stg-filters__btn--on { color: var(--pn-ink); border-color: var(--pn-line-2); }
+.stg-filters__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pn-brand); }
+.stg-filters__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 3;
+  width: min(520px, calc(100cqw - 2 * var(--pn-space-3)));
+  max-height: min(60vh, 460px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+}
+.stg-filters__pop .stg-meta { margin-left: 0; }
+.stg-filters__pop .stg-legend { margin: 0; padding: 10px 0 0; border-top: 1px solid var(--pn-line); }
