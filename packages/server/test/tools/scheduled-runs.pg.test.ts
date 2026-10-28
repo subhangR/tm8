@@ -59,6 +59,13 @@ async function tokensOf(run: string) {
     `select s.id,s.kind,s.api_scope,s.acting_as_team_member_id,s.space_id,s.label,s.parent_session_id,s.revoked_at,
        s.expires_at<=now()+interval '91 seconds' within_timeout from public.auth_sessions s where s.work_session_id=$1 order by s.created_at`, [run]);
 }
+/**
+ * The SQL doors are called through the PRODUCTION Db, the one `runScheduled`
+ * uses: it binds all eight claims (auth kind, link, work session included) and
+ * translates SQLSTATEs to contract codes. The harness's `rpcDb` binds four
+ * claims and throws raw pg errors, so a bearer refusal is invisible through it.
+ */
+const door = () => node.production.db!;
 async function resolve(hash: string) {
   return node.rpcDb.rpc<Record<string, unknown> | null>({}, 'resolve_auth_session', [hash]);
 }
@@ -99,14 +106,14 @@ afterAll(async () => { await node?.close(); });
 describe('379: start_tool_session with a loop', () => {
   const opened: Array<[string, DbClaims]> = [];
   async function start(claims: DbClaims, tool: string, loopId: string | null, opts: { version?: number | null; keepOpen?: boolean; cmid?: string } = {}) {
-    const result = await node.rpcDb.rpc<{ entity: { id: string }; __tm8_replayed: boolean }>(claims, 'start_tool_session',
+    const result = await door().rpc<{ entity: { id: string }; __tm8_replayed: boolean }>(claims, 'start_tool_session',
       [spaceId, tool, opts.version === undefined ? await versionOf(tool) : opts.version, {}, opts.keepOpen ?? false,
         'scheduled-db', '/tmp', 100, null, opts.cmid ?? cmid(), loopId]);
     opened.push([result.entity.id, claims]);
     return result;
   }
   // Release the member's tool-session slots: these runs never get a PTY.
-  afterAll(async () => { for (const [id, claims] of opened) await node.rpcDb.rpc(claims, 'work_session_transition', [id, 'failed', null, 'test cleanup']); });
+  afterAll(async () => { for (const [id, claims] of opened) await door().rpc(claims, 'work_session_transition', [id, 'failed', null, 'test cleanup']); });
 
   it('writes the run and its provenance-marked triggered_by edge in one call, as the firing member, at top level', async () => {
     const tool = await createTool('db-edge', 'read'), firing = firingClaims(owner.identityId, loop);
@@ -157,18 +164,18 @@ describe('379: start_tool_session with a loop', () => {
 describe('379: issue_tool_session_loop_session', () => {
   const opened: Array<[string, DbClaims]> = [];
   async function start(claims: DbClaims, tool: string, loopId: string | null) {
-    const result = await node.rpcDb.rpc<{ entity: { id: string } }>(claims, 'start_tool_session',
+    const result = await door().rpc<{ entity: { id: string } }>(claims, 'start_tool_session',
       [spaceId, tool, await versionOf(tool), {}, false, 'scheduled-db', '/tmp', 100, null, cmid(), loopId]);
     opened.push([result.entity.id, claims]);
     return result.entity.id;
   }
   async function mint(claims: DbClaims, run: string, loopId: string, teamMember: string | null, scope = 'write') {
     const hash = tokenHash();
-    const row = await node.rpcDb.rpc<{ id: string; kind: string; api_scope: string }>(claims, 'issue_tool_session_loop_session',
+    const row = await door().rpc<{ id: string; kind: string; api_scope: string }>(claims, 'issue_tool_session_loop_session',
       [run, loopId, teamMember, hash, new Date(Date.now() + 3600_000).toISOString(), scope]);
     return { hash, row };
   }
-  afterAll(async () => { for (const [id, claims] of opened) await node.rpcDb.rpc(claims, 'work_session_transition', [id, 'failed', null, 'test cleanup']); });
+  afterAll(async () => { for (const [id, claims] of opened) await door().rpc(claims, 'work_session_transition', [id, 'failed', null, 'test cleanup']); });
 
   it('(2)(6) mints a kind-agent token acting as the loop persona, pinned to the run, scope read when the tool reads', async () => {
     const firing = firingClaims(owner.identityId, loop), run = await start(firing, await createTool('mint-read', 'read'), loop);
@@ -219,7 +226,7 @@ describe('379: issue_tool_session_loop_session', () => {
     await expect(mint(firingClaims(peer.identityId, loop), run, loop, persona)).rejects.toMatchObject({ code: 'forbidden' });
     const personaLess = await start(firing, await createTool('mint-dispatch', 'write'), personaLessLoop);
     await expect(mint(firing, personaLess, personaLessLoop, persona)).rejects.toMatchObject({ code: 'forbidden', message: expect.stringContaining('runs-as persona') });
-    await node.rpcDb.rpc(firing, 'record_tool_exit', [run, 0, 'exited', '']);
+    await door().rpc(firing, 'record_tool_exit', [run, 0, 'exited', '']);
     await expect(mint(firing, run, loop, persona)).rejects.toMatchObject({ code: 'forbidden', message: expect.stringContaining('live tool session') });
     expect([...await tokensOf(run), ...await tokensOf(personaLess)]).toEqual([]);
   });
@@ -233,15 +240,15 @@ describe('379: issue_tool_session_loop_session', () => {
   it('(2) revokes on tool settlement, on a launch failure\'s PTY end, and on explicit revoke', async () => {
     const firing = firingClaims(owner.identityId, loop), tool = await createTool('mint-revoke', 'read');
     const settledRun = await start(firing, tool, loop);
-    await node.rpcDb.rpc(firing, 'work_session_transition', [settledRun, 'running']);
+    await door().rpc(firing, 'work_session_transition', [settledRun, 'running']);
     const settled = await mint(firing, settledRun, loop, persona);
-    await node.rpcDb.rpc(firing, 'record_tool_exit', [settledRun, 7, 'exited', '']);
+    await door().rpc(firing, 'record_tool_exit', [settledRun, 7, 'exited', '']);
     const failedRun = await start(firing, tool, loop);
     const failed = await mint(firing, failedRun, loop, persona);
-    await node.rpcDb.rpc(firing, 'work_session_transition', [failedRun, 'failed', null, 'launch failed']);
+    await door().rpc(firing, 'work_session_transition', [failedRun, 'failed', null, 'launch failed']);
     const revokedRun = await start(firing, tool, loop);
     const revoked = await mint(firing, revokedRun, loop, persona);
-    await node.rpcDb.rpc(firing, 'revoke_agent_auth_session', [revokedRun]);
+    await door().rpc(firing, 'revoke_agent_auth_session', [revokedRun]);
     for (const { hash } of [settled, failed, revoked]) expect(await resolve(hash)).toBeNull();
   });
 });
