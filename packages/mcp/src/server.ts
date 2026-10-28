@@ -88,7 +88,7 @@ export function serveStdio(server: Tm8McpServer, options: StdioServerOptions): v
   lines.on('line', (line) => {
     queue = queue.then(async () => {
       if (Buffer.byteLength(line, 'utf8') > maxLineBytes) {
-        write(options.output, rpcError(null, -32600, 'Request exceeds the 1 MiB stdio limit'));
+        write(options.output, rpcError(null, -32600, `Request exceeds the ${maxLineBytes}-byte stdio limit`));
         return;
       }
       let request: unknown;
