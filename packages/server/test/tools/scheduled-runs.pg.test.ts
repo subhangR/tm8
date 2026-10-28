@@ -254,10 +254,11 @@ describe('379: issue_tool_session_loop_session', () => {
 });
 
 describe('runScheduled on the production server with real PTYs', () => {
+  type SettledRow = { status: string; tool_state: string; tool_exit_code: number | null; outcome: string; tool_output_tail: string; title: string };
   async function settled(id: string) {
-    let row: { status: string; tool_state: string; tool_exit_code: number | null; outcome: string; tool_output_tail: string; title: string } | undefined;
+    let row: SettledRow | undefined;
     await vi.waitFor(async () => {
-      [row] = await node.database.query('select status,tool_state,tool_exit_code,outcome,tool_output_tail,title from public.work_sessions where entity_id=$1', [id]);
+      [row] = await node.database.query<SettledRow>('select status,tool_state,tool_exit_code,outcome,tool_output_tail,title from public.work_sessions where entity_id=$1', [id]);
       expect(row!.tool_state).not.toBe('running');
       expect(['exited', 'failed']).toContain(row!.status);
     }, { timeout: 20000, interval: 50 });
