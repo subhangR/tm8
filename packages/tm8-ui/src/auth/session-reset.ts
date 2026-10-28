@@ -50,6 +50,7 @@ import { resetChatEntityResolutionCache } from '../chat-home/EntityChip';
 import { clearLastPlace } from '../views/last-place';
 import { clearLaunchCache, nodeKeyOf } from '../data/launch-cache';
 import { clearLaunchRecents } from '../data/launch-recents';
+import { clearLaunchDefaultsCache } from '../data/launch-defaults-cache';
 import { clearCraftOpenTabs } from '../craft/craft-open-tabs';
 import { readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
 
@@ -143,6 +144,10 @@ export function endSession(end: SessionEnd, opts: SessionResetOptions = {}): voi
      viewer's teammate picker by the previous viewer's launches, which names
      who they work as. */
   clearLaunchRecents(nodeKey);
+  /* The launch card's remembered defaults: memory statements, skill and doc
+     titles from this viewer's spaces, keyed by node and space like the two
+     above — and held in this tab's memory too, which the sweep clears. */
+  clearLaunchDefaultsCache(nodeKey);
   /* Keyed by viewer, but still this browser's record of what they had open. */
   clearCraftOpenTabs(nodeKey);
   const address = opts.address === undefined ? browserAddress() : opts.address;

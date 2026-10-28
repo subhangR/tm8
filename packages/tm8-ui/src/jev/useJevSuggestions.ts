@@ -280,6 +280,15 @@ export interface JevSuggestions {
   undoAll(): void;
 
   toSpawnFields(): JevSpawnFields;
+  /**
+   * THE PRESS. Returns what the spawn carries from this run (`toSpawnFields`)
+   * and drops every answer still in flight: Jev only ever SUGGESTS, and an
+   * answer that lands after Launch was pressed is for a launch already on its
+   * way — applying it would change the card under a launch that did not carry
+   * it. Groups still asking return to idle (their reason, `jev-pending`, is in
+   * the fields). Nothing else changes; the next `ask` answers as usual.
+   */
+  seal(): JevSpawnFields;
 
 }
 
@@ -896,6 +905,20 @@ export function useJevSuggestions(args: {
     return fields;
   }, [applied, groups, asked, runId]);
 
+  const seal = useCallback((): JevSpawnFields => {
+    const fields = toSpawnFields();
+    /* `settle` lands an answer only for the request each group last asked
+       with, so forgetting them drops every answer in flight, per group. */
+    latest.current = {};
+    setGroups((current) => {
+      if (!LAUNCH_SUGGEST_GROUPS.some((group) => current[group].status === 'asking')) return current;
+      const next = { ...current };
+      for (const group of LAUNCH_SUGGEST_GROUPS) if (next[group].status === 'asking') (next as Record<string, unknown>)[group] = { status: 'idle' };
+      return next;
+    });
+    return fields;
+  }, [toSpawnFields]);
+
   return {
     runId,
     groups,
@@ -922,5 +945,6 @@ export function useJevSuggestions(args: {
     undo,
     undoAll,
     toSpawnFields,
+    seal,
   };
 }

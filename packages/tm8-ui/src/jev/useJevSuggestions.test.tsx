@@ -803,3 +803,44 @@ describe('the fixture port models the server contract', () => {
     })).rejects.toBeInstanceOf(CollabError);
   });
 });
+
+/* THE PRESS (lane E): Jev never holds Launch, and an answer that lands after
+   Launch was pressed is dropped — it was for a launch already on its way. */
+describe('seal — the press', () => {
+  it('returns the spawn fields as they stood, then drops the answer still in flight', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    act(() => { result.current.ask(); });
+    expect(result.current.groups.memories.status).toBe('asking');
+
+    let fields: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { fields = result.current.seal(); });
+    // The groups still asking at the press say so on the spawn: `jev-pending`.
+    expect(fields?.defaultReasons).toEqual({ memories: 'jev-pending', skills: 'jev-pending', references: 'jev-pending' });
+    expect(fields?.jevRunId).toBe(result.current.runId);
+    // …and they stop asking: nothing is left waiting on an answer that cannot land.
+    expect(result.current.groups.memories.status).toBe('idle');
+
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+    expect(result.current.groups.memories.status).toBe('idle');
+    expect(result.current.entity.memories.rows).toEqual([]);
+  });
+
+  it('answers again after the next ask — sealing ends one press, not the run', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    act(() => { result.current.ask(); });
+    act(() => { result.current.seal(); });
+    act(() => { result.current.ask(); });
+    await act(async () => { port.calls[1]!.resolve(answer(port.calls[1]!.input)); });
+    await waitFor(() => expect(result.current.groups.memories.status).toBe('ok'));
+    expect(port.calls[1]!.input.runId).toBe(port.calls[0]!.input.runId);
+  });
+
+  it('with nothing asked, the press carries no Jev fields at all', () => {
+    const { result } = mount({ port: pendingPort() });
+    let fields: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { fields = result.current.seal(); });
+    expect(fields).toEqual({});
+  });
+});

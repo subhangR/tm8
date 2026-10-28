@@ -6,11 +6,13 @@ import {
   isTicked,
   LAUNCH_GROUP_LABEL,
   LAUNCH_SELECTION_GROUPS,
+  shownDefaultRows,
   type LaunchContextRow,
 } from '../domain/launch-selection';
 import { BudgetMeter } from '../jev';
 import { groupMeter, REASON_WORDS, type GroupMeterFacts, type LaunchRanked } from './meter';
-import type { LaunchSelection, LoadLaunchDefaults } from './useLaunchSelection';
+import type { LoadLaunchDefaults } from './port';
+import type { LaunchSelection } from './useLaunchSelection';
 
 /** What a surface knows about the launch's prompt bytes, for the per-group meter (I7). All optional: absent, the meter falls back to `launch.defaults`, then to counts. */
 export interface LaunchSelectionBudgetProps {
@@ -94,6 +96,9 @@ export function LaunchSelectionGroups({
       {selection.warnings.map((warning) => (
         <p key={warning} className="ls__profile-empty" role="status">{warning}</p>
       ))}
+      {selection.updatedNote ? (
+        <p className="ls__profile-empty" role="status" data-testid="launch-selection-updated">{selection.updatedNote}</p>
+      ) : null}
     </>
   );
 }
@@ -139,7 +144,8 @@ function SelectionGroup({
   const diff = selection.diff(group);
   const label = LAUNCH_GROUP_LABEL[group];
 
-  const defaultRows = defaults.status === 'ready' ? defaults.rows : [];
+  const shownDefaults = shownDefaultRows(defaults);
+  const defaultRows = shownDefaults ?? [];
   const defaultIds = new Set(defaultRows.map((row) => row.id));
   const addedRows = selection.added[group].filter((row) => edit.added.includes(row.id) && !defaultIds.has(row.id));
   const needle = query.trim().toLowerCase();
@@ -222,7 +228,7 @@ function SelectionGroup({
       {expanded ? (
       <div id={bodyId} className="lsel__body">
       {lock ? <p className="ls__profile-empty" role="status">{lock}</p> : null}
-      {defaults.status === 'ready' && defaultRows.length === 0 && addedRows.length === 0 ? (
+      {shownDefaults && defaultRows.length === 0 && addedRows.length === 0 ? (
         <p className="ls__profile-empty" role="status">
           No default {label.toLowerCase()} for this launch.
         </p>

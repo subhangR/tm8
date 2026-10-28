@@ -6,14 +6,14 @@
  */
 import './launch-selection.css';
 
-export { useLaunchSelection, type LaunchDefaultsLaunchParams, type LaunchGroupBytes, type LaunchSelection, type LoadLaunchDefaults } from './useLaunchSelection';
+export { useLaunchSelection, type LaunchGroupBytes, type LaunchSelection } from './useLaunchSelection';
 export {
   LaunchSelectionChips,
   LaunchSelectionGroups,
   type LaunchSelectionCandidates,
   type LaunchSelectionSources,
 } from './LaunchSelectionGroups';
-export type { LaunchDefaultsPort } from './port';
+export type { LaunchDefaultsPort, LoadLaunchDefaults } from './port';
 export { BudgetOverride, BUDGET_OVERRIDE_HINT, overrunWarning } from './BudgetOverride';
 export { appliedReasons, groupMeter, REASON_WORDS, type GroupMeterFacts, type LaunchRanked } from './meter';
 export type { LaunchSelectionBudgetProps } from './LaunchSelectionGroups';
