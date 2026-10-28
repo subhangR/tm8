@@ -4,6 +4,7 @@ import { actorPresentation } from '../../domain';
 import type { PillTone } from '../../kit';
 import { relTime } from '../../kit/time';
 import { runLabel, runTone } from '../../tools/values';
+import { toolVersionOf } from '../../tools/version-field';
 
 /**
  * TILE BADGES — the Z1 vocabulary, rendered.
@@ -476,8 +477,9 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(at ? `ran ${relTime(at)}` : null);
     }
     case 'toolVersion': {
-      const n = num(field(row, 'version'));
-      return n ? meta(`v${n}`) : null;
+      // The execution version, as the page and a run print it; never the concurrency token.
+      const version = num(field(row, 'version')), executionVersion = num(field(row, 'executionVersion'));
+      return version ? meta(`v${toolVersionOf({ version, executionVersion: executionVersion ?? version })}`) : null;
     }
     default:
       return null;

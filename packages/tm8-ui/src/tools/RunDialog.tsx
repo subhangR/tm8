@@ -4,7 +4,8 @@ import { useDismissable } from '../panels/useDismissable';
 import type { ToolPort, ToolSourceChange } from './port';
 import { InputValue } from './InputValue';
 import { apiAccessNotice, initialValues, runValues } from './values';
-import { localError, ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
+import { localError, toolErrorOf, type ToolErrorView } from './errors';
+import { ToolErrorAlert } from './ToolErrorAlert';
 
 /** `onRunError` fires after the server refused or failed a launch; a failed launch is still recorded as a killed run. */
 export function RunDialog({ tool, port, onClose, onOpenSession, onRunError }: { tool: ToolView; port: ToolPort; onClose(): void; onOpenSession(id: string): void; onRunError?(failure: unknown): void }) {

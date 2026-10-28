@@ -4,7 +4,8 @@ import { Pill } from '../kit/Pill';
 import { Timestamp } from '../kit/Timestamp';
 import { useDismissable } from '../panels/useDismissable';
 import type { ToolPort } from './port';
-import { ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
+import { toolErrorOf, type ToolErrorView } from './errors';
+import { ToolErrorAlert } from './ToolErrorAlert';
 import { runDuration, runInvoker, runLabel, runTone } from './values';
 import { runVersionOf } from './version-field';
 

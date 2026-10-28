@@ -3,7 +3,8 @@ import type { ToolInput, ToolView } from '@tm8/contract';
 import type { ToolPermissions, ToolPort } from './port';
 import { initialValues, parseValue } from './values';
 import { InputValue } from './InputValue';
-import { ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
+import { toolErrorOf, type ToolErrorView } from './errors';
+import { ToolErrorAlert } from './ToolErrorAlert';
 
 function ConfigInput({ tool, input, port, permissions, refresh }: { tool: ToolView; input: ToolInput; port: ToolPort; permissions: ToolPermissions; refresh(): Promise<void> }) {
   const [value, setValue] = useState(initialValues(tool)[input.name] ?? '');
