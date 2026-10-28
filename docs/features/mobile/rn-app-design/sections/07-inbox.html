@@ -1,0 +1,1018 @@
+<section class="doc-section" id="s-inbox" data-title="Inbox, notifications, search, links and system states" data-lane="07 inbox">
+<style>
+/* lane 07 — every selector under #s-inbox. Kit gaps drawn here are named in the hand-off. */
+#s-inbox .att{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px 0 3px;border-radius:6px;background:var(--wait-soft);color:var(--wait);font-size:12px;line-height:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
+#s-inbox .att b{display:grid;place-items:center;width:14px;height:14px;border-radius:4px;background:var(--wait);color:var(--paper);font-size:10px;line-height:1}
+#s-inbox .att.fyi{background:var(--idle-soft);color:var(--ink-3)} #s-inbox .att.fyi b{background:var(--ink-4)}
+#s-inbox .att.urgent{background:var(--block-soft);color:var(--block)} #s-inbox .att.urgent b{background:var(--block)}
+#s-inbox .att.big{height:32px;padding:0 10px 0 6px;border-radius:16px;font-size:14px} #s-inbox .att.big b{width:18px;height:18px;font-size:12px;border-radius:5px}
+#s-inbox .srv{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px 0 3px;border-radius:5px;border:1px solid var(--line-2);font-size:11px;line-height:16px;font-weight:600;color:var(--ink-3);white-space:nowrap;flex:0 0 auto}
+#s-inbox .srv i{width:12px;height:12px;border-radius:3px;background:var(--brand);color:var(--brand-ink);font:700 8px/12px var(--ui);text-align:center;font-style:normal}
+#s-inbox .srv i.x{background:var(--info)} #s-inbox .srv i.p{background:var(--merged)}
+#s-inbox .row .s .ic,#s-inbox .row .q .ic{width:14px;height:14px;color:var(--ink-3)}
+#s-inbox .row .s .tt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#s-inbox .row .q{font-size:var(--fs-foot);line-height:var(--lh-foot);color:var(--ink-3);display:flex;gap:4px;align-items:center;white-space:nowrap;overflow:hidden}
+#s-inbox .row .p{font-size:var(--fs-sub);line-height:var(--lh-sub);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#s-inbox .row.read>*{opacity:.5}
+#s-inbox .section-h.alarm{color:var(--block)}
+#s-inbox .absent{padding:10px var(--gutter) 0;font-size:var(--fs-foot);line-height:var(--lh-foot);color:var(--ink-4)}
+#s-inbox .list.swipe{position:relative;overflow:hidden}
+#s-inbox .list.swipe .row{background:var(--paper)}
+#s-inbox .swipe-actions.lead{left:0;right:auto;width:96px}
+#s-inbox .row.swiped-r{transform:translateX(96px)}
+#s-inbox .phone.flat{--ph-h:auto;border-radius:16px;box-shadow:0 0 0 1px var(--line-2),var(--sh-md)}
+#s-inbox .phone.flat .content{flex:0 0 auto}
+#s-inbox .phone p{color:var(--ink-3);max-width:none} /* doc.css .doc-section p (#303030) otherwise wins inside phones */
+#s-inbox .phone code{background:var(--active);color:var(--ink-2);font-size:.88em} /* doc.css .doc code (#E9E9E6) leaks into dark phones */
+#s-inbox .phone[data-os="android"] .topbar .spacebtn{gap:2px;padding:0 0 0 4px}
+#s-inbox .kinds{display:grid;grid-template-columns:390px minmax(0,1fr);gap:12px 28px;align-items:center;margin:16px 0 28px}
+#s-inbox .kinds p{margin:0;font-size:13.5px;line-height:1.5}
+#s-inbox .kinds p b{font-family:var(--mono);font-size:12.5px}
+#s-inbox .rq{margin:0 var(--gutter) 10px;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--card)}
+#s-inbox .rq .tg{display:flex;gap:6px;align-items:center;font-size:var(--fs-c1);color:var(--ink-3)}
+#s-inbox .tagl{height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;display:inline-flex;align-items:center;background:var(--wait-soft);color:var(--wait)}
+#s-inbox .tagl.t{background:var(--surface);color:var(--ink-2)}
+#s-inbox .rq .rs{font-size:var(--fs-sub);line-height:20px;font-weight:600}
+#s-inbox .rq .mt{font-size:var(--fs-c1);line-height:16px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:2px 8px}
+#s-inbox .rq .mt .lk{color:var(--brand);font-weight:600}
+#s-inbox .wb{margin:8px 12px;border-radius:16px;background:var(--wait-soft);padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+#s-inbox .wb .l1{display:flex;align-items:center;gap:8px;font-size:var(--fs-sub);line-height:20px;font-weight:600}
+#s-inbox .wb .l1 .age{margin-left:auto;font-weight:500;color:var(--ink-3);font-size:var(--fs-foot)}
+#s-inbox .wb .rs{font-size:var(--fs-sub);line-height:20px;color:var(--ink-2)}
+#s-inbox .wb .va{display:flex;gap:8px} #s-inbox .wb .va .btn{flex:1;min-height:40px}
+#s-inbox .wb .va .btn.on{background:var(--ink);color:var(--paper)}
+#s-inbox .blur{position:absolute;inset:0;z-index:10;background:var(--scrim);backdrop-filter:blur(6px)}
+#s-inbox .pv{position:absolute;left:16px;right:16px;z-index:12;background:var(--card);border-radius:16px;padding:14px 16px;box-shadow:var(--sh-pop);display:flex;flex-direction:column;gap:8px}
+#s-inbox .pv .t{font-size:var(--fs-t3);line-height:var(--lh-t3);font-weight:700}
+#s-inbox .pv .m{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;font-size:var(--fs-foot);color:var(--ink-3)}
+#s-inbox .pv .q{display:flex;gap:5px;align-items:center;font-size:var(--fs-foot);color:var(--ink-3)} #s-inbox .pv .q .ic{width:14px;height:14px}
+#s-inbox .lock{position:absolute;inset:0;z-index:0;background:linear-gradient(165deg,#17202B 0%,#2A2236 52%,#3B2B22 100%)} /* sample wallpaper image */
+#s-inbox .lockui{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:6px 10px 0;color:var(--ink)}
+#s-inbox .lockui .date{font-size:19px;line-height:24px;font-weight:600;margin-top:6px;opacity:.9}
+#s-inbox .lockui .clock{font-size:88px;line-height:96px;font-weight:700;letter-spacing:-.02em}
+#s-inbox .lockui .grow{flex:1 1 auto}
+#s-inbox .ln{align-self:stretch;position:relative;z-index:2;margin-top:8px;border-radius:20px;padding:11px 14px;background:color-mix(in srgb,var(--card) 80%,transparent);backdrop-filter:blur(20px);display:flex;gap:10px}
+#s-inbox .ln .app{width:34px;height:34px;border-radius:8px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-weight:800;font-size:12px;flex:0 0 auto}
+#s-inbox .ln .nb{flex:1;min-width:0}
+#s-inbox .ln .nh{display:flex;justify-content:space-between;gap:8px;font-size:13px;line-height:18px;color:var(--ink-3)}
+#s-inbox .ln .nt{font-size:15px;line-height:20px;font-weight:600}
+#s-inbox .ln .nx{font-size:15px;line-height:20px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#s-inbox .peek{align-self:center;height:9px;border-radius:0 0 14px 14px;background:color-mix(in srgb,var(--card) 58%,transparent)}
+#s-inbox .lockfoot{display:flex;justify-content:space-between;align-self:stretch;padding:22px 34px 0}
+#s-inbox .lockfoot span{width:50px;height:50px;border-radius:50%;background:color-mix(in srgb,var(--card) 70%,transparent);display:grid;place-items:center}
+#s-inbox .shade{position:absolute;inset:0;background:var(--surface);padding-top:4px;display:flex;flex-direction:column}
+#s-inbox .qs{display:flex;gap:8px;padding:4px 14px 12px} #s-inbox .qs span{flex:1;height:52px;border-radius:18px;background:var(--card);display:grid;place-items:center;color:var(--ink-2)} #s-inbox .qs span.on{background:var(--brand-soft);color:var(--brand)}
+#s-inbox .nc{margin:0 10px 8px;background:var(--card);border-radius:24px;padding:12px 16px}
+#s-inbox .nc .nh{display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;color:var(--ink-3)}
+#s-inbox .nc .nh .app{width:20px;height:20px;border-radius:50%;background:var(--brand);color:var(--brand-ink);font:800 8px/20px var(--ui);text-align:center}
+#s-inbox .nc .nh .ic{width:16px;height:16px;margin-left:auto}
+#s-inbox .nc .it{padding-top:8px} #s-inbox .nc .it+.it{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+#s-inbox .nc .nt{font-size:15px;line-height:20px;font-weight:600;display:flex;justify-content:space-between;gap:8px} #s-inbox .nc .nt span{font-weight:400;font-size:12px;color:var(--ink-3);flex:0 0 auto}
+#s-inbox .nc .nx{font-size:14px;line-height:19px;color:var(--ink-2)}
+#s-inbox .nc .na{display:flex;gap:22px;margin-top:10px;font-size:14px;font-weight:600;color:var(--brand)}
+#s-inbox .nc .rin{margin-top:10px;display:flex;align-items:center;gap:8px;height:44px;border-radius:22px;background:var(--surface);padding:0 6px 0 16px;font-size:14px;color:var(--ink)}
+#s-inbox .nc .rin .go{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center} #s-inbox .nc .rin .go .ic{width:16px;height:16px}
+#s-inbox .shade-f{display:flex;justify-content:space-between;padding:4px 24px;font-size:14px;font-weight:600;color:var(--ink-2)}
+#s-inbox .srow{display:flex;align-items:center;gap:12px;padding:6px 0 6px var(--gutter);background:var(--paper);flex:0 0 auto}
+#s-inbox .srow .search{flex:1;margin:0;color:var(--ink)} #s-inbox .srow .search .ph{color:var(--ink-4)}
+#s-inbox .srow .cx{padding-right:var(--gutter);color:var(--brand);font-size:var(--fs-body)}
+#s-inbox .caret{display:inline-block;width:2px;height:20px;background:var(--brand);vertical-align:-4px;margin-left:1px;animation:s-inbox-blink 1s steps(1) infinite}
+@keyframes s-inbox-blink{50%{opacity:0}}
+#s-inbox .hints{display:flex;flex-wrap:wrap;gap:8px;padding:2px var(--gutter) 4px} #s-inbox .hints .chip{font-family:var(--mono);font-size:12.5px}
+#s-inbox .asb{display:flex;align-items:center;gap:4px;height:64px;padding:0 4px 0 4px;border-bottom:1px solid var(--line);flex:0 0 auto}
+#s-inbox .asb .q{flex:1;font-size:17px;color:var(--ink);white-space:nowrap;overflow:hidden}
+#s-inbox .keyboard .k.go{width:88px;font-size:14px;background:var(--info);color:var(--paper)}
+#s-inbox .phone[data-os="android"] .keyboard .k{width:29px} #s-inbox .phone[data-os="android"] .keyboard .k.w{width:42px} #s-inbox .phone[data-os="android"] .keyboard .k.space{width:166px}
+#s-inbox .hlm{background:var(--brand-soft);box-shadow:inset 3px 0 0 var(--brand)}
+#s-inbox .tstate{display:flex;flex-direction:column;align-items:center;text-align:center;padding:36px 28px 0;gap:10px}
+#s-inbox .tstate .glyph{width:64px;height:64px;border-radius:50%;background:var(--surface);display:grid;place-items:center;color:var(--ink-3);margin-bottom:4px} #s-inbox .tstate .glyph .ic{width:28px;height:28px}
+#s-inbox .tstate p{margin:0;font-size:var(--fs-sub);line-height:var(--lh-sub);color:var(--ink-3)}
+#s-inbox .tstate .kv{margin:6px 0 4px;text-align:left;background:var(--surface);border-radius:var(--r-md);padding:12px 14px;align-self:stretch}
+#s-inbox .tstate .btn{align-self:stretch}
+#s-inbox .chipset{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:14px 16px}
+#s-inbox .chip.snap{border-style:dashed;color:var(--ink-3)}
+#s-inbox .chip.gone{border-style:dashed;color:var(--ink-3);background:transparent}
+#s-inbox .chip .srv{height:16px;margin-left:2px;border:0;background:var(--active);padding:0 5px 0 2px}
+#s-inbox .chip .idm{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+#s-inbox .sab{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--line);font-size:13px;line-height:17px}
+#s-inbox .sab .app{width:40px;height:40px;border-radius:10px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-weight:800;font-size:13px}
+#s-inbox .sab .go{margin-left:auto;color:var(--info);font-weight:700}
+#s-inbox .sbar{position:absolute;left:0;right:0;bottom:0;padding:8px 14px 6px;background:var(--surface);border-top:1px solid var(--line)}
+#s-inbox .sbar .addr{height:40px;border-radius:12px;background:var(--card);display:flex;align-items:center;justify-content:center;gap:6px;font-size:15px;box-shadow:var(--sh-sm)}
+#s-inbox .keep{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;background:var(--brand-soft);color:var(--brand);font-size:13px;font-weight:600}
+#s-inbox .apps{display:flex;gap:20px;padding:16px 18px}
+#s-inbox .apps .ap{display:flex;flex-direction:column;align-items:center;gap:6px;width:60px;font-size:11px;color:var(--ink-2)}
+#s-inbox .apps .tl{width:60px;height:60px;border-radius:14px;background:var(--surface);display:grid;place-items:center;overflow:hidden;color:var(--ink-2)}
+#s-inbox .apps .tl .avatar{width:60px;height:60px;border-radius:14px;font-size:22px}
+#s-inbox .qr{width:208px;height:208px;padding:12px;background:#fff;border-radius:16px;color:#000} /* a QR is dark-on-light in every theme */
+#s-inbox .qr svg{width:184px;height:184px;display:block;fill:currentColor}
+#s-inbox .tree .row.ch::after{content:"";position:absolute;left:calc(var(--gutter) + 10px);top:0;bottom:0;width:1px;background:var(--line-2)}
+#s-inbox .cd{width:20px;height:20px;border-radius:50%;border:2px solid color-mix(in srgb,var(--paper) 25%,transparent);border-top-color:var(--paper);border-right-color:var(--paper);display:grid;place-items:center;font-size:9px;font-weight:700;flex:0 0 auto}
+#s-inbox .term-err{margin:8px 20px 0;font-family:var(--mono);font-size:11.5px;line-height:16px;background:var(--surface);border-radius:var(--r-sm);padding:10px 12px;white-space:pre;overflow:hidden;color:var(--ink-2);text-align:left}
+#s-inbox .flowbranch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px}
+#s-inbox .flowbranch .box{min-width:0}
+</style>
+<header>
+  <div class="lane-eyebrow">07 · Inbox</div>
+  <h2>Inbox, notifications, search, links and system states</h2>
+  <p class="lede">The cross-cutting lane: the one list of what needs you, read across every server you are signed in to; the pushes that bring you back to it; search and entity chips, which move you between things; links arriving from outside the app; and the states every screen can fall into. New against the web phone shell: a native Inbox tab with fixed groups and swipe verbs, real push on both platforms (proposed — the node cannot send one yet), links that resolve across servers before anything renders, and an honest terminal state for a link to something you cannot see. That is cold-open defect N-1, which the web still has.</p>
+</header>
+
+<h3>The Inbox — what needs you</h3>
+<p>The Inbox is the third tab. It is the web's T3-7 screen re-cut for a thumb. Two laws come over verbatim from <code>inbox-model.ts</code>, and one group is added on top. Groups render in a <b>fixed order</b> — Needs you · Mentions · Assignments · Delivery failures · Replies · Everything else — and nothing the viewer does reorders them. <b>A read row fades; it never vanishes.</b> <i>Needs you</i> is new: it is the attention queue's Personal roots, the decisions only you can settle. It sits above the news because a decision blocks someone and news does not.</p>
+
+<div class="anatomy">
+  <div class="screen-strip" style="margin:0"><div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div><div class="big">Inbox</div></header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Atelier <span class="badge muted">5</span></span><span class="seg">All servers <span class="badge muted">6</span></span></div>
+          <div class="section-h">Needs you · 2<span class="more">Team · 5</span></div>
+          <div class="list lines">
+            <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t wrap">Reviewer asked you: which tab bar?</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><span class="tt">in Release notes for #955</span></span></span><span class="trail"><span class="time">11:02</span></span></a>
+            <a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker is waiting on you</span><span class="s"><span class="att"><b>!</b>5 · 12m</span><span class="tt">approve · push to origin</span></span></span><span class="trail"><span class="time">13:28</span></span></a>
+          </div>
+          <div class="section-h">Mentions · 1</div>
+          <div class="list lines"><a class="row tall unread"><span class="avatar c2">P</span><span class="main"><span class="t">Priya mentioned you</span><span class="s"><svg class="ic"><use href="#i-hash"/></svg><span class="tt">mobile · “can you look at the tablet overflow?”</span></span></span><span class="trail"><span class="time">13:05</span></span></a></div>
+          <div class="section-h">Assignments · 1 read</div>
+          <div class="list lines"><a class="row tall read"><span class="avatar c3">M</span><span class="main"><span class="t">Marco assigned you</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Desktop-shell reflow overflow (tablet-768)</span></span></span><span class="trail"><span class="time">Tue</span></span></a></div>
+          <div class="section-h alarm">Delivery failures · 1</div>
+          <div class="list lines"><a class="row tall unread"><span class="kind-ic" style="color:var(--block)"><svg class="ic"><use href="#i-error"/></svg></span><span class="main"><span class="t">Not delivered to Worker</span><span class="s"><span class="pill failed">failed</span><span class="tt">on Bridge as an entity</span></span></span><span class="trail"><span class="time">12:10</span></span></a></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:138px;top:58px"></span>
+    <span class="an" data-n="2" style="left:282px;top:58px"></span>
+    <span class="an" data-n="3" style="left:362px;top:156px"></span>
+    <span class="an" data-n="4" style="left:128px;top:206px"></span>
+    <span class="an" data-n="5" style="left:44px;top:300px"></span>
+    <span class="an" data-n="6" style="left:300px;top:578px"></span>
+    <span class="an" data-n="7" style="left:206px;top:638px"></span>
+    <span class="an" data-n="8" style="left:282px;top:768px"></span>
+    </div>
+    <div class="cap"><b>Inbox root — Atelier, iOS light</b>The anatomy phone. The fixed group order runs top to bottom, and Replies and Everything else continue below (see the Android phone). <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div></div>
+  <ol class="legend">
+    <li><b>Scope.</b> The space button names the (server, space) the Atelier segment reads. One tap opens every server and space (lane 02's switcher).</li>
+    <li><b>Search and ⋯.</b> Search opens the global search modal. ⋯ holds Mark all read, Type (only the kinds actually present, never a fixed list) and Notification settings (lane 02).</li>
+    <li><b>Atelier · All servers.</b> This space, or every signed-in server at once. Each segment shows its own count. Under All servers every row gains a server badge.</li>
+    <li><b>Needs you.</b> The attention queue's <i>Personal</i> roots (requests assigned to you), in queue order: unseen first, then level, then points, then oldest. <i>Team · 5</i> opens every pending root in the space, which everyone can see.</li>
+    <li><b>The attention chip.</b> <code>! points · age of the oldest</code>, plus <code>· ×n</code> when several requests are pending. <code>i</code> grey for FYI, amber <code>!</code> for normal and high, red for urgent — the same chip the web prints on every tile.</li>
+    <li><b>Read fades, never vanishes.</b> When a row is read its dot goes and the row dims; the row itself stays. Only your own Unread filter takes it out of view. A fully read group's heading says "1 read".</li>
+    <li><b>Failures above replies.</b> The Delivery failures heading uses the block tone, and the group always sits above Replies, whichever arrived last.</li>
+    <li><b>One count.</b> The badge says 6: two Needs-you roots, three unread rows here, one on acme-node. Each thing counts once. When a server could not be counted, it is named, never shown as 0.</li>
+  </ol>
+</div>
+
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div><div class="big">Inbox</div></header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Atelier <span class="badge muted">5</span></span><span class="seg on">All servers <span class="badge muted">6</span></span></div>
+          <div class="banner neutral"><svg class="ic"><use href="#i-wifi-off"/></svg>acme-node unreachable — its rows are from 12:58<span class="act">Try again</span></div>
+          <div class="section-h">Needs you · 2</div>
+          <div class="list lines">
+            <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer asked you: which tab bar?</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><span class="srv"><i>A</i>Atelier</span></span></span><span class="trail"><span class="time">11:02</span></span></a>
+            <a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker is waiting on you</span><span class="s"><span class="att"><b>!</b>5 · 12m</span><span class="srv"><i>A</i>Atelier</span></span></span><span class="trail"><span class="time">13:28</span></span></a>
+          </div>
+          <div class="section-h">Mentions · 2</div>
+          <div class="list lines">
+            <a class="row tall unread"><span class="avatar c2">P</span><span class="main"><span class="t">Priya mentioned you</span><span class="s"><span class="srv"><i>A</i>Atelier</span><span class="tt">#mobile · tablet overflow</span></span></span><span class="trail"><span class="time">13:05</span></span></a>
+            <a class="row tall unread"><span class="avatar c4">L</span><span class="main"><span class="t">Lena mentioned you</span><span class="s"><span class="srv"><i class="x">M</i>acme-node · Mobile</span><span class="tt">#general</span></span></span><span class="trail"><span class="time">12:51</span></span></a>
+          </div>
+          <div class="section-h">Assignments · 1 read</div>
+          <div class="list lines"><a class="row tall read"><span class="avatar c3">M</span><span class="main"><span class="t">Marco assigned you</span><span class="s"><span class="srv"><i>A</i>Atelier</span><span class="tt">Desktop-shell reflow overflow</span></span><span class="q">in <svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></span><span class="trail"><span class="time">Tue</span></span></a></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>All servers — iOS dark</b>One list across every signed-in server, still in the fixed group order. Each row names its space, and its server too when that is not this one. acme-node could not be reached, so its row comes from cache and the banner says from when. Its count is kept and marked stale, never dropped to 0. A child entity names its parent ("in TM8 Mobile app", owner ruling 2026-10-28); Inbox rows themselves stay flat. <span class="route">/[server]/[space]/(tabs)/inbox?scope=all</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="section-h alarm">Delivery failures · 1 read</div>
+          <div class="list lines"><a class="row tall read"><span class="kind-ic" style="color:var(--block)"><svg class="ic"><use href="#i-error"/></svg></span><span class="main"><span class="t">Not delivered to Worker</span><span class="s"><span class="pill failed">failed</span><span class="tt">Bridge as an entity</span></span></span><span class="trail"><span class="time">12:10</span></span></a></div>
+          <div class="section-h">Replies · 1 read</div>
+          <div class="list lines"><a class="row tall read"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Coordinator replied</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">TM8 Mobile app</span></span></span><span class="trail"><span class="time">13:31</span></span></a></div>
+          <div class="section-h">Everything else · 2 read</div>
+          <div class="list lines">
+            <a class="row tall read"><span class="avatar c3">M</span><span class="main"><span class="t">Marco unblocked you</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Repoint family: 1-arg resume gate</span></span></span><span class="trail"><span class="time">Mon</span></span></a>
+            <a class="row tall read"><span class="kind-ic"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t">Flagged this as stale</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Bridge as an entity</span></span></span><span class="trail"><span class="time">Sun</span></span></a>
+          </div>
+          <div class="absent">Showing the first 50 — the node has more. Filters narrow only what is loaded.</div>
+          <div class="toast">3 marked read<span class="act">Undo</span></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Mark all read, with Undo — Android light</b>Scrolled to the end. Every notification faded where it was and stayed. The two Needs-you rows above, plus acme-node's one, keep the badge at 3: read is not resolved. Undo is real because nothing has been sent yet. The <code>inbox.markRead</code> fan-out starts only when the snackbar closes, 5 s later. A row with no actor leads with the verb ("Flagged this as stale"), never "Someone". <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="filters"><span class="f">All</span><span class="f on">Unread</span><span class="f"><svg class="ic"><use href="#i-pin"/></svg>Pinned</span><span class="f">Type<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="section-h">Needs you · 2</div>
+          <div class="list lines swipe">
+            <div class="swipe-actions"><span class="act pin"><svg class="ic"><use href="#i-pin"/></svg>Pin</span><span class="act done"><svg class="ic"><use href="#i-check"/></svg>Resolve</span></div>
+            <a class="row tall unread swiped"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker is waiting on you</span><span class="s"><span class="att"><b>!</b>5 · 12m</span><span class="tt">approve · push</span></span></span><span class="trail"><span class="time">13:28</span></span></a>
+          </div>
+          <div class="list lines" style="border-top:1px solid var(--line)"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t wrap">Reviewer asked you: which tab bar?</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><span class="tt">in Release notes for #955</span></span></span><span class="trail"><span class="time">11:02</span></span></a></div>
+          <div class="section-h">Mentions · 1</div>
+          <div class="list lines swipe">
+            <div class="swipe-actions lead"><span class="act read"><svg class="ic"><use href="#i-eye"/></svg>Read</span></div>
+            <a class="row tall unread swiped-r"><span class="avatar c2">P</span><span class="main"><span class="t">Priya mentioned you</span><span class="s"><svg class="ic"><use href="#i-hash"/></svg><span class="tt">mobile · tablet</span></span></span><span class="trail"><span class="time">13:05</span></span></a>
+          </div>
+          <div class="section-h alarm">Delivery failures · 1</div>
+          <div class="list lines"><a class="row tall unread"><span class="kind-ic" style="color:var(--block)"><svg class="ic"><use href="#i-error"/></svg></span><span class="main"><span class="t">Not delivered to Worker</span><span class="s"><span class="pill failed">failed</span><span class="tt">on Bridge as an entity</span></span></span><span class="trail"><span class="time">12:10</span></span></a></div>
+          <div class="section-h">Replies · 1</div>
+          <div class="list lines"><a class="row tall unread"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Coordinator replied</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">TM8 Mobile app</span></span></span><span class="trail"><span class="time">13:31</span></span></a></div>
+          <div class="absent">Nothing unread in assignments · everything else.</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Swipe verbs, Unread filter on — iOS light</b>A Needs-you row swipes left to Pin · Resolve (an optional note, then 8 s to Undo). A notification swipes right to Read. On a read row that action is absent, not dead, because the node has no mark-unread (proposed: <code>inbox.markUnread</code>). Pins live on this phone only. The filter is the one thing allowed to hide read rows, and the absence line names the groups it emptied. <span class="route">/[server]/[space]/(tabs)/inbox?filter=unread</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div><div class="big">Inbox</div></header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Atelier <span class="badge muted">5</span></span><span class="seg">All servers <span class="badge muted">6</span></span></div>
+          <div class="section-h">Needs you · 2</div>
+          <div class="list lines"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer asked you</span><span class="s">which tab bar?</span></span></a></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+        <div class="blur"></div>
+        <div class="pv" style="top:150px">
+          <span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17f0c</span>
+          <span class="t">Security lane A</span>
+          <span class="m"><span class="pill waiting">waiting</span>Worker · Opus 5.5 · 38 min</span>
+          <span class="m"><span class="att"><b>!</b>5 · 12m</span>approve · git push origin</span>
+          <span class="q">launched by <svg class="ic"><use href="#i-chat"/></svg>Plan the credentials security lane</span>
+        </div>
+        <div class="menu" style="left:16px;top:352px;width:262px">
+          <div class="mi">Open session<svg class="ic"><use href="#i-session"/></svg></div>
+          <div class="mi">Reply…<svg class="ic"><use href="#i-reply"/></svg></div>
+          <div class="mi">Mark seen<svg class="ic"><use href="#i-eye"/></svg></div>
+          <div class="mi">Resolve…<svg class="ic"><use href="#i-check"/></svg></div>
+          <div class="mi">Pin on this phone<svg class="ic"><use href="#i-pin"/></svg></div>
+          <div class="mi">Copy link<svg class="ic"><use href="#i-link"/></svg></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Long-press a row — iOS dark</b>The row lifts into a preview of what it opens — here the session, and the chat that launched it — over a menu of the row's verbs. Mark seen dims the row and changes no count; Resolve is the only verb that settles anything. Android shows the same list as a bottom sheet (see Chips). <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+</div>
+
+<div class="why">The group order is the web's: an order the caller can vary will vary, so the native list hard-codes <code>INBOX_GROUP_ORDER</code> and only prepends Needs you. A notification tells you something happened. A Needs-you row asks you to decide, and leaves only when the request is resolved, never because it was read or seen. Mark all read therefore cannot empty the tab, and the badge keeps saying so. Undo for a bulk read is a held write rather than a reverse write, because the node has <code>inbox.markRead</code> and nothing that un-reads.</div>
+
+<h4>The four states of the list</h4>
+<p>The web keeps four distinct facts apart — "we haven't asked yet", "the read failed", "your filter hides everything", "your inbox really is empty" — because a viewer who cannot tell them apart cannot act on any of them. The phone keeps them apart too. Loading is the list skeleton in the system-states catalogue.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div><div class="big">Inbox</div></header>
+        <main class="content"><div class="empty" style="padding:24px 32px 28px"><svg class="ic"><use href="#i-inbox"/></svg><div class="h">Nothing needs you</div><p>Forms, sessions waiting on you, mentions, assignments and replies land here as they happen.</p><span class="btn">See what’s moving</span></div></main>
+      </div>
+    </figure>
+    <div class="cap"><b>Empty — it really is</b>The verb goes to Work, where things move. Empty means the read succeeded and returned nothing. <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="dark">
+      <div class="ph-screen">
+        <main class="content"><div class="filters" style="padding-top:12px"><span class="f">All</span><span class="f on">Unread</span><span class="f">Pinned</span><span class="f">Type</span></div><div class="empty" style="padding:20px 32px 28px"><svg class="ic"><use href="#i-filter"/></svg><div class="h">Nothing unread</div><p>7 loaded, none unread. Read rows are still here; the filter is hiding them.</p><span class="btn">Show all</span></div></main>
+      </div>
+    </figure>
+    <div class="cap"><b>Filtered to nothing</b>Says how many rows the filter hides, so it never reads as an empty inbox. <span class="route">/[server]/[space]/(tabs)/inbox?filter=unread</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone flat" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-screen">
+        <main class="content"><div class="empty" style="padding:28px 28px"><svg class="ic" style="color:var(--block)"><use href="#i-error"/></svg><div class="h">The inbox read failed</div><p>tm8.sh answered <code>upstream_unavailable</code>. Nothing is hidden: there is no data to show, and the badge keeps its last count, marked stale.</p><span class="btn">Try again</span></div></main>
+      </div>
+    </figure>
+    <div class="cap"><b>Read failed — Android dark</b>A failed read is never flattened into an empty list: "we could not ask" is a different fact from "nothing for you". <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+</div>
+
+<h4>Row anatomy, per notification kind</h4>
+<p>One row grammar for every kind: <b>headline</b> (actor + verb, bold while unread) · <b>target</b> (kind glyph + title, or the attention chip on a Needs-you row) · an optional third line (the parent, per the tree ruling, or the quoted message) · time. <code>NotificationItem.kind</code> is an open union, so a kind this build does not know lands in Everything else with its name humanised (<code>review_request</code> → "requested your review"; an unknown <code>foo_bar</code> → "foo bar"). It is never dropped.</p>
+<div class="kinds">
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer asked you: which tab bar?</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><svg class="ic"><use href="#i-form"/></svg><span class="tt">Which tab bar? (3 options)</span></span></span><span class="trail"><span class="time">11:02</span></span></a></div></main></div></figure>
+  <p><b>form asked</b> · Needs you. An attention request raised by the chat that asked, pinned on the form and rolled up to its task. <i>Tap</i>: the asking chat at the form, <code>chat/[id]?form=[id]</code> (route proposed with lane 03; <code>openTargetOf</code>: an agent-raised request opens its source). <i>Swipe</i>: Pin · Resolve. <i>Push</i>: "Reviewer asked you: which tab bar?"</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker is waiting on you</span><span class="s"><span class="att"><b>!</b>5 · 12m</span><span class="tt">approve · push to origin</span></span></span><span class="trail"><span class="time">13:28</span></span></a></div></main></div></figure>
+  <p><b>session waiting on you</b> · Needs you. Raised by a work session (<code>actionType</code> approve · decide · unblock · review). PTY silence alone never makes this row. <i>Tap</i>: the session page with its waiting banner. <i>Swipe</i>: Pin · Resolve. <i>Push</i>: "Worker is waiting: push to origin", time-sensitive.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar c2">P</span><span class="main"><span class="t">Priya mentioned you</span><span class="s"><svg class="ic"><use href="#i-hash"/></svg><span class="tt">mobile</span></span><span class="p">“@subhang can you look at the tablet overflow?”</span></span><span class="trail"><span class="time">13:05</span></span></a></div></main></div></figure>
+  <p><b>mention</b> · Mentions. Third line: the quoted message, when the item carries one. <i>Tap</i>: the message on its anchor, highlighted (<code>channel/[id]?msg=</code>, or <code>e/[id]/messages?msg=</code>); this marks the row read. <i>Swipe</i>: Read · Pin. <i>Push</i>: "Priya mentioned you in #mobile".</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar c3">M</span><span class="main"><span class="t">Marco assigned you</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Desktop-shell reflow overflow (tablet-768)</span></span><span class="q">in <svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app · medium</span></span><span class="trail"><span class="time">Tue</span></span></a></div></main></div></figure>
+  <p><b>assignment</b> · Assignments. The target is a subtask, so the row names its parent (owner ruling 2026-10-28: a row for a child entity says "in ◆ parent"). <i>Tap</i>: the task page. <i>Swipe</i>: Read · Pin. <i>Push</i>: "Marco assigned you" · task title.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="kind-ic" style="color:var(--block)"><svg class="ic"><use href="#i-error"/></svg></span><span class="main"><span class="t">Not delivered to Worker</span><span class="s"><span class="pill failed">failed</span><span class="tt">on Bridge as an entity · session exited</span></span></span><span class="trail"><span class="time">12:10</span></span></a></div></main></div></figure>
+  <p><b>delivery failure</b> · Delivery failures. A prepared reader: the contract has no failure kind yet, so the group renders only when rows like this arrive. <i>Tap</i>: the message on its anchor, where <b>Send again</b> lives — a new send with a new record, never "Retry". It cannot be offered on the row, which carries no message id.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Coordinator replied</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">TM8 Mobile app</span></span><span class="p">“Foundation written; eight lanes spawned.”</span></span><span class="trail"><span class="time">13:31</span></span></a></div></main></div></figure>
+  <p><b>reply</b> · Replies. <i>Tap</i>: the thread on its anchor, at the reply. <i>Swipe</i>: Read · Pin. <i>Push</i>: grouped with mentions in the "Mentions and replies" channel.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer requested your review</span><span class="s"><svg class="ic"><use href="#i-pr"/></svg><span class="tt">#1208 fix(mcp): expose spaceLinks.list</span></span></span><span class="trail"><span class="time">10:20</span></span></a></div></main></div></figure>
+  <p><b>review_request</b> · Everything else. <i>Tap</i>: the PR page (lane 05). Its review state lives there, not on the row.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar c3">M</span><span class="main"><span class="t">Marco unblocked you</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Repoint family: 1-arg resume gate</span></span></span><span class="trail"><span class="time">Mon</span></span></a></div></main></div></figure>
+  <p><b>unblock</b> · Everything else. <i>Tap</i>: the task. The row says who unblocked it; whether it is still blocked is the task's own pill, read when the task opens.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Dreamer awarded you</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Craft L4.5 top bar QA</span></span><span class="p">“Clean pass, thank you.”</span></span><span class="trail"><span class="time">Sun</span></span></a></div></main></div></figure>
+  <p><b>award</b> · Everything else. The row shows only what the item carries: actor, target, message. It never invents a points figure.</p>
+  <figure class="phone flat" data-os="ios" data-theme="light"><div class="ph-screen"><main class="content"><div class="list"><a class="row tall unread"><span class="kind-ic"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t">Flagged this as stale</span><span class="s"><svg class="ic"><use href="#i-task"/></svg><span class="tt">Bridge as an entity</span></span></span><span class="trail"><span class="time">Sun</span></span></a></div></main></div></figure>
+  <p><b>stale</b> · Everything else. With no actor the verb stands alone, capitalised. The kind tile replaces the avatar, because inventing "Someone" would put a fabricated fact on the loudest line of the row.</p>
+</div>
+
+
+<h3>What “needs you” means — the attention model</h3>
+<p>“Needs you” is not a filter on notifications. It is the space's <b>attention queue</b>: requests raised on an entity (a form waiting for your answer, a session waiting on your permission, a decision, a review) and assigned to you, grouped by the root they roll up to. A request stays until someone <b>resolves</b> it. Reading or seeing it does not count, and PTY silence never raises one. The phone renders the same three surfaces as the web: the Inbox's Needs-you group, the <b>Needs me</b> filter on every list (the queue's <code>mine</code> roots for that kind, in queue order), and the <b>attention control</b> on each entity page.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Inbox</span></span></div><div class="title">Session<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-chat"/></svg>Plan the credentials security lane ›</span>
+            <span class="title">Security lane A</span>
+            <span class="meta"><span class="pill waiting">waiting</span><span class="avatar agent xs c3"><svg class="ic"><use href="#i-bot"/></svg></span>Worker · Opus 5.5 · 38 min</span>
+          </div>
+          <div class="wb">
+            <div class="l1"><span class="eyebrow" style="color:var(--wait)">Waiting on you</span><span class="att"><b>!</b>5</span><span class="age">12m</span></div>
+            <div class="rs">Worker wants to run <code>git push origin tm8/security-lane-a</code> and asked you to approve.</div>
+            <div class="va"><span class="btn on sm">Open terminal</span><span class="btn outline sm">Message</span><span class="btn outline sm">Resolve…</span></div>
+          </div>
+          <div class="segmented"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Children · 2</span></div>
+<div class="term" style="margin:6px 12px;border-radius:10px;height:218px"><span class="d">● Bash(git status --short)</span>
+  └  M packages/server/src/creds/recheck.ts
+<span class="d">● Bash(pnpm vitest run creds)</span>
+  └  <span class="g">✓ 42 passed</span> (3.1s)
+<span class="y">? Allow Bash(git push origin</span>
+<span class="y">  tm8/security-lane-a)?</span>
+  <span class="b">❯ 1. Yes</span>
+    2. Yes, and don't ask again
+    3. No, tell Claude what to do
+<span class="cur"></span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Session waiting on you — iOS light</b>The banner is the web's <code>SessionWaitingBanner</code>, labelled WAITING ON YOU. It sits between the head and the tabs, so it is the first thing under the title. <b>Open terminal</b> answers the prompt where it lives: the app never presses "Yes" on your behalf from a banner. <b>Message</b> writes to the session and the request stays open. <b>Resolve…</b> closes the request with an optional note sent to the session. The eyebrow is the parent chain (the chat that launched it). <span class="route">/[server]/[space]/session/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">TM8 Mobile app</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="meta"><span class="pill working">working</span>medium · Worker + Coordinator</span></div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:78%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Attention · 2 pending</span><span class="att"><b>!</b>8 · 2h</span></div>
+          <div class="sheet-b">
+            <div class="rq">
+              <div class="tg"><span class="tagl">Decide</span>to you · 2h</div>
+              <div class="rs">Reviewer asked: which tab bar?</div>
+              <div class="mt">raised in <span class="lk">Release notes for #955</span><span>on Lane 02 shell</span></div>
+              <div class="btnrow"><span class="btn sm outline">Open form</span><span class="btn sm primary">Resolve…</span></div>
+            </div>
+            <div class="rq" style="opacity:.55">
+              <div class="tg"><span class="tagl t">Review</span>to you · 40m</div>
+              <div class="rs">Coordinator: check lane 07 shots</div>
+              <div class="mt">Resolved by you just now</div>
+            </div>
+            <div class="rq">
+              <div class="tg"><span class="tagl t">FYI</span>to the team · 1d</div>
+              <div class="rs">Dreamer: usage limit paused every lane</div>
+              <div class="mt">raised on <span class="lk">TM8 Mobile app</span></div>
+              <div class="btnrow"><span class="btn sm outline">Resolve…</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="toast" style="bottom:20px"><span class="cd">8</span>Resolved.<span class="act">Undo</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Entity attention control, after a Resolve — Android dark</b>Tapping the attention chip on any entity page opens its requests, grouped by the root they count on, including the ones this entity's children raised. Resolve takes an optional note. The row dims in place, and the snackbar counts down the 8 s for which the node keeps a Resolve undoable (<code>unresolve(batchId)</code>). After that the sheet drops the row. The header chip is the same <code>! points · age</code> as everywhere else. <span class="route">/[server]/[space]/e/[id]?sheet=attention</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Work</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="filters"><span class="f">All</span><span class="f on">Needs me · 3</span><span class="f">Mine</span><span class="f">Blocked</span></div>
+          <div class="list tree lines">
+            <a class="row" style="--depth:0;opacity:.6"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>context · 2 of 9 children need you</span></span></a>
+            <a class="row tall ch" style="--depth:1"><span class="tw"></span><span class="main"><span class="t">Lane 02 — shell and servers</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><span class="pill working">working</span></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row tall ch" style="--depth:1"><span class="tw"></span><span class="main"><span class="t">Lane 07 — inbox and links</span><span class="s"><span class="att fyi"><b>i</b>1 · 40m</span><span class="pill working">working</span></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row tall" style="--depth:0"><span class="tw"></span><span class="main"><span class="t">Repoint family: 1-arg resume gate</span><span class="s"><span class="att urgent"><b>!</b>8 · 1d</span><span class="pill blocked">blocked</span></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          </div>
+          <div class="absent">3 requests need you here. A dimmed parent is shown for its place in the tree; it needs nothing itself.</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>The Needs me filter, as a tree — iOS dark</b>The row source is the queue's <code>mine</code> roots for this kind, in queue order, never an intersection with the loaded page. Per the owner's tree ruling, a root that has a parent is drawn under it. The parent comes in dimmed, as context, with a count of how many of its children need you. The web draws this as one flat list; that is open question 1. <span class="route">/[server]/[space]/(tabs)/work?filter=needs-me</span></div>
+  </div>
+</div>
+<div class="why">The banner never offers <b>Approve</b>. The permission prompt belongs to the agent's terminal, and the node has no verb that answers it on your behalf. A button that typed "1⏎" into a PTY would race whatever the agent printed next. The web ruling keeps Resolve separate from "answered" for the same reason: resolving a request settles the queue, and only the terminal settles the prompt.</div>
+
+<h3>Push notifications — proposed</h3>
+<div class="callout warn"><b>Proposed facade widening</b>No tm8 node sends a push today. This part needs three things that do not exist yet: <code>devices.register</code> (APNs / FCM token per server and member), a per-server push relay that signs the payload so the app can verify it before showing it, and a notification-preferences read so the phone can show what the node will send. Until a node advertises them, the app is honest about it: no permission prompt, and Settings reads "This server does not send notifications yet". The Inbox still updates live whenever the app is open.</div>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="lock"></div>
+        <div class="lockui">
+          <span class="date">Wednesday 28 October</span>
+          <span class="clock">14:07</span>
+          <div class="grow"></div>
+          <div class="ln"><span class="app">tm8</span><div class="nb"><div class="nh"><span>TM8 · ATELIER · TIME SENSITIVE</span><span>now</span></div><div class="nt">Worker is waiting: push to origin</div><div class="nx">Security lane A asked you to approve git push origin tm8/security-lane-a</div></div></div>
+          <div class="ln"><span class="app">tm8</span><div class="nb"><div class="nh"><span>TM8 · ATELIER</span><span>2h ago</span></div><div class="nt">Reviewer asked you: which tab bar?</div><div class="nx">Release notes for #955 · 3 options</div></div></div>
+          <div class="peek" style="width:88%"></div><div class="peek" style="width:80%;height:7px"></div>
+          <div class="ln"><span class="app">tm8</span><div class="nb"><div class="nh"><span>TM8 · ACME-NODE · MOBILE</span><span>9m ago</span></div><div class="nt">Session exited: done</div><div class="nx">Worker finished “Release build 1.4” · 3 commits</div></div></div>
+          <div class="lockfoot"><span><svg class="ic"><use href="#i-zap"/></svg></span><span><svg class="ic"><use href="#i-camera"/></svg></span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Lock screen — iOS</b>Grouped by <b>server · space</b> (<code>threadIdentifier = server/space</code>), so Atelier's stack and acme-node's stay apart. Only "waiting on you" is Time Sensitive. Everything else is passive or active. A stack's two collapsed pushes are the earlier Atelier rows. Long-press shows Reply · Mark read · Open. <span class="route">tap → /[server]/[space]/session/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="shade">
+          <div class="qs"><span class="on"><svg class="ic"><use href="#i-wifi"/></svg></span><span><svg class="ic"><use href="#i-moon"/></svg></span><span class="on"><svg class="ic"><use href="#i-bell"/></svg></span><span><svg class="ic"><use href="#i-sun"/></svg></span></div>
+          <div class="nc">
+            <div class="nh"><span class="app">tm8</span>tm8 · Atelier · 3<svg class="ic"><use href="#i-chevron-up"/></svg></div>
+            <div class="it">
+              <div class="nt">Priya mentioned you in #mobile<span>13:05</span></div>
+              <div class="nx">@subhang can you look at the tablet overflow?</div>
+              <div class="rin">Looking now —<span class="go"><svg class="ic"><use href="#i-send"/></svg></span></div>
+            </div>
+            <div class="it">
+              <div class="nt">Worker is waiting: push to origin<span>13:28</span></div>
+              <div class="nx">Security lane A · approve</div>
+              <div class="na"><span>Open</span><span>Mark read</span></div>
+            </div>
+          </div>
+          <div class="nc">
+            <div class="nh"><span class="app">tm8</span>tm8 · acme-node · Mobile<svg class="ic"><use href="#i-chevron-down"/></svg></div>
+            <div class="it"><div class="nt">Session exited: done<span>13:58</span></div><div class="nx">Release build 1.4 · 3 commits</div></div>
+          </div>
+          <div class="shade-f"><span>Manage</span><span>Clear all</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Notification shade, inline reply — Android light</b>One notification group per server and space. Channels are <i>Waiting on you</i> (high importance), <i>Mentions and replies</i>, <i>Assignments</i> and <i>Session updates</i> (low), so you can silence one in system settings and keep the others. Reply sends a message on the anchor, the same as the composer. A waiting session offers no Reply, because there is nothing a reply could approve. <span class="route">tap → /[server]/[space]/channel/[id]?msg=</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"></div><div class="big">Inbox</div></header>
+        <main class="content">
+          <div class="card" style="margin:8px 16px"><div class="h">Know when Worker is waiting on you</div><p style="margin:4px 0 12px;font-size:15px">tm8.sh can tell this phone when a session waits for your approval or someone mentions you. You choose which kinds in Settings.</p><div class="btnrow"><span class="btn outline">Not now</span><span class="btn primary">Turn on</span></div></div>
+        </main>
+        <div class="scrim"></div>
+        <div class="dialog"><div class="d-b"><div class="h">“tm8” Would Like to Send You Notifications</div><p>Notifications may include alerts, sounds and icon badges. These can be configured in Settings.</p></div><div class="d-a" style="--brand:var(--info)"><span>Don’t Allow</span><span><b>Allow</b></span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Asking, once, in context — iOS light</b>The system prompt comes only after the app's own card, and only when a server advertises push. The card appears the first time something lands in Needs you, not at first run. "Not now" waits for the next such moment, at most once a week. <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone flat" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-bell-off"/></svg>Notifications are off for tm8. You see this only with the app open.<span class="act">Settings</span></div>
+          <div class="section-h">Needs you · 2</div>
+          <div class="list lines"><a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Worker is waiting on you</span><span class="s"><span class="att"><b>!</b>5 · 12m</span><span class="tt">approve · push</span></span></span></a></div>
+          <div class="kv" style="margin:14px 16px 16px"><dt>Badge</dt><dd>off · system setting</dd><dt>tm8.sh</dt><dd>would send 4 kinds</dd><dt>acme-node</dt><dd>sends nothing yet</dd></div>
+        </main>
+      </div>
+    </figure>
+    <div class="cap"><b>Denied — Android dark</b>A denial is never asked again in-app. It becomes a dismissible banner on the Inbox that links to the system screen, and the notification settings (lane 02) show, per server, what that server would send and what it cannot. <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+</div>
+
+<table class="spec">
+  <thead><tr><th style="width:22%">Push</th><th style="width:18%">Channel / interruption</th><th style="width:22%">Actions</th><th>Tap opens</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Worker is waiting: push to origin</td><td>Waiting on you · iOS time-sensitive / Android high</td><td>Open · Mark read</td><td>The session page with its waiting banner. Never a terminal key press.</td></tr>
+    <tr><td class="code">Reviewer asked you: which tab bar?</td><td>Waiting on you · active / default</td><td>Open · Mark read</td><td>The asking chat at the form, <code>chat/[id]?form=</code> (proposed)</td></tr>
+    <tr><td class="code">Priya mentioned you in #mobile</td><td>Mentions and replies · active / default</td><td>Reply · Mark read · Open</td><td><code>channel/[id]?msg=</code>, the message highlighted</td></tr>
+    <tr><td class="code">Session exited: done</td><td>Session updates · passive / low</td><td>Open</td><td>The session page. It says done or failed, with its exit reason.</td></tr>
+    <tr><td class="code">Marco assigned you</td><td>Assignments · active / default</td><td>Open · Mark read</td><td>The task page</td></tr>
+  </tbody>
+</table>
+<div class="why"><b>Badge count rules.</b> The app icon shows the same number as the Inbox tab: Needs-you roots plus unread notifications, summed across every signed-in server and counted once each. A server that could not be counted is <i>not</i> counted as 0. The icon keeps its last known total, and the Inbox names the stale server. Read is not resolved, so Mark read on a waiting push lowers the badge only by its notification row; the Needs-you root keeps counting until it is resolved. Mark read from a push uses the existing <code>inbox.markRead</code>. Nothing else a push does needs a new verb.</div>
+
+<h3>Global search</h3>
+<p>Search is a modal, opened from the search icon at the top right of every tab root. The node's free-text search, <code>search.query</code>, is <b>reserved and answers 501</b>. The phone therefore searches what the node can answer today: <code>collections.query</code> with <code>words</code> (every word, matched across titles and short descriptions) and the kind, status and assignee filters. Message bodies and doc text are not searched. The screen says so instead of returning a silent nothing.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="srow"><div class="search input focus"><svg class="ic"><use href="#i-search"/></svg><span class="ph">Search Atelier</span><span class="caret"></span></div><span class="cx">Cancel</span></div>
+        <main class="content">
+          <div class="segmented"><span class="seg on">This space</span><span class="seg">All servers</span></div>
+          <div class="section-h">Recent</div>
+          <div class="list">
+            <a class="row"><span class="lead"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t">tab bar</span></span></a>
+            <a class="row"><span class="lead"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Readiness per used provider</span></span><span class="trail"><span class="pill review">in review</span></span></a>
+          </div>
+          <div class="section-h">Narrow it</div>
+          <div class="hints"><span class="chip">kind:task</span><span class="chip">status:blocked</span><span class="chip">@me</span><span class="chip">in:TM8&nbsp;Mobile&nbsp;app</span></div>
+        </main>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div><div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k go">search</span></div></div>
+      </div>
+    </figure>
+    <div class="cap"><b>Opened, keyboard up — iOS light</b>Focus lands in the field. Recent queries and opened entities are kept per space on this phone. A hint chip inserts its token, and the tokens become <code>collections.query</code> filters: <code>kind:</code>, <code>status:</code>, <code>@me</code> → assignee, <code>in:</code> → subtree. <span class="route">/search (modal over any tab)</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="srow"><div class="search input"><svg class="ic"><use href="#i-search"/></svg>tab bar</div><span class="cx">Cancel</span></div>
+        <main class="content">
+          <div class="filters"><span class="f on">All · 6</span><span class="f">Tasks · 3</span><span class="f">Docs · 2</span><span class="f">Forms · 1</span></div>
+          <div class="section-h">Tasks · 3</div>
+          <div class="list tree lines">
+            <a class="row" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>2 match below</span></span></a>
+            <a class="row ch" style="--depth:1"><span class="tw"></span><span class="main"><span class="t">Lane 02 — shell, <span class="hl">tab bar</span> and servers</span><span class="s"><span class="pill working">working</span>Worker</span></span></a>
+            <a class="row ch" style="--depth:1"><span class="tw"></span><span class="main"><span class="t">Native <span class="hl">tab bar</span> badge rules</span><span class="s"><span class="pill to_do">to do</span></span></span></a>
+          </div>
+          <div class="section-h">Docs · 2</div>
+          <div class="list lines">
+            <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">The Back Contract</span><span class="s">“…the <span class="hl">tab bar</span> is the root of every stack…”</span></span></a>
+            <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Phone shell — <span class="hl">tab bar</span> study</span></span></a>
+          </div>
+          <div class="section-h">Forms · 1</div>
+          <div class="list lines"><a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-form"/></svg></span><span class="main"><span class="t">Which <span class="hl">tab bar</span>? (3 options)</span><span class="s"><span class="att"><b>!</b>3 · 2h</span>needs you</span></span></a></div>
+          <div class="refusal" style="margin-top:10px"><div class="h">Messages and doc text are not searched</div><p>Full-text search (<code>search.query</code>) is not built on tm8.sh yet. These results match titles and short descriptions.</p></div>
+        </main>
+      </div>
+    </figure>
+    <div class="cap"><b>Results grouped by kind — iOS dark</b>Groups follow the order of the Browse tab's kinds, and the filter chips count only the kinds present. Two matching subtasks come in under their parent, per the tree ruling. A doc row's excerpt is its short description, never a body match the node did not make. <span class="route">/search?q=tab%20bar</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="asb"><span class="iconbtn"><svg class="ic"><use href="#i-arrow-left"/></svg></span><span class="q">kind:task status:blocked @me</span><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></div>
+        <main class="content">
+          <div class="chips"><span class="chip brand"><svg class="ic"><use href="#i-task"/></svg>Tasks</span><span class="chip block">blocked</span><span class="chip">assigned to me</span><span class="chip"><svg class="ic"><use href="#i-globe"/></svg>All servers</span></div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span><span class="srv"><i>A</i>Atelier</span></span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Play Store listing assets</span><span class="s"><span class="pill blocked">blocked</span><span class="srv"><i class="x">M</i>acme · Mobile</span></span></span></a>
+          </div>
+        </main>
+        <div class="keyboard"><div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div><div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div><div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div><div class="kr"><span class="k w">?123</span><span class="k space"> </span><span class="k w"><svg class="ic" style="width:18px;height:18px"><use href="#i-search"/></svg></span></div></div>
+      </div>
+    </figure>
+    <div class="cap"><b>Query tokens, all servers, keyboard up — Android light</b>Recognised tokens echo as chips (tap one to remove it), so the query is legible without knowing the syntax. All servers runs the same <code>collections.query</code> on each signed-in server in parallel, and rows carry the server badge. <span class="route">/search?q=…&amp;scope=all</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen">
+        <div class="srow"><div class="search input"><svg class="ic"><use href="#i-search"/></svg>tabbar</div><span class="cx">Cancel</span></div>
+        <main class="content">
+          <div class="list"><div class="row"><span class="skeleton" style="width:32px;height:32px;border-radius:8px"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div><div class="row"><span class="skeleton" style="width:32px;height:32px;border-radius:8px"></span><span class="main"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40"></span></span></div></div>
+          <div class="empty" style="padding:18px 32px 24px"><svg class="ic"><use href="#i-search"/></svg><div class="h">Nothing in Atelier titles for “tabbar”</div><p>Every word must appear in a title or short description. acme-node is still answering.</p><span class="btn">Search all servers</span></div>
+        </main>
+      </div>
+    </figure>
+    <div class="cap"><b>Loading, then empty</b>Skeleton rows hold the place while the first server answers. Empty says what was searched and where, and its verb widens the scope. A server still answering is named, never counted as "no results". <span class="route">/search?q=tabbar</span></div>
+  </div>
+</div>
+
+<h3>Entity chips and links</h3>
+<p>A chip is the smallest unit of tm8: a <b>kind glyph</b>, the <b>title</b>, a <b>state tint</b>, and, for a reference into another space, a <b>server / space badge</b>. Tap pushes the entity's page. The web ruling stands: no peek on tap. Long-press opens a preview sheet. The same chip renders in prose, in markdown, in transcripts and in rows.</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen"><main class="content">
+        <div class="chipset">
+          <span class="chip run"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span>
+          <span class="chip block"><svg class="ic"><use href="#i-task"/></svg>Repoint family: 1-arg resume gate</span>
+          <span class="chip info"><svg class="ic"><use href="#i-pr"/></svg>#955 Readiness per used provider</span>
+          <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span>
+          <span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Security lane A</span>
+          <span class="chip"><svg class="ic"><use href="#i-task"/></svg>Play Store listing<span class="srv"><i class="x">M</i>acme · Mobile</span></span>
+          <span class="chip snap"><svg class="ic"><use href="#i-doc"/></svg>Rollout plan v2 · as linked</span>
+          <span class="chip gone"><svg class="ic"><use href="#i-lock"/></svg><span class="idm">01a17e…c4</span></span>
+        </div>
+        <div class="prose" style="padding:0 16px 16px;font-size:15px;line-height:22px">Blocked on <span class="chip block"><svg class="ic"><use href="#i-task"/></svg>Repoint family</span> until <span class="chip info"><svg class="ic"><use href="#i-pr"/></svg>#955</span> lands; see <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span> §2.</div>
+      </main></div>
+    </figure>
+    <span class="an" data-n="1" style="left:6px;top:8px"></span>
+    <span class="an" data-n="2" style="left:268px;top:48px"></span>
+    <span class="an" data-n="3" style="left:262px;top:152px"></span>
+    <span class="an" data-n="4" style="left:2px;top:186px"></span>
+    <span class="an" data-n="5" style="left:324px;top:186px"></span>
+    <span class="an" data-n="6" style="left:362px;top:232px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Glyph + title.</b> The kind glyph from the shared set; the title is ellipsised at 24 characters in rows and kept whole in prose.</li>
+    <li><b>State tint.</b> Working and live are green, waiting amber, blocked and failed red, in review blue. No tint means no live state. The word lives on the page, so the tint is never the only signal.</li>
+    <li><b>Server / space badge.</b> Only on a reference outside this space. Tap signs you in to that server first if needed (see the link flow).</li>
+    <li><b>Snapshot.</b> A dashed chip is a reference to the version the author linked (<code>@v</code>), labelled "as linked". The page opens on that version with "newer exists".</li>
+    <li><b>Unavailable.</b> The ref did not resolve for you: a lock and the short id, never a title the node did not send. Tap opens the terminal state below.</li>
+    <li><b>In prose.</b> Inline chips sit on the text baseline at 26pt and keep a 44pt hit area through padding.</li>
+  </ol>
+</div>
+
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">#mobile</div><div class="trail"></div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:62%">
+          <div class="handle"></div>
+          <div class="sheet-b" style="padding:4px 16px 0;display:flex;flex-direction:column;gap:12px">
+            <span class="chip info lg" style="align-self:flex-start"><svg class="ic"><use href="#i-task"/></svg>Task · in review</span>
+            <div class="h2">Readiness per used provider</div>
+            <div style="font-size:13px;color:var(--ink-3);display:flex;gap:4px;align-items:center"><svg class="ic" style="width:14px;height:14px"><use href="#i-task"/></svg>in TM8 Mobile app</div>
+            <dl class="kv"><dt>Status</dt><dd><span class="pill review">in review</span></dd><dt>Pull request</dt><dd>#955 · open</dd><dt>Assignee</dt><dd>Worker</dd><dt>Updated</dt><dd>today 11:40</dd></dl>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-3)"><span class="stack"><span class="avatar sm agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="avatar sm agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="avatar sm c3">M</span></span>3 people · 14 messages</div>
+            <div class="btnrow"><span class="btn outline"><svg class="ic"><use href="#i-share-android"/></svg>Share</span><span class="btn primary">Open</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Long-press a chip — Android light</b>The preview is a card: the chip with its state as a word, the title, the parent chain, 2–4 summary fields chosen by kind, and a footer with the people and message count the node returned. A field that was not returned (points, cost) is left out, never shown as 0. Haptic: <code>LONG_PRESS</code>. iOS shows the same card as a context-menu preview. <span class="route">no route — a sheet over the current screen</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Inbox</span></span></div><div class="title">#mobile<span class="sub">Atelier · 4 members</span></div><div class="trail"></div></header>
+        <main class="content">
+          <div class="list">
+            <div class="row" style="align-items:flex-start"><span class="avatar c3">M</span><span class="main"><span class="t">Marco <span class="time" style="font-weight:400">12:58</span></span><span class="p" style="white-space:normal">Tablet build is up on TestFlight.</span></span></div>
+            <div class="row hlm" style="align-items:flex-start"><span class="avatar c2">P</span><span class="main"><span class="t">Priya <span class="time" style="font-weight:400">13:05</span></span><span class="p" style="white-space:normal;color:var(--ink)">@subhang can you look at the tablet overflow? <span class="chip"><svg class="ic"><use href="#i-task"/></svg>Desktop-shell reflow overflow</span></span><span class="s"><svg class="ic" style="width:14px;height:14px"><use href="#i-thread"/></svg>2 replies</span></span></div>
+            <div class="row" style="align-items:flex-start"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Worker <span class="time" style="font-weight:400">13:12</span></span><span class="p" style="white-space:normal">Reproduced at 768. The sidebar keeps its desktop width.</span></span></div>
+          </div>
+        </main>
+        <div class="composer"><div class="input"><span class="ph">Message #mobile</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>A link to a message — iOS light</b><code>…/channel/&lt;id&gt;?msg=&lt;id&gt;</code> lands on the channel scrolled to that message, highlighted for 2 s with a brand rail, its thread one tap away. Opening it from the Inbox marks the row read. If the message was deleted, the channel opens at the end with a toast saying so. It never fails silently at the top. <span class="route">/[server]/[space]/channel/[id]?msg=[id]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Link</div><div class="trail"></div></header>
+        <main class="content">
+          <div class="tstate">
+            <span class="glyph"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <div class="h2">This link names something you can’t see here</div>
+            <p>tm8.sh answered that it is unavailable to you. It may have been deleted, moved to a space you are not in, or never shared with you. The node does not say which, and neither do we.</p>
+            <dl class="kv tstate-kv kv"><dt>Server</dt><dd>tm8.sh</dd><dt>Space</dt><dd>Atelier (you are a member)</dd><dt>Entity</dt><dd class="mono">01a17e…c4</dd></dl>
+            <span class="btn primary">Copy link to ask someone</span>
+            <span class="btn outline">Go to Atelier</span>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Unavailable link — the N-1 fix — iOS dark</b>On the web, a cold link to an entity you cannot read opened a blank page with a spinner that never ended (nav matrix defect N-1). The phone resolves first and renders this terminal state: what was asked, where, what you can do. Its siblings use the same layout with the web's refusal copy: "You are not a member of this Space." · "This link’s Space is not on this tm8 node." Back goes to the kind's tab root. <span class="route">/[server]/[space]/e/[id] → unavailable</span></div>
+  </div>
+</div>
+<div class="why">"Tap = push, long-press = preview" is the web chip ruling, kept: on a phone a peek-on-tap would turn the most common gesture into two taps. The unavailable state refuses to guess. <code>EntityUnavailableRefusal</code> gets one answer from the node for "deleted", "never existed" and "not yours", so the copy names all three rather than picking the comforting one. "Request access" is not offered because no such verb exists; the honest substitute is a link you can send to someone who can see it.</div>
+
+<h3>Share</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span></div></header>
+        <main class="content"><div class="ent-head"><span class="title">TM8 Mobile app</span></div></main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:74%">
+          <div class="handle"></div>
+          <div class="row" style="border-bottom:1px solid var(--line)"><span class="kind-ic" style="width:44px;height:44px"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s mono" style="font-size:12px">tm8.sh/#/s/atelier/e/01a182a2…</span></span><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></div>
+          <div class="apps"><span class="ap"><span class="tl"><span class="avatar lg c2">P</span></span>Priya</span><span class="ap"><span class="tl"><svg class="ic"><use href="#i-message"/></svg></span>Messages</span><span class="ap"><span class="tl"><svg class="ic"><use href="#i-hash"/></svg></span>Slack</span><span class="ap"><span class="tl"><svg class="ic"><use href="#i-doc"/></svg></span>Notes</span></div>
+          <div class="list lines" style="margin:0 16px;border-radius:12px;background:var(--surface)">
+            <a class="row"><span class="main"><span class="t">Copy link</span></span><svg class="ic"><use href="#i-link"/></svg></a>
+            <a class="row"><span class="main"><span class="t">Open on the web</span></span><svg class="ic"><use href="#i-external"/></svg></a>
+            <a class="row"><span class="main"><span class="t">Show QR code</span></span><svg class="ic"><use href="#i-qr"/></svg></a>
+            <a class="row"><span class="main"><span class="t">Copy id</span><span class="s mono" style="font-size:11px">01a182a2-238b-7a87-a4ad-014347c45008</span></span><svg class="ic"><use href="#i-copy"/></svg></a>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Share sheet — iOS light</b>The native sheet, with tm8's verbs on top. The link is the <b>web URL</b> that <code>copyLinkUrl</code> spells, <code>https://tm8.sh/#/s/&lt;space&gt;/e/&lt;id&gt;</code>, never a <code>tm8://</code> address. Pasted anywhere it opens the same place: on a desktop the web page, on a phone with the app this screen (Law L8). <span class="route">/[server]/[space]/e/[id]?sheet=share</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-close"/></svg></span></div><div class="title">QR code</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span></div></header>
+        <main class="content" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:24px">
+          <div class="qr"><svg viewBox="0 0 25 25" shape-rendering="crispEdges"><path d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM9 0h1v1h-1zM16 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM20 0h1v1h-1zM21 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM9 1h1v1h-1zM10 1h1v1h-1zM12 1h1v1h-1zM13 1h1v1h-1zM14 1h1v1h-1zM15 1h1v1h-1zM18 1h1v1h-1zM24 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM11 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM16 2h1v1h-1zM18 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM18 3h1v1h-1zM20 3h1v1h-1zM21 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM12 4h1v1h-1zM13 4h1v1h-1zM15 4h1v1h-1zM18 4h1v1h-1zM20 4h1v1h-1zM21 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM12 5h1v1h-1zM13 5h1v1h-1zM16 5h1v1h-1zM18 5h1v1h-1zM24 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM13 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM19 6h1v1h-1zM20 6h1v1h-1zM21 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM12 7h1v1h-1zM13 7h1v1h-1zM1 8h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM9 8h1v1h-1zM10 8h1v1h-1zM13 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM17 8h1v1h-1zM19 8h1v1h-1zM21 8h1v1h-1zM24 8h1v1h-1zM0 9h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM6 9h1v1h-1zM7 9h1v1h-1zM8 9h1v1h-1zM9 9h1v1h-1zM11 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM20 9h1v1h-1zM2 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM12 10h1v1h-1zM13 10h1v1h-1zM14 10h1v1h-1zM17 10h1v1h-1zM19 10h1v1h-1zM20 10h1v1h-1zM0 11h1v1h-1zM2 11h1v1h-1zM4 11h1v1h-1zM5 11h1v1h-1zM7 11h1v1h-1zM9 11h1v1h-1zM10 11h1v1h-1zM12 11h1v1h-1zM15 11h1v1h-1zM17 11h1v1h-1zM20 11h1v1h-1zM24 11h1v1h-1zM1 12h1v1h-1zM2 12h1v1h-1zM5 12h1v1h-1zM7 12h1v1h-1zM8 12h1v1h-1zM9 12h1v1h-1zM10 12h1v1h-1zM14 12h1v1h-1zM15 12h1v1h-1zM17 12h1v1h-1zM18 12h1v1h-1zM19 12h1v1h-1zM20 12h1v1h-1zM23 12h1v1h-1zM0 13h1v1h-1zM2 13h1v1h-1zM4 13h1v1h-1zM5 13h1v1h-1zM6 13h1v1h-1zM8 13h1v1h-1zM10 13h1v1h-1zM11 13h1v1h-1zM12 13h1v1h-1zM13 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM17 13h1v1h-1zM18 13h1v1h-1zM19 13h1v1h-1zM20 13h1v1h-1zM21 13h1v1h-1zM1 14h1v1h-1zM2 14h1v1h-1zM5 14h1v1h-1zM6 14h1v1h-1zM9 14h1v1h-1zM10 14h1v1h-1zM11 14h1v1h-1zM12 14h1v1h-1zM13 14h1v1h-1zM20 14h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM12 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM23 15h1v1h-1zM0 16h1v1h-1zM1 16h1v1h-1zM2 16h1v1h-1zM3 16h1v1h-1zM7 16h1v1h-1zM11 16h1v1h-1zM14 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM17 16h1v1h-1zM18 16h1v1h-1zM19 16h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM14 17h1v1h-1zM17 17h1v1h-1zM18 17h1v1h-1zM23 17h1v1h-1zM24 17h1v1h-1zM0 18h1v1h-1zM1 18h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1zM11 18h1v1h-1zM13 18h1v1h-1zM14 18h1v1h-1zM15 18h1v1h-1zM18 18h1v1h-1zM19 18h1v1h-1zM20 18h1v1h-1zM23 18h1v1h-1zM24 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM8 19h1v1h-1zM10 19h1v1h-1zM13 19h1v1h-1zM0 20h1v1h-1zM2 20h1v1h-1zM3 20h1v1h-1zM4 20h1v1h-1zM6 20h1v1h-1zM8 20h1v1h-1zM9 20h1v1h-1zM14 20h1v1h-1zM16 20h1v1h-1zM19 20h1v1h-1zM22 20h1v1h-1zM24 20h1v1h-1zM0 21h1v1h-1zM2 21h1v1h-1zM3 21h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM8 21h1v1h-1zM9 21h1v1h-1zM12 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM21 21h1v1h-1zM22 21h1v1h-1zM23 21h1v1h-1zM0 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM6 22h1v1h-1zM12 22h1v1h-1zM14 22h1v1h-1zM15 22h1v1h-1zM16 22h1v1h-1zM18 22h1v1h-1zM19 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM8 23h1v1h-1zM10 23h1v1h-1zM11 23h1v1h-1zM12 23h1v1h-1zM14 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM21 23h1v1h-1zM22 23h1v1h-1zM23 23h1v1h-1zM24 23h1v1h-1zM0 24h1v1h-1zM1 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM9 24h1v1h-1zM10 24h1v1h-1zM11 24h1v1h-1zM13 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM18 24h1v1h-1zM19 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1z"/></svg></div>
+          <div class="h3" style="text-align:center;padding:0 24px">TM8 Mobile app</div>
+          <div class="mono" style="font-size:12px;color:var(--ink-3);text-align:center;padding:0 24px">https://tm8.sh/#/s/atelier/e/01a182a2-238b-7a87-a4ad-014347c45008</div>
+          <p style="margin:0;padding:0 28px;text-align:center;font-size:14px">Point a camera at it. A phone with tm8 opens this task; any other device opens it on the web. They still need to be a member of Atelier to see it.</p>
+          <span class="keep"><svg class="ic" style="width:16px;height:16px"><use href="#i-sun"/></svg>Brightness up while shown</span>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>QR — Android dark</b>The QR encodes the same web URL, so a laptop webcam and a phone camera both land in the same place. The code is always dark on light, whatever the theme, so scanners read it. <span class="route">/[server]/[space]/e/[id]?sheet=qr</span></div>
+  </div>
+</div>
+
+<h3>Deep and universal links</h3>
+<p>Every shareable address is a web URL on some server's host. The app claims each <b>added</b> server's host: iOS through Associated Domains (the node serves <code>/.well-known/apple-app-site-association</code>), Android through App Links (<code>/.well-known/assetlinks.json</code>, <code>autoVerify</code>). A self-hosted node the app was never told about cannot be claimed in advance. Its links open in the browser, which shows the "Open in tm8" banner, and the app then picks them up through the <code>tm8://open?url=</code> scheme. Serving both well-known files is a <b>proposed</b> node addition.</p>
+<table class="route-table">
+  <thead><tr><th style="width:38%">Web address (hash route)</th><th style="width:38%">App route</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>#/s/&lt;space&gt;/e/&lt;id&gt;</td><td>/[server]/[space]/e/[id] → the kind's page</td><td>Kind is read before rendering; a session goes to <code>session/[id]</code>, a chat to <code>chat/[id]</code></td></tr>
+    <tr><td>#/s/&lt;space&gt;/e/&lt;id&gt;@v&lt;n&gt;</td><td>/[server]/[space]/e/[id]?v=n</td><td>Snapshot, with “newer exists”</td></tr>
+    <tr><td>#/s/&lt;space&gt;/k/&lt;slug&gt;</td><td>/[server]/[space]/(tabs)/browse/[kind]</td><td>The kind list, opened in the Browse tab</td></tr>
+    <tr><td>#/s/&lt;space&gt;/channel/&lt;id&gt;?msg=&lt;id&gt;</td><td>/[server]/[space]/channel/[id]?msg=</td><td>Scrolled to the message and highlighted</td></tr>
+    <tr><td>#/s/&lt;space&gt;/inbox</td><td>/[server]/[space]/(tabs)/inbox</td><td></td></tr>
+    <tr><td>#/s/&lt;space&gt;/work · /board</td><td>/[server]/[space]/(tabs)/work</td><td>Board opens on its segment</td></tr>
+    <tr><td>#/s/&lt;space&gt;/settings/…</td><td>/settings/… (lane 02)</td><td>Admin-only pages refuse with the reason</td></tr>
+    <tr><td>tm8://open?url=&lt;web URL&gt;</td><td>Same as the URL it wraps</td><td>Fallback for an unclaimed host</td></tr>
+    <tr><td>tm8://add-server?url=…</td><td>/add-server (lane 02)</td><td>From a QR or a desktop "open on phone"</td></tr>
+    <tr><td>/search · ?sheet=share · ?sheet=qr · ?sheet=attention</td><td>Modal / sheets (this lane)</td><td>Not deep-linkable from outside</td></tr>
+  </tbody>
+</table>
+
+<div class="flow">
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg></span></div><div class="title">Marco<span class="sub">Messages</span></div><div class="trail"></div></header>
+        <main class="content" style="padding:16px">
+          <div style="max-width:270px;background:var(--surface);border-radius:18px;padding:10px 14px;font-size:16px;line-height:21px">Can you take this one?</div>
+          <div style="max-width:270px;margin-top:6px;background:var(--surface);border-radius:18px;overflow:hidden"><div style="height:90px;background:var(--brand-soft);display:grid;place-items:center;color:var(--brand);font-weight:800;font-size:28px">tm8</div><div style="padding:8px 14px 10px"><div style="font-weight:600;font-size:15px">Desktop-shell reflow overflow</div><div style="font-size:13px;color:var(--ink-3)">tm8.sh</div></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>1 · A link arrives.</b> Marco sends a task link in Messages. tm8.sh is an added server, so iOS hands the tap to the app.</div>
+  </div>
+  <span class="arrow"></span>
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <main class="content" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:0 40px">
+          <span class="spinner" style="width:32px;height:32px"></span>
+          <div class="h3">Opening link</div>
+          <div style="align-self:stretch;font-size:15px;line-height:28px">
+            <div><svg class="ic" style="width:16px;height:16px;color:var(--run)"><use href="#i-check"/></svg> tm8.sh — signed in as subhang</div>
+            <div><svg class="ic" style="width:16px;height:16px;color:var(--run)"><use href="#i-check"/></svg> Atelier — member</div>
+            <div style="color:var(--ink-3)"><span class="spinner" style="width:14px;height:14px;display:inline-block;vertical-align:-2px"></span> Task 01a182d0… — reading</div>
+          </div>
+          <span class="btn ghost">Cancel</span>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>2 · Resolve before render.</b> Server, then membership, then the entity. This shows only if resolving takes longer than 400 ms. A failure at any step goes to its branch below, never to a blank page.</div>
+  </div>
+  <span class="arrow"></span>
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app ›</span><span class="title">Desktop-shell reflow overflow (tablet-768)</span><span class="meta"><span class="pill to_do">to do</span>medium · you</span></div>
+          <div class="ent-actions"><span class="btn primary">Start</span><span class="btn outline">Launch</span><span class="btn outline">Message</span></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">6</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>3 · Land with a back.</b> A cold link builds the stack <code>[Work root, task]</code>: the kind's tab root, then the entity (Back Contract §2). Back reads "Work", not "Messages". The system's own back-to-Messages pill stays at the top left on iOS.</div>
+  </div>
+</div>
+<div class="diagram">
+  <div class="label">Resolution branches</div>
+  <div class="flowbranch">
+    <div class="box brand"><b>Known server, signed in</b><small>Push the route over <code>[tab root]</code>. If the link names another space on this server, switch space first. The scope chip flashes.</small></div>
+    <div class="box"><b>Known server, signed out</b><small>Sign in to <i>acme-node</i> (lane 02's sheet, method chosen by the node) → continue to the same route. The link is held, not dropped.</small></div>
+    <div class="box"><b>Unknown server</b><small>“Add tm8.acme.dev?” → lane 02's add-server screen with the URL filled in → sign in → continue. Never a silent add.</small></div>
+    <div class="box dark"><b>Not found · no access · wrong node</b><small>The terminal state above, with the matching refusal copy. Back → the kind's tab root.</small></div>
+  </div>
+</div>
+<div class="why">Resolving before rendering is the whole fix for N-1. The web mounted the entity page and let it discover, too late, that the read had failed. The phone treats a link as a request it can refuse. Cold-link back follows the Back Contract rather than the OS history: the person who tapped the link is now in tm8, and Back should keep them there.</div>
+
+<h3>System states — the catalogue</h3>
+<p>Each state is drawn once and used by every lane. A state names the server it is about, because with several servers signed in "offline" is a property of one server, not of the app.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen"><main class="content">
+        <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>Offline · cached 14:02 · 2 waiting to send<span class="act">Send now</span></div>
+        <div class="list lines">
+          <a class="row tall"><span class="avatar c1">S</span><span class="main"><span class="t">You</span><span class="s"><span class="pill pending">pending</span><span class="tt">Looking now — tablet overflow</span></span></span></a>
+          <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Desktop-shell reflow overflow</span><span class="s"><span class="pill pending">pending</span><span class="tt">to do → working</span></span></span></a>
+        </div>
+        <div class="toast" style="position:relative;left:auto;right:auto;bottom:auto;margin:12px 16px 16px"><svg class="ic"><use href="#i-success"/></svg>Back online · synced 2 changes with tm8.sh</div>
+      </main></div>
+    </figure>
+    <div class="cap"><b>Offline, queued writes, synced</b>Cached data stays readable under an amber banner that says from when. A write made offline shows <span class="pill pending">pending</span> on its row; Send now flushes the queue (the same records, not new sends). Only idempotent writes are queued (messages, read, status, carrying <code>--expect-version</code>). A queued write that comes back refused turns into the refusal card, never a silent drop.</div>
+  </div>
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="dark">
+      <div class="ph-screen"><main class="content">
+        <div class="banner block"><svg class="ic"><use href="#i-server"/></svg>tm8.sh isn’t answering · last reached 14:02<span class="act">Try again</span></div>
+        <div class="banner info"><svg class="ic"><use href="#i-info"/></svg>tm8.sh runs 0.41 · this app needs 0.44 for Inbox swipes<span class="act">Why</span></div>
+        <div class="banner"><svg class="ic"><use href="#i-warning"/></svg>This app is too old for acme-node · update to keep writing<span class="act">Update</span></div>
+        <div class="banner"><svg class="ic"><use href="#i-clock"/></svg>tm8.sh is limiting requests · retrying in 20 s</div>
+        <div class="refusal"><div class="h">The node refused: not_space_member</div><p>tm8.sh says you are not a member of Playground. Nothing was changed. Ask an owner of Playground to invite you.</p></div>
+      </main></div>
+    </figure>
+    <div class="cap"><b>Banners and the refusal card</b>Unreachable (red, per server) · node too old (info: the features it lacks are disabled with this reason) · app too old (amber: reads keep working, writes need the update) · rate-limited (with the node's <code>Retry-After</code>) · refusal (the node's code, its message, what was not changed, what to do).</div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone flat" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-screen"><main class="content">
+        <div class="eyebrow" style="padding:12px 16px 4px">List</div>
+        <div class="list"><div class="row"><span class="skeleton" style="width:32px;height:32px;border-radius:50%"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div><div class="row"><span class="skeleton" style="width:32px;height:32px;border-radius:50%"></span><span class="main"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40"></span></span></div></div>
+        <div class="eyebrow" style="padding:12px 16px 4px">Page</div>
+        <div style="padding:4px 16px;display:flex;flex-direction:column;gap:10px"><span class="skeleton sk-line w40"></span><span class="skeleton" style="height:26px;width:85%"></span><span class="skeleton sk-line w60"></span></div>
+        <div class="eyebrow" style="padding:16px 16px 4px">Transcript</div>
+        <div style="padding:4px 16px 16px;display:flex;flex-direction:column;gap:8px"><span class="skeleton" style="height:40px;width:70%;align-self:flex-end;border-radius:16px"></span><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w60"></span><span class="skeleton" style="height:52px;border-radius:10px"></span></div>
+      </main></div>
+    </figure>
+    <div class="cap"><b>Loading skeletons</b>The list, page and transcript shapes. Shown after 150 ms, never for less than 300 ms, so a fast read does not flash. Cached data, when there is any, is shown instead of a skeleton.</div>
+  </div>
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen"><main class="content">
+        <div class="tstate" style="padding-bottom:20px">
+          <span class="glyph"><svg class="ic"><use href="#i-warning"/></svg></span>
+          <div class="h3">Something broke here</div>
+          <p>This screen hit an error. The rest of the app is fine, and nothing you typed was lost.</p>
+<div class="term-err">TypeError: cannot read 'axes'
+  at TaskHeader (task/header.tsx:88)
+  build 1.4.0 (412) · tm8.sh 0.44</div>
+          <div class="btnrow" style="align-self:stretch"><span class="btn outline">Go back</span><span class="btn primary">Report</span></div>
+        </div>
+      </main></div>
+    </figure>
+    <div class="cap"><b>Error boundary</b>One per screen, not per app, so the tab bar still works. Report opens a prefilled message to the space's help channel with the stack and build. Nothing is sent without the tap.</div>
+  </div>
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="dark">
+      <div class="ph-screen" style="height:330px;position:relative"><main class="content">
+        <div class="list"><a class="row"><span class="main"><span class="t">Draft: tablet overflow notes</span></span></a></div>
+      </main>
+      <div class="scrim"></div>
+      <div class="dialog"><div class="d-b"><div class="h">Signed out of tm8.sh</div><p>Your session expired. Sign in again to keep working; your draft stays on this phone.</p></div><div class="d-a"><span>Later</span><span><b>Sign in</b></span></div></div>
+      </div>
+    </figure>
+    <div class="cap"><b>Session expired</b>Only the expired server asks; other servers keep working. "Later" leaves that server read-only from cache, with its banner.</div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone flat" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-screen" style="height:330px;position:relative"><main class="content">
+        <div class="list"><a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Rollout plan v2</span></span></a></div>
+      </main>
+      <div class="scrim"></div>
+      <div class="dialog" style="text-align:left"><div class="d-b"><div class="h">Archive “Rollout plan v2”?</div><p>Its 3 sub-docs are archived with it. Archive is soft: it can be restored.</p></div><div class="d-a" style="justify-content:flex-end"><span>Cancel</span><span style="color:var(--block)"><b>Archive</b></span></div></div>
+      <div class="toast" style="bottom:12px">Archived Rollout plan v2<span class="act">Undo</span></div>
+      </div>
+    </figure>
+    <div class="cap"><b>Destructive confirm, then Undo</b>The confirm names the thing and everything that goes with it, including children per the tree ruling. Archive is tm8’s soft delete (<code>entities.delete</code>), the same word in every lane, and the toast that follows offers Undo through <code>entities.restore</code>. Undo appears only where a reverse verb exists; where none does (send a message) the app does not pretend.</div>
+  </div>
+  <div class="shot">
+    <figure class="phone flat" data-os="ios" data-theme="light">
+      <div class="ph-screen"><main class="content">
+        <div class="tstate" style="padding-bottom:20px">
+          <span class="glyph"><svg class="ic"><use href="#i-camera"/></svg></span>
+          <div class="h3">Camera is off for tm8</div>
+          <p>Scanning a sign-in QR needs the camera. You can still paste the pairing code instead.</p>
+          <div class="btnrow" style="align-self:stretch"><span class="btn outline">Paste code</span><span class="btn primary">Open Settings</span></div>
+        </div>
+      </main></div>
+    </figure>
+    <div class="cap"><b>Permission denied</b>Camera (QR sign-in, attach photo), microphone (voice), notifications (banner above): each names what it was for and offers the alternative that needs no permission.</div>
+  </div>
+</div>
+<div class="grid-4">
+  <div class="tile"><h5>Chats · empty</h5><p>“No chats in Atelier yet.” Verb: <b>Start a chat</b>.</p></div>
+  <div class="tile"><h5>Work · empty</h5><p>“Nothing is moving.” Verb: <b>New task</b>; with Needs me on: <b>Show all</b>.</p></div>
+  <div class="tile"><h5>Inbox · empty</h5><p>“Nothing needs you.” Verb: <b>See what’s moving</b>.</p></div>
+  <div class="tile"><h5>Browse · empty kind</h5><p>“No docs in Atelier.” Verb: <b>New doc</b>, or disabled with the reason when your role cannot create.</p></div>
+</div>
+
+<h3>Routes, components and gestures</h3>
+<table class="route-table">
+  <thead><tr><th style="width:42%">Route</th><th>Screen</th><th style="width:22%">Params</th></tr></thead>
+  <tbody>
+    <tr><td>/[server]/[space]/(tabs)/inbox</td><td>Inbox root</td><td>scope=all · filter=unread|pinned · type=</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/work?filter=needs-me</td><td>Needs me on a list (lane 05 owns the list)</td><td>any list kind</td></tr>
+    <tr><td>/[server]/[space]/e/[id]?sheet=attention</td><td>Entity attention control</td><td></td></tr>
+    <tr><td>/[server]/[space]/e/[id]?sheet=share · ?sheet=qr</td><td>Share sheet · QR</td><td></td></tr>
+    <tr><td>/search</td><td>Global search modal</td><td>q · scope=space|all · kind</td></tr>
+    <tr><td>/link?url=</td><td>Link resolver (the “Opening link” screen and its branches)</td><td>the original URL</td></tr>
+    <tr><td>/[server]/[space]/e/[id] (unavailable)</td><td>Terminal state for a link you cannot see</td><td>reason from the node</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:20%">Component</th><th style="width:16%">Size</th><th>Behaviour</th><th style="width:24%">iOS / Android</th></tr></thead>
+  <tbody>
+    <tr><td class="code">InboxRow</td><td>min 64pt / 64dp</td><td>Avatar or kind tile · headline · target or attention chip · optional third line (parent or quote) · time. Unread: dot and semibold; read: 50% and stays.</td><td>Same; Android ripple</td></tr>
+    <tr><td class="code">AttentionChip</td><td>20pt high · 32pt big</td><td><code>! points · age</code>, <code>· ×n</code>; FYI grey <code>i</code>, normal/high amber, urgent red</td><td>Same</td></tr>
+    <tr><td class="code">ServerBadge</td><td>18pt</td><td>Space mark + name; server added when not the current one. Only under All servers or on cross-space refs.</td><td>Same</td></tr>
+    <tr><td class="code">WaitingBanner</td><td>full width − 24pt</td><td>Under the entity head. Open terminal · Message · Resolve…; never Approve.</td><td>Same</td></tr>
+    <tr><td class="code">AttentionSheet</td><td>78% detent</td><td>Requests by root; Resolve with note; 8 s Undo toast with countdown</td><td>UISheet medium/large · M3 bottom sheet</td></tr>
+    <tr><td class="code">EntityChip</td><td>26pt (32 lg), 44pt hit</td><td>Glyph · title · tint · server badge · snapshot dashed · unavailable lock + id</td><td>Same</td></tr>
+    <tr><td class="code">ChipPreview</td><td>card, ≤ 62%</td><td>Chip, title, parent chain, 2–4 kind fields, people/messages footer, Open/Share</td><td>Context-menu preview · bottom sheet</td></tr>
+    <tr><td class="code">LinkResolver</td><td>full screen</td><td>Server → membership → entity, shown after 400 ms; branches to sign-in / add-server / terminal</td><td>Same</td></tr>
+    <tr><td class="code">TerminalState</td><td>full screen</td><td>Glyph, title, node's reason, what was asked (kv), 1–2 verbs</td><td>Same</td></tr>
+    <tr><td class="code">SystemBanner</td><td>36pt min</td><td>Per server: offline · unreachable · version · rate-limit; one verb; stacks max 2, then “+n”</td><td>Same</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:24%">Gesture</th><th>Result</th><th style="width:30%">Haptic (iOS · Android)</th></tr></thead>
+  <tbody>
+    <tr><td>Tap Inbox row</td><td>Opens the target (<code>openTargetOf</code>); a notification marks read</td><td>— · —</td></tr>
+    <tr><td>Swipe right on notification</td><td>Read (full swipe commits)</td><td><code>impactLight</code> at threshold · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Swipe left on Needs-you row</td><td>Pin · Resolve…</td><td><code>impactLight</code> · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Long-press row or chip</td><td>Preview + menu / sheet</td><td><code>impactMedium</code> · <code>LONG_PRESS</code></td></tr>
+    <tr><td>Resolve committed</td><td>Row dims, Undo toast 8 s</td><td><code>notificationSuccess</code> · <code>CONFIRM</code></td></tr>
+    <tr><td>Mark all read</td><td>Held 5 s with Undo, then <code>inbox.markRead</code></td><td><code>notificationSuccess</code> · <code>CONFIRM</code></td></tr>
+    <tr><td>Pull to refresh</td><td>Re-reads every server in scope</td><td><code>impactLight</code> on release · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Tap segment / filter chip</td><td>Switch scope / filter</td><td><code>selection</code> · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Tap hint chip in search</td><td>Inserts token</td><td><code>selection</code> · —</td></tr>
+    <tr><td>Refusal or failed write</td><td>Refusal card / toast</td><td><code>notificationError</code> · <code>REJECT</code></td></tr>
+    <tr><td>Push action (Reply · Mark read)</td><td>Runs without opening the app (iOS requires unlock for Reply)</td><td>system</td></tr>
+  </tbody>
+</table>
+
+<div class="why">Rulings kept: the fixed group order and "read ≠ resolved" (inbox-model); chip tap = push, no peek (EntityChip); the Back Contract's cold-link stack; one surface at a time (the attention control is a sheet, not a second pane). Rulings overturned: the web's flat Needs-me list becomes a tree under the owner's 2026-10-28 ruling, and the web's mount-then-discover link handling (N-1) becomes resolve-then-render.</div>
+
+<div class="callout open"><b>Open questions for the owner</b>
+<ol style="margin:4px 0 0;padding-left:20px">
+  <li><b>Needs me as a tree.</b> The web's spec-owner ruling says Needs me is ONE FLAT LIST; your 2026-10-28 ruling says every list is a tree. I drew dimmed context parents. Keep that, or make Needs me the one flat exception?</li>
+  <li><b>Push.</b> Approve the facade widening (<code>devices.register</code>, a signed per-server relay, preference read)? Without it this lane's push screens stay proposed.</li>
+  <li><b>Mark unread.</b> Add <code>inbox.markUnread</code>, or keep Unread absent on read rows?</li>
+  <li><b>Search.</b> Is <code>search.query</code> (reserved, 501) on the roadmap? Until it exists, message and doc-body search is drawn as unavailable.</li>
+  <li><b>Well-known files.</b> Should every node serve <code>apple-app-site-association</code> and <code>assetlinks.json</code> for the official app's ids, or opt in per node?</li>
+</ol></div>
+
+</section>
