@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { CollabError, McpServerDefinitionSchema, mcpCatalogEntry, type ChatMcpSelectionsResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
+import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpAddOutcome, McpDefinition, McpPort, McpServer } from './port';
@@ -68,22 +68,64 @@ export function viewOf(server: McpServerView, accounts: McpCredentialView[]): Mc
       unavailableToolCount: a.unavailableToolCount ?? null })),
   };
 }
-/** Import metadata only. Reject unknown secret-bearing env/header fields instead of silently importing them. */
-export function importDefinitions(json: string, trustedCode: boolean): McpServerDefinition[] {
-  let parsed: unknown;
-  try { parsed = JSON.parse(json); } catch { throw new McpUiError('Enter valid JSON before importing.'); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new McpUiError('Expected an MCP configuration object.');
-  const config = parsed as Record<string, unknown>;
-  const rows = config.mcpServers;
-  if (!rows || typeof rows !== 'object' || Array.isArray(rows) || Object.keys(config).some(k => k !== 'mcpServers')) throw new McpUiError('Expected mcpServers metadata.');
-  return Object.entries(rows).map(([name, raw]) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new McpUiError('Invalid server metadata.');
-    const r = raw as Record<string, unknown>;
-    if (Object.keys(r).some(key => !['url', 'command', 'args', 'transport', 'auth', 'envKeys', 'headerKeys', 'provenance'].includes(key))) throw new McpUiError('Remove secrets and unsupported fields before importing.');
-    const transport = r.transport ?? (r.url ? 'http' : 'stdio');
-    if (transport === 'stdio' && !trustedCode) throw new McpUiError('Local commands need explicit code trust.');
-    return McpServerDefinitionSchema.parse({ ...r, name, transport, auth: r.auth ?? { type: 'none' }, envKeys: r.envKeys ?? [], headerKeys: r.headerKeys ?? [], approved: false, enabled: true, ...(transport === 'stdio' ? { stdioTrusted: true } : {}) });
-  });
+/**
+ * Accept a member's REAL harness configuration — `~/.claude.json`, a project
+ * `.mcp.json`, `~/.codex/config.toml` — and keep only metadata.
+ *
+ * This used to refuse any config carrying `type`, `headers` or `env`, which is
+ * every config anyone actually has: the box only accepted a hand-written tm8
+ * shape. The shared translator (`@tm8/contract`) now reads the real formats
+ * and turns a literal header or env token into a DECLARED SLOT. The value it
+ * extracts is deliberately dropped here rather than sent anywhere: the member
+ * adds their own credential per connector, so no token is ever carried into
+ * the Space by an import.
+ *
+ * `existing` is the Space's current connectors, so this takes the same
+ * decisions `tm8 mcp import` does through the same `selectMcpImports`: a
+ * duplicate endpoint, an untrusted local command and an over-limit row are
+ * SKIPPED AND REPORTED, never a reason to refuse the rest of the config, and a
+ * name the Space already uses is renamed rather than left to fail the whole
+ * transactional import.
+ */
+export function importPlan(
+  text: string,
+  trustedCode: boolean,
+  existing: readonly { id: string; definition: McpServerDefinition }[] = [],
+): { definitions: McpServerDefinition[]; summary: string } {
+  let translated;
+  try {
+    translated = translateMcpConfigText(detectMcpImportFormat(text), text, { trustStdio: trustedCode });
+  } catch (error) {
+    throw new McpUiError(error instanceof McpImportError ? error.message : 'Enter a valid MCP configuration before importing.');
+  }
+  const decisions = selectMcpImports(translated.candidates, existing, { trustStdio: trustedCode });
+  const register = decisions.filter(row => row.decision === 'register').map(row => row.candidate);
+  const skipped = [
+    ...decisions.filter(row => row.decision !== 'register').map(row => `${row.candidate.sourceName} (${row.reason ?? row.decision})`),
+    ...translated.problems.map(problem => `${problem.sourceName} (${problem.reason})`),
+  ];
+  if (!register.length) {
+    throw new McpUiError(skipped.length
+      ? `No connectors were registered. Skipped ${skipped.join('; ')}.`
+      : 'No connectors tm8 can register in this configuration.');
+  }
+  const definitions = register.map(candidate => McpServerDefinitionSchema.parse(candidate.definition));
+  const needCredential = register.filter(candidate => candidate.definition.auth.type === 'api_key');
+  const oauth = register.filter(candidate => candidate.definition.auth.type === 'oauth2');
+  const summary = [
+    `Imported ${definitions.length} connector${definitions.length === 1 ? '' : 's'}; an administrator approves them before any session can use one.`,
+    needCredential.length ? `No token was taken from the configuration — add your own key to: ${needCredential.map(c => c.definition.name).join(', ')}.` : '',
+    oauth.length ? `Connect in tm8: ${oauth.map(c => c.definition.name).join(', ')}.` : '',
+    skipped.length ? `Skipped ${skipped.join('; ')}.` : '',
+  ].filter(Boolean).join(' ');
+  return { definitions, summary };
+}
+export function importDefinitions(
+  text: string,
+  trustedCode: boolean,
+  existing: readonly { id: string; definition: McpServerDefinition }[] = [],
+): McpServerDefinition[] {
+  return importPlan(text, trustedCode, existing).definitions;
 }
 /**
  * The existing-connector id out of `mcp.servers.create`'s conflict (B22/B25).
@@ -144,6 +186,13 @@ export function previewMcpConfig(json: string): McpImportRow[] {
     const transport = entry.transport === 'stdio' || entry.transport === 'http' ? entry.transport : entry.url ? 'http' : entry.command ? 'stdio' : 'unknown';
     const target = String(entry.url ?? entry.command ?? '');
     if (transport === 'unknown') return { ...base, transport, target, droppedSecrets, error: 'No url and no command.' };
+    // `args` and the URL are KEPT, so a token written into either would ride
+    // into the Space definition. The same scan `tm8 mcp import` refuses on.
+    const args = Array.isArray(entry.args) ? entry.args.filter((a): a is string => typeof a === 'string') : [];
+    const literal = literalCredentialIn(args) ?? (typeof entry.url === 'string' ? (() => {
+      try { return literalCredentialInPath(new URL(entry.url as string).pathname); } catch { return undefined; }
+    })() : undefined);
+    if (literal) return { ...base, transport, target, droppedSecrets, error: `Remove the credential first: ${literal}.` };
     const kept = Object.fromEntries(Object.entries(entry).filter(([key]) => IMPORT_KEEP.includes(key)));
     try {
       const definition = McpServerDefinitionSchema.parse({ ...kept, name, transport,
@@ -200,6 +249,17 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     } while (cursor);
     return edges;
   }
+  /** Every connector the Space has, paged. Shared by the catalog read and the import diff. */
+  async function allServers(targetId?: string, teamMemberId?: string) {
+    const items: McpServerView[] = [];
+    let cursor: string | undefined;
+    let allowed = { register: false, attach: false };
+    do {
+      const page = await http.call<McpServerListResult>('mcp.servers.list', { params: { spaceId }, query: { targetId: targetId ?? teamMemberId, limit: 100, cursor } });
+      items.push(...page.items); allowed = page.allowed; cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    return Object.assign(items, { allowed });
+  }
   const command = () => ({ clientMutationId: `mcp-${crypto.randomUUID()}` });
   /** B22/B25's ADOPT: approve the row that already exists, at the version it is at now. */
   async function approveById(serverId: string) {
@@ -208,13 +268,8 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
   }
   return {
     async catalog(targetId, teamMemberId) {
-      const items: McpServerView[] = [];
-      let cursor: string | undefined;
-      let allowed = { register: false, attach: false };
-      do {
-        const page = await http.call<McpServerListResult>('mcp.servers.list', { params: { spaceId }, query: { targetId: targetId ?? teamMemberId, limit: 100, cursor } });
-        items.push(...page.items); allowed = page.allowed; cursor = page.nextCursor ?? undefined;
-      } while (cursor);
+      const items = await allServers(targetId, teamMemberId);
+      const allowed = items.allowed;
       const resolved = await http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } });
       const servers = await Promise.all(items.map(async server => {
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
@@ -256,7 +311,14 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     async register(input) { await http.call('mcp.servers.create', { params: { spaceId }, body: { ...command(), spaceId, definition: definitionFor(input) } }); },
     async update(server, input) { await http.call('mcp.servers.update', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version, definition: definitionFor(input, server.source) } }); },
     async remove(server) { await http.call('mcp.servers.delete', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version } }); },
-    async importConfig(json, trustedCode) { await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions: importDefinitions(json, trustedCode) } }); },
+    async importConfig(json, trustedCode) {
+      // The Space's connectors are READ FIRST: dedupe and the rename need them,
+      // and importing a name the Space already uses would otherwise refuse the
+      // whole transactional batch.
+      const { definitions, summary } = importPlan(json, trustedCode, await allServers());
+      await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions } });
+      return summary;
+    },
     async importMany(definitions) { await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions } }); },
     async attach(targetId, serverId) { await seam.commands.createEdge({ ...command(), srcId: targetId, dstId: serverId, type: 'equips', props: {} }); },
     async detach(targetId, serverId) {

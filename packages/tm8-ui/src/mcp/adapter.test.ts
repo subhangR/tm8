@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
-import { createMcpPort, definitionFor, importDefinitions } from './adapter';
+import { createMcpPort, definitionFor, importDefinitions, importPlan } from './adapter';
+import { McpUiError } from './errors';
 import type { Seam } from '../data/seam';
 import type { McpServerDefinition } from '@tm8/contract';
 const definition: McpServerDefinition = { name: 'calendar', transport: 'http', url: 'https://fixture.example/mcp', auth: { type: 'api_key', headerName: 'X-API-Key', prefix: 'none' }, envKeys: [], headerKeys: ['X-API-Key'], approved: true, enabled: true };
@@ -64,10 +65,53 @@ describe('MCP real operation adapter', () => {
     const begin = calls.find(call => call.url.includes('/oauth/begin'));
     expect(Object.keys(begin!.body!).sort()).toEqual(['clientMutationId', 'label', 'serverId']);
   });
-  it('rejects imported secrets and untrusted local commands', () => {
-    expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture', env: { TOKEN: 'secret' } } } }), true)).toThrow();
-    expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture' } } }), false)).toThrow();
+  it('imports a real Claude configuration as metadata and drops the token it carried', () => {
+    const imported = importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture', env: { TOKEN: 'fixture-secret' } } } }), true);
+    expect(imported[0]).toMatchObject({ transport: 'stdio', command: 'fixture', envKeys: ['TOKEN'], auth: { type: 'api_key', envKey: 'TOKEN' }, approved: false, stdioTrusted: true });
+    expect(JSON.stringify(imported)).not.toContain('fixture-secret');
+  });
+  it('still needs explicit code trust for a local command, and rejects what it cannot register', () => {
+    expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture' } } }), false)).toThrow(McpUiError);
+    expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'npx', args: ['--api-key', 'sk-fixture-abcdefghijklmnop'] } } }), true)).toThrow(/args carry a literal credential/);
+    expect(() => importDefinitions('not json', false)).toThrow(McpUiError);
+    expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { url: 'https://fixture.example/mcp?token=abc' } } }), false)).toThrow(/query string/);
     expect(importDefinitions(JSON.stringify({ mcpServers: { fixture: { url: 'https://fixture.example/mcp' } } }), false)[0]).toMatchObject({ approved: false, transport: 'http' });
+  });
+  it('accepts a Codex config.toml pasted into the same box', () => {
+    const { definitions, summary } = importPlan('[mcp_servers.linear]\nurl = "https://mcp.linear.app/mcp"\n', false);
+    expect(definitions[0]).toMatchObject({ name: 'linear', transport: 'http', url: 'https://mcp.linear.app/mcp', auth: { type: 'oauth2', scopes: [] } });
+    expect(summary).toContain('Connect in tm8: linear');
+  });
+  it('skips an untrusted local command and still imports the rest, matching the CLI', () => {
+    const { definitions, summary } = importPlan(JSON.stringify({
+      mcpServers: { local: { command: 'npx', args: ['-y', '@acme/server'] }, remote: { type: 'http', url: 'https://api.acme.test/mcp' } },
+    }), false);
+    expect(definitions.map(d => d.name)).toEqual(['remote']);
+    expect(summary).toContain('Skipped local (runs a local command');
+  });
+  it('dedupes and renames against the connectors the Space already has', () => {
+    const existingServers = [
+      { id: 'dup', definition: { ...definition, name: 'calendar', url: 'https://fixture.example/mcp' } },
+      { id: 'named', definition: { ...definition, name: 'Remote', url: 'https://other.example/mcp' } },
+    ];
+    const { definitions, summary } = importPlan(JSON.stringify({
+      mcpServers: { remote: { type: 'http', url: 'https://api.acme.test/mcp' }, again: { type: 'http', url: 'https://fixture.example/mcp' } },
+    }), false, existingServers);
+    expect(definitions.map(d => d.name)).toEqual(['remote-2']);
+    expect(summary).toContain('Skipped again (already registered as calendar (dup))');
+  });
+  it('reads the Space\u2019s connectors before importing so a name clash cannot refuse the batch', async () => {
+    const { port, calls } = harness();
+    await port.importConfig(JSON.stringify({ mcpServers: { calendar: { type: 'http', url: 'https://api.acme.test/mcp' } } }), false);
+    const imported = calls.find(c => c.url.includes('/mcp/servers/import'));
+    expect(calls.findIndex(c => c.url.includes('/mcp/servers?')) ).toBeLessThan(calls.indexOf(imported!));
+    expect((imported?.body?.definitions as Array<{ name: string }>).map(d => d.name)).toEqual(['calendar-2']);
+  });
+  it('tells the member what the import left for them to do', async () => {
+    const { port } = harness();
+    const summary = await port.importConfig(JSON.stringify({ mcpServers: { fixture: { url: 'https://other.example/mcp', headers: { 'X-Api-Key': 'fixture-secret' } } } }), false);
+    expect(summary).toContain('No token was taken from the configuration');
+    expect(summary).toContain('fixture');
   });
 });
 
