@@ -3145,7 +3145,7 @@ export function ChatHomeScreen({
                 existing thread is what extends the gate to a selection that
                 can now be changed mid-conversation. */}
             <McpPicker
-              teamMemberId={teammateId ?? undefined}
+              teamMemberId={shownTeammateId || undefined}
               targetId={aboutId ?? undefined}
               value={mcpSelections}
               onChange={connectors.change}
@@ -3260,7 +3260,7 @@ export function ChatHomeScreen({
                           <ChatConnectorsSheet
                             state={connectors}
                             {...(aboutId ? { targetId: aboutId } : {})}
-                            {...(teammateId ? { teamMemberId: teammateId } : {})}
+                            {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
                             streaming={thinking}
                             disabled={busy}
                           />
@@ -3274,7 +3274,7 @@ export function ChatHomeScreen({
                   <ConnectorsChip
                     state={connectors}
                     {...(aboutId ? { targetId: aboutId } : {})}
-                    {...(teammateId ? { teamMemberId: teammateId } : {})}
+                    {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
                     streaming={thinking}
                     disabled={busy}
                   />
@@ -3303,6 +3303,7 @@ export function ChatHomeScreen({
                   role={shownRole}
                   mode={shownMode}
                   onRoleChange={chooseRole}
+                  runsAs={teammateOptions.find((option) => option.id === shownTeammateId)?.label ?? null}
                   thread={<>
                     <ThreadSettingsFields
                       teammates={teammateOptions}
