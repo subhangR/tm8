@@ -1,12 +1,12 @@
 -- =============================================================================
--- 382 — the loop executor CLAIMS a run before it fires it (design 01a182d4
+-- 385 — the loop executor CLAIMS a run before it fires it (design 01a182d4
 --       §3.3; task 01a182d5-de68). Loops PR2.
 --
--- Predecessor on this branch: 378_loops_first_class.sql. 379–381 are reserved
+-- Predecessor on this branch: 384_loops_first_class.sql. 379–381 are reserved
 -- for the Tools lane and touch none of these objects, so either landing order
 -- applies clean.
 --
--- WHAT 378 LEFT FOR THIS FILE. 378 added `loop_runs` and two writer doors —
+-- WHAT 384 LEFT FOR THIS FILE. 384 added `loop_runs` and two writer doors —
 -- `loop_run_record` (insert one row) and `loop_run_settle` (settle once) — and
 -- taught 375's due read about pauses. It deliberately did not decide HOW a
 -- firing is recorded, because research A measured two defects in the old job
@@ -74,7 +74,7 @@ $$;
 revoke all on function internal.loop_acting_identity(uuid) from public;
 
 comment on function internal.loop_acting_identity(uuid) is
-  '382: the identity the NEXT firing of this loop runs as (375 rule): the armer '
+  '385: the identity the NEXT firing of this loop runs as (375 rule): the armer '
   'while an active member, else the space''s active owner, else NULL.';
 
 -- For LoopView.state.actingAs (§4.2) and the Run now handler: who, and by which
@@ -172,7 +172,7 @@ revoke all on function public.loops_claimable(integer, timestamptz) from public;
 grant execute on function public.loops_claimable(integer, timestamptz) to tm8_app;
 
 comment on function public.loops_claimable(integer, timestamptz) is
-  '382: due loops across every space with everything a firing branches on, for '
+  '385: due loops across every space with everything a firing branches on, for '
   'the in-process executor only (internal.is_loops_worker). A lapsed pause is '
   'due (§3.2); a loop with no identity to act as is left to loops_park_orphans.';
 
@@ -391,7 +391,7 @@ revoke all on function public.loop_run_claim(uuid,timestamptz,text,uuid[],timest
 grant execute on function public.loop_run_claim(uuid,timestamptz,text,uuid[],timestamptz,text,text,uuid,boolean,text) to tm8_app;
 
 comment on function public.loop_run_claim(uuid,timestamptz,text,uuid[],timestamptz,text,text,uuid,boolean,text) is
-  '382: claim one run of a loop before firing it: lock, re-check due, decide '
+  '385: claim one run of a loop before firing it: lock, re-check due, decide '
   'overlap (skip/queue/409), insert the loop_runs row and advance next_run_at in '
   'one transaction keyed on the run id. The executor (schedule) or a member (Run '
   'now). The schedule grammar is evaluated by the caller, never here.';
@@ -534,7 +534,7 @@ revoke all on function public.loop_runs_open_for_executor(timestamptz) from publ
 grant execute on function public.loop_runs_open_for_executor(timestamptz) to tm8_app;
 
 comment on function public.loop_runs_open_for_executor(timestamptz) is
-  '382: open loop firings across every space with their session facts, for the '
+  '385: open loop firings across every space with their session facts, for the '
   'executor''s max-runtime and settle sweep only (internal.is_loops_worker).';
 
 reset role;

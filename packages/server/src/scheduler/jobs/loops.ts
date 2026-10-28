@@ -138,7 +138,7 @@ export interface LoopStopRequest {
  */
 export interface LoopExecutorPort {
   /**
-   * Claims for the CROSS-SPACE reads and the run bookkeeping (375, 382).
+   * Claims for the CROSS-SPACE reads and the run bookkeeping (375, 385).
    *
    * These bind `tm8.background_job = 'loops.execute-due'`, which opens the
    * worker-gated doors and nothing else. They are deliberately NOT what a
@@ -163,7 +163,6 @@ export interface LoopExecutorPort {
    * `firedAt` is the firing instant and `runId` the claimed run: together they
    * key every mutation id the firing mints (loops/firing.ts), so two firings of
    * one loop are two distinct commands and a transport retry is a replay.
-   * `taskId` is null for a tool firing, which derives no task (§3.4).
    */
   fire(
     loop: DueLoop,
@@ -192,7 +191,7 @@ export interface LoopsJobOptions {
 }
 
 /**
- * The due read (382's `loops_claimable`), NOT a direct select: a direct
+ * The due read (385's `loops_claimable`), NOT a direct select: a direct
  * `select … from public.loops join public.entities` is filtered by
  * `entities_select` to the executor identity's own member spaces, which is the
  * 375 outage. The door is gated on the worker claim and returns every column a

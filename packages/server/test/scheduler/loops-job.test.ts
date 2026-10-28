@@ -9,7 +9,7 @@
  * set, the acting identity), what landed on each run (launched / failed /
  * settled), and which sessions the sweep stopped.
  *
- * The database is faked at the DOOR boundary: the four 382 doors and 378's
+ * The database is faked at the DOOR boundary: the four 385 doors and 384's
  * settle are recorded as calls and answered from a scripted table, so every
  * branch of the job is reachable without Postgres. The doors themselves are
  * covered by db/test/loop_rpcs.test.mjs and the pg suites.

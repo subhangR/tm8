@@ -1,5 +1,5 @@
 /**
- * The run-row doors of migration 382, as typed calls (design 01a182d4 §3.3).
+ * The run-row doors of migration 385, as typed calls (design 01a182d4 §3.3).
  *
  * Shared by the executor job (scheduler/jobs/loops.ts) and the Run now handler
  * (loops/run-handlers.ts), so a manual firing is recorded by exactly the code a
@@ -93,7 +93,7 @@ export async function recordLoopLaunchFailure(
 
 export type LoopRunOutcome = Extract<LoopRunStatus, 'completed' | 'failed' | 'stopped' | 'timed_out'>;
 
-/** Settles once (378): a second settle reports the first outcome and changes nothing. */
+/** Settles once (384): a second settle reports the first outcome and changes nothing. */
 export async function settleLoopRun(
   db: Db,
   claims: DbClaims,

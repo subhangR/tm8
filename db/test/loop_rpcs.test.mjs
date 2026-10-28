@@ -594,14 +594,14 @@ test('384 — runner invariants, the action backfill rule, loop_runs and loop he
   assert.equal(scalar(`select internal.header_kind_allowed('tool')`, { url: OWNER_URL }), 't');
 });
 
-test('382 — claim-then-fire: due read, claim, overlap skip/queue/409, launch bookkeeping, retry, sweep read', () => {
+test('385 — claim-then-fire: due read, claim, overlap skip/queue/409, launch bookkeeping, retry, sweep read', () => {
   const human = { ...w.claimsA, 'tm8.auth_kind': 'browser' };
   const worker = { 'tm8.identity_id': w.identityA, 'tm8.node_admin': 'true', 'tm8.background_job': 'loops.execute-due' };
   const past = `now() - interval '1 minute'`;
   const loop = json(
     `select public.create_loop(${uuid(w.spaceA)}, 'Claimed', null, 'every 1h', ${uuid(w.personaA)},
        p_next_run_at => ${past}, p_retry_attempts => 1, p_retry_delay_seconds => 60,
-       p_client_mutation_id => ${literal(cmid('loop-382-create'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-385-create'))})`,
     { claims: human },
   ).entity;
 
@@ -662,9 +662,9 @@ test('382 — claim-then-fire: due read, claim, overlap skip/queue/409, launch b
   assert.equal(scalar(`select (next_run_at <= now())::text from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }), 'true', 'a queued loop stays due');
 
   // Run now while run1 is live: 409 material unless forced; forced fires and records the presser.
-  const refused = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-382-manual-refused'))})`, { claims: w.claimsA });
+  const refused = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-manual-refused'))})`, { claims: w.claimsA });
   assert.deepEqual(refused, { claimed: false, reason: 'overlap', waitingOnRunId: claim1.runId });
-  const forcedCmid = cmid('loop-382-manual-forced');
+  const forcedCmid = cmid('loop-385-manual-forced');
   const forced = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(forcedCmid)})`, { claims: w.claimsA });
   assert.equal(forced.claimed, true);
   assert.equal(forced.launch, 'fired');
@@ -720,7 +720,7 @@ test('382 — claim-then-fire: due read, claim, overlap skip/queue/409, launch b
   const orphanHuman = { ...w.claimsB, 'tm8.auth_kind': 'browser' };
   const orphan = json(
     `select public.create_loop(${uuid(w.spaceB)}, 'Orphan', null, 'every 1h', null, p_next_run_at => ${past},
-       p_client_mutation_id => ${literal(cmid('loop-382-orphan'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-385-orphan'))})`,
     { claims: orphanHuman },
   ).entity;
   ok(`update public.members set status = 'removed', left_at = now() where space_id = ${uuid(w.spaceB)}`, { url: OWNER_URL });

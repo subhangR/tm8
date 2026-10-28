@@ -115,9 +115,10 @@ function jobFor(db: Db, readAs: DbClaims): {
     fire: async (loop, firingClaims) => {
       fired.push(loop.entityId);
       firedAs.push(String(firingClaims.identityId));
-      // No session row exists for a fake firing; the run keeps session_id null
-      // and the sweep settles it after the launch grace period.
-      return { taskId: null, sessionId: `00000000-0000-4000-8000-${String(fired.length).padStart(12, '0')}` };
+      // A fake firing spawns nothing. `loop_runs.session_id` references
+      // `entities`, so the stand-in must be a live row in the loop's space: the
+      // loop itself. The sweep is not under test here.
+      return { taskId: null, sessionId: loop.entityId };
     },
     stopSession: async () => {},
   };
@@ -173,6 +174,7 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
   });
 
   afterAll(async () => {
+    await db?.end();
     await database?.destroy();
   });
 
@@ -273,7 +275,7 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
     expect(firedAs).toEqual([spaceOwner]);
     expect(warned.warnings).toEqual([]);
 
-    // The claim went through the REAL `loop_run_claim` (382) under the worker
+    // The claim went through the REAL `loop_run_claim` (385) under the worker
     // claim, and the launch record through `loop_run_launched`. This is the
     // half that proves the bookkeeping path works and not just the read: the
     // outcome is on the row, and the loop is no longer due, so it cannot be
@@ -300,7 +302,7 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
   it('an orphaned loop is parked with a reason, never skipped in silence', async () => {
     // The space's only member is gone (232 tombstone), so there is no identity
     // left to act as. Such a loop cannot be fired, so the executor parks it
-    // LOUDLY (382 `loops_park_orphans`): `last_error` says 'needs arming', the
+    // LOUDLY (385 `loops_park_orphans`): `last_error` says 'needs arming', the
     // warn log names it, and it is no longer selected as due — so it can no
     // longer starve the queue, and the moment the space has an owner again it
     // fires once. A silent skip here is the original bug wearing a new hat.
@@ -332,11 +334,12 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
     expect(outcome.detail).toMatchObject({ due: 0, orphaned: 1 });
     expect(warned.warnings).toHaveLength(1);
     expect(warned.warnings[0]).toContain('no active member to act as');
-    const [parked] = await db.query<{ last_error: string | null }>(
-      executorClaims(),
+    // Read as the owner: the executor identity is not a member of this space,
+    // so under its claims RLS hides the row (375) — which is the whole point.
+    const [parked] = await db.asOwner((q) => q.query<{ last_error: string | null }>(
       'select last_error from public.loops where entity_id = $1',
       [loopId],
-    );
+    ));
     expect(parked?.last_error ?? '').toContain('needs arming');
 
     // Parked once: a second tick neither re-warns nor re-writes the row.

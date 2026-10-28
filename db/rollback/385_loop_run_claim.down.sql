@@ -1,14 +1,14 @@
 -- =============================================================================
--- ROLLBACK for 382_loop_run_claim.sql — NOT a migration (db/migrate.mjs never
--- reads this directory). Run by hand, as the migration owner, only to undo 382:
+-- ROLLBACK for 385_loop_run_claim.sql — NOT a migration (db/migrate.mjs never
+-- reads this directory). Run by hand, as the migration owner, only to undo 385:
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/382_loop_run_claim.down.sql
---   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '382_loop_run_claim.sql'"
+--   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/385_loop_run_claim.down.sql
+--   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '385_loop_run_claim.sql'"
 --
--- Destroys no data: 382 added functions only. `loop_runs` rows written through
--- the claim door stay (they are ordinary 378 rows), and `loops.last_error`
--- values the orphan sweep wrote stay as text. 378's `loops_due_for_executor`,
--- `loop_run_record` and `loop_run_settle` are untouched by 382 and remain.
+-- Destroys no data: 385 added functions only. `loop_runs` rows written through
+-- the claim door stay (they are ordinary 384 rows), and `loops.last_error`
+-- values the orphan sweep wrote stay as text. 384's `loops_due_for_executor`,
+-- `loop_run_record` and `loop_run_settle` are untouched by 385 and remain.
 -- =============================================================================
 
 set role tm8_graph_owner;
