@@ -1697,6 +1697,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
+  sourceWorkSessionId: EntityIdSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>

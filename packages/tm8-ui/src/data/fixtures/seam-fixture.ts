@@ -3231,6 +3231,7 @@ export function createFixtureSeam(): FixtureSeam {
           || (s.state.kind === 'message' && s.state.rootMessageId === opts.rootMessageId))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map(toMessageView);
+      if (opts?.order === 'newest') rows.reverse();
       return clone(pageOf(rows, opts));
     },
     async handoffs(workSessionId, opts): Promise<Page<HandoffView>> {

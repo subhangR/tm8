@@ -488,6 +488,12 @@ export interface SessionCompleteResult extends CommandResult {
 export interface MessageListOpts extends PageOpts {
   /** Read the branch under this root instead of the anchor's thread roots. */
   rootMessageId?: EntityId;
+  /**
+   * `newest` pages from the latest message backwards (the cursor walks OLDER),
+   * which is how a long transcript opens without reading its whole history.
+   * Default `oldest`, as the server's.
+   */
+  order?: 'oldest' | 'newest';
 }
 
 /**
