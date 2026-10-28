@@ -2,7 +2,7 @@ import { TOOL_DEFAULT_TIMEOUT_SECONDS, ToolDefinitionSchema, type ToolDefinition
 import { readJsonSource, readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { isAgentContext } from '../credentials.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_PROTOCOL, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
@@ -10,6 +10,9 @@ import { assertKnownOptions, headerTextOptions, requireArg } from './entity.js';
 import { inputFlag, parseToolArgs, parseToolValue, refuseLiteralToolSecrets, renderToolHelp, type ToolHelp } from './tool-args.js';
 import { readToolSecret } from './tool-secret.js';
 import { attachToolRun } from './tool-terminal.js';
+import { unifiedDiff } from './tool-diff.js';
+import { changedFields, FOLDED_VERSIONS_NOTE, renderDiff, renderVersions, snapshotSource, versionRef, versionRows,
+  type EntityVersionItem, type ToolDiffResult, type ToolVersionsPage } from './tool-history.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const client = (cmd: CommandContext) => clientFor({ ...cmd.ctx, fresh: true });
@@ -193,10 +196,62 @@ async function toolRunShow(cmd: CommandContext): Promise<ExitCode> {
   const result = await observedInvoke<ToolRun>(client(cmd), 'tools.runs.get', { params: { sessionId: requireArg(cmd, 0, '<session-id>') } });
   cmd.out.data(result, value => cmd.options.bool('output') ? value.outputTail : JSON.stringify(value, null, 2)); return EXIT_OK;
 }
+const versionsPage = (cmd: CommandContext, toolId: string, query: Record<string, string>): Promise<{ items: EntityVersionItem[]; nextCursor: string | null }> =>
+  observedInvoke(client(cmd), 'entities.versions', { params: { id: toolId }, query });
+async function toolVersions(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['limit', 'cursor']); argumentsCount(cmd, 1);
+  const tool = await loadTool(cmd), page = await versionsPage(cmd, tool.id, pageQuery(cmd));
+  // The oldest row of a page is compared with the first snapshot past it.
+  const older = page.nextCursor ? (await versionsPage(cmd, tool.id, { limit: '1', cursor: page.nextCursor })).items[0] : undefined;
+  const result: ToolVersionsPage = { toolId: tool.id, name: tool.definition.name, currentVersion: tool.version,
+    items: versionRows(page.items, older), nextCursor: page.nextCursor };
+  cmd.out.data(result, renderVersions); return EXIT_OK;
+}
+function versionOption(cmd: CommandContext, option: 'from' | 'to'): number | undefined {
+  const raw = cmd.options.value(option);
+  if (raw === undefined) return undefined;
+  const version = /^v?[0-9]+$/.test(raw) ? Number(raw.replace(/^v/, '')) : Number.NaN;
+  if (!Number.isSafeInteger(version) || version < 1) throw new CliError(`--${option} expects a version number such as 3`, EXIT_USAGE);
+  return version;
+}
+async function toolDiff(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['from', 'to']); argumentsCount(cmd, 1);
+  const from = versionOption(cmd, 'from'), to = versionOption(cmd, 'to');
+  const tool = await loadTool(cmd), name = tool.definition.name;
+  // History is newest first; walk it until both ends are known or passed.
+  const stored: EntityVersionItem[] = [];
+  const resolve = () => {
+    const newer = to === undefined ? stored[0] : stored.find(item => item.version === to);
+    return { newer, older: from !== undefined ? stored.find(item => item.version === from) : newer && stored[stored.indexOf(newer) + 1] };
+  };
+  const passed = (version: number | undefined, found: unknown): boolean => version !== undefined && !found && stored.at(-1)!.version < version;
+  let cursor: string | null = null;
+  do {
+    const page = await versionsPage(cmd, tool.id, { limit: '200', ...(cursor ? { cursor } : {}) });
+    stored.push(...page.items); cursor = page.nextCursor;
+    const { newer, older } = resolve();
+    if (!stored.length || (newer && older) || passed(to, newer) || passed(from, older)) break;
+  } while (cursor);
+  const { newer, older } = resolve();
+  const missing = (version: number): CliError => {
+    const nearest = [[...stored].reverse().find(item => item.version > version), stored.find(item => item.version < version)]
+      .flatMap(item => item ? [`v${item.version}`] : []);
+    return new CliError(`${name} v${version} has no stored snapshot${nearest.length ? ` (nearest stored: ${nearest.join(', ')})` : ''}; ${FOLDED_VERSIONS_NOTE}`, EXIT_NOT_FOUND);
+  };
+  if (!stored.length) throw new CliError(`${name} has no stored versions`, EXIT_NOT_FOUND);
+  if (!newer) throw missing(to!);
+  if (!older) throw from !== undefined ? missing(from) : new CliError(`${name} has no stored version older than v${newer.version} to compare with`, EXIT_NOT_FOUND);
+  const before = snapshotSource(older), after = snapshotSource(newer);
+  if (before === null || after === null) throw new CliError(`A stored snapshot of ${name} carries no source`, EXIT_PROTOCOL);
+  const result: ToolDiffResult = { toolId: tool.id, name, from: versionRef(older), to: versionRef(newer), changed: changedFields(newer, older),
+    diff: unifiedDiff(before, after, { from: `${name}@v${older.version}`, to: `${name}@v${newer.version}` }) };
+  cmd.out.data(result, renderDiff); return EXIT_OK;
+}
 export const TOOL_COMMANDS: CommandModule[] = [
   { path: ['tool', 'create'], run: toolCreate }, { path: ['tool', 'edit'], run: toolEdit },
   { path: ['tool', 'show'], run: toolShow }, { path: ['tool', 'list'], run: toolList }, { path: ['tool', 'help'], run: toolHelp },
   { path: ['tool', 'config', 'set'], run: cmd => toolConfig(cmd, false) }, { path: ['tool', 'config', 'unset'], run: cmd => toolConfig(cmd, true) },
   { path: ['tool', 'secret', 'set'], run: cmd => toolSecret(cmd, false) }, { path: ['tool', 'secret', 'unset'], run: cmd => toolSecret(cmd, true) },
   { path: ['tool', 'run'], run: toolRun }, { path: ['tool', 'runs'], run: toolRuns }, { path: ['tool', 'run-show'], run: toolRunShow },
+  { path: ['tool', 'versions'], run: toolVersions }, { path: ['tool', 'diff'], run: toolDiff },
 ];

@@ -4950,6 +4950,32 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 style versions <space-ref> --limit <count>'],
   }],
+  // `tool versions|diff` read a tool's stored history through
+  // entities.versions, as `style versions` does: each snapshot's
+  // content.definition is the definition as of that version. No catalog rows.
+  ['tool versions', {
+    path: ['tool', 'versions'],
+    syntax: 'tm8 tool versions <name|id> [--limit <count>] [--cursor <cursor>]',
+    summary: 'The stored version history of a tool: who changed it, when, and which fields',
+    notes: [
+      'sugar over entities.versions on the tool — it adds no catalog operation',
+      'each row names the fields that differ from the next older stored snapshot (name, description, runtime, source, inputs, help, tm8Access, timeoutSeconds, config, secrets) and the sha256 of its source, the digest `tm8 tool runs` pins per run',
+      'not every version number has a stored snapshot: rapid edits by one author can fold into one, so the list can skip numbers',
+    ],
+    examples: ['tm8 tool versions <name> --limit 20'],
+  }],
+  ['tool diff', {
+    path: ['tool', 'diff'],
+    syntax: 'tm8 tool diff <name|id> [--from <version>] [--to <version>]',
+    summary: 'Unified diff of a tool\'s source between two stored versions',
+    notes: [
+      'sugar over entities.versions — it adds no catalog operation',
+      'defaults: --to is the newest stored version, --from the stored version just before --to',
+      'a version with no stored snapshot is refused by name with the nearest stored versions (exit 5), as is a tool with only one stored version',
+      'human output is `diff -u` text of the source; --format json adds both versions, every changed field and the diff as one string',
+    ],
+    examples: ['tm8 tool diff <name>', 'tm8 tool diff <name> --from 3 --to 7'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -5182,6 +5208,12 @@ COMMAND_ORDER.splice(styleUpdateIndex < 0 ? COMMAND_ORDER.length : styleUpdateIn
 const styleCreateIndex = COMMAND_ORDER.indexOf('style create');
 COMMAND_ORDER.splice(styleCreateIndex < 0 ? COMMAND_ORDER.length : styleCreateIndex + 1, 0, 'style import');
 COMMAND_ORDER.push('style versions');
+// The tool history verbs read only entities.versions (after the tools.get or
+// tools.list that resolves the name) and close the tool noun.
+COMMAND_OPS.set('tool versions', ['entities.versions', 'tools.get', 'tools.list']);
+COMMAND_OPS.set('tool diff', ['entities.versions', 'tools.get', 'tools.list']);
+const toolRunShowIndex = COMMAND_ORDER.indexOf('tool run-show');
+COMMAND_ORDER.splice(toolRunShowIndex < 0 ? COMMAND_ORDER.length : toolRunShowIndex + 1, 0, 'tool versions', 'tool diff');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 // Lane L1 aliases: each is exactly as available as the operation it spells.
 COMMAND_OPS.set('space-link list', ['spaceLinks.list']);

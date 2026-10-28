@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,6 +40,14 @@ let requests: Array<{ method: string; path: string; query: URLSearchParams; body
 let stdout = '', stderr = '', fast = false, completed = false, exitCode = 37, keepOpen = false, conflict = false, helpVersionMismatch = false;
 let namePage = 0;
 let noReplay = false, statusDelay = 0, noTerminalEnd = false;
+const AUTHOR = { id: CREDENTIAL, kind: 'team_member' as const, displayName: 'Author', isAgent: false };
+// Stored snapshots, newest first, as entities.versions returns them; v2 and v3 were folded into v4.
+const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<string, unknown> = {}) => ({
+  entityId: TOOL, version, changedBy: AUTHOR, changedAt: `2026-10-28T1${version}:00:00.000Z`,
+  snapshot: { entity: { id: TOOL, kind: 'tool', version }, content: { title: 'demo', definition: { ...definition, ...patch },
+    execution_version: version, config_revision: Object.keys(config).length, config, secretBindings: [] } },
+});
+let history: ReturnType<typeof stored>[] = [], versionPageCap = 200;
 const storedRun = (): ToolRun => ({ id: SESSION, spaceId: SPACE, toolId: TOOL, toolVersion: tool.version,
   sourceSha256: tool.sourceSha256, inputs: {}, state: completed ? 'exited' : 'running', keepOpen,
   exitCode: completed ? exitCode : null, startedAt: null, exitedAt: null, outputTail: 'stored output\n', parentSessionId: null });
@@ -94,6 +103,12 @@ beforeAll(async () => {
         workSessionId: SESSION, mode: 'drive', token: 'grant-bearer', expiresAt: new Date(Date.now() + 60000).toISOString(), url: `/terminal?sessionId=${SESSION}`,
       };
       else if (url.pathname.endsWith('/runs')) data = { items: [storedRun()], nextCursor: null };
+      else if (url.pathname.endsWith('/versions')) {
+        // The cursor is the last version served, the keyset the server encodes.
+        const limit = Math.min(Number(url.searchParams.get('limit') ?? 50), versionPageCap), after = url.searchParams.get('cursor');
+        const rest = history.filter(item => after === null || item.version < Number(after));
+        data = { items: rest.slice(0, limit), nextCursor: rest.length > limit ? String(rest[limit - 1]!.version) : null };
+      }
       else if (url.pathname.includes('/tool-runs/')) data = storedRun();
       else if (url.pathname.endsWith('/secrets/bind')) data = { inputName: 'auth', keyHint: '••••' };
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -111,7 +126,13 @@ beforeEach(() => {
     executionVersion: 1, configRevision: 0, config: {}, secretBindings: [], sourceChangedSinceViewerLastRun: null };
   requests = []; stdout = ''; stderr = ''; fast = false; completed = false; exitCode = 37; keepOpen = false; conflict = false; helpVersionMismatch = false; namePage = 0;
   TerminalSocket.instances = [];
-  noReplay = false; statusDelay = 0; noTerminalEnd = false;
+  noReplay = false; statusDelay = 0; noTerminalEnd = false; versionPageCap = 200;
+  history = [
+    stored(6, { source: 'echo one\necho two\n', help: 'New help', inputs: definition.inputs.slice(0, 2) }, { limit: 4 }),
+    stored(5, { source: 'echo one\necho two\n' }, { limit: 4 }),
+    stored(4, { source: 'echo one\necho two\n' }),
+    stored(1, { source: 'echo one\n' }),
+  ];
   vi.stubEnv('TM8_BASE_URL', baseUrl); vi.stubEnv('TM8_SPACE_ID', SPACE); vi.stubEnv('TM8_CREDENTIALS_MODE', 'off');
   vi.stubEnv('TM8_SESSION_ID', ''); vi.stubEnv('TM8_AGENT_TOKEN', ''); vi.stubEnv('TM8_TEAM_MEMBER_ID', '');
   vi.stubEnv('TM8_JOURNAL_CLASS', 'human'); vi.stubEnv('TM8_NO_TERSE_DEFAULT', '1');
@@ -201,7 +222,66 @@ describe('catalog commands and version pin', () => {
     expect(await run(['tool', 'help', TOOL])).toBe(0); expect(requests.at(-1)!.path).toContain('/help');
     expect(await run(['tool', 'runs', TOOL, '--limit', '3'])).toBe(0); expect(requests.at(-1)!.path).toContain('/runs');
     expect(await run(['tool', 'run-show', SESSION, '--output'])).toBe(0); expect(stdout).toContain('stored output');
-    expect(nounHelp('tool')!.commands).toHaveLength(12);
+    expect(nounHelp('tool')!.commands).toHaveLength(14);
+  });
+});
+
+describe('version history', () => {
+  it('lists stored versions with the fields each changed, comparing a page\'s oldest row past the page', async () => {
+    expect(await run(['tool', 'versions', 'demo', '--limit', '2', '--format', 'json'])).toBe(0);
+    const page = JSON.parse(stdout);
+    expect(page).toMatchObject({ toolId: TOOL, name: 'demo', currentVersion: 23, nextCursor: '5' });
+    expect(page.items.map((row: { version: number; changed: string[]; previousVersion: number }) => [row.version, row.changed, row.previousVersion]))
+      .toEqual([[6, ['inputs', 'help'], 5], [5, ['config'], 4]]);
+    expect(page.items[0]).toMatchObject({ changedBy: AUTHOR, changedAt: '2026-10-28T16:00:00.000Z', executionVersion: 6, configRevision: 1,
+      sourceSha256: createHash('sha256').update('echo one\necho two\n').digest('hex') });
+    const reads = requests.filter(req => req.path.endsWith(`/entities/${TOOL}/versions`));
+    expect(reads.map(req => [req.query.get('limit'), req.query.get('cursor')])).toEqual([['2', null], ['1', '5']]);
+  });
+  it('renders the history for a human, naming the first stored version and the folded gap', async () => {
+    expect(await run(['tool', 'versions', TOOL])).toBe(0);
+    expect(stdout).toContain('demo: 4 stored versions, newest first (current v23)');
+    expect(stdout).toMatch(/v6 +2026-10-28T16:00:00.000Z +Author +inputs, help +sha256 [0-9a-f]{12}/);
+    expect(stdout).toMatch(/v4 .* source /); expect(stdout).toMatch(/v1 .* created /);
+    expect(stdout).toContain('note: not every version number has a stored snapshot');
+    expect(stdout).not.toContain('more:');
+    stdout = '';
+    expect(await run(['tool', 'versions', TOOL, '--limit', '1'])).toBe(0);
+    expect(stdout).toContain(`more: tm8 tool versions demo --cursor 6`);
+  });
+  it('diffs the two newest stored versions by default and says when the source did not change', async () => {
+    expect(await run(['tool', 'diff', 'demo'])).toBe(0);
+    expect(stdout).toBe('no source change between demo v5 and v6; changed: inputs, help\n');
+  });
+  it('prints a unified source diff between named versions, with json carrying both ends', async () => {
+    expect(await run(['tool', 'diff', 'demo', '--from', 'v1', '--to', '4'])).toBe(0);
+    expect(stdout).toBe('--- demo@v1\n+++ demo@v4\n@@ -1 +1,2 @@\n echo one\n+echo two\n');
+    stdout = '';
+    expect(await run(['tool', 'diff', 'demo', '--from', '1', '--format', 'json'])).toBe(0);
+    const result = JSON.parse(stdout);
+    expect(result).toMatchObject({ toolId: TOOL, name: 'demo', from: { version: 1, changedBy: AUTHOR }, to: { version: 6 },
+      changed: ['source', 'inputs', 'help', 'config'], diff: '--- demo@v1\n+++ demo@v6\n@@ -1 +1,2 @@\n echo one\n+echo two\n' });
+    expect(result.from.sourceSha256).toBe(createHash('sha256').update('echo one\n').digest('hex'));
+  });
+  it('walks history pages until both versions are found, and stops once a missing one is passed', async () => {
+    versionPageCap = 2;
+    expect(await run(['tool', 'diff', 'demo', '--from', '4'])).toBe(0);
+    expect(requests.filter(req => req.path.endsWith('/versions')).map(req => req.query.get('cursor'))).toEqual([null, '5']);
+    requests = [];
+    expect(await run(['tool', 'diff', 'demo', '--from', '3'])).toBe(5);
+    expect(stderr).toContain('demo v3 has no stored snapshot (nearest stored: v4, v1); not every version number has a stored snapshot');
+    expect(requests.filter(req => req.path.endsWith('/versions'))).toHaveLength(2);
+    expect(await run(['tool', 'diff', 'demo', '--to', '9'])).toBe(5);
+    expect(stderr).toContain('demo v9 has no stored snapshot (nearest stored: v6)');
+  });
+  it('refuses a single stored version and malformed version numbers', async () => {
+    history = history.slice(-1);
+    expect(await run(['tool', 'diff', 'demo'])).toBe(5);
+    expect(stderr).toContain('demo has no stored version older than v1 to compare with');
+    requests = [];
+    for (const bad of ['0', 'latest', '-1', '1.5']) expect(await run(['tool', 'diff', 'demo', '--from', bad])).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(await run(['tool', 'versions', 'demo', 'extra'])).toBe(2);
   });
 });
 
