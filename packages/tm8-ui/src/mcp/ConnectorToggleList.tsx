@@ -1,11 +1,11 @@
 /**
  * §10.0 — THE ONE TOGGLE LIST, drawn by three surfaces.
  *
- * The chat sheet (§10.4), the launch dialogs' Connectors section (§10.5) and
- * the debug view's read-only mode all render THIS component. `McpPicker` keeps
- * its readiness logic (`readiness`, `selectionProblem`) and hands its body
- * here, which is what the plan asks for and what stops the three from drifting
- * into three vocabularies for one state.
+ * The chat sheet (§10.4), the launch dialogs' Connectors section (§10.5, and
+ * the full list behind the launch card's chips) and the debug view's read-only
+ * mode all render THIS component. The readiness logic is `selection-gate.ts`'s;
+ * `McpPicker` runs it and hands its body here, which is what the plan asks for
+ * and what stops the three from drifting into three vocabularies for one state.
  *
  * ---------------------------------------------------------------------------
  * THE THREE-VALUE RULE, which is the whole reason this component is careful
@@ -33,7 +33,7 @@
  */
 import { useId, useState, type ReactNode } from 'react';
 import { ConnectorsLink } from './ConnectorsLink';
-import { connectorRows, type ConnectorRow } from './row-model';
+import { connectorRows, pinned, toggled, type ConnectorRow } from './row-model';
 import type { McpCatalog, McpSelection } from './port';
 import './mcp.css';
 
@@ -109,16 +109,8 @@ export function ConnectorToggleList({
       || row.server.description.toLowerCase().includes(needle));
 
   const set = (next: McpSelection[]) => onChange?.(next);
-  const toggle = (row: ConnectorRow, on: boolean) => {
-    set(on
-      ? [...selected, { serverId: row.server.id }]
-      : selected.filter(s => s.serverId !== row.server.id));
-  };
-  const pinAccount = (row: ConnectorRow, credentialId: string) => {
-    set(selected.map(s => s.serverId === row.server.id
-      ? { serverId: row.server.id, ...(credentialId ? { credentialId } : {}) }
-      : s));
-  };
+  const toggle = (row: ConnectorRow, on: boolean) => set(toggled(selected, row.server.id, on));
+  const pinAccount = (row: ConnectorRow, credentialId: string) => set(pinned(selected, row.server.id, credentialId));
 
   if (rows.length === 0) {
     return (
@@ -285,12 +277,14 @@ function Row({
         * THE ACCOUNT PICKER, for an explicit pick that needs an account.
         *
         * §10.0 asks for it "only when the root has more than one connection",
-        * and that is not enough: `readiness` — the gate this surface keeps —
-        * blocks an explicit pick until its `credentialId` names a connected
-        * account, so a connector with exactly ONE account and no picker is a
-        * row you can switch on and then never send. It is drawn whenever
-        * there is an account to name, and left out when there is none (the
-        * row's action is [Connect] then, which is the real remedy).
+        * and that is not enough: a connection only SHARED with the viewer is
+        * opened by the server only when it is pinned (`resolvedAccount`), so a
+        * row whose one account is a share would switch on and never send. It
+        * is drawn whenever there is an account to name, and left out when
+        * there is none (the row's action is [Connect] then, which is the real
+        * remedy). "Choose for me" sends no pin: the server's own-then-shared
+        * order picks, and `accountProblem` blocks it only when that order has
+        * nothing to pick.
         */}
       {!readOnly && row.on && row.server.auth !== 'none' && row.accounts.length > 0 ? (
         <label className="mcp-toggles__account">

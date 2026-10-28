@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { McpCredentialScope } from '@tm8/contract';
 import { ConnectorForm } from './ConnectorForm';
-import { ConnectorLogo } from './connector-logos';
+import { ConnectorLogo, serverLogo } from './connector-logos';
 import { accessLabel, isGoogleConnector, rowStatusOf, statusLabel, typeLabel, STATUS_ROWS } from './connector-rows';
 import { McpUiError, testFailure, type ConnectFailure } from './errors';
 import { useConnect, type ConnectPhase } from './useConnect';
@@ -273,7 +273,7 @@ export function ConnectorDrawer({ server, port, admin, busy, run, onClose }: {
 
   return <aside className="mcp-drawer" aria-label={`${server.title} connector`}>
     <header className="mcp-drawer__head">
-      <ConnectorLogo logo={definition?.catalogId?.replace(/\./g, '-')} title={server.title} />
+      <ConnectorLogo logo={serverLogo(definition)} title={server.title} />
       <div>
         <h3>{server.title}</h3>
         <p className="mcp-note">{typeLabel(server)} · {accessLabel(server)}</p>

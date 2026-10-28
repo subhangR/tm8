@@ -28,10 +28,16 @@ function Picker({ port, onReady = vi.fn(), onChange = vi.fn() }: { port: McpPort
   return <McpProvider port={port}><McpPicker value={value} onChange={next => { onChange(next); setValue(next); }} onReady={onReady} /></McpProvider>;
 }
 describe('native MCP picker', () => {
-  it('requires an explicit account and distinguishes defaults from none', async () => {
+  /*
+   * An explicit pick with NO pin is sendable when the viewer has their own
+   * connection: `bind` opens it by §3's order (`resolve_mcp_account`). This
+   * cell used to expect `onReady(false)` here, which held a launch the server
+   * would have run until the person pinned the only account there was.
+   */
+  it('sends an unpinned pick the viewer has an account for, pins one on request, and distinguishes defaults from none', async () => {
     const onReady = vi.fn(), onChange = vi.fn(); render(<Picker port={fixture()} onReady={onReady} onChange={onChange} />);
     fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
-    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server' }]); expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server' }]); expect(onReady).toHaveBeenLastCalledWith(true);
     fireEvent.change(screen.getByRole('combobox', { name: 'Account for Calendar' }), { target: { value: 'account' } });
     expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server', credentialId: 'account' }]); expect(onReady).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: 'Turn all off' })); expect(onChange).toHaveBeenLastCalledWith([]);
@@ -172,10 +178,16 @@ describe('MCP readiness and recovery', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByRole('option',{name:'Work account'})).toBeNull();
   });
-  it('still blocks an explicitly ticked connector until an account is chosen', async () => {
-    const onReady = vi.fn(); render(<Picker port={fixture()} onReady={onReady} />);
+  it('still blocks an explicitly ticked connector until an account is chosen, when only a pin can open one', async () => {
+    // The one account is ANOTHER member's, shared with the viewer: §3 never
+    // picks a share by itself, so the server would refuse the unpinned pick.
+    const data = catalog(); data.servers[0]!.accounts[0] = { ...data.servers[0]!.accounts[0]!, ownerId: 'someone', canManage: false, sharing: 'members' };
+    const onReady = vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} />);
     fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
-    expect(onReady).toHaveBeenLastCalledWith(false); expect(screen.getByRole('alert').textContent).toBe('Choose a connected account.');
+    expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('alert').textContent).toBe('Choose an account for Calendar: a connection shared with you is used only when you pick it.');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Account for Calendar' }), { target: { value: 'account' } });
+    expect(onReady).toHaveBeenLastCalledWith(true); expect(screen.queryByRole('alert')).toBeNull();
   });
   it('preserves sharing selection and offers the named member after loading', async () => {
     const port=fixture(); render(<McpProvider port={port}><McpSettings/></McpProvider>);
