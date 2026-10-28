@@ -21,6 +21,7 @@
  * `artifact` and `project` have no create door in this client, so the
  * registry marks them not creatable.
  */
+import { LoopFormDialog } from '../../loops/LoopForm';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type FormEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import {
@@ -579,6 +580,36 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
 }
 
 // ---------------------------------------------------------------------------
+// loop: the loop form (the generic header form cannot create one — a loop
+// needs a schedule and a runner)
+// ---------------------------------------------------------------------------
+
+function LoopDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
+  const { gate, spaceId } = useWorkspace();
+  const { loops, loopForm } = gate.data.seam.commands;
+  return (
+    <div className="tws-draft-form" data-testid="tws-draft-loop" onInput={() => onValues({})}>
+      <DraftHeading kind={tab.kind} />
+      {loops && loopForm ? (
+        <LoopFormDialog
+          mode="create"
+          spaceId={spaceId as SpaceId}
+          client={loops}
+          sources={loopForm}
+          onClose={onCancel}
+          onSaved={(view) => onCreated(view.id, view.definition.title)}
+        />
+      ) : (
+        <>
+          <p className="tws-draft-note">This node does not offer loops here.</p>
+          <DraftActions onCancel={onCancel} submitting={false} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // work_session: the launch sheet
 // ---------------------------------------------------------------------------
 
@@ -666,5 +697,6 @@ export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | unde
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;
+  if (form === 'scheduled-work') return LoopDraftBody;
   return undefined;
 }

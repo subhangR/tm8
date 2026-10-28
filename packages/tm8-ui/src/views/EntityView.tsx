@@ -32,6 +32,7 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
+import { LoopsList } from '../loops/LoopsList';
 import { projectRecordPort } from '../projects/project-record';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -1226,7 +1227,17 @@ export function EntityView(props: EntityViewProps) {
           onArchive={(id) => rowLifecycle.archive('archive', id)}
         />
       ) : null}
-      {oneSurface ? null : (
+      {oneSurface || config.list.surface !== 'loops' ? null : (
+        <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
+          <LoopsList
+            spaceId={data.spaceId}
+            client={data.seam.commands.loops ?? null}
+            sources={data.seam.commands.loopForm ?? data.seam}
+            onOpen={selectFromList}
+          />
+        </section>
+      )}
+      {oneSurface || config.list.surface === 'loops' ? null : (
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}

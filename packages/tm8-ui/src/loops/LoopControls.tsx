@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
-import { entityPatchInput, type AuthoringCommands } from '../authoring/commands';
+import type { AuthoringCommands } from '../authoring/commands';
 import { absTime } from '../kit/time';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
-import { loopScheduleProblem, nextLoopRunAt } from './schedule';
+import type { LoopsClient } from './api';
 
 type LoopAction = 'enable' | 'disable' | 'run-now';
 
@@ -15,11 +15,13 @@ type ActionState =
 
 export function LoopControls({
   detail,
-  commands,
+  loops,
   onSaved,
 }: {
   detail: EntityDetail;
   commands?: Pick<AuthoringCommands, 'patchEntity'> | null;
+  /** `loops.*`: Enable/Disable/Run now go through the loop doors, which own the next run (design 01a182d4 §3.1). */
+  loops?: LoopsClient | null;
   onSaved?: (result: CommandResult) => void;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
@@ -56,23 +58,21 @@ export function LoopControls({
 
   const unavailable = !detail.capabilities.canEdit
     ? { cause: 'You cannot manage this loop', remedy: 'the server refuses edits for this entity' }
-    : !commands
-      ? { cause: 'Loop controls are not wired here', remedy: 'this surface has no patch executor' }
+    : !loops
+      ? { cause: 'Loop controls are not wired here', remedy: 'this surface has no loops client' }
       : null;
 
-  const commit = async (
-    requested: LoopAction,
-    patch: Record<string, unknown>,
-    success: string,
-  ) => {
-    if (!commands || unavailable || pending) return;
+  const commit = async (requested: LoopAction, success: string) => {
+    if (!loops || unavailable || pending) return;
     setAction({ phase: 'saving', action: requested });
+    const ref = { id: detail.id, version: detail.version };
     try {
-      const result = await commands.patchEntity(
-        detail.id,
-        entityPatchInput({ content: patch }, detail.version),
-      );
-      onSaved?.(result);
+      if (requested === 'enable') await loops.enable(ref);
+      else if (requested === 'disable') await loops.disable(ref);
+      else await loops.runNow(detail.id);
+      /* The loop door answers a LoopView, not a CommandResult; the panel
+         refreshes from the change feed, so the callback only signals. */
+      onSaved?.({ patches: [] });
       setAction({ phase: 'saved', message: success });
     } catch (error) {
       setAction({
@@ -83,29 +83,12 @@ export function LoopControls({
   };
 
   const toggle = () => {
-    if (enabled) {
-      void commit('disable', { enabled: false }, 'Disabled. Its stored deadline is preserved.');
-      return;
-    }
-    const patch: Record<string, unknown> = { enabled: true };
-    if (nextRunAt === null) {
-      const problem = loopScheduleProblem(schedule);
-      if (problem) {
-        setAction({ phase: 'error', message: `Cannot enable: ${problem}` });
-        return;
-      }
-      const next = nextLoopRunAt(schedule, new Date());
-      if (next) patch.nextRunAt = next.toISOString();
-    }
-    void commit('enable', patch, 'Enabled. The scheduler will use the recorded next run.');
+    if (enabled) void commit('disable', 'Disabled. The schedule is kept.');
+    else void commit('enable', 'Enabled. The server scheduled the next run from now.');
   };
 
   const runNow = () => {
-    void commit(
-      'run-now',
-      { nextRunAt: new Date().toISOString() },
-      'Run queued for the next scheduler tick.',
-    );
+    void commit('run-now', 'Fired now.');
   };
 
   return (
@@ -168,7 +151,7 @@ export function LoopControls({
           ? action.message
           : action.phase === 'error'
             ? action.message
-            : 'Run now marks the loop due; execution begins on the next scheduler tick.'}
+            : 'Run now fires the loop immediately.'}
       </p>
     </div>
   );
