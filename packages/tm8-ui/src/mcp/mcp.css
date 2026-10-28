@@ -563,7 +563,7 @@
 .mcp-chip__toggle:focus-visible,
 .mcp-chip > a:focus-visible,
 .mcp-compact__reset:focus-visible,
-.mcp-compact__more > summary:focus-visible {
+.mcp-compact__more:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 1px;
 }
@@ -624,7 +624,7 @@
 }
 
 .mcp-compact__reset,
-.mcp-compact__more > summary {
+.mcp-compact__more {
   padding: 2px 6px;
   border: 0;
   border-radius: var(--pn-r-sm, 4px);
@@ -636,26 +636,20 @@
 }
 
 .mcp-compact__reset:hover:not(:disabled),
-.mcp-compact__more > summary:hover {
+.mcp-compact__more:hover {
   background: var(--pn-hover);
   color: var(--pn-ink);
 }
 
-.mcp-compact__more {
-  display: contents;
-}
-
-.mcp-compact__more > summary {
-  list-style: none;
-}
-
-.mcp-compact__more > summary::-webkit-details-marker {
-  display: none;
+.mcp-compact__more[aria-expanded='true'] {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
 }
 
 /* The full list, when asked for, takes its own line under the chips. */
-.mcp-compact__more[open] > .mcp-toggles {
+.mcp-compact__full {
   flex-basis: 100%;
+  min-width: 0;
   max-height: 280px;
   overflow: auto;
   padding: 8px 0 0;

@@ -28,6 +28,23 @@ describe('MCP real operation adapter', () => {
     expect(calls.find(c => c.url.includes('/resolve'))?.body).toEqual({ spaceId: 'space', targetIds: ['task'], teamMemberId: 'teammate' });
     expect(calls[0]?.url).toContain('targetId=task');
   });
+  it('asks for the defaults and the attachments while the connector list is still in flight', async () => {
+    const { seam } = harness();
+    let release: () => void = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/mcp/servers?')) await held;
+      const data = url.includes('/resolve') ? { ready: true, selections: [] }
+        : url.endsWith('/credentials') ? []
+        : { items: [server], nextCursor: null, allowed: { register: true, attach: true } };
+      return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const reading = createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space').catalog('task', 'teammate');
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).includes('/resolve'))).toBe(true));
+    expect(seam.connections).toHaveBeenCalledWith('task', expect.anything());
+    release();
+    expect((await reading).attachedServerIds).toEqual(['server']);
+  });
   it('writes equips edges in the correct direction and deletes only matching edges', async () => {
     const { port, seam } = harness(); await port.attach('task', 'server'); await port.detach('task', 'server');
     expect(seam.commands.createEdge).toHaveBeenCalledWith(expect.objectContaining({ srcId: 'task', dstId: 'server', type: 'equips', props: {} }));

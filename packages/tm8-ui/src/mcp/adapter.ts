@@ -271,14 +271,20 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
   }
   return {
     async catalog(targetId, teamMemberId) {
-      const items = await allServers(targetId, teamMemberId);
-      const allowed = items.allowed;
-      const resolved = await http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } });
+      // Two round trips, not four: the connector list, the defaults and the
+      // target's attachments are independent reads and go out together; only
+      // the accounts wait, because they are asked per connector. Every launch
+      // card opens on this read, so its depth is the card's.
+      const [items, resolved, attached] = await Promise.all([
+        allServers(targetId, teamMemberId),
+        http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } }),
+        targetId ? attachments(targetId) : Promise.resolve([]),
+      ]);
       const servers = await Promise.all(items.map(async server => {
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
         return viewOf(server, accounts);
       }));
-      return { servers, attachedServerIds: targetId ? (await attachments(targetId)).map(e => e.serverId) : [], defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: allowed.register, canAttach: allowed.attach };
+      return { servers, attachedServerIds: attached.map(e => e.serverId), defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: items.allowed.register, canAttach: items.allowed.attach };
     },
     async catalogEntries() {
       // Asked WITH the Space, so each entry carries `added` (B16) and Discover

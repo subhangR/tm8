@@ -15,10 +15,10 @@
  * the row model). Pressed means on in the EFFECTIVE set, a default included.
  * A connector waiting on an admin is left off the row unless it is on — but
  * nothing is lost: the full list, every option the launch grid had and under
- * the grid's own test ids, sits behind the row's last control. Compact demotes
- * an option; it never removes one.
+ * the grid's own test ids, opens under the row from its last control. Compact
+ * demotes an option; it never removes one.
  */
-import type { ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ConnectorLogo, serverLogo } from './connector-logos';
 import { ConnectorsLink } from './ConnectorsLink';
 import { ConnectorToggleList } from './ConnectorToggleList';
@@ -41,6 +41,9 @@ export interface ConnectorChipsProps {
 }
 
 export function ConnectorChips({ catalog, value, onChange, disabled = false, problem, notice, resetLabel }: ConnectorChipsProps) {
+  // The full list's one state: shut (the row alone) or open (the list on its own line under it).
+  const [full, setFull] = useState(false);
+  const listId = useId();
   const selected = value ?? catalog.defaults;
   // Computed every render, like the toggle list's rows: a revocation mutates
   // the catalog in place, and a memo would serve the old account.
@@ -58,23 +61,27 @@ export function ConnectorChips({ catalog, value, onChange, disabled = false, pro
         from today's defaults written out as a list (S23). */}
     {value !== undefined ? <button type="button" className="mcp-compact__reset" data-testid="mcp-compact-reset" disabled={disabled}
       title="Back to the Space’s default connectors" onClick={() => onChange(undefined)}>{resetLabel ?? 'Reset'}</button> : null}
-    <details className="mcp-compact__more">
-      <summary data-testid="mcp-picker-summary" aria-label="All connectors and options"
-        title={hidden > 0 ? `${hidden} more waiting on an admin, and every option` : 'Every connector option'}>
-        {hidden > 0 ? `+${hidden} more` : '⋯'}
-      </summary>
-      <ConnectorToggleList
-        catalog={catalog}
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        layout="grid"
-        testId="mcp-picker-toggles"
-        {...(resetLabel ? { resetLabel } : {})}
-        {...(notice ? { notice } : {})}
-      />
-    </details>
+    <button type="button" className="mcp-compact__more" data-testid="mcp-picker-summary" aria-expanded={full}
+      aria-controls={listId} aria-label="All connectors and options"
+      title={hidden > 0 ? `${hidden} more waiting on an admin, and every option` : 'Every connector option'}
+      onClick={() => setFull(open => !open)}>
+      {hidden > 0 ? `+${hidden} more` : '⋯'}
+    </button>
     {problem ? <p className="mcp-error mcp-compact__line" role="alert">{problem}</p> : null}
+    {full ? (
+      <div id={listId} className="mcp-compact__full">
+        <ConnectorToggleList
+          catalog={catalog}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          layout="grid"
+          testId="mcp-picker-toggles"
+          {...(resetLabel ? { resetLabel } : {})}
+          {...(notice ? { notice } : {})}
+        />
+      </div>
+    ) : null}
   </div>;
 }
 

@@ -100,7 +100,10 @@ describe('the compact launch row', () => {
     expect(onCount).toHaveBeenLastCalledWith(4);
     const summary = screen.getByTestId('mcp-picker-summary');
     expect(summary.textContent).toBe('+1 more');
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('mcp-picker-toggles')).toBeNull();
     fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
     const list = screen.getByTestId('mcp-picker-toggles');
     expect(within(list).getAllByTestId('mcp-picker-toggles-row')).toHaveLength(4);
     expect(within(list).getByText('Awaiting approval')).toBeTruthy();
