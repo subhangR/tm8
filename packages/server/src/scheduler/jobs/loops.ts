@@ -95,12 +95,17 @@ export interface LoopExecutorPort {
    * it is the identity of THIS firing: it keys the mutation ids that keep two
    * firings of one loop distinct commands. Taking it from the scheduler makes
    * that key deterministic and testable instead of wall-clock dependent.
+   *
+   * `runId` is the claimed run's id (design §3.3): when given it IS the firing
+   * key (`firingKeyFor`). `taskId` is null for a tool firing, which derives no
+   * task (§3.4).
    */
   fire(
     loop: DueLoop,
     claims: DbClaims,
     firedAt: Date,
-  ): Promise<{ taskId: string; sessionId: string }>;
+    runId?: string,
+  ): Promise<{ taskId: string | null; sessionId: string }>;
 }
 
 export interface LoopsJobOptions {

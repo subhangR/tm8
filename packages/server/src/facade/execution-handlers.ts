@@ -78,6 +78,9 @@ import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTI
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { fireTool, resolveLoopRunner } from '../loops/fire-tool.js';
+import { firingKeyFor } from '../loops/firing.js';
+import { spawnRequestForLoop } from '../loops/spawn-config.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
@@ -3092,7 +3095,48 @@ export function createLoopExecutorPort(deps: {
       requestId: `loop-executor:${loop.entityId}`,
     }),
     liveSessionIds: () => pty.liveSessionIds(),
-    async fire(loop, claims, firedAt) {
+    async fire(loop, claims, firedAt, runId) {
+      /**
+       * THE firing key. ONE derivation for every id this firing mints
+       * (`firingKeyFor`): the claimed run's id when the job hands one over
+       * (§3.3), else the loop and the instant. The spawn path's
+       * `loop-fire:<key>` and the tool path's `tool-fire:<key>` (379) read this
+       * same value, so a transport retry replays and a next firing never does.
+       *
+       * Why the key carries the INSTANT and not just the task: `derive_task_for_entity`
+       * REUSES an open derived task, so `taskId` is stable across every firing
+       * of a loop whose task nobody closed. A mutation id built from (loop,
+       * task) is therefore also stable — and `execution_spawn` opens with
+       * `internal.ledger_replay(cmid, 'execution.spawn')` (043) unconditionally,
+       * gated only by `internal.idempotency_enabled()`, which DEFAULTS ON (046).
+       * On a replay hit SpawnService takes its `replayed` branch, returns the
+       * ORIGINAL session id with `reused: true` and boots no PTY at all. So a
+       * stable id makes every firing after the first a silent no-op that looks
+       * like a success, and the command ledger is not pruned on this node, so
+       * the poisoning is permanent. A firing is a DISTINCT INTENT, so it gets a
+       * distinct id; the overlap guard, not idempotency, is what stops a pile-up.
+       */
+      const firingKey = firingKeyFor(loop, firedAt, runId);
+
+      /**
+       * §3.4: the ACTION decides the branch. A tool firing derives NO task
+       * (nothing for a tool to be assigned) and writes NO loop-side edge:
+       * `start_tool_session` (379) writes the run's provenance-marked
+       * `triggered_by` inside the run's own transaction, which is both the run
+       * history the overlap guard reads and the authority its tm8 bearer is
+       * minted on. The runtime's refusals propagate unchanged, so the job
+       * records their text as the run's launch error and `last_error`.
+       */
+      const runner = await resolveLoopRunner(db, claims, loop);
+      if (runner.action === 'tool') {
+        return fireTool(
+          { tools: deps.tools },
+          { ...loop, toolId: runner.toolId, toolInputs: runner.toolInputs },
+          claims,
+          firingKey,
+        );
+      }
+
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(
@@ -3102,56 +3146,30 @@ export function createLoopExecutorPort(deps: {
         throw new Error(`derive_task_for_entity returned no task for loop ${loop.entityId}`);
       }
 
-      /**
-       * THE firing key, and the reason it carries the instant.
-       *
-       * `derive_task_for_entity` REUSES an open derived task, so `taskId` is
-       * stable across every firing of a loop whose task nobody closed. A
-       * mutation id built from (loop, task) is therefore also stable — and
-       * `execution_spawn` opens with `internal.ledger_replay(cmid,
-       * 'execution.spawn')` (043) unconditionally, gated only by
-       * `internal.idempotency_enabled()`, which DEFAULTS ON (046; the server
-       * pool sends `tm8.idempotency_enabled=on` unless
-       * `TM8_IDEMPOTENCY_ENABLED=0`). On a replay hit SpawnService takes its
-       * `replayed` branch, returns the ORIGINAL session id with `reused: true`
-       * and boots no PTY at all.
-       *
-       * So a stable id makes every firing after the first a silent no-op that
-       * looks like a success: the seeded Dreamer daily loop would spawn once
-       * and then quietly never again. And the command ledger is not pruned on
-       * this node — `retention.command-ledger` is registered as an inert stub —
-       * so the poisoning is permanent, not a 24h window.
-       *
-       * A firing is a DISTINCT INTENT, so it gets a distinct id. Idempotency is
-       * not what stops a pile-up here; the overlap guard is, and that is
-       * precisely what it is for.
-       */
-      const firingKey = `${loop.entityId}:${firedAt.toISOString()}`;
-
       // STABLE on purpose, and the contrast with `firingKey` is the point: this
       // edge asserts "this task belongs to this loop", which is one fact no
       // matter how many times it fires. A replay here is the correct outcome.
       await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-task:${loop.entityId}:${taskId}`);
 
       let sessionId: string;
-      if (loop.teamMemberId) {
-        sessionId = (await spawnService.spawn(claims, {
-          spaceId: loop.spaceId,
-          teamMemberId: loop.teamMemberId,
-          parentSessionId: null,
-          taskIds: [taskId],
-          projectId: null,
-          mode: null,
-          model: (loop.config?.['model'] as string | undefined) ?? null,
-          agentTool: (loop.config?.['agentTool'] as string | undefined) ?? null,
-          reasoningEffort: null,
-          accessMode: (loop.config?.['accessMode'] as never) ?? null,
-          title: loop.title,
-          // The loop's instruction is launch-manifest context, not a runtime
-          // prompt — the same channel `--context` uses.
-          promptExtra: loop.prompt === '' ? null : loop.prompt,
-          clientMutationId: `loop-fire:${firingKey}`,
-        }, {
+      if (runner.action === 'spawn') {
+        if (!loop.teamMemberId) {
+          // 378's door refuses this shape; reaching it means a row was written
+          // around the door. Loud, and recorded on the loop as `last_error`.
+          throw new CollabError('invariant_violation', `spawn loop ${loop.entityId} names no teammate`);
+        }
+        sessionId = (await spawnService.spawn(
+          claims,
+          /*
+           * §3.4 "spawn": the loop's stored `config` mapped 1:1 onto the
+           * request (`spawnRequestForLoop`, PR3) — projectId, workdir, mode,
+           * reasoning effort, memories, credential source, interaction profile,
+           * model, agent tool, access mode — exactly what a human launching by
+           * hand with those settings would send. Until PR3 only model, agent
+           * tool and access mode travelled and projectId was forced null.
+           */
+          spawnRequestForLoop({ ...loop, teamMemberId: loop.teamMemberId }, taskId, firingKey),
+          {
           /*
            * 348, ac1/ac2. THE FIRING'S PROVENANCE ROOT, handed over as a SERVER
            * FACT and written inside `execution_spawn`'s own transaction.
