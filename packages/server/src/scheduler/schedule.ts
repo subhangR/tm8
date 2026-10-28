@@ -14,9 +14,11 @@
  * correct by construction, and the horizon below bounds the cost: one year of
  * minutes is ~527k cheap comparisons, run once per firing, not per tick.
  *
- * All arithmetic is UTC. A schedule that drifted with the server's local DST
- * would fire twice or not at all one night a year, and the graph would record
- * that as the loop's fault.
+ * The server's own zone never enters: cursors are UTC instants. Cron is matched
+ * against the WALL-CLOCK fields in the loop's IANA `timezone` (loops design
+ * §3.1, Intl only, no dependency); intervals are zone-free. DST: a wall-clock
+ * minute that does not exist is never matched (no instant has it), and one that
+ * occurs twice fires once, at its first occurrence.
  */
 
 /** A schedule that never matches inside this window is treated as unfireable. */
@@ -101,20 +103,82 @@ function parseCron(expression: string): CronSpec {
   };
 }
 
-function matches(spec: CronSpec, at: Date): boolean {
-  if (!spec.minute.has(at.getUTCMinutes())) return false;
-  if (!spec.hour.has(at.getUTCHours())) return false;
-  if (!spec.month.has(at.getUTCMonth() + 1)) return false;
+/** Wall-clock fields of an instant in some zone. */
+interface Wall { minute: number; hour: number; date: number; month: number; day: number; year: number }
+
+function matches(spec: CronSpec, at: Wall): boolean {
+  if (!spec.minute.has(at.minute)) return false;
+  if (!spec.hour.has(at.hour)) return false;
+  if (!spec.month.has(at.month)) return false;
   // POSIX: when both day fields are restricted a date matching EITHER matches.
   // Getting this wrong is the classic silent cron bug — `0 0 1 * 1` means "the
   // 1st, and every Monday", not "Mondays that fall on the 1st".
-  const domHit = spec.dom.has(at.getUTCDate());
-  const dowHit = spec.dow.has(at.getUTCDay());
+  const domHit = spec.dom.has(at.date);
+  const dowHit = spec.dow.has(at.day);
   if (spec.domRestricted && spec.dowRestricted) return domHit || dowHit;
   if (spec.domRestricted) return domHit;
   if (spec.dowRestricted) return dowHit;
   return true;
 }
+
+export const DEFAULT_TIMEZONE = 'UTC';
+
+let knownZones: ReadonlySet<string> | null = null;
+/** IANA validation (§3.1): the runtime's own zone list, plus the UTC spellings. */
+export function isValidTimezone(timezone: string): boolean {
+  knownZones ??= new Set([...Intl.supportedValuesOf('timeZone'), 'UTC', 'Etc/UTC']);
+  return knownZones.has(timezone);
+}
+
+export function assertValidTimezone(timezone: string): void {
+  if (!isValidTimezone(timezone)) throw new ScheduleError(`unknown IANA timezone "${timezone}"`);
+}
+
+const OFFSET_BUCKET_MS = 15 * 60_000;
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * The zone's UTC offset at an instant, in ms. Offsets only change on quarter-
+ * hour boundaries, so a cursor stepping a year of minutes asks Intl once per
+ * bucket rather than once per minute.
+ */
+function offsetFinder(timezone: string): (ms: number) => number {
+  if (timezone === 'UTC' || timezone === 'Etc/UTC') return () => 0;
+  let format = formatters.get(timezone);
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, hourCycle: 'h23',
+      year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric',
+    });
+    formatters.set(timezone, format);
+  }
+  const zone = format;
+  const cache = new Map<number, number>();
+  return (ms) => {
+    const bucket = Math.floor(ms / OFFSET_BUCKET_MS) * OFFSET_BUCKET_MS;
+    let offset = cache.get(bucket);
+    if (offset === undefined) {
+      const parts: Record<string, number> = {};
+      for (const part of zone.formatToParts(new Date(bucket))) {
+        if (part.type !== 'literal') parts[part.type] = Number(part.value);
+      }
+      offset = Date.UTC(parts.year!, parts.month! - 1, parts.day!, parts.hour!, parts.minute!) - bucket;
+      cache.set(bucket, offset);
+    }
+    return offset;
+  };
+}
+
+function wallAt(ms: number, offsetAt: (ms: number) => number): Wall {
+  const wall = new Date(ms + offsetAt(ms));
+  return {
+    minute: wall.getUTCMinutes(), hour: wall.getUTCHours(), date: wall.getUTCDate(),
+    month: wall.getUTCMonth() + 1, day: wall.getUTCDay(), year: wall.getUTCFullYear(),
+  };
+}
+
+const sameWall = (a: Wall, b: Wall) =>
+  a.minute === b.minute && a.hour === b.hour && a.date === b.date && a.month === b.month && a.year === b.year;
 
 /**
  * The next firing at or after `from`, or null when the expression can never
@@ -122,7 +186,7 @@ function matches(spec: CronSpec, at: Date): boolean {
  * exception: the loop stays enabled with a recorded `last_error` so a human can
  * see the schedule they wrote is unsatisfiable.
  */
-export function nextRunAt(schedule: string, from: Date): Date | null {
+export function nextRunAt(schedule: string, from: Date, timezone: string = DEFAULT_TIMEZONE): Date | null {
   const interval = INTERVAL.exec(schedule.trim());
   if (interval) {
     const n = Number(interval[1]);
@@ -131,20 +195,91 @@ export function nextRunAt(schedule: string, from: Date): Date | null {
   }
 
   const spec = parseCron(schedule);
+  assertValidTimezone(timezone);
+  const offsetAt = offsetFinder(timezone);
   // Start at the next whole minute: cron has minute resolution, and firing at
   // `from` itself would re-fire the same minute that just fired.
-  const cursor = new Date(from.getTime());
-  cursor.setUTCSeconds(0, 0);
-  cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
-  for (let step = 0; step < CRON_HORIZON_MINUTES; step += 1) {
-    if (matches(spec, cursor)) return new Date(cursor.getTime());
-    cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
+  let cursor = Math.floor(from.getTime() / 60_000) * 60_000 + 60_000;
+  for (let step = 0; step < CRON_HORIZON_MINUTES; step += 1, cursor += 60_000) {
+    const wall = wallAt(cursor, offsetAt);
+    if (!matches(spec, wall)) continue;
+    // A fall-back hour repeats wall-clock minutes; only the first occurrence
+    // fires. Real zones shift by 30 or 60 minutes.
+    if (sameWall(wallAt(cursor - 30 * 60_000, offsetAt), wall)
+      || sameWall(wallAt(cursor - 60 * 60_000, offsetAt), wall)) continue;
+    return new Date(cursor);
   }
   return null;
 }
 
 /** Parse-only check, for validating a schedule before it is stored. */
 export function assertValidSchedule(schedule: string): void {
-  if (INTERVAL.test(schedule.trim())) return;
+  const interval = INTERVAL.exec(schedule.trim());
+  if (interval) {
+    if (Number(interval[1]) < 1) throw new ScheduleError(`interval must be a positive integer: "${schedule}"`);
+    return;
+  }
   parseCron(schedule);
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const pad = (n: number) => String(n).padStart(2, '0');
+const isNumber = (field: string) => /^\d+$/.test(field);
+
+/**
+ * A human summary of a valid schedule (§3.1): "Every 15 minutes", "Every day at
+ * 09:00 Europe/London", "Weekdays at 08:30 UTC", or the expression itself when
+ * no plainer sentence says exactly the same thing.
+ */
+export function describeSchedule(schedule: string, timezone: string = DEFAULT_TIMEZONE): string {
+  const trimmed = schedule.trim();
+  const interval = INTERVAL.exec(trimmed);
+  if (interval) {
+    const n = Number(interval[1]);
+    const unit = ({ m: 'minute', h: 'hour', d: 'day' } as const)[interval[2]!.toLowerCase() as 'm' | 'h' | 'd'];
+    return n === 1 ? `Every ${unit}` : `Every ${n} ${unit}s`;
+  }
+  const fields = trimmed.split(/\s+/);
+  const [minute, hour, dom, month, dow] = fields as [string, string, string, string, string];
+  const raw = `Cron \`${fields.join(' ')}\` (${timezone})`;
+  if (dom !== '*' || month !== '*') return raw;
+  const every = /^\*\/(\d+)$/.exec(minute);
+  if (every && hour === '*' && dow === '*') return `Every ${every[1]} minutes`;
+  if (isNumber(minute) && hour === '*' && dow === '*') return `Every hour at :${pad(Number(minute))}`;
+  if (!isNumber(minute) || !isNumber(hour)) return raw;
+  const at = `${pad(Number(hour))}:${pad(Number(minute))} ${timezone}`;
+  if (dow === '*') return `Every day at ${at}`;
+  if (dow === '1-5') return `Weekdays at ${at}`;
+  if (dow === '0,6' || dow === '6,0') return `Weekends at ${at}`;
+  if (isNumber(dow) && Number(dow) <= 6) return `Every ${DAY_NAMES[Number(dow)]} at ${at}`;
+  return raw;
+}
+
+export interface SchedulePreview { valid: boolean; problem: string | null; summary: string; next: string[] }
+
+/**
+ * `loops.schedule.preview` and LoopView.schedule. `count` 0 skips the cron
+ * stepping entirely (list rows): an unsatisfiable cron costs a year of steps.
+ */
+export function previewSchedule(schedule: string, timezone: string, count: number, from: Date = new Date()): SchedulePreview {
+  try {
+    assertValidSchedule(schedule);
+    assertValidTimezone(timezone);
+  } catch (error) {
+    const problem = error instanceof ScheduleError ? error.message : String(error);
+    return { valid: false, problem, summary: '', next: [] };
+  }
+  const summary = describeSchedule(schedule, timezone);
+  const next: string[] = [];
+  let cursor = from;
+  for (let i = 0; i < count; i += 1) {
+    const at = nextRunAt(schedule, cursor, timezone);
+    if (at === null) {
+      if (i === 0) return { valid: false, problem: 'the schedule never matches within a year', summary, next };
+      break;
+    }
+    next.push(at.toISOString());
+    cursor = at;
+  }
+  return { valid: true, problem: null, summary, next };
 }
