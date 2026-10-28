@@ -25,31 +25,43 @@ function claim(turnId: string) {
 }
 function deferred() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
 
-function setup(opts: { queue?: string[]; team?: unknown; sweep?: { stale: unknown[]; queued: unknown[] } } = {}) {
+function setup(opts: { queue?: string[]; team?: unknown; sweep?: unknown[]; claimFailures?: unknown[];
+  recoverAnswers?: unknown[] } = {}) {
   const queue = [...(opts.queue ?? [])];
-  const rpcs: { name: string; args: readonly unknown[] }[] = [];
-  const rpc = async <T,>(_auth: DbClaims, name: string, args: readonly unknown[] = []): Promise<T> => {
-    rpcs.push({ name, args });
-    if (name === 'claim_next_chat_turn') { const next = queue.shift(); return (next ? claim(next) : null) as T; }
+  const claimFailures = [...(opts.claimFailures ?? [])];
+  const recoverAnswers = [...(opts.recoverAnswers ?? [])];
+  const rpcs: { name: string; args: readonly unknown[]; identityId?: string }[] = [];
+  const rpc = async <T,>(auth: DbClaims | undefined, name: string, args: readonly unknown[] = []): Promise<T> => {
+    rpcs.push({ name, args, ...(auth ? { identityId: auth.identityId } : {}) });
+    if (name === 'claim_next_chat_turn') {
+      const failure = claimFailures.shift(); if (failure) throw failure;
+      const next = queue.shift(); return (next ? claim(next) : null) as T;
+    }
     if (name === 'chat_turn_team') return (opts.team ?? null) as T;
     if (name === 'recover_chat_attempt' && args[1] === 'bad-turn') throw new Error('recover failed');
+    if (name === 'recover_chat_attempt' && recoverAnswers.length) return recoverAnswers.shift() as T;
     return undefined as T;
   };
-  const q: Querier = { query: async <T,>() => [] as T[], rpc: (name, args) => rpc(undefined as never, name, args) };
+  const q: Querier = { query: async <T,>() => [] as T[], rpc: (name, args) => rpc(undefined, name, args) };
   const query = vi.fn(async <T,>(_auth: DbClaims, sql: string) => {
     if (!opts.sweep) return [] as T[];
-    return (sql.includes("t.state='queued'") ? opts.sweep.queued : opts.sweep.stale) as T[];
+    if (!sql.includes('list_recoverable_chats')) throw new Error(`unexpected sweep query: ${sql}`);
+    return opts.sweep as T[];
   });
   const db = { tx: async <T,>(_auth: DbClaims, fn: (q: Querier) => Promise<T>) => fn(q), query, rpc } as unknown as Db;
+  const leaseRpcs: { name: string; args: readonly unknown[]; identityId?: string }[] = [];
+  const leaseDb = { rpc: async <T,>(auth: DbClaims, name: string, args: readonly unknown[] = []) => {
+    leaseRpcs.push({ name, args, identityId: auth.identityId }); return rpc<T>(auth, name, args);
+  } } as unknown as Db;
   const onError = vi.fn();
   const orchestrator = new ChatOrchestrator({
-    db, registry: {} as HarnessRegistry, resolvePreparedLaunch: vi.fn() as never, nodeId: 'node', bootId: 'boot',
+    db, leaseDb, registry: {} as HarnessRegistry, resolvePreparedLaunch: vi.fn() as never, nodeId: 'node', bootId: 'boot',
     publisher: { publish: vi.fn() } as never, onError, sweepClaims: { identityId: 'owner' },
   });
-  return { orchestrator, rpcs, onError, query };
+  return { orchestrator, rpcs, leaseRpcs, onError, query };
 }
 
-afterEach(() => { runs.length = 0; runTurn = async () => undefined; vi.useRealTimers(); });
+afterEach(() => { runs.length = 0; runTurn = async () => undefined; vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('Stop (chat.interrupt) on the harness drain', () => {
   it('cancels a tracked attempt', async () => {
@@ -96,6 +108,53 @@ describe('the drain survives a turn that cannot settle', () => {
   });
 });
 
+describe('a turn its owner gave up is recovered by that owner', () => {
+  it('recovers the abandoned attempt after its lease expires, on the lease lane, as the configuring identity, and drains the queue', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    runTurn = async (o) => {
+      if (o.turn.turnId === 't1') o.onAbandoned!({ reason: 'lease lost', recoverAfter: Date.now() + 60_000 });
+    };
+    const { orchestrator, rpcs, leaseRpcs } = setup({ queue: ['t1'], recoverAnswers: [{ disposition: 'retry_prepared' }] });
+    await orchestrator.wake(CHAT, 'creator');
+    // Not before the lease can have expired: recovery never steals a live lease.
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(leaseRpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(0);
+    const claimsBefore = rpcs.filter((c) => c.name === 'claim_next_chat_turn').length;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(leaseRpcs.filter((c) => c.name === 'recover_chat_attempt'))
+      .toEqual([{ name: 'recover_chat_attempt', args: [CHAT, 't1', 1, { nodeId: 'node', bootId: 'boot' }], identityId: 'creator' }]);
+    // ...and the queue behind it is drained at once, not at the next sweep.
+    expect(rpcs.filter((c) => c.name === 'claim_next_chat_turn').length).toBeGreaterThan(claimsBefore);
+    orchestrator.stopRecoverySweep();
+  });
+
+  it('keeps trying while the database still sees a live lease, then stops once it has recovered', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    runTurn = async (o) => { if (o.turn.turnId === 't1') o.onAbandoned!({ reason: 'x', recoverAfter: Date.now() }); };
+    const { orchestrator, leaseRpcs } = setup({ queue: ['t1'], recoverAnswers: [{ disposition: 'wait_owner' }, { disposition: 'retry_prepared' }] });
+    await orchestrator.wake(CHAT, 'creator');
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(leaseRpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(leaseRpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(leaseRpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(2);
+    orchestrator.stopRecoverySweep();
+  });
+});
+
+describe('a claim that loses a race for a pool client', () => {
+  it('is retried instead of leaving the message queued', async () => {
+    const { DbPoolExhaustedError } = await import('../../src/db/client.js');
+    const { orchestrator, onError } = setup({ queue: ['t1'], claimFailures: [new DbPoolExhaustedError(5_000, 8, 8, 2)] });
+    await orchestrator.wake(CHAT, 'creator');
+    expect(runs.map((o) => o.turn.turnId)).toEqual(['t1']);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ reason: 'db_pool_exhausted' }) }));
+  });
+});
+
 describe('the team line reaches the harness prompt', () => {
   it('reads chat_turn_team on the production path (it was legacy-only)', async () => {
     const { orchestrator, rpcs } = setup({ queue: ['t1'], team: { members: [] } });
@@ -109,13 +168,11 @@ describe('periodic recovery sweep', () => {
     vi.useFakeTimers();
     const { orchestrator, rpcs, onError } = setup({
       queue: [],
-      sweep: {
-        stale: [
-          { entity_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'bad-turn', attempt_no: 1 },
-          { entity_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'stuck-turn', attempt_no: 2 },
-        ],
-        queued: [{ entity_id: CHAT, configured_by_identity_id: 'creator' }],
-      },
+      sweep: [
+        { kind: 'stale', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'bad-turn', attempt_no: 1 },
+        { kind: 'stale', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'stuck-turn', attempt_no: 2 },
+        { kind: 'queued', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: null, attempt_no: null },
+      ],
     });
     orchestrator.startRecoverySweep(1_000);
     expect(rpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(0);
@@ -125,5 +182,26 @@ describe('periodic recovery sweep', () => {
     expect(recovered).toEqual(['bad-turn', 'stuck-turn']);
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'recover failed' }));
     expect(rpcs.some((c) => c.name === 'claim_next_chat_turn')).toBe(true);
+  });
+
+  it('lists chats through the node-admin function and acts on each as its own configuring identity', async () => {
+    // The listing must not be a SELECT under the owner's RLS: that hid every
+    // chat outside the owner's spaces and one stayed stuck (prod 2026-10-20).
+    const OTHER = '00000000-0000-4000-8000-0000000000c2';
+    const { orchestrator, query, rpcs } = setup({
+      sweep: [
+        { kind: 'stale', chat_id: OTHER, configured_by_identity_id: 'stranger', turn_id: 'frozen', attempt_no: 1 },
+        { kind: 'queued', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: null, attempt_no: null },
+      ],
+    });
+    await orchestrator.reconcileOnBoot();
+    const claims = () => rpcs.filter((c) => c.name === 'claim_next_chat_turn').map((c) => c.identityId);
+    await vi.waitFor(() => expect(claims()).toHaveLength(2));
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]![0]).toEqual({ identityId: 'owner' });
+    expect(query.mock.calls[0]![1]).toContain('public.list_recoverable_chats($1,$2)');
+    expect(query.mock.calls[0]![2]).toEqual(['node', 'boot']);
+    expect(rpcs.find((c) => c.name === 'recover_chat_attempt')).toMatchObject({ args: [OTHER, 'frozen', 1, { nodeId: 'node', bootId: 'boot' }], identityId: 'stranger' });
+    expect(claims().sort()).toEqual(['creator', 'stranger']);
   });
 });

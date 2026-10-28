@@ -385,9 +385,23 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             onCleanupFailure: chatCleanupRetries.schedule })
         : opts.chat
       : undefined;
+  // Lease-critical chat writes get their own two connections (see
+  // ChatOrchestratorOptions.leaseDb): a turn whose renewals and failure record
+  // queued behind a saturated main pool froze on 2026-10-20 with its lease
+  // unreleased. Same role, claims and server-side timeouts as `db`.
+  const chatLeaseDb = db && chatBlock && config.databaseUrl
+    ? createDb(config.databaseUrl, {
+        max: 2,
+        idempotencyEnabled: config.idempotencyEnabled !== false,
+        ...(config.dbStatementTimeoutMs !== undefined
+          ? { statementTimeoutMillis: config.dbStatementTimeoutMs }
+          : {}),
+      })
+    : undefined;
   const chat = db && chatBlock
     ? new ChatOrchestrator({
         db,
+        ...(chatLeaseDb ? { leaseDb: chatLeaseDb } : {}),
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
@@ -914,7 +928,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
-  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
+  server.http.once('close', () => {
+    chatCleanupRetries.stop(); chat?.stopRecoverySweep();
+    void chatLeaseDb?.end().catch(() => undefined);
+  });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is

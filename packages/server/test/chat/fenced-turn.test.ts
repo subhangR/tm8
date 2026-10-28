@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { HarnessRegistry, harnessFailure, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
 import { AgentSilentError, DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS, executeFencedTurn,
-  UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
+  StepTimeoutError, UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import { CollabError } from '@tm8/contract';
+import { DbPoolExhaustedError } from '../../src/db/client.js';
 
 const caps: HarnessCapabilities={schemaVersion:1,harness:'codex',binaryVersion:'test',protocolRevision:'v2',
   nativeResume:'unknown',portableBootstrap:'supported',cancelActiveTurn:'supported',nativeTurnIds:'supported',usage:'supported',
@@ -151,8 +153,16 @@ it('names the startup step that timed out in a preparation failure',async()=>{
   f.open.mockImplementation(async()=>late.promise); f.options.timeouts!.open=5;
   await executeFencedTurn(f.options);
   const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
-  expect(failed.args[2]).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: harness open timed out.',
-    detail:{step:'harness open',error:{name:'Error',message:'harness open timed out'}}});
+  // The thread names the phase (lease.ts); the stored detail keeps the step.
+  expect(failed.args[2]).toMatchObject({code:'phase_timeout',message:expect.stringContaining('starting the agent took longer than'),
+    detail:{step:'harness open',error:{name:'Error',message:expect.stringContaining('starting the agent')}}});
+});
+it('names a bare deadline timeout in a preparation failure',async()=>{
+  const f=fixture(); f.options.registry.admit=async()=>{ throw new StepTimeoutError('harness admission'); };
+  await executeFencedTurn(f.options);
+  const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
+  expect(failed.args[2]).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: harness admission timed out.',
+    detail:{step:'harness admission',error:{message:'harness admission timed out'}}});
 });
 it('settles a harness refusal with its own reason, not a bare runtime_lost',async()=>{
   const f=fixture();
@@ -221,7 +231,8 @@ it('records the failing step, RPC and error when an output write fails for good'
   const f=fixture(); const rpc=f.options.db.rpc.bind(f.options.db);
   f.options.db.rpc=async(auth,name,args)=>{
     if(name==='append_chat_message_part' && args?.[2]==='tool_call')
-      throw Object.assign(new Error('stale chat execution fence'),{details:{sqlstate:'42501'}});
+      // Not a fence refusal: that one means the lease is lost (lease.test.ts).
+      throw Object.assign(new Error('permission denied for function append_chat_message_part'),{details:{sqlstate:'42501'}});
     return rpc(auth,name,args);
   };
   await executeFencedTurn(f.options);
@@ -230,7 +241,7 @@ it('records the failing step, RPC and error when an output write fails for good'
   expect(failure.code).toBe('delivery_unknown');
   expect(failure.message).toBe("Chat delivery was interrupted (the server could not save the agent's output); recorded effects may have occurred.");
   expect(failure.detail).toMatchObject({step:'agent output',rpc:'append_chat_message_part',
-    error:{message:'stale chat execution fence',sqlstate:'42501'}});
+    error:{message:'permission denied for function append_chat_message_part',sqlstate:'42501'}});
   expect(done.args[2]).toBe('final answer');
   // The part the thread renders carries only the readable reason.
   const part=f.calls.filter(c=>c.name==='append_chat_message_part' && c.args[2]==='error').at(-1)!.args[3];
@@ -417,4 +428,68 @@ it('heartbeats the runtime lease through a wait that outlasts the idle limit',as
   await sleep(160);
   expect(f.calls.filter(c=>c.name==='heartbeat_chat_runtime').length).toBeGreaterThanOrEqual(2);
   f.gate.resolve(); await run;
+});
+
+/*
+ * A turn must never hang on its lease (prod 2026-10-20, chat dd0bbd03): the
+ * lease-critical writes go to their own lane and are retried, every pre-launch
+ * phase is bounded and named, and a lost lease ends the turn at once.
+ */
+function leaseLane(f:ReturnType<typeof fixture>,answer:(name:string,attempt:number)=>unknown=()=>undefined) {
+  const calls:{name:string;args:readonly unknown[]}[]=[]; const attempts=new Map<string,number>();
+  const leaseDb={tx:async()=>{throw new Error('lease lane runs rpcs only');},query:async()=>{throw new Error('lease lane runs rpcs only');},
+    rpc:async <T>(_auth:DbClaims,name:string,args:readonly unknown[]=[])=>{
+      calls.push({name,args}); const attempt=(attempts.get(name) ?? 0)+1; attempts.set(name,attempt);
+      const value=answer(name,attempt); if (value instanceof Error) throw value;
+      return (value===undefined && name==='release_chat_runtime' ? true : value) as T;
+    }} as unknown as Db;
+  (f.options as {leaseDb?:Db}).leaseDb=leaseDb;
+  return calls;
+}
+const poolExhausted=()=>new DbPoolExhaustedError(5_000,32,32,3);
+const staleFence=()=>new CollabError('forbidden','stale chat execution fence',{details:{sqlstate:'42501'}});
+
+it('records a frozen preparation as failed on the lease lane through a pool wait, and releases the lease without waiting for it',async()=>{
+  vi.spyOn(console,'error').mockImplementation(()=>{});
+  const f=fixture(); f.resolver.mockImplementation(()=>new Promise(()=>{})); f.options.timeouts!.preparation=5;
+  const lane=leaseLane(f,(name,attempt)=>name==='fail_chat_preparation' && attempt===1 ? poolExhausted() : undefined);
+  await executeFencedTurn(f.options);
+  expect(lane.map(c=>c.name)).toEqual(['fail_chat_preparation','fail_chat_preparation','release_chat_runtime']);
+  expect(lane[0]!.args[2]).toMatchObject({code:'phase_timeout'});
+  expect((lane[0]!.args[2] as {message:string}).message)
+    .toBe('Preparing this turn stopped: preparing credentials and workspace took longer than 0s. The next message will run.');
+  expect(f.calls.map(c=>c.name)).not.toContain('fail_chat_preparation');
+  expect(f.options.onReleased).toHaveBeenCalledOnce();
+  expect(f.publish.mock.calls.some(call=>call[1].type==='chat.turn.done')).toBe(true);
+});
+it('bounds every pre-launch step and names the one that ran out in the failure',async()=>{
+  const f=fixture(); f.options.createAgentMessage=()=>new Promise(()=>{}); f.options.timeouts!.phase=5;
+  const lane=leaseLane(f);
+  await executeFencedTurn(f.options);
+  expect(lane[0]).toMatchObject({name:'fail_chat_preparation'});
+  expect((lane[0]!.args[2] as {message:string}).message).toContain('creating the reply message took longer than');
+  expect(f.resolver).not.toHaveBeenCalled();
+});
+it('ends a running turn the moment its lease is lost, cancels the agent, and hands the unsettled turn to recovery',async()=>{
+  vi.spyOn(console,'error').mockImplementation(()=>{});
+  const f=toolGapFixture(); f.options.timeouts!.observation=5_000; f.options.timeouts!.tool=5_000; f.options.timeouts!.heartbeat=10;
+  const cancels:string[]=[]; const original=f.open.getMockImplementation()!;
+  f.open.mockImplementation(async value=>{const session=await original(value);
+    return {...session,cancel:async(attempt,reason)=>{cancels.push(reason);return session.cancel(attempt,reason);}};});
+  let lost=false;
+  leaseLane(f,name=>{ if (name==='heartbeat_chat_runtime') { lost=true; return staleFence(); } return undefined; });
+  // Once the lease is gone the database refuses every fenced write.
+  const rpc=f.options.db.rpc.bind(f.options.db);
+  f.options.db.rpc=async(auth,name,args)=>{ if (lost && name!=='heartbeat_chat_runtime') throw staleFence(); return rpc(auth,name,args); };
+  const abandoned=vi.fn(); f.options.onAbandoned=abandoned;
+  const started=Date.now();
+  await expect(executeFencedTurn(f.options)).rejects.toThrow('stale chat execution fence');
+  expect(Date.now()-started).toBeLessThan(1_000);
+  expect(cancels).toContain('revocation');
+  expect(abandoned).toHaveBeenCalledOnce();
+  expect(abandoned.mock.calls[0]![0]).toMatchObject({reason:expect.stringContaining('lease_lost')});
+  expect(abandoned.mock.calls[0]![0].recoverAfter).toBeGreaterThan(Date.now());
+  expect(f.calls.map(c=>c.name)).not.toContain('heartbeat_chat_runtime');
+  expect(f.publish.mock.calls.some(call=>call[1].type==='chat.turn.done')).toBe(false);
+  f.gate.resolve();
 });
