@@ -474,7 +474,7 @@ export class ChatOrchestrator {
    * retries. The durable lease may still be live, so `recover_chat_attempt`
    * runs once the owner's latest estimate of its expiry has passed, then the
    * queue behind it is drained. Until this existed the only way out was the
-   * periodic sweep — which, before 338, could not even see most chats.
+   * periodic sweep — which, before 376, could not even see most chats.
    *
    * `wait_owner` means the database still sees a live lease (or nothing to
    * recover); the attempt is repeated with backoff a bounded number of times

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 338: the chat recovery sweep sees every chat, not only the node owner's.
+-- 376 (authored as 338): the chat recovery sweep sees every chat, not only the node owner's.
 --
 -- The server's boot reconcile and its 60s recovery sweep found stale turns and
 -- queued work with two SELECTs over public.chats/chat_turns, run as the node
