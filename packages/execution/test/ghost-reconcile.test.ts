@@ -49,9 +49,13 @@ describe('startup ghost reconciliation', () => {
 
     expect(retired).toEqual({ retired: 1, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
-    // 378: through the node door, in any space, with no ledger command — the
-    // node observed an absence; nobody asked for a terminate.
-    expect(graph.nodeLostWrites.map((w) => w.sessionId)).toEqual(['ghost-1']);
+    // 378: through the node door, in any space. The door itself writes the
+    // `execution.node_ending` ledger row with the node identity and the reason
+    // (pinned in node-ghost-sessions-378.pg.test.ts); no member-door
+    // `execution.terminate` command is asked for.
+    expect(graph.nodeEndings).toMatchObject([
+      { sessionId: 'ghost-1', status: 'failed', error: expect.stringMatching(/retired at node startup/) },
+    ]);
     expect(graph.commands).toEqual([]);
   });
 

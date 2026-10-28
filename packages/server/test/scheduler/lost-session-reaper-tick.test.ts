@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   runLostSessionReaperTick,
+  tickLogLevel,
   type LostSessionReaperTickLine,
 } from '../../src/scheduler/jobs/lost-session-reaper.js';
 
@@ -52,5 +53,15 @@ describe('lost-session reaper tick (378)', () => {
       reap: async (ms) => { seen = ms; return { candidates: 0, reaped: 0, errors: [] }; },
     });
     expect(seen).toBe(1234);
+  });
+
+  it('logs an all-zero tick at debug, anything to see at info, any refusal at warn', () => {
+    const line = (candidates: number, retired: number, refused: number): LostSessionReaperTickLine => ({
+      candidates, retired, refused, problems: refused > 0 ? ['x'] : [],
+    });
+    expect(tickLogLevel(line(0, 0, 0))).toBe('debug');
+    expect(tickLogLevel(line(3, 0, 0))).toBe('info');
+    expect(tickLogLevel(line(3, 3, 0))).toBe('info');
+    expect(tickLogLevel(line(3, 1, 2))).toBe('warn');
   });
 });

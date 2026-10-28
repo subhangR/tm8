@@ -25,7 +25,9 @@ import type {
   CredentialBindingLaunch,
   TransitionInput,
   WorkSessionResumeInfo,
-  NodeObservedEndedKind,
+  NodeEndedKind,
+  NodeSessionEnding,
+  SessionUsageFacts,
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
@@ -339,14 +341,19 @@ export class FakeGraph implements GraphPort {
   readonly nodeSessionQueries: string[] = [];
   /** When set, the listing REJECTS — the unreadable-graph case at boot. */
   listNodeLiveSessionsError: Error | null = null;
-  /** Every `recordNodeSessionLost` write, as asked. */
-  readonly nodeLostWrites: Array<{
+  /** Every `recordNodeSessionEnding` write, as asked. */
+  readonly nodeEndings: Array<{
     nodeId: string;
     sessionId: string;
-    endedKind: NodeObservedEndedKind;
+    status: 'exited' | 'failed';
+    endedKind: NodeEndedKind;
     endedReason: string;
     error: string;
   }> = [];
+  /** What the node ending returns for the usage read; null = no transcript facts. */
+  nodeUsageFacts: SessionUsageFacts | null = null;
+  /** Every `recordNodeSessionUsage` write. */
+  readonly nodeUsageWrites: Array<{ nodeId: string; sessionId: string; source: WorkSessionUsageSource }> = [];
   /** Session ids whose node write should blow up. */
   failNodeWriteFor = new Set<string>();
   /** Session ids whose `terminate` should blow up, to prove one bad row cannot
@@ -368,29 +375,39 @@ export class FakeGraph implements GraphPort {
     return this.nodeLiveSessions;
   }
 
-  /** Recorded as a `failed` transition too, so `statusesFor` reads both doors. */
-  async recordNodeSessionLost(
+  /** Recorded as a transition too, so `statusesFor` reads both doors. */
+  async recordNodeSessionEnding(
     auth: GraphAuth,
     input: {
       nodeId: string;
       sessionId: string;
-      endedKind: NodeObservedEndedKind;
+      status: 'exited' | 'failed';
+      endedKind: NodeEndedKind;
       endedReason: string;
       error: string;
     },
-  ): Promise<boolean> {
+  ): Promise<NodeSessionEnding> {
     this.authSeen.push(auth);
     if (this.failNodeWriteFor.has(input.sessionId)) {
       throw new Error(`injected node write failure for ${input.sessionId}`);
     }
-    this.nodeLostWrites.push(input);
+    this.nodeEndings.push(input);
     this.transitions.push({
       sessionId: input.sessionId,
-      status: 'failed',
+      status: input.status,
       error: input.error,
       endedKind: input.endedKind,
       endedReason: input.endedReason,
     });
+    return { recorded: true, usageFacts: this.nodeUsageFacts };
+  }
+
+  async recordNodeSessionUsage(
+    auth: GraphAuth,
+    input: { nodeId: string; sessionId: string; usage: WorkSessionUsage; source: WorkSessionUsageSource },
+  ): Promise<boolean> {
+    this.authSeen.push(auth);
+    this.nodeUsageWrites.push({ nodeId: input.nodeId, sessionId: input.sessionId, source: input.source });
     return true;
   }
 

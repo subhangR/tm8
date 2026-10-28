@@ -100,7 +100,11 @@ import {
 import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
-import { readSessionUsage } from '../transcript/session-usage.js';
+import {
+  readSessionUsage,
+  type WorkSessionUsage,
+  type WorkSessionUsageSource,
+} from '../transcript/session-usage.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
   type AgentCredentialHome,
@@ -143,7 +147,8 @@ import type {
   SpaceCredentialProvider,
   Tm8Manifest,
   LostSessionReapReport,
-  NodeObservedEndedKind,
+  NodeEndedKind,
+  SessionUsageFacts,
   TransitionInput,
   WorkSessionEndedKind,
   WorkSessionStatus,
@@ -463,6 +468,18 @@ async function isDirectory(path: string): Promise<boolean> {
  * base delay.
  */
 const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
+
+/**
+ * Writes one ending through a door (`memberEnding` or `nodeEnding`) and
+ * resolves whether it was recorded. `killThenRecordEnding` calls it after the
+ * kill, so every ending — operator, containment, node job — has one path.
+ */
+type EndingWriter<K extends WorkSessionEndedKind> = (ending: {
+  status: 'exited' | 'failed';
+  error: string;
+  endedKind: K;
+  endedReason: string;
+}) => Promise<boolean>;
 
 /** The `failed / lost` ending: the reaper's and the panel's "Mark lost". */
 function lostEnding(missingForMs?: number): {
@@ -3027,7 +3044,7 @@ export class SpawnService {
           `session ${sessionId} booted into Claude Code's first-run onboarding (theme picker / login) — ` +
             `the agent's config home has no login. Failing it as ${AGENT_ONBOARDING_SCREEN}.`,
         );
-        await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+        await this.killThenRecordEnding(sessionId, this.memberEnding(this.sessionAuth.get(sessionId), sessionId), {
           onNotFound: 'skip',
           status: 'failed',
           error: () =>
@@ -3096,7 +3113,7 @@ export class SpawnService {
             `session ${sessionId} is stuck at Claude Code's workspace-trust prompt after ` +
               `${String(keystrokes)} keystrokes — failing it as ${action.reason}.`,
           );
-          await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+          await this.killThenRecordEnding(sessionId, this.memberEnding(this.sessionAuth.get(sessionId), sessionId), {
             onNotFound: 'skip',
             status: 'failed',
             error: () =>
@@ -3437,7 +3454,7 @@ export class SpawnService {
     // user cancelling something that just finished. The graph still needs to
     // reflect the terminal state, and the RPC tolerates same→same.
     const status = opts.terminalStatus ?? 'exited';
-    const { outcome } = await this.killThenRecordEnding(auth, sessionId, {
+    const { outcome } = await this.killThenRecordEnding(sessionId, this.memberEnding(auth, sessionId), {
       onNotFound: 'record',
       status,
       error: (killed) =>
@@ -3521,7 +3538,7 @@ export class SpawnService {
       // 299 (Spec D1 §3): `credential_revoked` on `failed`. No operator chose
       // to stop this work — the credential was taken away — so the outcome
       // stays open and the session can be resumed once it is reconnected.
-      result = await this.killThenRecordEnding(auth, sessionId, {
+      result = await this.killThenRecordEnding(sessionId, this.memberEnding(auth, sessionId), {
         onNotFound: 'skip',
         status: 'failed',
         error: () => ending.error,
@@ -3567,8 +3584,7 @@ export class SpawnService {
    */
   async killRecordedEnding(sessionId: string): Promise<PtyKillOutcome> {
     const outcome = this.pty.kill(sessionId, true);
-    this.sessionAuth.delete(sessionId);
-    this.toolSessions.delete(sessionId);
+    this.forgetSession(sessionId);
     if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
     return outcome;
@@ -3595,26 +3611,25 @@ export class SpawnService {
    * nothing to kill and the caller asked to `skip` that, or when there are no
    * claims to write under. A transition that throws propagates.
    */
-  private async killThenRecordEnding(
-    auth: GraphAuth | undefined,
+  private async killThenRecordEnding<K extends WorkSessionEndedKind>(
     sessionId: string,
+    write: EndingWriter<K> | undefined,
     ending: {
       onNotFound: 'record' | 'skip';
       status: 'exited' | 'failed';
       error: (outcome: 'killed' | 'not_found') => string;
-      endedKind: WorkSessionEndedKind;
+      endedKind: K;
       endedReason: string;
     },
   ): Promise<{ outcome: PtyKillOutcome; recorded: boolean }> {
     const outcome = this.pty.kill(sessionId, true);
-    this.sessionAuth.delete(sessionId);
-    this.toolSessions.delete(sessionId);
+    this.forgetSession(sessionId);
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
     if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     if (outcome === 'not_found' && ending.onNotFound === 'skip') return { outcome, recorded: false };
-    if (auth === undefined) return { outcome, recorded: false };
+    if (write === undefined) return { outcome, recorded: false };
 
     // `kill()` sends a signal and finalizes the tracked entry synchronously —
     // it does not, and structurally cannot, wait for node-pty's own async exit
@@ -3626,23 +3641,61 @@ export class SpawnService {
     // The ending facts (171). `endedReason` is the sentence a person reads, so
     // it never mentions PTYs, kill outcomes or exit events — all of which are
     // already in `error`, which stays technical.
-    await this.graph.transition(auth, {
-      sessionId,
+    const recorded = await write({
       status: ending.status,
       error: ending.error(outcome),
       endedKind: ending.endedKind,
       endedReason: ending.endedReason,
     });
+    return { outcome, recorded };
+  }
 
-    // The instrument, AFTER the ending is on record. A kill does not wait for
-    // the exit event (see `error` above), so the harness may still be writing
-    // its last records when this reads — a `cost-state` written after this
-    // point is missed, and the transcript half is what the process had
-    // flushed. Best-effort by contract; a later exit read overwrites with
-    // more. Ghost reconciliation reuses this path, so a session killed with a
-    // previous instance of the node is measured here too.
-    await this.recordUsageAfterExit(auth, sessionId);
-    return { outcome, recorded: true };
+  /** Drop what this process holds for a session whose process is ending. */
+  private forgetSession(sessionId: string): void {
+    this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
+  }
+
+  /**
+   * The MEMBER DOOR for an ending: `work_session_transition` under claims a
+   * member of the session's space holds (the launcher's, or a person's), then
+   * the usage instrument. Undefined without claims: nothing may be written.
+   */
+  private memberEnding(auth: GraphAuth | undefined, sessionId: string): EndingWriter<WorkSessionEndedKind> | undefined {
+    if (auth === undefined) return undefined;
+    return async (ending) => {
+      await this.graph.transition(auth, { sessionId, ...ending });
+      // The instrument, AFTER the ending is on record. A kill does not wait for
+      // the exit event (see `killThenRecordEnding`), so the harness may still
+      // be writing its last records when this reads — a `cost-state` written
+      // after this point is missed, and the transcript half is what the
+      // process had flushed. Best-effort by contract; a later exit read
+      // overwrites with more.
+      await this.recordUsageAfterExit(auth, sessionId);
+      return true;
+    };
+  }
+
+  /**
+   * The NODE DOOR for an ending (378): `recordNodeSessionEnding`, which every
+   * node job uses because the node's background identity is not a member of
+   * every space it hosts. The usage instrument follows through the node's own
+   * usage door, from the facts the ending returned. A row whose process was no
+   * longer recorded live is not counted and not measured.
+   */
+  private nodeEnding(auth: GraphAuth, nodeId: string, sessionId: string): EndingWriter<NodeEndedKind> {
+    return async (ending) => {
+      const result = await this.graph.recordNodeSessionEnding(auth, { nodeId, sessionId, ...ending });
+      const facts = result.usageFacts;
+      if (result.recorded && facts) {
+        await this.recordUsage(
+          sessionId,
+          async () => facts,
+          (usage, source) => this.graph.recordNodeSessionUsage(auth, { nodeId, sessionId, usage, source }),
+        );
+      }
+      return result.recorded;
+    };
   }
 
   /**
@@ -3667,9 +3720,26 @@ export class SpawnService {
    * worktree path from the row — so the exit read and the live page can never
    * name different files for one session.
    */
-  private async recordUsageAfterExit(auth: GraphAuth, sessionId: string): Promise<void> {
+  private recordUsageAfterExit(auth: GraphAuth, sessionId: string): Promise<void> {
+    return this.recordUsage(
+      sessionId,
+      () => this.graph.loadWorkSessionForResume(auth, sessionId),
+      (usage, source) => this.graph.recordWorkSessionUsage(auth, sessionId, usage, source),
+    );
+  }
+
+  /**
+   * The instrument's core, shared by the member path (above) and the node
+   * path (`nodeEnding`): find the transcript from the session's facts, read
+   * it, write what it says through `write`. Never throws.
+   */
+  private async recordUsage(
+    sessionId: string,
+    load: () => Promise<SessionUsageFacts>,
+    write: (usage: WorkSessionUsage, source: WorkSessionUsageSource) => Promise<unknown>,
+  ): Promise<void> {
     try {
-      const info = await this.graph.loadWorkSessionForResume(auth, sessionId);
+      const info = await load();
       const cwd =
         info.workdirMode === 'scratch' ? join(this.dataDir, 'scratch', sessionId) : info.workdirPath;
       const home = this.env.HOME ?? homedir();
@@ -3696,7 +3766,7 @@ export class SpawnService {
         });
         return;
       }
-      await this.graph.recordWorkSessionUsage(auth, sessionId, read.usage, read.source);
+      await write(read.usage, read.source);
       this.logger?.info('SpawnService: recorded session usage', {
         sessionId,
         source: read.source,
@@ -3731,7 +3801,7 @@ export class SpawnService {
    * they may be perfectly alive over there.
    *
    * IN EVERY SPACE (378). Candidates and the write go through the node doors
-   * (`listNodeLiveSessions`, `recordNodeSessionLost` — see `retireGhost`), so
+   * (`listNodeLiveSessions`, then `killThenRecordEnding` with `nodeEnding`), so
    * a ghost in a space this node's identity is not a member of is retired like
    * any other, by the same definition of live the concurrency cap counts.
    *
@@ -3780,23 +3850,28 @@ export class SpawnService {
     const oomSinceBoot = await readOomKillCount();
     const memoryKillHappened = (oomSinceBoot ?? 0) > 0;
 
+    // Defensive, and what makes this safe to call at any time rather than
+    // only at boot: a session with a LIVE PTY on this node is not a ghost. The
+    // attribution rule below counts THESE, not the raw list.
+    const ghosts = candidates.filter(({ sessionId }) => !this.pty.hasSession(sessionId));
+    const nodeId = this.nodeId;
+
     let retired = 0;
     const errors: Array<{ message: string }> = [];
-    for (const { sessionId, status } of candidates) {
-      // Defensive, and what makes this safe to call at any time rather than
-      // only at boot: a session with a LIVE PTY on this node is not a ghost.
-      if (this.pty.hasSession(sessionId)) continue;
+    for (const { sessionId, status } of ghosts) {
       try {
-        // 'failed', not 'exited' (the node door always writes it): this agent
-        // did not finish, it was killed with its host. See the `terminalStatus`
-        // docstring on terminate() — 'exited' here is indistinguishable from a
-        // clean finish to every client, because the contract projects neither
-        // exit_code nor error.
-        const wrote = await this.retireGhost(auth, this.nodeId, sessionId, {
-          reason:
-            `retired at node startup: this node still recorded status '${status}' with no live ` +
-            'PTY for it — the process almost certainly died with a prior instance of this node ' +
-            '(crash or restart) before it could record its own exit',
+        // 'failed', not 'exited': this agent did not finish, it was killed with
+        // its host. 'exited' here is indistinguishable from a clean finish to
+        // every client, because the contract projects neither exit_code nor
+        // error (see the `terminalStatus` docstring on terminate()).
+        const reason =
+          `retired at node startup: this node still recorded status '${status}' with no live ` +
+          'PTY for it — the process almost certainly died with a prior instance of this node ' +
+          '(crash or restart) before it could record its own exit';
+        const { recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
+          onNotFound: 'record',
+          status: 'failed',
+          error: () => reason,
           // Attribution rule, per the honesty bound above: assert
           // `out_of_memory` ONLY when a memory kill happened AND this is the
           // single ghost, because only then does the per-cgroup counter point
@@ -3804,7 +3879,7 @@ export class SpawnService {
           // occurred but not to whom, so the kind drops to 'unknown' and the
           // sentence says both halves out loud rather than picking a victim.
           ...(memoryKillHappened
-            ? candidates.length === 1
+            ? ghosts.length === 1
               ? {
                   endedKind: 'out_of_memory' as const,
                   endedReason:
@@ -3825,7 +3900,7 @@ export class SpawnService {
                   'it can be resumed to pick up where it left off.',
               }),
         });
-        if (!wrote) continue;
+        if (!recorded) continue;
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
@@ -3886,6 +3961,7 @@ export class SpawnService {
       const message = error instanceof Error ? error.message : String(error);
       return { candidates: 0, reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
     }
+    const nodeId = this.nodeId;
     const ghosts = new Set<string>();
     for (const { sessionId } of candidates) {
       if (!this.pty.hasSession(sessionId)) ghosts.add(sessionId);
@@ -3906,9 +3982,16 @@ export class SpawnService {
       // read, and a session with a live PTY here is not lost.
       if (this.pty.hasSession(sessionId)) continue;
       try {
-        const wrote = await this.retireGhost(auth, this.nodeId, sessionId, lostEnding(now - first));
+        const lost = lostEnding(now - first);
+        const { recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
+          onNotFound: 'record',
+          status: 'failed',
+          error: () => lost.reason,
+          endedKind: lost.endedKind,
+          endedReason: lost.endedReason,
+        });
         this.ghostFirstSeen.delete(sessionId);
-        if (wrote) reaped += 1;
+        if (recorded) reaped += 1;
       } catch (error) {
         errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
       }
@@ -3919,7 +4002,7 @@ export class SpawnService {
   /**
    * The panel's "Mark lost" (Spec D1 §5.6): record that a session's process
    * is gone, `failed / lost`, through the member door under the person's own
-   * claims (the reaper uses the node door, `retireGhost`). Refused while this
+   * claims (the reaper uses the node door, `nodeEnding`). Refused while this
    * node still holds a live PTY for the session, because then it is not lost.
    */
   async markLost(auth: GraphAuth, sessionId: string): Promise<{ outcome: string; commandResult: unknown }> {
@@ -3933,42 +4016,24 @@ export class SpawnService {
   }
 
   /**
-   * Write a ghost's ending through the node door (378). Not `terminate`: that
-   * is the member door (`work_session_transition`), which refuses the node's
-   * background identity outside its own spaces, and its only other work — the
-   * kill and the ledger command — has nothing to act on for a process that is
-   * already gone. Resolves false when the row was no longer live on this node,
-   * so the caller does not count it.
-   */
-  private retireGhost(
-    auth: GraphAuth,
-    nodeId: string,
-    sessionId: string,
-    ending: { reason: string; endedKind: NodeObservedEndedKind; endedReason: string },
-  ): Promise<boolean> {
-    return this.graph.recordNodeSessionLost(auth, {
-      nodeId,
-      sessionId,
-      endedKind: ending.endedKind,
-      endedReason: ending.endedReason,
-      error: ending.reason,
-    });
-  }
-
-  /**
    * AUTO-CLOSE (Spec D1, owner ruling Q3). A COMPLETED session's process left
    * open idles away a slot nobody uses; after its space's window (default 30
    * min, 0 = never) since completion with no activity, close it. The work is
    * already done, so the ending is `exited_clean` and the outcome is
    * untouched. NEVER THROWS.
+   *
+   * Through the NODE DOOR (378), like reconciliation and the reaper: the
+   * listing is node-wide, and the member door refused the node's identity
+   * for every completed session outside its own spaces, every tick.
    */
   async closeIdleCompletedSessions(
     auth: GraphAuth,
   ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
     if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+    const nodeId = this.nodeId;
     let due: Array<{ sessionId: string; minutes: number }>;
     try {
-      due = await this.graph.listCompletedSessionsToClose(auth, this.nodeId);
+      due = await this.graph.listCompletedSessionsToClose(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
@@ -3977,12 +4042,22 @@ export class SpawnService {
     const errors: Array<{ message: string }> = [];
     for (const { sessionId, minutes } of due) {
       try {
-        await this.terminate(auth, sessionId, {
-          reason: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
-          endedKind: 'exited_clean',
-          endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
-        });
-        closed += 1;
+        const { outcome, recorded } = await this.killThenRecordEnding(
+          sessionId,
+          this.nodeEnding(auth, nodeId, sessionId),
+          {
+            onNotFound: 'record',
+            status: 'exited',
+            error: () => `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+            endedKind: 'exited_clean',
+            endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+          },
+        );
+        if (outcome === 'error') {
+          errors.push({ message: `session ${sessionId}: the kill signal itself failed` });
+          continue;
+        }
+        if (recorded) closed += 1;
       } catch (error) {
         errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
       }

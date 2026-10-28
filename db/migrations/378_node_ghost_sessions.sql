@@ -28,42 +28,63 @@
 -- the reaper's read had neither the outcome nor the kind filter. This adds ONE
 -- definition, `internal.work_session_is_live`, and both now call it.
 --
--- THE NODE DOORS. Two SECURITY DEFINER functions, node admin only, both scoped
--- to the node id the caller names (the node's own id; a ghost recorded against
--- another node may be alive over there):
+-- THE NODE DOORS, for "this node's process ended". Node admin only, scoped to
+-- the node id the caller names (its own; a session recorded against another
+-- node may be alive over there). One door for all three node jobs — boot
+-- reconciliation, the lost-session reaper and the completed auto-close — so no
+-- node job writes through a member door again:
 --
---   * `node_live_work_sessions(node)` — ids and statuses, nothing else;
---   * `node_record_work_session_lost(node, session, kind, reason, error)` —
---     writes the PROCESS fact only: status 'failed', ended_kind, ended_reason,
---     error, exited_at. It never touches the outcome or the claims, so a lost
---     session is still unfinished work someone can resume, complete or stop.
---     The ending kinds are the four a node can infer about a process it does
---     not hold: lost, server_restart, unknown, out_of_memory.
+--   * `node_live_work_sessions(node)` — ghost candidates: ids and statuses;
+--   * `node_record_work_session_ending(node, session, status, kind, reason,
+--     error)` — the PROCESS fact only (status, ended_kind, ended_reason, error,
+--     exited_at), never the outcome or the claims. Endings a node may record:
+--     failed with lost / server_restart / unknown / out_of_memory (an absence
+--     it observed), or exited with exited_clean (it closed a completed
+--     session's idle process). Each write leaves a command-ledger row
+--     (`execution.node_ending`) with the node identity and the reason, and
+--     returns the facts the node needs to read the transcript's usage;
+--   * `node_record_work_session_usage(node, session, usage, source)` — that
+--     usage, for a session this node ran, in any space.
 --
--- Neither is a catalog operation; only the node's own background jobs call
--- them. Members gain nothing: a member is not a node admin.
+-- None is a catalog operation; only the node's own jobs call them. Members gain
+-- nothing: a member is not a node admin.
 --
--- And a COUNT for the person at the launch card: `node_ghost_work_session_count`
--- is how many live rows this node holds no process for, given the ids it does
--- hold. A number only, no ids, so it is safe on a member's read.
+-- And `session_capacity(node, held)` for the launch card: the cap's `used`
+-- (node-wide, as the spawn gate counts it) and, when a node is named, `ghosts`
+-- (this node's live rows it holds no process for), from ONE population in one
+-- round trip. Numbers only, no ids, so it is safe on a member's read — a
+-- member-scoped `used` beside a node-wide `ghosts` would describe two
+-- different sets.
 -- =============================================================================
 
 set local lock_timeout = '5s';
 
 set role tm8_graph_owner;
 
--- The one definition of a live work session: the concurrency cap counts it,
+-- The record says an agent process runs: what a node may end, and what the cap
+-- and the ghost reads start from.
+create or replace function internal.work_session_process_recorded_live(
+  p_status text, p_session_kind text, p_deleted_at timestamptz
+) returns boolean language sql immutable
+set search_path = public, internal, pg_temp as $$
+  select p_status in ('spawning', 'running', 'idle')
+     and p_session_kind = 'agent'
+     and p_deleted_at is null
+$$;
+
+revoke all on function internal.work_session_process_recorded_live(text, text, timestamptz) from public;
+grant execute on function internal.work_session_process_recorded_live(text, text, timestamptz) to tm8_app;
+
+-- The one definition of a LIVE work session: the concurrency cap counts it,
 -- and the node's ghost reads consider it. A completed session is spare
--- capacity (302, spec §5.3) even while its process idles, and the completed
--- auto-close closes that process, so it is not live here.
+-- capacity (302, spec §5.3) even while its process idles; the completed
+-- auto-close ends that process.
 create or replace function internal.work_session_is_live(
   p_status text, p_outcome text, p_session_kind text, p_deleted_at timestamptz
 ) returns boolean language sql immutable
 set search_path = public, internal, pg_temp as $$
-  select p_status in ('spawning', 'running', 'idle')
+  select internal.work_session_process_recorded_live(p_status, p_session_kind, p_deleted_at)
      and p_outcome is distinct from 'completed'
-     and p_session_kind = 'agent'
-     and p_deleted_at is null
 $$;
 
 revoke all on function internal.work_session_is_live(text, text, text, timestamptz) from public;
@@ -79,9 +100,8 @@ set search_path = public, internal, pg_temp as $$
      and (target_space is null or e.space_id = target_space)
 $$;
 
-create or replace function public.node_live_work_sessions(p_node_id text)
-returns table(session_id uuid, status text)
-language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+create or replace function internal.require_node_door(p_node_id text) returns void
+language plpgsql stable set search_path = public, internal, pg_temp as $$
 begin
   if not internal.is_node_admin() then
     raise exception 'node admin required' using errcode = '42501';
@@ -89,6 +109,16 @@ begin
   if nullif(btrim(coalesce(p_node_id, '')), '') is null then
     raise exception 'node id required' using errcode = '22023';
   end if;
+end
+$$;
+
+revoke all on function internal.require_node_door(text) from public;
+
+create or replace function public.node_live_work_sessions(p_node_id text)
+returns table(session_id uuid, status text)
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_node_door(p_node_id);
   return query
     select ws.entity_id, ws.status
       from public.work_sessions ws
@@ -102,66 +132,106 @@ $$;
 revoke all on function public.node_live_work_sessions(text) from public;
 grant execute on function public.node_live_work_sessions(text) to tm8_app;
 
--- Returns whether it wrote. FALSE, not an error, for a row that is no longer
--- live or not on this node: the process may have recorded its own exit between
--- the read and this write, and that ending stands.
-create or replace function public.node_record_work_session_lost(
-  p_node_id text, p_session_id uuid, p_ended_kind text, p_ended_reason text, p_error text
-) returns boolean
+-- `recorded` false, not an error, for a row whose process is no longer recorded
+-- live on this node: its own exit may have been written between the read and
+-- this write, and that ending stands.
+create or replace function public.node_record_work_session_ending(
+  p_node_id text, p_session_id uuid, p_status text, p_ended_kind text,
+  p_ended_reason text, p_error text
+) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare v_id uuid;
+declare
+  ws public.work_sessions;
 begin
-  if not internal.is_node_admin() then
-    raise exception 'node admin required' using errcode = '42501';
-  end if;
-  if nullif(btrim(coalesce(p_node_id, '')), '') is null then
-    raise exception 'node id required' using errcode = '22023';
-  end if;
-  if p_ended_kind is null or p_ended_kind not in ('lost', 'server_restart', 'unknown', 'out_of_memory') then
-    raise exception 'invalid ended_kind for a node-recorded ending: %', p_ended_kind using errcode = '22023';
+  perform internal.require_node_door(p_node_id);
+  if not ((p_status = 'failed' and p_ended_kind in ('lost', 'server_restart', 'unknown', 'out_of_memory'))
+       or (p_status = 'exited' and p_ended_kind = 'exited_clean')) then
+    raise exception 'not an ending a node records: % / %', p_status, p_ended_kind using errcode = '22023';
   end if;
 
-  select ws.entity_id into v_id
-    from public.work_sessions ws
-    join public.entities e on e.id = ws.entity_id
-   where ws.entity_id = p_session_id
-     and ws.node_id = p_node_id
-     and internal.work_session_is_live(ws.status, ws.outcome, ws.session_kind, e.deleted_at)
-     for update of ws;
-  if v_id is null then return false; end if;
+  select w.* into ws
+    from public.work_sessions w
+    join public.entities e on e.id = w.entity_id
+   where w.entity_id = p_session_id
+     and w.node_id = p_node_id
+     and internal.work_session_process_recorded_live(w.status, w.session_kind, e.deleted_at)
+     for update of w;
+  if ws.entity_id is null then
+    return jsonb_build_object('recorded', false, 'usageFacts', null);
+  end if;
 
   perform set_config('tm8.work_session_transition', 'on', true);
   update public.work_sessions
-     set status = 'failed',
+     set status = p_status,
          error = coalesce(p_error, error),
          ended_kind = p_ended_kind,
          ended_reason = coalesce(p_ended_reason, ended_reason),
          exited_at = coalesce(exited_at, now())
-   where entity_id = v_id;
+   where entity_id = ws.entity_id;
   perform set_config('tm8.work_session_transition', 'off', true);
   update public.entities
      set version = version + 1, activity_at = now(), updated_at = now()
-   where id = v_id;
+   where id = ws.entity_id;
+
+  -- The audit row: who ended it (the node identity, from the claims), and why.
+  perform internal.ledger_record('node-ending:' || internal.new_id()::text, 'execution.node_ending',
+    jsonb_build_object('sessionId', ws.entity_id, 'nodeId', p_node_id, 'status', p_status,
+                       'endedKind', p_ended_kind, 'reason', p_error));
+
+  return jsonb_build_object('recorded', true, 'usageFacts', jsonb_build_object(
+    'agentTool', ws.agent_tool,
+    'nativeSessionId', ws.native_session_id,
+    'workdirMode', ws.workdir_mode,
+    'workdirPath', ws.workdir_path,
+    'agentConfigDir', ws.agent_config_dir));
+end
+$$;
+
+revoke all on function public.node_record_work_session_ending(text, uuid, text, text, text, text) from public;
+grant execute on function public.node_record_work_session_ending(text, uuid, text, text, text, text) to tm8_app;
+
+-- record_work_session_usage (185) for a session this node ran, in any space.
+create or replace function public.node_record_work_session_usage(
+  p_node_id text, p_session_id uuid, p_usage jsonb, p_usage_source text
+) returns boolean
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_node_door(p_node_id);
+  if p_usage is null or jsonb_typeof(p_usage) <> 'object' then
+    raise exception 'usage must be a JSON object' using errcode = '22023';
+  end if;
+  if p_usage_source is null or p_usage_source not in ('claude_transcript', 'codex_rollout') then
+    raise exception 'usage_source must be claude_transcript or codex_rollout, got %',
+      coalesce(p_usage_source, '<null>') using errcode = '22023';
+  end if;
+  update public.work_sessions
+     set usage = p_usage, usage_source = p_usage_source, usage_recorded_at = now()
+   where entity_id = p_session_id and node_id = p_node_id;
+  if not found then return false; end if;
+  update public.entities set version = version + 1, updated_at = now() where id = p_session_id;
   return true;
 end
 $$;
 
-revoke all on function public.node_record_work_session_lost(text, uuid, text, text, text) from public;
-grant execute on function public.node_record_work_session_lost(text, uuid, text, text, text) to tm8_app;
+revoke all on function public.node_record_work_session_usage(text, uuid, jsonb, text) from public;
+grant execute on function public.node_record_work_session_usage(text, uuid, jsonb, text) to tm8_app;
 
--- Any caller: a count across spaces is what the cap itself already discloses.
-create or replace function public.node_ghost_work_session_count(p_node_id text, p_held uuid[])
-returns integer
+-- Any caller: numbers only, and `used` is what the spawn gate already discloses.
+-- `ghosts` is null when no node is named.
+create or replace function public.session_capacity(p_node_id text, p_held uuid[])
+returns table(used integer, ghosts integer)
 language sql stable security definer set search_path = public, internal, pg_temp as $$
-  select count(*)::integer
+  select count(*)::integer,
+         case when p_node_id is null then null
+              else (count(*) filter (
+                      where ws.node_id = p_node_id
+                        and not (ws.entity_id = any(coalesce(p_held, '{}'::uuid[])))))::integer end
     from public.work_sessions ws
     join public.entities e on e.id = ws.entity_id
-   where ws.node_id = p_node_id
-     and internal.work_session_is_live(ws.status, ws.outcome, ws.session_kind, e.deleted_at)
-     and not (ws.entity_id = any(coalesce(p_held, '{}'::uuid[])))
+   where internal.work_session_is_live(ws.status, ws.outcome, ws.session_kind, e.deleted_at)
 $$;
 
-revoke all on function public.node_ghost_work_session_count(text, uuid[]) from public;
-grant execute on function public.node_ghost_work_session_count(text, uuid[]) to tm8_app;
+revoke all on function public.session_capacity(text, uuid[]) from public;
+grant execute on function public.session_capacity(text, uuid[]) to tm8_app;
 
 reset role;

@@ -9,11 +9,14 @@
  * refused at the write anyway. The cap counts every space, so they refused
  * launches everywhere.
  *
- * Pinned here: the old read misses the other space's ghost (the reproduction),
- * the node read and write reach it, the write is the process fact only (the
- * outcome and claims are untouched), only a node admin may call either door,
- * the node id scopes both, and the cap's count equals the node read on a
- * fixture holding every status × outcome × kind × deleted combination.
+ * Pinned here: the old read misses the other space's ghost (the reproduction);
+ * the node read and the ending door reach it; the ending is the process fact
+ * only (outcome and claims untouched), pairs status with kind, leaves an
+ * `execution.node_ending` ledger row and returns the usage facts; the usage
+ * door writes in any space; only a node admin may call any door, and the node
+ * id scopes each; `session_capacity` gives every caller the node-wide `used`;
+ * and the cap's count equals the node read on a fixture holding every
+ * status × outcome × kind × deleted combination.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -146,14 +149,35 @@ const nodeLive = async (node = NODE): Promise<string[]> =>
     String(r.session_id),
   );
 
-const recordLost = (id: string, kind = 'lost', node = NODE): Promise<boolean> =>
+interface Ending {
+  recorded: boolean;
+  usageFacts: Record<string, unknown> | null;
+}
+
+const recordEnding = (id: string, kind = 'lost', status = 'failed', node = NODE): Promise<Ending> =>
   asNode((q) =>
-    q(`select public.node_record_work_session_lost($1,$2,$3,'Lost: gone.','marked lost by test') wrote`, [
+    q(`select public.node_record_work_session_ending($1,$2,$3,$4,'Lost: gone.','marked lost by test') r`, [
       node,
       id,
+      status,
       kind,
     ]),
-  ).then((rows) => rows[0]!.wrote === true);
+  ).then((rows) => rows[0]!.r as Ending);
+
+const recordLost = (id: string, kind = 'lost', node = NODE): Promise<boolean> =>
+  recordEnding(id, kind, 'failed', node).then((r) => r.recorded);
+
+const capacity = async (
+  identity: string,
+  node: string | null,
+  held: string[] = [],
+): Promise<{ used: number; ghosts: number | null }> => {
+  const row = (
+    await asApp((q) => q(`select used, ghosts from public.session_capacity($1,$2::uuid[])`, [node, held]),
+      identity, false)
+  )[0]!;
+  return { used: Number(row.used), ghosts: row.ghosts === null ? null : Number(row.ghosts) };
+};
 
 beforeAll(async () => {
   database = await createW1ScratchDatabase('ghost-378');
@@ -199,7 +223,13 @@ describe('378 — node ghost sessions', () => {
     const foreign = await spawnRunning(theirs);
     const before = await sessionRow(foreign);
 
-    expect(await recordLost(foreign)).toBe(true);
+    const ending = await recordEnding(foreign);
+    expect(ending.recorded).toBe(true);
+    // The facts the node needs to find the transcript, and nothing else.
+    expect(Object.keys(ending.usageFacts ?? {}).sort()).toEqual(
+      ['agentConfigDir', 'agentTool', 'nativeSessionId', 'workdirMode', 'workdirPath'],
+    );
+    expect(ending.usageFacts).toMatchObject({ agentTool: 'codex', workdirMode: 'scratch' });
 
     const after = await sessionRow(foreign);
     expect(after).toMatchObject({
@@ -228,7 +258,7 @@ describe('378 — node ghost sessions', () => {
     const foreign = await spawnRunning(theirs);
     // The space's own owner, a member, but not a node admin.
     await expect(
-      asApp((q) => q(`select public.node_record_work_session_lost($1,$2,'lost','r','e')`, [NODE, foreign]),
+      asApp((q) => q(`select public.node_record_work_session_ending($1,$2,'failed','lost','r','e')`, [NODE, foreign]),
         theirs.identityId, false),
     ).rejects.toMatchObject({ code: '42501' });
     await expect(
@@ -236,32 +266,83 @@ describe('378 — node ghost sessions', () => {
     ).rejects.toMatchObject({ code: '42501' });
     // An identity with no membership anywhere and no node-admin claim.
     await expect(
-      asApp((q) => q(`select public.node_record_work_session_lost($1,$2,'lost','r','e')`, [NODE, foreign]),
+      asApp((q) => q(`select public.node_record_work_session_ending($1,$2,'failed','lost','r','e')`, [NODE, foreign]),
         'ghost-378-stranger', false),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      asApp((q) => q(`select public.node_record_work_session_usage($1,$2,'{}'::jsonb,'codex_rollout')`, [NODE, foreign]),
+        theirs.identityId, false),
     ).rejects.toMatchObject({ code: '42501' });
     // A node admin naming no node, or an ending that is not a process fact.
     await expect(asNode((q) => q(`select * from public.node_live_work_sessions('')`))).rejects.toMatchObject({
       code: '22023',
     });
+    // exited_clean only with exited, and the inferable kinds only with failed.
     await expect(recordLost(foreign, 'exited_clean')).rejects.toMatchObject({ code: '22023' });
+    await expect(recordEnding(foreign, 'lost', 'exited')).rejects.toMatchObject({ code: '22023' });
     await expect(recordLost(foreign, 'stopped_by_operator')).rejects.toMatchObject({ code: '22023' });
+    await expect(recordLost(foreign, 'credential_revoked')).rejects.toMatchObject({ code: '22023' });
     expect((await sessionRow(foreign)).status).toBe('running');
   });
 
-  it('counts ghosts as this node’s live rows minus the ids it holds, as a number only', async () => {
+  it('leaves an execution.node_ending ledger row naming the node identity and the reason', async () => {
+    const foreign = await spawnRunning(theirs);
+    expect(await recordLost(foreign)).toBe(true);
+    const rows = await asGraphOwner(
+      `select identity_id, operation, result from public.command_ledger
+        where operation = 'execution.node_ending' and result->>'sessionId' = $1`,
+      [foreign],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      identity_id: mine.identityId,
+      result: { nodeId: NODE, status: 'failed', endedKind: 'lost', reason: 'marked lost by test' },
+    });
+  });
+
+  it('closes a completed session’s idle process as exited / exited_clean, outcome untouched', async () => {
+    const done = await spawnRunning(theirs);
+    await asGraphOwner(
+      `with ok as (select set_config('tm8.work_session_outcome','on',true))
+       update public.work_sessions set outcome = 'completed', outcome_at = now(), outcome_source = 'operator'
+        where entity_id = $1 and (select true from ok)`,
+      [done],
+    );
+    // Not a ghost candidate (the cap does not count it either)...
+    expect(await nodeLive()).not.toContain(done);
+    // ...but its process is still recorded live, so the auto-close may end it.
+    expect((await recordEnding(done, 'exited_clean', 'exited')).recorded).toBe(true);
+    expect(await sessionRow(done)).toMatchObject({ status: 'exited', outcome: 'completed', ended_kind: 'exited_clean' });
+  });
+
+  it('writes usage for a session this node ran, in a space the node owner is not in', async () => {
+    const foreign = await spawnRunning(theirs);
+    await recordLost(foreign);
+    const usage = { transcript: { messages: 3 }, transcriptBytes: 10 };
+    const write = (node: string) =>
+      asNode((q) =>
+        q(`select public.node_record_work_session_usage($1,$2,$3::jsonb,'codex_rollout') ok`, [node, foreign,
+          JSON.stringify(usage)]),
+      ).then((rows) => rows[0]!.ok);
+    expect(await write(NODE)).toBe(true);
+    expect(await write(OTHER_NODE)).toBe(false);
+    const row = await asGraphOwner(`select usage, usage_source from public.work_sessions where entity_id = $1`, [foreign]);
+    expect(row[0]).toMatchObject({ usage, usage_source: 'codex_rollout' });
+  });
+
+  it('session_capacity: used is node-wide for ANY caller; ghosts is this node’s share with no PTY here', async () => {
     const held = await spawnRunning(mine);
     const live = await nodeLive();
-    const count = async (ids: string[], identity = theirs.identityId): Promise<number> =>
-      Number(
-        (
-          await asApp((q) => q(`select public.node_ghost_work_session_count($1,$2::uuid[]) n`, [NODE, ids]),
-            identity, false)
-        )[0]!.n,
-      );
-    // Any member may ask; a count across spaces is what the cap already says.
-    expect(await count([])).toBe(live.length);
-    expect(await count([held])).toBe(live.length - 1);
-    expect(await count(live)).toBe(0);
+    const cap = Number((await asGraphOwner(`select internal.live_work_session_count(null) n`))[0]!.n);
+    // A member of ONE space sees the same `used` the spawn gate counts, not
+    // its own spaces' share, so `used` and `ghosts` describe one population.
+    for (const identity of [theirs.identityId, mine.identityId]) {
+      expect((await capacity(identity, null)).used).toBe(cap);
+    }
+    expect(await capacity(theirs.identityId, null)).toMatchObject({ ghosts: null });
+    expect((await capacity(theirs.identityId, NODE)).ghosts).toBe(live.length);
+    expect((await capacity(theirs.identityId, NODE, [held])).ghosts).toBe(live.length - 1);
+    expect((await capacity(theirs.identityId, NODE, live)).ghosts).toBe(0);
   });
 
   it('the cap and the node read share one definition of live, on every combination', async () => {
@@ -304,6 +385,8 @@ describe('378 — node ghost sessions', () => {
     const otherNode = (await nodeLive(OTHER_NODE)).length;
     const live = await nodeLive();
     expect(cap - otherNode).toBe(live.length);
+    // The capacity read counts the same population as the cap.
+    expect((await capacity(theirs.identityId, null)).used).toBe(cap);
     // Not vacuous: 3 live statuses x 2 unfinished outcomes, agent, not deleted.
     expect(live.length).toBeGreaterThanOrEqual(6);
 

@@ -83,14 +83,26 @@ export interface LostSessionReapReport {
 }
 
 /**
- * The endings a node may record for a session it holds no process for (378):
- * what can be inferred about an absence, never an operator's or the agent's
- * own ending.
+ * The endings a node may record itself (378): failed with what it can infer
+ * about a process that is gone, or exited_clean for a completed session's idle
+ * process it closed. Never an operator's or the agent's own ending.
  */
-export type NodeObservedEndedKind = Extract<
+export type NodeEndedKind = Extract<
   WorkSessionEndedKind,
-  'lost' | 'server_restart' | 'unknown' | 'out_of_memory'
+  'lost' | 'server_restart' | 'unknown' | 'out_of_memory' | 'exited_clean'
 >;
+
+/** What the usage instrument needs to find a session's transcript. */
+export type SessionUsageFacts = Pick<
+  WorkSessionResumeInfo,
+  'agentTool' | 'nativeSessionId' | 'workdirMode' | 'workdirPath' | 'agentConfigDir'
+>;
+
+/** `recordNodeSessionEnding`'s answer: whether it wrote, and the usage facts if so. */
+export interface NodeSessionEnding {
+  recorded: boolean;
+  usageFacts: SessionUsageFacts | null;
+}
 
 /**
  * Permission posture handed to the agent. Named for old maestro's vocabulary
@@ -1308,22 +1320,33 @@ export interface GraphPort {
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
   /**
-   * Record that a session this node holds no process for has ended
-   * (`public.node_record_work_session_lost`, 378): status 'failed' and the
-   * ending, in any space, never the outcome or the claims, and no ledger
-   * command (nobody gave one; the node observed an absence). Node admin.
-   * Resolves false when the row is no longer live on this node — its own
-   * exit won the race, and that ending stands.
+   * "This node's process for the session ended" (378,
+   * `public.node_record_work_session_ending`). The ONE write every node job
+   * uses — boot reconciliation, the lost-session reaper, the completed
+   * auto-close — in any space: status and ending, never the outcome or the
+   * claims, plus an `execution.node_ending` ledger row with the node identity
+   * and the reason. Node admin. `recorded: false` when the process is no
+   * longer recorded live on this node (its own exit won the race).
    */
-  recordNodeSessionLost(
+  recordNodeSessionEnding(
     auth: GraphAuth,
     input: {
       nodeId: string;
       sessionId: string;
-      endedKind: NodeObservedEndedKind;
+      status: 'exited' | 'failed';
+      endedKind: NodeEndedKind;
       endedReason: string;
       error: string;
     },
+  ): Promise<NodeSessionEnding>;
+  /**
+   * `recordWorkSessionUsage` for a session this node ran, in any space
+   * (`public.node_record_work_session_usage`, 378). Node admin. The node
+   * jobs' half of the usage instrument, written after the ending.
+   */
+  recordNodeSessionUsage(
+    auth: GraphAuth,
+    input: { nodeId: string; sessionId: string; usage: WorkSessionUsage; source: WorkSessionUsageSource },
   ): Promise<boolean>;
   /**
    * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still

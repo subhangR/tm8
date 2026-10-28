@@ -601,9 +601,11 @@ describe('W1 honest W2-only skeletons', () => {
       expect(parsed.data.liveChatCount).toBe(3);
       expect(parsed.data.workingChatCount).toBe(1);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
-      // 378: no `?ghosts=1`, so not a byte more than before, and no ghost read ran.
+      // 378: no `?ghosts=1`, so not a byte more than before, and the one
+      // capacity read named no node, so it counted no ghosts.
       expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
-      expect(query.mock.calls.some((c) => String(c[1]).includes('node_ghost_work_session_count'))).toBe(false);
+      const capacityCall = query.mock.calls.find((c) => String(c[1]).includes('session_capacity')) as unknown[];
+      expect((capacityCall[2] as unknown[])[0]).toBeNull();
       // Carried so a client can open a space at the tail of the log instead of
       // paging the whole retained log to discover the same number.
       expect(parsed.data.eventHwm).toBe(108477);
@@ -633,8 +635,7 @@ describe('W1 honest W2-only skeletons', () => {
     query
       .mockResolvedValueOnce([{ id: SPACE }])
       .mockResolvedValueOnce([{ id: SOURCE, recorded_live: true }])
-      .mockResolvedValueOnce([{ used: 64 }])
-      .mockResolvedValueOnce([{ ghosts: '19' }])
+      .mockResolvedValueOnce([{ used: 64, ghosts: '19' }])
       .mockResolvedValueOnce([{ live: '0', working: '0' }]);
     const optedIn = (await handler({
       ...context('execution.liveness', undefined),

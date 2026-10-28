@@ -33,6 +33,8 @@ export interface LostSessionReaperOptions {
  * the reaper could not see ghosts outside its identity's spaces, reported
  * `skipped`, and said nothing for weeks while 19 dead rows held the cap. A line
  * with `candidates` > 0 and `retired` 0 is that state, and it is now visible.
+ * Its level is `tickLogLevel`'s: an all-zero tick is debug, so a quiet node
+ * does not write 1440 identical lines a day.
  */
 export interface LostSessionReaperTickLine {
   candidates: number;
@@ -40,6 +42,12 @@ export interface LostSessionReaperTickLine {
   refused: number;
   /** The first five refusals, verbatim. */
   problems: string[];
+}
+
+/** warn when anything was refused, info when there was anything to see, debug otherwise. */
+export function tickLogLevel(line: LostSessionReaperTickLine): 'warn' | 'info' | 'debug' {
+  if (line.refused > 0 || line.problems.length > 0) return 'warn';
+  return line.candidates > 0 || line.retired > 0 ? 'info' : 'debug';
 }
 
 /** One tick, exported so tests and `scheduler.runNow` drive it without a timer. */
@@ -75,8 +83,7 @@ export function createLostSessionReaperJob(options: LostSessionReaperOptions): S
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
       return runLostSessionReaperTick(options, (message, line) => {
-        if (line.refused > 0) ctx.logger.warn(message, line);
-        else ctx.logger.info(message, line);
+        ctx.logger[tickLogLevel(line)](message, line);
       });
     },
   };
