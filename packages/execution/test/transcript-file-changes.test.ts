@@ -86,6 +86,25 @@ describe('collectFileChanges', () => {
     expect(out.totalAdded).toBe(0);
   });
 
+  it('drops a call whose tool result came back as an error', async () => {
+    // A denied permission or an unmatched old_string is still a recorded
+    // tool_use; the file was never touched, so it must not be reported.
+    const result = (id: string, isError: boolean): string => JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: 'x' }] },
+    });
+    const path = await transcript([
+      turn([{ type: 'tool_use', id: 'denied', name: 'Write', input: { file_path: '/a/denied.ts', content: 'a' } }]),
+      result('denied', true),
+      turn([{ type: 'tool_use', id: 'ok', name: 'Edit', input: { file_path: '/a/ok.ts', old_string: 'a', new_string: 'b' } }]),
+      result('ok', false),
+      // No result yet: the session is mid-call. Kept — it may have landed.
+      turn([{ type: 'tool_use', id: 'inflight', name: 'Write', input: { file_path: '/a/inflight.ts', content: 'c' } }]),
+    ]);
+    const out = await collectFileChanges(path);
+    expect(out.files.map((f) => f.path)).toEqual(['/a/ok.ts', '/a/inflight.ts']);
+  });
+
   it('throws on a missing file — the caller owns the unavailable translation', async () => {
     await expect(collectFileChanges(join(dir, 'nope.jsonl'))).rejects.toThrow();
   });

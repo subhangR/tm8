@@ -74,7 +74,9 @@ const DAY_MS = 86_400_000;
 /** Field separator: 0x1f, a byte no ref name or commit subject may contain. */
 const FS = '\u001f';
 const FORMAT = [
-  '%(refname:short)',
+  // The FULL refname, stripped below. `:short` is not a stable name: when a
+  // tag shares the branch's name it prints `heads/<name>` to disambiguate.
+  '%(refname)',
   '%(objectname)',
   '%(committerdate:iso-strict)',
   '%(upstream:short)',
@@ -96,18 +98,28 @@ function fail(message: string, reason: string): never {
 async function resolveDefaultBranch(
   run: (args: readonly string[], cwd: string) => Promise<GitResult>,
   cwd: string,
-): Promise<{ branch: string; source: BranchTopology['defaultBranchSource'] }> {
-  // 1. What the remote itself says its HEAD is.
+): Promise<{ branch: string; ref: string; source: BranchTopology['defaultBranchSource'] }> {
+  const localExists = async (name: string): Promise<boolean> => {
+    const probe = await run(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], cwd);
+    return probe.code === 0 && probe.stdout.trim() !== '';
+  };
+  // 1. What the remote itself says its HEAD is. A clone with no LOCAL twin of
+  // that branch (a lane checkout, a `--single-branch` clone of something else)
+  // is measured against the remote-tracking ref: a bare `main` that resolves
+  // to nothing would fail every `rev-list` and report every branch as 0/0 —
+  // which `merged` then reads as "fully merged".
   const originHead = await run(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd);
   if (originHead.code === 0) {
     const short = originHead.stdout.trim().replace(/^origin\//, '');
-    if (short) return { branch: short, source: 'origin_head' };
+    if (short) {
+      const ref = (await localExists(short)) ? `refs/heads/${short}` : `refs/remotes/origin/${short}`;
+      return { branch: short, ref, source: 'origin_head' };
+    }
   }
   // 2. The two conventional names, but only if the ref actually exists.
   for (const candidate of ['main', 'master']) {
-    const probe = await run(['rev-parse', '--verify', '--quiet', `refs/heads/${candidate}`], cwd);
-    if (probe.code === 0 && probe.stdout.trim()) {
-      return { branch: candidate, source: 'local_conventional' };
+    if (await localExists(candidate)) {
+      return { branch: candidate, ref: `refs/heads/${candidate}`, source: 'local_conventional' };
     }
   }
   // 3. Whatever is checked out. Honest, and labelled as the fallback it is.
@@ -116,7 +128,7 @@ async function resolveDefaultBranch(
   if (current.code !== 0 || !name || name === 'HEAD') {
     fail(`cannot determine a default branch in ${JSON.stringify(cwd)}`, 'no_default_branch');
   }
-  return { branch: name, source: 'current_branch' };
+  return { branch: name, ref: `refs/heads/${name}`, source: 'current_branch' };
 }
 
 /**
@@ -124,15 +136,19 @@ async function resolveDefaultBranch(
  * difference: left is on A and not B (how far B is BEHIND), right is on B and
  * not A (how far B is AHEAD). Both refs are passed as argv slots, never
  * interpolated into a string.
+ *
+ * FULL refnames on both sides. A short name is resolved through git's
+ * disambiguation order, where `refs/tags/<name>` outranks `refs/heads/<name>`,
+ * so a tag that shares a branch's name would silently be measured instead.
  */
 async function aheadBehind(
   run: (args: readonly string[], cwd: string) => Promise<GitResult>,
   cwd: string,
-  defaultBranch: string,
+  defaultRef: string,
   branch: string,
 ): Promise<{ ahead: number; behind: number }> {
   const result = await run(
-    ['rev-list', '--left-right', '--count', `${defaultBranch}...${branch}`],
+    ['rev-list', '--left-right', '--count', `${defaultRef}...refs/heads/${branch}`],
     cwd,
   );
   if (result.code !== 0) return { ahead: 0, behind: 0 };
@@ -157,7 +173,7 @@ export async function readBranchTopology(
     fail(`not a git repository: ${JSON.stringify(workingDir)}`, 'not_a_git_repository');
   }
 
-  const { branch: defaultBranch, source } = await resolveDefaultBranch(run, workingDir);
+  const { branch: defaultBranch, ref: defaultRef, source } = await resolveDefaultBranch(run, workingDir);
 
   const listed = await run(
     [
@@ -180,12 +196,13 @@ export async function readBranchTopology(
   const staleBefore = now().getTime() - staleAfterDays * DAY_MS;
   const branches: BranchTopologyEntry[] = [];
   for (const row of kept) {
-    const [name, head, date, upstream, headMark, ...rest] = row.split(FS);
+    const [refname, head, date, upstream, headMark, ...rest] = row.split(FS);
+    const name = refname?.startsWith('refs/heads/') ? refname.slice('refs/heads/'.length) : '';
     if (!name) continue;
     const isDefault = name === defaultBranch;
     const { ahead, behind } = isDefault
       ? { ahead: 0, behind: 0 }
-      : await aheadBehind(run, workingDir, defaultBranch, name);
+      : await aheadBehind(run, workingDir, defaultRef, name);
     const raw = date ?? '';
     const at = new Date(raw);
     branches.push({

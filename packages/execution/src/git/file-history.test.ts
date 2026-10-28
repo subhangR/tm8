@@ -5,7 +5,7 @@
 // `-L 1,N` and its "has only N lines" refusal). Canned stdout would pass while
 // every one of those spellings was wrong.
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -90,9 +90,25 @@ describe('readFileHistory — against real git', () => {
     expect(first?.additions).toBe(3);
     expect(first?.deletions).toBe(0);
     expect(first?.path).toBe('story.txt'); // the path AT that revision
+    // The renaming revision names its DESTINATION, not numstat's `a => b`
+    // display form, which no pathspec matches.
+    expect(history.revisions[0]?.path).toBe('tale.txt');
     expect(history.revisions[1]?.additions).toBe(2);
     expect(history.revisions[1]?.deletions).toBe(1);
     expect(Date.parse(first?.committedAt ?? '')).not.toBeNaN();
+  });
+
+  it('a rename inside a directory resolves numstat\'s `dir/{a => b}` form to the new path', async () => {
+    await mkdir(join(repo, 'docs'), { recursive: true });
+    await commitFile('docs/old-name.md', 'a\nb\nc\nd\n', 'docs: add');
+    await git(['mv', 'docs/old-name.md', 'docs/new-name.md'], repo);
+    await git([...AUTHOR, 'commit', '-m', 'docs: rename'], repo);
+    const renamedAt = await git(['rev-parse', 'HEAD'], repo);
+
+    const history = await readFileHistory(repo, 'docs/new-name.md');
+    expect(history.revisions[0]?.oid).toBe(renamedAt);
+    expect(history.revisions[0]?.path).toBe('docs/new-name.md');
+    expect(history.revisions[1]?.path).toBe('docs/old-name.md');
   });
 
   it('honours maxRevisions and reports the cut', async () => {

@@ -289,6 +289,38 @@ describe('T3 — stash', () => {
   });
 });
 
+describe('T3b — the stash list is shared by every worktree of a repo', () => {
+  // `refs/stash` lives in the COMMON git dir: a stash taken in the primary
+  // tree (or any other lane) lands on the SAME list as this lane's, on top.
+  async function otherLaneStashes(): Promise<string> {
+    await writeFile(join(repoRoot, 'README.md'), 'primary-tree wip\n');
+    await git(['stash', 'push', '-m', 'someone else'], repoRoot);
+    return git(['rev-parse', 'refs/stash'], repoRoot);
+  }
+
+  it('a pop with no index takes THIS branch\'s newest entry, not the shared top', async () => {
+    await writeFile(join(wt, 'mine.txt'), 'lane wip\n');
+    const mine = await stashPush({ worktreePath: wt, message: 'lane wip' });
+    expect(mine.status).toBe('stashed');
+    const theirs = await otherLaneStashes();
+    expect((await stashList(wt))[0]?.oid).toBe(theirs); // theirs is stash@{0}
+
+    const popped = await stashPop({ worktreePath: wt, expectedBranch: 'tm8/session' });
+    expect(popped.status).toBe('popped');
+    if (popped.status !== 'popped' || mine.status !== 'stashed') return;
+    expect(popped.oid).toBe(mine.oid);
+    await stat(join(wt, 'mine.txt'));
+    // The other lane's entry is untouched and still listed.
+    expect((await stashList(wt)).map((e) => e.oid)).toEqual([theirs]);
+  });
+
+  it('a pop with no index and no entry for this branch refuses instead of taking another lane\'s', async () => {
+    await otherLaneStashes();
+    await expect(stashPop({ worktreePath: wt })).rejects.toMatchObject({ reason: 'stash_not_found' });
+    expect(await stashList(wt)).toHaveLength(1);
+  });
+});
+
 describe('T4 — hostile branch names ride argv as inert data', () => {
   // Git's ref rules ban `~ ^ : ? *` but PERMIT `$ ( ) ; & >` — this name is
   // LEGAL, and a shell would treat it as three commands and a redirect.
