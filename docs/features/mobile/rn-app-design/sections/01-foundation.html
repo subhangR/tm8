@@ -1,0 +1,1055 @@
+<section class="doc-section" id="s-foundation" data-title="Design system &amp; component catalogue" data-lane="01 foundation">
+<style>
+#s-foundation .tok td.lt, #s-foundation .tok td.dk { background: var(--paper); color: var(--ink); font-family: var(--mono); font-size: 12px; white-space: nowrap; vertical-align: middle; }
+#s-foundation .tok td.dk { border-left: 1px solid var(--line); }
+#s-foundation .tok .pill, #s-foundation .tok .chip { font-family: var(--ui); margin-left: 6px; }
+#s-foundation .sw { display: inline-block; width: 22px; height: 22px; border-radius: var(--r-xs); vertical-align: middle; margin-right: 8px; box-shadow: inset 0 0 0 1px var(--line-2); background: var(--c); }
+#s-foundation .sw.soft { background: linear-gradient(var(--c), var(--c)), var(--paper); }
+#s-foundation .spec tr.grp td { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); background: var(--surface); }
+#s-foundation .ty-lt { font-size: var(--fs-lt); line-height: var(--lh-lt); font-weight: 700; letter-spacing: -0.02em; }
+#s-foundation .ty-t1 { font-size: var(--fs-t1); line-height: var(--lh-t1); font-weight: 700; letter-spacing: -0.02em; }
+#s-foundation .ty-t2 { font-size: var(--fs-t2); line-height: var(--lh-t2); font-weight: 700; letter-spacing: -0.015em; }
+#s-foundation .ty-t3 { font-size: var(--fs-t3); line-height: var(--lh-t3); font-weight: 600; }
+#s-foundation .ty-hl { font-size: var(--fs-hl); line-height: var(--lh-hl); font-weight: 600; }
+#s-foundation .ty-bd { font-size: var(--fs-body); line-height: var(--lh-body); }
+#s-foundation .ty-co { font-size: var(--fs-callout); line-height: var(--lh-callout); }
+#s-foundation .ty-sb { font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink-3); }
+#s-foundation .ty-ft { font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-foundation .ty-ey { font-size: var(--fs-foot); line-height: var(--lh-foot); font-weight: 600; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--ink-3); }
+#s-foundation .ty-c1 { font-size: var(--fs-c1); line-height: var(--lh-c1); font-weight: 600; }
+#s-foundation .ty-c2 { font-size: var(--fs-c2); line-height: var(--lh-c2); font-weight: 700; }
+#s-foundation .ty-mo { font-family: var(--mono); font-size: var(--fs-mono); line-height: var(--lh-mono); }
+#s-foundation .spx { display: grid; grid-template-columns: 70px 1fr; gap: 6px 12px; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+#s-foundation .spx i { display: block; height: 12px; border-radius: 2px; background: var(--brand); }
+#s-foundation .rads { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: center; }
+#s-foundation .rads div > i { display: block; width: 64px; height: 64px; margin-bottom: 6px; background: var(--surface); border: 1.5px solid var(--line-2); }
+#s-foundation .curves { display: flex; gap: 24px; flex-wrap: wrap; }
+#s-foundation .curves svg { width: 150px; height: 150px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); }
+#s-foundation .curves figure { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+#s-foundation .glyph .ic { width: 24px; height: 24px; color: var(--ink); }
+/* specimen-gallery chrome inside phones */
+#s-foundation .sl { display: flex; justify-content: space-between; gap: 8px; padding: 9px var(--gutter) 5px; font-size: 11px; line-height: 13px; font-weight: 600; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-foundation .sl i { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-4); white-space: nowrap; }
+#s-foundation .fr { margin: 0 var(--gutter); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); position: relative; }
+#s-foundation .fr > .tabbar { height: var(--tabbar-h); }
+#s-foundation .fr.fabs { height: 84px; }
+#s-foundation .fr .search { margin: 8px 8px; }
+#s-foundation .tbtn { color: var(--brand); font-size: var(--fs-body); padding: 0 8px; white-space: nowrap; }
+#s-foundation .tbtn.b { font-weight: 600; }
+#s-foundation .brow { display: flex; flex-wrap: wrap; gap: var(--s2); padding: 0 var(--gutter); margin-bottom: var(--s2); }
+#s-foundation .pad16 { padding: 0 var(--gutter); }
+#s-foundation .pad16 > .btn.block { margin-bottom: var(--s2); }
+#s-foundation .reason { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); margin: 6px 0 0; }
+#s-foundation .reason .ic { width: 14px; height: 14px; margin-top: 2px; }
+#s-foundation .caret { display: inline-block; width: 2px; height: 22px; background: var(--brand); margin-left: 1px; vertical-align: middle; }
+#s-foundation .stack-f > * + * { margin-top: var(--s2); }
+#s-foundation .srow { display: flex; align-items: center; padding-right: var(--s2); }
+#s-foundation .srow .search { flex: 1 1 auto; margin-right: 4px; }
+#s-foundation .pr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px var(--gutter); }
+#s-foundation .pr .tn { width: 50px; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+#s-foundation .bc { display: flex; align-items: center; gap: 12px; padding: 0 var(--gutter); min-height: 44px; }
+#s-foundation .avr { display: flex; align-items: flex-end; gap: 8px; padding: 4px var(--gutter); }
+#s-foundation .avr .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+#s-foundation .avr .foot { margin-left: 4px; }
+#s-foundation .pl { display: flex; justify-content: space-between; font-size: var(--fs-foot); color: var(--ink-2); margin: 0 0 6px; }
+#s-foundation .pgx { padding: 2px var(--gutter) 0; }
+#s-foundation .pgx .progress { margin-bottom: 12px; }
+#s-foundation .ringrow { display: flex; align-items: center; gap: 10px; font-size: var(--fs-foot); color: var(--ink-2); }
+/* tree guides (owner ruling 2026-10-28): a hairline from the parent's chevron down its children */
+#s-foundation .tree .row { gap: var(--s2); }
+#s-foundation .gd { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+#s-foundation .gd.st { top: calc(50% + 11px); }
+#s-foundation .gd.en { bottom: 50%; }
+#s-foundation .tree .row .t.wrap { font-size: var(--fs-body); }
+#s-foundation .android-ripple { background: radial-gradient(circle at 30% 50%, var(--active) 0, var(--active) 38%, transparent 39%); }
+/* overlays drawn unmounted, as specimens */
+#s-foundation .ph-screen .dialog.fl { position: relative; left: auto; top: auto; transform: none; margin: 0 auto; }
+#s-foundation .ph-screen .menu.fl { position: relative; margin: 0 var(--gutter) 0 auto; width: 230px; }
+#s-foundation .ph-screen .toast.fl { position: relative; left: auto; right: auto; bottom: auto; margin: 0 var(--gutter); }
+#s-foundation .ph-screen .notice.fl { position: relative; left: auto; right: auto; top: auto; margin: 0 var(--s2); }
+#s-foundation .lift { margin: 0 var(--gutter) var(--s2); border-radius: 14px; background: var(--card); box-shadow: var(--sh-pop); overflow: hidden; }
+#s-foundation .empty.tight { padding: var(--s3) var(--s8) var(--s4); }
+#s-foundation .refusal.tight { margin-top: 0; }
+#s-foundation .phone[data-size="360"] .keyboard .k { width: 29px; }
+#s-foundation .keyboard .k.ret { width: 88px; }
+#s-foundation .board.short { height: 236px; }
+#s-foundation .content > .term:only-child { height: 100%; }
+/* doc.css paragraph rules leak into phones (lane 03 finding): restore the kit's own */
+#s-foundation .phone p { max-width: none; }
+#s-foundation .phone .empty p { color: var(--ink-3); margin: 0; }
+#s-foundation .phone .refusal p { color: var(--ink-3); margin: 4px 0 0; }
+#s-foundation .phone .dialog .d-b p { color: var(--ink-2); margin: 0; }
+#s-foundation .phone[data-size="360"] .keyboard .k.w { width: 42px; }
+#s-foundation .phone[data-size="360"] .keyboard .k.space { width: 160px; }
+#s-foundation .phone[data-size="360"] .keyboard .k.ret { width: 64px; }
+/* type preview: iOS AX3 and Android font scale 1.3 (bars, tab labels and badges do not scale) */
+#s-foundation .phone.ax3 { --fs-body: 40px; --lh-body: 48px; --fs-sub: 36px; --lh-sub: 43px; --fs-foot: 33px; --lh-foot: 40px; --fs-c1: 24px; --lh-c1: 28px; }
+#s-foundation .phone.ax3 .topbar, #s-foundation .phone.ax3 .sl, #s-foundation .phone.ax3 .tabbar { --fs-body: 17px; --lh-body: 22px; --fs-c1: 12px; --lh-c1: 16px; }
+#s-foundation .phone.ax3 .row, #s-foundation .phone.fs13 .row { align-items: flex-start; }
+#s-foundation .phone.ax3 .row .t.wrap { -webkit-line-clamp: 3; }
+#s-foundation .phone.ax3 .row .s, #s-foundation .phone.fs13 .row .s { white-space: normal; flex-wrap: wrap; }
+#s-foundation .phone.ax3 .pill, #s-foundation .phone.fs13 .pill { height: auto; padding: 2px 10px; }
+#s-foundation .phone.ax3 .row .kind-ic { width: 48px; height: 48px; } #s-foundation .phone.ax3 .row .kind-ic .ic { width: 27px; height: 27px; }
+#s-foundation .phone.fs13 { --fs-body: 21px; --lh-body: 28px; --fs-sub: 19.5px; --lh-sub: 26px; --fs-foot: 17px; --lh-foot: 23px; --fs-c1: 15.6px; --lh-c1: 20px; }
+#s-foundation .phone.fs13 .topbar .title { font-size: 26px; line-height: 32px; }
+#s-foundation .phone.fs13 .tabbar .tab { font-size: 15.6px; line-height: 20px; }
+#s-foundation .phone.fs13 .sl { --fs-c1: 12px; }
+/* THEMING SPECIMEN. Atelier, mapped from packages/tm8-ui/src/styles/tokens.css onto the phone's token names —
+   exactly what painting a space style does. These hex values ARE the specimen (a token table), not ad-hoc colour. */
+#s-foundation .phone.atelier { --paper: #F4F2EC; --surface: #FBFAF6; --card: #FFFFFF; --hover: #F2EFE8; --active: #ECE8DF; --line: #E7E3D9; --line-2: #D8D3C6; --ink: #23201B; --ink-2: #5B564C; --ink-3: #8E897B; --ink-4: #B7B2A4; --brand: #B26A2B; --brand-2: #9A581F; --brand-soft: rgba(178, 106, 43, 0.11); --brand-ink: #FFFFFF; --idle: #A29C8E; --idle-soft: rgba(162, 156, 142, 0.16); --scrim: rgba(35, 32, 27, 0.58); }
+#s-foundation .phone.atelier[data-theme="dark"] { --paper: #1D1912; --surface: #1B1810; --card: #221E15; --hover: #262117; --active: #302A1D; --line: #2C2719; --line-2: #3B3524; --ink: #EFE9DB; --ink-2: #BDB5A2; --ink-3: #8C8470; --ink-4: #665E4C; --brand: #E0A45A; --brand-2: #C98A3E; --brand-soft: rgba(224, 164, 90, 0.15); --brand-ink: #1D1912; --idle: #7A7360; --idle-soft: rgba(122, 115, 96, 0.20); --scrim: rgba(0, 0, 0, 0.66); }
+#s-foundation .phone.atelier .topbar.large .big { font-family: ui-serif, "New York", Georgia, "Noto Serif", serif; font-weight: 500; letter-spacing: 0; }
+/* PROPOSED status-word tones (kit gap, see contrast section): same hues, deeper in light, lifted in dark */
+#s-foundation .prop { --run: #327349; --wait: #85611D; --block: #AA4637; --info: #3D698C; --merged: #72569D; --ink-3: #666666; --brand: #8A600F; }
+#s-foundation .prop[data-theme="dark"] { --run: #5CB381; --wait: #D9AA49; --block: #DD8876; --info: #76A4CA; --merged: #AD97D2; --ink-3: #9D9D9D; --brand: #D9B25E; }
+#s-foundation .pstrip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; border-radius: var(--r-sm); background: var(--paper); border: 1px solid var(--line); margin: 0 0 8px; }
+#s-foundation .pstrip .lab { width: 150px; font: 600 11px/1.3 var(--mono); color: var(--ink-3); }
+#s-foundation .pstrip.cardbg { background: var(--card); }
+</style>
+<header>
+  <div class="lane-eyebrow">01 · Foundation</div>
+  <h2>Design system &amp; component catalogue</h2>
+  <p class="lede">Every other lane composes from one kit; this section is where the owner judges the atoms once. It documents tm8's neutral default tokens with <em>measured</em> contrast in both themes, the platform type scale and how it reflows under Dynamic Type and Android font scale, geometry per OS, every kit component as a specimen inside a 1:1 phone, the 33 kind glyphs, motion, gestures and haptics, accessibility, theming, and the iOS/Android differences in one table. New versus the web phone shell: system type instead of Hanken Grotesk and Newsreader, 44pt/48dp targets as a token rather than a retrofit, haptics, native sheet detents, a space style painted natively — and a contrast audit that found six of seven pill tones under WCAG AA on white.</p>
+</header>
+
+<h3>Colour tokens — both themes</h3>
+<p>The values are tm8's default built-in pair since the 2026-10-14 ruling (<code>builtin:chatgpt-light</code> / <code>-dark</code> in <code>packages/tm8-ui/src/styles/tokens.css</code>), renamed for the phone (<code>--pn-paper</code> → <code>--paper</code>) with the status ramp untouched. Swatches below are the real tokens rendered in each theme; soft fills are composited over that theme's paper.</p>
+<table class="spec tok">
+  <thead><tr><th style="width:15%">Token</th><th style="width:19%">Light</th><th style="width:19%">Dark</th><th>Role on the phone</th></tr></thead>
+  <tbody>
+    <tr class="grp"><td colspan="4">Surfaces</td></tr>
+    <tr><td class="code">--paper</td><td class="lt"><i class="sw" style="--c:var(--paper)"></i>#FFFFFF</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--paper)"></i>#0E0E0E</td><td>Screen background; rows, prose and top bars sit on it.</td></tr>
+    <tr><td class="code">--surface</td><td class="lt"><i class="sw" style="--c:var(--surface)"></i>#F7F7F7</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--surface)"></i>#161616</td><td>Grouped-list background, search field, chips, Android sheets and navigation bar.</td></tr>
+    <tr><td class="code">--card</td><td class="lt"><i class="sw" style="--c:var(--card)"></i>#FFFFFF</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--card)"></i>#212121</td><td>Cards, inset groups, iOS sheets, dialogs, menus. In dark it is the lightest surface — the one pills fail on (below).</td></tr>
+    <tr><td class="code">--hover · --active</td><td class="lt"><i class="sw" style="--c:var(--hover)"></i><i class="sw" style="--c:var(--active)"></i>#F0F0F0 · #E8E8E8</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--hover)"></i><i class="sw" style="--c:var(--active)"></i>#1C1C1C · #272727</td><td>Pressed/selected row (iOS highlight) · switch-off track, skeleton, Android ripple.</td></tr>
+    <tr><td class="code">--line · --line-2</td><td class="lt"><i class="sw" style="--c:var(--line)"></i><i class="sw" style="--c:var(--line-2)"></i>#ECECEC · #DEDEDE</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--line)"></i><i class="sw" style="--c:var(--line-2)"></i>#262626 · #333333</td><td>Hairlines between rows and under pushed bars · outline buttons, filter chips, tree guide lines.</td></tr>
+    <tr class="grp"><td colspan="4">Ink</td></tr>
+    <tr><td class="code">--ink · --ink-2</td><td class="lt"><i class="sw" style="--c:var(--ink)"></i><i class="sw" style="--c:var(--ink-2)"></i>#0D0D0D · #303030</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--ink)"></i><i class="sw" style="--c:var(--ink-2)"></i>#ECECEC · #D4D4D4</td><td>Titles, body, primary-button fill · secondary body, menu icons, Android navigation labels.</td></tr>
+    <tr><td class="code">--ink-3 · --ink-4</td><td class="lt"><i class="sw" style="--c:var(--ink-3)"></i><i class="sw" style="--c:var(--ink-4)"></i>#6E6E6E · #A3A3A3</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--ink-3)"></i><i class="sw" style="--c:var(--ink-4)"></i>#999999 · #6B6B6B</td><td>Subtitles, times, section headers, inactive tab · placeholder, disabled, chevrons — never information.</td></tr>
+    <tr class="grp"><td colspan="4">The one accent</td></tr>
+    <tr><td class="code">--brand · --brand-2</td><td class="lt"><i class="sw" style="--c:var(--brand)"></i><i class="sw" style="--c:var(--brand-2)"></i>#9C6E14 · #8A600F</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--brand)"></i><i class="sw" style="--c:var(--brand-2)"></i>#D9B25E · #D1A54C</td><td>Back word, links, active tab, focus ring, unread dot · pressed brand.</td></tr>
+    <tr><td class="code">--brand-soft · --brand-ink</td><td class="lt"><i class="sw soft" style="--c:var(--brand-soft)"></i><i class="sw" style="--c:var(--brand-ink)"></i>10% · #FFFFFF<span class="pill brand nodot">default</span></td><td class="dk" data-theme="dark"><i class="sw soft" style="--c:var(--brand-soft)"></i><i class="sw" style="--c:var(--brand-ink)"></i>14% · #0E0E0E<span class="pill brand nodot">default</span></td><td>Agent-avatar fill, brand chip/pill, Android active-tab pill · text on a brand fill.</td></tr>
+    <tr class="grp"><td colspan="4">Status ramp — solid · soft · in use</td></tr>
+    <tr><td class="code">--run</td><td class="lt"><i class="sw" style="--c:var(--run)"></i><i class="sw soft" style="--c:var(--run-soft)"></i>#3E8E5A<span class="pill working">working</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--run)"></i><i class="sw soft" style="--c:var(--run-soft)"></i>#5CB381<span class="pill working">working</span></td><td>working · live · done · running; live bar; switch on.</td></tr>
+    <tr><td class="code">--wait</td><td class="lt"><i class="sw" style="--c:var(--wait)"></i><i class="sw soft" style="--c:var(--wait-soft)"></i>#BD8A2A<span class="pill waiting">waiting</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--wait)"></i><i class="sw soft" style="--c:var(--wait-soft)"></i>#D9AA49<span class="pill waiting">waiting</span></td><td>waiting · stale · pending; the offline banner.</td></tr>
+    <tr><td class="code">--block</td><td class="lt"><i class="sw" style="--c:var(--block)"></i><i class="sw soft" style="--c:var(--block-soft)"></i>#BB4D3D<span class="pill blocked">blocked</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--block)"></i><i class="sw soft" style="--c:var(--block-soft)"></i>#DA7D6A<span class="pill blocked">blocked</span></td><td>blocked · failed · error; count badges; destructive verbs.</td></tr>
+    <tr><td class="code">--info</td><td class="lt"><i class="sw" style="--c:var(--info)"></i><i class="sw soft" style="--c:var(--info-soft)"></i>#3F6C90<span class="pill review">in review</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--info)"></i><i class="sw soft" style="--c:var(--info-soft)"></i>#6F9FC7<span class="pill review">in review</span></td><td>in review · checks running; informational banner.</td></tr>
+    <tr><td class="code">--idle</td><td class="lt"><i class="sw" style="--c:var(--idle)"></i><i class="sw soft" style="--c:var(--idle-soft)"></i>#9B9B9B<span class="pill exited">exited</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--idle)"></i><i class="sw soft" style="--c:var(--idle-soft)"></i>#7A7A7A<span class="pill exited">exited</span></td><td>open · pulled · exited · cancelled (the word is drawn in ink-3).</td></tr>
+    <tr><td class="code">--merged</td><td class="lt"><i class="sw" style="--c:var(--merged)"></i><i class="sw soft" style="--c:var(--merged-soft)"></i>#7B5EA7<span class="pill merged">merged</span></td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--merged)"></i><i class="sw soft" style="--c:var(--merged-soft)"></i>#9C82C9<span class="pill merged">merged</span></td><td>Merged pull requests only.</td></tr>
+    <tr class="grp"><td colspan="4">Terminal canvas — near-black in both themes</td></tr>
+    <tr><td class="code">--term-bg · -fg · -dim · -cursor</td><td class="lt"><i class="sw" style="--c:var(--term-bg)"></i><i class="sw" style="--c:var(--term-fg)"></i><i class="sw" style="--c:var(--term-dim)"></i><i class="sw" style="--c:var(--term-cursor)"></i>#0D0D0D</td><td class="dk" data-theme="dark"><i class="sw" style="--c:var(--term-bg)"></i><i class="sw" style="--c:var(--term-fg)"></i><i class="sw" style="--c:var(--term-dim)"></i><i class="sw" style="--c:var(--term-cursor)"></i>#0A0A0A</td><td>Terminal interior; the style's dark sibling paints it, so it never turns light (tokens.css "always-dark" rule).</td></tr>
+    <tr><td class="code">--scrim</td><td class="lt"><i class="sw soft" style="--c:var(--scrim)"></i>13,13,13 · 50%</td><td class="dk" data-theme="dark"><i class="sw soft" style="--c:var(--scrim)"></i>0,0,0 · 66%</td><td>Behind sheets and dialogs. Darkens in both themes — a scrim is the absence of light, not ink.</td></tr>
+  </tbody>
+</table>
+<div class="why">Three values differ from the web pair on purpose: light <code>--surface</code> #F7F7F7 (web #F9F9F9) and dark <code>--surface</code> #161616 (web #0A0A0A) so a grouped list, a search field and a chip read as a layer <em>above</em> paper on an OLED screen instead of a hole in it, and dark <code>--line</code> #262626 (web #232323) so a hairline survives a phone's brightness at 30%. Everything else is the web value, which is why a style published for the web can paint the phone (see Theming).</div>
+
+<h3>Contrast, measured</h3>
+<p>WCAG 2.x ratios computed from the token values with the same luminance function the server's style lint uses (<code>relativeLuminance</code> in <code>packages/contract/src/style.ts</code>); soft fills composited over the background they actually sit on. Text below 18.66pt bold needs 4.5:1 (AA); glyphs and control boundaries need 3:1 (1.4.11). Pill words are 12pt semibold — they need 4.5.</p>
+<table class="spec">
+  <thead><tr><th style="width:26%">Pair</th><th style="width:30%">Used for</th><th style="width:11%">Light</th><th style="width:11%">Dark</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td class="code">ink / paper · surface · card</td><td>Titles, body</td><td><b class="y">19.4 · 18.1 · 19.4</b></td><td><b class="y">16.3 · 15.3 · 13.6</b></td><td>AAA everywhere.</td></tr>
+    <tr><td class="code">ink-2 / paper</td><td>Secondary body</td><td><b class="y">13.2</b></td><td><b class="y">13.0</b></td><td>AAA.</td></tr>
+    <tr><td class="code">ink-3 / paper · card</td><td>Subtitles 15pt, times 13pt, section headers</td><td><b class="y">5.10 · 5.10</b></td><td><b class="y">6.78 · 5.65</b></td><td>AA. The floor every secondary line relies on.</td></tr>
+    <tr><td class="code">ink-4 / paper</td><td>Placeholder, disabled, chevrons</td><td><b class="n">2.52</b></td><td><b class="m">3.62</b></td><td>Not text-grade. Disabled is exempt; a placeholder may never be the only instruction — the field label carries it.</td></tr>
+    <tr><td class="code">brand / paper</td><td>Back word, links, active tab, unread dot</td><td><b class="y">4.51</b></td><td><b class="y">9.63</b></td><td>AA by 0.01 in light — no lighter brand tint may ever carry text.</td></tr>
+    <tr><td class="code">brand-ink / brand · paper / ink</td><td>Brand button · primary button, filter on</td><td><b class="y">4.51 · 19.4</b></td><td><b class="y">9.63 · 16.3</b></td><td>AA.</td></tr>
+    <tr><td class="code">run / run-soft</td><td>Pill: working, live, done</td><td><b class="n">3.50</b></td><td><b class="y">5.86</b> · card <b class="y">4.70</b></td><td>Light fails.</td></tr>
+    <tr><td class="code">wait / wait-soft</td><td>Pill: waiting, stale, pending; offline banner</td><td><b class="n">2.68</b></td><td><b class="y">6.60</b> · card <b class="y">5.26</b></td><td>Light fails even the 3:1 large-text bar.</td></tr>
+    <tr><td class="code">block / block-soft</td><td>Pill: blocked, failed; refused banner</td><td><b class="n">4.21</b></td><td><b class="y">5.22</b> · card <b class="n">4.21</b></td><td>Light fails; dark fails inside sheets and cards.</td></tr>
+    <tr><td class="code">info / info-soft</td><td>Pill: in review</td><td><b class="y">4.75</b> · surface <b class="n">4.46</b></td><td><b class="y">5.40</b> · card <b class="n">4.34</b></td><td>Passes on paper only.</td></tr>
+    <tr><td class="code">merged / merged-soft</td><td>Pill: merged</td><td><b class="n">4.37</b></td><td><b class="y">4.56</b> · card <b class="n">3.67</b></td><td>Fails in light and on dark cards.</td></tr>
+    <tr><td class="code">ink-3 / idle-soft</td><td>Pill: open, exited, cancelled</td><td><b class="n">4.43</b></td><td><b class="y">5.48</b> · card <b class="n">4.45</b></td><td>Narrow fail.</td></tr>
+    <tr><td class="code">brand / brand-soft</td><td>Brand pill and chip; agent-avatar glyph</td><td><b class="n">3.99</b></td><td><b class="y">7.60</b></td><td>Fails as a word; passes as a glyph (3:1).</td></tr>
+    <tr><td class="code">#FFF / run · wait</td><td>Swipe labels (Done, Pin), check mark</td><td><b class="n">4.02 · 3.07</b></td><td><b class="n">2.55 · 2.14</b></td><td>Fails; in dark the check mark fails 3:1 too.</td></tr>
+    <tr><td class="code">#FFF / block · info</td><td>Count badge, swipe Delete/Read, stop</td><td><b class="y">4.95 · 5.59</b></td><td><b class="n">2.95 · 2.82</b></td><td>Dark fails: white on a lifted tone.</td></tr>
+    <tr><td class="code">toast action / toast</td><td>Undo on the inverted toast</td><td><b class="n">4.31</b></td><td><b class="n">1.70</b></td><td>Dark draws #D9B25E on #ECECEC. The toast inverts the theme; its action must take the <em>other</em> theme's brand-2 (#8A600F → 4.73).</td></tr>
+    <tr><td class="code">term-fg · term-dim / term-bg</td><td>Terminal text</td><td><b class="y">13.8</b> · <b class="n">3.65</b></td><td><b class="y">14.0</b> · <b class="n">2.87</b></td><td>Dim is xterm's own secondary; the interior is not restyled (design-language rule).</td></tr>
+    <tr><td class="code">avatar tints c1–c4</td><td>Initials on tint</td><td><b class="y">5.46–6.48</b></td><td><b class="y">6.13–6.99</b></td><td>AA.</td></tr>
+    <tr><td class="code">line · line-2 / paper</td><td>Hairlines · unchecked ring, switch-off track</td><td><b class="m">1.18 · 1.35</b></td><td><b class="m">1.28 · 1.53</b></td><td>Decorative is fine; a control is never identified by its hairline alone (we use the platform Switch, which honours Increase Contrast).</td></tr>
+  </tbody>
+</table>
+<div class="callout warn"><b>Finding · six of seven pill tones are under AA on white</b>The web ramp was tuned on warm paper for 13px pills; on a white phone at 12pt the words of run, wait, block, merged, idle and brand fall between 2.68 and 4.43. Status is colour <em>and word</em> — so the word must be readable. Proposed below: one text tone per hue (same hue, deeper in light, lifted in dark), used for the word on its soft fill and as the fill under a label on solid surfaces (swipe actions, badges, check). Until the coordinator promotes them to <code>tokens.css</code>, lanes keep drawing kit pills; the fix is a token value, no markup changes.</div>
+<div class="grid-2">
+  <div>
+    <div class="pstrip"><span class="lab">kit · light</span><span class="pill working">working</span><span class="pill waiting">waiting</span><span class="pill blocked">blocked</span><span class="pill review">in review</span><span class="pill merged">merged</span><span class="pill open">open</span><span class="pill brand">default</span></div>
+    <div class="pstrip prop"><span class="lab">proposed · light ≥4.6</span><span class="pill working">working</span><span class="pill waiting">waiting</span><span class="pill blocked">blocked</span><span class="pill review">in review</span><span class="pill merged">merged</span><span class="pill open">open</span><span class="pill brand">default</span></div>
+  </div>
+  <div data-theme="dark">
+    <div class="pstrip cardbg"><span class="lab">kit · dark on card</span><span class="pill working">working</span><span class="pill waiting">waiting</span><span class="pill blocked">blocked</span><span class="pill review">in review</span><span class="pill merged">merged</span><span class="pill open">open</span><span class="pill brand">default</span></div>
+    <div class="pstrip cardbg prop" data-theme="dark"><span class="lab">proposed · dark ≥4.6</span><span class="pill working">working</span><span class="pill waiting">waiting</span><span class="pill blocked">blocked</span><span class="pill review">in review</span><span class="pill merged">merged</span><span class="pill open">open</span><span class="pill brand">default</span></div>
+  </div>
+</div>
+<table class="spec">
+  <thead><tr><th>Proposed token</th><th>Light value · word on soft (paper / surface)</th><th>Dark value · word on soft (paper / card)</th><th>Solid fill + label</th></tr></thead>
+  <tbody>
+    <tr><td class="code">--run-ink</td><td>#327349 · 4.96 / 4.65 (kit 3.50 / 3.28)</td><td>#5CB381 (= kit) · 5.86 / 4.70</td><td>white 5.70 · paper 7.56</td></tr>
+    <tr><td class="code">--wait-ink</td><td>#85611D · 4.91 / 4.62 (kit 2.68 / 2.52)</td><td>#D9AA49 (= kit) · 6.60 / 5.26</td><td>white 5.64 · paper 9.01</td></tr>
+    <tr><td class="code">--block-ink</td><td>#AA4637 · 4.90 / 4.59 (kit 4.21 / 3.94)</td><td>#DD8876 · 5.76 / 4.64 (kit 5.22 / 4.21)</td><td>white 5.77 · paper 7.22</td></tr>
+    <tr><td class="code">--info-ink</td><td>#3D698C · 4.97 / 4.66 (kit 4.75 / 4.46)</td><td>#76A4CA · 5.75 / 4.61 (kit 5.40 / 4.34)</td><td>white 5.84 · paper 7.29</td></tr>
+    <tr><td class="code">--merged-ink</td><td>#72569D · 4.94 / 4.64 (kit 4.37 / 4.10)</td><td>#AD97D2 · 5.75 / 4.63 (kit 4.56 / 3.67)</td><td>white 5.94 · paper 7.48</td></tr>
+    <tr><td class="code">--idle-ink</td><td>#666666 · 4.99 / 4.70 (kit ink-3 4.43 / 4.17)</td><td>#9D9D9D · 5.75 / 4.67 (kit 5.48 / 4.45)</td><td>white 5.74 · paper 7.12</td></tr>
+    <tr><td class="code">brand word</td><td>use existing --brand-2 #8A600F · 4.94 / 4.63</td><td>--brand (= kit) · 7.60 / 6.05</td><td>white 5.58 · paper 9.63</td></tr>
+  </tbody>
+</table>
+<p>Rule for solid fills: fill = the tone's <code>-ink</code>, label = <code>--brand-ink</code> (white in light, paper in dark). That one rule fixes swipe actions, count badges, the check mark and the stop button in both themes.</p>
+
+<h3>Type scale</h3>
+<p>The platform face on each OS (SF Pro / Roboto), never a bundled web font. Sizes are iOS text styles at the default "Large" setting, which the kit treats as Android sp at 1.0; Android-only roles are noted. Weight does the work colour cannot: the unread row is 600, the read row 500.</p>
+<div class="type-sample">
+  <div class="lab">Large title<br>--fs-lt</div><div class="ty-lt">Chats</div><div class="sz">34/41 · 700</div>
+  <div class="lab">Title 1<br>--fs-t1</div><div class="ty-t1">TM8 Mobile — native app design</div><div class="sz">28/34 · 700</div>
+  <div class="lab">Title 2 · entity title<br>--fs-t2</div><div class="ty-t2">Readiness per used provider</div><div class="sz">22/28 · 700</div>
+  <div class="lab">Title 3 · sheet title<br>--fs-t3</div><div class="ty-t3">Servers &amp; spaces</div><div class="sz">20/25 · 600</div>
+  <div class="lab">Headline · bar title<br>--fs-hl</div><div class="ty-hl">Design the mobile tab bar</div><div class="sz">17/22 · 600</div>
+  <div class="lab">Body · row title<br>--fs-body</div><div class="ty-bd">Worker is writing the receipt for PR #1208</div><div class="sz">17/22 · 400/500</div>
+  <div class="lab">Callout · composer<br>--fs-callout</div><div class="ty-co">Need a new React Native mobile app for tm8…</div><div class="sz">16/21 · 400</div>
+  <div class="lab">Subheadline · row meta<br>--fs-sub</div><div class="ty-sb">Coordinator · 4 tasks made · 2 sessions spawned</div><div class="sz">15/20 · 400</div>
+  <div class="lab">Footnote · meta<br>--fs-foot</div><div class="ty-ft">opened 13:12 by Subhang</div><div class="sz">13/18 · 400</div>
+  <div class="lab">Footnote caps · section<br>--fs-foot</div><div class="ty-ey">Working · 3</div><div class="sz">13/18 · 600 · +0.08em</div>
+  <div class="lab">Caption 1 · pill, eyebrow<br>--fs-c1</div><div class="ty-c1"><span class="pill review">in review</span> &nbsp; TASK · V14 · 01A182A2</div><div class="sz">12/16 · 600</div>
+  <div class="lab">Caption 2 · badge<br>--fs-c2</div><div class="ty-c2">3 · Atelier · tm8.sh</div><div class="sz">11/13 · 700</div>
+  <div class="lab">Mono · ids, branches<br>--fs-mono</div><div class="ty-mo">01a182a2 · tm8/01a182a9… · 12/17 in the terminal</div><div class="sz">13/18 · 400</div>
+  <div class="lab">Android bar title</div><div style="font-size:22px;line-height:28px">Inbox</div><div class="sz">22/28 · 400 (M3 Title L)</div>
+  <div class="lab">Tab labels</div><div style="font-size:12px;font-weight:500">Chats · Work · Inbox · Browse</div><div class="sz">iOS 10/12 · Android 12/16</div>
+</div>
+<p><b>Readability floor.</b> Nothing below 11pt carries information. The single exception is the iOS tab label (10pt), which is system-owned and is read through the Large Content Viewer at accessibility sizes. This is the phone's answer to CONTRACT §6's unbuilt sibling: "a 44px button with 9.5px text is tappable and unreadable".</p>
+
+<h4>Dynamic Type and Android font scale</h4>
+<p>React Native multiplies every <code>Text</code> by one system factor, so the kit sets <code>maxFontSizeMultiplier</code> per role and lets layouts reflow; the platform's per-style curve is reproduced by the token function, not by hand. iOS values are Apple's text-style table; Android 14+ scales non-linearly (large sizes grow less), so values ≥18sp are given as "≈".</p>
+<table class="spec">
+  <thead><tr><th style="width:17%">Role</th><th>Large</th><th>xxxL</th><th>AX3</th><th>AX5</th><th>Android 1.3</th><th style="width:34%">Under scale</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Large title</td><td>34</td><td>40</td><td>52</td><td>60</td><td>—</td><td>Scales; one line, truncates (it is a tab name). Android has no large title.</td></tr>
+    <tr><td class="code">Title 2 (entity)</td><td>22</td><td>28</td><td>44</td><td>56</td><td>≈27</td><td>Wraps without a cap — it is the page's name; never truncated on the entity page.</td></tr>
+    <tr><td class="code">Headline (bar title)</td><td>17</td><td colspan="3">fixed 17 — Large Content Viewer on long-press</td><td>≈26 (22sp)</td><td>iOS bar items never grow; Android's 22sp title scales, one line, ellipsis.</td></tr>
+    <tr><td class="code">Body (row title)</td><td>17</td><td>23</td><td>40</td><td>53</td><td>≈21</td><td>Wraps to 2 lines (3 at AX), then truncates. Row grows; lead aligns to the first line.</td></tr>
+    <tr><td class="code">Subheadline (meta)</td><td>15</td><td>21</td><td>36</td><td>49</td><td>19.5</td><td>Meta line wraps instead of truncating at AX sizes: the pill keeps its own line.</td></tr>
+    <tr><td class="code">Footnote / caps</td><td>13</td><td>19</td><td>33</td><td>44</td><td>16.9</td><td>Section headers wrap; tracking kept.</td></tr>
+    <tr><td class="code">Caption 1 (pill word)</td><td>12</td><td>18</td><td>cap 24</td><td>cap 24</td><td>15.6</td><td>Capped at 2×. A status word never truncates — the pill grows in height.</td></tr>
+    <tr><td class="code">Caption 2 (badge)</td><td>11</td><td>16.5 cap</td><td>16.5</td><td>16.5</td><td>14.3</td><td>Capped at 1.5×: it sits on a 26pt icon. The count is also spoken.</td></tr>
+    <tr><td class="code">Tab label</td><td>10 / 12sp</td><td colspan="3">iOS fixed — Large Content Viewer</td><td>15.6 then cap</td><td>Android labels scale to 1.3 and stop; four labels must not wrap.</td></tr>
+    <tr><td class="code">Terminal mono</td><td>12</td><td colspan="4">never follows the system — pinch sets 10–18pt per session</td><td>A terminal's columns are its geometry; reflowing them breaks every program in it.</td></tr>
+    <tr><td class="code">Glyphs</td><td>20–24</td><td>+0</td><td>×1.5 cap</td><td>×1.5 cap</td><td>+0</td><td>Lead tiles grow with text at AX sizes (32→48); bar and tab icons never do.</td></tr>
+  </tbody>
+</table>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone ax3" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Type<span class="sub">AX3 preview</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="section-h">Working · 3</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span>waiting on Marco</span></span></a>
+          </div>
+          <div class="sl">Never scales · bars, tab labels, badges</div>
+          <div class="fr"><nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Type preview · iOS AX3</b>The same rows at Accessibility Extra Large: titles wrap to three lines, the meta line wraps under its pill, the pill word is capped at 24pt and never truncates, lead tiles grow ×1.5. Bar title, back word and tab labels stay put. <span class="route">/dev/kit/type?size=AX3</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone fs13" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Type</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="section-h">Working · 3</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator · 1 live session</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span>waiting on Marco</span></span></a>
+          </div>
+          <div class="sl">Navigation bar · labels scale, icons do not</div>
+          <div class="fr"><nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Type preview · Android font scale 1.3</b>Dark, 360dp. The top-app-bar title and navigation labels are sp and scale (the labels stop at 1.3); body ≈21sp because Android 14 scales large text less than small. <span class="route">/dev/kit/type?size=1.3</span></div>
+  </div>
+</div>
+
+<h3>Geometry — spacing, radii, targets, safe areas</h3>
+<div class="grid-2">
+  <div class="tile"><h5>Spacing · 4pt grid</h5>
+    <div class="spx"><span>s1 · 4</span><i style="width:var(--s1)"></i><span>s2 · 8</span><i style="width:var(--s2)"></i><span>s3 · 12</span><i style="width:var(--s3)"></i><span>s4 · 16</span><i style="width:var(--s4)"></i><span>s5 · 20</span><i style="width:var(--s5)"></i><span>s6 · 24</span><i style="width:var(--s6)"></i><span>s8 · 32</span><i style="width:var(--s8)"></i><span>s10 · 40</span><i style="width:var(--s10)"></i><span>s12 · 48</span><i style="width:var(--s12)"></i></div>
+    <p style="margin-top:10px">Gutter 16 both OSes. Row padding 8×16 (tall 12×16). Lead-to-text gap 12; tree indent 20 per depth.</p></div>
+  <div class="tile"><h5>Radii</h5>
+    <div class="rads"><div><i style="border-radius:var(--r-xs)"></i>xs 6 · chip</div><div><i style="border-radius:var(--r-sm)"></i>sm 8 · kind tile</div><div><i style="border-radius:var(--r-md)"></i>md 12 · card, btn</div><div><i style="border-radius:var(--r-lg)"></i>lg 16 · FAB (And.)</div><div><i style="border-radius:var(--r-xl)"></i>xl 20 · iOS sheet</div><div><i style="border-radius:28px"></i>28 · M3 sheet, dialog</div><div><i style="border-radius:var(--r-pill)"></i>pill · pill, M3 btn</div></div>
+    <p style="margin-top:10px">Agent avatars keep a 25% corner at every size (5/7/9/12/18) so a 72pt teammate still reads as a squircle, not a circle.</p></div>
+</div>
+<table class="spec">
+  <thead><tr><th style="width:22%">Element</th><th style="width:22%">iOS (pt)</th><th style="width:24%">Android (dp)</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Top inset</td><td>47 drawn (59–62 on Dynamic Island models)</td><td>24 drawn (status bar inset)</td><td>Always from <code>useSafeAreaInsets()</code>; never a literal. Android 15 is edge-to-edge, so we draw under both system bars.</td></tr>
+    <tr><td class="code">Top bar</td><td>44 · centred title · large title +52 on tab roots, collapses on scroll</td><td>56 · left title · no large title</td><td>56 is what the native-stack toolbar renders; M3's spec is 64 (open question).</td></tr>
+    <tr><td class="code">Tab / navigation bar</td><td>49 + 34 home indicator</td><td>80 + gesture inset</td><td>Tab roots only; pushed screens hide it.</td></tr>
+    <tr><td class="code">Tap target</td><td>44 × 44</td><td>48 × 48</td><td>The control's own frame (so the accessibility frame matches the touch frame). <code>hitSlop</code> only for chips inside prose. Adjacent targets ≥ 8 apart.</td></tr>
+    <tr><td class="code">Row</td><td>min 44 · tall 68</td><td>min 48 · tall 68</td><td>Lead 32 tile or 36 avatar; trail 18 chevron or a 13pt time.</td></tr>
+    <tr><td class="code">Sheet</td><td>corner 20 · grabber 36×5 · detents medium (52%) / large (92%)</td><td>corner 28 · drag handle · on surface</td><td>Content pads itself with the bottom inset.</td></tr>
+    <tr><td class="code">Dialog</td><td>270 wide · r14 · stacked/side buttons</td><td>312 wide · r28 · right-aligned text buttons</td><td>Only for a confirm the registry names (<code>confirm:</code>).</td></tr>
+    <tr><td class="code">FAB</td><td>56 round — canvases only</td><td>56 · r16 · extended 56 high</td><td>Android: the primary create on Chats and Work. iOS: create is the brand icon in the bar.</td></tr>
+    <tr><td class="code">Toast / snackbar</td><td>≥ 48 · 16 above the bottom inset</td><td>≥ 48</td><td>4s; 6s with an action; stays while VoiceOver/TalkBack is focused on it.</td></tr>
+    <tr><td class="code">Keyboard</td><td>216–336 + accessory</td><td>varies, OEM toolbars</td><td>One measured inset for the whole screen (CONTRACT §3): no surface wires its own listener.</td></tr>
+  </tbody>
+</table>
+
+<h4>Anatomy — the design-kit index</h4>
+<p>The foundation lane's one screen is the in-app specimen gallery every phone in this section is a page of. It ships in internal and preview builds only, so screenshot tests (lane 08) render the very specimens the owner judged here.</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+  <figure class="phone" data-os="ios" data-theme="light">
+    <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+    <div class="ph-screen">
+      <header class="topbar large">
+        <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>About</span></span></div>
+        <div class="title hidden">Design kit</div>
+        <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-moon"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        <div class="big">Design kit</div>
+      </header>
+      <main class="content fade-bottom">
+        <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search specimens</div>
+        <div class="section-h">Atoms</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-style"/></svg></span><span class="main"><span class="t">Colour</span></span><span class="trail">Neutral<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-edit"/></svg></span><span class="main"><span class="t">Type</span></span><span class="trail">Large<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-browse"/></svg></span><span class="main"><span class="t">Glyphs</span></span><span class="trail">33 kinds<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+        <div class="section-h">Components</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+      </main>
+    </div>
+    <div class="ph-home"></div>
+  </figure>
+  <span class="an" data-n="1" style="left:84px;top:16px"></span>
+  <span class="an" data-n="2" style="left:104px;top:58px"></span>
+  <span class="an" data-n="3" style="left:214px;top:100px"></span>
+  <span class="an" data-n="4" style="left:330px;top:151px"></span>
+  <span class="an" data-n="5" style="left:96px;top:208px"></span>
+  <span class="an" data-n="6" style="left:150px;top:246px"></span>
+  <span class="an" data-n="7" style="left:356px;top:276px"></span>
+  <span class="an" data-n="8" style="left:2px;top:586px"></span>
+  <span class="an" data-n="9" style="left:280px;top:812px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Top inset</b> — 47pt on this class, 59–62 on Dynamic Island models; read from the safe-area context, never typed. Nothing interactive lives in it.</li>
+    <li><b>Top bar, 44pt</b> — the back word names the previous screen ("‹ About"); trailing icon buttons are full 44×44 frames with a 24pt glyph and an accessibility label ("Preview dark theme", "More").</li>
+    <li><b>Large title</b> — 34/41 bold, −0.02em; collapses into the 44pt bar as content scrolls (the hidden centred title appears with a hairline). Android draws a 56dp bar with a left title instead.</li>
+    <li><b>Search</b> — 36pt field, 10pt radius, inside the 16pt gutters; on Android a 48–56dp pill.</li>
+    <li><b>Section header</b> — footnote caps, 600, +0.08em, ink-3; 20 above, 8 below. Announced as a heading.</li>
+    <li><b>Row</b> — 44pt minimum (48dp), 32pt kind tile or 36pt avatar, 12pt gap, title 17/22, optional meta 15/20, trailing value + 18pt chevron. The whole row is one target and one accessibility element.</li>
+    <li><b>Hairline</b> — 1px <code>--line</code> between rows; full-bleed on plain lists, inset 60 under a lead in grouped ones. Never the only thing that tells two controls apart.</li>
+    <li><b>Status in the meta line</b> — a pill is a dot <em>and</em> a word, 22pt high; here the gallery's own contrast lint ("6 below AA"), computed on the device from the painted token table.</li>
+    <li><b>Home indicator</b> — 34pt; content scrolls under it, controls stop above it. The fade at the bottom says the list continues.</li>
+  </ol>
+</div>
+<table class="route-table">
+  <thead><tr><th style="width:38%">Route (proposed, internal builds only)</th><th>Screen</th><th style="width:30%">Params · notes</th></tr></thead>
+  <tbody>
+    <tr><td>/dev/kit</td><td>Design-kit index (anatomy above)</td><td>Reached from Settings › About in <code>development</code>/<code>preview</code> build profiles; absent from store builds.</td></tr>
+    <tr><td>/dev/kit/chrome · /rows · /status · /controls</td><td>Specimen pages, one per family</td><td><code>?theme=light|dark</code> · <code>?style=&lt;style ref&gt;</code></td></tr>
+    <tr><td>/dev/kit/overlays</td><td>Sheet, dialog, menu, toast, banner, notice</td><td><code>?show=sheet|all</code> mounts the overlay in situ</td></tr>
+    <tr><td>/dev/kit/states · /composer · /run · /entity</td><td>States, composer (keyboard up), terminal, entity atoms + board</td><td><code>?keyboard=up</code></td></tr>
+    <tr><td>/dev/kit/type</td><td>Type preview</td><td><code>?size=Large|xxxL|AX1…AX5|1.3|2.0</code> overrides the system size for this page only</td></tr>
+    <tr><td>/dev/kit/glyphs · /colour</td><td>The 33 kind glyphs; token swatches + live contrast lint</td><td>The lint runs on the painted style, so a space style can be checked on the phone.</td></tr>
+  </tbody>
+</table>
+<div class="why">Why a gallery in the app and not only this document: the kit is a native component set, and the only faithful specimen of a native component is the component running on a device, at the user's text size, in the user's style. It also gives lane 08 one fixture per family for screenshot tests, so "the owner judged it once" stays true after the first refactor.</div>
+
+<h3>Chrome — top bars, tab bar, FAB</h3>
+<p>Each specimen page of the gallery stacks one family's variants in labelled frames. Frames are drawn at device size inside the page, so a 44pt bar here is a 44pt bar on the phone.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Chrome<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content grouped">
+          <div class="sl">Large title · tab root<i>44 + 52pt</i></div>
+          <div class="fr"><header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Chats</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div><div class="big">Chats</div></header></div>
+          <div class="sl">Collapsed on scroll<i>44pt + hairline</i></div>
+          <div class="fr"><header class="topbar hairline"><div class="lead"><span class="spacebtn"><span class="mark">A</span></span></div><div class="title">Chats</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div></header></div>
+          <div class="sl">Plain · modal sheet<i>text buttons</i></div>
+          <div class="fr"><header class="topbar"><div class="lead"><span class="tbtn">Cancel</span></div><div class="title">New chat</div><div class="trail"><span class="tbtn b">Start</span></div></header></div>
+          <div class="sl">Pushed · back names the stack<i>44pt</i></div>
+          <div class="fr"><header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header></div>
+          <div class="sl">Subtitle · long title truncates<i>“Back”</i></div>
+          <div class="fr"><header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Back</span></span></div><div class="title">Repoint family: 1-arg resume gate<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header></div>
+          <div class="sl">Tab bar · badges<i>49 + 34pt</i></div>
+          <div class="fr"><nav class="tabbar"><a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav></div>
+          <div class="sl">Proposed · filled active glyph<i>HIG / M3</i></div>
+          <div class="fr"><nav class="tabbar"><a class="tab on"><svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" fill="currentColor"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav></div>
+          <div class="sl">FAB · canvases only on iOS<i>56pt round</i></div>
+          <div class="fr fabs"><span class="fab ext" style="left:16px;right:auto"><svg class="ic"><use href="#i-plus"/></svg>Add card</span><span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chrome · iOS</b>Large title on tab roots, collapsing to a centred 44pt title; text buttons on modal bars; the back word becomes "Back" when the title needs the room. The filled active glyph is proposed (kit gap). <span class="route">/dev/kit/chrome</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Chrome</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content grouped">
+          <div class="sl">Top app bar · tab root<i>56dp</i></div>
+          <div class="fr"><header class="topbar"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header></div>
+          <div class="sl">Pushed · ← is Up<i>56dp</i></div>
+          <div class="fr"><header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header></div>
+          <div class="sl">Subtitle · ellipsis<i>22 + 12sp</i></div>
+          <div class="fr"><header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Repoint family: 1-arg resume gate<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header></div>
+          <div class="sl">Search bar<i>48dp kit · 56 M3</i></div>
+          <div class="fr"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search Atelier</div></div>
+          <div class="sl">Navigation bar · active pill<i>80dp</i></div>
+          <div class="fr"><nav class="tabbar"><a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav></div>
+          <div class="sl">FAB · squared and extended<i>56dp · r16</i></div>
+          <div class="fr fabs"><span class="fab ext" style="left:16px;right:auto"><svg class="ic"><use href="#i-edit"/></svg>New chat</span><span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chrome · Android</b>Dark, 360dp. Left 22sp titles, ← as Up, a navigation bar whose active tab wears a brand pill. The extended FAB is the Chats root's create and shrinks to the 56dp FAB on scroll. <span class="route">/dev/kit/chrome</span></div>
+  </div>
+</div>
+<div class="why">Create lives where each platform puts it: the brand icon in the iOS bar (no FAB on tab roots — Apple's bars already hold the verb), the FAB on Android Chats and Work. A round FAB on iOS appears only on a canvas with no bar slot (Board, drawing). Tab bars stay on tab roots only, as the overview drew them; with iOS 26 native tabs the system paints them in glass — the metrics above are the floor both share.</div>
+
+<h3>Rows &amp; trees</h3>
+<p>The row is the atom of every list in the app. Per the owner ruling of 2026-10-28, <b>every list is a tree whenever anything in it nests</b>: expanded to depth 2, a chevron on every parent, 20pt indent per depth, a hairline guide from the parent's chevron down its children, and a count summary on a collapsed parent. A child keeps its own full row.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Rows &amp; trees<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Plain<i>44pt</i></div>
+          <div class="list lines"><a class="row"><span class="main"><span class="t">The Back Contract</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a></div>
+          <div class="sl">Tall · agent · live<i>68pt</i></div>
+          <div class="list lines"><a class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s"><span class="pill live">live</span>Worker is writing…</span></span><span class="trail"><span class="time">now</span></span></a></div>
+          <div class="sl">Unread<i>dot + weight + label</i></div>
+          <div class="list lines"><a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill waiting">waiting</span>Reviewer asked a question</span></span><span class="trail"><span class="time">11:02</span></span></a></div>
+          <div class="sl">Pressed / selected · kind tile<i>--hover</i></div>
+          <div class="list lines"><a class="row tall sel"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill review">in review</span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955</span></span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a></div>
+          <div class="sl">Swiped · trailing actions<i>120pt</i></div>
+          <div class="list lines" style="position:relative;overflow:hidden"><div class="swipe-actions"><span class="act read"><svg class="ic"><use href="#i-check"/></svg>Read</span><span class="act pin"><svg class="ic"><use href="#i-pin"/></svg>Pin</span></div><a class="row tall unread swiped" style="background:var(--paper)"><span class="avatar c2">P</span><span class="main"><span class="t">Priya: can you look at the tablet overflow?</span><span class="s">#mobile · 2 replies</span></span><span class="trail"><span class="time">09:15</span></span></a></div>
+          <div class="sl">Tree · open, leaf, collapsed<i>20pt / depth</i></div>
+          <div class="list tree">
+            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall" style="--depth:1"><i class="gd" style="left:25px"></i><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 01 — design system</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 05 — work</span><span class="s">3 subtasks · 1 working</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Rows · iOS</b>Plain, tall, unread (dot, weight and the word "unread" in the label), pressed, swiped, and the tree row. The collapsed parent says what it hides: "3 subtasks · 1 working". <span class="route">/dev/kit/rows</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Trees</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Sessions · grouped by root<i>verdict per row</i></div>
+          <div class="list tree">
+            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill live">live</span>Coordinator · 42 min</span></span></a>
+            <a class="row tall android-ripple" style="--depth:1"><i class="gd" style="left:25px"></i><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Mobile design lane 01</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>push to origin</span></span></a>
+            <a class="row tall" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill live">live</span>3 children · 2 live</span></span></a>
+          </div>
+          <div class="sl">Tasks · depth 0 / 1 / 2<i>guide per level</i></div>
+          <div class="list tree">
+            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><i class="gd st" style="left:45px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Lane 05 — work</span><span class="s"><span class="pill working">working</span>2 subtasks</span></span></a>
+            <a class="row tall" style="--depth:2"><i class="gd" style="left:45px"></i><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>4 of 5</span></span></a>
+            <a class="row tall" style="--depth:2"><i class="gd en" style="left:45px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Desktop-shell reflow overflow</span><span class="s"><span class="pill open">open</span>4 more · 1 working</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Trees · Android</b>Dark. Sessions group by root with each child's own liveness word; a collapsed root counts its children ("3 children · 2 live"). Tasks show depth 0/1/2; deeper levels stay folded with a count. Row 2 shows the Material ripple. <span class="route">/dev/kit/rows?layout=tree</span></div>
+  </div>
+</div>
+<div class="why">Trees are drawn because the owner ruled it (2026-10-28: "the tree structure is not shown in the list — in the app it must be shown") and because the web drawer already does it — "an item with children has a ▸ and expands in place" (<code>MobileDrawer.tsx</code>). Tree vs flat is decided from data (does any row have a parent of its own kind?), never from a kind literal. The tap target for disclosure is the 20pt chevron <em>plus</em> the indent to its left, padded to 44×44; the rest of the row still pushes.</div>
+
+<h3>Status &amp; identity — pills, chips, badges, avatars</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Status &amp; identity<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Pills · every status word<i>dot + word</i></div>
+          <div class="pr"><span class="tn">run</span><span class="pill working">working</span><span class="pill live">live</span><span class="pill done">done</span><span class="pill run">running</span></div>
+          <div class="pr"><span class="tn">wait</span><span class="pill waiting">waiting</span><span class="pill stale">stale</span><span class="pill pending">pending</span></div>
+          <div class="pr"><span class="tn">block</span><span class="pill blocked">blocked</span><span class="pill failed">failed</span><span class="pill error">error</span></div>
+          <div class="pr"><span class="tn">info</span><span class="pill review">in review</span><span class="pill info">checks running</span></div>
+          <div class="pr"><span class="tn">idle</span><span class="pill open">open</span><span class="pill to_do">pulled</span><span class="pill exited">exited</span><span class="pill idle">cancelled</span></div>
+          <div class="pr"><span class="tn">merged</span><span class="pill merged">merged</span></div>
+          <div class="pr"><span class="tn">no dot</span><span class="pill idle nodot">medium</span><span class="pill block nodot">high</span><span class="pill brand nodot">default</span></div>
+          <div class="sl">Chips · tap pushes the entity<i>26 / 32pt</i></div>
+          <div class="chips"><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span><span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Coordinator · live</span><span class="chip wait"><svg class="ic"><use href="#i-form"/></svg>Which tab bar? (3 options)</span><span class="chip block"><svg class="ic"><use href="#i-task"/></svg>Repoint family</span><span class="chip info"><svg class="ic"><use href="#i-pr"/></svg>#1208</span><span class="chip brand"><svg class="ic"><use href="#i-space"/></svg>Atelier</span><span class="chip lg"><svg class="ic"><use href="#i-artifact"/></svg>TM8 Dark Tech marketing preview</span></div>
+          <div class="sl">Badges &amp; counts<i>absent ≠ 0</i></div>
+          <div class="bc"><span class="iconbtn"><svg class="ic"><use href="#i-bell"/></svg><span class="badge">3</span></span><span class="badge">12</span><span class="badge brand">new</span><span class="badge muted">7</span><span class="badge dot"></span><span class="count">4 of 5</span><span class="count">—</span><span class="foot">not counted</span></div>
+          <div class="sl">Avatars · shape is provenance<i>20 · 28 · 36 · 48 · 72</i></div>
+          <div class="avr"><span class="avatar xs c1">S</span><span class="avatar sm c2">P</span><span class="avatar c3">M</span><span class="avatar lg c4">L</span><span class="sep"></span><span class="avatar xs agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="avatar lg agent c4"><svg class="ic"><use href="#i-bot"/></svg></span></div>
+          <div class="avr"><span class="avatar xl c1">S<i class="live"></i></span><span class="avatar xl agent c3"><svg class="ic lg"><use href="#i-bot"/></svg><i class="live"></i></span><span class="stack"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="avatar c2">P</span></span><span class="foot">Worker, Coordinator, Priya</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Status &amp; identity · iOS</b>Every status word the node returns, grouped by tone; priority and "default" are dot-less because they are not states. Humans round (Subhang, Priya, Marco, Lena), agents rounded-square; a live dot on either; a stack always names who is in it. <span class="route">/dev/kit/status</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Status &amp; identity</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Pills · on paper<i>dark</i></div>
+          <div class="pr"><span class="tn">run</span><span class="pill working">working</span><span class="pill live">live</span><span class="pill done">done</span></div>
+          <div class="pr"><span class="tn">wait</span><span class="pill waiting">waiting</span><span class="pill stale">stale</span><span class="pill pending">pending</span></div>
+          <div class="pr"><span class="tn">block</span><span class="pill blocked">blocked</span><span class="pill failed">failed</span></div>
+          <div class="pr"><span class="tn">info</span><span class="pill review">in review</span></div>
+          <div class="pr"><span class="tn">idle</span><span class="pill open">open</span><span class="pill exited">exited</span><span class="pill idle">cancelled</span></div>
+          <div class="pr"><span class="tn">merged</span><span class="pill merged">merged</span><span class="pill brand nodot">default</span></div>
+          <div class="sl">Pills · on a card<i>where dark fails</i></div>
+          <div class="card" style="margin:0 16px"><span class="pill blocked">blocked</span> <span class="pill review">in review</span> <span class="pill merged">merged</span> <span class="pill open">open</span></div>
+          <div class="sl">Chips<i>26 / 32dp</i></div>
+          <div class="chips"><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>One surface at a time</span><span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Worker · live</span><span class="chip wait"><svg class="ic"><use href="#i-form"/></svg>Which tab bar?</span><span class="chip block"><svg class="ic"><use href="#i-pr"/></svg>#1113</span><span class="chip brand"><svg class="ic"><use href="#i-space"/></svg>Playground</span></div>
+          <div class="sl">Badges &amp; counts</div>
+          <div class="bc"><span class="iconbtn"><svg class="ic"><use href="#i-bell"/></svg><span class="badge">3</span></span><span class="badge muted">7</span><span class="badge dot"></span><span class="count">7 of 12</span><span class="count">—</span></div>
+          <div class="sl">Avatars</div>
+          <div class="avr"><span class="avatar sm c2">P</span><span class="avatar c3">M<i class="live"></i></span><span class="avatar lg c4">L</span><span class="sep"></span><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="avatar lg agent c4"><svg class="ic"><use href="#i-bot"/></svg></span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Status &amp; identity · Android</b>Dark, 360dp. On paper every pill passes; on a card blocked, in review, merged and open drop under 4.5 — the second half of the contrast finding. <span class="route">/dev/kit/status</span></div>
+  </div>
+</div>
+<div class="why">Kept from the web: status is colour + word (design language §1) and avatar shape is provenance, coloured by FNV-1a of the actor id, never the display name (<code>kit/Avatar.tsx</code>). Changed: the kit has four tints where the web has six tones (gap, below). Priority takes the registry's tone — low/medium grey, high/urgent red — with no dot, because the dot is reserved for state; the overview's gold "medium" pill should follow this. A count the node did not return renders "—", never 0 (principle 9).</div>
+
+<h3>Controls</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Controls<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Buttons<i>44pt · r12</i></div>
+          <div class="pad16"><span class="btn primary block"><svg class="ic"><use href="#i-play"/></svg>Launch session</span></div>
+          <div class="brow"><span class="btn brand">Publish</span><span class="btn">Chat about</span><span class="btn outline">Move</span></div>
+          <div class="brow"><span class="btn ghost">Copy link</span><span class="btn danger">Revoke</span><span class="btn sm">View all</span></div>
+          <div class="sl">Disabled · always with a reason</div>
+          <div class="pad16"><span class="btn block disabled"><svg class="ic"><use href="#i-terminal"/></svg>Attach terminal</span><div class="reason"><svg class="ic"><use href="#i-lock"/></svg>This session is not running — there is no terminal to attach to.</div></div>
+          <div class="sl">Inputs · focus, error, area</div>
+          <div class="pad16 stack-f">
+            <div class="field"><label>Server address</label><div class="input focus"><svg class="ic"><use href="#i-globe"/></svg>https://tm8.acme.dev<span class="caret"></span></div></div>
+            <div class="field"><div class="input err"><svg class="ic"><use href="#i-globe"/></svg>https://tm8.acme.dev</div><div class="help err">This server could not be reached</div></div>
+            <div class="input area"><span class="ph">Add a description</span></div>
+          </div>
+          <div class="sl">Search · active</div>
+          <div class="srow"><div class="search on"><svg class="ic"><use href="#i-search"/></svg>tab bar<span class="caret"></span></div><span class="tbtn">Cancel</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Controls · iOS</b>Primary (ink), brand, secondary, outline, ghost, danger, small sizes; a disabled control always carries the node's reason underneath — here the registry's own words. Inputs focused (brand ring), refused (the node's words), and multi-line. <span class="route">/dev/kit/controls</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Controls</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="sl">Tabs · segmented on iOS</div>
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="sl">Filter chips<i>32dp</i></div>
+          <div class="filters"><span class="f on"><svg class="ic"><use href="#i-check"/></svg>Mine</span><span class="f">Needs me</span><span class="f">Working</span></div>
+          <div class="sl">Switches &amp; checks</div>
+          <div class="list lines">
+            <div class="row"><span class="main"><span class="t">Mentions</span></span><span class="switch on"></span></div>
+            <div class="row"><span class="main"><span class="t">Haptics</span></span><span class="switch"></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="check"></span><span class="check square on"><svg class="ic"><use href="#i-check"/></svg></span><span class="check square"></span><span class="main"><span class="s">criteria · multi-select</span></span></div>
+          </div>
+          <div class="sl">Progress — only fractions the node returns</div>
+          <div class="pgx">
+            <div class="pl"><span>Story kind improvements</span><span class="count">7 of 12</span></div><div class="progress"><i style="width:58%"></i></div>
+            <div class="pl"><span>Quiet list tiles · criteria</span><span class="count">4 of 5</span></div><div class="progress brand"><i style="width:80%"></i></div>
+            <div class="pl"><span>Sessions · Atelier</span><span class="count">—</span></div><div class="reason" style="margin:0 0 10px">Nobody could count this yet — no bar is drawn.</div>
+            <div class="ringrow"><span class="ring" style="--p:58"></span>7 of 12 done · ring for a row trail</div>
+          </div>
+          <div class="sl">Buttons · Material<i>40dp pill</i></div>
+          <div class="brow"><span class="btn brand">Publish</span><span class="btn">Move</span><span class="btn outline">Copy link</span></div>
+          <div class="brow"><span class="btn ghost">View all</span><span class="btn danger">Revoke</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Controls · Android</b>Dark. The iOS segmented control becomes Material tabs; switches are the M3 switch; buttons are 40dp pills (filled, tonal, outlined, text). An unknown fraction draws no bar at all. <span class="route">/dev/kit/controls</span></div>
+  </div>
+</div>
+<div class="why">Disabled-with-reason is the native form of CONTRACT §8's "no control that cannot perform": the control stays visible and focusable, its reason is on screen (not a hover title — a phone has none, DEF-033) and is also its accessibility hint. A control the viewer can never use is absent, not disabled.</div>
+
+<h3>Overlays — sheets, dialogs, menus, toasts, banners, notices</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Overlays<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="list lines">
+            <a class="row"><span class="main"><span class="t">Sheet · medium detent</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row"><span class="main"><span class="t">Sheet · large detent</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row"><span class="main"><span class="t">Alert</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row"><span class="main"><span class="t">Context menu</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row"><span class="main"><span class="t">Toast</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          </div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet half">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Move · TM8 Mobile app</span><span class="iconbtn filled"><svg class="ic"><use href="#i-close"/></svg></span></div>
+          <div class="sheet-b"><div class="list lines">
+            <a class="row"><span class="pill open">open</span><span class="main"></span></a>
+            <a class="row"><span class="pill working">working</span><span class="main"></span><span class="trail" style="color:var(--brand)"><svg class="ic" style="color:var(--brand)"><use href="#i-check"/></svg></span></a>
+            <a class="row"><span class="pill review">in review</span><span class="main"></span></a>
+            <a class="row"><span class="pill blocked">blocked</span><span class="main"></span></a>
+            <a class="row"><span class="pill done">done</span><span class="main"></span></a>
+            <a class="row"><span class="pill idle">cancelled</span><span class="main"></span></a>
+          </div></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Sheet in situ · iOS</b>Medium detent over a dimmed screen that stays mounted; grabber, title, close; the current status checked. Drag past 30% or flick to dismiss. Flip the page's OS switch to see the 28dp Material sheet. <span class="route">/dev/kit/overlays?show=sheet</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Overlays</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content grouped">
+          <div class="sl">Banners · top of content</div>
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>This server could not be reached<span class="act">Check again</span></div>
+          <div class="banner block"><svg class="ic"><use href="#i-error"/></svg>The node refused: you are not signed in on this link</div>
+          <div class="banner info"><svg class="ic"><use href="#i-info"/></svg>Showing what was cached at 13:31</div>
+          <div class="banner run"><svg class="ic"><use href="#i-success"/></svg>Back online · queued writes sent</div>
+          <div class="sl">Dialog · Material<i>r28</i></div>
+          <div class="dialog fl"><div class="d-b"><div class="h">Revoke this credential?</div><p>Revoking stops every session using it.</p></div><div class="d-a"><span>Cancel</span><span class="destructive">Revoke</span></div></div>
+          <div class="sl">Menu · from ⋮</div>
+          <div class="menu fl"><div class="mi">Copy link<svg class="ic"><use href="#i-link"/></svg></div><div class="mi">Open on web<svg class="ic"><use href="#i-external"/></svg></div><div class="mi">Pin<svg class="ic"><use href="#i-pin"/></svg></div><div class="mi destructive">Archive<svg class="ic"><use href="#i-trash"/></svg></div></div>
+          <div class="sl">Snackbar<i>action fails 1.70:1</i></div>
+          <div class="toast fl"><svg class="ic"><use href="#i-check"/></svg>Moved to in review<span class="act">Undo</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Overlays · Android</b>Dark. Banners in four tones (neutral is the same shape on --surface) with the node's words; the M3 dialog with the registry's confirm text; an overflow menu; the snackbar whose gold Undo on light grey is the contrast defect named above. <span class="route">/dev/kit/overlays?show=all</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Overlays<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content grouped">
+          <div class="sl">Alert · registry confirm</div>
+          <div class="dialog fl"><div class="d-b"><div class="h">Revoke this credential?</div><p>Revoking stops every session using it.</p></div><div class="d-a"><span>Cancel</span><span class="destructive bold">Revoke</span></div></div>
+          <div class="sl">Context menu · long-press preview</div>
+          <div class="lift"><div class="row tall"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill waiting">waiting</span>Reviewer asked a question</span></span></div></div>
+          <div class="menu fl"><div class="mi">Open<svg class="ic"><use href="#i-arrow-right"/></svg></div><div class="mi">Mark read<svg class="ic"><use href="#i-check"/></svg></div><div class="mi">Copy link<svg class="ic"><use href="#i-link"/></svg></div><div class="mi">Pin<svg class="ic"><use href="#i-pin"/></svg></div></div>
+          <div class="sl">Toast<i>4s · 6s with action</i></div>
+          <div class="toast fl"><svg class="ic"><use href="#i-check"/></svg>Marked read<span class="act">Undo</span></div>
+          <div class="sl">System notice · push</div>
+          <div class="notice fl"><div class="app">t8</div><div class="nb"><div class="t">Reviewer · Release notes for #955</div><div class="s">asked: which tab bar — 3 options</div></div><span class="time">now</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Overlays · iOS dark</b>The alert, the long-press preview (the row lifts, its menu below), a toast and a push notice, unmounted so each can be judged. <span class="route">/dev/kit/overlays?show=all</span></div>
+  </div>
+</div>
+<div class="why">CONTRACT §4 kept: a sheet when the thing is temporary and over your place, a full screen when it replaces your place; opening an entity is always a push (ruling 2026-10-18). Sheet content is never the subject of a share. The one native addition the web left open is the long-press preview — tap still pushes. Android Back dismisses the topmost sheet, dialog or menu before any screen pops.</div>
+
+<h3>States, composer and terminal</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">States<span class="sub">Design kit · iOS</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>This server could not be reached<span class="act">Check again</span></div>
+          <div class="sl">Loading · skeleton, then words</div>
+          <div class="row tall"><span class="avatar skeleton"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40" style="margin-top:6px"></span></span></div>
+          <div class="row tall"><span class="avatar skeleton"></span><span class="main"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40" style="margin-top:6px"></span></span></div>
+          <div class="row"><span class="spinner"></span><span class="main"><span class="s">Loading Atelier from tm8.sh…</span></span></div>
+          <div class="sl">Empty · names a verb</div>
+          <div class="empty tight"><svg class="ic"><use href="#i-inbox"/></svg><div class="h">Nothing needs you</div><p>Assignments, mentions and forms land here.</p><span class="btn sm">Open Work</span></div>
+          <div class="sl">A count the node did not return</div>
+          <div class="row"><span class="kind-ic"><svg class="ic"><use href="#i-session"/></svg></span><span class="main"><span class="t">Sessions</span><span class="s">Nobody could count this yet</span></span><span class="trail">—</span></div>
+          <div class="sl">Refusal · the node's words</div>
+          <div class="refusal tight"><div class="h">No terminal to attach to</div><p>This session is not running — there is no terminal to attach to.</p></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>States · iOS dark</b>Offline is a banner over cached content, not an error page; loading is a skeleton for 300ms and then a sentence that says what is loading (DEF-038); empty names a verb; an absent count is "—"; a refusal quotes the node. <span class="route">/dev/kit/states</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Kit</span></span></div><div class="title">Composer<span class="sub">Design kit · keyboard up</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content grouped">
+          <div class="sl">Multi-line · grows to 6 lines</div>
+          <div class="composer"><div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><span class="box multi">Draw the tab bar in both themes, then post the shots on the task.</span><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div></div>
+          <div class="sl">Picks · teammate, model, workdir</div>
+          <div class="composer"><div class="picks"><span class="pk on"><svg class="ic"><use href="#i-bot"/></svg>Worker</span><span class="pk"><svg class="ic"><use href="#i-sparkle"/></svg>Opus 5.5</span><span class="pk"><svg class="ic"><use href="#i-worktree"/></svg>tm8/01a182a9…</span></div><div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><span class="box"><span class="ph">Message Worker</span></span><span class="send off"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div></div>
+          <div class="sl">Tray · attached entities</div>
+          <div class="composer tray"><div class="tray-chips"><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></div><div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><span class="box">Read these first</span><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div></div>
+        </main>
+        <div class="composer"><div class="row1"><span class="ib"><svg class="ic"><use href="#i-plus"/></svg></span><span class="box">Ship it after review<span class="caret"></span></span><span class="ib"><svg class="ic"><use href="#i-mic"/></svg></span><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div></div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w ret">return</span></div>
+        </div>
+      </div>
+    </figure>
+    <div class="cap"><b>Composer · keyboard up</b>The docked composer rides the keyboard (one measured inset, CONTRACT §3); the home inset is zeroed while it is up. Above it the three composed variants. Send is ink; "off" until there is text. <span class="route">/dev/kit/composer?keyboard=up</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Terminal</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <div class="livebar"><span class="dot"></span>Live · Coordinator · 42 min<span style="margin-left:auto;font-weight:500">View</span></div>
+        <main class="content">
+          <div class="term"><span class="d">~/lane-01</span> <span class="g">$</span> node check.mjs \
+    sections/01-foundation.html
+ok    01-foundation.html: 20 phones
+<span class="g">0 error(s)</span>, 0 warning(s)
+<span class="d">~/lane-01</span> <span class="g">$</span> tm8 task tick 01a182c6 ac1
+<span class="g">✓</span> ticked ac1 · v3
+<span class="d">~/lane-01</span> <span class="g">$</span> git push origin HEAD
+<span class="y">waiting</span> on a permission: push to origin
+<span class="d">~/lane-01</span> <span class="g">$</span> <span class="cur"></span></div>
+        </main>
+        <div class="keysbar"><span class="k">esc</span><span class="k">tab</span><span class="k on">ctrl</span><span class="k">↑</span><span class="k">↓</span><span class="k">←</span><span class="k">→</span></div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">?123</span><span class="k space">space</span><span class="k w ret">⏎</span></div>
+        </div>
+      </div>
+    </figure>
+    <div class="cap"><b>Terminal · Android, keyboard up</b>Light theme — the canvas stays near-black anyway. Live bar on top, a keys bar for the keys a soft keyboard lacks (ctrl latched in brand), 12/17 mono that never follows the system size. <span class="route">/dev/kit/run?keyboard=up</span></div>
+  </div>
+</div>
+
+<h3>Entity atoms and board</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Entity</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · v14 · 01a182a2</span><div class="title">TM8 Mobile app</div><div class="meta"><span class="pill working">working</span><span class="pill idle nodot">medium</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>Worker, Coordinator</div></div>
+          <div class="ent-actions"><span class="btn primary"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="btn"><svg class="ic"><use href="#i-chat"/></svg>Chat about</span></div>
+          <div class="livebar"><span class="dot"></span>2 sessions live on this task<span style="margin-left:auto;font-weight:500">View</span></div>
+          <div class="linked"><div class="fam">Children · 9</div><div class="chips"><span class="chip run"><svg class="ic"><use href="#i-task"/></svg>Lane 01 · working</span><span class="chip run"><svg class="ic"><use href="#i-task"/></svg>Lane 05 · working</span></div></div>
+          <div class="sl">Board · column + card<i>280dp column</i></div>
+          <div class="board short">
+            <div class="col"><div class="ch"><span>Working</span><span class="count">3</span></div><div class="card"><div class="t">TM8 Mobile app</div><div class="m"><span class="pill working">working</span>9 subtasks</div></div><div class="card"><div class="t">Bridge as an entity</div><div class="m"><span class="pill working">working</span>Coordinator</div></div></div>
+            <div class="col"><div class="ch"><span>In review</span><span class="count">2</span></div><div class="card"><div class="t">Readiness per used provider</div><div class="m"><span class="pill review">in review</span>#955</div></div></div>
+          </div>
+          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Entity atoms · Android</b>Dark. Kind eyebrow with version and short id, title, status meta (priority dot-less), the kind's verbs, the live bar, linked families — Children first — and a board column whose card carries subtasks as a count. <span class="route">/dev/kit/entity</span></div>
+  </div>
+</div>
+
+<h3>Kind glyphs — all 33</h3>
+<p>Labels are exactly the registry's (<code>packages/tm8-ui/src/domain/registry.ts</code>); groups are Browse's, from <code>tm8 kind list</code>. Glyphs follow <code>kind-art.ts</code>'s rule — every mark is the thing it names, no two share a silhouette — redrawn on the 24pt grid. Note the two labels that surprise: <code>mcp_server</code> is a <b>Connector</b>, <code>work_session</code> is a <b>Session</b>.</p>
+<table class="spec">
+  <thead><tr><th style="width:7%">Glyph</th><th style="width:18%">Kind</th><th style="width:15%">Singular</th><th style="width:17%">Plural</th><th style="width:22%">List route</th><th>Depicts</th></tr></thead>
+  <tbody>
+    <tr class="grp"><td colspan="6">Work · 6</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-task"/></svg></td><td class="code">task</td><td>Task</td><td>Tasks</td><td class="code">k/tasks</td><td>a checked box</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-loop"/></svg></td><td class="code">loop</td><td>Loop</td><td>Loops</td><td class="code">k/loops</td><td>a circular arrow</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-project"/></svg></td><td class="code">project</td><td>Project</td><td>Projects</td><td class="code">k/projects</td><td>a folder</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-collection"/></svg></td><td class="code">collection</td><td>Collection</td><td>Collections</td><td class="code">k/collections</td><td>four tiles</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-story"/></svg></td><td class="code">story</td><td>Story</td><td>Stories</td><td class="code">k/stories</td><td>an open book</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-craft"/></svg></td><td class="code">craft</td><td>Craft</td><td>Crafts</td><td class="code">k/crafts</td><td>stacked sheets</td></tr>
+    <tr class="grp"><td colspan="6">Talk · 5</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-message"/></svg></td><td class="code">message</td><td>Message</td><td>Messages</td><td class="code">— (no list: opened from its anchor)</td><td>an envelope</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-channel"/></svg></td><td class="code">channel</td><td>Channel</td><td>Channels</td><td class="code">k/channels</td><td>a hash</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-voice"/></svg></td><td class="code">voice_channel</td><td>Voice channel</td><td>Voice channels</td><td class="code">— (no list: opened from its anchor)</td><td>a microphone</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-chat"/></svg></td><td class="code">chat</td><td>Chat</td><td>Chats</td><td class="code">k/chats</td><td>a speech bubble</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-form"/></svg></td><td class="code">form</td><td>Form</td><td>Forms</td><td class="code">k/forms</td><td>an option list</td></tr>
+    <tr class="grp"><td colspan="6">Knowledge · 8</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-doc"/></svg></td><td class="code">doc</td><td>Doc</td><td>Docs</td><td class="code">k/docs</td><td>a page with a fold</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-file"/></svg></td><td class="code">file</td><td>File</td><td>Files</td><td class="code">k/files</td><td>a file</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-drawing"/></svg></td><td class="code">drawing</td><td>Drawing</td><td>Drawings</td><td class="code">k/drawings</td><td>a pen stroke</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-style"/></svg></td><td class="code">style</td><td>Style</td><td>Styles</td><td class="code">k/styles</td><td>a palette</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-graph"/></svg></td><td class="code">graph</td><td>Graph</td><td>Graphs</td><td class="code">k/graphs</td><td>linked nodes</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-memory"/></svg></td><td class="code">memory</td><td>Memory</td><td>Memories</td><td class="code">k/memories</td><td>a bookmark</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-skill"/></svg></td><td class="code">skill</td><td>Skill</td><td>Skills</td><td class="code">k/skills</td><td>a mortarboard</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-spell"/></svg></td><td class="code">spell</td><td>Spell</td><td>Spells</td><td class="code">k/spells</td><td>a wand and spark</td></tr>
+    <tr class="grp"><td colspan="6">Code · 3</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-pr"/></svg></td><td class="code">pull_request</td><td>Pull request</td><td>Pull requests</td><td class="code">k/pulls</td><td>a branch merging back</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-commit"/></svg></td><td class="code">commit</td><td>Commit</td><td>Commits</td><td class="code">k/commits</td><td>a node on a line</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-worktree"/></svg></td><td class="code">worktree</td><td>Worktree</td><td>Worktrees</td><td class="code">k/worktrees</td><td>a second branch</td></tr>
+    <tr class="grp"><td colspan="6">Runtime · 8</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-tool"/></svg></td><td class="code">tool</td><td>Tool</td><td>Tools</td><td class="code">k/tools</td><td>a wrench</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-mcp"/></svg></td><td class="code">mcp_server</td><td>Connector</td><td>Connectors</td><td class="code">k/connectors</td><td>a plug</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-session"/></svg></td><td class="code">work_session</td><td>Session</td><td>Sessions</td><td class="code">k/sessions</td><td>a terminal window</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-credential"/></svg></td><td class="code">credential</td><td>Credential</td><td>Credentials</td><td class="code">k/credentials</td><td>a key</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-container"/></svg></td><td class="code">container</td><td>Container</td><td>Containers</td><td class="code">k/containers</td><td>a box</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-artifact"/></svg></td><td class="code">artifact</td><td>Artifact</td><td>Artifacts</td><td class="code">k/artifacts</td><td>a sealed package</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-space-link"/></svg></td><td class="code">space_link</td><td>Space link</td><td>Space links</td><td class="code">k/space-links</td><td>a chain link</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-server"/></svg></td><td class="code">server</td><td>Server</td><td>Servers</td><td class="code">k/servers</td><td>a server</td></tr>
+    <tr class="grp"><td colspan="6">People · 3</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-member"/></svg></td><td class="code">member</td><td>Member</td><td>Members</td><td class="code">k/members</td><td>a person</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-team-member"/></svg></td><td class="code">team_member</td><td>Teammate</td><td>Teammates</td><td class="code">k/teammates</td><td>a bot</td></tr>
+    <tr><td class="glyph"><svg class="ic"><use href="#i-profile"/></svg></td><td class="code">interaction_profile</td><td>Interaction profile</td><td>Interaction profiles</td><td class="code">k/interaction-profiles</td><td>sliders</td></tr>  </tbody>
+</table>
+<p>A custom kind (<code>c:*</code>) renders the registry fallback mark (a diamond) with its own derived label; <code>i-space</code> is not a kind — it marks the space button and space chips.</p>
+
+<h3>Iconography</h3>
+<div class="grid-3">
+  <div class="tile"><h5>Grid &amp; stroke</h5><p>24pt square, ~2pt optical padding, 1.75 stroke (kit <code>.ic</code>), round caps and joins, <code>currentColor</code>. Sizes: 16 inline in chips, 18 row trail, 20 in text and menus, 24 in bars, 26 iOS tab, 40 empty states.</p></div>
+  <div class="tile"><h5>When filled</h5><p>Never for meaning. Two places only: the <b>active tab</b> on both OSes (HIG tab bars and M3's active destination are filled; proposed, kit gap), and dot glyphs (more, grip, palette). A filled kind mark would read as "selected" beside stroked ones — kind-art.ts says the same.</p></div>
+  <div class="tile"><h5>One set, both OSes</h5><p>The same glyph set ships on iOS and Android, so a kind looks the same on the phone and the web. Platform idioms win only for chrome: share (iOS box-arrow / Android nodes), back (chevron / arrow), overflow (⋯ / ⋮).</p></div>
+</div>
+<div class="why">Every icon-only control has an accessibility label that is a verb and its object ("Search Atelier", "New chat", "Share task") — never the glyph's name and never "button". A glyph never carries status alone: the word is always beside it.</div>
+
+<h3>Motion</h3>
+<p>Fast, mechanical, no bounce (design language §4) — for <em>our</em> motion. Platform transitions (iOS push spring, Android predictive back) are system-owned and not restyled. Durations and easings are the tokens.</p>
+<div class="curves">
+  <figure><svg viewBox="-8 -8 116 116"><path d="M0 100 L100 0" stroke="var(--line-2)" stroke-dasharray="3 3" fill="none"/><path d="M0 100 C16 0 30 0 100 0" stroke="var(--brand)" stroke-width="2.5" fill="none"/></svg><figcaption><b>--ease-out</b> (.16,1,.3,1) · enter, present</figcaption></figure>
+  <figure><svg viewBox="-8 -8 116 116"><path d="M0 100 L100 0" stroke="var(--line-2)" stroke-dasharray="3 3" fill="none"/><path d="M0 100 C40 100 20 0 100 0" stroke="var(--ink)" stroke-width="2.5" fill="none"/></svg><figcaption><b>--ease-std</b> (.4,0,.2,1) · move, dismiss</figcaption></figure>
+</div>
+<table class="spec">
+  <thead><tr><th style="width:18%">Motion</th><th style="width:18%">Duration · easing</th><th>Behaviour</th><th style="width:26%">Reduce Motion / Remove animations</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Push / pop</td><td>system</td><td>Native stack; edge swipe (iOS) and predictive back (Android) track the finger.</td><td>iOS cross-fades by itself; Android uses <code>fade</code>.</td></tr>
+    <tr><td class="code">Sheet present</td><td>slow 280 · ease-out</td><td>Rises to its detent; scrim fades in on the same curve.</td><td>Appears in place, 120 fade.</td></tr>
+    <tr><td class="code">Sheet dismiss</td><td>base 180 · ease-std</td><td>Follows the finger; release past 30% of its height or a 0.5pt/ms flick closes (web <code>layerMotion.ts</code> constants kept), else springs back without overshoot.</td><td>Still follows the finger; closes without travel.</td></tr>
+    <tr><td class="code">Fade · replace</td><td>fast 120 / base 180</td><td>Skeleton → content, tab content swaps, toast out.</td><td>Unchanged (fades are allowed).</td></tr>
+    <tr><td class="code">List insert / remove</td><td>base 180 · ease-out</td><td>New row grows from 0 and fades in; removed row fades then collapses. A read Inbox row fades and stays.</td><td>Instant; no height animation.</td></tr>
+    <tr><td class="code">Tree expand</td><td>base 180 · ease-out</td><td>Chevron rotates 90°; children slide down from their parent.</td><td>Instant.</td></tr>
+    <tr><td class="code">Live pulse</td><td>1.4s · ease-in-out ∞</td><td>Only on live/streaming dots, one per row.</td><td>Static dot; the word "live" carries it.</td></tr>
+    <tr><td class="code">Skeleton shimmer</td><td>1.4s · linear ∞</td><td>At most 300ms before the loading sentence replaces it.</td><td>Static blocks.</td></tr>
+    <tr><td class="code">Toast / snackbar</td><td>in slow 280 · out fast 120</td><td>Slides 16pt from the bottom; 4s, 6s with an action.</td><td>Fades.</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures &amp; haptics — the whole app</h3>
+<p>Haptics mark <b>state changes and thresholds</b>, never navigation or content arriving. All go through the platform's feedback API, so the user's system haptics setting silences them; Settings › Appearance adds an in-app switch (lane 02). Android constants marked ³⁴ need API 34 and fall back as noted.</p>
+<table class="spec">
+  <thead><tr><th style="width:16%">Gesture</th><th style="width:24%">Where · result</th><th style="width:17%">iOS haptic</th><th style="width:19%">Android haptic</th><th>Accessible alternative</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Tap</td><td>Row, chip, link → push the entity</td><td>none</td><td>none</td><td>Default activate.</td></tr>
+    <tr><td class="code">Tap toggle</td><td>Switch, check, criterion tick</td><td><code>selection</code></td><td><code>TOGGLE_ON/OFF</code>³⁴ · <code>CLOCK_TICK</code></td><td>Value announced ("on", "done").</td></tr>
+    <tr><td class="code">Tap chevron</td><td>Tree row → expand / collapse in place</td><td><code>selection</code></td><td><code>CLOCK_TICK</code></td><td>Row action "Expand"/"Collapse"; state "expanded".</td></tr>
+    <tr><td class="code">Long-press chevron</td><td>Expand / collapse everything under it</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td><td>Row action "Expand all".</td></tr>
+    <tr><td class="code">Long-press row</td><td>Preview + context menu (tap still pushes)</td><td>system (context menu)</td><td><code>LONG_PRESS</code></td><td>The same items as custom actions.</td></tr>
+    <tr><td class="code">Swipe row</td><td>Reveal actions (per row, also in trees); full swipe commits the first</td><td><code>impactLight</code> at the threshold</td><td><code>GESTURE_THRESHOLD_ACTIVATE</code>³⁴ · <code>CONTEXT_CLICK</code></td><td>Custom actions (VoiceOver rotor / TalkBack actions menu).</td></tr>
+    <tr><td class="code">Edge swipe / back</td><td>Pop one screen; a sheet is dismissed first</td><td>none (system)</td><td>none (predictive back)</td><td>‹ button; Android Back. No horizontal drag starts within 24pt of an edge.</td></tr>
+    <tr><td class="code">Pull to refresh</td><td>Every list → refetch from the node</td><td><code>impactLight</code> at trigger</td><td>none (spinner is the feedback)</td><td>"Refresh" custom action; lists also refresh on focus.</td></tr>
+    <tr><td class="code">Drag reorder</td><td>Pinned kinds, board cards between columns</td><td>lift <code>impactMedium</code> · slot <code>selection</code> · drop <code>impactLight</code></td><td>lift <code>DRAG_START</code>³⁴ · slot <code>SEGMENT_TICK</code>³⁴ · drop <code>GESTURE_END</code></td><td>"Move up / Move down / Move to column…" actions.</td></tr>
+    <tr><td class="code">Pinch zoom</td><td>Drawing, graph, image, terminal font</td><td><code>selection</code> on snap to fit/100%</td><td><code>SEGMENT_TICK</code>³⁴ · <code>CLOCK_TICK</code></td><td>Zoom buttons in the overflow menu.</td></tr>
+    <tr><td class="code">Re-tap active tab</td><td>Pop to root, then scroll to top</td><td>none</td><td>none</td><td>Same on activate.</td></tr>
+    <tr><td class="code">Long-press active tab</td><td>Show this tab's stack (≤ 12)</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td><td>"Show history" action on the tab.</td></tr>
+    <tr><td class="code">Shake</td><td>Report a problem (screenshot + route + build)</td><td><code>impactMedium</code></td><td><code>CONTEXT_CLICK</code></td><td>Settings › Help › Report. Never while a field is focused (iOS Shake to Undo); opt-in in store builds.</td></tr>
+    <tr><td class="code">State outcomes</td><td>Task done · write refused by the node</td><td><code>notificationSuccess</code> · <code>notificationError</code></td><td><code>CONFIRM</code> · <code>REJECT</code></td><td>The outcome is announced in words.</td></tr>
+    <tr><td class="code">Terminal keys bar</td><td>esc, tab, ctrl, arrows</td><td><code>impactSoft</code></td><td><code>KEYBOARD_TAP</code></td><td>Hardware keyboard works directly.</td></tr>
+  </tbody>
+</table>
+
+<h3>Accessibility</h3>
+<table class="spec">
+  <thead><tr><th style="width:22%">Rule</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Icon buttons are labelled</td><td><code>accessibilityLabel</code> = verb + object; <code>accessibilityHint</code> only when the result is not obvious; role says "button".</td></tr>
+    <tr><td class="code">A row is one element</td><td>VoiceOver/TalkBack read: title → status word → who → meta → time → "unread". E.g. "Release notes for #955. Waiting. Reviewer asked a question. 11:02. Unread." Swipe and menu items are custom actions; the time reads absolute ("today at 11:02") as the web <code>Timestamp</code> does.</td></tr>
+    <tr><td class="code">Tree rows</td><td><code>accessibilityState.expanded</code>, level in the label ("level 2 of 3"), count summary read for collapsed parents ("3 subtasks, 1 working").</td></tr>
+    <tr><td class="code">Focus on sheet open</td><td>Focus lands on the sheet title; the screen behind is hidden from assistive tech (<code>accessibilityViewIsModal</code> / <code>importantForAccessibility</code>); on dismiss focus returns to the opener. Popping a screen returns focus to the row that pushed it (CONTRACT §5).</td></tr>
+    <tr><td class="code">Status is a word</td><td>A pill's label is its word ("in review"), never its colour. Live changes announce once, politely, at the end of a turn — never token by token.</td></tr>
+    <tr><td class="code">Colour never alone</td><td>Pill = dot + word; unread = dot + weight + "unread"; error = icon + text; agent vs human = shape + "agent" in the label.</td></tr>
+    <tr><td class="code">Targets</td><td>44×44pt / 48×48dp measured on the element's own frame (CONTRACT §6), ≥ 8 between targets.</td></tr>
+    <tr><td class="code">Disabled with reason</td><td>Stays focusable, <code>accessibilityState.disabled</code>, the reason is the hint and is on screen.</td></tr>
+    <tr><td class="code">Headings</td><td>Section headers have <code>accessibilityRole="header"</code> so the rotor and TalkBack heading navigation work.</td></tr>
+    <tr><td class="code">System settings</td><td>Dynamic Type / font scale (table above), Reduce Motion, Reduce Transparency (no blur behind sheets), Bold Text (one weight step up), Increase Contrast (style fallback, below).</td></tr>
+  </tbody>
+</table>
+
+<h3>Theming — system, light, dark, and the space style</h3>
+<div class="diagram">
+  <div class="label">How a phone resolves its paint</div>
+  <div class="lane-row">
+    <div class="box"><b>OS appearance</b><small>light / dark, follows the system clock</small></div><span class="arr">→</span>
+    <div class="box"><b>App setting</b><small>System · Light · Dark (lane 02)</small></div><span class="arr">→</span>
+    <div class="box brand"><b>Space style</b><small>a <code>style</code> entity: foundation + vars (+ css). Default: the built-in neutral pair</small></div><span class="arr">→</span>
+    <div class="box"><b>Mobile token table</b><small><code>--pn-paper</code> → paper … term; contrast-linted</small></div><span class="arr">→</span>
+    <div class="box dark"><b>Native StyleSheet</b><small>re-rendered on change; no reload</small></div>
+  </div>
+</div>
+<ul>
+  <li><b>Vars only.</b> A style is <code>foundation + vars + css</code> (<code>packages/contract/src/style.ts</code>). The phone paints the vars that map onto its tokens (surfaces, ink, brand, status, terminal) and ignores <code>css</code> — sanitised web CSS cannot style native views — and size/radius keys, which are platform metrics here.</li>
+  <li><b>No fonts.</b> The system face always. A style whose display face is a serif (Atelier's Newsreader) gets the <em>platform</em> serif — New York (<code>ui-serif</code>) on iOS, Noto Serif on Android — on large titles and entity titles only.</li>
+  <li><b>Always-dark stays dark.</b> The terminal is painted from the style's dark sibling in both themes.</li>
+  <li><b>Contrast floor.</b> The phone runs the server's lint (ink/paper ≥ 4.5, ink-3/paper ≥ 3) plus its own (ink-3 ≥ 4.5 because subtitles are 13–15pt). A failing key paints as published, Appearance shows the warning, and with iOS Increase Contrast / Android high-contrast text on, the failing key falls back to the foundation's value. Atelier light's ink-3 on paper is 3.12 — it trips this.</li>
+</ul>
+<p>The same specimen phone — the kit index from the anatomy — painted with the Atelier style through a scoped token override, light on iOS and dark on Android:</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone atelier" data-os="ios" data-theme="light">
+    <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+    <div class="ph-screen">
+      <header class="topbar large">
+        <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>About</span></span></div>
+        <div class="title hidden">Design kit</div>
+        <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-moon"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        <div class="big">Design kit</div>
+      </header>
+      <main class="content fade-bottom">
+        <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search specimens</div>
+        <div class="section-h">Atoms</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-style"/></svg></span><span class="main"><span class="t">Colour</span></span><span class="trail">Atelier<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-edit"/></svg></span><span class="main"><span class="t">Type</span></span><span class="trail">Large<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-browse"/></svg></span><span class="main"><span class="t">Glyphs</span></span><span class="trail">33 kinds<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+        <div class="section-h">Components</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+      </main>
+    </div>
+    <div class="ph-home"></div>
+  </figure>
+    <div class="cap"><b>Atelier · light · iOS</b>Paper #F4F2EC, ink #23201B, brass #B26A2B; the large title takes the platform serif. Note the paler secondary ink (3.12:1) the contrast floor flags. <span class="route">/dev/kit?style=atelier</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone atelier" data-os="android" data-theme="dark" data-size="360">
+    <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+    <div class="ph-screen">
+      <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Design kit</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-sun"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+      <main class="content fade-bottom">
+        <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search specimens</div>
+        <div class="section-h">Atoms</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-style"/></svg></span><span class="main"><span class="t">Colour</span></span><span class="trail">Atelier<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-edit"/></svg></span><span class="main"><span class="t">Type</span></span><span class="trail">Large<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-browse"/></svg></span><span class="main"><span class="t">Glyphs</span></span><span class="trail">33 kinds<svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+        <div class="section-h">Components</div>
+        <div class="list lines">
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+        </div>
+      </main>
+    </div>
+    <div class="ph-home"></div>
+  </figure>
+    <div class="cap"><b>Atelier · dark · Android</b>Warm graphite #1D1912, ink #EFE9DB, brass #E0A45A; status ramp unchanged. No large title on Android, so no serif. <span class="route">/dev/kit?style=atelier&amp;theme=dark</span></div>
+  </div>
+</div>
+<div class="why">Kept: the overview's style ruling — the app ships in tm8's neutral default (owner ruling 2026-10-14) and Atelier stays available as a space <code>style</code>. Added: the phone paints a published style natively instead of shipping its own theme engine, so a style pushed with <code>tm8 style push</code> reaches the web and the phone at once. Note the design-language doc lists Atelier dark paper as #15130E; the shipped tokens.css says #1D1912 — the phone follows tokens.css.</div>
+
+<h3>iOS vs Android — in one place</h3>
+<table class="spec">
+  <thead><tr><th style="width:18%">Concern</th><th style="width:38%">iOS</th><th>Android</th></tr></thead>
+  <tbody>
+    <tr><td class="code">Type</td><td>SF Pro, Dynamic Type to AX5, bars fixed + Large Content Viewer</td><td>Roboto, font scale to 2.0 (non-linear on 14+), bar title and labels scale</td></tr>
+    <tr><td class="code">Top bar</td><td>44pt, centred title, large title on tab roots, ‹ + previous screen's name</td><td>56dp, left 22sp title, ← (Up), no large title</td></tr>
+    <tr><td class="code">Tabs</td><td>49pt tab bar, tinted active glyph; glass on iOS 26 with native tabs</td><td>80dp navigation bar, active pill</td></tr>
+    <tr><td class="code">Primary create</td><td>Brand icon in the bar trail</td><td>FAB / extended FAB on Chats and Work</td></tr>
+    <tr><td class="code">Back</td><td>Left-edge swipe, ‹ button</td><td>Predictive back gesture or button; dismisses sheet → dialog → menu first</td></tr>
+    <tr><td class="code">Sheets</td><td>Card, r20, grabber, medium/large detents</td><td>Surface, r28, drag handle, Back dismisses</td></tr>
+    <tr><td class="code">Dialogs</td><td>270pt alert, centred, bold default</td><td>312dp, left-aligned, text buttons right</td></tr>
+    <tr><td class="code">Menus</td><td>Context menu with lifted preview on long-press; ⋯ menu</td><td>Dropdown from ⋮; long-press → preview sheet</td></tr>
+    <tr><td class="code">Transient message</td><td>Toast (app-drawn)</td><td>Snackbar</td></tr>
+    <tr><td class="code">Controls</td><td>UISegmentedControl, UISwitch, rounded fields</td><td>Tabs, M3 switch, filled fields with an indicator line, 40dp pill buttons</td></tr>
+    <tr><td class="code">Share</td><td>Share sheet (<code>i-share</code>)</td><td>Sharesheet (<code>i-share-android</code>)</td></tr>
+    <tr><td class="code">Haptics</td><td>UIFeedbackGenerator: selection / impact / notification</td><td>performHapticFeedback constants (API 34 set with fallbacks)</td></tr>
+    <tr><td class="code">Insets &amp; keyboard</td><td>Island/notch top, 34 home; keyboard overlays → measured inset</td><td>Edge-to-edge (15+); keyboard resizes; OEM toolbars unverified</td></tr>
+    <tr><td class="code">Push</td><td>APNs banner, grouped by thread</td><td>FCM, one notification channel per Inbox group</td></tr>
+  </tbody>
+</table>
+
+<h3>Component spec</h3>
+<table class="spec">
+  <thead><tr><th style="width:17%">Component</th><th style="width:17%">Size pt / dp</th><th>Behaviour</th><th style="width:24%">Platform</th></tr></thead>
+  <tbody>
+    <tr><td class="code">TopBar</td><td>44 / 56 (+52 large)</td><td>Variants plain · hairline · large · subtitle. Title truncates; back word collapses to "Back".</td><td>Native-stack header on both.</td></tr>
+    <tr><td class="code">TabBar</td><td>49+34 / 80</td><td>Four tabs, badges = node counts only; re-tap pops to root; long-press shows the stack.</td><td>Glass on iOS 26.</td></tr>
+    <tr><td class="code">Row</td><td>min 44 / 48; tall 68</td><td>One target, one a11y element; lead · title · meta · trail; unread, selected, swipe actions (2 × 60, 3 × 60 = 180).</td><td>Highlight / ripple.</td></tr>
+    <tr><td class="code">TreeRow</td><td>row + 20 per depth</td><td>Chevron cell 20 (target 44 with indent); guide hairline; expanded to depth 2; collapsed parent shows count summary; expansion saved per list.</td><td>Same.</td></tr>
+    <tr><td class="code">Pill</td><td>22 high, 12pt 600</td><td>Dot + word; every node status word mapped to one tone; <code>nodot</code> for priority and marks.</td><td>Same.</td></tr>
+    <tr><td class="code">Chip</td><td>26 / 32 (lg)</td><td>Kind glyph + name (+ tint); tap pushes; long-press previews; hitSlop to 44 inside prose.</td><td>Same.</td></tr>
+    <tr><td class="code">Badge · Count</td><td>18 · 15pt</td><td>Badge only for node-returned counts; "—" when absent.</td><td>Same.</td></tr>
+    <tr><td class="code">Avatar · Stack</td><td>20 · 28 · 36 · 48 · 72</td><td>Round human / 25%-corner agent; FNV-1a tint by actor id; live dot; stacks always name their members.</td><td>Same.</td></tr>
+    <tr><td class="code">Button</td><td>44 r12 / 40 pill</td><td>primary · brand · secondary · outline · ghost · danger; sm 32, xs 26 (inline only). Disabled carries its reason.</td><td>M3 filled/tonal/outlined/text.</td></tr>
+    <tr><td class="code">Input · Field</td><td>44 / 48; area ≥ 96</td><td>Label above, help or node error below; focus ring brand; never zooms (≥ 16pt).</td><td>Rounded / filled + indicator.</td></tr>
+    <tr><td class="code">Search</td><td>36 / 48 (M3 56)</td><td>Active state adds Cancel (iOS) or ← (Android).</td><td>UISearchController / M3 search.</td></tr>
+    <tr><td class="code">Segmented · Filters</td><td>32 · 32</td><td>Segments switch views (route state); filters are multi-select chips in a scroller.</td><td>Tabs on Android.</td></tr>
+    <tr><td class="code">Switch · Check</td><td>51×31 / 52×32 · 22</td><td>Platform switch; check round (criteria), square (multi-select).</td><td>Native controls.</td></tr>
+    <tr><td class="code">Progress · Ring</td><td>6 · 28</td><td>Only for fractions the node returns; no bar when unknown.</td><td>Same.</td></tr>
+    <tr><td class="code">Sheet</td><td>52% / 92%</td><td>Temporary surface over a mounted screen; drag/flick dismiss; focus trapped; never shared.</td><td>r20 card / r28 surface.</td></tr>
+    <tr><td class="code">Dialog · Menu</td><td>270 / 312 · ≥ 220</td><td>Dialog only for registry <code>confirm:</code> text; menu items ≥ 44, destructive last.</td><td>Alert / M3 dialog.</td></tr>
+    <tr><td class="code">Toast · Banner · Notice</td><td>≥ 48 · ≥ 34 · system</td><td>Toast after an action (Undo); banner = a state of the screen (offline, refused); notice = push.</td><td>Snackbar on Android.</td></tr>
+    <tr><td class="code">Empty · Skeleton · Refusal</td><td>—</td><td>Empty names a verb; skeleton ≤ 300ms then words; refusal quotes the node.</td><td>Same.</td></tr>
+    <tr><td class="code">Composer</td><td>≥ 57 docked</td><td>Single → multi (6 lines), picks, tray; rides the keyboard inset; draft kept per stack entry.</td><td>Same.</td></tr>
+    <tr><td class="code">Terminal · KeysBar · LiveBar</td><td>12/17 mono · 46 · 30</td><td>Near-black always; keys bar above the keyboard; live bar on anything running.</td><td>Same.</td></tr>
+    <tr><td class="code">EntityHeader · Linked</td><td>—</td><td>Eyebrow (kind · version · short id), title, meta, verbs; parent chain; Children tree; Messages then Linked.</td><td>Same.</td></tr>
+    <tr><td class="code">Board · FAB</td><td>280 col · 56</td><td>Swipeable columns with page dots; card shows subtasks as a count; FAB per the create rule.</td><td>Round iOS (canvas) / r16.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout ruling"><b>Decisions other lanes need</b>(1) Priority pills take the registry tone (low/medium grey, high/urgent red) with no dot; brand is for marks ("default"), not status. (2) Create is the bar's brand icon on iOS and the FAB on Android; iOS FAB only on canvases. (3) Tree rows: chevron cell 20, guide at the parent chevron's centre, collapsed parents carry the count summary, tap chevron toggles, long-press expands all. (4) Haptics only on state changes and thresholds, from the table above. (5) A disabled control always shows its reason on screen. (6) The phone paints a space style's vars, never its css or fonts. (7) <code>/dev/kit/*</code> routes are internal-build only and double as screenshot fixtures.</div>
+
+<div class="callout warn"><b>Kit gaps (drawn inline here, or listed for promotion)</b>Proposed <code>-ink</code> status tones and the solid-fill rule; dark toast action colour (1.70:1); white labels on swipe actions/badges/check in dark; filled active tab glyphs; four avatar tints vs the web's six; no Android notification style; no M3 medium/large top app bar; Android search 48 vs M3 56; Android keyboard keys overflow at 360 (fixed in this section's CSS); <code>doc.css</code> <code>p</code> rules leak into phones (restored here, lane 03 finding); tree guide line; context-menu lift; disabled reason line; text buttons in bars. From lane 03, also missing: like/dislike glyphs, radio, day separator, code block header + copy, receipt grid row, usage footnote, form card, reactions, jump pill, waveform, 3-action swipe width, effort slider.</div>
+
+<div class="callout open"><b>Open questions for the owner</b>1. Adopt the seven proposed status-word tones (light pills get visibly deeper) — and apply them on the web too? 2. Android top bar: 56dp (what native-stack renders) or M3's 64dp? 3. iOS 26: use native tabs (system glass) or keep a flat tab bar that matches these drawings on every iOS version? 4. A published style that fails the phone's contrast floor: paint as published with a warning (proposed), or always substitute? 5. Add two avatar tints to match the web's six FNV tones? 6. Shake-to-report: opt-in in store builds (proposed) or internal only? 7. Atelier on the phone: platform serif for large and entity titles (proposed), or sans everywhere?</div>
+</section>
