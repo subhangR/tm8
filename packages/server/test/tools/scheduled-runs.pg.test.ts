@@ -322,7 +322,8 @@ describe('runScheduled on the production server with real PTYs', () => {
   it('a nonzero exit is the run\'s outcome, not a firing failure', async () => {
     const failing = await createTool('nightly-exit', 'none', 'exit 7');
     const run = await settled((await fire(failing)).sessionId);
-    expect(run).toMatchObject({ status: 'failed', tool_state: 'exited', tool_exit_code: 7, outcome: 'completed' });
+    // The PTY status is the process ending ('exited', the launcher's closePty); the work outcome carries the code.
+    expect(run).toMatchObject({ status: 'exited', tool_state: 'exited', tool_exit_code: 7, outcome: 'completed' });
   });
 
   it('(2) a launch failure leaves a killed run with its marked edge and its token revoked', async () => {
