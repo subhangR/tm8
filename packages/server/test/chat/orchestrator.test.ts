@@ -348,6 +348,29 @@ describe('TM8 Chat durable orchestration', () => {
     expect(db.claimIdentities).toEqual([IDENTITY]);
   });
 
+  // The facade fires wakeForMessages after the message commit without awaiting
+  // it; a rejection there would be unhandled and stop the node.
+  it('reports a failed chat lookup through onError instead of rejecting', async () => {
+    const db = new FakeDb(null, [], [CHAT]);
+    const failure = new Error('connection terminated');
+    db.query = (async () => { throw failure; }) as typeof db.query;
+    const errors: unknown[] = [];
+    const orchestrator = new ChatOrchestrator({
+      db,
+      runtime: new FakeRuntime([]),
+      publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveLaunchConfig: async () => ({
+        systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [], allowedTools: [],
+      }),
+      onError: (error) => errors.push(error),
+    });
+    await expect(orchestrator.wakeForMessages('other-human', [{
+      state: { anchorId: CHAT },
+    } as never])).resolves.toBeUndefined();
+    expect(errors).toEqual([failure]);
+    expect(db.claimCalls).toBe(0);
+  });
+
   // The thread is collaborative: the sender is named on the turn, and the
   // stream goes to everyone subscribed to the Space — the configuring human
   // has no privileged view. A subscription is itself authorized

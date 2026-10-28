@@ -11,11 +11,9 @@
  * time. The conformance suite's shape stays meaningful throughout — each
  * handler that lands turns exactly one red assertion green.
  *
- * TODAY THE REGISTRY IS DELIBERATELY EMPTY. That is not an oversight: it is
- * the acceptance criterion. An empty registry reproduces the conformance
- * stub's profile exactly (taxonomy/envelope/501-honesty assertions pass, v1
- * semantics red), which is how we prove the frame replaces the stub honestly
- * rather than papering over it.
+ * What is mounted is decided by `registerFacadeHandlers` (./index.ts); an
+ * empty registry still reproduces the conformance stub's profile exactly
+ * (taxonomy/envelope/501-honesty assertions pass, v1 semantics red).
  */
 import { RESERVED_OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
 import type { OperationHandler } from '../http/types.js';

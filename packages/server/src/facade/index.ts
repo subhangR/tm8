@@ -288,7 +288,7 @@ export function registerFacadeHandlers(
   // delivery drain (214) plugs into its post-commit hooks when main.ts built one.
   registerW2FormHandlers(registry, facade, deps.formDelivery ?? {});
   registerW2InboxReadMarksHandlers(registry, facade);
-  registerW2SavedViewsActionsHandlers(registry, deps);
+  registerW2SavedViewsActionsHandlers(registry, facade);
 
   /**
    * G04 is the second seam to REPLACE rather than only add. It owns
