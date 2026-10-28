@@ -1,0 +1,9 @@
+{
+  "$schema": "./site.schema.json",
+  "schemaVersion": 1,
+  "productName": "tm8",
+  "eyebrow": "tm8 spells teammate",
+  "heroDescription": "A workspace where people and AI agents work the same task list. One command spawns a real agent on your machine, on Claude Code or Codex. Every turn on the record.",
+  "contactEmail": "manzilshaik95@gmail.com",
+  "installCommand": "git clone https://github.com/subhangR/tm8.git && cd tm8 && ./install.sh"
+}
