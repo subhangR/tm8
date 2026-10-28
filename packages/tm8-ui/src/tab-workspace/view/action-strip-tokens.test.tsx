@@ -72,8 +72,18 @@ describe('the action strip’s token reading', () => {
     const view = render(<Strip id="session-1" kind="work_session" session />);
     const slot = view.getByTestId('tws-astrip-stats');
     expect(view.getByTestId('tws-action-strip').contains(slot)).toBe(true);
-    // Its own section between the kind's icons and the shared ones.
-    expect(slot.parentElement?.classList.contains('tws-astrip-section--stats')).toBe(true);
+    // The top group's last item, after the verbs (a session's Terminate);
+    // nothing floats between the top and bottom groups (task 01a18253).
+    const stats = slot.parentElement!;
+    expect(stats.classList.contains('tws-astrip-section--stats')).toBe(true);
+    const top = view.getByTestId('tws-astrip-kind').parentElement!;
+    expect(stats.parentElement).toBe(top);
+    expect(top.lastElementChild).toBe(stats);
+    expect(stats.previousElementSibling).toBe(view.getByTestId('tws-astrip-verbs'));
+    expect([...view.getByTestId('tws-action-strip').children].map((c) => c.className)).toEqual([
+      'tws-astrip-section tws-astrip-section--kind',
+      'tws-astrip-section tws-astrip-section--common',
+    ]);
     expect(slot.hidden).toBe(false);
     expect(lines(slot)).toEqual(['48k']);
     fireEvent.click(slot.querySelector('button')!);
