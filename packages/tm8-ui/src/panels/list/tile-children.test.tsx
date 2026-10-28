@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
 import { tileChildCount, type ActionContext, type QueryFilter } from '../../domain';
 import { FIXTURE_SPACE_ID, docLayoutSpec, sessionLive, taskGuideLines } from '../../fixtures';
 import { EntityListPanel } from '../index';
+import { useListPrefs } from './list-prefs';
 
 /**
  * TILE CHILDREN (task 01a14b92). The list a status tab shows is one page of
@@ -189,17 +190,18 @@ describe('the pinned rail with "Show sub-items" off', () => {
   /* Task 01a18331: a launched session has no `parentId`, only `launchedBy`, so
      a roots-only filter reading `parentId` kept every launched session and the
      rail's session list came out flat — workers above and below their lead. */
-  const session = (id: string, title: string, launchedBy: string | null) =>
+  const session = (id: string, title: string, launchedBy: string | null, sessions = 0) =>
     ({
       ...sessionLive,
       id,
       title,
       parentId: null,
+      counters: { ...sessionLive.counters, sessions },
       state: { ...sessionLive.state, status: 'idle', outcome: 'open', ...(launchedBy ? { launchedBy } : {}) },
     }) as EntitySummary;
   const all = [
     session('ses-kid-a', 'Lane 02', 'ses-lead'),
-    session('ses-lead', 'Lead', null),
+    session('ses-lead', 'Lead', null, 2),
     session('ses-kid-b', 'Lane 03', 'ses-lead'),
   ];
   const rowsFor = (filter: QueryFilter): readonly EntitySummary[] => {
@@ -210,16 +212,39 @@ describe('the pinned rail with "Show sub-items" off', () => {
     });
   };
 
+  const drawnRoots = (container: HTMLElement) =>
+    [...container.querySelectorAll<HTMLElement>('[data-session-node]')]
+      .filter((el) => !el.closest('[data-testid="list-tile-children"]'))
+      .map((el) => el.getAttribute('data-session-node'));
+
   it('draws the launcher alone, not every launched session as a root', () => {
-    window.localStorage.setItem('tm8.list.prefs.v1.work_session', JSON.stringify({ groupBy: 'none', subItems: false }));
+    const prefs = renderHook(() => useListPrefs('work_session'));
+    act(() => prefs.result.current.setSubItems(false));
     try {
       const { container } = render(
         <EntityListPanel kind="work_session" rowsFor={rowsFor} rowsForKind={() => rowsFor} ctx={ctx} toolbarInline />,
       );
-      const drawn = [...container.querySelectorAll<HTMLElement>('[data-session-node]')].map((el) =>
-        el.getAttribute('data-session-node'),
+      expect(drawnRoots(container)).toEqual(['ses-lead']);
+    } finally {
+      act(() => prefs.result.current.reset());
+      window.localStorage.removeItem('tm8.list.prefs.v1.work_session');
+    }
+  });
+
+  it('a stored "off" is ignored: sub-items are on by default, always', () => {
+    window.localStorage.setItem('tm8.list.prefs.v1.work_session', JSON.stringify({ groupBy: 'none', subItems: false }));
+    try {
+      const { container, getByRole } = render(
+        <EntityListPanel kind="work_session" rowsFor={rowsFor} rowsForKind={() => rowsFor} ctx={ctx} toolbarInline />,
       );
-      expect(drawn).toEqual(['ses-lead']);
+      // An earlier test leaves another tab chosen; the lanes are Running rows.
+      fireEvent.click(getByRole('tab', { name: /^Running/ }));
+      // The tree is drawn: the lead is the one root, its lanes nest under it.
+      expect(drawnRoots(container)).toEqual(['ses-lead']);
+      fireEvent.click(container.querySelector<HTMLElement>('[data-session-node="ses-lead"] .pn-st__arrow')!);
+      const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
+      expect(children.querySelector('[data-session-node="ses-kid-a"]')).not.toBeNull();
+      expect(children.querySelector('[data-session-node="ses-kid-b"]')).not.toBeNull();
     } finally {
       window.localStorage.removeItem('tm8.list.prefs.v1.work_session');
     }
