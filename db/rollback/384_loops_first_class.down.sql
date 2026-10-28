@@ -1,10 +1,10 @@
 -- =============================================================================
--- ROLLBACK for 378_loops_first_class.sql — NOT a migration (db/migrate.mjs
+-- ROLLBACK for 384_loops_first_class.sql — NOT a migration (db/migrate.mjs
 -- never reads this directory). Run by hand, as the migration owner, only to
--- undo 378:
+-- undo 384:
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/378_loops_first_class.down.sql
---   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '378_loops_first_class.sql'"
+--   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/384_loops_first_class.down.sql
+--   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '384_loops_first_class.sql'"
 --
 -- DESTROYS DATA: every loop_runs row, and every loop's action, tool, timezone,
 -- pause and policy columns. A tool loop (no 091 meaning) is left as a dispatch

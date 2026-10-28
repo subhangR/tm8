@@ -35,7 +35,7 @@ async function currentSchedule(q: Querier, loopId: string): Promise<ScheduleStat
   return row;
 }
 
-/** update_loop (378) in named form; every argument this module does not name stays at its default. */
+/** update_loop (384) in named form; every argument this module does not name stays at its default. */
 interface LoopPatch {
   title?: string | null; schedule?: string | null;
   teamMemberId?: string | null; clearTeamMember?: boolean;

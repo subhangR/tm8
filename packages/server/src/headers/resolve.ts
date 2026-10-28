@@ -63,8 +63,10 @@ export interface HeaderRow {
   story_description?: string | null;
   story_bytes?: number | null;
   task_title: string | null;
+  tool_name?: string | null;
   tool_description?: string | null;
   tool_bytes?: number | null;
+  loop_title?: string | null;
   loop_description?: string | null;
   loop_bytes?: number | null;
   task_description: string | null;
@@ -171,10 +173,12 @@ const HEADER_SQL = `
          t.title as task_title,
          left(t.description, ${L}) as task_description,
          octet_length(t.description) as task_bytes,
+         tl.definition ->> 'name' as tool_name,
          left(tl.definition ->> 'description', ${L}) as tool_description,
          octet_length(tl.definition ->> 'description') as tool_bytes,
+         lp.title as loop_title,
          case when lp.entity_id is null then null else left(
-           lp.schedule || ' · ' || lp.action || case when lp.prompt = '' then '' else ' · ' || lp.prompt end, ${L}) end as loop_description,
+           lp.schedule || ' · ' || coalesce(to_jsonb(lp)->>'action', case when lp.team_member_id is null then 'dispatch' else 'spawn' end) || case when lp.prompt = '' then '' else ' · ' || lp.prompt end, ${L}) end as loop_description,
          octet_length(lp.prompt) as loop_bytes,
          col.name as collection_name,
          left(col.description, ${W}) as collection_description,
@@ -332,6 +336,9 @@ function authoredOf(row: HeaderRow): AuthoredHeader | null {
  * kind's name is its own column, uncut, and is redacted like every other field.
  */
 export function headerNameOf(row: HeaderRow): string {
+  // A tool title is its definition name (titleOf parses the whole tool view, which this row does not carry)
+  if (row.kind === 'tool') return safeText(row.tool_name ?? null) ?? 'Tool';
+  // A loop falls through: titleOf reads row.loop_title, which HEADER_SQL selects.
   const memory_statement = row.kind === 'memory' ? safeText(row.memory_statement, L) : row.memory_statement;
   // `titleOf` reads only the kind and that kind's own name column, all selected above.
   return safeText(titleOf({ ...row, memory_statement, deleted_at: null } as unknown as EntityRow))!;

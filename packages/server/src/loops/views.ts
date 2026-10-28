@@ -60,7 +60,7 @@ function viewOf(row: LoopRow, actors: Map<string, ActorSummary>, options: LoopVi
       title: row.title, schedule: row.schedule, timezone: row.timezone, action: row.action,
       teamMemberId: row.team_member_id, subjectId: row.subject_id, toolId: row.tool_id,
       toolInputs: row.tool_inputs ?? {}, prompt: row.prompt,
-      // A config stored before 378 validated it reads as empty rather than failing the view.
+      // A config stored before 384 validated it reads as empty rather than failing the view.
       config: config.success ? config.data : {},
       concurrency: row.concurrency, maxRuntimeSeconds: row.max_runtime_seconds,
       retry: { attempts: Number(row.retry_attempts), delaySeconds: Number(row.retry_delay_seconds) },
