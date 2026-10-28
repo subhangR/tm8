@@ -1,6 +1,8 @@
 import {
+  codexMcpHomeFor,
   isolateCodexMcpHome,
   scrubCodexMcpHome,
+  sessionManifestPath,
   sweepCodexMcpHomeSecrets,
 } from './mcp-home.js';
 import {
@@ -1050,7 +1052,7 @@ export class SpawnService {
   }
 
   private manifestPathFor(sessionId: string): string {
-    return join(this.dataDir, 'manifests', `${sessionId}.json`);
+    return sessionManifestPath(this.dataDir, sessionId);
   }
 
   /**
@@ -2028,7 +2030,11 @@ export class SpawnService {
       }, launch.agentTool === 'claude-code'
         ? env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), '.claude')
         : launch.agentTool === 'codex'
-          ? env.CODEX_HOME ?? join(env.HOME ?? homedir(), '.codex')
+          // The home the child RUNS with, not `env.CODEX_HOME` as it stands
+          // here: `isolateCodexMcpHome` (below) repoints CODEX_HOME at this
+          // session's own home before the PTY exists, and that is where Codex
+          // writes the rollouts resume and the transcript reader look for.
+          ? codexMcpHomeFor(manifestPath)
           : null);
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
@@ -2574,6 +2580,7 @@ export class SpawnService {
           agentTool: launch.agentTool,
           dataDir: this.dataDir,
           home: this.env.HOME ?? homedir(),
+          sessionId,
         }),
       ])];
       for (const configDir of configDirs) {
@@ -2605,7 +2612,7 @@ export class SpawnService {
     if (!nativeSessionId) {
       throw new SpawnError(
         launch.agentTool === 'codex'
-          ? `no Codex rollout under ~/.codex/sessions could be proven to belong to session ${sessionId} — refusing to resume a different or fresh conversation`
+          ? `no Codex rollout in this session's Codex home or the node's known Codex homes could be proven to belong to session ${sessionId} — refusing to resume a different or fresh conversation`
           : `work session ${sessionId} has no recorded native session id (spawned before resume support) — it cannot be resumed`,
         'conflict',
         { sessionId, agentTool: launch.agentTool },
@@ -3631,6 +3638,7 @@ export class SpawnService {
         agentTool: info.agentTool,
         dataDir: this.dataDir,
         home,
+        sessionId,
       });
       const read = await readSessionUsage({
         sessionId,
