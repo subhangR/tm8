@@ -166,12 +166,20 @@ export function FrameClaim(props: FrameProps) {
 
         {actions ? (
           // A FORM so Enter submits from any field, as every sign-up form does.
-          // `display: contents` keeps the card's own gap rhythm.
+          // The action is a type="button" (AuthAction), and a form with several
+          // fields and no submit button gets NO implicit submission, so Enter is
+          // routed explicitly. `display: contents` keeps the card's gap rhythm.
           <form
             className="auth-form"
             onSubmit={(e) => {
               e.preventDefault();
               if (ready && !actions.busy) submit();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+                e.preventDefault();
+                e.currentTarget.requestSubmit();
+              }
             }}
           >
             {showTokenField ? (

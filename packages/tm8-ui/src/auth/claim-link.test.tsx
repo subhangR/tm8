@@ -99,7 +99,7 @@ describe('on the server\'s own machine', () => {
     const { actions, claimNode } = actionsFor({ tokenRequired: false });
     renderCard(actions);
     fillAccount();
-    fireEvent.submit(screen.getByLabelText('PASSWORD').closest('form')!);
+    fireEvent.keyDown(screen.getByLabelText('PASSWORD'), { key: 'Enter' });
     expect(claimNode).toHaveBeenCalledTimes(1);
   });
 });
