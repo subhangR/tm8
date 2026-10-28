@@ -525,6 +525,21 @@ export class McpOAuth {
 }
 
 /**
+ * A token endpoint refused the request. The message is the one every caller
+ * already shows; `oauthError` is the RFC 6749 §5.2 `error` the provider sent,
+ * when it sent one (not `code`: the database layer reads that as a SQLSTATE), so a refresh can tell a dead grant (`invalid_grant`, §7.2) from a
+ * provider or network hiccup, which must never mark a connection.
+ */
+export class OAuthTokenError extends Error {
+  constructor(readonly oauthError: string | undefined) { super('OAuth token exchange failed'); }
+}
+
+/** The RFC 6749 `error` code of a refused token request, or undefined. Never its description. */
+export function oauthErrorCode(body: string): string | undefined {
+  return providerErrorCode(body) ?? undefined;
+}
+
+/**
  * Token types that are sent as `Authorization: Bearer`. Slack's
  * oauth.v2.user.access, the token endpoint of its MCP server, labels its user
  * token `"token_type": "user"`; the MCP server's 401 challenges with
@@ -542,7 +557,9 @@ async function tokenRequest(
   failure?: (status: number, code: string | null) => Error,
 ): Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number; scope?: string }> {
   const response = await mcpHttp({ url, method: 'POST', headers: clientHeaders(body, client), body: body.toString() }, privateNetwork);
-  if (response.status !== 200) throw failure ? failure(response.status, providerErrorCode(response.body)) : new Error('OAuth token exchange failed');
+  // The callback flow words the cause itself; a refresh carries only the
+  // provider's short code, so it can tell invalid_grant (§7.2) from a hiccup.
+  if (response.status !== 200) throw failure ? failure(response.status, providerErrorCode(response.body)) : new OAuthTokenError(oauthErrorCode(response.body));
   let value: Record<string, unknown>;
   try { value = JSON.parse(response.body) as Record<string, unknown>; }
   catch { throw new Error('OAuth token exchange failed'); }

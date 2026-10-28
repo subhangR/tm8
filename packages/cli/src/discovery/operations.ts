@@ -186,6 +186,7 @@ const ROWS: Record<OperationName, Row> = {
   'mcp.credentials.create': {cmd: ['mcp','credential','create'], syn: 'tm8 mcp credential create [<id>] --input <@file|->', sum: 'Create MCP credential', authz: 'entity', input: 'bound'},
   'mcp.credentials.rotate': {cmd: ['mcp','credential','rotate'], syn: 'tm8 mcp credential rotate [<id>] --input <@file|->', sum: 'Rotate MCP credential', authz: 'entity', input: 'bound'},
   'mcp.credentials.revoke': {cmd: ['mcp','credential','revoke'], syn: 'tm8 mcp credential revoke [<id>] --input <@file|->', sum: 'Revoke MCP credential', authz: 'entity', input: 'bound'},
+  'mcp.credentials.revokeAll': {cmd: ['mcp','credential','revoke-all'], syn: 'tm8 mcp credential revoke-all --input <@file|->', sum: 'Revoke every MCP connection in a Space (spaceId, admin) or on the node (operator, confirm text required)', authz: 'space', input: 'bound'},
   'mcp.credentials.share': {cmd: ['mcp','credential','share'], syn: 'tm8 mcp credential share [<id>] --input <@file|->', sum: 'Share MCP credential', authz: 'entity', input: 'bound'},
   'mcp.credentials.unshare': {cmd: ['mcp','credential','unshare'], syn: 'tm8 mcp credential unshare [<id>] --input <@file|->', sum: 'Unshare MCP credential', authz: 'entity', input: 'bound'},
   'mcp.oauth.begin': {cmd: ['mcp','oauth','begin'], syn: 'tm8 mcp oauth begin [<id>] --input <@file|->', sum: 'Begin MCP oauth', authz: 'entity', input: 'bound'},

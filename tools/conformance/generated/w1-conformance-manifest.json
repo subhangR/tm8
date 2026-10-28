@@ -383,6 +383,13 @@
         "source": "server-router"
       },
       {
+        "operation": "mcp.credentials.revokeAll",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/revoke-all",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "mcp.credentials.unshare",
         "method": "POST",
         "path": "/v2/mcp/credentials/:credentialId/unshare",
@@ -3671,6 +3678,24 @@
           "mcp",
           "credentials",
           "share"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.revokeAll",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.revokeAll",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "revoke",
+          "all"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

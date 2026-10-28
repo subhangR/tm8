@@ -85,6 +85,7 @@ export const OPERATIONS = [
   { name: 'mcp.credentials.readiness', method: 'GET', path: '/v2/mcp/credentials/:credentialId/readiness', kind: 'read', status: 'v1' },
   { name: 'mcp.credentials.revoke', method: 'POST', path: '/v2/mcp/credentials/:credentialId/revoke', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.share', method: 'POST', path: '/v2/mcp/credentials/:credentialId/share', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.credentials.revokeAll', method: 'POST', path: '/v2/mcp/credentials/revoke-all', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.unshare', method: 'POST', path: '/v2/mcp/credentials/:credentialId/unshare', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.begin', method: 'POST', path: '/v2/mcp/servers/:serverId/oauth/begin', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },

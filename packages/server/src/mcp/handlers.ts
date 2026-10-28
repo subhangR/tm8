@@ -1,7 +1,7 @@
 import {
  CollabError, McpCredentialRotateInputSchema, McpCredentialCreateInputSchema, McpCredentialCommandInputSchema,
  McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema,
- McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerDefinition, type McpServerView,
+ McpServerTestInputSchema, McpProxyRequestInputSchema, McpCredentialRevokeAllInputSchema, type McpCredentialRevokeAllResult, type McpCredentialView, type McpServerDefinition, type McpServerView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -123,6 +123,35 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    // local row keeps no ciphertext; the owner removes tm8 entirely at Google.
    if(opened?.secret.kind==='oauth' && opened.secret.issuer!==GOOGLE_OAUTH_ISSUER)await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
    return view(auth,input.credentialId);}),
+  'mcp.credentials.revokeAll':requireHumanSession(async ctx=>{
+   // §9.3(4) kill switch. The database revokes every row locally and commits
+   // BEFORE any provider is called, so nothing uses a row after this point
+   // whatever the providers do; revoke_all_mcp_credentials checks the Space
+   // admin (spaceId) or node admin (none) itself.
+   const input=McpCredentialRevokeAllInputSchema.parse(ctx.body);const auth=await claims(ctx);
+   const result=await credentials.revokeAll(auth,input.spaceId??null);
+   let providerRevoked=0,providerFailed=0;
+   // One Google grant per account on tm8's client: a token revoked once is not revoked again.
+   const seen=new Set<string>();
+   for(const {binding,secret} of result.providerRevoke) {
+    if(!secret){providerFailed++;continue;}
+    if(secret.kind!=='oauth')continue; // an API key has no provider revoke
+    if(secret.issuer!==GOOGLE_OAUTH_ISSUER && !secret.revocationEndpoint)continue; // the provider offers none
+    const token=secret.refreshToken??secret.accessToken;
+    if(seen.has(token))continue;
+    seen.add(token);
+    let ok:boolean;
+    // Only rows this scope may revoke at the provider come back (B39): a Space
+    // admin gets Space-owned rows, the node operator every row.
+    if(secret.issuer===GOOGLE_OAUTH_ISSUER)ok=await google.revoke(secret);
+    else {
+     const privateNetwork=await options.definition(auth,binding.serverId).then(server=>server.definition.allowPrivateNetwork===true,()=>false);
+     ok=await revokeOAuth(secret,privateNetwork).catch(()=>false);
+    }
+    if(ok)providerRevoked++;else providerFailed++;
+   }
+   return {scope:result.scope,revoked:result.revoked,providerRevoked,providerFailed} satisfies McpCredentialRevokeAllResult;
+  }),
   'mcp.credentials.share':requireHumanSession(async ctx=>{
    const input=McpCredentialShareInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
    if(!current.manageable)throw new CollabError('forbidden','Only the account owner can share');
@@ -268,7 +297,8 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    catch(error){await auditAfter({outcome:'denied',denyReason:mcpDenyReason(error)??'forbidden'});throw error;}
    await audit({outcome:'started',grant});
    let result;
-   try {result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);}
+   // §5.6: a refreshed token leaves its own row, beside the call's.
+   try {result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>,{refreshed:()=>auditAfter({outcome:'refreshed',grant})});}
    catch(error){
     // The proxy re-authorizes before every send, so access lost mid-call is a
     // refusal too; anything else (the provider, the network) is a failure.
