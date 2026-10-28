@@ -10,7 +10,9 @@
  *   · the gate is `interactionProfile.setDefault`'s: a plain member may READ
  *     but not WRITE; a non-member may do neither;
  *   · validation: never `message`/`chat`, a teammate must be a live teammate
- *     of THIS space, no unknown fields.
+ *     of THIS space, no unknown fields;
+ *   · a default only PRE-FILLS the composer: `start_chat` binds the teammate it
+ *     is sent, never the kind's default (task 01a181da).
  */
 import { randomUUID } from 'node:crypto';
 
@@ -69,6 +71,9 @@ beforeAll(async () => {
     ids.elsewhere = await space(c, 'Elsewhere', STRANGER);
     ids.draco = await teammate(c, ids.space, 'Draco');
     ids.foreign = await teammate(c, ids.elsewhere, 'Foreign');
+    ids.vega = await teammate(c, ids.space, 'Vega');
+    ids.task = await newId(c);
+    await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'task', 0, $3)`, [ids.task, ids.space, ids[`member:${ids.space}`]]);
   });
 }, 300_000);
 
@@ -144,5 +149,39 @@ describe('spaces.chatDefaults — space-wide per-kind defaults', () => {
       { identityId: OWNER, nodeAdmin: false, requestId: randomUUID() },
       'set_space_chat_defaults', [ids.space, JSON.stringify({ task: { model: 'x', extra: 1 } }), null],
     )).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+});
+
+describe('a chat default never overrides the teammate a chat is started with', () => {
+  async function startAboutTask(teammateId: string): Promise<{ chatId: string; boundTo: string; edgeTo: string[] }> {
+    return database.transaction(async (c) => {
+      await c.query('set local role tm8_app');
+      await c.query(`select set_config('tm8.identity_id',$1,true)`, [OWNER]);
+      await c.query(`select set_config('tm8.auth_kind','browser',true)`);
+      const chatId = randomUUID();
+      await c.query(
+        `select public.start_chat($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [chatId, ids.space, teammateId, 'claude-opus-5-5', 'anthropic', 'claude-code', 'ask', 'scratch', null,
+          randomUUID(), `/tmp/tm8-chat-${chatId}`, null, 'who answers?', [], ids.task, `start-${chatId}`],
+      );
+      await c.query('set local role tm8_graph_owner');
+      const bound = (await c.query<{ teammate_id: string }>('select teammate_id::text from public.chats where entity_id = $1', [chatId])).rows[0]!;
+      const edges = await c.query<{ dst: string }>(
+        `select dst_id::text dst from public.edges where src_id = $1 and type = 'relates_to'`, [chatId]);
+      return { chatId, boundTo: bound.teammate_id, edgeTo: edges.rows.map((row) => row.dst) };
+    });
+  }
+
+  it('with the task default on Draco, a task chat started as Vega runs as Vega', async () => {
+    await set({ task: { teammateId: ids.draco, model: 'claude-opus-5-5' } });
+    const started = await startAboutTask(ids.vega!);
+    expect(started.boundTo).toBe(ids.vega);
+    expect(started.edgeTo).toEqual([ids.vega]);
+  });
+
+  it('and a task chat started as the default teammate runs as that teammate', async () => {
+    const started = await startAboutTask(ids.draco!);
+    expect(started.boundTo).toBe(ids.draco);
+    expect(started.edgeTo).toEqual([ids.draco]);
   });
 });

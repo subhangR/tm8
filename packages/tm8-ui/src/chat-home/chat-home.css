@@ -2406,6 +2406,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-pop__trigger:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 .tch-pop__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tch-pop__sub { flex: none; color: var(--pn-ink-4); }
+/* The ⚙ chip's "· Worker": who the chat runs as, quieter than the role, and the part that ellipsizes. */
+.tch-pop__runsas { min-width: 0; color: var(--pn-ink-4); }
 .tch-pop__gear { font: var(--pn-fs-label) var(--pn-ui); line-height: 1; }
 .tch-pop__badge {
   position: absolute;
