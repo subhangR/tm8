@@ -150,15 +150,21 @@ describe('versions section', () => {
 
 describe('versions model', () => {
   it('classifies rows as the CLI does: definition when the execution version is its own, with the pre-381 fallback', () => {
-    // 381 rows: v5 config (runs as v4), v4 source edit, v3 help edit (runs as v1), v2 config, v1 create.
-    const items = [stored(5, { source: 'echo two\n' }, { execution_version: 4, config: { limit: 9 } }), stored(4, { source: 'echo two\n' }), stored(3, { help: 'Run it.' }, { execution_version: 1 }), stored(2, {}, { execution_version: 1, config: { limit: 7 } }), stored(1)];
+    // 381 rows, each cumulative on the one before: v5 config (runs as v4), v4 source edit, v3 help edit (runs as v1), v2 config, v1 create.
+    const items = [
+      stored(5, { help: 'Run it.', source: 'echo two\n' }, { execution_version: 4, config: { limit: 9 } }),
+      stored(4, { help: 'Run it.', source: 'echo two\n' }, { config: { limit: 7 } }),
+      stored(3, { help: 'Run it.' }, { execution_version: 1, config: { limit: 7 } }),
+      stored(2, {}, { execution_version: 1, config: { limit: 7 } }),
+      stored(1),
+    ];
     const rows = classifyVersions(items, true);
     expect(rows.map(row => [row.version, row.executionVersion, row.definition, row.changed])).toEqual([
       [5, 4, false, ['config']], [4, 4, true, ['source']], [3, 1, false, ['help']], [2, 1, false, ['config']], [1, 1, true, []],
     ]);
     expect(rows[1]!.sourceSha256).toBe(sourceSha256Of('echo two\n'));
     // Pre-381 numbering: execution_version counted on its own, so a source edit at v3 carries execution_version 2.
-    const older = [stored(3, { source: 'echo one\n' }, { execution_version: 2 }), stored(2, {}, { execution_version: 1, config: { limit: 7 } }), stored(1)];
+    const older = [stored(3, { source: 'echo one\n' }, { execution_version: 2, config: { limit: 7 } }), stored(2, {}, { execution_version: 1, config: { limit: 7 } }), stored(1)];
     expect(classifyVersions(older, true).map(row => [row.version, row.executionVersion, row.definition])).toEqual([[3, 3, true], [2, 1, false], [1, 1, true]]);
     // The oldest loaded row of an incomplete list stays visible until the page behind it loads.
     const partial = classifyVersions([stored(5, {}, { execution_version: 4, config: { limit: 9 } })], false);
