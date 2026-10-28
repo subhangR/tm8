@@ -480,3 +480,61 @@ describe('the list header, one row', () => {
     expect(ref.current).toBe(getByTestId('list-search'));
   });
 });
+
+describe('a session row draws each PR, not a count (task 01a18209)', () => {
+  const pr = (number: number, state: string) => ({
+    entityId: `pr-${number}`,
+    repository: 'subhangR/tm8',
+    number,
+    title: `PR ${number}`,
+    state,
+    url: `https://github.com/subhangR/tm8/pull/${number}`,
+    ciStatus: null,
+    mergeState: null,
+    headRef: null,
+  });
+  const sessionWith = (badges: Record<string, unknown>, counters: Record<string, unknown>): EntitySummary =>
+    withCounters({ ...sessionLive, badges: { ...sessionLive.badges, ...badges } } as EntitySummary, counters);
+
+  it('one chip per PR, coloured by lifecycle and linked to GitHub, in place of the PR count', () => {
+    const row = sessionWith({ pullRequests: [pr(1372, 'open'), pr(1360, 'merged')] }, { docs: 1, prs: 2 });
+    const onSelect = vi.fn();
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor([row])} ctx={ctx} onSelect={onSelect} />,
+    );
+    const chips = [...container.querySelectorAll<HTMLElement>('[data-testid="linked-pr"]')];
+    expect(chips.map((chip) => chip.getAttribute('data-pr-number'))).toEqual(['1372', '1360']);
+    expect(
+      chips.map((chip) => chip.querySelector('[data-testid="pr-state-chip"]')?.getAttribute('data-pr-state')),
+    ).toEqual(['open', 'merged']);
+    expect(chips[0]!.querySelector('a')?.getAttribute('href')).toBe('https://github.com/subhangR/tm8/pull/1372');
+    // The PR count is gone; the other counts stay.
+    expect(container.querySelector('[data-count-kind="prs"]')).toBeNull();
+    expect(container.querySelector('[data-count-kind="docs"]')).not.toBeNull();
+    // The chip's click is the chip's, not the row's.
+    fireEvent.click(chips[0]!.querySelector('a')!);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the count beside the chips when the server cap dropped PRs', () => {
+    const row = sessionWith({ pullRequests: [pr(1, 'open')], pullRequestsTruncated: true }, { prs: 9 });
+    const { container } = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([row])} ctx={ctx} />);
+    expect(container.querySelectorAll('[data-testid="linked-pr"]')).toHaveLength(1);
+    expect(container.querySelector('[data-count-kind="prs"]')?.textContent).toBe('9');
+  });
+
+  it('draws at most four chips, then the total as the count', () => {
+    const row = sessionWith({ pullRequests: [1, 2, 3, 4, 5].map((n) => pr(n, 'merged')) }, { prs: 5 });
+    const { container } = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([row])} ctx={ctx} />);
+    expect([...container.querySelectorAll('[data-testid="linked-pr"]')].map((c) => c.getAttribute('data-pr-number')))
+      .toEqual(['1', '2', '3', '4']);
+    expect(container.querySelector('[data-count-kind="prs"]')?.textContent).toBe('5');
+  });
+
+  it('falls back to the count when the server sent no PR facts', () => {
+    const row = sessionWith({}, { prs: 1 });
+    const { container } = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([row])} ctx={ctx} />);
+    expect(container.querySelector('[data-testid="linked-pr"]')).toBeNull();
+    expect(container.querySelector('[data-count-kind="prs"]')?.textContent).toBe('1');
+  });
+});

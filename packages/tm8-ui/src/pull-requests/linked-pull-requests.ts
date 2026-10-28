@@ -171,6 +171,31 @@ export function badgePullRequestFactsOf(row: EntitySummary): LinkedPullRequestFa
 }
 
 /**
+ * A session row's PRs from both of its sources, each PR once (task 01a18209).
+ *
+ * `badges.pullRequests` is the server's own answer for THIS row — what the
+ * `prs` counter counts, so it arrives with the row and cannot lose a bounded
+ * graph page's lottery. The graph index adds what only the graph knows (a PR
+ * inherited from a task the session worked on) and may hold a STRONGER claim
+ * about a PR both name (`authored`), which wins — attribution only climbs, the
+ * same rule as `indexLinkedPullRequests`. Badge order first: newest link first.
+ */
+export function mergeLinkedPullRequests(
+  badges: readonly LinkedPullRequestFacts[],
+  graph: readonly LinkedPullRequestFacts[],
+): LinkedPullRequestFacts[] {
+  const byId = new Map<string, LinkedPullRequestFacts>();
+  for (const facts of [...badges, ...graph]) {
+    const prior = byId.get(facts.id);
+    if (prior === undefined) byId.set(facts.id, facts);
+    else if (ATTRIBUTION_RANK[facts.attribution] > ATTRIBUTION_RANK[prior.attribution]) {
+      byId.set(facts.id, { ...prior, attribution: facts.attribution });
+    }
+  }
+  return [...byId.values()];
+}
+
+/**
  * One PR may carry up to three independent facts. Conflict and CI do not
  * replace lifecycle: an open PR with a merge conflict and failing checks is
  * truthfully all three at once.

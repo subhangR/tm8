@@ -97,7 +97,7 @@ import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges'
 import { CategoryGlyph, TabGlyph, hasCategoryGlyph, hasTabGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
-import { type LinkedPullRequestFacts } from '../pull-requests';
+import { LinkedPullRequestChips, badgePullRequestFactsOf, mergeLinkedPullRequests, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountToggle } from './list/ChildCountBadge';
 import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
@@ -726,6 +726,9 @@ export interface BoardSnapshot {
  * its tile's top edge. Mirrors `--lp-hoverbar-rise` in panels.css.
  */
 const HOVERBAR_RISE_PX = 24;
+
+/** How many PR chips a session row draws before the PR count takes over (task 01a18209). */
+const SESSION_ROW_PR_CHIPS = 4;
 
 /**
  * WHERE THE HOVER BAR GOES on the tile under the pointer: on the top edge, or
@@ -5056,6 +5059,44 @@ export function Tile({
     <ParentCrumb parentId={parentOutside} rowTitle={row.title} onOpen={props.onSelect} />
   ) : null;
   if (sessionTree) {
+    /* EACH PR, NOT A COUNT (task 01a18209, Subhang 2026-10-28: "individual pr,
+       ... with link which opens the pr, and shows color of the pr status, like
+       previously"). The chips are the ones this row wore before the §6 cut —
+       `LinkedPullRequestChips`, octicon coloured by lifecycle beside `#number`
+       — and they take the PR count's place on the counts line, under the same
+       switches. At most SESSION_ROW_PR_CHIPS are drawn, newest link first, so
+       the row stays one line of links; past that (or past the server's cap)
+       the PR count comes back after them as the total, and is the door to the
+       rest in the detail panel. */
+    const pullRequestsShown = view.shows('counts') && !hiddenGroups.has('prs');
+    const allSessionPullRequests = pullRequestsShown
+      ? mergeLinkedPullRequests(badgePullRequestFactsOf(row), props.linkedPullRequestsOf?.(row.id) ?? [])
+      : [];
+    const sessionPullRequests = allSessionPullRequests.slice(0, SESSION_ROW_PR_CHIPS);
+    const morePullRequests =
+      allSessionPullRequests.length > SESSION_ROW_PR_CHIPS || row.badges.pullRequestsTruncated === true;
+    const countHiddenGroups = sessionPullRequests.length > 0 && !morePullRequests
+      ? new Set([...hiddenGroups, 'prs'])
+      : hiddenGroups;
+    const sessionCountsLine = sessionPullRequests.length > 0 || (showCounts && hasTileLinkCounts(row.counters, countHiddenGroups)) ? (
+      <span className="lp__session-links">
+        {sessionPullRequests.length > 0 ? (
+          /* A chip is a link to GitHub inside a selectable row: the click is
+             the chip's, not the row's. */
+          <span onClick={(event) => event.stopPropagation()}>
+            <LinkedPullRequestChips pullRequests={sessionPullRequests} placement="tile" />
+          </span>
+        ) : null}
+        {showCounts && hasTileLinkCounts(row.counters, countHiddenGroups) ? (
+          <TileLinkCounts
+            counters={row.counters}
+            entityId={row.id}
+            hiddenGroups={countHiddenGroups}
+            {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
+          />
+        ) : null}
+      </span>
+    ) : null;
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
     const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
@@ -5169,11 +5210,11 @@ export function Tile({
         /* The lane line is cut from the collapsed row (§6: the branch and the
            worktree are detail-panel facts) and so is its worktree door, which
            was the last of the inline relation accordion on this anatomy. */
-        badges={attentionLine || countsLine || hasPendingFormsChip(pendingFormsRead) ? (
+        badges={attentionLine || sessionCountsLine || hasPendingFormsChip(pendingFormsRead) ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
             <PendingFormsChip pending={pendingFormsRead} />
-            {countsLine}
+            {sessionCountsLine}
           </>
         ) : null}
         childCount={childCount}
