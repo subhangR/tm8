@@ -628,6 +628,16 @@ export interface EntityRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  // Loops 378 columns; optional until every select carries them.
+  loop_action?: 'spawn' | 'dispatch' | 'tool' | null;
+  loop_timezone?: string | null;
+  loop_paused_until?: Date | string | null;
+  loop_tool_id?: string | null;
+  loop_tool_inputs?: Record<string, unknown> | null;
+  loop_concurrency?: 'skip' | 'queue' | null;
+  loop_max_runtime_seconds?: number | null;
+  loop_retry_attempts?: number | null;
+  loop_retry_delay_seconds?: number | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
   chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
@@ -2087,9 +2097,13 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // distinction the executor branches on.
       return {
         kind: 'loop',
+        action: row.loop_action ?? (row.loop_team_member_id === null ? 'dispatch' : 'spawn'),
         schedule: row.loop_schedule ?? '',
+        timezone: row.loop_timezone ?? 'UTC',
         enabled: row.loop_enabled ?? false,
+        pausedUntil: isoOrNull(row.loop_paused_until ?? null),
         teamMemberId: row.loop_team_member_id,
+        toolId: row.loop_tool_id ?? null,
         subjectId: row.loop_subject_id,
         nextRunAt: isoOrNull(row.loop_next_run_at),
         lastRunAt: isoOrNull(row.loop_last_run_at),
@@ -2818,12 +2832,20 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'loop':
       return {
         kind: 'loop',
+        action: row.loop_action ?? (row.loop_team_member_id === null ? 'dispatch' : 'spawn'),
         schedule: row.loop_schedule ?? '',
+        timezone: row.loop_timezone ?? 'UTC',
         enabled: row.loop_enabled ?? false,
+        pausedUntil: isoOrNull(row.loop_paused_until ?? null),
         teamMemberId: row.loop_team_member_id,
+        toolId: row.loop_tool_id ?? null,
         subjectId: row.loop_subject_id,
         prompt: row.loop_prompt ?? '',
         config: row.loop_config ?? {},
+        toolInputs: row.loop_tool_inputs ?? {},
+        concurrency: row.loop_concurrency ?? 'skip',
+        maxRuntimeSeconds: row.loop_max_runtime_seconds ?? null,
+        retry: { attempts: row.loop_retry_attempts ?? 0, delaySeconds: row.loop_retry_delay_seconds ?? 300 },
         nextRunAt: isoOrNull(row.loop_next_run_at),
         lastRunAt: isoOrNull(row.loop_last_run_at),
         lastError: row.loop_last_error,

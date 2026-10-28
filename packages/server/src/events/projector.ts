@@ -331,6 +331,16 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  // Loops 378 columns; optional until every select carries them.
+  loop_action?: 'spawn' | 'dispatch' | 'tool' | null;
+  loop_timezone?: string | null;
+  loop_paused_until?: Date | string | null;
+  loop_tool_id?: string | null;
+  loop_tool_inputs?: Record<string, unknown> | null;
+  loop_concurrency?: 'skip' | 'queue' | null;
+  loop_max_runtime_seconds?: number | null;
+  loop_retry_attempts?: number | null;
+  loop_retry_delay_seconds?: number | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
   chat_credential_selection?: import('@tm8/contract').ChatCredentialSelection | null;
@@ -1567,9 +1577,13 @@ export class PgEntityProjector implements EntityProjector {
         // (route via the dispatcher), so it is projected as null, not ''.
         return {
           kind: 'loop',
+          action: r.loop_action ?? (r.loop_team_member_id === null ? 'dispatch' : 'spawn'),
           schedule: r.loop_schedule ?? '',
+          timezone: r.loop_timezone ?? 'UTC',
           enabled: r.loop_enabled ?? false,
+          pausedUntil: iso(r.loop_paused_until ?? null),
           teamMemberId: r.loop_team_member_id,
+          toolId: r.loop_tool_id ?? null,
           subjectId: r.loop_subject_id,
           nextRunAt: iso(r.loop_next_run_at),
           lastRunAt: iso(r.loop_last_run_at),
