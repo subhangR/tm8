@@ -158,7 +158,7 @@
           </div>
           <div class="ss-lab">Finished, still open (1)<span class="more">Stop all</span></div>
           <div class="list tree ss-c">
-            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live gy"></i></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill done">finished, still open</span></span></span><span class="btn xs">Stop</span></a>
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live gy"></i></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill merged">finished, still open</span></span></span><span class="btn xs">Stop</span></a>
           </div>
         </main>
         <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
@@ -212,10 +212,10 @@
   <tbody>
     <tr><td class="code">working · streaming</td><td><span class="pill working">working</span> green</td><td>Outcome open, process recorded running, verdict <code>live</code>. "streaming" only while PTY bytes are moving (pool activity may refine a live verdict but never promote another one).</td></tr>
     <tr><td class="code">waiting for you</td><td><span class="pill waiting">waiting</span> amber</td><td>Process idle <b>and</b> forms are pending for the viewer (<code>forms.pendingForSessions</code>). This is the only "waiting" the node can see; see the Live view below.</td></tr>
-    <tr><td class="code">ready to complete · idle 3h</td><td><span class="pill done">ready</span> / <span class="pill idle">idle</span></td><td>Every claim is in review, blocked or ended / the agent finished its turn and sits at its prompt. An idle process is never drawn with working's green pill (owner, 2026-10-17).</td></tr>
+    <tr><td class="code">ready to complete · idle 3h</td><td><span class="pill wait">ready</span> / <span class="pill idle">idle</span></td><td>Every claim is in review, blocked or ended / the agent finished its turn and sits at its prompt. An idle process is never drawn with working's green pill (owner, 2026-10-17).</td></tr>
     <tr><td class="code">stale · unverified · starting</td><td><span class="pill stale">stale</span> hollow amber</td><td>The record says running but the node has no PTY / no fresh snapshot / still spawning. Amber, never green: a record without proof does not borrow a live colour.</td></tr>
     <tr><td class="code">crashed · lost · credential disconnected · failed to start</td><td><span class="pill failed">crashed</span> red</td><td>Outcome open, process ended badly. Line 2 adds the reason: "Crashed 3h ago: server restart". Offers Resume · Complete · Dismiss.</td></tr>
-    <tr><td class="code">finished, still open · completed · stopped</td><td><span class="pill done">completed</span> / <span class="pill exited">stopped</span></td><td>The work's outcome. It wins over the process: a crash after completion is a grey fact, never an alert.</td></tr>
+    <tr><td class="code">finished, still open · completed · stopped</td><td><span class="pill merged">completed</span> / <span class="pill exited">stopped</span></td><td>The work's outcome. It wins over the process: a crash after completion is a grey fact, never an alert.</td></tr>
   </tbody>
 </table>
 
@@ -338,7 +338,7 @@
           <div class="ss-head">
             <span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17b20</span>
             <div class="tt">Readiness per used provider</div>
-            <div class="ss-meta"><span class="pill done">ready to complete</span>2h 20m · since 11:20</div>
+            <div class="ss-meta"><span class="pill wait">ready to complete</span>2h 20m · since 11:20</div>
             <div class="ss-meta"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><b>Worker</b>·<span class="mono">claude-opus-5-5</span>· worker</div>
             <div class="chips nowrap"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Readiness per used provider</span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955</span></div>
           </div>
@@ -474,7 +474,7 @@
         </header>
         <main class="content">
           <div class="segmented s5"><span class="seg">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg on">Stats</span><span class="seg">Discussion</span></div>
-          <div class="ss-note" style="font-size:13px;padding-top:10px"><span class="pill done">completed</span>&nbsp; ran 1h 12m · ended 2h ago</div>
+          <div class="ss-note" style="font-size:13px;padding-top:10px"><span class="pill merged">completed</span>&nbsp; ran 1h 12m · ended 2h ago</div>
           <div class="ss-lab">Tokens<span class="more q" style="color:var(--ink);font-weight:700">2,413,906</span></div>
           <div class="ss-bar"><i style="width:2.5%;background:var(--info)"></i><i style="width:4.9%;background:var(--brand)"></i><i style="width:90.6%;background:var(--run)"></i><i style="width:2%;background:var(--merged)"></i></div>
           <div class="ss-grid"><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--info)"></i>input</div><div class="v">61,204</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--brand)"></i>output</div><div class="v">118,930</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--run)"></i>cache read</div><div class="v">2,186,410</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--merged)"></i>cache create</div><div class="v">47,362</div></div></div>
@@ -793,7 +793,7 @@ message.send stored · msg 01a182b1 on 01a182a2 · <span class="g">8 sessions ac
           </div>
           <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>tm8.sh · Playground<span class="r">nothing running</span></div>
           <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>acme-node<span class="r"><span class="pill failed">offline</span></span></div>
-          <div class="refusal" style="margin-top:4px"><div class="h">This server could not be reached</div><p>2 sessions were live when it was last read, at 13:12. Read it again, or open its last copy.</p></div>
+          <div class="refusal" style="margin-top:4px"><div class="h">This server could not be reached</div><p>2 sessions were live when it was last read, at 13:12. Check again, or open its last copy.</p></div>
           <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>local · 127.0.0.1:4611<span class="r">reading…</span></div>
           <div class="row"><span class="skeleton" style="width:36px;height:36px;border-radius:9px"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div>
         </main>
@@ -885,7 +885,7 @@ message.send stored · msg 01a182b1 on 01a182a2 · <span class="g">8 sessions ac
       <div class="ph-screen">
         <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Connectors</span></span></div><div class="title">Connector</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
         <main class="content">
-          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-mcp"/></svg>Connector · Remote · Just me + Shared</span><div class="title">github</div><div class="meta"><span class="pill done">connected</span>approved for Atelier · on by default</div></div>
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-mcp"/></svg>Connector · Remote · Just me + Shared</span><div class="title">github</div><div class="meta"><span class="pill working">connected</span>approved for Atelier · on by default</div></div>
           <div class="ss-lab">Your connection</div>
           <div class="list lines"><a class="row"><span class="avatar sm">S</span><span class="main"><span class="t" style="font-size:15px">@subhangR</span><span class="s" style="font-size:13px">last used 13:31 · scopes: repo, read:org</span></span></a></div>
           <div class="ss-lab">Shared connection</div>
@@ -914,7 +914,7 @@ message.send stored · msg 01a182b1 on 01a182a2 · <span class="g">8 sessions ac
         <main class="content">
           <div class="filters"><span class="f on">All</span><span class="f">Needs attention</span><span class="f">Shared</span></div>
           <div class="list lines">
-            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-mcp"/></svg></span><span class="main"><span class="t">github</span><span class="s" style="font-size:13px"><span class="pill done">connected</span>Remote · Just me + Shared</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-mcp"/></svg></span><span class="main"><span class="t">github</span><span class="s" style="font-size:13px"><span class="pill working">connected</span>Remote · Just me + Shared</span></span></a>
             <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-mcp"/></svg></span><span class="main"><span class="t">linear</span><span class="s" style="font-size:13px"><span class="pill wait">needs reconnect</span>expired</span></span><span class="btn sm">Reconnect</span></a>
           </div>
           <div class="ss-note">Adding a connector and the space's MCP settings live in Settings › Space (lane 02).</div>
@@ -1031,7 +1031,7 @@ message.send stored · msg 01a182b1 on 01a182a2 · <span class="g">8 sessions ac
       <div class="ph-screen">
         <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Running now</span></span></div><div class="title">Session</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
         <main class="content">
-          <div class="ss-head"><span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17c2e</span><div class="tt">Facade audit</div><div class="ss-meta"><span class="pill done">completed</span>swarm01 · ran 1h 12m</div></div>
+          <div class="ss-head"><span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17c2e</span><div class="tt">Facade audit</div><div class="ss-meta"><span class="pill merged">completed</span>swarm01 · ran 1h 12m</div></div>
           <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
           <div class="empty" style="padding:24px 24px 12px"><svg class="ic" style="color:var(--run)"><use href="#i-success"/></svg><div class="h">Completed</div><p>Receipt recorded: the close-out message on this session.</p></div>
           <div class="ss-msg" style="margin-top:4px"><b>swarm01 · 11:20</b><br>Facade audit done: 14 dead endpoints, 3 docs written, PR #1208 opened.</div>
