@@ -58,7 +58,7 @@ import type {
   SpacePasswordSetRequiredResult,
 } from '@tm8/contract';
 import { AuthSessionsListInputSchema } from '@tm8/contract';
-import { chmod, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { resolveServerDataDir } from '../../../http/config.js';
@@ -71,6 +71,7 @@ import {
   changePassword,
   checkSpacePassword,
   claimNode,
+  claimTokenIsLive,
   enterSpace,
   inviteRequiresSpacePassword,
   resetSpaceLogin,
@@ -395,6 +396,56 @@ function authSpaceEnter(deps: FacadeDeps): OperationHandler {
   };
 }
 
+/**
+ * The claim token for a caller ON THE SERVER'S OWN MACHINE, who sent none.
+ *
+ * WHY THE LOOPBACK OWNER NEEDS NO TOKEN. The token exists so that whoever
+ * reaches an unclaimed PUBLIC node first cannot own it. The loopback auto-owner
+ * (loopback peer, no forwarding header, auto-owner enabled, never `multi`) is
+ * not that stranger: it already acts as the owner on every other operation, and
+ * `auth.claim.reissue` already hands it a fresh token on request. Making it
+ * copy a token out of a terminal it is sitting at bought no security and was the
+ * whole of the first-run friction. Every other caller still must present one.
+ *
+ * The live token in `<dataDir>/setup-token` is reused rather than rotated, so a
+ * claim that fails (a taken name, say) leaves the printed link working. Only a
+ * missing or dead file mints, and the new one is written back for the same
+ * reason reissue writes it. `claim_node` then burns it under its usual lock.
+ */
+async function onBoxClaimToken(deps: FacadeDeps, ctx: RequestContext): Promise<string> {
+  if (ctx.identity.kind !== 'auto-owner') {
+    throw new CollabError(
+      'unauthenticated',
+      'claiming this node from another machine needs its setup link — on the server, run `tm8 auth claim --show`',
+    );
+  }
+  if (await nodeIsClaimed(deps.db)) {
+    // Same words `claim_node` uses for a token against a claimed node.
+    throw new CollabError('forbidden', 'this node is already claimed');
+  }
+  const tokenPath = join(deps.config.dataDir ?? resolveServerDataDir(), 'setup-token');
+  try {
+    const saved = (await readFile(tokenPath, 'utf8')).trim();
+    if (saved && (await claimTokenIsLive(deps.db, saved))) return saved;
+  } catch {
+    // No readable file, or nothing live behind it. Mint below.
+  }
+  const token = await issueNodeClaimToken(deps.db);
+  await writeSetupToken(tokenPath, token);
+  return token;
+}
+
+/** The 0600 durable copy. Never fails the caller: the token is already valid. */
+async function writeSetupToken(tokenPath: string, token: string): Promise<boolean> {
+  try {
+    await writeFile(tokenPath, `${token}\n`, { mode: 0o600 });
+    await chmod(tokenPath, 0o600);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The complete auth seam — one registration, one honest group. */
 /**
  * `auth.claim` — the first-run ceremony (design D1/D2).
@@ -418,10 +469,11 @@ function authSpaceEnter(deps: FacadeDeps): OperationHandler {
 function authClaim(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
     const body = ctx.body as AuthClaimInput;
+    const token = body.token ?? (await onBoxClaimToken(deps, ctx));
     const issued = await claimNode(
       deps.db,
       {
-        token: body.token,
+        token,
         username: body.username,
         password: body.password,
         displayName: body.displayName ?? null,
@@ -477,7 +529,7 @@ export async function readProjectIsolation(db: FacadeDeps['db']): Promise<Projec
  * gate renders a truth rather than an inference.
  */
 function authClaimStatus(deps: FacadeDeps): OperationHandler {
-  return async () => {
+  return async (ctx) => {
     const [claimed, projectIsolation] = await Promise.all([
       nodeIsClaimed(deps.db),
       readProjectIsolation(deps.db),
@@ -495,6 +547,9 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
       // A node admin can still provision through `auth.signup`, but the primary
       // route for a new person on a claimed node is redeeming an invite.
       signupPath: claimed ? 'invite' : 'claim',
+      // A fact about THIS CALLER, not the node's filesystem: the loopback owner
+      // claims without a token (`onBoxClaimToken`), everyone else needs one.
+      tokenRequired: !claimed && ctx.identity.kind !== 'auto-owner',
     };
     return result;
   };
@@ -544,13 +599,7 @@ function authClaimReissue(deps: FacadeDeps): OperationHandler {
     // and already in this response — so a write error becomes `tokenPath: null`.
     const dataDir = deps.config.dataDir ?? resolveServerDataDir();
     const tokenPath = join(dataDir, 'setup-token');
-    let written: string | null = tokenPath;
-    try {
-      await writeFile(tokenPath, `${token}\n`, { mode: 0o600 });
-      await chmod(tokenPath, 0o600);
-    } catch {
-      written = null;
-    }
+    const written = (await writeSetupToken(tokenPath, token)) ? tokenPath : null;
 
     const origin = (deps.config.publicOrigin ?? `http://${deps.config.host}:${deps.config.port}`)
       .replace(/\/$/, '');

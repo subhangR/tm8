@@ -164,6 +164,7 @@ export function AuthField({
   trailing,
   placeholder,
   readOnly,
+  autoFocus,
 }: {
   label: string;
   value?: string;
@@ -184,6 +185,8 @@ export function AuthField({
   trailing?: ReactNode;
   placeholder?: string;
   readOnly?: boolean;
+  /** Real focus on mount — the live card's first field, not the drawn ring. */
+  autoFocus?: boolean;
 }) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -203,6 +206,7 @@ export function AuthField({
           {...controlled}
           placeholder={placeholder}
           readOnly={readOnly}
+          autoFocus={autoFocus}
           aria-describedby={hint ? hintId : undefined}
         />
         {trailing}

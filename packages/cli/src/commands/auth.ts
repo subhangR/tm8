@@ -386,15 +386,17 @@ async function authClaim(cmd: CommandContext): Promise<ExitCode> {
   // on-box by construction, not by a check that could be bypassed.
   if (cmd.options.bool('show')) return authClaimShow(cmd);
   const usage =
-    'usage: tm8 auth claim --token <tm8c_…> --username <username> --password <password> [--display-name <name>] [--email <email>]';
+    'usage: tm8 auth claim --username <username> --password <password> [--token <tm8c_…>] [--display-name <name>] [--email <email>]';
   if (cmd.args.length > 0) throw new CliError(usage, EXIT_USAGE);
 
+  // `--token` is needed only off the server's machine: on the box the CLI is
+  // the loopback owner, which the Server lets claim without one.
   const token = cmd.options.value('token');
   const username = cmd.options.value('username');
-  if (!token || !username) throw new CliError(usage, EXIT_USAGE);
+  if (!username) throw new CliError(usage, EXIT_USAGE);
 
   const body: Record<string, unknown> = {
-    token,
+    ...(token ? { token } : {}),
     username,
     password: requirePassword(cmd, usage),
     kind: cmd.options.value('kind') ?? 'cli',
@@ -463,7 +465,9 @@ async function authClaimStatus(cmd: CommandContext): Promise<ExitCode> {
     if (!result.claimed) {
       lines.push(
         'no account here has a password yet, so nobody can sign in',
-        'claim it with the tm8c_… token from the Server\'s boot log or <dataDir>/setup-token:',
+        'on the server\'s own machine, claim it with:',
+        '  tm8 auth claim --username <you> --password <password>',
+        'from another machine, add the setup token (`tm8 auth claim --show` on the server prints it):',
         '  tm8 auth claim --token <tm8c_…> --username <you> --password <password>',
       );
     } else if (result.signupPath === 'admin') {

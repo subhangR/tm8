@@ -90,7 +90,9 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
+  /* SAFE: a card taller than the viewport starts at the top and scrolls.
+     Plain `center` pushed its head above the scroll origin, unreachable. */
+  align-items: safe center;
   justify-content: center;
   padding: 0 18px 46px;
   overflow: auto;
@@ -357,6 +359,9 @@
 /* oracle L43: h34, --pn-ink over --pn-paper, r7, 12.5/600 */
 .cv2-root .auth-btn {
   appearance: none;
+  /* A refused action is a <span>, which is content-box by default: at
+     width:100% its 44px of padding stuck out past the card. */
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -399,12 +404,20 @@
 
 /* A full-width primary is what the card grammar draws (L43 has no padding and
    fills the card); a `sm` button sits in a row and does not stretch. */
+/* The live claim card's <form>: a box-less wrapper, so its fields stay direct
+   flex items of the card and keep its gap rhythm. */
+.cv2-root .auth-form {
+  display: contents;
+}
 .cv2-root .auth-card > .auth-btn--lg,
 .cv2-root .auth-card > .auth-btn-group > .auth-btn--lg,
+.cv2-root .auth-form > .auth-btn--lg,
+.cv2-root .auth-form > .auth-btn-group > .auth-btn--lg,
 .cv2-root .auth-stack > .auth-btn-group > .auth-btn--lg {
   width: 100%;
 }
 .cv2-root .auth-card > .auth-btn-group,
+.cv2-root .auth-form > .auth-btn-group,
 .cv2-root .auth-stack > .auth-btn-group {
   align-self: stretch;
 }
@@ -698,6 +711,9 @@
 .cv2-root .auth-dot--brand {
   background: var(--pn-brand);
 } /* L83 */
+.cv2-root .auth-dot--run {
+  background: var(--pn-run);
+}
 .cv2-root .auth-dot--wait {
   width: 8px;
   height: 8px;

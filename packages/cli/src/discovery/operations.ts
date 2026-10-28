@@ -558,13 +558,14 @@ const ROWS: Record<OperationName, Row> = {
   // ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ───────
   'auth.claim': {
     cmd: ['auth', 'claim'],
-    syn: 'tm8 auth claim --token <tm8c_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth claim --username <username> --password <password> [--token <tm8c_…>] [--display-name <name>] [--email <email>]',
     sum: 'Claim an unclaimed Server: set the first credential on its owner account and sign in',
     authz: 'server',
     input: 'bound',
     tags: ['claim', 'first-run', 'setup', 'bootstrap', 'owner', 'install', 'onboard'],
     notes: [
-      'the one-time tm8c_… token is printed at first boot and written to <dataDir>/setup-token — the token is the authorization, so this works from a machine that is not the Server',
+      'on the Server\'s own machine no token is needed: the loopback owner claims directly',
+      'from any other machine pass --token: the one-time tm8c_… token is printed at first boot and by `tm8 auth claim --show` on the Server',
       'it sets a credential on the EXISTING owner account rather than creating one, so everything the node already recorded stays attributed to you',
       'refused once any account on the node has a password: a claim token is inert on a claimed node',
       'the password travels in the request body — a real deployment needs TLS before using this',
