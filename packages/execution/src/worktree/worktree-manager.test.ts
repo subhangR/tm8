@@ -6,7 +6,8 @@
 //   G2.2  containment — segment-wise, symlink root, sibling-prefix path
 //   G2.3  post-creation re-assertion catches a parent swapped for a symlink
 //         between validation and `git worktree add`, and cleans up
-//   G2.4  N concurrent adds on one repo serialize; N distinct paths/branches
+//   G2.4  N concurrent adds on one repo serialize; N distinct paths/branches;
+//         a caller re-entering the project lock is refused, never deadlocked
 //   G2.5  idempotent cleanup — remove twice, remove on already-gone, converge
 //   G2.7  shared paths — a lane borrows the launch project's gitignored
 //         graphify-out by symlink, stays clean, and removes without touching it
@@ -215,6 +216,25 @@ describe('G2.4 — concurrency: one repo, N adds, zero corruption', () => {
     for (const r of results) {
       expect(isContainedIn(await realpath(r.path), root)).toBe(true);
     }
+  });
+
+  it('re-entering the project lock fails fast with git_lock_reentrant instead of hanging', async () => {
+    // The manager takes the Git lock itself; a caller still wrapping add() in
+    // it would wait on its own hold forever.
+    const oid = await git(['rev-parse', 'HEAD'], repoRoot);
+    const worktreeId = UUIDISH();
+    await expect(
+      manager.withProjectLock(PROJECT_ID, () =>
+        manager.add({ repoRoot, projectId: PROJECT_ID, worktreeId, branch: 'tm8/reentrant', baseCommitOid: oid }),
+      ),
+    ).rejects.toMatchObject({ reason: 'git_lock_reentrant' });
+    await expect(stat(await manager.computeWorktreePath(PROJECT_ID, worktreeId))).rejects.toThrow();
+
+    // The refused holder released it, and other keys nest freely.
+    await expect(manager.withProjectLock(PROJECT_ID, async () => 'free')).resolves.toBe('free');
+    await expect(
+      manager.withProjectLock(`${PROJECT_ID}:reserve`, () => manager.withProjectLock(PROJECT_ID, async () => 'nested')),
+    ).resolves.toBe('nested');
   });
 
   it('a duplicate branch is a refusal, not a silent reuse', async () => {

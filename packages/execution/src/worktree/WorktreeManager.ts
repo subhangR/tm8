@@ -23,9 +23,12 @@
 // launch of the project wait seconds behind it (measured on the tm8 repository:
 // `git worktree add` p50 7.9 s on a loaded node, its registration 36 ms). So
 // callers do not hold the lock around these methods: the chain is not
-// reentrant and holding it would deadlock. `withProjectLock` stays public for
-// callers' own keys, such as the provisioning saga's reservation lock.
+// reentrant, so a caller that does is refused with `git_lock_reentrant` the
+// moment it re-enters — a fast, named failure where it would otherwise hang a
+// launch forever. `withProjectLock` stays public for callers' own keys, such
+// as the provisioning saga's reservation lock.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -147,6 +150,8 @@ export class WorktreeManager {
   private readonly gitTimeoutMs: number | undefined;
   /** Per-project promise chain — the generalized workspace-trust mutex (§5.1). */
   private readonly projectLocks = new Map<string, Promise<void>>();
+  /** The keys the current async call chain holds, so re-entering one fails instead of deadlocking. */
+  private readonly heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
   /** This node's warm lanes, or null when it keeps none. */
   readonly pool: WarmLanePool | null;
 
@@ -174,6 +179,15 @@ export class WorktreeManager {
    * without bound across many projects.
    */
   async withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+    // The chain cannot be re-entered: a holder waiting on itself waits forever.
+    // Refuse it by name instead, before it queues.
+    const held = this.heldLocks.getStore();
+    if (held?.has(projectId)) {
+      throw new WorktreeError(
+        `the lock ${projectId} is already held by this call chain, and it is not reentrant`,
+        'internal', 'git_lock_reentrant',
+      );
+    }
     const previous = this.projectLocks.get(projectId) ?? Promise.resolve();
     let release!: () => void;
     const tail = new Promise<void>((r) => { release = r; });
@@ -186,7 +200,7 @@ export class WorktreeManager {
     this.projectLocks.set(projectId, entry);
     await previous;
     try {
-      return await fn();
+      return await this.heldLocks.run(new Set([...(held ?? []), projectId]), fn);
     } finally {
       release();
       if (this.projectLocks.get(projectId) === entry) this.projectLocks.delete(projectId);
