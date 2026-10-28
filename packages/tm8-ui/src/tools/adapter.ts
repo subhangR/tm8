@@ -3,14 +3,37 @@ import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
 
-/** All network requests use the operation catalog and the existing authenticated transport. */
-export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'>): ToolPort {
+/** A space holds a handful of tools; the bound only stops a cursor that never ends. */
+const LIST_PAGES = 50;
+
+/**
+ * All network requests use the operation catalog and the existing authenticated transport.
+ * The selection header goes through the seam's own `setEntityHeader` door.
+ */
+export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'> & { commands: Pick<Seam['commands'], 'setEntityHeader'> }): ToolPort {
   const command = () => ({ clientMutationId: `tool-${crypto.randomUUID()}` });
   const versioned = (tool: ToolView) => ({ ...command(), toolId: tool.id, expectedVersion: tool.version });
   async function call<T>(name: OperationName, options: Parameters<HttpClient['call']>[1]): Promise<T> {
     return http.call<T>(name, options);
   }
   return {
+    create: (spaceId, definition) => call<ToolView>('tools.create', { params: { spaceId }, body: { ...command(), definition } }),
+    async setHeader(toolId, header) {
+      const result = await seam.commands.setEntityHeader(toolId, { ...command(), ...header });
+      if (result.header) return { stored: true };
+      return { stored: false, reason: result.warnings?.map(warning => warning.message).join('; ') || 'the node returned no header' };
+    },
+    async list(spaceId) {
+      const tools: ToolView[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < LIST_PAGES; page += 1) {
+        const result: { items: ToolView[]; nextCursor: string | null } = await call('tools.list', { params: { spaceId }, query: { limit: 100, ...(cursor ? { cursor } : {}) } });
+        tools.push(...result.items);
+        cursor = result.nextCursor;
+        if (!cursor) break;
+      }
+      return tools;
+    },
     get: toolId => call<ToolView>('tools.get', { params: { toolId } }),
     async permissions(toolId) {
       const actions = await seam.actions.list(toolId);
