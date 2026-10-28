@@ -321,8 +321,13 @@ function extractClaudeEntries(lines: unknown[], maxChars: number): SourcedEntry[
       } else {
         continue;
       }
-      const humanized = humanizeUserPrompt(text);
+      // Strip the machinery blocks BEFORE judging the turn. Claude Code appends
+      // `<system-reminder>` blocks to the operator's own prompt, so testing for
+      // the tag first dropped real prompts whole; a turn that was nothing BUT
+      // machinery still cleans down to empty and is dropped below.
+      const humanized = humanizeUserPrompt(cleanText(text));
       if (!humanized) continue;
+      // What survives the strip with a tag still in it is an unclosed block.
       if (NOISE_TAG_PATTERNS.some((p) => p.test(humanized))) continue;
       const cleaned = cleanText(humanized);
       if (cleaned.length < 3) continue;
@@ -362,7 +367,9 @@ function extractCodexEntries(lines: unknown[], maxChars: number): SourcedEntry[]
       const cut = truncate(cleaned, maxChars);
       pushEntry(entries, { at, source: 'assistant', text: cut.text, truncated: cut.truncated }, i);
     } else if (message.role === 'user') {
-      const humanized = humanizeUserPrompt(text);
+      // Cleaned first, as in the claude dialect: a reminder riding on a real
+      // prompt must not take the prompt down with it.
+      const humanized = humanizeUserPrompt(cleanText(text));
       if (!humanized || humanized.length < 3) continue;
       if (NOISE_TAG_PATTERNS.some((p) => p.test(humanized))) continue;
       const cut = truncate(cleanText(humanized), maxChars);

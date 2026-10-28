@@ -141,6 +141,15 @@ describe('option arity', () => {
     expect(parsed.options.integer('limit')).toBe(50);
     const bad = parseInvocation(['entity', 'children', 'ent_1', '--limit', 'lots']);
     expect(exitOf(() => bad.options.integer('limit'))).toBe(2);
+    // Past 2^53 Number() rounds: refuse rather than send a different integer.
+    const huge = parseInvocation(['entity', 'children', 'ent_1', '--limit', '99999999999999999999']);
+    expect(exitOf(() => huge.options.integer('limit'))).toBe(2);
+  });
+
+  it('an empty value for a value-taking global is refused, not passed on as ""', () => {
+    for (const flag of ['--space=', '--as=', '--server=', '--format=', '--timeout=', '--space=  ']) {
+      expect(exitOf(() => parseInvocation([flag, 'entity', 'query', '--kind', 'task']))).toBe(2);
+    }
   });
 
   it('require() names the missing flag', () => {
