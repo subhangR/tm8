@@ -1,0 +1,4 @@
+#!/usr/bin/python3
+import json, os, sys, urllib.request
+req = urllib.request.Request("http://127.0.0.1:43097/github", data=json.dumps({'token': os.environ['GH_TOKEN'], 'args': sys.argv[1:]}).encode(), headers={'Content-Type': 'application/json'})
+with urllib.request.urlopen(req) as r: print(r.read().decode())

@@ -30,6 +30,7 @@
 .cv2-root .tool-last-run { display: inline-flex; align-items: center; gap: 6px; }
 .cv2-root .tool-last-run__label { color: var(--pn-ink-2, inherit); }
 .cv2-root .tool-versions-table tr[aria-current='true'] td { font-weight: 600; }
+.cv2-root .tool-versions__toggle { display: inline-flex; align-items: center; gap: 6px; }
 .cv2-root .tool-compare { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; min-width: 0; }
 .cv2-root .tool-compare label { display: inline-flex; align-items: center; gap: 6px; }
 .cv2-root .tool-drawer-backdrop { position: fixed; inset: 0; z-index: 150; background: rgb(0 0 0 / 30%); display: flex; justify-content: flex-end; }
