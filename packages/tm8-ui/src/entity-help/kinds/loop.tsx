@@ -6,8 +6,8 @@
  * backfill; overlap guard; errors never disable), scheduler/schedule.ts (the
  * `every <n>{m|h|d}` / 5-field UTC cron grammar), createLoopExecutorPort in
  * facade/execution-handlers.ts (derive task → triggered_by → spawn or
- * dispatch → triggered_by), loops/LoopControls.tsx (Run now, Disable keeps
- * the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
+ * dispatch → triggered_by), loops/LoopHeader.tsx (Run now fires through
+ * loops.runNow; Disable keeps the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
  *
  * SIGNATURE MOMENT: the metronome. Eight due moments play left to right, one
  * beat at a time: fired, fired, skipped because the last session is still

@@ -1,0 +1,435 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { CollabError, type ActorSummary, type CommandResult, type EntityDetail } from '@tm8/contract';
+import { getKind } from '../domain';
+import { GenericBody } from '../panels/bodies/GenericBody';
+import { LoopHeader } from './LoopHeader';
+import { LoopRuns } from './LoopRuns';
+import { PauseDialog, resolvePause, tomorrowAtNine } from './PauseDialog';
+import type { LoopFormSources } from './LoopForm';
+import type { LoopPagePort, LoopRun, LoopView } from './page-port';
+import { durationLabel, loopStatus, zonedInstant } from './page-format';
+import { resetLoopPageStore } from './useLoopView';
+
+const LOOP_ID = '019fe999-0000-7000-8000-000000000002';
+const SESSION_ID = '019fe999-0000-7000-8000-0000000000aa';
+const TASK_ID = '019fe999-0000-7000-8000-0000000000bb';
+const RUNNER_ID = '019fe999-0000-7000-8000-0000000000cc';
+const NOW = Date.parse('2026-10-28T12:00:00.000Z');
+
+const ada: ActorSummary = { id: '019fe999-0000-7000-8000-0000000000dd', kind: 'member', displayName: 'Ada' } as ActorSummary;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  resetLoopPageStore();
+});
+
+function view(over: { state?: Partial<LoopView['state']>; capabilities?: Partial<LoopView['capabilities']>; definition?: Partial<LoopView['definition']> } = {}): LoopView {
+  return {
+    id: LOOP_ID, spaceId: 'space-1', version: 7,
+    definition: {
+      title: 'Daily sweep', schedule: '0 9 * * *', timezone: 'UTC', action: 'spawn',
+      teamMemberId: RUNNER_ID, subjectId: null, toolId: null, toolInputs: {},
+      prompt: 'Sweep the board', config: { model: 'opus' }, concurrency: 'skip',
+      maxRuntimeSeconds: 3600, retry: { attempts: 2, delaySeconds: 300 },
+      ...over.definition,
+    },
+    schedule: {
+      valid: true, problem: null, summary: 'Every day at 09:00 UTC',
+      next: ['2026-10-29T09:00:00.000Z', '2026-10-30T09:00:00.000Z'],
+    },
+    state: {
+      enabled: true, pausedUntil: null, nextRunAt: '2026-10-28T15:00:00.000Z',
+      lastRunAt: '2026-10-27T09:00:00.000Z', lastError: null,
+      armedBy: ada, armedAt: '2026-10-27T08:00:00.000Z',
+      actingAs: { identity: ada, via: 'armer' }, waitingOnRunId: null,
+      ...over.state,
+    },
+    runs: { total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 }, usage: { inputTokens: null, outputTokens: null, costUsd: null } },
+    createdBy: ada, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-27T08:00:00.000Z',
+    capabilities: { canEdit: true, canControl: true, canRun: true, canDelete: true, ...over.capabilities },
+  };
+}
+
+function run(over: Partial<LoopRun> = {}): LoopRun {
+  return {
+    id: 'run-1', loopId: LOOP_ID, spaceId: 'space-1',
+    firedAt: '2026-10-28T11:00:00.000Z', trigger: 'schedule', requestedBy: null,
+    action: 'spawn', attempt: 1, status: 'completed', skipReason: null, error: null,
+    taskId: TASK_ID, sessionId: SESSION_ID,
+    startedAt: '2026-10-28T11:00:01.000Z', endedAt: '2026-10-28T11:05:00.000Z', durationMs: 299_000,
+    exitCode: null, outputTail: null, actedAs: ada, endedKind: null, usage: null,
+    ...over,
+  };
+}
+
+function port(over: Partial<LoopPagePort> = {}): LoopPagePort {
+  return {
+    get: vi.fn(async () => view()),
+    enable: vi.fn(async () => view()),
+    disable: vi.fn(async () => view({ state: { enabled: false } })),
+    resume: vi.fn(async () => view()),
+    pause: vi.fn(async (_loop: unknown, until: string) => view({ state: { pausedUntil: until } })),
+    runNow: vi.fn(async () => ({ run: run({ id: 'run-new', trigger: 'manual', status: 'running', endedAt: null, durationMs: null }) })),
+    runsList: vi.fn(async () => ({ items: [run()], nextCursor: null })),
+    runsStop: vi.fn(async (runId: string) => ({ run: run({ id: runId, status: 'stopped' }) })),
+    create: vi.fn(), update: vi.fn(), list: vi.fn(), runsGet: vi.fn(), schedulePreview: vi.fn(),
+    ...over,
+  } as LoopPagePort;
+}
+
+/** PR5a's bound seam reads; the page only needs `entity` for chip titles. */
+function sources() {
+  return {
+    query: vi.fn(),
+    entity: vi.fn(async (id: string) => ({
+      id, title: id === RUNNER_ID ? 'Dreamer' : 'Some entity', state: { kind: 'team_member' },
+    }) as unknown as EntityDetail),
+  } as unknown as LoopFormSources;
+}
+
+function header(v: LoopView, p: LoopPagePort = port(), extra: Partial<Parameters<typeof LoopHeader>[0]> = {}) {
+  const props = {
+    view: v, port: p, onView: vi.fn(), onReload: vi.fn(), onRunsChanged: vi.fn(), onOpenEntity: vi.fn(),
+    deleteEntity: vi.fn(async () => ({ patches: [] }) as unknown as CommandResult),
+    renderEditor: ({ onClose }: { onClose(): void }) => <div role="dialog" aria-label="Edit loop"><button type="button" onClick={onClose}>close</button></div>,
+    ...extra,
+  };
+  render(<div className="cv2-root"><LoopHeader {...props} /></div>);
+  return props;
+}
+
+describe('loop page header: status pill and facts', () => {
+  it('Enabled, with next run relative + absolute in the loop timezone', () => {
+    header(view());
+    expect(screen.getByText('Enabled')).toBeTruthy();
+    expect(screen.getByTestId('loop-next-run').textContent).toBe('Next run in 3h (Wed 15:00 UTC)');
+  });
+
+  it('Paused until …', () => {
+    header(view({ state: { pausedUntil: '2026-10-29T09:00:00.000Z' } }));
+    expect(screen.getByText('Paused until Thu 09:00 UTC')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change pause…' })).toBeTruthy();
+  });
+
+  it('a lapsed pause reads as Enabled', () => {
+    expect(loopStatus(view({ state: { pausedUntil: '2026-10-28T11:00:00.000Z' } }), NOW).kind).toBe('enabled');
+  });
+
+  it('Disabled outranks paused and says it is not scheduled', () => {
+    header(view({ state: { enabled: false, pausedUntil: '2026-10-29T09:00:00.000Z' } }));
+    expect(screen.getByText('Disabled')).toBeTruthy();
+    expect(screen.getByTestId('loop-next-run').textContent).toBe('Not scheduled while disabled');
+    expect(screen.getByRole('button', { name: 'Enable' })).toBeTruthy();
+  });
+
+  it('Waiting on previous run', () => {
+    header(view({ state: { waitingOnRunId: 'run-live' } }));
+    expect(screen.getByText('Waiting on previous run')).toBeTruthy();
+  });
+
+  it('the next run is drawn in the loop zone, not the browser zone', () => {
+    expect(zonedInstant('2026-10-28T15:00:00.000Z', 'Asia/Kolkata', NOW)).toBe('Wed 20:30 GMT+5:30');
+  });
+
+  it('last error banner, and the loop stays enabled', () => {
+    header(view({ state: { lastError: 'spawn refused: session cap reached' } }));
+    const banner = screen.getByTestId('loop-last-error');
+    expect(banner.textContent).toContain('spawn refused: session cap reached');
+    expect(screen.getByText('Enabled')).toBeTruthy();
+  });
+
+  it('armed by, and the fallback identity when it differs', () => {
+    const bob = { id: 'bob', kind: 'member', displayName: 'Bob' } as ActorSummary;
+    header(view({ state: { actingAs: { identity: bob, via: 'fallback' } } }));
+    const armer = screen.getByTestId('loop-armer').textContent ?? '';
+    expect(armer).toContain('Armed by');
+    expect(armer).toContain('Ada');
+    expect(armer).toContain('running as');
+    expect(armer).toContain('Bob');
+    expect(armer).toContain('(fallback)');
+  });
+
+  it('needs arming when there is no one to run as', () => {
+    header(view({ state: { armedBy: null, armedAt: null, actingAs: { identity: null, via: 'none' } } }));
+    const armer = screen.getByTestId('loop-armer').textContent ?? '';
+    expect(armer).toContain('Not armed by a human');
+    expect(armer).toContain('needs arming');
+  });
+});
+
+describe('loop page controls', () => {
+  it('Run now shows the new run with a session link at once', async () => {
+    const p = port();
+    const props = header(view(), p);
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    const started = await screen.findByTestId('loop-run-started');
+    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID);
+    expect(within(started).getByText('Running')).toBeTruthy();
+    fireEvent.click(within(started).getByRole('button', { name: 'Open session' }));
+    expect(props.onOpenEntity).toHaveBeenCalledWith(SESSION_ID);
+    expect(props.onRunsChanged).toHaveBeenCalled();
+  });
+
+  it('Run now on 409 loop_run_overlap offers Run anyway, which forces', async () => {
+    const runNow = vi.fn()
+      .mockRejectedValueOnce(new CollabError('conflict', 'Run run-live is still live.', { details: { code: 'loop_run_overlap', liveRunId: 'run-live' } }))
+      .mockResolvedValueOnce({ run: run({ id: 'run-forced', status: 'running' }) });
+    header(view(), port({ runNow }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    const overlap = await screen.findByTestId('loop-overlap');
+    expect(overlap.textContent).toContain('still live');
+    fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway' }));
+    await screen.findByTestId('loop-run-started');
+    expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true);
+  });
+
+  it('Run now refusal (501 until PR2) is named, not swallowed', async () => {
+    header(view(), port({ runNow: vi.fn(async () => { throw new CollabError('not_implemented', 'loops.runNow is not implemented'); }) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('501');
+  });
+
+  it('Disable sends the version guard and redraws from the returned view', async () => {
+    const p = port();
+    const props = header(view(), p);
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    await waitFor(() => expect(props.onView).toHaveBeenCalled());
+    expect(p.disable).toHaveBeenCalledWith(expect.objectContaining({ id: LOOP_ID, version: 7 }));
+    expect((props.onView.mock.calls[0]![0] as LoopView).state.enabled).toBe(false);
+  });
+
+  it('Enable on a disabled loop', async () => {
+    const p = port();
+    header(view({ state: { enabled: false } }), p);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+    await waitFor(() => expect(p.enable).toHaveBeenCalledWith(expect.objectContaining({ id: LOOP_ID, version: 7 })));
+  });
+
+  it('a version conflict reloads and says so', async () => {
+    const props = header(view(), port({ disable: vi.fn(async () => { throw new CollabError('version_conflict', 'stale'); }) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('changed while you were looking');
+    expect(props.onReload).toHaveBeenCalled();
+  });
+
+  it('Resume calls loops.resume', async () => {
+    const p = port();
+    header(view({ state: { pausedUntil: '2026-10-29T09:00:00.000Z' } }), p);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(p.resume).toHaveBeenCalledWith(expect.objectContaining({ id: LOOP_ID, version: 7 })));
+  });
+
+  it('Edit opens the form; Delete confirms, then calls entities.delete', async () => {
+    const props = header(view());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('dialog', { name: 'Edit loop' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(props.deleteEntity).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete loop' }));
+    await waitFor(() => expect(props.deleteEntity).toHaveBeenCalledWith(LOOP_ID, expect.objectContaining({ clientMutationId: expect.any(String) })));
+  });
+
+  it('every control is honest about capabilities', () => {
+    header(view({ capabilities: { canRun: false, canControl: false, canEdit: false, canDelete: false } }));
+    const refused = screen.getAllByTestId('disabled-with-reason').map((el) => el.parentElement?.textContent ?? '');
+    expect(refused.some((t) => t.includes('Run now') && t.includes('canRun'))).toBe(true);
+    expect(refused.some((t) => t.includes('Pause…') && t.includes('canControl'))).toBe(true);
+    expect(refused.some((t) => t.includes('Disable') && t.includes('canControl'))).toBe(true);
+    expect(refused.some((t) => t.includes('Edit') && t.includes('canEdit'))).toBe(true);
+    expect(refused.some((t) => t.includes('Delete') && t.includes('canDelete'))).toBe(true);
+    expect(screen.getByRole('button', { name: 'Run now' }).getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('pause dialog', () => {
+  it('quick picks resolve to 1 h and tomorrow 09:00; custom is bounded', () => {
+    const now = new Date(NOW);
+    expect('until' in resolvePause('hour', '', now) && resolvePause('hour', '', now)).toMatchObject({ until: new Date(NOW + 3_600_000) });
+    const tomorrow = tomorrowAtNine(now);
+    expect(tomorrow.getHours()).toBe(9);
+    expect(tomorrow.getDate()).toBe(new Date(NOW + 86_400_000).getDate());
+    expect(resolvePause('custom', '2026-10-27T10:00', now)).toEqual({ problem: 'The pause must end in the future.' });
+    expect(resolvePause('custom', '2028-10-27T10:00', now)).toMatchObject({ problem: expect.stringContaining('365 days') });
+    expect(resolvePause('custom', '', now)).toEqual({ problem: 'Pick a date and time.' });
+  });
+
+  it('submits loops.pause with the version guard', async () => {
+    const p = port();
+    const onPaused = vi.fn(); const onClose = vi.fn();
+    render(<div className="cv2-root"><PauseDialog view={view()} port={p} onClose={onClose} onPaused={onPaused} /></div>);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    await waitFor(() => expect(onPaused).toHaveBeenCalled());
+    expect(p.pause).toHaveBeenCalledWith(expect.objectContaining({ id: LOOP_ID, version: 7 }), new Date(NOW + 3_600_000).toISOString());
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('custom date-time in the past cannot be submitted', () => {
+    render(<div className="cv2-root"><PauseDialog view={view()} port={port()} onClose={vi.fn()} onPaused={vi.fn()} /></div>);
+    fireEvent.click(screen.getByLabelText(/Custom/));
+    fireEvent.change(screen.getByLabelText('Pause until (date and time)'), { target: { value: '2020-01-01T09:00' } });
+    expect(screen.getByTestId('pause-resolved').textContent).toBe('The pause must end in the future.');
+    expect((screen.getByRole('button', { name: 'Pause' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('a refusal stays in the dialog', async () => {
+    const onClose = vi.fn();
+    render(<div className="cv2-root"><PauseDialog view={view()} port={port({ pause: vi.fn(async () => { throw new CollabError('invalid_input', 'until must be in the future'); }) })} onClose={onClose} onPaused={vi.fn()} /></div>);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('until must be in the future');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('Pause… in the header opens it', () => {
+    header(view());
+    fireEvent.click(screen.getByRole('button', { name: 'Pause…' }));
+    expect(screen.getByRole('dialog', { name: 'Pause Daily sweep' })).toBeTruthy();
+  });
+});
+
+describe('runs table', () => {
+  function runs(p: LoopPagePort, canControl = true) {
+    const onOpenEntity = vi.fn(); const onChanged = vi.fn();
+    render(<div className="cv2-root"><LoopRuns loopId={LOOP_ID} port={p} canControl={canControl} epoch={0} onOpenEntity={onOpenEntity} onChanged={onChanged} /></div>);
+    return { onOpenEntity, onChanged };
+  }
+
+  it('draws every status with its chip, trigger, duration and note', async () => {
+    const items = [
+      run({ id: 'r1', status: 'running', endedAt: null, durationMs: null, trigger: 'manual' }),
+      run({ id: 'r2', status: 'completed' }),
+      run({ id: 'r3', status: 'failed', error: 'spawn refused', sessionId: null, taskId: null, durationMs: null }),
+      run({ id: 'r4', status: 'skipped', skipReason: 'overlap', sessionId: null, taskId: null, durationMs: null }),
+      run({ id: 'r5', status: 'stopped' }),
+      run({ id: 'r6', status: 'timed_out', attempt: 2 }),
+    ];
+    runs(port({ runsList: vi.fn(async () => ({ items, nextCursor: null })) }));
+    const rows = await screen.findAllByTestId('loop-run-row');
+    expect(rows.map((r) => r.getAttribute('data-status'))).toEqual(['running', 'completed', 'failed', 'skipped', 'stopped', 'timed_out']);
+    expect(rows[0]!.textContent).toContain('Run now');
+    expect(rows[0]!.textContent).toContain('so far');
+    expect(rows[1]!.textContent).toContain('Completed');
+    expect(rows[1]!.textContent).toContain('4m 59s');
+    expect(rows[2]!.textContent).toContain('spawn refused');
+    expect(rows[3]!.textContent).toContain('previous run was still live');
+    expect(rows[5]!.textContent).toContain('Timed out');
+    expect(rows[5]!.textContent).toContain('retry 1');
+    // Stop only on the running row.
+    expect(within(rows[0]!).getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(within(rows[1]!).queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+
+  it('the session link opens the session tab; the task link the task', async () => {
+    const { onOpenEntity } = runs(port());
+    const row = (await screen.findAllByTestId('loop-run-row'))[0]!;
+    fireEvent.click(within(row).getByRole('button', { name: /Open the session/ }));
+    expect(onOpenEntity).toHaveBeenCalledWith(SESSION_ID);
+    fireEvent.click(within(row).getByRole('button', { name: 'Task' }));
+    expect(onOpenEntity).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it('Stop calls loops.runs.stop and redraws the row', async () => {
+    const p = port({ runsList: vi.fn(async () => ({ items: [run({ id: 'live', status: 'running', durationMs: null })], nextCursor: null })) });
+    const { onChanged } = runs(p);
+    const row = (await screen.findAllByTestId('loop-run-row'))[0]!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Stop' }));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')[0]!.getAttribute('data-status')).toBe('stopped'));
+    expect(p.runsStop).toHaveBeenCalledWith('live');
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('Stop is refused with a reason without canControl', async () => {
+    runs(port({ runsList: vi.fn(async () => ({ items: [run({ status: 'running' })], nextCursor: null })) }), false);
+    const row = (await screen.findAllByTestId('loop-run-row'))[0]!;
+    expect(within(row).getByTestId('disabled-with-reason').parentElement?.textContent).toContain('canControl');
+  });
+
+  it('paginates with the cursor', async () => {
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'a' })], nextCursor: 'c1' })
+      .mockResolvedValueOnce({ items: [run({ id: 'b' })], nextCursor: null });
+    runs(port({ runsList }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(2));
+    expect(runsList).toHaveBeenLastCalledWith(LOOP_ID, { limit: 20, cursor: 'c1' });
+    expect(screen.queryByRole('button', { name: 'Older runs' })).toBeNull();
+  });
+
+  it('empty state', async () => {
+    runs(port({ runsList: vi.fn(async () => ({ items: [], nextCursor: null })) }));
+    expect((await screen.findByTestId('loop-runs-empty')).textContent).toContain('No runs yet');
+  });
+
+  it('error state with retry; 501 says the server lacks it', async () => {
+    const runsList = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ items: [run()], nextCursor: null });
+    runs(port({ runsList }));
+    expect((await screen.findByTestId('loop-runs-error')).textContent).toContain('network down');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findAllByTestId('loop-run-row')).toHaveLength(1);
+    cleanup();
+    runs(port({ runsList: vi.fn(async () => { throw new CollabError('not_implemented', 'nope'); }) }));
+    expect((await screen.findByTestId('loop-runs-error')).textContent).toContain('501');
+  });
+
+  it('duration labels: unknown is a dash, never zero', () => {
+    expect(durationLabel(null)).toBe('—');
+    expect(durationLabel(45_000)).toBe('45s');
+    expect(durationLabel(3_840_000)).toBe('1h 4m');
+  });
+});
+
+describe('the registry row mounts the page through GenericBody', () => {
+  function detail(): EntityDetail {
+    return {
+      id: LOOP_ID, kind: 'loop', title: 'Daily sweep', version: 7,
+      content: { kind: 'loop', schedule: '0 9 * * *', teamMemberId: RUNNER_ID, config: { model: 'opus' } },
+      state: { kind: 'loop' },
+      capabilities: { canEdit: true, canDelete: true },
+      connections: { outgoing: [], incoming: [] },
+    } as unknown as EntityDetail;
+  }
+
+  it('header, WHAT IT RUNS, SCHEDULE, SETTINGS and RUNS render from one loops.get, without raw ids', async () => {
+    const p = port();
+    render(
+      <div className="cv2-root">
+        <GenericBody detail={detail()} blocks={getKind('loop').panel.blocks ?? []} commands={{ loops: p, loopForm: sources() }} />
+      </div>,
+    );
+    expect(await screen.findByTestId('loop-header')).toBeTruthy();
+    expect(screen.getByTestId('loop-what').textContent).toContain('Dreamer');
+    expect(screen.getByTestId('loop-schedule').textContent).toContain('Every day at 09:00 UTC');
+    expect(screen.getByTestId('loop-settings').textContent).toContain('opus');
+    expect(screen.getByTestId('loop-settings').textContent).toContain('2 retries, 5m 0s apart');
+    expect(await screen.findAllByTestId('loop-run-row')).toHaveLength(1);
+    expect(p.get).toHaveBeenCalledTimes(1);
+    const page = document.querySelector('.pn-body')!.textContent ?? '';
+    expect(page).not.toContain(RUNNER_ID);
+    for (const label of ['WHAT IT RUNS', 'SCHEDULE', 'SETTINGS', 'RUNS']) expect(page).toContain(label);
+  });
+
+  it('says so when the surface has no loops client', () => {
+    render(<div className="cv2-root"><GenericBody detail={detail()} blocks={getKind('loop').panel.blocks ?? []} commands={null} /></div>);
+    expect(screen.getAllByText(/not wired on this surface/).length).toBeGreaterThan(0);
+  });
+
+  it('a dispatch loop says the Dispatcher decides; a tool loop names the tool and its inputs', async () => {
+    render(<div className="cv2-root"><GenericBody detail={detail()} blocks={getKind('loop').panel.blocks ?? []} commands={{ loops: port({ get: vi.fn(async () => view({ definition: { action: 'dispatch', teamMemberId: null } })) }), loopForm: sources() }} /></div>);
+    expect((await screen.findByTestId('loop-what')).textContent).toContain('Dispatcher decides');
+    cleanup(); resetLoopPageStore();
+    render(<div className="cv2-root"><GenericBody detail={detail()} blocks={getKind('loop').panel.blocks ?? []} commands={{ loops: port({ get: vi.fn(async () => view({ definition: { action: 'tool', toolId: 'tool-1', teamMemberId: null, toolInputs: { repo: 'tm8' } } })) }), loopForm: sources() }} /></div>);
+    const what = (await screen.findByTestId('loop-what')).textContent ?? '';
+    expect(what).toContain('Runs tool');
+    expect(what).toContain('repo = tm8');
+    expect(what).not.toContain('tool-1');
+  });
+});

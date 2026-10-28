@@ -1,0 +1,21 @@
+/* The loop page (LoopHeader, LoopDefinition, LoopRuns, PauseDialog). */
+.cv2-root .loop-page__header { display: flex; flex-direction: column; gap: 8px; }
+.cv2-root .loop-page__status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--pn-ink-2); }
+.cv2-root .loop-page__line { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--pn-ink-2); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cv2-root .loop-page__hint { margin: 0; font-family: var(--pn-mono); font-size: 10px; line-height: 1.45; color: var(--pn-ink-3); }
+.cv2-root .loop-page__error, .cv2-root .loop-page__warn { margin: 0; font-size: 11.5px; color: var(--pn-warn, var(--pn-ink-1)); }
+/* A recorded failure the loop survives: only the banner says something is wrong. */
+.cv2-root .loop-page__banner { margin: 0; padding: 8px 10px; border: 1px solid var(--pn-warn, var(--pn-line)); border-radius: 6px; font-size: 11.5px; line-height: 1.5; color: var(--pn-ink-1); }
+.cv2-root .loop-page__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv2-root .loop-page__confirm, .cv2-root .loop-page__overlap, .cv2-root .loop-page__started { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; }
+.cv2-root .loop-page__confirm p, .cv2-root .loop-page__overlap p { margin: 0; }
+.cv2-root .loop-page__dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 11.5px; }
+.cv2-root .loop-page__dl dt { color: var(--pn-ink-3); }
+.cv2-root .loop-page__dl dd { margin: 0; color: var(--pn-ink-1); display: flex; flex-wrap: wrap; gap: 4px; }
+.cv2-root .loop-page__prompt { white-space: pre-wrap; }
+.cv2-root .loop-page__inputs, .cv2-root .loop-page__next { margin: 0; padding-left: 18px; font-size: 11.5px; }
+.cv2-root .loop-runs { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.cv2-root .loop-runs th { text-align: left; font-weight: 500; color: var(--pn-ink-3); padding: 4px 6px; border-bottom: 1px solid var(--pn-line); }
+.cv2-root .loop-runs td { padding: 4px 6px; border-bottom: 1px solid var(--pn-line); vertical-align: middle; }
+.cv2-root .loop-page__runs { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
+.cv2-root .loop-pause__picks { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 12px 0 8px; }
