@@ -1121,7 +1121,19 @@ export async function cherryPick(params: {
   return { status: 'conflict', branch, fromOids, conflictedPaths };
 }
 
-// ── stash, per worktree ─────────────────────────────────────────────────────
+// ── stash ───────────────────────────────────────────────────────────────────
+//
+// THE STASH IS NOT PER WORKTREE. `refs/stash` lives in the COMMON git dir, so
+// every lane cut from one repository — and the user's primary tree — pushes
+// onto ONE list. Two consequences shape the verbs below:
+//
+//   * an index is a position in a list other lanes are pushing onto, so it can
+//     name a different entry by the time it is used. Pop and drop resolve the
+//     entry to its OID first and act on that OID, re-finding its current index
+//     at the last moment instead of trusting the one they were handed;
+//   * `stash@{0}` is whoever stashed LAST, which is often another lane. A pop
+//     with no index therefore takes the newest entry made on THIS worktree's
+//     branch, never blindly the top of the shared list.
 
 export interface StashEntry {
   /** Position in the stash list; stash@{index}. */
@@ -1156,6 +1168,27 @@ export async function stashList(worktreePath: string): Promise<StashEntry[]> {
     entries.push({ index: entries.length, oid, date, subject: subject ?? '' });
   }
   return entries;
+}
+
+/** The `%gs` subject git writes for a stash taken on `branch`. */
+function stashedOnBranch(entry: StashEntry, branch: string): boolean {
+  return entry.subject.startsWith(`On ${branch}: `) || entry.subject.startsWith(`WIP on ${branch}: `);
+}
+
+/**
+ * Drop the stash entry whose commit is `oid`, wherever it sits NOW. The index
+ * is re-read immediately before the drop, so a push by another lane between a
+ * caller's listing and this call cannot redirect the drop onto its entry.
+ * Returns false when the entry is no longer in the list.
+ */
+async function dropStashByOid(worktreePath: string, oid: string): Promise<boolean> {
+  const index = (await stashList(worktreePath)).findIndex((e) => e.oid === oid);
+  if (index === -1) return false;
+  const res = await git(['stash', 'drop', stashRef(index)], worktreePath);
+  if (res.code !== 0) {
+    throw new WorktreeError('git stash drop failed', 'internal', 'stash_drop_failed', { stderr: res.stderr.trim() });
+  }
+  return true;
 }
 
 export type StashPushResult =
@@ -1203,6 +1236,12 @@ export type StashPopResult =
  * came from the failed pop, the tree was clean), and the abort is VERIFIED:
  * clean status AND the stash entry still present, or `stash_pop_abort_failed`
  * is thrown loudly.
+ *
+ * Implemented as `stash apply <oid>` + drop-by-oid rather than `stash pop
+ * stash@{n}`, because the list is shared (see the section header): applying
+ * the OID resolved from the listing is the only way to be sure the content
+ * that lands is the entry that was chosen. With no `index`, the entry chosen is
+ * the newest one stashed on this worktree's branch.
  */
 export async function stashPop(params: {
   worktreePath: string;
@@ -1211,12 +1250,18 @@ export async function stashPop(params: {
 }): Promise<StashPopResult> {
   const { branch } = await assertMutableWorktree(params);
   await refuseMidMerge(params.worktreePath, 'stash pop');
-  const index = params.index ?? 0;
-  const ref = stashRef(index);
+  if (params.index !== undefined) stashRef(params.index);
   const entries = await stashList(params.worktreePath);
-  const entry = entries[index];
+  const entry = params.index === undefined
+    ? entries.find((e) => stashedOnBranch(e, branch))
+    : entries[params.index];
   if (entry === undefined) {
-    throw new WorktreeError(`no stash entry at index ${index}`, 'not_found', 'stash_not_found', { entries: entries.length });
+    throw new WorktreeError(
+      params.index === undefined
+        ? `no stash entry was made on ${JSON.stringify(branch)}`
+        : `no stash entry at index ${params.index}`,
+      'not_found', 'stash_not_found', { entries: entries.length, branch },
+    );
   }
   const dirty = await changedFiles(params.worktreePath);
   if (dirty.length > 0) {
@@ -1227,8 +1272,12 @@ export async function stashPop(params: {
     );
   }
 
-  const popped = await git(['stash', 'pop', ref], params.worktreePath);
+  const popped = await git(['stash', 'apply', entry.oid], params.worktreePath);
   if (popped.code === 0) {
+    // The content is applied; a drop that finds the entry already gone (some
+    // other lane dropped it meanwhile) leaves nothing to undo, so it is not
+    // an error here.
+    await dropStashByOid(params.worktreePath, entry.oid);
     return { status: 'popped', branch, oid: entry.oid, files: await changedFiles(params.worktreePath) };
   }
 
@@ -1288,9 +1337,13 @@ export async function stashDrop(params: {
       { index: params.index, oid: entry.oid, hint: 'pass force to drop — the oid stays in the receipt until gc' },
     );
   }
-  const res = await git(['stash', 'drop', ref], params.worktreePath);
-  if (res.code !== 0) {
-    throw new WorktreeError('git stash drop failed', 'internal', 'stash_drop_failed', { stderr: res.stderr.trim() });
+  // Drop by the OID the caller was shown, not by the index they passed: the
+  // list is shared, and the index may name another lane's entry by now.
+  if (!(await dropStashByOid(params.worktreePath, entry.oid))) {
+    throw new WorktreeError(
+      `stash entry ${entry.oid} left the list before it could be dropped`,
+      'conflict', 'stash_not_found', { oid: entry.oid },
+    );
   }
   return { droppedOid: entry.oid, subject: entry.subject };
 }

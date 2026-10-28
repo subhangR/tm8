@@ -48,6 +48,7 @@ import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { noticeStatusNudges } from '../status-nudge.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
+import { assertKnownOptions } from './entity.js';
 import type { Tm8Client } from '../client.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
@@ -642,21 +643,45 @@ export function renderDelivery(dto: unknown): string {
  * The module's registration. NOTE the absence of `message mark-read`: that path
  * is `readMarks.upsert` and belongs to the per-member read-state group.
  */
+/**
+ * Each command refuses a flag it does not read. `message send` is the one write
+ * every agent makes, and a misspelt `--mentions` or `--reply_to` used to be
+ * dropped in silence: the message went out, without the mention or off its
+ * thread, and exit 0 said nothing was wrong. `--mutation-id` stays listed on the
+ * reads so `refuseMutationId` can give its own, better answer.
+ */
+function known(allowed: readonly string[], run: CommandModule['run']): CommandModule['run'] {
+  return (cmd) => {
+    assertKnownOptions(cmd, allowed);
+    return run(cmd);
+  };
+}
+
 export const MESSAGE_COMMANDS: CommandModule[] = [
-  { path: ['message', 'list'], run: messageList },
-  { path: ['message', 'send'], run: messageSend },
-  { path: ['message', 'reply'], run: messageReply },
-  { path: ['message', 'update'], run: messageUpdate },
-  { path: ['message', 'delete'], run: messageDelete },
+  { path: ['message', 'list'], run: known(['for', 'limit', 'root', 'order', 'cursor', 'mutation-id'], messageList) },
+  {
+    path: ['message', 'send'],
+    run: known(['to', 'conversation', 'reply-to', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageSend),
+  },
+  {
+    path: ['message', 'reply'],
+    // --to/--conversation are read only to refuse them with a reason.
+    run: known(['to', 'conversation', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageReply),
+  },
+  // --mention is read only to refuse it with a reason (refuseMentionEdit).
+  { path: ['message', 'update'], run: known(['body', 'mention', 'expect-version', 'mutation-id'], messageUpdate) },
+  { path: ['message', 'delete'], run: known(['yes', 'expect-version', 'mutation-id'], messageDelete) },
   {
     path: ['message', 'attachment', 'add'],
-    run: (cmd) => attachmentMutation(cmd, 'messages.attachments.add', 'message attachment add'),
+    run: known(['expect-version', 'mutation-id'], (cmd) =>
+      attachmentMutation(cmd, 'messages.attachments.add', 'message attachment add')),
   },
   {
     path: ['message', 'attachment', 'remove'],
-    run: (cmd) => attachmentMutation(cmd, 'messages.attachments.remove', 'message attachment remove'),
+    run: known(['expect-version', 'mutation-id'], (cmd) =>
+      attachmentMutation(cmd, 'messages.attachments.remove', 'message attachment remove')),
   },
-  { path: ['message', 'delivery'], run: messageDelivery },
+  { path: ['message', 'delivery'], run: known(['mutation-id'], messageDelivery) },
 ];
 
 /**

@@ -21,9 +21,9 @@
  */
 import { Pool } from 'pg';
 
-import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import { BACKGROUND_JOB_CLAIMS, type Db, type DbClaims, type Querier } from '../../src/db/types.js';
 
-/** `SET LOCAL` for the four canonical claims, via `set_config(…, is_local => true)`. */
+/** `SET LOCAL` for the canonical claims, via `set_config(…, is_local => true)`. */
 async function applyClaims(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }, claims: DbClaims): Promise<void> {
   const bindings: Array<[string, string]> = [];
   if (claims.identityId !== undefined) bindings.push(['tm8.identity_id', claims.identityId]);
@@ -32,6 +32,20 @@ async function applyClaims(client: { query: (sql: string, params?: unknown[]) =>
   // the literal 'true', so 'on' would silently read as "not an admin".
   if (claims.nodeAdmin !== undefined) bindings.push(['tm8.node_admin', claims.nodeAdmin ? 'true' : 'false']);
   if (claims.requestId !== undefined) bindings.push(['tm8.request_id', claims.requestId]);
+  /**
+   * `tm8.background_job` (306, 375). MIRRORS db/client.ts:457, including both
+   * of its refusals — a name outside the closed list and a space-pinned caller
+   * each bind `''`. A harness that bound this claim more freely than the real
+   * client would let a test prove a background door open that production
+   * cannot reach.
+   */
+  const backgroundJob = claims.sessionSpaceId ? undefined : claims.backgroundJob;
+  if (backgroundJob !== undefined) {
+    bindings.push([
+      'tm8.background_job',
+      (BACKGROUND_JOB_CLAIMS as readonly string[]).includes(backgroundJob) ? backgroundJob : '',
+    ]);
+  }
   for (const [name, value] of bindings) {
     await client.query('select set_config($1, $2, true)', [name, value]);
   }

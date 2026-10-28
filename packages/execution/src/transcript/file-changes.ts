@@ -20,6 +20,11 @@
  *     removal count would be a claim with nothing behind it.
  *   * Sidechain (sub-agent) edits are INCLUDED: a file changed by a session's
  *     sub-agent was changed by that session's run.
+ *   * A call whose tool RESULT came back `is_error` is EXCLUDED. A denied
+ *     permission, an `old_string` that did not match, a Write to a path it may
+ *     not touch — the harness records the call either way, and counting it
+ *     reported files as changed that never were. A call with no result at all
+ *     (the transcript ends mid-turn) is kept: the write may well have landed.
  *   * `lastTurn` marks the files the agent's MOST RECENT turn wrote, where a
  *     turn is the work following one real user prompt. It can be a false
  *     NEGATIVE — a shell-made change in that same turn is invisible here, as
@@ -186,6 +191,17 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
    * This is the same definition `transcript/session-usage` counts prompts by.
    */
   let epoch = 1;
+  /** Hunks held until their tool_result says whether the call succeeded. */
+  const pending = new Map<string, { hunks: { path: string; hunk: SessionFileHunk }[]; epoch: number }>();
+  const commit = (hunks: { path: string; hunk: SessionFileHunk }[], atEpoch: number): void => {
+    for (const { path: filePath, hunk } of hunks) {
+      if (!byPath.has(filePath) && byPath.size >= MAX_FILES) {
+        filesTruncated = true;
+        continue;
+      }
+      addHunk(byPath, order, filePath, hunk, atEpoch);
+    }
+  };
 
   const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
   try {
@@ -208,9 +224,22 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
       const content = message?.content;
 
       if (record?.type === 'user') {
+        // Results first, sidechain or not: a sub-agent's edit is settled by
+        // its own result record, which is itself a sidechain line.
+        let isToolResult = false;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            const b = asRecord(block);
+            if (b?.type !== 'tool_result') continue;
+            isToolResult = true;
+            const id = typeof b.tool_use_id === 'string' ? b.tool_use_id : null;
+            const held = id === null ? undefined : pending.get(id);
+            if (held === undefined) continue;
+            pending.delete(id!);
+            if (b.is_error !== true) commit(held.hunks, held.epoch);
+          }
+        }
         if (record.isSidechain === true || record.isCompactSummary === true || record.isMeta === true) continue;
-        const isToolResult = Array.isArray(content)
-          && content.some((b) => asRecord(b)?.type === 'tool_result');
         if (!isToolResult) epoch += 1;
         continue;
       }
@@ -223,18 +252,23 @@ export async function collectFileChanges(path: string): Promise<SessionFileChang
         if (!FILE_TOOLS.has(name)) continue;
         const input = asRecord(b.input);
         if (input === null) continue;
-        for (const { path: filePath, hunk } of hunksOf(name, input)) {
-          if (!byPath.has(filePath) && byPath.size >= MAX_FILES) {
-            filesTruncated = true;
-            continue;
-          }
-          addHunk(byPath, order, filePath, hunk, epoch);
+        const hunks = hunksOf(name, input);
+        if (typeof b.id !== 'string') {
+          commit(hunks, epoch);
+          continue;
         }
+        // A reused id cannot be settled per call any more; keep the earlier one.
+        const earlier = pending.get(b.id);
+        if (earlier !== undefined) commit(earlier.hunks, earlier.epoch);
+        pending.set(b.id, { hunks, epoch });
       }
     }
   } finally {
     rl.close();
   }
+  // Calls whose result never arrived: the transcript ended mid-call (a live
+  // session, a crash). Kept, in call order — the write may have landed.
+  for (const held of pending.values()) commit(held.hunks, held.epoch);
 
   /*
    * `lastTurn` is resolved HERE, against the epoch the scan ended on, not
