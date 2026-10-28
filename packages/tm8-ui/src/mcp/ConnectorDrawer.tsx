@@ -16,17 +16,23 @@
  *  - S9. The Gmail send gate is part of the definition fingerprint (B1), so
  *    flipping it really does invalidate every connection. The confirm says how
  *    many, in BOTH directions, before the write.
+ *  - §10.2. Connect and Reconnect run the POPUP flow (`useConnect`), not the
+ *    same-tab link this file used to render. Every fallback row of that table
+ *    shows up here: the browser blocking the window, the person closing it, the
+ *    provider refusing tm8 as a client, an expired state, an admin changing the
+ *    connector mid-flow.
  *  - S10/S12. A partial Google grant is not a broken connection: it stays
  *    `ready`, and the gap shows here, from `unavailableTools` on
  *    `mcp.servers.test`. The UI never computes scope coverage — if the server
  *    does not report a gap, none is drawn.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { McpCredentialScope } from '@tm8/contract';
 import { ConnectorForm } from './ConnectorForm';
 import { ConnectorLogo } from './connector-logos';
 import { accessLabel, isGoogleConnector, rowStatusOf, statusLabel, typeLabel, STATUS_ROWS } from './connector-rows';
-import { McpUiError, testFailure } from './errors';
+import { McpUiError, testFailure, type ConnectFailure } from './errors';
+import { useConnect, type ConnectPhase } from './useConnect';
 import type { McpAccount, McpDefinition, McpPort, McpServer, McpTestReport } from './port';
 import './connectors.css';
 
@@ -108,6 +114,83 @@ function ConnectionControls({ account, server, port, busy, run }: {
   </div>;
 }
 
+/**
+ * §10.2's live connect state and its whole fallback column, in one place.
+ *
+ * Each row below is a row of that table:
+ *  - `starting` — `mcp.oauth.begin` is in flight and no window exists yet.
+ *  - `waiting` — the popup is open. "Waiting for <Provider>…", with [Cancel].
+ *  - `blocked` — the browser refused the window, so the sign-in continues in
+ *    THIS tab. The server already holds `return_to`, so the person comes back
+ *    here afterwards; the link is the only thing that carries a user gesture
+ *    the browser will honour.
+ *  - `failed` — the §10.2 error table, worded by `connectFailure`. A member
+ *    sees what happened; a Space admin also sees what they can do about it,
+ *    the server variable to set, and the server's own diagnosis.
+ */
+function ConnectStatus({ connect, admin, busy, onRetry, onSettings }: {
+  connect: { phase: ConnectPhase; cancel(): void; reset(): void };
+  admin: boolean;
+  busy: boolean;
+  onRetry(): void;
+  onSettings(): void;
+}) {
+  const phase = connect.phase;
+  if (phase.kind === 'idle') return null;
+  if (phase.kind === 'starting') return <p role="status" className="mcp-note">Starting sign-in with {phase.provider}&hellip;</p>;
+  if (phase.kind === 'waiting') {
+    return <div className="mcp-banner mcp-banner--wait" role="status">
+      <p>Waiting for {phase.provider}&hellip; finish signing in in the window tm8 opened.</p>
+      <button type="button" onClick={connect.cancel}>Cancel</button>
+    </div>;
+  }
+  if (phase.kind === 'blocked') {
+    return <div className="mcp-banner mcp-banner--warn" role="alert">
+      <p>Your browser blocked the sign-in window. Continue in this tab instead &mdash; tm8 brings you back here when you are done.</p>
+      <div className="mcp-actions">
+        {/* NOT `noopener`: the same-tab path leaves this page entirely, and the
+            callback completes against the server's pending row, not an opener. */}
+        <a href={phase.url} rel="noreferrer">Continue to {phase.provider}</a>
+        <button type="button" onClick={connect.reset}>Cancel</button>
+      </div>
+    </div>;
+  }
+  return <ConnectError failure={phase.failure} admin={admin} busy={busy} onRetry={onRetry} onSettings={onSettings} onDismiss={connect.reset} />;
+}
+
+function ConnectError({ failure, admin, busy, onRetry, onSettings, onDismiss }: {
+  failure: ConnectFailure; admin: boolean; busy: boolean;
+  onRetry(): void; onSettings(): void; onDismiss(): void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return <div className="mcp-banner mcp-banner--warn" role="alert">
+    <p>{failure.message}</p>
+    {admin && failure.adminHint && <p className="mcp-note">{failure.adminHint}</p>}
+    {admin && failure.copyable !== undefined && <p className="mcp-note">
+      <code>{failure.copyable}</code>{' '}
+      {/* The variable NAME, which is configuration, never its value. The
+          clipboard is absent on an insecure origin and can be refused on a
+          secure one, and neither must read as a failed connect — so the name is
+          on screen to read either way. */}
+      <button type="button" onClick={() => {
+        const write = navigator.clipboard?.writeText;
+        if (!write) { setCopied(false); return; }
+        void write.call(navigator.clipboard, failure.copyable as string).then(() => setCopied(true), () => setCopied(false));
+      }}>Copy name</button>
+      {copied && <span role="status"> Copied.</span>}
+    </p>}
+    {/* The server's own sentence, for a Space admin only: the provider's
+        origin, its status and its short error code (#1296/#1328). It is folded
+        away because it is a diagnosis, not an instruction. */}
+    {admin && failure.cause && <details className="mcp-note"><summary>Technical detail</summary><p>{failure.cause}</p></details>}
+    <div className="mcp-actions">
+      {failure.retry && <button type="button" disabled={busy} onClick={onRetry}>Try again</button>}
+      {admin && failure.settings && <button type="button" onClick={onSettings}>Open settings</button>}
+      <button type="button" onClick={onDismiss}>Dismiss</button>
+    </div>
+  </div>;
+}
+
 export function ConnectorDrawer({ server, port, admin, busy, run, onClose }: {
   server: McpServer;
   port: McpPort;
@@ -122,11 +205,34 @@ export function ConnectorDrawer({ server, port, admin, busy, run, onClose }: {
   const [typed, setTyped] = useState('');
   const [adding, setAdding] = useState(false);
   const [scope, setScope] = useState<McpCredentialScope>('member');
-  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
+
+  /**
+   * §10.2. `run` is the page's single-action wrapper: it reports one sentence
+   * and refreshes the catalog. A connect is not one action — it is a `begin`,
+   * then a window the person uses, then a message back — so the popup flow owns
+   * its own phase and reaches for `run` only at the END, to announce the
+   * connection and pull the fresh row in.
+   */
+  const announce = useCallback((result: { provider: string; accountLabel?: string }) => {
+    setAdding(false);
+    void run(async () => undefined, result.accountLabel
+      ? `${result.provider} connected as ${result.accountLabel}.`
+      : `${result.provider} connected.`);
+  }, [run]);
+  const connect = useConnect({ port, admin, onConnected: announce });
 
   const definition = server.source;
   const google = isGoogleConnector(definition);
-  const row = rowStatusOf(server);
+  const base = rowStatusOf(server);
+  /**
+   * `provider_blocked` has no server-side readiness reason — only a failed
+   * `mcp.oauth.begin` can produce it (`connector-rows.ts`), and this is the one
+   * surface that has just made that call. So the DCR 403 is shown as the §10.0
+   * row it is, rather than only as an error line under the form.
+   */
+  const row = connect.phase.kind === 'failed' && connect.phase.failure.status
+    ? { ...base, status: connect.phase.failure.status }
+    : base;
   const live = server.accounts.filter(account => account.status !== 'revoked');
   const mine = live.filter(account => account.scope !== 'space' && account.canManage);
   const shared = live.filter(account => account.scope === 'space');
@@ -223,25 +329,31 @@ export function ConnectorDrawer({ server, port, admin, busy, run, onClose }: {
       </div>)}
     </section>}
 
-    {adding && server.auth !== 'none' && <form className="mcp-form" onSubmit={e => {
+    {/* While a connect is in flight the form gives way to its status: §10.2
+        shows the person ONE thing at a time — "Waiting for Google…", the
+        same-tab link, or the error with [Try again], which brings this back. */}
+    {adding && connect.phase.kind === 'idle' && server.auth !== 'none' && <form className="mcp-form" onSubmit={e => {
       e.preventDefault();
       const form = e.currentTarget;
       const data = new FormData(form);
       const label = String(data.get('label'));
       const secret = String(data.get('secret') ?? '');
+      if (server.auth !== 'api_key') { void connect.start(server, { label, scope }); return; }
+      // Cleared BEFORE the await: a rejected create must not leave the key
+      // sitting in a live input for the next person at the screen.
       form.reset();
       void run(async () => {
-        if (server.auth === 'api_key') await port.createKey(server.id, label, secret, scope);
-        else {
-          const response = await port.startOAuth(server.id, label, scope);
-          const url = new URL(response.authorizationUrl);
-          if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new McpUiError('This provider returned an address tm8 will not open.');
-          setOauthUrl(url.href);
-        }
+        await port.createKey(server.id, label, secret, scope);
         setAdding(false);
-      }, server.auth === 'api_key' ? 'Connection added.' : 'Authorization is ready.');
+      }, 'Connection added.');
     }}>
-      <label>Account label<input name="label" required autoComplete="off" /></label>
+      {/* A first-party Google connection is NAMED BY GOOGLE: `accountLabel` is
+          filled from userinfo at the callback (#1323). Making someone invent a
+          label for it first is a question with no useful answer, so the
+          connector's own name is offered and the real account arrives after. */}
+      <label>Account label<input name="label" required autoComplete="off" defaultValue={google ? server.title : ''} />
+        {google && <span className="mcp-note">Google supplies the account name once you sign in.</span>}
+      </label>
       {server.auth === 'api_key' && <label>API key<input name="secret" type="password" required autoComplete="off" /></label>}
       {/* §10.2 step 2: only a Space admin is offered the Space-owned scope.
           A member's connection is always their own. */}
@@ -255,7 +367,9 @@ export function ConnectorDrawer({ server, port, admin, busy, run, onClose }: {
         <button type="button" onClick={() => setAdding(false)}>Cancel</button>
       </div>
     </form>}
-    {oauthUrl && <div className="mcp-actions"><a href={oauthUrl} rel="noreferrer">Continue authorization</a></div>}
+    <ConnectStatus connect={connect} admin={admin} busy={busy}
+      onRetry={() => { connect.reset(); setAdding(true); }}
+      onSettings={() => { connect.reset(); setEditing(true); }} />
 
     <section className="mcp-drawer__group">
       <h4>Tools</h4>
