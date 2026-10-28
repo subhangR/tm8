@@ -71,6 +71,7 @@ import {
   type WorkSessionUsage,
   type WorkSessionUsageSource,
   WorktreeManager,
+  type WarmLanePool,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
   type GhostReconcileReport,
@@ -1974,6 +1975,14 @@ export interface ExecutionRuntime {
    */
   reconcileWorktrees(): Promise<WorktreeReconcileReport>;
   /**
+   * This node's warm lanes (`@tm8/execution`'s warm-pool.ts), or null when it
+   * keeps none (no data root, or TM8_WORKTREE_POOL=0). The composition root
+   * owns its upkeep and its shutdown: `maintainAll()` on the scheduler,
+   * `drain()` from the signal handler under a time bound. Launches use it
+   * through the worktree manager and never see it here.
+   */
+  worktreePool: WarmLanePool | null;
+  /**
    * Annotate every live session with WHY it is about to die, from the process
    * that is dying (171). The mirror image of `reconcileGhosts`: that one infers
    * a past death from the next process, this one observes an imminent one from
@@ -2049,7 +2058,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // Its PRESENCE is what makes `workdir.mode:'worktree'` serviceable; a node
   // built without a data root simply does not advertise it (§7.4), rather than
   // quietly handing back the shared project directory.
-  const worktrees = resolveWorktreeManager(deps.dataDir);
+  const worktrees = resolveWorktreeManager(deps.dataDir, deps.logger ?? createSpawnLogger());
 
   const mcpBindings = new McpSessionBindings(deps.db);
   spawnService = new SpawnService({
@@ -2102,6 +2111,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     spawnService,
     graph,
+    worktreePool: worktrees?.pool ?? null,
     register: (registry, options) =>
       registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, options),
     reconcileGhosts: async () => {
@@ -2230,9 +2240,32 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
  * inventing checkout locations in a user's home directory, and §7.4 would
  * rather the capability be absent than approximate.
  */
-function resolveWorktreeManager(dataDir: string | undefined): WorktreeManager | null {
+function resolveWorktreeManager(dataDir: string | undefined, logger: Logger): WorktreeManager | null {
   if (!dataDir) return null;
-  return new WorktreeManager({ worktreeRoot: resolvePath(dataDir, 'worktrees') });
+  return new WorktreeManager({
+    worktreeRoot: resolvePath(dataDir, 'worktrees'),
+    // Warm lanes sit beside the lane area, on its filesystem: a claim is a
+    // rename into it.
+    pool: { root: resolvePath(dataDir, 'worktrees-pool'), size: resolveWorktreePoolSize(), logger },
+  });
+}
+
+/** Warm lanes per project when TM8_WORKTREE_POOL is unset. */
+export const DEFAULT_WORKTREE_POOL = 2;
+/** Each one is a full checkout on disk; a typo must not fill the disk with them. */
+const MAX_WORKTREE_POOL = 8;
+
+/**
+ * How many checked-out lanes this node keeps ready per project
+ * (TM8_WORKTREE_POOL). 0 turns the pool off; absent or unparseable is the
+ * default; anything larger is capped.
+ */
+export function resolveWorktreePoolSize(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.TM8_WORKTREE_POOL?.trim();
+  if (!raw) return DEFAULT_WORKTREE_POOL;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0 || String(parsed) !== raw) return DEFAULT_WORKTREE_POOL;
+  return Math.min(parsed, MAX_WORKTREE_POOL);
 }
 
 /**
@@ -2279,7 +2312,7 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const nodeId = `${deps.config.host}:${deps.config.port}`;
-  const worktrees = resolveWorktreeManager(deps.dataDir);
+  const worktrees = resolveWorktreeManager(deps.dataDir, deps.logger ?? createSpawnLogger());
   const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
     mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
@@ -2327,6 +2360,7 @@ export function registerExecutionHandlers(
     promptSettlement: new PromptSettlementWaiter(),
     spawnService,
     graph,
+    worktreePool: worktrees?.pool ?? null,
     register: () => {},
     // Same reconciliation as createExecutionRuntime — a node wired through the
     // legacy shape leaves the same ghosts behind and deserves the same cleanup.

@@ -192,15 +192,13 @@ describe('G2.4 — concurrency: one repo, N adds, zero corruption', () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>
-        manager.withProjectLock(PROJECT_ID, () =>
-          manager.add({
-            repoRoot,
-            projectId: PROJECT_ID,
-            worktreeId: uuidN(i + 1),
-            branch: `tm8/conc-${i}`,
-            baseCommitOid: oid,
-          }),
-        ),
+        manager.add({
+          repoRoot,
+          projectId: PROJECT_ID,
+          worktreeId: uuidN(i + 1),
+          branch: `tm8/conc-${i}`,
+          baseCommitOid: oid,
+        }),
       ),
     );
     const paths = new Set(results.map((r) => r.path));
@@ -222,15 +220,13 @@ describe('G2.4 — concurrency: one repo, N adds, zero corruption', () => {
   it('a duplicate branch is a refusal, not a silent reuse', async () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
     await expect(
-      manager.withProjectLock(PROJECT_ID, () =>
-        manager.add({
-          repoRoot,
-          projectId: PROJECT_ID,
-          worktreeId: UUIDISH(),
-          branch: 'tm8/conc-0',
-          baseCommitOid: oid,
-        }),
-      ),
+      manager.add({
+        repoRoot,
+        projectId: PROJECT_ID,
+        worktreeId: UUIDISH(),
+        branch: 'tm8/conc-0',
+        baseCommitOid: oid,
+      }),
     ).rejects.toMatchObject({ reason: 'worktree_add_failed' });
   });
 });
@@ -238,51 +234,45 @@ describe('G2.4 — concurrency: one repo, N adds, zero corruption', () => {
 describe('G2.5 — idempotent cleanup', () => {
   it('remove twice, remove after manual rm -rf — all converge without error', async () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
-    const { path } = await manager.withProjectLock(PROJECT_ID, () =>
-      manager.add({
-        repoRoot,
-        projectId: PROJECT_ID,
-        worktreeId: uuidN(900),
-        branch: 'tm8/cleanup-a',
-        baseCommitOid: oid,
-      }),
-    );
-    await manager.remove({ repoRoot, path });
-    await manager.remove({ repoRoot, path }); // second remove: no throw
+    const { path } = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: uuidN(900),
+      branch: 'tm8/cleanup-a',
+      baseCommitOid: oid,
+    });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path }); // second remove: no throw
     await expect(stat(path)).rejects.toThrow();
 
-    const second = await manager.withProjectLock(PROJECT_ID, () =>
-      manager.add({
-        repoRoot,
-        projectId: PROJECT_ID,
-        worktreeId: uuidN(901),
-        branch: 'tm8/cleanup-b',
-        baseCommitOid: oid,
-      }),
-    );
+    const second = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: uuidN(901),
+      branch: 'tm8/cleanup-b',
+      baseCommitOid: oid,
+    });
     await rm(second.path, { recursive: true, force: true }); // manual disappearance
-    await manager.remove({ repoRoot, path: second.path });   // converges via prune
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: second.path });   // converges via prune
     const listed = await manager.list(repoRoot);
     expect(listed.some((e) => e.branch === 'tm8/cleanup-b')).toBe(false);
   });
 
   it('remove refuses a dirty worktree without force, removes it with force', async () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
-    const { path } = await manager.withProjectLock(PROJECT_ID, () =>
-      manager.add({
-        repoRoot,
-        projectId: PROJECT_ID,
-        worktreeId: uuidN(902),
-        branch: 'tm8/cleanup-dirty',
-        baseCommitOid: oid,
-      }),
-    );
+    const { path } = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: uuidN(902),
+      branch: 'tm8/cleanup-dirty',
+      baseCommitOid: oid,
+    });
     await writeFile(join(path, 'scratch.txt'), 'uncommitted\n');
     expect(await manager.isDirty(path)).toBe(true);
-    await expect(manager.remove({ repoRoot, path })).rejects.toMatchObject({
+    await expect(manager.remove({ projectId: PROJECT_ID, repoRoot, path })).rejects.toMatchObject({
       reason: 'worktree_remove_refused',
     });
-    await manager.remove({ repoRoot, path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path, force: true });
     await expect(stat(path)).rejects.toThrow();
   });
 });
@@ -290,15 +280,13 @@ describe('G2.5 — idempotent cleanup', () => {
 describe('preflight and merge verification (§5.4, §10.1)', () => {
   it('preflight reports dirty/unpushed and mints a stable token over the result', async () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
-    const { path } = await manager.withProjectLock(PROJECT_ID, () =>
-      manager.add({
-        repoRoot,
-        projectId: PROJECT_ID,
-        worktreeId: uuidN(903),
-        branch: 'tm8/preflight',
-        baseCommitOid: oid,
-      }),
-    );
+    const { path } = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: uuidN(903),
+      branch: 'tm8/preflight',
+      baseCommitOid: oid,
+    });
     const clean = await manager.preflight({ repoRoot, path, branch: 'tm8/preflight' });
     expect(clean.dirty).toBe(false);
     expect(clean.token).toMatch(/^[0-9a-f]{64}$/);
@@ -307,20 +295,18 @@ describe('preflight and merge verification (§5.4, §10.1)', () => {
     const dirty = await manager.preflight({ repoRoot, path, branch: 'tm8/preflight' });
     expect(dirty.dirty).toBe(true);
     expect(dirty.token).not.toBe(clean.token);
-    await manager.remove({ repoRoot, path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path, force: true });
   });
 
   it('an empty worktree answers empty, never merged (the abandoned-before-started case)', async () => {
     const oid = await git(['rev-parse', 'HEAD'], repoRoot);
-    const { path } = await manager.withProjectLock(PROJECT_ID, () =>
-      manager.add({
-        repoRoot,
-        projectId: PROJECT_ID,
-        worktreeId: uuidN(904),
-        branch: 'tm8/verify-empty',
-        baseCommitOid: oid,
-      }),
-    );
+    const { path } = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: uuidN(904),
+      branch: 'tm8/verify-empty',
+      baseCommitOid: oid,
+    });
     expect(await manager.verifyMerged({
       repoRoot, branch: 'tm8/verify-empty', baseBranch: 'main', baseCommitOid: oid,
     })).toBe('empty');
@@ -341,7 +327,7 @@ describe('preflight and merge verification (§5.4, §10.1)', () => {
 
     // Reset main back so later tests see the original tip.
     await git(['reset', '--hard', oid], repoRoot);
-    await manager.remove({ repoRoot, path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path, force: true });
   });
 
   it('unpushed counting: a repo with no remotes counts local-only commits', async () => {
@@ -407,7 +393,7 @@ describe('G2.6 — default base ref is the project default branch, not parked HE
       expect(ref).toBe('origin/main');
       expect(await git(['rev-parse', 'HEAD'], path)).toBe(originMainOid);
     } finally {
-      await manager.remove({ repoRoot: clone, path, force: true });
+      await manager.remove({ projectId: PROJECT_ID, repoRoot: clone, path, force: true });
     }
   });
 
@@ -496,7 +482,7 @@ describe('G2.6 — default base ref is the project default branch, not parked HE
     try {
       expect(await git(['rev-parse', 'HEAD'], path)).toBe(wipOid);
     } finally {
-      await manager.remove({ repoRoot: local, path, force: true });
+      await manager.remove({ projectId: PROJECT_ID, repoRoot: local, path, force: true });
     }
   });
 
@@ -524,9 +510,9 @@ describe('G2.7 — shared paths: a lane borrows graphify-out by symlink', () => 
   let lanes: WorktreeManager;
 
   async function addLane(n: number, oid: string): Promise<string> {
-    const { path } = await lanes.withProjectLock(PROJECT_ID, () =>
-      lanes.add({ repoRoot: launch, projectId: PROJECT_ID, worktreeId: uuidN(n), branch: `tm8/shared-${n}`, baseCommitOid: oid }),
-    );
+    const { path } = await lanes.add({
+      repoRoot: launch, projectId: PROJECT_ID, worktreeId: uuidN(n), branch: `tm8/shared-${n}`, baseCommitOid: oid,
+    });
     return path;
   }
 
@@ -563,7 +549,7 @@ describe('G2.7 — shared paths: a lane borrows graphify-out by symlink', () => 
     // Idempotent: an existing entry is left alone.
     expect(await lanes.linkSharedPaths(launch, path)).toEqual([]);
 
-    await lanes.remove({ repoRoot: launch, path });
+    await lanes.remove({ projectId: PROJECT_ID, repoRoot: launch, path });
     await expect(stat(path)).rejects.toThrow();
     expect(await readFile(join(launch, 'graphify-out', 'merged-graph.json'), 'utf8')).toBe('{"v":2}');
   });

@@ -12,13 +12,23 @@
 // global chain to a Map. It is taken OUTSIDE and BEFORE any ledgered database
 // transaction — `internal.ledger_replay` is the first statement of every door
 // and holds an advisory lock, and nesting a project lock beneath it is the
-// documented deadlock pattern (036:100-105, 032:123-129). Callers wrap the
-// whole saga step in `withProjectLock`; nothing in this class talks to the
-// database at all (the package has no driver and must never gain one).
+// documented deadlock pattern (036:100-105, 032:123-129). Nothing in this
+// class talks to the database at all (the package has no driver and must
+// never gain one), so the ordering holds by construction.
+//
+// THE GIT LOCK IS TAKEN HERE, around exactly the commands that rewrite shared
+// `.git/worktrees` metadata — `worktree add --no-checkout`, `move`, `remove`,
+// `prune` — and NEVER around a checkout. Writing a tree's files touches only
+// that tree and its own index, and holding the lock for it made every other
+// launch of the project wait seconds behind it (measured on the tm8 repository:
+// `git worktree add` p50 7.9 s on a loaded node, its registration 36 ms). So
+// callers do not hold the lock around these methods: the chain is not
+// reentrant and holding it would deadlock. `withProjectLock` stays public for
+// callers' own keys, such as the provisioning saga's reservation lock.
 
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, realpath, rm, stat, symlink } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { lstat, mkdir, readdir, readFile, realpath, rm, stat, symlink } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
   WorktreeError,
@@ -28,6 +38,7 @@ import {
   runGit,
   type GitRunOptions,
 } from './git-invoker.js';
+import { WarmLanePool, type WarmLanePoolOptions } from './warm-pool.js';
 
 /**
  * Untracked paths a lane borrows from the launch project by SYMLINK, never by
@@ -43,6 +54,22 @@ import {
 export const LANE_SHARED_PATHS: readonly string[] = ['graphify-out'];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The bound on one checkout's file writes. `runGit`'s 30 s default is sized
+ * for probes; a full checkout of a large repository on a loaded node was
+ * measured at up to 24 s, and failing a launch at 30 s for a checkout that
+ * would have finished is the wrong trade. Still bounded: a hung git must not
+ * hang a saga.
+ */
+const CHECKOUT_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Parallel checkout (git ≥ 2.32): `0` is one worker per logical core. Measured
+ * on the tm8 repository at about half the time of the sequential default.
+ * Older git ignores the key.
+ */
+const PARALLEL_CHECKOUT_ARGS = ['-c', 'checkout.workers=0'] as const;
 
 /**
  * Segment-boundary containment: is `child` equal to or under `root`?
@@ -70,6 +97,21 @@ export interface WorktreeAddParams {
   onBeforeGitAdd?: () => Promise<void>;
 }
 
+/** A reservation's lane, to be made out of a warm lane rather than checked out. */
+export interface PoolLaneAdoption {
+  repoRoot: string;
+  projectId: string;
+  worktreeId: string;
+  branch: string;
+  baseCommitOid: string;
+  /** The warm lane's directory in the pool area. */
+  from: string;
+  /** The commit that directory is checked out at. */
+  fromOid: string;
+  /** TEST SEAM for the §4.4.3 symlink race — runs between validation and `git worktree move`. */
+  onBeforeGitMove?: () => Promise<void>;
+}
+
 export interface WorktreePreflight {
   dirty: boolean;
   unpushedCommits: number;
@@ -90,28 +132,44 @@ export interface WorktreeManagerOptions {
   /** The node's worktree area; created (and realpath'd) on first use. */
   worktreeRoot: string;
   gitTimeoutMs?: number;
+  /**
+   * The node's warm lanes (warm-pool.ts). Absent, or a size of 0, builds no
+   * pool: every lane is checked out when its launch asks for it.
+   */
+  pool?: WarmLanePoolOptions;
 }
 
 export class WorktreeManager {
   private readonly rootConfigured: string;
   private rootReal: string | null = null;
+  private readonly poolConfigured: string | null;
+  private poolReal: string | null = null;
   private readonly gitTimeoutMs: number | undefined;
   /** Per-project promise chain — the generalized workspace-trust mutex (§5.1). */
   private readonly projectLocks = new Map<string, Promise<void>>();
+  /** This node's warm lanes, or null when it keeps none. */
+  readonly pool: WarmLanePool | null;
 
   constructor(options: WorktreeManagerOptions) {
     this.rootConfigured = options.worktreeRoot;
     this.gitTimeoutMs = options.gitTimeoutMs;
+    const pooled = options.pool !== undefined && options.pool.size > 0;
+    this.poolConfigured = pooled ? options.pool!.root : null;
+    this.pool = pooled ? new WarmLanePool(this, options.pool!) : null;
   }
 
   private gitOpts(cwd?: string): GitRunOptions {
     return { cwd, ...(this.gitTimeoutMs === undefined ? {} : { timeoutMs: this.gitTimeoutMs }) };
   }
 
+  private checkoutOpts(): GitRunOptions {
+    return { timeoutMs: this.gitTimeoutMs ?? CHECKOUT_TIMEOUT_MS };
+  }
+
   /**
-   * Serialize `fn` against every other holder of the same project's lock.
-   * `git worktree add/remove/prune` mutate shared `.git/worktrees/` metadata,
-   * so they serialize per repository; distinct projects proceed concurrently.
+   * Serialize `fn` against every other holder of the same key. Keyed by a
+   * project id it is that project's Git lock, which this class takes itself
+   * (see the file header); other keys are the caller's own.
    * The chain entry is removed when the tail settles so the map cannot grow
    * without bound across many projects.
    */
@@ -142,6 +200,33 @@ export class WorktreeManager {
       this.rootReal = await realpath(this.rootConfigured);
     }
     return this.rootReal;
+  }
+
+  /**
+   * The canonicalized warm lane area, created on first use and asserted to
+   * resolve inside the directory it was configured in (the node's data
+   * directory): a pool area that is a symlink to somewhere else is refused,
+   * not followed, because the pool deletes what it finds there.
+   */
+  async poolRoot(): Promise<string> {
+    if (this.poolConfigured === null) {
+      throw new WorktreeError('this node keeps no warm lanes', 'internal', 'pool_unconfigured');
+    }
+    if (this.poolReal === null) {
+      await mkdir(this.poolConfigured, { recursive: true });
+      const [real, parentReal] = await Promise.all([
+        realpath(this.poolConfigured),
+        realpath(dirname(this.poolConfigured)),
+      ]);
+      if (real === parentReal || !isContainedIn(real, parentReal)) {
+        throw new WorktreeError(
+          `the warm lane area resolves outside its data directory: ${real}`,
+          'invalid_input', 'containment_violation',
+        );
+      }
+      this.poolReal = real;
+    }
+    return this.poolReal;
   }
 
   /**
@@ -228,10 +313,12 @@ export class WorktreeManager {
       if (!candidates.includes(ref)) candidates.push(ref);
     };
 
-    const originHead = await runGit(
-      ['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD'],
-      this.gitOpts(),
-    );
+    // Both symbolic refs are read at once: they are independent reads, and
+    // every launch and every pool refresh waits on this list.
+    const [originHead, head] = await Promise.all([
+      runGit(['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD'], this.gitOpts()),
+      runGit(['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'HEAD'], this.gitOpts()),
+    ]);
     if (originHead.code === 0) {
       const remoteRef = originHead.stdout.trim(); // e.g. `origin/main`
       push(remoteRef);
@@ -245,7 +332,6 @@ export class WorktreeManager {
     // Last: the branch HEAD is parked on. Before this function existed that was
     // the FIRST and only answer, which is how 36 of 68 measured lanes were
     // based on another lane's in-flight branch.
-    const head = await runGit(['-C', repoRoot, 'symbolic-ref', '--short', '-q', 'HEAD'], this.gitOpts());
     if (head.code === 0) push(head.stdout.trim());
 
     return candidates;
@@ -305,26 +391,239 @@ export class WorktreeManager {
     return join(await this.worktreeRoot(), projectId, worktreeId);
   }
 
+  /** A warm lane's path: `<pool root>/<projectId>/<laneId>`, by the same rule. */
+  async computePoolLanePath(projectId: string, laneId: string): Promise<string> {
+    if (!UUID_RE.test(projectId) || !UUID_RE.test(laneId)) {
+      throw new WorktreeError('warm lane path components must be uuids', 'invalid_input', 'invalid_path_component');
+    }
+    return join(await this.poolRoot(), projectId, laneId);
+  }
+
   /**
-   * §4.6 — `git worktree add`, argv-only, with §4.4's containment sandwich:
+   * §4.6 — a lane's checkout, in two halves with §4.4's containment sandwich
+   * around both:
    *
    *   1. realpath the PARENT (the leaf does not exist yet) and assert it is a
    *      segment-wise descendant of the realpath'd root;
-   *   2. run `git -C <repo> worktree add -b <branch> <path> <oid>`;
-   *   3. realpath the CREATED directory and RE-ASSERT containment — the check
-   *      before creation is a check against a path that does not exist yet;
-   *      this one is what actually closes the symlink race. On violation the
-   *      checkout is removed, not warned about.
+   *   2. under the Git lock, `git -C <repo> worktree add --no-checkout -b
+   *      <branch> <path> <oid>` — the registration, the only half that
+   *      rewrites shared metadata — then realpath the CREATED directory and
+   *      RE-ASSERT containment: the check before creation is a check against a
+   *      path that does not exist yet; this one is what actually closes the
+   *      symlink race. On violation the checkout is removed, not warned about;
+   *   3. without the lock, write the files and the index: `reset --hard`, which
+   *      is exactly what `git worktree add` runs itself after registering, with
+   *      parallel checkout. Containment is asserted once more on the populated
+   *      directory.
    *
-   * Callers hold `withProjectLock(projectId, …)` around this.
+   * The result is the checkout a plain `git worktree add -b` makes.
    */
   async add(params: WorktreeAddParams): Promise<{ path: string }> {
     assertSafeBranchName(params.branch);
     assertCommitOid(params.baseCommitOid);
     const root = await this.worktreeRoot();
     const path = await this.computeWorktreePath(params.projectId, params.worktreeId);
+    await this.register({
+      repoRoot: params.repoRoot,
+      projectId: params.projectId,
+      path,
+      root,
+      head: ['-b', params.branch],
+      baseCommitOid: params.baseCommitOid,
+      what: params.branch,
+      ...(params.onBeforeGitAdd ? { onBeforeGitAdd: params.onBeforeGitAdd } : {}),
+    });
+    await this.populate({ repoRoot: params.repoRoot, projectId: params.projectId, path, root });
+    return { path };
+  }
 
+  /**
+   * A warm lane's checkout (warm-pool.ts): a DETACHED tree at `baseCommitOid`
+   * in the pool area, made exactly as `add` makes a lane. Detached because the
+   * branch is the launch's to name; `adoptPoolLane` creates it at the claim.
+   */
+  async addPoolLane(params: {
+    repoRoot: string;
+    projectId: string;
+    laneId: string;
+    baseCommitOid: string;
+  }): Promise<{ path: string }> {
+    assertCommitOid(params.baseCommitOid);
+    const root = await this.poolRoot();
+    const path = await this.computePoolLanePath(params.projectId, params.laneId);
+    await this.register({
+      repoRoot: params.repoRoot,
+      projectId: params.projectId,
+      path,
+      root,
+      head: ['--detach'],
+      baseCommitOid: params.baseCommitOid,
+      what: 'a warm lane',
+    });
+    await this.populate({ repoRoot: params.repoRoot, projectId: params.projectId, path, root });
+    return { path };
+  }
+
+  /**
+   * Make a reservation's lane out of a warm lane: the same checkout `add`
+   * would have made at `computeWorktreePath(projectId, worktreeId)`, without
+   * writing the tree.
+   *
+   *   1. under the Git lock, `git worktree move` it from the pool area to the
+   *      lane path — a rename plus a metadata rewrite — and run `add`'s
+   *      post-creation containment re-assert on the moved directory;
+   *   2. without the lock, create the launch's branch at `baseCommitOid`. When
+   *      the lane already sits at that commit, `checkout -b` with no start
+   *      point writes neither a file nor the index (which the pool refreshed
+   *      past git's racy-timestamp window); otherwise `checkout -f -b <oid>`
+   *      rewrites exactly the files that differ.
+   *
+   * Two failures leave the reservation free for a cold `add`, and say so by
+   * reason: `pool_lane_move_failed` (the lane is still where it was) and
+   * `pool_lane_branch_failed` (the moved checkout was removed again). Anything
+   * else — a containment violation above all — is the caller's to settle.
+   */
+  async adoptPoolLane(params: PoolLaneAdoption): Promise<{ path: string }> {
+    assertSafeBranchName(params.branch);
+    assertCommitOid(params.baseCommitOid);
+    assertCommitOid(params.fromOid);
+    const [root, poolRoot] = await Promise.all([this.worktreeRoot(), this.poolRoot()]);
+    const path = await this.computeWorktreePath(params.projectId, params.worktreeId);
+    await this.assertExistingInside(params.from, poolRoot);
     await mkdir(dirname(path), { recursive: true });
+    await this.assertParentInside(path, root);
+
+    if (params.onBeforeGitMove) await params.onBeforeGitMove();
+
+    await this.withProjectLock(params.projectId, async () => {
+      const moved = await runGit(
+        ['-C', params.repoRoot, 'worktree', 'move', params.from, path],
+        this.gitOpts(),
+      );
+      if (moved.code !== 0) {
+        throw new WorktreeError(
+          `git worktree move failed for ${params.from}`,
+          'conflict', 'pool_lane_move_failed', { stderr: moved.stderr.trim() },
+        );
+      }
+      await this.assertCreatedInside(path, root, () =>
+        this.removeHeld({ repoRoot: params.repoRoot, path, force: true }));
+    });
+
+    const branched = await runGit(
+      params.fromOid === params.baseCommitOid
+        ? ['-C', path, 'checkout', '-q', '-b', params.branch]
+        : [...PARALLEL_CHECKOUT_ARGS, '-C', path, 'checkout', '-q', '-f', '-b', params.branch, params.baseCommitOid],
+      this.checkoutOpts(),
+    );
+    if (branched.code !== 0) {
+      await this.remove({ projectId: params.projectId, repoRoot: params.repoRoot, path, force: true });
+      throw new WorktreeError(
+        `could not start ${params.branch} in a warm lane`,
+        'internal', 'pool_lane_branch_failed', { stderr: branched.stderr.trim() },
+      );
+    }
+    await this.assertCreatedInside(path, root, () =>
+      this.remove({ projectId: params.projectId, repoRoot: params.repoRoot, path, force: true }));
+    return { path };
+  }
+
+  /** Move a warm lane's detached tree to `oid`, rewriting the files that differ. No lock: one tree. */
+  async checkoutDetached(path: string, oid: string): Promise<void> {
+    assertCommitOid(oid);
+    const res = await runGit(
+      [...PARALLEL_CHECKOUT_ARGS, '-C', path, 'checkout', '-q', '-f', '--detach', oid],
+      this.checkoutOpts(),
+    );
+    if (res.code !== 0) {
+      throw new WorktreeError(`checkout of ${oid} failed in ${path}`, 'internal', 'worktree_checkout_failed', {
+        stderr: res.stderr.trim(),
+      });
+    }
+  }
+
+  /**
+   * Re-stat every tracked file into the index and write it. Right after a
+   * checkout every file shares the index's timestamp, which git treats as
+   * "racily clean" and re-hashes on the next read: 80-1,659 ms for the first
+   * `git status` in a fresh tm8 lane. Run once the second has passed, this
+   * pays that cost here instead. No lock: one tree.
+   */
+  async refreshIndex(path: string): Promise<void> {
+    const res = await runGit(['-C', path, 'update-index', '-q', '--refresh'], this.checkoutOpts());
+    if (res.code !== 0) {
+      throw new WorktreeError(`index refresh failed in ${path}`, 'internal', 'worktree_index_refresh_failed', {
+        stderr: res.stderr.trim(),
+      });
+    }
+  }
+
+  /**
+   * Every `<projectId>/<laneId>` directory in the pool area — what a startup
+   * sweep removes. Anything else found there is reported, never touched.
+   */
+  async listPoolLanes(): Promise<{
+    lanes: Array<{ projectId: string; path: string }>;
+    unexpected: string[];
+  }> {
+    const root = await this.poolRoot();
+    const lanes: Array<{ projectId: string; path: string }> = [];
+    const unexpected: string[] = [];
+    for (const project of await readdir(root, { withFileTypes: true })) {
+      const projectDir = join(root, project.name);
+      if (!project.isDirectory() || !UUID_RE.test(project.name)) {
+        unexpected.push(projectDir);
+        continue;
+      }
+      for (const lane of await readdir(projectDir, { withFileTypes: true })) {
+        const path = join(projectDir, lane.name);
+        if (lane.isDirectory() && UUID_RE.test(lane.name)) lanes.push({ projectId: project.name, path });
+        else unexpected.push(path);
+      }
+    }
+    return { lanes, unexpected };
+  }
+
+  /**
+   * Remove a warm lane. Only a directory exactly two levels under the pool
+   * area qualifies — by the pool's contract nothing there is anyone's work —
+   * and anything else is refused: a LANE is removed by `remove`, with its
+   * dirty protection, never by this.
+   *
+   * The files go first and without the Git lock (that is the slow part), then
+   * `git worktree prune` forgets the registration under it. The repository is
+   * read off the lane's own `.git` file, so a leftover from an earlier process
+   * is removable with no database to say whose repository it belonged to.
+   */
+  async discardPoolLane(params: { projectId: string; path: string }): Promise<void> {
+    const root = await this.poolRoot();
+    const lexical = resolve(params.path);
+    // A lane path is never a symlink, so one that resolves anywhere but
+    // itself — inside the area or not — is refused rather than followed.
+    const real = await realpath(lexical).catch(() => lexical);
+    const segments = relative(root, real).split(sep);
+    if (
+      real !== lexical
+      || !isContainedIn(real, root)
+      || segments.length !== 2
+      || segments[0] !== params.projectId
+      || segments.some((segment) => !UUID_RE.test(segment))
+    ) {
+      throw new WorktreeError(
+        `refusing to discard a path that is not a warm lane: ${params.path}`,
+        'invalid_input', 'containment_violation',
+      );
+    }
+    const commonDir = await readCommonGitDir(real);
+    await rm(real, { recursive: true, force: true });
+    if (commonDir === null) return;
+    await this.withProjectLock(params.projectId, async () => {
+      await runGit(['--git-dir', commonDir, 'worktree', 'prune'], this.gitOpts());
+    });
+  }
+
+  /** realpath(parent of `path`) must be inside `root` — `add`'s pre-creation check. */
+  private async assertParentInside(path: string, root: string): Promise<void> {
     const parentReal = await realpath(dirname(path));
     if (!isContainedIn(parentReal, root)) {
       throw new WorktreeError(
@@ -332,20 +631,26 @@ export class WorktreeManager {
         'invalid_input', 'containment_violation',
       );
     }
+  }
 
-    if (params.onBeforeGitAdd) await params.onBeforeGitAdd();
-
-    const added = await runGit(
-      ['-C', params.repoRoot, 'worktree', 'add', '-b', params.branch, path, params.baseCommitOid],
-      this.gitOpts(),
-    );
-    if (added.code !== 0) {
+  /** A path that must already exist inside `root`, such as a warm lane about to be moved. */
+  private async assertExistingInside(path: string, root: string): Promise<void> {
+    const real = await realpath(path).catch(() => null);
+    if (real === null || !isContainedIn(real, root)) {
       throw new WorktreeError(
-        `git worktree add failed for ${params.branch}`,
-        'conflict', 'worktree_add_failed', { stderr: added.stderr.trim() },
+        `warm lane is missing or outside its area: ${path}`,
+        real === null ? 'conflict' : 'invalid_input',
+        real === null ? 'pool_lane_move_failed' : 'containment_violation',
       );
     }
+  }
 
+  /**
+   * §8 — the post-creation re-assert: realpath the directory that now exists
+   * and confirm it is still inside `root`. A violation is a CLEANUP
+   * OBLIGATION, not a warning: `cleanUp` removes it before the refusal.
+   */
+  private async assertCreatedInside(path: string, root: string, cleanUp: () => Promise<void>): Promise<void> {
     let createdReal: string;
     try {
       createdReal = await realpath(path);
@@ -353,14 +658,62 @@ export class WorktreeManager {
       throw new WorktreeError('created worktree vanished before verification', 'internal', 'worktree_vanished');
     }
     if (!isContainedIn(createdReal, root)) {
-      // §8: failure here is a CLEANUP OBLIGATION, not a warning.
-      await this.remove({ repoRoot: params.repoRoot, path, force: true }).catch(() => undefined);
+      await cleanUp().catch(() => undefined);
       throw new WorktreeError(
         `created worktree resolved outside the worktree area: ${createdReal}`,
         'invalid_input', 'containment_violation',
       );
     }
-    return { path };
+  }
+
+  /** The registration half of a checkout: see `add`, steps 1-2. */
+  private async register(params: {
+    repoRoot: string;
+    projectId: string;
+    path: string;
+    root: string;
+    /** `['-b', branch]` for a lane, `['--detach']` for a warm lane. */
+    head: readonly string[];
+    baseCommitOid: string;
+    /** For the refusal message: the branch, or what the tree is. */
+    what: string;
+    onBeforeGitAdd?: () => Promise<void>;
+  }): Promise<void> {
+    await mkdir(dirname(params.path), { recursive: true });
+    await this.assertParentInside(params.path, params.root);
+
+    if (params.onBeforeGitAdd) await params.onBeforeGitAdd();
+
+    await this.withProjectLock(params.projectId, async () => {
+      const added = await runGit(
+        ['-C', params.repoRoot, 'worktree', 'add', '--no-checkout', ...params.head, params.path, params.baseCommitOid],
+        this.gitOpts(),
+      );
+      if (added.code !== 0) {
+        throw new WorktreeError(
+          `git worktree add failed for ${params.what}`,
+          'conflict', 'worktree_add_failed', { stderr: added.stderr.trim() },
+        );
+      }
+      await this.assertCreatedInside(params.path, params.root, () =>
+        this.removeHeld({ repoRoot: params.repoRoot, path: params.path, force: true }));
+    });
+  }
+
+  /** The file-writing half of a checkout: see `add`, step 3. */
+  private async populate(params: { repoRoot: string; projectId: string; path: string; root: string }): Promise<void> {
+    const populated = await runGit(
+      [...PARALLEL_CHECKOUT_ARGS, '-C', params.path, 'reset', '-q', '--hard', '--no-recurse-submodules'],
+      this.checkoutOpts(),
+    );
+    if (populated.code !== 0) {
+      throw new WorktreeError(
+        `checkout failed in ${params.path}`,
+        'conflict', 'worktree_add_failed', { stderr: populated.stderr.trim() },
+      );
+    }
+    await this.assertCreatedInside(params.path, params.root, () =>
+      this.remove({ projectId: params.projectId, repoRoot: params.repoRoot, path: params.path, force: true }));
   }
 
   /**
@@ -397,9 +750,14 @@ export class WorktreeManager {
    * §5.3 — removal, idempotent under retry: `remove` twice, `remove` on an
    * already-gone directory, and `remove` after a manual `rm -rf` all converge.
    * `prune` runs unconditionally afterwards so `.git/worktrees` metadata never
-   * outlives the directory. Callers hold the project lock.
+   * outlives the directory. Takes the project's Git lock.
    */
-  async remove(params: { repoRoot: string; path: string; force?: boolean }): Promise<void> {
+  async remove(params: { projectId: string; repoRoot: string; path: string; force?: boolean }): Promise<void> {
+    await this.withProjectLock(params.projectId, () => this.removeHeld(params));
+  }
+
+  /** `remove`'s body, for callers already holding the project's Git lock. */
+  private async removeHeld(params: { repoRoot: string; path: string; force?: boolean }): Promise<void> {
     const args = ['-C', params.repoRoot, 'worktree', 'remove'];
     if (params.force) args.push('--force');
     args.push(params.path);
@@ -520,4 +878,17 @@ export class WorktreeManager {
       .digest('hex');
     return { dirty, unpushedCommits: unpushed, token, measuredAtIso };
   }
+}
+
+/**
+ * The repository a linked worktree belongs to, from its `.git` file
+ * (`gitdir: <common>/worktrees/<name>`) and that admin directory's `commondir`.
+ * Null when the tree never got that far — there is then nothing to prune.
+ */
+async function readCommonGitDir(worktreePath: string): Promise<string | null> {
+  const pointer = await readFile(join(worktreePath, '.git'), 'utf8').catch(() => null);
+  const gitDir = pointer?.match(/^gitdir: (.+)$/m)?.[1]?.trim();
+  if (!gitDir || !isAbsolute(gitDir)) return null;
+  const common = await readFile(join(gitDir, 'commondir'), 'utf8').catch(() => null);
+  return common === null ? dirname(dirname(gitDir)) : resolve(gitDir, common.trim());
 }

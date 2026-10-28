@@ -142,7 +142,7 @@ describe('materializeWorktree — steps 5-6', () => {
     expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], reserved.path)).toBe(reserved.branch);
     expect(calls.map((c) => c.call)).toEqual(['reserve', 'entity']);
     expect(calls[1]).toEqual({ call: 'entity', worktreeId: reserved.worktreeId, path: reserved.path });
-    await manager.remove({ repoRoot, path: reserved.path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: reserved.path, force: true });
   });
 
   it('settles the allocation failed when the checkout cannot be created', async () => {
@@ -169,6 +169,6 @@ describe('provisionWorktree — the two halves composed', () => {
     expect(calls.map((c) => c.call)).toEqual(['reserve', 'entity']);
     expect(calls.every((c) => c.path === provisioned.path)).toBe(true);
     expect(await exists(join(provisioned.path, 'README.md'))).toBe(true);
-    await manager.remove({ repoRoot, path: provisioned.path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: provisioned.path, force: true });
   });
 });
