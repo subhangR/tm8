@@ -8,7 +8,7 @@ Design: `/home/tm8/prod-data/chat-threads/cbe3ce53-f1ab-4850-a62b-c42d3678601d/w
 |---|---|
 | Source | `integrations/whatsapp-bridge` in the tm8 repo (imported from the standalone repo at `5febafc`) |
 | Live deploy dir | `/home/tm8/prod-data/wa-bridge`: `scripts/deploy.sh` mounts `auth/`, `data/`, `secrets/`, `config.json` from the directory it runs in |
-| Container / image | `wa-bridge` / `wa-bridge:latest` (`--restart unless-stopped`, `--network host`, uid 110) |
+| Container / image | `wa-bridge` / `wa-bridge:latest` (`--restart unless-stopped`, `--network host`, as the host's `tm8` user: `WA_BRIDGE_USER=<uid>:<gid>` overrides) |
 | API | `http://127.0.0.1:8787` (localhost only) |
 | Linked device (SECRET) | `auth/` → `/app/auth`. Never delete, commit, or print it. |
 | Database | `data/bridge.sqlite` → `/app/data` (log + FTS, names, tokens, outbox, routes, media) |
@@ -65,6 +65,7 @@ Docker's healthcheck is "WhatsApp connected".
 ```jsonc
 {
   "pairingPhone": "910000000001",                 // only used by --link
+  "handle": "tm8",                                // optional: the mention for this bridge (@tm8, @tm8-<teammate>); see "Same number on several bridges"
   "ownerJids": ["910000000001@s.whatsapp.net", "100000000000001@lid"],  // owner = PN + LID
   "approverName": "<name>",                      // optional: who briefings say confirms sensitive actions in the tm8 UI; default "the operator"
   "trustedSenders": [],                          // optional: "owner" or sender JIDs labelled TRUSTED in every channel; see "Trusted senders"
@@ -89,6 +90,7 @@ Docker's healthcheck is "WhatsApp connected".
     "threads": 4,                                 // whisper threads; the box has 8 CPUs shared with everything else
     "language": "auto",                           // or a fixed ISO code, e.g. "hi"
     "maxDurationSec": 600,                        // longer audio is downloaded and attached but not transcribed
+    "timeoutFactor": 2,                           // a run may take this × the audio length + 30 s; raise it on a small or busy box (2 CPUs shared with agents: ~20)
     "waitSeconds": 20                             // routing waits this long for a transcript, then posts and sends it as a follow-up
   },
   "channels": [
@@ -102,6 +104,8 @@ Docker's healthcheck is "WhatsApp connected".
       "allowedSenders": ["owner"],                   // "owner", WA JIDs, or "everyone" (any member; owner-only commands stay owner-only); default ["owner"]
       "trustedSenders": ["919999999999@s.whatsapp.net"],  // optional: labelled TRUSTED in this channel only (added to the global list)
       "mainChatId": null,                            // optional: use this existing tm8 chat instead of creating one
+      "trigger": "mention",                          // optional: "all" = every message routes, no @tm8 needed (see "Every message, and test mode")
+      "deliverTo": "self",                           // optional: shadow mode, replies go to that channel instead (see the same section)
       "style": "casual & short",                     // optional, one line ≤300 chars: how agents talk here; on every envelope as [style: …] and in briefings; default: short and readable
       "tm8": {                                       // optional: this channel's tm8 space; each missing field falls back to the global tm8 block
         "spaceId": "<space id>",                     // calls go with --space <spaceId>
@@ -359,7 +363,7 @@ by it (0700), tokens group-readable by `tm8`, and agents out of the `docker` gro
 
 ## Test hook: inject a message
 
-`POST /admin/inject {text, channel?, quoted_wa_msg_id?}` feeds a synthetic owner message (id `TEST-…`) through the
+`POST /admin/inject {text, channel?, quoted_wa_msg_id?, sender_jid?, sender_name?, media?}` feeds a synthetic owner message (or, with `sender_jid`, a group member's) (id `TEST-…`) through the
 normal inbound path (log, loop guard, routing) as if the owner had typed it. Nothing appears on WhatsApp except the
 agents' replies, and the bridge doesn't react to `TEST-` ids. The admin token is in `data/admin-token` (0600, created at first start):
 
@@ -439,6 +443,42 @@ that space (`tm8 --space <space id> teammate list`). The global default isn't th
 `curl -s 127.0.0.1:8787/health | jq '.channels[] | {id, main_chat_id, tm8}'` and `docker logs wa-bridge | grep -E '\[(tm8|main|poll)\]'`.
 A channel whose token file is missing or invalid is log-only (mentions get "tm8: link not configured yet") and doesn't affect the others.
 
+## Every message, and test mode
+
+For a feedback or support group where nobody should have to mention `@tm8`:
+
+```json
+{ "id": "feedback", "jid": "1203…@g.us", "title": "Strykr feedback", "allowedSenders": ["everyone"], "trigger": "all", "deliverTo": "self" }
+```
+
+- **`trigger: "all"`**: every message from an allowed sender goes to the group's main chat, text, images, videos, documents and
+  voice notes (transcribed) alike, forwards included. The briefing tells the main chat to triage: chatter and messages a person
+  already answered get no reply (the turn ends with `skip <wa_msg_id>`, which closes them quietly); a real issue gets
+  investigated and a 1–3 line answer. The bridge adds no 👀 / ✅ / ⚠️ reactions in such a group.
+- **`deliverTo: "<channel id>"`** (shadow mode): nothing is ever sent to this group (no text, media, polls or reactions).
+  Everything agents say for it goes to that channel instead (normally `self`), as `[<title>] tm8: …`, unquoted. Replying in the
+  self chat to one of those messages goes back to the group's main chat (e.g. "make it shorter"). Use it to review answers
+  before people see them.
+- **Going live**: remove `deliverTo` and deploy. Switching either setting on a group whose main chat already exists: deploy,
+  then post the update to the main chat: `docker exec wa-bridge node --import tsx src/admin.ts rebrief-listen <group>-main`
+  (prints the tm8 chat id and the text; send it with `tm8 message send --to <chat id>`).
+
+## Same number on several bridges
+
+One WhatsApp number can serve several bridges at once: another tm8 server, another tm8 setup on this server, or another
+instance here. Each bridge is its own linked device (WhatsApp › Linked devices; a phone takes up to 4), with its own `auth/`,
+database, config and port, and each routes only its own channels.
+
+- **Link each bridge separately** (its own pairing code). Never copy `auth/` between bridges: two processes on one device fight
+  and WhatsApp logs it out.
+- **One group, one bridge.** A group in two bridges' configs gets every message routed twice.
+- **The self chat can be shared, with different `handle`s.** Each bridge answers only its own mention (`"handle": "strykr"` →
+  `@strykr`, `@strykr-<teammate>`); `trigger: "all"` on a shared self chat would make every bridge answer, so don't.
+- **Bridges never answer each other.** Every bridge appends an invisible marker (`BRIDGE_MARK`, three zero-width characters) to
+  what it sends. Another bridge sees those messages as the owner's own (same number), and the marker is how it knows to log and
+  ignore them, including shadow-mode replies landing in the self chat.
+- **More groups on the same bridge** are just more channels, each in any tm8 space ("Add a group", "Add a group in another space").
+
 ## Commands in a chat (strict, whole message)
 
 `/who` · `/status <name>` · `/help` (any allowed sender) · `/stop <name>` (owner: stops the tm8 session, ends the name)
@@ -451,7 +491,7 @@ Symptoms: `/health` → `wa.state: "logged_out"` (the container stays up and doe
 ```bash
 docker stop wa-bridge
 mv auth auth.dead-$(date +%F)            # keep it until the new link works, then delete it
-docker run --rm -it --network host --user 110:114 -v $PWD/auth:/app/auth -v $PWD/data:/app/data \
+docker run --rm -it --network host --user $(id -u tm8):$(id -g tm8) -v $PWD/auth:/app/auth -v $PWD/data:/app/data \
   -v $PWD/config.json:/app/config.json:ro -v $PWD/secrets:/app/secrets:ro -v /opt/tm8/prod:/opt/tm8/prod:ro \
   wa-bridge node --import tsx src/main.ts --link
 # Pairing code is printed (and written to data/pairing-code.txt) when config.pairingPhone is set; otherwise a QR
