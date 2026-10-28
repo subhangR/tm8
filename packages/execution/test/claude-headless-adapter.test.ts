@@ -313,6 +313,50 @@ describe('ClaudeHeadlessAdapter', () => {
     expect(fourth.find((item) => item.kind === 'usage')).toMatchObject({ total_cost_usd: 0.01 });
   });
 
+  it('delivers attachment content as Claude image and document blocks after the text', async () => {
+    const runtime = adapter();
+    const thread = input();
+    await runtime.startThread(thread);
+
+    const plain = await collect(runtime.sendTurn(thread.threadId, { text: 'plain', content: [] }));
+    // No blocks: the stream-json content stays the bare string it always was.
+    expect(plain).toContainEqual({ kind: 'text', text: 'echo:plain:1' });
+
+    const items = await collect(runtime.sendTurn(thread.threadId, {
+      text: 'look at this',
+      content: [
+        { type: 'text', text: '[contents of file f1]' },
+        { type: 'image', mediaType: 'image/png', data: 'iVBORw0KGgo=' },
+        { type: 'document', mediaType: 'application/pdf', data: 'JVBERi0=', title: 'spec.pdf' },
+      ],
+    }));
+    const sent = [
+      { type: 'text', text: 'look at this' },
+      { type: 'text', text: '[contents of file f1]' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+      {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' },
+        title: 'spec.pdf',
+      },
+    ];
+    expect(items).toContainEqual({ kind: 'text', text: `echo:${JSON.stringify(sent)}:2` });
+  });
+
+  it('refuses an empty or NUL-bearing content block before writing the turn', async () => {
+    const runtime = adapter();
+    const thread = input();
+    await runtime.startThread(thread);
+    expect(() => runtime.sendTurn(thread.threadId, {
+      text: 'x',
+      content: [{ type: 'image', mediaType: 'image/png', data: '' }],
+    })).toThrow(AgentRuntimeError);
+    expect(() => runtime.sendTurn(thread.threadId, {
+      text: 'x',
+      content: [{ type: 'text', text: 'a\0b' }],
+    })).toThrow(AgentRuntimeError);
+  });
+
   it('rejects an overlapping turn synchronously, outside the C1 stream', async () => {
     let resolveExit!: (event: AgentThreadExit) => void;
     const exited = new Promise<AgentThreadExit>((resolve) => (resolveExit = resolve));

@@ -122,7 +122,10 @@ process.on('SIGINT', () => {
 input.on('line', (line) => {
   turn += 1;
   const envelope = JSON.parse(line);
-  const text = envelope?.message?.content;
+  const content = envelope?.message?.content;
+  // A turn with attachments arrives as a content-block array; echo it as JSON
+  // so a test can pin the exact blocks Claude would have received.
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
   send({
     type: 'system',
     subtype: 'init',

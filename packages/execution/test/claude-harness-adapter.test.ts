@@ -62,6 +62,19 @@ describe('Claude shared-port conformance', () => {
     expect(JSON.stringify(receipt)).not.toContain('private cleanup diagnostic');
   });
 
+  it('forwards a turn\'s content blocks to Claude after the text', async () => {
+    const data = input(material()),
+      session = await open(data),
+      record = new Recorder(session);
+    await session.submit({ ...command(data.config, 'look'),
+      content: [{ type: 'image', mediaType: 'image/png', data: 'iVBORw0KGgo=' }] });
+    await record.terminal();
+    const sent = [{ type: 'text', text: 'look' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } }];
+    const texts = record.events.filter((e) => e.payload.kind === 'text').map((e) => e.payload.kind === 'text' ? e.payload.text : '');
+    expect(texts.join('')).toContain(JSON.stringify(sent));
+  });
+
   it('keeps CLI recipe, validates native init and emits paired tools and one provider terminal', async () => {
     const data = input(material()),
       session = await open(data),

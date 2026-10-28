@@ -1,6 +1,8 @@
 // Private, execution-owned chat harness port. Vendor processes report evidence;
 // the server owns authorization, canonical history, recovery and persistence.
 
+import type { AgentTurnContentBlock } from './types.js';
+
 export type HarnessKind = 'claude' | 'codex';
 export type Json = null | boolean | number | string | readonly Json[]
   | { readonly [key: string]: Json };
@@ -189,6 +191,12 @@ export interface TurnCommand {
   readonly clientSubmissionId: string;
   readonly text: string; // current user input plus server-authored attribution
   readonly attachmentRefs: readonly string[];
+  /**
+   * Attached file contents delivered INTO the turn after `text` (sniffed and
+   * capped by the caller). Only for a harness whose `imageInputs` is supported;
+   * absent or empty means the turn is `text` alone.
+   */
+  readonly content?: readonly AgentTurnContentBlock[];
   readonly config: RuntimeConfig; // frozen attempt config; supports safe turn overrides
 }
 

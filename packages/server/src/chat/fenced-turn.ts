@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { MessagePartSchema, type ChatTurnUsage } from '@tm8/contract';
 import {
   HarnessRuntimeError, type AttemptRef, type GenerationFence, type HarnessRegistry, type HarnessSession,
-  type RuntimeConfig, type TerminalOutcome, type UsageFact,
+  type RuntimeConfig, type TerminalOutcome, type UsageFact, type AgentTurnContentBlock,
 } from '@tm8/execution';
 import type { Db, DbClaims } from '../db/types.js';
 import type { ClaimedTurn } from './orchestrator.js';
@@ -25,6 +25,12 @@ export interface FencedTurnOptions {
   db: Db; registry: HarnessRegistry;
   resolvePreparedLaunch: ReturnType<typeof createChatPreparedLaunchResolver>;
   publisher: ChatTurnPublisher; turn: FencedClaim; leaseToken: string; prompt: string;
+  /**
+   * Attached file contents for the turn, after `prompt` (orchestrator.ts
+   * loadAttachmentContent). Never sealed into the snapshot or the portable
+   * history: a retried attempt reads the files again.
+   */
+  content?: readonly AgentTurnContentBlock[] | undefined;
   historyBudgetBytes: number; createAgentMessage(): Promise<string>;
   track(active: ActiveChatHarness): void; untrack(): void;
   /**
@@ -534,6 +540,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     observed=consume();
     void observed.catch(()=>undefined);
     const dispatched=await deadline(Promise.race([current.submit({attempt,clientSubmissionId:snapshotId,text:options.prompt,
+      ...(options.content && options.content.length>0 ? {content:options.content} : {}),
       // The prompt already lists every attached file by tm8 id, and the agent
       // opens it with its own tm8 tools (orchestrator.ts attachmentLines), as
       // the legacy runtime did. Raw refs go only to a harness that says it can

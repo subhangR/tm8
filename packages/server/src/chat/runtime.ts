@@ -28,9 +28,24 @@ export interface AgentThread {
   readonly threadId: string;
 }
 
+/**
+ * An attached file's content, carried INTO the turn after the text (the
+ * execution port's `AgentTurnContentBlock`; `wrapExecutionAgentRuntime` keeps
+ * the two structurally identical under tsc). Images and PDFs are base64.
+ */
+export type AgentTurnContentBlock =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'; readonly data: string }
+  | { readonly type: 'document'; readonly mediaType: 'application/pdf'; readonly data: string; readonly title?: string };
+
+export interface AgentTurnInput {
+  readonly text: string;
+  readonly content?: readonly AgentTurnContentBlock[];
+}
+
 export interface AgentRuntime {
   startThread(input: StartAgentThreadInput): Promise<AgentThread>;
-  sendTurn(threadId: string, input: { readonly text: string }): AsyncIterable<TurnItem>;
+  sendTurn(threadId: string, input: AgentTurnInput): AsyncIterable<TurnItem>;
   interrupt(threadId: string): Promise<boolean>;
   close(threadId: string): Promise<void>;
 }

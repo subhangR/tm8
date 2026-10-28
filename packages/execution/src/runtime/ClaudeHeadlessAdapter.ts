@@ -16,6 +16,7 @@ import {
   type AgentRuntime,
   type AgentThread,
   type AgentThreadExit,
+  type AgentTurnContentBlock,
   type AgentTurnInput,
   type ContextTurnItem,
   type StartAgentThreadInput,
@@ -359,6 +360,12 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (typeof input.text !== 'string' || input.text.length === 0 || input.text.includes('\0')) {
       throw new AgentRuntimeError('turn text must be a non-empty string without NUL bytes', 'invalid_input');
     }
+    for (const block of input.content ?? []) {
+      const payload = block.type === 'text' ? block.text : block.data;
+      if (typeof payload !== 'string' || payload.length === 0 || payload.includes('\0')) {
+        throw new AgentRuntimeError('turn content blocks must carry non-empty data without NUL bytes', 'invalid_input');
+      }
+    }
 
     const active: ActiveTurn = {
       queue: new AsyncTurnQueue(),
@@ -370,7 +377,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
 
     const message = `${JSON.stringify({
       type: 'user',
-      message: { role: 'user', content: input.text },
+      message: { role: 'user', content: claudeUserContent(input) },
     })}\n`;
     try {
       state.child.stdin.write(message, 'utf8', (error) => {
@@ -1064,4 +1071,31 @@ export function contextWindowFor(
   const canonical = entries.filter((e) => e.canonical === model);
   if (canonical.length === 1) return canonical[0]!.window;
   return null;
+}
+
+/**
+ * The stream-json `content` for one user turn. A plain string when the turn is
+ * text alone — the shape every turn had before attachments, kept byte-identical
+ * — otherwise the text block first and then each attachment as the provider's
+ * own block, so an image reaches the model as pixels rather than as an id.
+ */
+function claudeUserContent(input: AgentTurnInput): string | unknown[] {
+  const blocks = input.content ?? [];
+  if (blocks.length === 0) return input.text;
+  return [{ type: 'text', text: input.text }, ...blocks.map(claudeContentBlock)];
+}
+
+function claudeContentBlock(block: AgentTurnContentBlock): unknown {
+  switch (block.type) {
+    case 'text':
+      return { type: 'text', text: block.text };
+    case 'image':
+      return { type: 'image', source: { type: 'base64', media_type: block.mediaType, data: block.data } };
+    case 'document':
+      return {
+        type: 'document',
+        source: { type: 'base64', media_type: block.mediaType, data: block.data },
+        ...(block.title ? { title: block.title } : {}),
+      };
+  }
 }

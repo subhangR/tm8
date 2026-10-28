@@ -32,7 +32,8 @@ const CAPABILITIES: HarnessCapabilities = {
   contextReading: 'supported',
   interactiveRequests: 'unsupported',
   textInputs: 'supported',
-  imageInputs: 'unsupported',
+  // Image, PDF and text blocks ride on the turn (TurnCommand.content).
+  imageInputs: 'supported',
   fileInputs: 'unsupported',
   builtInToolRestriction: 'supported',
   configuration: {
@@ -238,7 +239,10 @@ class ClaudeSession extends HarnessSessionBase {
       this.dispatchResolve = resolve;
     });
     try {
-      const stream = this.runtime.sendTurn(this.key, { text: command.text });
+      const stream = this.runtime.sendTurn(this.key, {
+        text: command.text,
+        ...(command.content && command.content.length > 0 ? { content: command.content } : {}),
+      });
       this.pump = this.consume(stream);
       return await receipt;
     } catch {

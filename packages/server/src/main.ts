@@ -420,6 +420,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
         ...(chatBlock.resolveMcpSelection ? { resolveMcpSelection: chatBlock.resolveMcpSelection } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
+        // Attached files reach the teammate as content, not just ids.
+        ...(blobStore ? { attachmentBlobs: blobStore } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
         // block-form test harnesses must never see sweep queries.
         ...(typeof opts.chat === 'function'
