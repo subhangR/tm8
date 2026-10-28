@@ -80,4 +80,50 @@ describe('sharedRead', () => {
     await expect(shared('a')).resolves.toBe('ok a');
     expect(read).toHaveBeenCalledTimes(2);
   });
+
+  describe('forget — an explicit change, not an age', () => {
+    it('drops a kept answer inside its window: the next call asks', async () => {
+      const read = vi.fn(async (key: string) => `answer ${key} #${String(read.mock.calls.length)}`);
+      const shared = sharedRead(read, (key) => key, { freshForMs: 60_000, now: () => 0 });
+      await expect(shared('a')).resolves.toBe('answer a #1');
+      await expect(shared('b')).resolves.toBe('answer b #2');
+      shared.forget('a');
+      await expect(shared('a')).resolves.toBe('answer a #3');
+      // Only the forgotten key: `b` is still reused.
+      await expect(shared('b')).resolves.toBe('answer b #2');
+      expect(read).toHaveBeenCalledTimes(3);
+    });
+
+    it('a read in flight across a forget is neither joined nor kept — it may describe the world before the change', async () => {
+      const stale = deferred<string>();
+      const fresh = deferred<string>();
+      const read = vi.fn().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
+      const shared = sharedRead(read as (key: string) => Promise<string>, (key) => key, { freshForMs: 60_000, now: () => 0 });
+      const before = shared('a');
+      shared.forget('a');
+      const after = shared('a');
+      const joined = shared('a');
+      expect(read).toHaveBeenCalledTimes(2);
+      // The stale answer lands first: its caller gets it, nobody keeps it, and
+      // the fresh request in flight is still the one later calls join.
+      stale.resolve('connected');
+      await expect(before).resolves.toBe('connected');
+      expect(shared('a')).toBe(after);
+      fresh.resolve('revoked');
+      await expect(Promise.all([after, joined])).resolves.toEqual(['revoked', 'revoked']);
+      await expect(shared('a')).resolves.toBe('revoked');
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgetAll does it for every key', async () => {
+      const read = vi.fn(async (key: string) => `answer ${key}`);
+      const shared = sharedRead(read, (key) => key, { freshForMs: 60_000, now: () => 0 });
+      await shared('a');
+      await shared('b');
+      shared.forgetAll();
+      await shared('a');
+      await shared('b');
+      expect(read).toHaveBeenCalledTimes(4);
+    });
+  });
 });
