@@ -294,16 +294,14 @@ export interface EntityListPanelProps {
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
   /**
-   * STILL DECLARED, NO LONGER READ BY A TILE (task 01a1469f). Both fed chips
-   * §6 cut: `linkedSessionsOf` the leading sessions chip, `linkedPullRequestsOf`
-   * the PR chips. They stay on the props because four hosts pass them
-   * (`WorkspaceView`, `Browser`, `EntityView`, `ChannelView`) and
-   * `linkedPullRequestsOf` is live data the DETAIL panel still renders —
-   * removing them here would be a four-file change that buys nothing and
-   * would have to be undone the day a row wants either fact again.
+   * `linkedSessionsOf` is STILL DECLARED, NO LONGER READ BY A TILE (task
+   * 01a1469f): it fed the leading sessions chip the §6 cut removed. It stays
+   * because four hosts pass it (`WorkspaceView`, `Browser`, `EntityView`,
+   * `ChannelView`).
    *
-   * Named as unread rather than left looking wired: a prop a reader assumes
-   * drives something is worse than one that says it does not.
+   * `linkedPullRequestsOf` IS read again (task 01a18209): a session row's PR
+   * chips merge it with the row's own `badges.pullRequests`, so a PR the
+   * session inherited from a task it worked on still gets its chip.
    */
   linkedSessionsOf?: (id: string) => readonly EntitySummary[];
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
@@ -5069,16 +5067,32 @@ export function Tile({
        the PR count comes back after them as the total, and is the door to the
        rest in the detail panel. */
     const pullRequestsShown = view.shows('counts') && !hiddenGroups.has('prs');
+    const badgePullRequests = pullRequestsShown ? badgePullRequestFactsOf(row) : [];
     const allSessionPullRequests = pullRequestsShown
-      ? mergeLinkedPullRequests(badgePullRequestFactsOf(row), props.linkedPullRequestsOf?.(row.id) ?? [])
+      ? mergeLinkedPullRequests(badgePullRequests, props.linkedPullRequestsOf?.(row.id) ?? [])
       : [];
     const sessionPullRequests = allSessionPullRequests.slice(0, SESSION_ROW_PR_CHIPS);
-    const morePullRequests =
-      allSessionPullRequests.length > SESSION_ROW_PR_CHIPS || row.badges.pullRequestsTruncated === true;
+    const pullRequestsTruncated = row.badges.pullRequestsTruncated === true;
+    const morePullRequests = allSessionPullRequests.length > SESSION_ROW_PR_CHIPS || pullRequestsTruncated;
     const countHiddenGroups = sessionPullRequests.length > 0 && !morePullRequests
       ? new Set([...hiddenGroups, 'prs'])
       : hiddenGroups;
-    const sessionCountsLine = sessionPullRequests.length > 0 || (showCounts && hasTileLinkCounts(row.counters, countHiddenGroups)) ? (
+    /* The total after the chips. The `prs` counter counts what the session
+       authored or tracks; the graph can add PRs INHERITED from a task it worked
+       on, which that counter never saw. So the count is the counted set plus
+       the graph-only PRs — never fewer than the chips already drawn. */
+    const sessionCounters = morePullRequests
+      ? {
+          ...row.counters,
+          prs: Math.max(
+            row.counters.prs ?? 0,
+            pullRequestsTruncated
+              ? (row.counters.prs ?? 0) + allSessionPullRequests.length - badgePullRequests.length
+              : allSessionPullRequests.length,
+          ),
+        }
+      : row.counters;
+    const sessionCountsLine = sessionPullRequests.length > 0 || (showCounts && hasTileLinkCounts(sessionCounters, countHiddenGroups)) ? (
       <span className="lp__session-links">
         {sessionPullRequests.length > 0 ? (
           /* A chip is a link to GitHub inside a selectable row: the click is
@@ -5087,9 +5101,9 @@ export function Tile({
             <LinkedPullRequestChips pullRequests={sessionPullRequests} placement="tile" />
           </span>
         ) : null}
-        {showCounts && hasTileLinkCounts(row.counters, countHiddenGroups) ? (
+        {showCounts && hasTileLinkCounts(sessionCounters, countHiddenGroups) ? (
           <TileLinkCounts
-            counters={row.counters}
+            counters={sessionCounters}
             entityId={row.id}
             hiddenGroups={countHiddenGroups}
             {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}

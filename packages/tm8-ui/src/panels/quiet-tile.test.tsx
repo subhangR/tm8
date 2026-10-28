@@ -531,6 +531,27 @@ describe('a session row draws each PR, not a count (task 01a18209)', () => {
     expect(container.querySelector('[data-count-kind="prs"]')?.textContent).toBe('5');
   });
 
+  it('counts the PRs inherited through the graph too, never fewer than the chips drawn', () => {
+    // The counter saw the two PRs the session authored; the graph adds three it
+    // inherited from a task it worked on. Four chips, then the total of five.
+    const row = sessionWith({ pullRequests: [pr(1, 'open'), pr(2, 'merged')] }, { prs: 2 });
+    const inherited = [3, 4, 5].map((number) => ({
+      id: `pr-${number}`, title: `PR ${number}`, repository: 'subhangR/tm8', number, lifecycle: 'open' as const,
+      url: null, ciStatus: null, mergeState: null, headRef: null, attribution: 'inherited' as const,
+    }));
+    const { container } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([row])}
+        ctx={ctx}
+        linkedPullRequestsOf={(id) => (id === row.id ? inherited : [])}
+      />,
+    );
+    expect([...container.querySelectorAll('[data-testid="linked-pr"]')].map((c) => c.getAttribute('data-pr-number')))
+      .toEqual(['1', '2', '3', '4']);
+    expect(container.querySelector('[data-count-kind="prs"]')?.textContent).toBe('5');
+  });
+
   it('falls back to the count when the server sent no PR facts', () => {
     const row = sessionWith({}, { prs: 1 });
     const { container } = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([row])} ctx={ctx} />);
