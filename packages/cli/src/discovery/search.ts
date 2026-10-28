@@ -264,6 +264,15 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     ],
   },
   {
+    // Before `list teammates`: "schedule a teammate" is a loop, not a roster read.
+    intent: 'schedule recurring work (a loop)',
+    all: [['schedule', 'scheduled', 'recurring', 'cron', 'loop', 'loops', 'periodically', 'nightly', 'hourly', 'daily']],
+    candidates: [
+      { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
+      { path: ['loop', 'list'], example: 'tm8 loop list' },
+    ],
+  },
+  {
     intent: 'list teammates',
     all: [['teammate', 'agents', 'personas']],
     none: ['chat', 'skill', 'skills', 'equip', 'profile', 'interaction-profile', 'spawn', 'launch'],

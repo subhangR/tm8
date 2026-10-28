@@ -5,6 +5,7 @@ import type { LoopRun, LoopView } from '@tm8/contract';
 import { run } from '../src/run.js';
 import { pauseUntil } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
+import { matchIntent } from '../src/discovery/search.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
 const RUN = '22222222-2222-7222-8222-222222222222';
@@ -208,6 +209,11 @@ describe('tm8 loop runs', () => {
 });
 
 describe('tm8 loop discovery', () => {
+  it('help --query routes scheduling intents to loop create, and leaves the roster read alone', () => {
+    expect(matchIntent('schedule a teammate')?.candidates[0]?.path).toEqual(['loop', 'create']);
+    expect(matchIntent('run a teammate nightly')?.candidates[0]?.path).toEqual(['loop', 'create']);
+    expect(matchIntent('list teammates')?.candidates[0]?.path).toEqual(['teammate', 'list']);
+  });
   it('help lists every verb', () => {
     const text = JSON.stringify(nounHelp('loop'));
     for (const verb of ['create', 'list', 'show', 'edit', 'enable', 'disable', 'pause', 'resume', 'run-now', 'runs', 'run-show', 'stop', 'preview']) {
