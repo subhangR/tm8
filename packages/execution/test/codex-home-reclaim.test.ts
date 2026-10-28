@@ -4,7 +4,7 @@
 //
 //   - the scrub (PTY exit, kill, failed launch, boot sweep) removes the login
 //     copy and the rebuildable caches and keeps the conversation, and a later
-//     `isolateCodexMcpHome` (resume) copies the login back over it;
+//     `isolateCodexMcpHome` (resume) links the login back into it;
 //   - the reclaim removes a whole home only when its session cannot be
 //     resumed: no row, a deleted row, or a worktree that is gone. With the
 //     operator's retention set, a session that ended long enough ago goes too.
@@ -14,7 +14,7 @@
 // space-credential-spawn.test.ts. The space-key home and manifest file rules
 // that share this reclaim are pinned in session-artifact-reclaim.test.ts.
 
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -122,7 +122,7 @@ describe('Codex session homes after the process', () => {
       expect(await scrubCodexMcpHome(dataDir, 'not-a-session')).toBe(false);
     });
 
-    it('a resume after the scrub copies the login back and keeps the conversation', async () => {
+    it('a resume after the scrub links the login back and keeps the conversation', async () => {
       const home = await seedHome(RESUMABLE);
       await scrubCodexMcpHome(dataDir, RESUMABLE);
 
@@ -131,7 +131,8 @@ describe('Codex session homes after the process', () => {
 
       expect(env.CODEX_HOME).toBe(home);
       expect(await readFile(join(home, 'auth.json'), 'utf8')).toBe(LOGIN);
-      expect((await stat(join(home, 'auth.json'))).mode & 0o777).toBe(0o600);
+      expect((await lstat(join(home, 'auth.json'))).isSymbolicLink()).toBe(true);
+      expect(await readlink(join(home, 'auth.json'))).toBe(join(source, 'auth.json'));
       expect(await readFile(join(home, 'sessions', '2026', '10', '19', 'rollout.jsonl'), 'utf8')).toBe('{"turn":1}\n');
     });
 
