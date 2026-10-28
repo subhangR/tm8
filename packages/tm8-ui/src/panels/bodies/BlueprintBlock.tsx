@@ -32,7 +32,7 @@ import { useMemo, type CSSProperties } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import { Mermaid } from '../../kit/Mermaid';
 import { BlueprintCanvas } from '../../craft/BlueprintCanvas';
-import { blueprintView } from '../../craft/blueprint-model';
+import { blueprintView, DEFAULT_EDGE_DETAIL } from '../../craft/blueprint-model';
 
 /**
  * The smallest scale at which a node title still reads. MEASURED, not chosen:
@@ -49,7 +49,7 @@ export function BlueprintBlock({
   detail: EntityDetail;
   onOpenEntity?: ((id: string) => void) | undefined;
 }) {
-  const view = useMemo(() => blueprintView(detail.content), [detail.content]);
+  const view = useMemo(() => blueprintView(detail.content, undefined, { edgeDetail: DEFAULT_EDGE_DETAIL }), [detail.content]);
 
   /*
    * EVERY TYPE SAYS WHAT IT IS. `graphType` is content-discriminated (R3):
