@@ -158,9 +158,9 @@
   background: none;
 }
 /* THE TOKEN READING (task 01a14b00): the context chip in its own middle
-   section, between the kind's icons and the shared ones, one figure per line.
-   Two groups — occupancy (used, %) over freshness (cache, age) — with room
-   between them. Its details card opens to the left, centred on it. */
+   section, between the kind's icons and the shared ones. It shows the context
+   size alone, small (task 01a181e2); % · cache · age are the ⋯ menu's line
+   and the details card's, which opens to the left, centred on it. */
 .tws-astrip-section--stats:not(:has(.pn-context)) {
   display: none;
 }
@@ -175,24 +175,16 @@
   gap: 1px;
   width: 36px;
   height: auto;
-  padding: var(--pn-space-2) 0;
+  padding: var(--pn-space-1) 0;
   line-height: 14px;
   font-size: 10px;
   white-space: nowrap;
   border-color: var(--pn-line);
 }
 .tws-astrip-stats .pn-context__line[data-line='0'] {
-  color: var(--pn-ink);
-  font-size: 11px;
-  font-weight: 600;
-}
-.tws-astrip-stats .pn-context__line[data-line='1'] {
   color: var(--pn-ink-2);
-}
-.tws-astrip-stats .pn-context__line[data-line='2'] {
-  margin-top: 5px;
-  padding-top: 5px;
-  border-top: 1px solid var(--pn-line);
+  font-size: 10px;
+  font-weight: 500;
 }
 .tws-astrip-stats .pn-context__sep {
   display: none;
@@ -889,4 +881,39 @@
   outline: none;
   border-color: var(--pn-line-2);
   background: var(--pn-card);
+}
+
+/* THE SESSION'S "MORE VIEWS" (task 01a181e2): Git, Debug, Graph and Context
+   behind one tab in the switch; its menu opens to the left like ⋯. */
+.pn-surface-more {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip .pn-surface-more__menu {
+  min-width: 150px;
+}
+.cv2-root .pn-surface-more__item {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+}
+.cv2-root .pn-surface-more__item[aria-checked='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+/* A session's Run, in ⋯ as a menu row: the glyph, then its word. */
+.cv2-root .tws-astrip .tws-astrip-menu-verbs {
+  align-items: stretch;
+}
+.cv2-root .tws-astrip .tws-astrip-menu-verbs .pn-btn {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+}
+.cv2-root .tws-astrip .tws-astrip-menu-verbs .pn-btn::after {
+  content: attr(aria-label);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
 }
