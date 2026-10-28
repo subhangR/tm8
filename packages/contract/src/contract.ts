@@ -6501,6 +6501,19 @@ export interface ExecutionSpawnResult extends CommandResult {
    * that predates it.
    */
   launch?: ExecutionSpawnLaunch;
+  /** Where this request's time went, phase by phase. Absent from a server that predates it. */
+  timings?: ExecutionSpawnTimings;
+}
+
+/**
+ * The wall clock of one `execution.spawn`, in milliseconds. DIAGNOSTIC ONLY:
+ * the phase names are the server's internal steps and change when those
+ * steps do, so nothing may branch on them. Phases that ran concurrently
+ * overlap and need not sum to `totalMs`.
+ */
+export interface ExecutionSpawnTimings {
+  totalMs: number;
+  phases: Record<string, number>;
 }
 
 /**

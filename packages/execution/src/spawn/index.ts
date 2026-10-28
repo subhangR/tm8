@@ -129,6 +129,7 @@ export {
   type CredentialResolutionInput,
   type ResolvedSessionCredentials,
 } from './credential-resolution.js';
+export { SpawnPhaseTimer, type SpawnTimings } from './spawn-timings.js';
 export {
   branchNameFor,
   materializeWorktree,

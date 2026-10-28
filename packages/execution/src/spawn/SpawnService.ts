@@ -88,6 +88,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { detectCheckoutBranch } from './checkout-branch.js';
+import { SpawnPhaseTimer, type SpawnTimings } from './spawn-timings.js';
 import {
   claudePluginConfigDir,
   harnessSurfaceEnv,
@@ -332,6 +333,11 @@ interface SandboxDecision {
   unavailable: boolean;
   /** Why, in one sentence, for the manifest. Null when nothing was degraded. */
   degradedReason: string | null;
+}
+
+/** What `runSpawn` has established so far, for the timing line of a launch that throws. */
+interface SpawnProgress {
+  sessionId: string | null;
 }
 
 /** The ordinary case: whatever the posture asked for, the node can give it. */
@@ -1598,11 +1604,50 @@ export class SpawnService {
    * fills it.
    */
   async spawn(auth: GraphAuth, request: SpawnRequest, server?: SpawnServerFacts): Promise<SpawnResult> {
+    const timer = new SpawnPhaseTimer();
+    const progress: SpawnProgress = { sessionId: null };
+    try {
+      const result = await this.runSpawn(auth, request, server, timer, progress);
+      return { ...result, timings: this.logSpawnTimings(timer, progress.sessionId, result.reused ? 'replayed' : 'running') };
+    } catch (error) {
+      this.logSpawnTimings(timer, progress.sessionId, 'failed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * One structured line per spawn, whatever its outcome, so a slow launch can
+   * be read phase by phase from the node's log (see spawn-timings.ts).
+   */
+  private logSpawnTimings(
+    timer: SpawnPhaseTimer,
+    sessionId: string | null,
+    outcome: 'running' | 'replayed' | 'failed',
+    error?: unknown,
+  ): SpawnTimings {
+    const timings = timer.snapshot();
+    this.logger?.info('SpawnService: spawn timings', {
+      sessionId,
+      outcome,
+      totalMs: timings.totalMs,
+      phases: timings.phases,
+      ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
+    });
+    return timings;
+  }
+
+  private async runSpawn(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    server: SpawnServerFacts | undefined,
+    timer: SpawnPhaseTimer,
+    progress: SpawnProgress,
+  ): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
     let firstPromptDeliveryId: string | undefined;
 
-    const context = await this.graph.loadSpawnContext(auth, {
+    const context = await timer.time('loadSpawnContext', () => this.graph.loadSpawnContext(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       projectId: request.projectId ?? null,
@@ -1615,7 +1660,7 @@ export class SpawnService {
       parentSessionId: request.parentSessionId ?? null,
       ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
       ...(request.selection ? { selection: request.selection } : {}),
-    });
+    }));
 
     // A child inherits its parent's posture but not its harness pick; only a
     // resume replays the pick, because only a resume is the same launch. An
@@ -1623,8 +1668,8 @@ export class SpawnService {
     // replayed, so it keeps its pick: dropping a plugin allow set could widen it.
     const inherited = request.inheritPosture !== undefined
       ? request.inheritPosture
-      : childLaunchPosture(await this.inheritedPosture(auth, request));
-    const launch = resolveLaunchConfig(request, context, this.env, inherited);
+      : childLaunchPosture(await timer.time('inheritedPosture', () => this.inheritedPosture(auth, request)));
+    const launch = timer.timeSync('resolveLaunchConfig', () => resolveLaunchConfig(request, context, this.env, inherited));
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
     // guard so direct callers cannot manufacture an unroutable prompt.
@@ -1650,17 +1695,19 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
-    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
+    const resolvedProfile = await timer.time('resolveInteractionProfile', () => this.graph.resolveInteractionProfile(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       interactionProfileId: request.interactionProfileId ?? null,
-    });
+    }));
     // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
     // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
     const contextIndex = indexSwitch.on ? { source: indexSwitch.source } : null;
     applyDispatcherTeammates(context, launch.mode);
-    if (contextIndex) await this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId);
+    if (contextIndex) {
+      await timer.time('loadIndexHeaders', () => this.loadIndexHeaders(auth, context, launch.mode, request.jevRunId));
+    }
 
     // Worktree mode provisions BEFORE the work_session row exists, because the
     // row must persist the path the PTY will actually use — that is §1.2's
@@ -1673,7 +1720,7 @@ export class SpawnService {
     // itself, and that one hands the fresh checkout to the reconciler below.
     const worktree =
       workdir.mode === 'worktree'
-        ? await this.provisionWorktreeFor(auth, request, context, workdir.baseRef)
+        ? await timer.time('provisionWorktree', () => this.provisionWorktreeFor(auth, request, context, workdir.baseRef))
         : null;
 
     // The lane fact (107). Worktree mode knows its branch without a probe —
@@ -1683,12 +1730,12 @@ export class SpawnService {
     const checkoutBranch = worktree
       ? worktree.branch
       : workdir.mode === 'project'
-        ? await detectCheckoutBranch(workdir.path)
+        ? await timer.time('detectCheckoutBranch', () => detectCheckoutBranch(workdir.path))
         : null;
 
     let created: Awaited<ReturnType<GraphPort['createWorkSession']>>;
     try {
-      created = await this.graph.createWorkSession(auth, {
+      created = await timer.time('createWorkSession', () => this.graph.createWorkSession(auth, {
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
         parentSessionId: request.parentSessionId ?? null,
@@ -1723,7 +1770,7 @@ export class SpawnService {
         // the MCP bind below runs inside this spawn and reads the schedule
         // provenance root off that edge.
         ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
-      });
+      }));
     } catch (error) {
       // The row was refused, so nothing references the checkout just created
       // and nothing ever will: left in `preparing` with its entity committed,
@@ -1743,6 +1790,7 @@ export class SpawnService {
       throw error;
     }
     const { sessionId, commandResult, replayed, createdTaskId } = created;
+    progress.sessionId = sessionId;
     // Launch v3 gap 4: the task the RPC just created is known only now. It is
     // new, so it has nothing but its title — the rest is what the row holds.
     if (createdTaskId) {
@@ -1766,7 +1814,7 @@ export class SpawnService {
     }
     // The RPC just started the tasks, so their version moved (a replay's did,
     // the first time). Compose from the task as it stands now.
-    await this.refreshStartedTasks(auth, context);
+    await timer.time('refreshStartedTasks', () => this.refreshStartedTasks(auth, context));
     // A dispatcher launched on tasks ROUTES them rather than working them:
     // its first turn is a dispatch request per task, not an assignment (and
     // 267 wrote it neither `working_on` nor `assigned_to`).
@@ -1832,7 +1880,7 @@ export class SpawnService {
     this.sessionAuth.set(sessionId, auth);
     // The OOM baseline, captured with the claims because it is the same kind
     // of launch-time bookkeeping and must exist before the PTY can die (171).
-    this.oomKillAtSpawn.set(sessionId, await readOomKillCount());
+    this.oomKillAtSpawn.set(sessionId, await timer.time('readOomKillCount', () => readOomKillCount()));
     let spaceCredentialIds: string[] = [];
 
     try {
@@ -1842,47 +1890,48 @@ export class SpawnService {
       // and claiming it before the lease is held would let a second spawn take
       // a worktree this one is about to boot into.
       if (worktree) {
-        await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
-        await this.graph.linkSessionToWorktree(auth, {
+        await timer.time('acquireWorktreeLease', () => this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId));
+        await timer.time('linkSessionToWorktree', () => this.graph.linkSessionToWorktree(auth, {
           spaceId: request.spaceId,
           sessionId,
           worktreeId: worktree.worktreeId,
-        });
-        await this.graph.setWorktreeAllocationState(auth, {
+        }));
+        await timer.time('setWorktreeReady', () => this.graph.setWorktreeAllocationState(auth, {
           worktreeId: worktree.worktreeId,
           state: 'ready',
-        });
+        }));
       }
 
       // The lane fact needs the row, so this is the earliest it can land —
       // recorded before the PTY exists so even a session that dies in its
       // boot window already answers "what branch was I on".
       if (checkoutBranch !== null) {
-        await this.captureCheckoutBranch(auth, sessionId, checkoutBranch);
+        await timer.time('captureCheckoutBranch', () => this.captureCheckoutBranch(auth, sessionId, checkoutBranch));
       }
 
       // The pre-minted Claude id is graph truth from the moment the session
       // exists — recorded BEFORE the PTY spawns, so even a session that dies
       // in its boot window is already resume-capable.
       if (nativeSessionId) {
-        await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
+        await timer.time('recordNativeSessionId', () => this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId));
       }
-      const interactionProfile = await this.graph.recordInteractionProfilePin(
+      const interactionProfile = await timer.time('recordInteractionProfilePin', () => this.graph.recordInteractionProfilePin(
         auth,
         sessionId,
         resolvedProfile,
-      );
-      const agentToken = await this.graph.issueWorkSessionAgentToken(
+      ));
+      const agentToken = await timer.time('issueWorkSessionAgentToken', () => this.graph.issueWorkSessionAgentToken(
         auth,
         sessionId,
         request.teamMemberId,
-      );
+      ));
       agentTokenIssued = true;
-      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
+      const mcpBindings = this.mcpBindings;
+      if (mcpBindings) launch.mcpSelections = await timer.time('mcpBind', () => mcpBindings.bind(auth, {
         sessionId, spaceId: request.spaceId, teamMemberId: request.teamMemberId,
         targetIds: context.tasks.map(task => task.id), agentToken,
         ...(request.mcpSelections !== undefined ? { mcpSelections: request.mcpSelections } : {}),
-      });
+      }));
       else if (request.mcpSelections?.length) throw new Error('MCP launch bindings are unavailable');
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
@@ -1892,15 +1941,15 @@ export class SpawnService {
       // cannot honour this posture refuses here — with a sentence naming the
       // precondition — instead of booting an agent that will look healthy and
       // be unable to run anything. Throws unless the operator has opted in.
-      const sandbox = await this.resolveSandboxPosture(launch);
+      const sandbox = await timer.time('resolveSandboxPosture', () => this.resolveSandboxPosture(launch));
       const manifestPath = this.manifestPathFor(sessionId);
-      const credentials = await this.resolveSessionCredentials(
+      const credentials = await timer.time('resolveSessionCredentials', () => this.resolveSessionCredentials(
         auth,
         request.spaceId,
         sessionId,
         launch,
         agentToken,
-      );
+      ));
       spaceCredentialIds = credentials.spaceCredentialIds;
       const { credentialHome, gitHubCredential } = credentials;
       // Built after the credentials because a `minimal` launch reads the
@@ -1909,10 +1958,12 @@ export class SpawnService {
       // it, so the two cannot disagree about a plugin.
       // The command is built INSIDE composeManifest, after the skill index is
       // trimmed, from the plugins of the skills that survived (F2).
-      const installedPlugins = this.installedClaudePluginsFor(launch, credentialHome?.configDir);
-      const homeSkills = this.configHomeSkillsFor(launch, credentialHome?.configDir);
+      const { installedPlugins, homeSkills } = timer.timeSync('harnessSurfaceReads', () => ({
+        installedPlugins: this.installedClaudePluginsFor(launch, credentialHome?.configDir),
+        homeSkills: this.configHomeSkillsFor(launch, credentialHome?.configDir),
+      }));
       let baseCommand = '';
-      const manifest = composeManifest({
+      const manifest = timer.timeSync('composeManifest', () => composeManifest({
         agentConfigDir: credentialHome?.configDir ?? (launch.agentTool === 'codex' ? this.env.CODEX_HOME : this.env.CLAUDE_CONFIG_DIR),
         homeDir: this.env.HOME ?? homedir(),
         sessionId,
@@ -1937,11 +1988,11 @@ export class SpawnService {
         harness: this.managesClaudeHarness(launch) ? { installedPlugins, skills: homeSkills, projectKeys: this.projectSkillKeysFor(launch, cwd) } : null,
         contextIndex,
         baseUrl: this.baseUrl,
-      });
+      }));
 
-      const story = await this.storyContext(auth, manifest, sessionId);
+      const story = await timer.time('storyContext', () => this.storyContext(auth, manifest, sessionId));
       if (story) manifest.story = story;
-      const design = await this.designContext(auth, manifest, sessionId);
+      const design = await timer.time('designContext', () => this.designContext(auth, manifest, sessionId));
       if (design) manifest.design = design;
 
       // Compose the agent's briefing IN-PROCESS and embed it in the command.
@@ -1955,9 +2006,9 @@ export class SpawnService {
       const runtime: PromptRuntime = {
         sessionId,
         baseUrl: this.baseUrl,
-        ...(await this.promptV2Runtime(auth, manifest, sessionId, cwd)),
+        ...(await timer.time('promptV2Runtime', () => this.promptV2Runtime(auth, manifest, sessionId, cwd))),
       };
-      const envelope = composeLaunchPrompt(manifest, runtime);
+      const envelope = timer.timeSync('composeLaunchPrompt', () => composeLaunchPrompt(manifest, runtime));
       // The two halves stay SEPARATE all the way to the argv. `envelope.system`
       // configures the agent; `envelope.task` is its first user turn, and is
       // what actually makes it start. Concatenating them here is what left every
@@ -2019,9 +2070,9 @@ export class SpawnService {
       // binaries. `composeEnv` has already added the standard install dirs, so
       // reaching this branch means the CLI genuinely is not installed anywhere
       // tm8 knows to look — which is a `not_found`, not a retryable 503.
-      await this.assertAgentRuntime(baseCommand, launch, env);
+      await timer.time('assertAgentRuntime', () => this.assertAgentRuntime(baseCommand, launch, env));
 
-      await this.writeManifestFile(manifestPath, manifest);
+      await timer.time('writeManifestFile', () => this.writeManifestFile(manifestPath, manifest));
       // Names only. The manifest row is read by the UI and included in backups;
       // an ANTHROPIC_API_KEY value in there would outlive every rotation.
       //
@@ -2031,7 +2082,7 @@ export class SpawnService {
       // one actually handed to the PTY — including the Codex session marker —
       // so that a reader sees the real first user turn rather than the
       // pre-marker composer output.
-      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
+      await timer.time('recordManifest', () => this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
         system: envelope.system,
         task,
       }, launch.agentTool === 'claude-code'
@@ -2042,9 +2093,9 @@ export class SpawnService {
           // session's own home before the PTY exists, and that is where Codex
           // writes the rollouts resume and the transcript reader look for.
           ? codexMcpHomeFor(manifestPath)
-          : null);
+          : null));
 
-      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
+      if (!context.project) await timer.time('scratchDirectory', () => this.ensurePrivateScratchDirectory(cwd));
 
       // Record the CLI's per-workspace trust BEFORE the child exists, because
       // afterwards is too late: the dialog blocks on first directory access, and
@@ -2058,18 +2109,20 @@ export class SpawnService {
       // The stable trust root is what survives a booting claude's stale
       // rewrite of the shared config; see trustClaudeWorkspace.
       if (launch.agentTool === 'claude-code') {
-        await this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env);
+        await timer.time('seedClaudeTrust', () => this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env));
       }
       if (launch.agentTool === 'codex') {
-        await isolateCodexMcpHome(manifestPath, env);
-        await trustCodexWorkspace(cwd, env);
+        await timer.time('codexHomeAndTrust', async () => {
+          await isolateCodexMcpHome(manifestPath, env);
+          await trustCodexWorkspace(cwd, env);
+        });
       }
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
       // and here. Ask again before a child exists to hold the key; the
       // post-spawn check below still closes the window after it.
-      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+      await timer.time('credentialRecheckBeforePty', () => this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds));
 
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
@@ -2083,13 +2136,14 @@ export class SpawnService {
         // Registration MUST precede queue admission: a same-tick settlement
         // must already have somewhere to land (PromptSettlementWaiter's law).
         firstPromptOutcome = this.promptSettlement.awaitOutcome(firstPromptDeliveryId);
-        const admitted = await this.pty.deliverPrompt(
+        const deliveryId = firstPromptDeliveryId;
+        const admitted = await timer.time('queueFirstPrompt', () => this.pty.deliverPrompt(
           sessionId,
           task,
           'send',
-          firstPromptDeliveryId,
+          deliveryId,
           true,
-        );
+        ));
         if (!admitted) {
           this.promptSettlement.cancel(firstPromptDeliveryId);
           throw new SpawnError(
@@ -2099,14 +2153,14 @@ export class SpawnService {
           );
         }
       }
-      const { reused } = this.pty.spawnIfAbsent({
+      const { reused } = timer.timeSync('ptySpawn', () => this.pty.spawnIfAbsent({
         sessionId,
         command,
         cwd,
         env,
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
-      });
+      }));
 
       // Arm the watcher before the first post-spawn await. A very short-lived
       // child can exit while the running transition is in flight; registering
@@ -2120,11 +2174,11 @@ export class SpawnService {
       const onboarding = launch.agentTool === 'claude-code' && !reused
         ? this.detectClaudeOnboarding(sessionId)
         : null;
-      await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
+      await timer.time('credentialRecheckAfterPty', () => this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds));
       let earlyExit: Awaited<typeof bootSettlement>;
       let promptOutcome: PromptSettlementResult | 'onboarding';
       try {
-        [earlyExit, promptOutcome] = await Promise.all([
+        [earlyExit, promptOutcome] = await timer.time('bootAndFirstPromptSettlement', () => Promise.all([
           bootSettlement,
           Promise.race([
             firstPromptDeliveryId && firstPromptOutcome
@@ -2134,7 +2188,7 @@ export class SpawnService {
               ? [onboarding.seen.then((seen) => (seen ? ('onboarding' as const) : new Promise<never>(() => {})))]
               : []),
           ]),
-        ]);
+        ]));
       } finally {
         onboarding?.stop();
       }
@@ -2165,7 +2219,7 @@ export class SpawnService {
       }
 
       // `running` now means both process survival and first-turn submission.
-      await this.graph.transition(auth, { sessionId, status: 'running' });
+      await timer.time('transitionRunning', () => this.graph.transition(auth, { sessionId, status: 'running' }));
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
       this.notifySessionLive(sessionId, 'spawn');
