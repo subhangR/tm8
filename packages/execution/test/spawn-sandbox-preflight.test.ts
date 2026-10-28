@@ -143,6 +143,20 @@ describe('codex sandbox preflight', () => {
       const result = await probeCodexSandbox({ binary: join(binDir, 'no-such-codex') });
       expect(result).toMatchObject({ usable: false, reason: 'binary_missing' });
     });
+
+    it('re-probes after an inconclusive answer instead of pinning it for the process', async () => {
+      const binary = join(binDir, 'codex');
+      await expect(probeCodexSandbox({ binary })).resolves.toMatchObject({ reason: 'binary_missing' });
+      await installCodex(CODEX_OK);
+      await expect(probeCodexSandbox({ binary })).resolves.toEqual({ usable: true });
+    });
+
+    it('keeps a real verdict about the node for the life of the process', async () => {
+      const binary = await installCodex(CODEX_BROKEN);
+      await expect(probeCodexSandbox({ binary })).resolves.toMatchObject({ reason: 'probe_failed' });
+      await installCodex(CODEX_OK);
+      await expect(probeCodexSandbox({ binary })).resolves.toMatchObject({ reason: 'probe_failed' });
+    });
   });
 
   describe('the command line it produces', () => {
