@@ -278,7 +278,7 @@
 <div class="rcards">
   <div class="card"><div class="rh"><span class="spinner"></span><span class="rt">Checking tm8.acme.dev…</span></div><div class="d">Asking /health whether a tm8 node answers. Gives up after 8 s and says "offline", never a blank.</div></div>
   <div class="card"><div class="rh"><span class="pill run">online</span><span class="v">contract 0.1.0</span></div><div class="rt">tm8-server · database ok</div><div class="d">Certificate valid. Next: choose how to sign in.</div></div>
-  <div class="card"><div class="rh"><span class="pill wait">offline</span></div><div class="rt">This server could not be reached</div><div class="d">Nothing answered at tm8.acme.dev. It may be off, or reachable only on its own network. If you add it anyway it waits in the switcher, marked offline.</div><div class="acts"><span class="btn sm">Try again</span><span class="btn sm ghost">Add it anyway</span></div></div>
+  <div class="card"><div class="rh"><span class="pill wait">offline</span></div><div class="rt">This server could not be reached</div><div class="d">Nothing answered at tm8.acme.dev. It may be off, or reachable only on its own network. If you add it anyway it waits in the switcher, marked offline.</div><div class="acts"><span class="btn sm">Check again</span><span class="btn sm ghost">Add it anyway</span></div></div>
   <div class="card"><div class="rh"><span class="pill error">not a tm8 node</span></div><div class="rt">Something else answered</div><div class="d">tm8.acme.dev replied, but /health did not say <span class="mono">server: tm8-server</span>. Check the address — a path or a proxy page is the usual cause.</div><div class="acts"><span class="btn sm">Edit URL</span></div></div>
   <div class="card"><div class="rh"><span class="pill error">unreachable</span><span class="v">TLS</span></div><div class="rt">Certificate not trusted</div><div class="d">The certificate for tm8.acme.dev expired on 2026-10-20. TM8 Mobile will not send a password over it, and there is no "continue anyway".</div><div class="acts"><span class="btn sm">Edit URL</span></div></div>
   <div class="card"><div class="rh"><span class="pill wait">update needed</span><span class="v">e.g. 0.2.0 &gt; 0.1.0</span></div><div class="rt">This app is too old for acme-node</div><div class="d">acme-node speaks a newer contract than this app. Update TM8 Mobile to sign in; nothing on acme-node changes until you do.</div><div class="acts"><span class="btn sm">Open the store</span></div></div>
@@ -498,7 +498,7 @@
     <li><b>Server header.</b> Its name, its reachability word (online · offline · unreachable · signed out · update needed) and when it last synced. ⋯ or a long-press opens the server menu.</li>
     <li><b>Active space.</b> Brand mark and a check. Tapping another row switches space and dismisses the sheet; nothing in the old space is thrown away (see below).</li>
     <li><b>Counts, honestly.</b> Red badge = Needs you (lane 07's count); grey text = unread from <code>spaces.navigation</code>. Playground draws nothing because nobody has counted it yet. A zero would claim a measurement nobody took.</li>
-    <li><b>An offline server.</b> Its spaces still open from cache, read-only. Writes queue with a pending pill, and the cached badge turns grey: last known, not live.</li>
+    <li><b>An offline server.</b> Its spaces still open from cache, read-only. Writes queue with a pending pill (v2, per lane 08), and the cached badge turns grey: last known, not live.</li>
     <li><b>Signed out.</b> A server with no pass lists no spaces, only "Sign in". A server needing an update reads "update needed" here and opens its card.</li>
     <li><b>Add a server.</b> The first-run flow, presented over the sheet; on success, the new server's spaces appear in place.</li>
   </ol>
@@ -624,7 +624,7 @@
       </div>
       <div class="ph-home"></div>
     </figure>
-    <div class="cap"><b>Browse ① — search, pinned, and a tree</b>Pinned tiles match your desktop rail pins. The selected tile previews its kind as a <em>tree</em> (owner ruling 2026-10-28): sessions are grouped by root session, with launched children nested to depth 2. Each row has its own liveness word and a 20pt indent with a guide line. A collapsed parent states its children ("3 children · none live"), and your collapse is remembered per list. See all opens the full list. The avatar at top right opens your account. <span class="route">/[server]/[space]/(tabs)/browse</span></div>
+    <div class="cap"><b>Browse ① — search, pinned, and a tree</b>Pinned tiles match your desktop rail pins. The selected tile previews its kind as a <em>tree</em> (owner ruling 2026-10-28): sessions are grouped by root session, with launched children nested to depth 2, with 2 children shown inline and then a "N more · status" row, as on the Work tab. Each row has its own liveness word and a 20pt indent with a guide line. A collapsed parent states its children ("3 children · none live"), and your collapse is remembered per list. See all opens the full list. The avatar at top right opens your account. <span class="route">/[server]/[space]/(tabs)/browse</span></div>
   </div>
 
   <div class="shot">
@@ -1158,7 +1158,7 @@
   <tbody>
     <tr><td class="code">No servers</td><td>Welcome</td><td>The first-run screen; returns after the last server is removed.</td></tr>
     <tr><td class="code">Checking · online · offline · not a tm8 node · TLS · update needed · node too old</td><td>Reachability cards; Add a server</td><td>One component, seven verdicts; there is never a blank card or a "continue anyway".</td></tr>
-    <tr><td class="code">One server offline</td><td>Switcher anatomy</td><td>Spaces open from cache, read-only; writes queue as pending.</td></tr>
+    <tr><td class="code">One server offline</td><td>Switcher anatomy</td><td>Spaces open from cache, read-only; queued writes are v2 (lane 08).</td></tr>
     <tr><td class="code">All servers offline</td><td>Android switcher</td><td>"No server could be reached · showing what was cached at 13:12"; with no network: "No connection", "not checked".</td></tr>
     <tr><td class="code">Signed out · signed out by the server</td><td>Switcher (local); sheet over Work</td><td>"Sign in" row; "tm8.sh signed you out", with the place kept.</td></tr>
     <tr><td class="code">Sign-in loading · refused</td><td>Sheet; Password screen</td><td>"Signing in to tm8.sh…"; "Sign-in failed — the server refused that handle and password."</td></tr>
