@@ -7,7 +7,7 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
-import { assertKnownOptions, headerTextOptions, requireArg } from './entity.js';
+import { assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg } from './entity.js';
 import { parseCredentialSourceFlags } from './session.js';
 
 // Mirrors design §4.2 until the contract commit (PR1) exports LoopView/LoopRun.
@@ -267,7 +267,7 @@ export function renderRun(run: LoopRunDto): string {
 
 // ── verbs ─────────────────────────────────────────────────────────────────
 async function loopCreate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, [...DEFINITION_OPTIONS, 'disabled', 'when-to-use', 'summary', 'keyword', 'mutation-id']);
+  assertKnownOptions(cmd, [...DEFINITION_OPTIONS, 'disabled', ...HEADER_TEXT_OPTIONS, 'mutation-id']);
   argumentsCount(cmd, 1);
   if (!cmd.options.has('schedule')) throw new CliError('--schedule is required', EXIT_USAGE, { hint: 'every <n>{m|h|d} or a 5-field cron; try `tm8 loop preview --schedule <expr>`' });
   const definition = { title: requireArg(cmd, 0, '<title>'), prompt: '', ...await definitionFlags(cmd, false) };
