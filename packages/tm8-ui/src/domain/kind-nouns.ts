@@ -137,7 +137,7 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
       'mcp server test',
     ],
   },
-  loop: { nouns: [], commands: ['entity query', 'session spawn'] },
+  loop: { nouns: ['loop'], commands: [] },
   spell: { nouns: [], commands: ['skill equip', 'entity query'] },
   container: { nouns: ['container'], commands: [] },
 };

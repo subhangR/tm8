@@ -1,6 +1,7 @@
 // `tm8 loop` (design 01a182d4 §5): every verb is one loops.* operation. The
 // CLI never computes schedule state and never writes loop fields through
 // entities.*: the server owns nextRunAt, the preview and who a firing acts as.
+import type { ActorSummary, LoopListResult, LoopRun, LoopRunListResult, LoopRunResult, LoopSchedulePreview, LoopView } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -10,32 +11,8 @@ import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions, HEADER_TEXT_OPTIONS, headerTextOptions, requireArg } from './entity.js';
 import { parseCredentialSourceFlags } from './session.js';
 
-// Mirrors design §4.2 until the contract commit (PR1) exports LoopView/LoopRun.
-type Actor = { displayName?: string | null; id?: string | null } | null;
-export interface LoopRunDto {
-  id: string; loopId: string; firedAt: string; trigger: string; action: string; attempt: number;
-  status: string; skipReason: string | null; error: string | null;
-  taskId: string | null; sessionId: string | null; startedAt: string | null; endedAt: string | null;
-  durationMs: number | null; exitCode: number | null; outputTail?: string | null;
-  actedAs: Actor; endedKind: string | null;
-  usage: { inputTokens: number | null; outputTokens: number | null; costUsd: number | null } | null;
-}
-export interface LoopViewDto {
-  id: string; version: number;
-  definition: {
-    title: string; schedule: string; timezone: string; action: string;
-    teamMemberId: string | null; subjectId: string | null; toolId: string | null;
-    toolInputs: Record<string, unknown>; prompt: string; config: Record<string, unknown>;
-    concurrency: string; maxRuntimeSeconds: number | null; retry: { attempts: number; delaySeconds: number };
-  };
-  schedule: { valid: boolean; problem: string | null; summary: string; next: string[] };
-  state: {
-    enabled: boolean; pausedUntil: string | null; nextRunAt: string | null; lastRunAt: string | null;
-    lastError: string | null; actingAs: { identity: Actor; via: string }; waitingOnRunId: string | null;
-  };
-  runs: { total: number; last: LoopRunDto | null; last24h: { fired: number; failed: number; skipped: number } };
-}
 interface Page<T> { items: T[]; nextCursor: string | null }
+type Actor = ActorSummary | null;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EXIT_NOT_FOUND = 5;
@@ -78,14 +55,14 @@ function oneOf<T extends string>(cmd: CommandContext, option: string, allowed: r
 }
 
 /** A loop by id, or by exact title through loops.list (like `tm8 tool` resolves names). */
-async function loadLoop(cmd: CommandContext): Promise<LoopViewDto> {
+async function loadLoop(cmd: CommandContext): Promise<LoopView> {
   const ref = requireArg(cmd, 0, '<id|title>');
   let loopId = ref;
   if (!UUID.test(ref)) {
     let cursor: string | null = null;
-    const found: LoopViewDto[] = [];
+    const found: LoopView[] = [];
     do {
-      const page: Page<LoopViewDto> = await observedInvoke(client(cmd), 'loops.list', {
+      const page: LoopListResult = await observedInvoke(client(cmd), 'loops.list', {
         params: { spaceId: requireSpace(cmd.ctx) }, query: { words: ref, limit: '100', ...(cursor ? { cursor } : {}) },
       });
       found.push(...page.items.filter(item => item.definition.title === ref));
@@ -176,9 +153,9 @@ async function definitionFlags(cmd: CommandContext, editing: boolean): Promise<R
   const maxRuntime = positive(cmd, 'max-runtime');
   if (maxRuntime !== undefined) def.maxRuntimeSeconds = maxRuntime;
   const attempts = positive(cmd, 'retry'), delay = positive(cmd, 'retry-delay');
+  // A partial retry policy: the server keeps (or defaults) the half not given.
   if (attempts !== undefined || delay !== undefined) {
-    if (editing && (attempts === undefined || delay === undefined)) throw new CliError('--retry and --retry-delay are edited together', EXIT_USAGE);
-    def.retry = { attempts: attempts ?? 0, delaySeconds: delay ?? 60 };
+    def.retry = { ...(attempts !== undefined ? { attempts } : {}), ...(delay !== undefined ? { delaySeconds: delay } : {}) };
   }
   const config: Record<string, unknown> = {};
   const configStrings: Array<[string, string]> = [['model', 'model'], ['agent-tool', 'agentTool'], ['launch-project', 'projectId'], ['interaction-profile', 'interactionProfileId']];
@@ -208,15 +185,15 @@ async function definitionFlags(cmd: CommandContext, editing: boolean): Promise<R
 }
 
 // ── human rendering ───────────────────────────────────────────────────────
-const actor = (a: Actor): string => a?.displayName ?? a?.id ?? 'nobody';
-const runner = (loop: LoopViewDto): string => loop.definition.action === 'spawn' ? `spawn ${loop.definition.teamMemberId ?? '?'}`
+const actor = (a: Actor): string => a?.displayName ?? 'nobody';
+const runner = (loop: LoopView): string => loop.definition.action === 'spawn' ? `spawn ${loop.definition.teamMemberId ?? '?'}`
   : loop.definition.action === 'tool' ? `tool ${loop.definition.toolId ?? '?'}` : 'dispatch';
-function loopState(loop: LoopViewDto): string {
+function loopState(loop: LoopView): string {
   if (!loop.state.enabled) return 'disabled';
   if (loop.state.pausedUntil) return `paused until ${loop.state.pausedUntil}`;
   return loop.schedule.valid ? 'enabled' : `invalid: ${loop.schedule.problem ?? 'schedule'}`;
 }
-export function renderLoop(loop: LoopViewDto): string {
+export function renderLoop(loop: LoopView): string {
   const d = loop.definition, s = loop.state;
   const lines = [
     `loop ${loop.id} v${loop.version} · ${loopState(loop)}`,
@@ -237,19 +214,19 @@ export function renderLoop(loop: LoopViewDto): string {
   if (d.prompt) lines.push('prompt:', ...d.prompt.split('\n').map(line => `  ${line}`));
   return lines.join('\n');
 }
-function renderLoopPage(page: Page<LoopViewDto>): string {
+function renderLoopPage(page: LoopListResult): string {
   if (page.items.length === 0) return 'no loops';
   const lines = page.items.map(loop => [loop.id, `v${loop.version}`, loopState(loop), loop.definition.schedule,
     runner(loop), `next ${loop.state.nextRunAt ?? 'none'}`, loop.definition.title].join('  '));
   if (page.nextCursor) lines.push(`next: --cursor ${page.nextCursor}`);
   return lines.join('\n');
 }
-function runLine(run: LoopRunDto): string {
+function runLine(run: LoopRun): string {
   return [run.id, run.status + (run.skipReason ? `(${run.skipReason})` : ''), run.trigger, `attempt ${run.attempt}`, run.firedAt,
     run.durationMs !== null ? `${Math.round(run.durationMs / 1000)}s` : '', run.sessionId ? `session ${run.sessionId}` : '']
     .filter(part => part !== '').join('  ');
 }
-export function renderRun(run: LoopRunDto): string {
+export function renderRun(run: LoopRun): string {
   const lines = [
     `run ${run.id} · ${run.status}${run.skipReason ? ` (${run.skipReason})` : ''}`,
     `loop: ${run.loopId} · ${run.action} · ${run.trigger} · attempt ${run.attempt} · acted as ${actor(run.actedAs)}`,
@@ -272,7 +249,7 @@ async function loopCreate(cmd: CommandContext): Promise<ExitCode> {
   if (!cmd.options.has('schedule')) throw new CliError('--schedule is required', EXIT_USAGE, { hint: 'every <n>{m|h|d} or a 5-field cron; try `tm8 loop preview --schedule <expr>`' });
   const definition = { title: requireArg(cmd, 0, '<title>'), prompt: '', ...await definitionFlags(cmd, false) };
   const body = mutation(cmd);
-  let loop: LoopViewDto = await observedInvoke(client(cmd), 'loops.create', {
+  let loop: LoopView = await observedInvoke(client(cmd), 'loops.create', {
     params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition, enabled: !cmd.options.bool('disabled') },
   });
   const header = headerTextOptions(cmd);
@@ -292,7 +269,7 @@ async function loopEdit(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.options.value('title') !== undefined) definition.title = cmd.options.value('title');
   if (Object.keys(definition).length === 0) throw new CliError('Nothing to change: pass at least one create flag', EXIT_USAGE);
   const loop = await loadLoop(cmd);
-  cmd.out.data(await observedInvoke<LoopViewDto>(client(cmd), 'loops.update', { params: { loopId: loop.id }, body: {
+  cmd.out.data(await observedInvoke<LoopView>(client(cmd), 'loops.update', { params: { loopId: loop.id }, body: {
     ...mutation(cmd), expectedVersion: version, definition,
   } }), renderLoop);
   return EXIT_OK;
@@ -308,7 +285,7 @@ async function loopList(cmd: CommandContext): Promise<ExitCode> {
   const query = pageQuery(cmd, ['action', 'words', 'limit', 'cursor']);
   if (cmd.options.bool('enabled')) query.enabled = 'true';
   if (cmd.options.bool('disabled')) query.enabled = 'false';
-  cmd.out.data(await observedInvoke<Page<LoopViewDto>>(client(cmd), 'loops.list', { params: { spaceId: requireSpace(cmd.ctx) }, query }), renderLoopPage);
+  cmd.out.data(await observedInvoke<LoopListResult>(client(cmd), 'loops.list', { params: { spaceId: requireSpace(cmd.ctx) }, query }), renderLoopPage);
   return EXIT_OK;
 }
 async function loopControl(cmd: CommandContext, operation: 'loops.enable' | 'loops.disable' | 'loops.resume' | 'loops.pause'): Promise<ExitCode> {
@@ -318,7 +295,7 @@ async function loopControl(cmd: CommandContext, operation: 'loops.enable' | 'loo
   const version = expectedVersion(cmd);
   const until = pausing ? pauseUntil(cmd.options.value('until')) : undefined;
   const loop = await loadLoop(cmd);
-  cmd.out.data(await observedInvoke<LoopViewDto>(client(cmd), operation, { params: { loopId: loop.id }, body: {
+  cmd.out.data(await observedInvoke<LoopView>(client(cmd), operation, { params: { loopId: loop.id }, body: {
     ...mutation(cmd), expectedVersion: version, ...(until ? { until } : {}),
   } }), renderLoop);
   return EXIT_OK;
@@ -338,7 +315,7 @@ export function pauseUntil(raw: string | undefined, now: Date = new Date()): str
 async function loopRunNow(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['force', 'mutation-id']); argumentsCount(cmd, 1);
   const loop = await loadLoop(cmd);
-  const result = await observedInvoke<{ run: LoopRunDto }>(client(cmd), 'loops.runNow', { params: { loopId: loop.id }, body: {
+  const result = await observedInvoke<LoopRunResult>(client(cmd), 'loops.runNow', { params: { loopId: loop.id }, body: {
     ...mutation(cmd), ...(cmd.options.bool('force') ? { force: true } : {}),
   } });
   cmd.out.data(result, value => renderRun(value.run)); return EXIT_OK;
@@ -347,7 +324,7 @@ async function loopRuns(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['status', 'limit', 'cursor']); argumentsCount(cmd, 1);
   oneOf(cmd, 'status', ['running', 'completed', 'failed', 'skipped', 'stopped', 'timed_out'] as const);
   const loop = await loadLoop(cmd);
-  cmd.out.data(await observedInvoke<Page<LoopRunDto>>(client(cmd), 'loops.runs.list', { params: { loopId: loop.id }, query: pageQuery(cmd, ['status', 'limit', 'cursor']) }), page => {
+  cmd.out.data(await observedInvoke<LoopRunListResult>(client(cmd), 'loops.runs.list', { params: { loopId: loop.id }, query: pageQuery(cmd, ['status', 'limit', 'cursor']) }), page => {
     if (page.items.length === 0) return 'no runs';
     const lines = page.items.map(runLine);
     if (page.nextCursor) lines.push(`next: --cursor ${page.nextCursor}`);
@@ -357,12 +334,12 @@ async function loopRuns(cmd: CommandContext): Promise<ExitCode> {
 }
 async function loopRunShow(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
-  cmd.out.data(await observedInvoke<LoopRunDto>(client(cmd), 'loops.runs.get', { params: { runId: requireArg(cmd, 0, '<run-id>') } }), renderRun);
+  cmd.out.data(await observedInvoke<LoopRun>(client(cmd), 'loops.runs.get', { params: { runId: requireArg(cmd, 0, '<run-id>') } }), renderRun);
   return EXIT_OK;
 }
 async function loopStop(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
-  const result = await observedInvoke<{ run: LoopRunDto }>(client(cmd), 'loops.runs.stop', { params: { runId: requireArg(cmd, 0, '<run-id>') }, body: mutation(cmd) });
+  const result = await observedInvoke<LoopRunResult>(client(cmd), 'loops.runs.stop', { params: { runId: requireArg(cmd, 0, '<run-id>') }, body: mutation(cmd) });
   cmd.out.data(result, value => renderRun(value.run)); return EXIT_OK;
 }
 async function loopPreview(cmd: CommandContext): Promise<ExitCode> {
@@ -370,7 +347,7 @@ async function loopPreview(cmd: CommandContext): Promise<ExitCode> {
   const schedule = cmd.options.value('schedule');
   if (schedule === undefined) throw new CliError('--schedule is required', EXIT_USAGE);
   const count = positive(cmd, 'count');
-  const preview = await observedInvoke<LoopViewDto['schedule']>(client(cmd), 'loops.schedule.preview', { params: { spaceId: requireSpace(cmd.ctx) }, body: {
+  const preview = await observedInvoke<LoopSchedulePreview>(client(cmd), 'loops.schedule.preview', { params: { spaceId: requireSpace(cmd.ctx) }, body: {
     schedule, ...(cmd.options.value('timezone') !== undefined ? { timezone: cmd.options.value('timezone') } : {}), ...(count !== undefined ? { count } : {}),
   } });
   cmd.out.data(preview, value => value.valid ? [value.summary, ...value.next].join('\n') : `invalid: ${value.problem ?? 'schedule'}`);
