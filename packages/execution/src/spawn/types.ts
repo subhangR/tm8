@@ -29,6 +29,7 @@ import type {
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 import type { SessionHomeFacts, SessionHomeOwnerFacts } from './session-artifact-reclaim.js';
+import type { SpawnTimings } from './spawn-timings.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -1765,6 +1766,8 @@ export interface SpawnResult {
    * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
    */
   launchFacts?: ExecutionSpawnLaunch;
+  /** Wall clock per phase of this spawn (spawn-timings.ts). Absent on resume. */
+  timings?: SpawnTimings;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

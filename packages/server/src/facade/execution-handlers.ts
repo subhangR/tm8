@@ -75,6 +75,7 @@ import {
   type WorktreeAllocationState,
   type GhostReconcileReport,
   type WorktreeReconcileReport,
+  SpawnPhaseTimer,
 } from '@tm8/execution';
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
@@ -106,6 +107,7 @@ import type {
   SkippedSkill,
   SpawnSelection,
 } from '@tm8/contract';
+import { createSpawnLogger } from './spawn-logger.js';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -2052,7 +2054,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId,
-    ...(deps.logger ? { logger: deps.logger } : {}),
+    // Its own JSON-line log when the root passes none: SpawnService's lines
+    // (the per-launch `spawn timings` among them) otherwise reach no log.
+    logger: deps.logger ?? createSpawnLogger(),
     // Per-member credential delivery. Wired ONLY when this node has a data
     // root, because the credential home is a path underneath it: with no data
     // root there is nowhere a login terminal could have written a credential,
@@ -2278,7 +2282,7 @@ export function registerExecutionHandlers(
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId,
-    ...(deps.logger ? { logger: deps.logger } : {}),
+    logger: deps.logger ?? createSpawnLogger(),
     // Same wiring as `createExecutionRuntime` above, deliberately duplicated
     // rather than shared: a node on the legacy shape must not silently lose
     // per-member credentials just because it wires the runtime differently.
@@ -3727,8 +3731,11 @@ function registerHandlers(
       executionSpawn(ctx)));
   const executionSpawn = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionSpawnInput;
+    // The handler's own reads and writes, around SpawnService's: together they
+    // are the request's whole server-side time (`timings` on the result).
+    const timer = new SpawnPhaseTimer();
 
-    const owner = await resolveOwner();
+    const owner = await timer.time('handler.resolveOwner', () => resolveOwner());
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
     // 256 (W7p, ruling A') and W7b: a link session launches only through
@@ -3763,18 +3770,19 @@ function registerHandlers(
     // transaction, for an id deleted in between.
     if (input.selection) {
       const selection = input.selection;
-      await db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection));
+      await timer.time('handler.assertSelectionIds', () =>
+        db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection)));
     }
 
     // taskIds accepts any entity and resolves it to a task assignment.
     // Direct storyId bypasses derivation and is persisted by execution_spawn.
     const anchorPairs: Array<{ subjectId: string; taskId: string }> = [];
     const taskIds = input.taskIds?.length
-      ? await rethrowing(() =>
+      ? await timer.time('handler.resolveAssignmentAnchors', () => rethrowing(() =>
           resolveAssignmentAnchors(
             db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false, anchorPairs,
           ),
-        )
+        ))
       : undefined;
 
     // Spawn-on-story: a launch ON a story runs on the task derived from it.
@@ -3783,7 +3791,7 @@ function registerHandlers(
     // story and the prompt's story read below finds it. Before the spawn, so
     // the hand-over sees it; best-effort, so a story never refuses a launch.
     try {
-      for (const r of await putDerivedTasksInStories(db, claims, anchorPairs)) {
+      for (const r of await timer.time('handler.putDerivedTasksInStories', () => putDerivedTasksInStories(db, claims, anchorPairs))) {
         if (r.outcome === 'failed') {
           console.warn(`[tm8:spawn] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
         }
@@ -3816,11 +3824,11 @@ function registerHandlers(
     const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
     const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
     // An agent that names no project works where its chat or session does.
-    const inheritedProjectId = await inheritedSpawnProjectId(db, claims, {
+    const inheritedProjectId = await timer.time('handler.inheritedSpawnProjectId', () => inheritedSpawnProjectId(db, claims, {
       input,
       agentCaller: isChatRuntimeBearer(ctx) || sourceWorkSessionId !== undefined,
       parentId: parentSessionId,
-    });
+    }));
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
@@ -3871,6 +3879,7 @@ function registerHandlers(
       authSessionId: ctx.identity.sessionId,
       sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
     } }, request));
+    for (const [phase, ms] of Object.entries(result.timings?.phases ?? {})) timer.record(phase, ms);
 
     // 327: a session records the chat or session that launched it (its
     // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
@@ -3878,7 +3887,8 @@ function registerHandlers(
     const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
     if (spawnOrigin && parentSessionId === spawnOrigin) {
       try {
-        await db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin]));
+        await timer.time('handler.recordAuthoredFrom', () =>
+          db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin])));
       } catch (error) {
         console.warn(`[tm8:spawn] authored_from not recorded for ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -3891,7 +3901,8 @@ function registerHandlers(
     if (input.jevRunId) {
       const runId = input.jevRunId;
       try {
-        const linked = await db.tx(claims, (q) => linkSession(q, runId, result.sessionId, input.spaceId));
+        const linked = await timer.time('handler.linkJevRun', () =>
+          db.tx(claims, (q) => linkSession(q, runId, result.sessionId, input.spaceId)));
         if (!linked) {
           console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: no such run of this caller in space ${input.spaceId}`);
         }
@@ -3910,7 +3921,7 @@ function registerHandlers(
     // provenance above: the session is live, and its turn carries the request.
     for (const routedTaskId of result.routedTaskIds ?? []) {
       try {
-        await sendDispatchRequest({
+        await timer.time('handler.storeRoutingRequests', () => sendDispatchRequest({
           db,
           claims,
           taskId: routedTaskId,
@@ -3921,20 +3932,23 @@ function registerHandlers(
           requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
           requestId: ctx.requestId,
           clientMutationId: `${envelope.clientMutationId ?? result.sessionId}:route:${routedTaskId}`,
-        });
+        }));
       } catch (error) {
         console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
     // 201: a spawn creates a work_session.
+    const commandResult = await timer.time('handler.assembleCommandResult', () =>
+      assembleCommandResult(db, claims, result.commandResult, owner.identityId));
     const spawnResult: ExecutionSpawnResult = {
-      ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
+      ...(commandResult as CommandResult),
       ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
       // The resolved posture — access mode and where it came from, the
       // credential each provider ran on, the parent — so the caller's receipt
       // shows what the child inherited without a second read.
       ...(result.launchFacts ? { launch: result.launchFacts } : {}),
+      timings: timer.snapshot(),
     };
     return json(spawnResult, { status: 201 });
   };

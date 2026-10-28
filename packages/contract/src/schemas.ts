@@ -2984,6 +2984,10 @@ export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.laz
   warnings: z.array(ResultWarningSchema).optional(),
   createdTaskId: EntityIdSchema.optional(),
   launch: ExecutionSpawnLaunchSchema.optional(),
+  timings: z.object({
+    totalMs: z.number().nonnegative(),
+    phases: z.record(z.number().nonnegative()),
+  }).strict().optional(),
 }).strict());
 
 export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
