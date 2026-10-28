@@ -515,3 +515,81 @@ test('entity_tree walks the task hierarchy the composer renders', () => {
     'entity_tree must be RLS-filtered for a non-member',
   );
 });
+
+test('378 — runner invariants, the action backfill rule, loop_runs and loop headers', () => {
+  const dispatch = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Routed', null, 'every 1h',
+       p_client_mutation_id => ${literal(cmid('loop-378-dispatch'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  // A caller written against 091 names no action: no runner still means dispatch.
+  assert.equal(dispatch.content.action, 'dispatch');
+  assert.equal(dispatch.content.timezone, 'UTC');
+  assert.equal(dispatch.content.concurrency, 'skip');
+  assert.equal(dispatch.content.retry_attempts, 0);
+  assert.equal(dispatch.content.retry_delay_seconds, 300);
+
+  const spawn = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Spawned', null, '0 9 * * 1-5',
+       ${uuid(w.personaA)}, p_timezone => 'Europe/London', p_concurrency => 'queue',
+       p_max_runtime_seconds => 600, p_retry_attempts => 2, p_retry_delay_seconds => 60,
+       p_client_mutation_id => ${literal(cmid('loop-378-spawn'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(spawn.content.action, 'spawn');
+  assert.equal(spawn.content.timezone, 'Europe/London');
+  assert.equal(spawn.content.concurrency, 'queue');
+  assert.equal(spawn.content.max_runtime_seconds, 600);
+
+  denied('create_loop: spawn without a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No runner', null, 'every 1d', p_action => 'spawn')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: tool without a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No tool', null, 'every 1d', p_action => 'tool')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: a tool id that is not a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Not a tool', null, 'every 1d',
+       p_action => 'tool', p_tool_id => ${uuid(spawn.id)})`,
+    { claims: w.claimsA, expect: '23503' });
+  denied('create_loop: retry attempts out of range',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Retry', null, 'every 1d', p_retry_attempts => 9)`,
+    { claims: w.claimsA, expect: '23514' });
+  // The invariant is judged on the row a patch leaves: clearing the runner of a
+  // spawn loop is refused, not stored.
+  denied('update_loop: clearing the runner of a spawn loop',
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_clear_team_member => true)`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // Pause and resume are bookkeeping: they write paused_until and nothing else.
+  const until = '2030-01-01T09:00:00Z';
+  const paused = json(
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_paused_until => ${literal(until)},
+       p_client_mutation_id => ${literal(cmid('loop-378-pause'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(new Date(paused.content.paused_until).toISOString(), new Date(until).toISOString());
+
+  // loop_runs: recorded by a member, settled once, invisible outside the space.
+  const run = json(
+    `select public.loop_run_record(${uuid(spawn.id)}, now(), 'manual', 'fired',
+       p_client_mutation_id => ${literal(cmid('loop-378-run'))})`,
+    { claims: w.claimsA },
+  );
+  assert.ok(run.runId);
+  const first = json(`select public.loop_run_settle(${uuid(run.runId)}, 'stopped')`, { claims: w.claimsA });
+  const second = json(`select public.loop_run_settle(${uuid(run.runId)}, 'completed')`, { claims: w.claimsA });
+  assert.equal(first.outcome, 'stopped');
+  assert.equal(second.outcome, 'stopped', 'a run settles once');
+  assert.equal(
+    scalar(`select action from public.loop_runs where id = ${uuid(run.runId)}`, { claims: w.claimsA }),
+    'spawn', 'the run snapshots the loop action');
+  assert.deepEqual(
+    rows(`select id from public.loop_runs where id = ${uuid(run.runId)}`, { claims: w.claimsB }),
+    [], 'loop_runs is RLS-filtered for a non-member');
+  denied('loop_run_record: a non-member',
+    `select public.loop_run_record(${uuid(spawn.id)}, now(), 'manual', 'fired')`,
+    { claims: w.claimsB, expect: '42501' });
+
+  assert.equal(scalar(`select internal.header_kind_allowed('loop')`, { url: OWNER_URL }), 't');
+  assert.equal(scalar(`select internal.header_kind_allowed('tool')`, { url: OWNER_URL }), 't');
+});
