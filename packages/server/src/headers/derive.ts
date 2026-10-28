@@ -67,8 +67,8 @@ export type HeaderFacts =
   | { kind: 'file'; name: string; mime: string | null; bytes: number | null }
   | { kind: 'story'; description: string | null; bytes: number | null }
   | { kind: 'task'; description: string | null; bytes: number | null }
-  | { kind: 'collection'; description: Backstopped; members: Record<string, number> }
-  | { kind: 'tool'; description: string | null; bytes: number | null };
+  | { kind: 'tool'; description: string | null; bytes: number | null }
+  | { kind: 'collection'; description: Backstopped; members: Record<string, number> };
 
 interface Fields {
   /** Never cut here: the backstop, if it bit, was declared by the reader (`whenCut`). */

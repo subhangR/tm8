@@ -36,8 +36,7 @@ export type SelectionHeaderKind =
   | 'task'
   | 'collection'
   | 'story'
-  // Both kinds, by the coordinator's union rule (as in migration 380 and
-  // Loops PR1's 378): whoever touches this list keeps 'tool' AND 'loop'.
+  // Tools PR-E adds 'tool' to this same list; both lanes carry the converged set.
   | 'tool'
   | 'loop';
 

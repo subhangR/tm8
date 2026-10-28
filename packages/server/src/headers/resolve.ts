@@ -63,11 +63,11 @@ export interface HeaderRow {
   story_description?: string | null;
   story_bytes?: number | null;
   task_title: string | null;
-  task_description: string | null;
-  task_bytes: number | null;
   tool_name?: string | null;
   tool_description?: string | null;
   tool_bytes?: number | null;
+  task_description: string | null;
+  task_bytes: number | null;
   collection_name: string | null;
   collection_description: string | null;
   collection_members: Record<string, number | string> | null;
@@ -172,7 +172,7 @@ const HEADER_SQL = `
          octet_length(t.description) as task_bytes,
          tl.definition ->> 'name' as tool_name,
          left(tl.definition ->> 'description', ${L}) as tool_description,
-         octet_length(tl.definition::text) as tool_bytes,
+         octet_length(tl.definition ->> 'description') as tool_bytes,
          col.name as collection_name,
          left(col.description, ${W}) as collection_description,
          case when col.entity_id is null then null else (
@@ -208,8 +208,8 @@ const HEADER_SQL = `
     left join public.files f          on e.kind = 'file'        and f.entity_id = e.id
     left join public.stories sty      on e.kind = 'story'       and sty.entity_id = e.id
     left join public.tasks t          on e.kind = 'task'        and t.entity_id = e.id
-    left join public.tools tl         on e.kind = 'tool'        and tl.entity_id = e.id
     left join public.collections col  on e.kind = 'collection'  and col.entity_id = e.id
+    left join public.tools tl         on e.kind = 'tool'        and tl.entity_id = e.id
     left join public.entity_headers eh on eh.entity_id = e.id
    where e.id = any($2::uuid[]) and e.space_id = $1 and e.deleted_at is null
      and e.kind = any($3::text[])`;
@@ -252,10 +252,10 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
       return { kind: 'file', name: safeText(row.file_name) ?? 'File', mime: safeText(row.file_mime), bytes: num(row.file_size) };
     case 'story':
       return { kind: 'story', description: safeText(row.story_description ?? null, L), bytes: num(row.story_bytes ?? null) };
-    case 'task':
-      return { kind: 'task', description: safeText(row.task_description, L), bytes: num(row.task_bytes) };
     case 'tool':
       return { kind: 'tool', description: safeText(row.tool_description ?? null, L), bytes: num(row.tool_bytes ?? null) };
+    case 'task':
+      return { kind: 'task', description: safeText(row.task_description, L), bytes: num(row.task_bytes) };
     case 'collection':
       return {
         kind: 'collection',
