@@ -131,6 +131,20 @@ describe('OBLIGATION 2 — the sheet never outlives its subject', () => {
     result.current.close();
     expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 0 });
   });
+
+  it('gives the modal depth back on ONE close after the sheet was re-opened on another subject', () => {
+    const setKeyboardContext = vi.fn();
+    const { result, rerender } = renderHook(() =>
+      useLaunchSheet({ hostedIds: [] as EntityId[], setKeyboardContext }),
+    );
+    act(() => result.current.open('t1' as EntityId));
+    rerender();
+    act(() => result.current.open('t2' as EntityId));
+    expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 1 });
+    rerender();
+    act(() => result.current.close());
+    expect(setKeyboardContext).toHaveBeenLastCalledWith({ modalDepth: 0 });
+  });
 });
 
 describe('ESC — both halves, which is the point', () => {

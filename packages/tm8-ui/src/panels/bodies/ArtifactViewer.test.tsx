@@ -331,6 +331,25 @@ describe('artifact viewer — revisions, download, chrome, fullscreen', () => {
     expect(root().className).not.toContain('pn-preview--fullscreen');
   });
 
+  it('the Escape that leaves fullscreen does not also reach the screen underneath', async () => {
+    const previewArtifact = vi.fn(async () => session());
+    const { container, findByLabelText } = renderViewer({ previewArtifact });
+    const root = () => container.querySelector('.pn-preview')!;
+    const screenEsc = vi.fn();
+    document.addEventListener('keydown', screenEsc);
+    try {
+      fireEvent.click(await findByLabelText('Fullscreen'));
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(root().className).not.toContain('pn-preview--fullscreen');
+      expect(screenEsc).not.toHaveBeenCalled();
+      // Out of fullscreen, Escape is the screen's again.
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screenEsc).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', screenEsc);
+    }
+  });
+
   /**
    * ONE REVISION IS NOT A CHOICE (owner ruling 2026-08-20). The picker's width
    * in the panel bar is paid for by the tab labels, and most artifacts — every

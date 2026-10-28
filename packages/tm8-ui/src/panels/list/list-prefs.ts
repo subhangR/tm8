@@ -37,13 +37,19 @@ const DEFAULTS: ListPrefs = { groupBy: 'none', subItems: true };
 const STORAGE_PREFIX = 'tm8.list.prefs.v1.';
 const listeners = new Set<() => void>();
 const cache = new Map<string, { raw: string | null; prefs: ListPrefs }>();
+/* What a refused write left behind. Read FIRST: storage that throws on write
+   either throws on read too (blocked) or still holds the old value (quota), and
+   either answer would undo the choice the member just made. */
+const unsaved = new Map<string, string>();
 
 function read(kind: string): ListPrefs {
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(STORAGE_PREFIX + kind);
-  } catch {
-    raw = null;
+  let raw: string | null = unsaved.get(kind) ?? null;
+  if (raw === null) {
+    try {
+      raw = window.localStorage.getItem(STORAGE_PREFIX + kind);
+    } catch {
+      raw = null;
+    }
   }
   const hit = cache.get(kind);
   if (hit && hit.raw === raw) return hit.prefs;
@@ -62,11 +68,13 @@ function read(kind: string): ListPrefs {
 }
 
 function write(kind: string, prefs: ListPrefs): void {
+  const raw = JSON.stringify(prefs);
   try {
-    window.localStorage.setItem(STORAGE_PREFIX + kind, JSON.stringify(prefs));
+    window.localStorage.setItem(STORAGE_PREFIX + kind, raw);
+    unsaved.delete(kind);
   } catch {
     // No storage ⇒ the choice lasts as long as the page.
-    cache.set(kind, { raw: JSON.stringify(prefs), prefs });
+    unsaved.set(kind, raw);
   }
   for (const listener of listeners) listener();
 }

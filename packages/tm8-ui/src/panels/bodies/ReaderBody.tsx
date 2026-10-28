@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { MD_HEADING_ATTR, Markdown, headingsIn, type DocHeading, type MarkdownFileHref } from '../../kit';

@@ -16,7 +16,7 @@ import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,

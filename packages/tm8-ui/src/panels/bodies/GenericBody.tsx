@@ -632,11 +632,17 @@ function ArtifactPreviewBlock({
     // Keydown reaches this document only while focus sits OUTSIDE the frame —
     // a cross-origin sandboxed iframe swallows its own keys and cannot be
     // listened into. The Exit-fullscreen button stays visible for that case.
+    // Capture, and consumed: the screen's own Esc listeners (pop the panel,
+    // close the detail) sit on `document` and ran first, so one press used to
+    // leave fullscreen AND close the artifact underneath it.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFullscreen(false);
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setFullscreen(false);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [fullscreen]);
 
   /**

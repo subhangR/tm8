@@ -371,7 +371,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'format')));
     case 'childCount': {
       const n = num(field(row, 'childCount'));
-      return n && n > 0 ? meta(`${n} children`) : null;
+      return n && n > 0 ? meta(`${n} ${n === 1 ? 'child' : 'children'}`) : null;
     }
     case 'memberRole':
       return meta(str(field(row, 'role')));
@@ -404,7 +404,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       return meta(str(field(row, 'collectionType')));
     case 'itemCount': {
       const n = num(field(row, 'itemCount'));
-      return meta(`${n ?? 0} items`);
+      return meta(`${n ?? 0} ${n === 1 ? 'item' : 'items'}`);
     }
     case 'projectVersion': {
       const n = num(field(row, 'materializedVersion'));
@@ -427,7 +427,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     case 'customFields': {
       const f = field(row, 'fields');
       const n = f && typeof f === 'object' ? Object.keys(f as object).length : 0;
-      return n > 0 ? meta(`${n} fields`) : null;
+      return n > 0 ? meta(`${n} ${n === 1 ? 'field' : 'fields'}`) : null;
     }
     default:
       return null;

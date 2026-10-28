@@ -179,6 +179,18 @@ describe('the two-column page', () => {
     expect(lastPatch(patchTask)).toMatchObject({ title: 'Redesign the task detail page', expectedVersion: TASK.version });
   });
 
+  it('Escape abandons a title edit: it writes nothing and puts the title back', async () => {
+    const { patchTask } = mount();
+    const field = screen.getByTestId('panel-embedded-title-input') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'A rename I changed my mind about' } });
+    await act(async () => {
+      fireEvent.keyDown(field, { key: 'Escape' });
+    });
+    expect(patchTask).not.toHaveBeenCalled();
+    expect(field.value).toBe('Redesign the task page');
+  });
+
   it('writes the estimate on commit, and an emptied one as a clear', async () => {
     const { patchTask } = mount();
     const points = screen.getByTestId('subtree-points') as HTMLInputElement;
@@ -223,6 +235,15 @@ describe('the checklist writes each gesture', () => {
     expect(next).toHaveLength(3);
     expect(next[2]).toEqual({ id: 'ac_3', text: 'Phone stacks the columns', done: false });
     expect((add as HTMLInputElement).value).toBe('');
+  });
+
+  it('Escape abandons a new criterion without reaching the screen behind it', () => {
+    mount();
+    const add = screen.getByTestId('acceptance-add') as HTMLInputElement;
+    fireEvent.change(add, { target: { value: 'half a thought' } });
+    const delivered = fireEvent.keyDown(add, { key: 'Escape' });
+    expect(delivered).toBe(false); // default prevented ⇒ the screen's Esc stands down
+    expect(add.value).toBe('');
   });
 
   it('renames on blur, and an unchanged blur writes nothing', async () => {

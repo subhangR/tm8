@@ -1954,6 +1954,9 @@ function EmbeddedTitle({
 
   const setDraft = (next: string | null) => {
     setDraftState(next);
+    /* Now, not at the next render: Escape clears the draft and then blurs, and
+       the blur's commit must see the cancel rather than the text it cancelled. */
+    pending.current.draft = next;
     if (next === null) {
       clearLiveTitle(entityId);
       return;
@@ -1988,8 +1991,9 @@ function EmbeddedTitle({
     );
   }
   const commit = () => {
-    if (committing.current || draft === null) return;
-    const next = draft.trim();
+    const current = pending.current.draft;
+    if (committing.current || current === null) return;
+    const next = current.trim();
     if (next === '' || next === title) {
       setDraft(null);
       return;

@@ -1,6 +1,6 @@
 import { useEntityListSelection } from '../seen-entities/EntitySeen';
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
-import { Fragment, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
@@ -18,31 +18,24 @@ import type { SessionLiveness } from '../data/seam';
 import type {
   ActionContext,
   ActionRef,
-  AssignControl,
   GroupByKey,
   KindConfig,
   LaunchCapacity,
   LaunchProjectOption,
   StatusCategoryTab,
   ListPageState,
-  ListRowFacts,
   LiveTreatment,
   MembershipListControl,
   ProfileResolution,
   QueryFilter,
   SetStateOutcome,
   SortKey,
-  StateControl,
   StateOption,
-  StatusPillSpec,
   TeammateLaunchState,
-  ValueControl,
   CollectionMode,
 } from '../domain';
 import {
-  ALL_MODES,
   KindIcon,
-  REASONS,
   crossTabBreadcrumb,
   groupSessionRows,
   isSessionState,
@@ -72,12 +65,10 @@ import {
   type PillTone,
 } from '../kit';
 import {
-  CheckingPermission,
   DisabledAction,
   DisabledIconControl,
   NOT_WIRED_REASON,
   toReason,
-  type UnavailableReason,
 } from './honesty/DisabledWithReason';
 import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
@@ -86,14 +77,11 @@ import { useRunningGrace } from './list/useRunningGrace';
 import './session/session-outcome.css';
 import {
   EntityControlStrip,
-  RowAction,
   RowActionCluster,
-  RowMembershipControl,
   RowStateControl,
-  type ControlHost,
   type SessionSharingPatch,
 } from './controls/EntityControls';
-import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
+import { renderBadge, type TileSlot } from './list/tile-badges';
 import { CategoryGlyph, TabGlyph, hasCategoryGlyph, hasTabGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
@@ -1505,32 +1493,6 @@ function bandFilter(
 
 /** Frozen so an unsatisfiable band keeps referential identity across renders. */
 const NO_ROWS: readonly EntitySummary[] = Object.freeze([]);
-
-function rowsForBand(
-  props: EntityListPanelProps,
-  filter: QueryFilter,
-  tab: StatusCategoryTab | null,
-  selected: Readonly<Record<string, readonly string[]>>,
-  config: KindConfig,
-  selectedPeople: readonly string[] = [],
-  sort?: SortKey,
-): readonly EntitySummary[] {
-  /**
-   * D20 RETIRED (D56). The client-side status partition that used to run here
-   * is DELETED, not translated: the contract gained
-   * `CollectionQuery.filters.sessionStatus`, so the tab's own `filter` is an
-   * ordinary filter the SEAM executes, exactly like the task tabs beside it.
-   *
-   * Deliberately not re-implemented against `filter.sessionStatus` — that
-   * would put server-side filtering on the client as well, and the two would
-   * disagree the moment a status is added. One filter, executed once, at the
-   * seam.
-   */
-  const merged = bandFilter(filter, tab, selected, config, props.ctx, selectedPeople);
-  // Disjoint band: the section asks for statuses this tab excludes, so it can
-  // hold nothing. Its caller skips the heading entirely — see `sectionsFor`.
-  return merged === null ? NO_ROWS : props.rowsFor(merged, sort);
-}
 
 /**
  * A tab's count is its OWN query's answer — the same source the tab label, the
@@ -3537,6 +3499,11 @@ function BoardBody({
   // §8.1 — drag is never the only path. The same dispatch as a drop, so one
   // command path serves pointer and keyboard.
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    /* The board's own focus only. A key bubbling from a control inside it — the
+       group-by select's arrows, a tile button's Enter — belongs to that control;
+       handling it here swallowed the select's arrows and opened the focused
+       card on top of the button's own click. */
+    if (event.target !== event.currentTarget) return;
     const mod = event.metaKey || event.ctrlKey;
     const colCount = columns.length;
     if (colCount === 0) return;
@@ -4918,9 +4885,7 @@ export function Tile({
     .filter((slot): slot is TileSlot => slot != null);
 
   const badgeStatus = slots.find((s) => s.slot === 'status');
-  const tag = slots.find((s) => s.slot === 'tag');
   const avatar = slots.find((s) => s.slot === 'avatar');
-  const metas = slots.filter((s) => s.slot === 'meta').map((s) => s.text);
 
   /**
    * PRECEDENCE: the seam VERDICT outranks the record's own status badge.

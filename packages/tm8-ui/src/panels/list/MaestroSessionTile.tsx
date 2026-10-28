@@ -1,4 +1,4 @@
-import type { ActorSummary, EntitySummary } from '@tm8/contract';
+import type { ActorSummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
 import { RowLead, leadTooltip } from './RowLead';

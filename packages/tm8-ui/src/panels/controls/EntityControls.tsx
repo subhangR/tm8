@@ -72,7 +72,6 @@ import {
   actionGlyph,
   SHARING_CONTROL,
   REASONS,
-  getKind,
   hasEnded,
   offWorkflowType,
   processControlFor,
