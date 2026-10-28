@@ -37,8 +37,9 @@ export interface LoopReferenceFields {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function refused(field: string, message: string, extra: Record<string, unknown> = {}): CollabError {
-  return new CollabError('invalid_input', message, { details: { field, ...extra } });
+/** PR1's write-time convention (loops/write.ts): the field path leads the message and rides `details.path`. */
+function refused(path: string, message: string, extra: Record<string, unknown> = {}): CollabError {
+  return new CollabError('invalid_input', `${path}: ${message}`, { details: { path, ...extra } });
 }
 
 /**
@@ -57,7 +58,7 @@ export function strictLoopSpawnConfig(raw: Record<string, unknown> | null | unde
   return parsed.data;
 }
 
-interface Reference { id: string; kind: string; field: string; what: string }
+interface Reference { id: string; kind: string; path: string; what: string }
 
 /**
  * Every referenced entity must be live, in the loop's space, readable by the
@@ -69,7 +70,7 @@ interface Reference { id: string; kind: string; field: string; what: string }
 async function assertReferencedEntities(q: Querier, spaceId: string, refs: readonly Reference[]): Promise<void> {
   if (refs.length === 0) return;
   for (const ref of refs) {
-    if (!UUID_RE.test(ref.id)) throw refused(ref.field, `${ref.what} must be an entity id: ${ref.id}`, { ids: [ref.id] });
+    if (!UUID_RE.test(ref.id)) throw refused(ref.path, `${ref.what} must be an entity id: ${ref.id}`, { ids: [ref.id] });
   }
   const ids = [...new Set(refs.map((ref) => ref.id))];
   const rows = await q.query<{ id: string; kind: string }>(
@@ -79,18 +80,35 @@ async function assertReferencedEntities(q: Querier, spaceId: string, refs: reado
     [ids, spaceId],
   );
   const kinds = new Map(rows.map((row) => [row.id, row.kind]));
-  const byField = new Map<string, { what: string; kind: string; bad: string[] }>();
+  const byPath = new Map<string, { what: string; kind: string; bad: string[] }>();
   for (const ref of refs) {
     if (kinds.get(ref.id) === ref.kind) continue;
-    const slot = byField.get(ref.field) ?? { what: ref.what, kind: ref.kind, bad: [] };
+    const slot = byPath.get(ref.path) ?? { what: ref.what, kind: ref.kind, bad: [] };
     slot.bad.push(ref.id);
-    byField.set(ref.field, slot);
+    byPath.set(ref.path, slot);
   }
-  const [first] = byField;
+  const [first] = byPath;
   if (first) {
-    const [field, { what, kind, bad }] = first;
-    throw refused(field, `${what} must name ${bad.length === 1 ? 'a' : ''} live ${kind.replace('_', ' ')}${bad.length === 1 ? '' : 's'} in this space: ${bad.join(', ')}`, { ids: bad });
+    const [path, { what, kind, bad }] = first;
+    const noun = kind.replace('_', ' ');
+    throw refused(path, `${what} must name ${bad.length === 1 ? `a live ${noun}` : `live ${noun}s`} in this space: ${bad.join(', ')}`, { ids: bad });
   }
+}
+
+/**
+ * `config.projectId` resolves the way a spawn resolves it (234: members do not
+ * read `public.projects`; `resolve_project_ref` answers for the space's project
+ * entity or its folder id, zero rows for anything the caller may not launch
+ * in). The same resolver at write time means a project the firing could not
+ * open is refused when it is typed, with no existence oracle for other spaces.
+ */
+async function assertProjectRef(q: Querier, spaceId: string, projectId: string): Promise<void> {
+  const path = 'definition.config.projectId';
+  if (!UUID_RE.test(projectId)) throw refused(path, `config.projectId must be a project id: ${projectId}`, { ids: [projectId] });
+  const rows = await q.query<{ folder_id: string }>(
+    'select folder_id from public.resolve_project_ref($1::uuid, $2::uuid)', [projectId, spaceId],
+  );
+  if (rows.length === 0) throw refused(path, `config.projectId must name a project of this space: ${projectId}`, { ids: [projectId] });
 }
 
 /**
@@ -103,19 +121,17 @@ export async function assertLoopDefinitionReferences(q: Querier, spaceId: string
   const config = strictLoopSpawnConfig(loop.config);
   const refs: Reference[] = [];
   if (loop.teamMemberId) {
-    refs.push({ id: loop.teamMemberId, kind: 'team_member', field: 'definition.teamMemberId', what: 'teamMemberId' });
+    refs.push({ id: loop.teamMemberId, kind: 'team_member', path: 'definition.teamMemberId', what: 'teamMemberId' });
   }
-  if (config.projectId) {
-    refs.push({ id: config.projectId, kind: 'project', field: 'definition.config.projectId', what: 'config.projectId' });
-  }
+  if (config.projectId) await assertProjectRef(q, spaceId, config.projectId);
   if (config.interactionProfileId) {
-    refs.push({ id: config.interactionProfileId, kind: 'interaction_profile', field: 'definition.config.interactionProfileId', what: 'config.interactionProfileId' });
+    refs.push({ id: config.interactionProfileId, kind: 'interaction_profile', path: 'definition.config.interactionProfileId', what: 'config.interactionProfileId' });
   }
   for (const id of config.memoryIds ?? []) {
-    refs.push({ id, kind: 'memory', field: 'definition.config.memoryIds', what: 'config.memoryIds' });
+    refs.push({ id, kind: 'memory', path: 'definition.config.memoryIds', what: 'config.memoryIds' });
   }
   if (loop.toolId) {
-    refs.push({ id: loop.toolId, kind: 'tool', field: 'definition.toolId', what: 'toolId' });
+    refs.push({ id: loop.toolId, kind: 'tool', path: 'definition.toolId', what: 'toolId' });
   }
   await assertReferencedEntities(q, spaceId, refs);
 

@@ -116,7 +116,7 @@ describe('loopSpawnConfig at fire time', () => {
     let error: unknown;
     try { loopSpawnConfig({ accessMode: 'root' }); } catch (e) { error = e; }
     expect(error).toBeInstanceOf(CollabError);
-    expect(error).toMatchObject({ code: 'invalid_input', details: { field: 'definition.config' } });
+    expect(error).toMatchObject({ code: 'invalid_input', details: { path: 'definition.config' } });
     expect((error as Error).message).toContain('accessMode');
   });
 

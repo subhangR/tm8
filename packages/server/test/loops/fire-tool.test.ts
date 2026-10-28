@@ -279,7 +279,7 @@ describe('the spawn branch carries the whole config (ac1)', () => {
     const spawn = vi.fn(async () => ({ sessionId: 'session-spawned' }));
     const { port: p } = port({ db, spawn });
     await expect(p.fire(toolLoop({ action: 'spawn', toolId: null, toolInputs: {}, config: { reasoningEffort: 'infinite' } }), CLAIMS, AT))
-      .rejects.toMatchObject({ code: 'invalid_input', details: { field: 'definition.config' } });
+      .rejects.toMatchObject({ code: 'invalid_input', details: { path: 'definition.config' } });
     expect(spawn).not.toHaveBeenCalled();
   });
 });

@@ -42,8 +42,8 @@ export function loopSpawnConfig(raw: Record<string, unknown> | null | undefined)
     const issues = parsed.error.issues
       .map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`)
       .join('; ');
-    throw new CollabError('invalid_input', `loop config is invalid: ${issues}`, {
-      details: { field: 'definition.config' },
+    throw new CollabError('invalid_input', `definition.config: ${issues}`, {
+      details: { path: 'definition.config' },
     });
   }
   return parsed.data;

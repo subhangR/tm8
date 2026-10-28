@@ -82,6 +82,7 @@ import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
 import { requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
+import { assertLoopReferences } from '../../../loops/validate.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
@@ -1510,6 +1511,9 @@ export class W2EntitiesCommandsTrackingService {
               content.action ?? null, content.toolId ?? null, JSON.stringify(content.toolInputs ?? {}),
               timezone, content.concurrency ?? 'skip', content.maxRuntimeSeconds ?? null,
               retry.attempts ?? 0, retry.delaySeconds ?? 300]);
+            // PR3: judged on the row the door left, like loops.create.
+            if (!raw.entity?.id) throw new CollabError('upstream_unavailable', 'create_loop returned no entity');
+            await assertLoopReferences(q, raw.entity.id);
           }
           break;
         case 'graph': {
@@ -1737,6 +1741,7 @@ export class W2EntitiesCommandsTrackingService {
                 content.timezone ?? null, null, false, content.concurrency ?? null,
                 content.maxRuntimeSeconds ?? null, content.maxRuntimeSeconds === null,
                 retry.attempts ?? null, retry.delaySeconds ?? null, null]);
+              await assertLoopReferences(q, id);
             }
             break;
           case 'graph': {
