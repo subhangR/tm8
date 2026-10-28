@@ -1,0 +1,1169 @@
+<section class="doc-section" id="s-sessions" data-title="Sessions and everything that runs" data-lane="04 sessions">
+<style>
+#s-sessions .ss-lab { display: flex; align-items: baseline; justify-content: space-between; padding: 10px var(--gutter) 6px; font-size: var(--fs-c1); line-height: var(--lh-c1); font-weight: 600; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-sessions .ss-lab .more { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--brand); font-size: var(--fs-foot); }
+#s-sessions .ss-lab .more.q { color: var(--ink-4); }
+#s-sessions .ss-head { padding: 4px var(--gutter) 8px; display: flex; flex-direction: column; gap: 6px; }
+#s-sessions .ss-head .tt { font-size: var(--fs-t2); line-height: var(--lh-t2); font-weight: 700; letter-spacing: -0.015em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#s-sessions .ss-head .chips { padding: 0; }
+#s-sessions .ss-meta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-foot); line-height: 22px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+#s-sessions .ss-meta b { color: var(--ink-2); font-weight: 600; }
+#s-sessions .ss-meta .mono { font-size: 12px; }
+#s-sessions .segmented.s5 .seg { font-size: 12px; }
+#s-sessions .ss-c .row.tall { padding-top: 10px; padding-bottom: 10px; }
+#s-sessions .ss-c .row .s { font-size: var(--fs-foot); }
+#s-sessions .ss-tr { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: var(--fs-foot); line-height: 18px; color: var(--ink-3); }
+#s-sessions .phone p { margin: 0; max-width: none; color: inherit; }
+#s-sessions .phone .refusal p { margin-top: 4px; color: var(--ink-3); }
+#s-sessions .phone .empty p { color: var(--ink-3); }
+#s-sessions .phone .dialog .d-b p { color: var(--ink-2); }
+#s-sessions .phone .prose p { margin: 0 0 var(--s3); color: var(--ink); }
+#s-sessions .ent-actions .btn { padding: 0 10px; }
+#s-sessions .ss-s75 .shot { width: 292px; }
+#s-sessions .ss-s75 .phone-wrap { transform: scale(.75); transform-origin: top left; margin-bottom: -211px; }
+#s-sessions .ss-s75 .phone-wrap:has(.phone[data-size="360"]) { margin-bottom: -195px; }
+#s-sessions .ss-s75 .shot .cap { max-width: 292px; }
+#s-sessions .phone code { background: transparent; color: inherit; padding: 0; border-radius: 0; }
+#s-sessions .ss-tr .m { white-space: nowrap; font-family: var(--mono); font-size: 11px; line-height: 14px; color: var(--ink-4); }
+#s-sessions .tree .row { position: relative; }
+#s-sessions .tree .row.root + .row.root { border-top: 1px solid var(--line); }
+#s-sessions .tree .row.open::before { content: ""; position: absolute; left: calc(var(--gutter) + 10px + var(--depth, 0) * 20px); top: calc(50% + 10px); bottom: 0; width: 1px; background: var(--line-2); }
+#s-sessions .tree .row.ch::before { content: ""; position: absolute; left: calc(var(--gutter) + 10px + (var(--depth) - 1) * 20px); top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+#s-sessions .tree .row.ch.end::before { bottom: 50%; }
+#s-sessions .tree .row.ch::after { content: ""; position: absolute; left: calc(var(--gutter) + 10px + (var(--depth) - 1) * 20px); top: 50%; width: 9px; height: 1px; background: var(--line-2); }
+#s-sessions .tree .row .ss-sum { font-size: var(--fs-c1); color: var(--ink-3); }
+#s-sessions .tree .row.more { min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
+#s-sessions .tree .row.more .s { color: var(--brand); font-weight: 500; }
+#s-sessions .avatar .live.am { background: var(--wait); }
+#s-sessions .avatar .live.ho { background: var(--paper); box-shadow: inset 0 0 0 2px var(--wait); }
+#s-sessions .avatar .live.rd { background: var(--block); }
+#s-sessions .avatar .live.gy { background: var(--idle); }
+#s-sessions .ss-fleet { display: flex; align-items: center; gap: 8px; padding: 2px var(--gutter) 8px; font-size: var(--fs-foot); font-weight: 600; color: var(--brand); }
+#s-sessions .ss-fleet .ic { width: 16px; height: 16px; }
+#s-sessions .ss-fleet .ic:last-child { margin-left: auto; color: var(--ink-4); }
+#s-sessions .ss-now { margin: 0 var(--gutter); padding: 10px 12px; border-radius: var(--r-md); background: var(--surface); display: flex; gap: 10px; align-items: flex-start; }
+#s-sessions .ss-now .spinner { margin-top: 1px; flex: 0 0 auto; border-top-color: var(--run); }
+#s-sessions .ss-now .nb { min-width: 0; flex: 1; }
+#s-sessions .ss-now .a { font-size: var(--fs-sub); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#s-sessions .ss-now .a code, #s-sessions .ss-mono { font-family: var(--mono); font-size: 12.5px; }
+#s-sessions .ss-now .b { font-size: var(--fs-c1); line-height: 18px; color: var(--ink-3); }
+#s-sessions .ss-now .ic { color: var(--ink-3); margin-top: 1px; }
+#s-sessions .ss-mx { margin: 0 var(--gutter); }
+#s-sessions .ss-msg { margin: 0 var(--gutter); padding: 6px 0 6px 12px; border-left: 3px solid var(--line-2); font-size: var(--fs-sub); line-height: 20px; color: var(--ink-2); }
+#s-sessions .ss-msg b { color: var(--ink); }
+#s-sessions .ss-dock { flex: 0 0 auto; display: flex; gap: var(--s2); padding: var(--s2) var(--gutter); border-top: 1px solid var(--line); background: var(--paper); position: relative; z-index: 2; }
+#s-sessions .ss-dock .btn { flex: 1 1 0; }
+#s-sessions .ss-dock .btn.disabled { pointer-events: none; }
+#s-sessions .ss-note { padding: 6px var(--gutter); font-size: var(--fs-c1); line-height: 16px; color: var(--ink-3); }
+#s-sessions .ss-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; background: var(--surface); font-size: 11px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+#s-sessions .ss-tag.src { background: var(--brand-soft); color: var(--brand); }
+#s-sessions .rad { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-2); flex: 0 0 auto; display: grid; place-items: center; }
+#s-sessions .rad.on { border-color: var(--brand); }
+#s-sessions .rad.on::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
+#s-sessions .off { opacity: .5; }
+#s-sessions .ss-form { margin: 8px var(--gutter) 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); overflow: hidden; }
+#s-sessions .ss-form .fh { padding: 10px 12px 2px; font-weight: 600; font-size: var(--fs-callout); line-height: 21px; }
+#s-sessions .ss-form .fb { padding: 0 12px 8px; font-size: var(--fs-foot); line-height: 18px; color: var(--ink-3); }
+#s-sessions .ss-form .opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); font-size: var(--fs-sub); }
+#s-sessions .ss-form .ff { padding: 10px 12px; border-top: 1px solid var(--line); display: flex; gap: 8px; }
+#s-sessions .ss-term { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg); position: relative; }
+#s-sessions .ss-term .term { flex: 1 1 auto; min-height: 0; }
+#s-sessions .ss-strip { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--term-bg); color: var(--term-dim); font-family: var(--mono); font-size: 11px; line-height: 14px; border-bottom: 1px solid color-mix(in srgb, var(--term-fg) 14%, transparent); white-space: nowrap; overflow: hidden; }
+#s-sessions .ss-strip .lv { color: var(--run); }
+#s-sessions .ss-strip .am { color: var(--term-cursor); }
+#s-sessions .ss-strip .r { margin-left: auto; }
+#s-sessions .term .sl { background: color-mix(in srgb, var(--info) 65%, transparent); color: var(--term-fg); }
+#s-sessions .ss-kb { gap: 6px; padding: 6px 8px; }
+#s-sessions .ss-kb .kr { display: flex; gap: 5px; flex: 1 1 auto; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(to right, var(--ink) 82%, transparent); mask-image: linear-gradient(to right, var(--ink) 82%, transparent); }
+#s-sessions .ss-kb .k { min-width: 34px; padding: 0 8px; }
+#s-sessions .ss-kb.dim { opacity: .45; }
+#s-sessions .ss-jump { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-pill); background: var(--card); color: var(--ink); font-size: var(--fs-foot); font-weight: 600; box-shadow: var(--sh-pop); }
+#s-sessions .ss-jump .ic { width: 16px; height: 16px; }
+#s-sessions .ss-hnd { position: absolute; width: 12px; height: 12px; border-radius: 50% 0 50% 50%; background: var(--info); }
+#s-sessions .ss-dim .term { opacity: .5; }
+#s-sessions .phone.landscape .ph-status { display: none; }
+#s-sessions .phone.landscape:not([data-os="android"])::before { left: 10px; top: 50%; transform: translateY(-50%); width: 32px; height: 120px; }
+#s-sessions .phone.landscape .ph-screen { padding: 0 34px 0 48px; background: var(--term-bg); }
+#s-sessions .phone.landscape .ph-home { flex-basis: 20px; padding-bottom: 6px; background: var(--term-bg); }
+#s-sessions .phone.landscape .ph-home::before { background: var(--term-fg); }
+#s-sessions .ss-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 2px var(--gutter) 4px; background: var(--active); }
+#s-sessions .ss-bar i { display: block; height: 100%; }
+#s-sessions .ss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 4px var(--gutter) 0; }
+#s-sessions .ss-grid.g3 { grid-template-columns: 1fr 1fr 1fr; }
+#s-sessions .ss-cell .l { font-size: var(--fs-c1); color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+#s-sessions .ss-cell .v { font-size: var(--fs-hl); line-height: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#s-sessions .ss-sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+#s-sessions .ss-tb { display: grid; grid-template-columns: 52px 1fr 30px; align-items: center; gap: 8px; padding: 2px var(--gutter); font-size: var(--fs-foot); line-height: 18px; font-variant-numeric: tabular-nums; }
+#s-sessions .ss-tb i { display: block; height: 6px; border-radius: 3px; background: var(--brand); }
+#s-sessions .ss-tb span:last-child { text-align: right; color: var(--ink-3); }
+#s-sessions .ss-srv { display: flex; align-items: center; gap: 8px; padding: 14px var(--gutter) 4px; font-size: var(--fs-foot); font-weight: 700; color: var(--ink-2); }
+#s-sessions .ss-srv .ic { width: 16px; height: 16px; color: var(--ink-3); }
+#s-sessions .ss-srv .r { margin-left: auto; font-weight: 500; color: var(--ink-3); }
+#s-sessions .ss-sec { padding: 12px var(--gutter) 4px; font-size: var(--fs-c1); font-weight: 600; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-sessions .ss-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px var(--gutter); }
+#s-sessions .ss-tiles > span { border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 10px; font-size: var(--fs-c1); line-height: 16px; color: var(--ink-3); }
+#s-sessions .ss-tiles > span b { display: block; font-size: var(--fs-foot); color: var(--ink); }
+#s-sessions .ss-tiles > span.on { border-color: var(--brand); background: var(--brand-soft); }
+#s-sessions .ss-ref { margin: 8px var(--gutter); padding: 10px 12px; border-radius: var(--r-md); background: var(--block-soft); color: var(--block); font-size: var(--fs-foot); line-height: 18px; }
+#s-sessions .ss-ref b { display: block; }
+#s-sessions .ss-ref span { color: var(--ink-2); }
+#s-sessions .ss-sheetf { display: flex; align-items: center; gap: 8px; padding: 10px var(--gutter); border-top: 1px solid var(--line); font-size: var(--fs-c1); color: var(--ink-3); }
+#s-sessions .ss-sheetf .btn { margin-left: auto; }
+#s-sessions .term.mini { margin: 0 var(--gutter); border-radius: var(--r-sm); font-size: 11px; line-height: 15px; padding: 8px 10px; }
+#s-sessions .ss-kv { padding: 2px var(--gutter) 4px; gap: 4px 14px; font-size: var(--fs-foot); line-height: 20px; }
+#s-sessions .ss-kv dd { font-family: var(--mono); font-size: 12px; }
+#s-sessions .ss-step { display: flex; align-items: center; padding: 6px var(--gutter) 0; gap: 0; }
+#s-sessions .ss-step > span { flex: 1; text-align: center; font-size: var(--fs-c1); font-weight: 600; color: var(--ink-4); padding: 6px 0; border-bottom: 3px solid var(--line); }
+#s-sessions .ss-step > span.on { color: var(--run); border-color: var(--run); }
+#s-sessions .ss-meter { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; padding: 6px var(--gutter); font-size: var(--fs-foot); }
+#s-sessions .ss-meter span:last-child { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#s-sessions .ss-d3 .d-a { flex-direction: column; align-items: flex-end; gap: 0 !important; }
+#s-sessions .ss-under { position: absolute; left: 0; right: 0; top: 0; }
+#s-sessions .ss-anat { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 32px; align-items: start; margin: 20px 0 28px; }
+#s-sessions .ss-anat .legend { padding: 0; margin: 0; list-style: none; counter-reset: an; }
+#s-sessions .ss-anat .legend li { position: relative; padding: 0 0 0 36px; margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+#s-sessions .ss-anat .legend li::before { counter-increment: an; content: counter(an); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%; background: var(--block); color: var(--brand-ink); font: 700 12px/22px var(--ui); text-align: center; }
+#s-sessions .ss-anat .phone-wrap { margin-left: 14px; }
+</style>
+<header>
+  <div class="lane-eyebrow">04 · Sessions</div>
+  <h2>Sessions and everything that runs: terminal, launch, fleet, tools, connectors, containers</h2>
+  <p class="lede">Everything that runs in tm8 gets a live, honest screen of its own: an agent's work session, a plain terminal, a tool run, a container or a worktree lane. The web phone shell made the session page an immersive terminal with a "Messages door". The native app splits that page into <b>Live · Transcript · Context · Stats · Discussion</b>, moves the terminal to its own full-screen route with a real keys bar and landscape mode, adds a cross-server <b>Running now</b> fleet, and turns the launch dialog into a native sheet where every refusal names its cause. Every word comes from tm8's own session model: a row says <em>working</em>, <em>waiting for you</em>, <em>stale</em> or <em>crashed</em>, never the raw process status. Every list nests launched sessions under the session that launched them.</p>
+</header>
+
+<h3>Work › Sessions: the launched-by tree</h3>
+<p>The Sessions segment of the Work tab uses lane 05's chrome (large title, segments, filter chips) and this lane's rows. Each root session carries the sessions it launched as children (the <code>launched_by</code> edge, <code>treeParentOf</code>). The list opens expanded to depth 2, and every row has its own verdict word.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Tasks</span><span class="seg on">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="filters"><span class="f">Mine</span><span class="f">Needs me</span><span class="f on">Running 13</span><span class="f">Interrupted <span class="badge">2</span></span><span class="f">Completed</span></div>
+          <a class="ss-fleet"><svg class="ic"><use href="#i-zap"/></svg>Running now on all servers<svg class="ic"><use href="#i-chevron-right"/></svg></a>
+          <div class="list tree ss-c">
+            <a class="row tall root open"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Coordinator</span></span><span class="ss-tr">42m<span class="m">fable-5-1</span></span></a>
+            <a class="row tall ch" style="--depth:1"><span class="tw"></span><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 04 — sessions, terminal…</span><span class="s"><span class="pill live">streaming</span>Opus 5.5 1M Teammate</span></span><span class="ss-tr">19m<span class="m">opus-5-5</span></span></a>
+            <a class="row tall ch" style="--depth:1"><span class="tw"></span><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 03 — chat…</span><span class="s"><span class="pill working">working</span>Fable 5.1 1M Teammate</span></span><span class="ss-tr">19m<span class="m">fable-5-1</span></span></a>
+            <a class="row more ch end" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="s">6 more · 6 live · 1 waiting for you</span></span></a>
+            <a class="row tall root"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator</span><span class="ss-sum">2 children · 1 live</span></span><span class="ss-tr">31m<span class="m">fable-5-1</span></span></a>
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live am"></i></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting for you</span>Worker · 1 form</span></span><span class="ss-tr">3h 50m<span class="m">opus-5-5</span></span></a>
+          </div>
+          <div class="ss-lab">Finished, still open (1)<span class="more">Stop all</span></div>
+          <div class="list tree ss-c">
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live gy"></i></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill done">finished, still open</span></span></span><span class="btn xs">Stop</span></a>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Sessions: Running, as a tree</b>The Coordinator's root session opens with its lane sessions nested (guide line, 20pt indent). The first two children show, and "6 more" summarises the rest with the server's own counts. Bridge is collapsed, so its subtitle carries "2 children · 1 live". A completed session whose process is still open sits under the "Finished, still open" divider with Stop. <span class="route">/[server]/[space]/(tabs)/work?seg=sessions&amp;tab=running</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Tasks</span><span class="seg on">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="filters"><span class="f">Mine</span><span class="f">Running 13</span><span class="f on">Interrupted 2</span><span class="f">Completed</span></div>
+          <div class="ss-lab">Finished, not closed out (1)<span class="more">Complete all</span></div>
+          <div class="list tree ss-c">
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Patch vulnerable dependencies</span><span class="s"><span class="pill wait">finished, not closed out</span></span></span><span class="ss-tr">1h</span></a>
+          </div>
+          <div class="ss-lab">Server restart (2)<span class="more">Resume all</span></div>
+          <div class="list tree ss-c" style="position:relative;overflow:hidden">
+            <div class="swipe-actions"><span class="act done"><svg class="ic"><use href="#i-play"/></svg>Resume</span><span class="act read"><svg class="ic"><use href="#i-check"/></svg>Complete</span></div>
+            <a class="row tall root swiped" style="background:var(--paper)"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live rd"></i></span><span class="main"><span class="t">Repoint family: 1-arg resume…</span><span class="s"><span class="pill failed">crashed</span>Worker</span></span><span class="ss-tr">3h</span></a>
+          </div>
+          <div class="list tree ss-c">
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg><i class="live rd"></i></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s"><span class="pill failed">crashed</span>Reviewer · server restart</span></span><span class="ss-tr">3h</span></a>
+          </div>
+          <div class="ss-lab">Crashed (1)<span class="more">Resume all</span></div>
+          <div class="list tree ss-c">
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live rd"></i></span><span class="main"><span class="t">Bridge as an entity — UI</span><span class="s"><span class="pill failed">crashed</span>Worker · out of memory</span><span class="ss-sum">↳ under Bridge as an entity (Running)</span></span><span class="ss-tr">25m</span></a>
+          </div>
+          <span class="fab ext" style="bottom:12px"><svg class="ic"><use href="#i-play"/></svg>Launch</span>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Interrupted, grouped by reason</b>Android, dark. Groups follow the web's order, each with its bulk verb: "Finished, not closed out" offers Complete all, a server restart offers Resume all. A swipe reveals Resume and Complete. A child whose parent is in another tab renders at top level with "↳ under Bridge as an entity (Running)". <span class="route">…/work?seg=sessions&amp;tab=interrupted</span></div>
+  </div>
+</div>
+<div class="why">Filters. The brief sketched "Live · Waiting · Mine · Exited". tm8 already rules on this partition (Spec D1 §5.3, owner 6 Oct): <b>Running · Interrupted · Completed · Stopped</b>. Every session lands in exactly one of the four, they map to the server's own filters (<code>SESSION_TAB_FILTERS</code>), and the counts add up. So the four are kept and composed with the registry's two toggles, <b>Mine</b> ("Assigned to me") and <b>Needs me</b>. "Live" is Running, "Waiting" is Needs me, and "Exited" is the other three. "Running" stays a tab word and not a row word: <code>live</code> is only the count word ("● 13 running").</div>
+<div class="why">Tree, per the owner ruling of 2026-10-28: "in the app the tree structure must be shown". The web drawer already nests launched sessions under their root; the phone list dropped that, and this restores it. The list opens expanded to depth 2. Collapsing is remembered per list. A collapsed parent states its children in its subtitle. A child keeps its full row, with its own verdict, teammate and time.</div>
+<table class="spec">
+  <thead><tr><th style="width:24%">Row word (sessionRowWord)</th><th style="width:16%">Pill · dot</th><th>When, from the record and the node's liveness verdict</th></tr></thead>
+  <tbody>
+    <tr><td class="code">working · streaming</td><td><span class="pill working">working</span> green</td><td>Outcome open, process recorded running, verdict <code>live</code>. "streaming" only while PTY bytes are moving (pool activity may refine a live verdict but never promote another one).</td></tr>
+    <tr><td class="code">waiting for you</td><td><span class="pill waiting">waiting</span> amber</td><td>Process idle <b>and</b> forms are pending for the viewer (<code>forms.pendingForSessions</code>). This is the only "waiting" the node can see; see the Live view below.</td></tr>
+    <tr><td class="code">ready to complete · idle 3h</td><td><span class="pill done">ready</span> / <span class="pill idle">idle</span></td><td>Every claim is in review, blocked or ended / the agent finished its turn and sits at its prompt. An idle process is never drawn with working's green pill (owner, 2026-10-17).</td></tr>
+    <tr><td class="code">stale · unverified · starting</td><td><span class="pill stale">stale</span> hollow amber</td><td>The record says running but the node has no PTY / no fresh snapshot / still spawning. Amber, never green: a record without proof does not borrow a live colour.</td></tr>
+    <tr><td class="code">crashed · lost · credential disconnected · failed to start</td><td><span class="pill failed">crashed</span> red</td><td>Outcome open, process ended badly. Line 2 adds the reason: "Crashed 3h ago: server restart". Offers Resume · Complete · Dismiss.</td></tr>
+    <tr><td class="code">finished, still open · completed · stopped</td><td><span class="pill done">completed</span> / <span class="pill exited">stopped</span></td><td>The work's outcome. It wins over the process: a crash after completion is a grey fact, never an alert.</td></tr>
+  </tbody>
+</table>
+
+<h3>The session page: Live</h3>
+<p>One screen per session, with five segments. <b>Live</b> shows what the agent is doing now. It is a projection of the transcript tail (the newest tool call with no result yet, the last few calls), the PTY activity signal, pending forms and the last message the session posted. The tail read's age is always shown, and nothing is guessed.</p>
+<div class="anatomy">
+  <div>
+  <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Session<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ss-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a182a9 · started by Subhang</span>
+            <div class="tt">TM8 Mobile app</div>
+            <div class="ss-meta"><span class="pill working">working</span>42m · since 12:58 · context 41%</div>
+            <div class="ss-meta"><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><b>Coordinator</b>·<span class="mono">claude-fable-5-1</span>· coordinator</div>
+            <div class="chips nowrap"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span><span class="chip"><svg class="ic"><use href="#i-worktree"/></svg>tm8/01a182a9…</span><span class="chip"><svg class="ic"><use href="#i-server"/></svg>tm8.sh</span></div>
+          </div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="ss-lab">Now<span class="more q">read 6s ago</span></div>
+          <div class="ss-now"><span class="spinner"></span><div class="nb"><div class="a"><b>Bash</b> <code>node build.mjs</code></div><div class="b">no result yet · 8s · bytes moving</div></div></div>
+          <div class="ss-lab">Recent</div>
+          <div class="toolcard ss-mx"><div class="tc-h"><svg class="ic"><use href="#i-terminal"/></svg>Bash · node check.mjs<span class="st">✓ 3s</span></div><div class="tc-b">ok  00-overview.html: 4 phones
+0 error(s), 0 warning(s)</div></div>
+          <div class="ss-lab">Launched · 8<span class="more">See all</span></div>
+          <div class="list tree">
+            <a class="row ch" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t" style="font-size:15px">Mobile design lane 04 — sessions…</span></span><span class="pill live">streaming</span></a>
+            <a class="row ch" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live am"></i></span><span class="main"><span class="t" style="font-size:15px">Mobile design lane 07 — inbox…</span></span><span class="pill waiting">waiting</span></a>
+            <a class="row more ch end" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="s">6 more · all working</span></span></a>
+          </div>
+          <div class="ss-lab">Last message it posted<span class="more q">13:31</span></div>
+          <div class="ss-msg">Foundation written; eight lanes spawned. Merge expected this afternoon.</div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:-11px;top:58px"></span>
+    <span class="an" data-n="2" style="left:379px;top:58px"></span>
+    <span class="an" data-n="3" style="left:-11px;top:94px"></span>
+    <span class="an" data-n="4" style="left:-11px;top:150px"></span>
+    <span class="an" data-n="5" style="left:-11px;top:206px"></span>
+    <span class="an" data-n="6" style="left:-11px;top:248px"></span>
+    <span class="an" data-n="7" style="left:-11px;top:316px"></span>
+    <span class="an" data-n="8" style="left:-11px;top:410px"></span>
+    <span class="an" data-n="9" style="left:-11px;top:528px"></span>
+    <span class="an" data-n="10" style="left:-11px;top:640px"></span>
+    <span class="an" data-n="11" style="left:-11px;top:766px"></span>
+  </div>
+  <p style="font-size:13px;margin-top:14px"><b>Session page, Live: anatomy</b>. iOS, light. The Coordinator's own session, with its eight lanes as children. <code>/[server]/[space]/session/[id]?seg=live</code></p>
+  </div>
+  <ol class="legend">
+    <li><b>Back</b> names where you came from: Work, Inbox, a task, or Running now. iOS edge swipe and Android predictive back pop it.</li>
+    <li><b>Share · more</b>: Copy link and Open on web, plus the verbs for this row's state (<code>sessionVerbsOf</code>). While it works: Complete… and Terminate…. A stale session adds Resume and Mark lost.</li>
+    <li><b>Eyebrow and title</b>: kind, short id, and its origin. A launched child shows its parent chain here instead ("launched by ◆ TM8 Mobile app · Coordinator").</li>
+    <li><b>Verdict row</b>: the row word, duration, and the context number, which only shows a % when capacity is known. A second line names the teammate, the exact model id and the agent mode.</li>
+    <li><b>Chips</b>: claimed task(s), worktree branch (or "shared checkout" / "scratch"), and the server. Every chip pushes its page.</li>
+    <li><b>Segments</b>: Live · Transcript · Context · Stats · Discussion. They are route state (<code>?seg=</code>), so a link can open on any of them. The header collapses into the top bar on scroll.</li>
+    <li><b>Now</b>: the newest tool call that has no result yet in the transcript tail, plus PTY activity. "no result yet · 8s" is a fact, not a claim about why it is waiting.</li>
+    <li><b>Recent</b>: the last finished tool calls as chat-kit tool cards, each with an output tail. Tap one to open it in the Transcript.</li>
+    <li><b>Launched</b>: the Children tree (the owner ruling). Each child has its own verdict, and a tap pushes that session.</li>
+    <li><b>Last message it posted</b> on its own anchor or its task. On an exited session, this is where the receipt shows.</li>
+    <li><b>Dock</b>: Terminal (a full-screen route) and Message. It changes with state: Resume on an interrupted or stopped session, Reopen on a completed one, and disabled-with-reason when there is nothing to attach to.</li>
+  </ol>
+</div>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Inbox</span></span></div>
+          <div class="title">Session<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ss-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17e90 · started by Subhang</span>
+            <div class="tt">Security lane A</div>
+            <div class="ss-meta"><span class="pill waiting">waiting for you</span>3h 50m · since 09:50</div>
+            <div class="ss-meta"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><b>Worker</b>·<span class="mono">claude-opus-5-5</span>· worker · safe</div>
+            <div class="chips nowrap"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>PTY recheck fails closed</span><span class="chip"><svg class="ic"><use href="#i-worktree"/></svg>tm8/01a17e90…</span><span class="chip"><svg class="ic"><use href="#i-server"/></svg>tm8.sh</span></div>
+          </div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="banner"><svg class="ic"><use href="#i-clock"/></svg>Waiting for you · 1 form · asked 10:48</div>
+          <div class="ss-form">
+            <div class="fh">Push to origin?</div>
+            <div class="fb">3 commits on tm8/01a17e90… are ready. I run in safe mode, so I'm asking before I push to github.com/subhangR/tm8.</div>
+            <div class="opt"><span class="rad on"></span>Push now and open a PR</div>
+            <div class="opt"><span class="rad"></span>Not yet — keep the commits local</div>
+            <div class="ff"><span class="btn brand sm" style="flex:1">Send answer</span></div>
+          </div>
+          <div class="ss-note">The answer is delivered to the session's terminal. If the session ends first, it is queued until the session resumes. The options are the form's own; the app adds none.</div>
+          <div class="ss-lab">Now<span class="more q">read 4s ago</span></div>
+          <div class="ss-now"><svg class="ic"><use href="#i-pause"/></svg><div class="nb"><div class="a">Idle since 10:48</div><div class="b">last call: <span class="ss-mono">tm8 form ask "Push to origin?"</span></div></div></div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Live: waiting on a permission</b>Dark. The Worker runs in safe mode and asked with a <em>form</em> before pushing to origin, and the form is answered inline. There is deliberately no "Approve" button: the node has no permission API, and a harness prompt inside the PTY is invisible to it (R8: no detector ships). That case is answered in the Terminal. <span class="route">/[server]/[space]/session/[id]?seg=live</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div>
+          <div class="title">Session</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ss-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17b20</span>
+            <div class="tt">Readiness per used provider</div>
+            <div class="ss-meta"><span class="pill done">ready to complete</span>2h 20m · since 11:20</div>
+            <div class="ss-meta"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><b>Worker</b>·<span class="mono">claude-opus-5-5</span>· worker</div>
+            <div class="chips nowrap"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Readiness per used provider</span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955</span></div>
+          </div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="banner run"><svg class="ic"><use href="#i-success"/></svg><span>Every claimed task is in review, blocked or finished.</span><span class="act">Complete…</span></div>
+          <div class="ss-lab">Working on · 1</div>
+          <div class="list"><a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t" style="font-size:15px">Readiness per used provider</span></span><span class="pill review">in review</span></a></div>
+          <div class="ss-lab">Recent<span class="more q">read 12s ago</span></div>
+          <div class="steps open ss-mx" style="margin-left:22px">
+            <div class="step run"><svg class="ic"><use href="#i-check"/></svg>gh pr checks 955 — passed<span class="st">13:02</span></div>
+            <div class="step run"><svg class="ic"><use href="#i-check"/></svg>tm8 task transition — in_review<span class="st">13:03</span></div>
+            <div class="step run"><svg class="ic"><use href="#i-check"/></svg>tm8 message send — on the task<span class="st">13:04</span></div>
+          </div>
+          <div class="ss-lab">Last message it posted<span class="more q">13:04</span></div>
+          <div class="ss-msg">PR #955 merged; the R2 seeding gate is reachable. Task moved to review. Ready to complete.</div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Live: ready to complete</b>Android, light: 56dp app bar with the title on the left, segments as Material tabs. The green banner offers Complete…, which opens the receipt sheet with the latest message prefilled and the claim check run first. <span class="route">/[server]/[space]/session/[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div>
+          <div class="title">Session</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ss-head">
+            <span class="chip" style="align-self:flex-start"><svg class="ic"><use href="#i-session"/></svg>launched by ◆ TM8 Mobile app · Coordinator</span>
+            <div class="tt">Mobile design lane 04 — sessions, terminal, launch, fleet, tools, connectors, containers</div>
+            <div class="ss-meta"><span class="pill live">streaming</span>19m · since 13:21</div>
+            <div class="ss-meta"><span class="avatar xs agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><b>Opus 5.5 1M Teammate</b>· coordinated-worker</div>
+            <div class="chips nowrap"><span class="chip"><svg class="ic"><use href="#i-worktree"/></svg>tm8/01a182ca…</span><span class="chip"><svg class="ic"><use href="#i-server"/></svg>tm8.sh</span></div>
+          </div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="ss-lab">Now<span class="more q">read 3s ago</span></div>
+          <div class="ss-now"><span class="spinner"></span><div class="nb"><div class="a"><b>Write</b> <code>sections/04-sessions.html</code></div><div class="b">no result yet · 2s · bytes moving</div></div></div>
+          <div class="ss-lab">Recent</div>
+          <div class="toolcard ss-mx"><div class="tc-h"><svg class="ic"><use href="#i-terminal"/></svg>Bash · tm8 message reply<span class="st">✓ 1s</span></div><div class="tc-b">message.reply stored · on 01a182a2
+01a182a9… accepted</div></div>
+          <div class="ss-lab">Last message it posted<span class="more q">13:38</span></div>
+          <div class="ss-msg">Lane 04 · no conflict with the tree ruling. The Sessions segment is drawn as a launched-by tree…</div>
+          <div class="ss-lab">Context</div>
+          <div class="ctxbar ss-mx"><span>412k</span><div class="progress brand"><i style="width:41%"></i></div><span>41% of 1M · cache 92%</span></div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Live: a launched child, streaming</b>Android, dark. A child session leads with its parent chain ("launched by ◆ TM8 Mobile app · Coordinator"), and tapping the chip pops to the parent. The context number shows a % only because the launch model proves a 1M window. <span class="route">/[server]/[space]/session/[id]</span></div>
+  </div>
+</div>
+<div class="why">The web made the session page <em>immersive</em> (CONTRACT §5: the header was hidden so the terminal kept its height, and Messages became a "door" to a Discussion sheet). Native overturns the immersion and keeps the meaning. The terminal gets its own full-screen route, so the page no longer has to give up its header to the canvas. The door becomes the <b>Discussion</b> segment: same thread, same count, addressable. Ruling 8 (Messages above Linked) still holds; Linked lives at the foot of Context.</div>
+<div class="why">"Waiting for you" is server truth only: process idle plus pending forms. <code>presentSession</code>'s <code>needs-you</code> is "designed-but-dormant (R8) — no detector ships", so the app never infers a permission prompt from silence. It does show the neutral fact "no result yet · 2m" for an in-flight call, because both halves of that fact come from the transcript and the PTY.</div>
+
+<h3>Transcript · Context · Stats · Discussion</h3>
+<p>Scrolling any segment collapses the header into the top bar (title + verdict) and pins the segments. Transcript reuses the chat kit's turns, tool cards and steps. Context is the launch manifest. Stats is the post-mortem. Discussion is the thread on the session's anchor.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Mobile design lane 04…<span class="sub">streaming · 19m</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented s5"><span class="seg">Live</span><span class="seg on">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="banner neutral"><svg class="ic"><use href="#i-wifi-off"/></svg><span>Offline · transcript cached at 13:31. New turns load when tm8.sh is back.</span></div>
+          <div class="thread">
+            <div class="turn me"><div class="byline">user · 13:21</div><div class="bubble">Lane 04 (sessions) of the TM8 Mobile design artifact. Deliver sections/04-sessions.html…</div></div>
+            <div class="turn"><div class="byline"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="who">Opus 5.5 1M Teammate</span>13:21</div>
+              <div class="steps"><svg class="ic"><use href="#i-chevron-right"/></svg><span class="n">Read 6 files · Bash 2</span>48s</div>
+              <div class="prose"><p>I'll start by reading the brief, the overview exemplar, and the shared kit.</p></div>
+              <div class="toolcard"><div class="tc-h"><svg class="ic"><use href="#i-terminal"/></svg>Bash<span class="st">✓ 0.2s</span></div><div class="tc-b cmd">wc -c rn-app-design/*</div></div>
+            </div>
+            <div class="turn me"><div class="byline">user · 13:36 · delivered message</div><div class="bubble">COORDINATOR → all lanes · OWNER RULING: hierarchy in every list…</div></div>
+          </div>
+        </main>
+        <div class="ss-dock"><span class="btn primary disabled"><svg class="ic"><use href="#i-terminal"/></svg>Terminal · offline</span><span class="btn disabled"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Transcript, offline</b>The agent's own transcript (<code>execution.transcript</code>), cached per server. Turns marked "user" carry no person's name, because the transcript records only user/assistant and never claims an author. Offline, Terminal is disabled with its reason. Queued offline writes are v2 (lane 08), so Message is disabled offline in v1. <span class="route">…/session/[id]?seg=transcript</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Mobile design lane 04…<span class="sub">streaming · 19m</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented s5"><span class="seg">Live</span><span class="seg">Transcript</span><span class="seg on">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="ss-lab">Launch context · 6</div>
+          <div class="list">
+            <div class="row"><span class="main"><span class="chip"><svg class="ic"><use href="#i-team-member"/></svg>Opus 5.5 1M Teammate</span></span><span class="ss-tag">teammate</span><span class="ss-tag src">launch</span></div>
+            <div class="row"><span class="main"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Mobile design lane 04 — sessions…</span></span><span class="ss-tag">task</span><span class="ss-tag src">launch</span></div>
+            <div class="row"><span class="main"><span class="chip"><svg class="ic"><use href="#i-memory"/></svg>Prefer bun over npm in this repo</span></span><span class="ss-tag">memory</span><span class="ss-tag src">teammate</span></div>
+            <div class="row"><span class="main"><span class="chip"><svg class="ic"><use href="#i-skill"/></svg>github</span></span><span class="ss-tag">skill</span><span class="ss-tag src">teammate</span></div>
+            <div class="row"><span class="main"><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Mobile shell contract</span></span><span class="ss-tag">reference</span><span class="ss-tag src">task</span></div>
+          </div>
+          <div class="ss-note">1 more not shown: you can't read it, or it was deleted.</div>
+          <div class="ss-lab">Launch</div>
+          <dl class="kv ss-kv"><dt>Tool</dt><dd>claude-code</dd><dt>Model · effort</dt><dd>claude-opus-5-5 · max</dd><dt>Access</dt><dd>fullAccess</dd><dt>Agent mode</dt><dd>coordinated-worker</dd><dt>Profile</dt><dd>core-default (space)</dd><dt>Claude credential</dt><dd>space ▸ space default</dd><dt>Workdir</dt><dd>tm8 · worktree · base tm8/01a182a9…</dd></dl>
+          <div class="list lines"><a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t" style="font-size:15px">System prompt</span><span class="s" style="font-size:13px">v2.0 · composed 13:21 · read-only</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a></div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Context: the launch manifest</b>Dark. Everything that went into the launch, each row tagged with its role and where it came from (launch · teammate · task). Rows the viewer can't read arrive as a count. Credentials name the <em>source kind</em> and label, never a secret. The system prompt opens a read-only viewer (proposed route), and Linked follows below. <span class="route">…/session/[id]?seg=context</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div>
+          <div class="title">Facade audit<span class="sub">completed · swarm01</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented s5"><span class="seg">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg on">Stats</span><span class="seg">Discussion</span></div>
+          <div class="ss-note" style="font-size:13px;padding-top:10px"><span class="pill done">completed</span>&nbsp; ran 1h 12m · ended 2h ago</div>
+          <div class="ss-lab">Tokens<span class="more q" style="color:var(--ink);font-weight:700">2,413,906</span></div>
+          <div class="ss-bar"><i style="width:2.5%;background:var(--info)"></i><i style="width:4.9%;background:var(--brand)"></i><i style="width:90.6%;background:var(--run)"></i><i style="width:2%;background:var(--merged)"></i></div>
+          <div class="ss-grid"><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--info)"></i>input</div><div class="v">61,204</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--brand)"></i>output</div><div class="v">118,930</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--run)"></i>cache read</div><div class="v">2,186,410</div></div><div class="ss-cell"><div class="l"><i class="ss-sw" style="background:var(--merged)"></i>cache create</div><div class="v">47,362</div></div></div>
+          <div class="ss-lab">Messages and tools</div>
+          <div class="ss-grid g3"><div class="ss-cell"><div class="l">user</div><div class="v">9</div></div><div class="ss-cell"><div class="l">agent</div><div class="v">241</div></div><div class="ss-cell"><div class="l">tool calls</div><div class="v">203</div></div></div>
+          <div style="height:6px"></div>
+          <div class="ss-tb"><span class="ss-mono">Bash</span><i style="width:100%"></i><span>88</span></div>
+          <div class="ss-tb"><span class="ss-mono">Read</span><i style="width:69%"></i><span>61</span></div>
+          <div class="ss-tb"><span class="ss-mono">Grep</span><i style="width:31%"></i><span>27</span></div>
+          <div class="ss-tb"><span class="ss-mono">Edit</span><i style="width:16%"></i><span>14</span></div>
+          <div class="ss-lab">Models seen</div>
+          <div class="chips" style="padding-top:0;padding-bottom:0"><span class="chip"><span class="ss-mono">claude-opus-5-5</span></span></div>
+          <div class="ss-lab">Files touched</div>
+          <div class="ss-note" style="font-size:13px;color:var(--ink-2)">+318 / −1,204 across 14 files: observed Edit/Write calls, not a git diff.</div>
+          <div class="ss-lab">Cost</div>
+          <div class="ss-note" style="font-size:13px">— not reported. tm8 keeps no rate table for work sessions, so no money figure is drawn.</div>
+        </main>
+        <div class="ss-dock"><span class="btn primary"><svg class="ic"><use href="#i-refresh"/></svg>Reopen</span><span class="btn"><svg class="ic"><use href="#i-message"/></svg>Message</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Stats: the post-mortem</b>Android, light. Read once from the finished transcript and never polled. Absent is not zero: an unreported token count renders "—" and the total is then labelled a floor. There is no cost and no exit code, because neither is recorded for work sessions. <span class="route">…/session/[id]?seg=stats</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Facade audit<span class="sub">completed · swarm01</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented s5"><span class="seg">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg on">Discussion</span></div>
+          <div class="list">
+            <div class="row tall"><span class="avatar sm">S</span><span class="main"><span class="s" style="color:var(--ink-2)"><b>Subhang</b> · 10:31</span><span class="t wrap" style="font-weight:400">Skip the deprecated v1 routes.</span><span class="s" style="font-size:12px;color:var(--run)">✓ delivered live</span></span></div>
+            <div class="row tall"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s" style="color:var(--ink-2)"><b>swarm01</b> · 11:20 <span class="pill brand nodot">receipt</span></span><span class="t wrap" style="font-weight:400">Facade audit done: 14 dead endpoints, 3 docs, PR #1208.</span></span></div>
+            <div class="row tall"><span class="avatar sm">S</span><span class="main"><span class="s" style="color:var(--ink-2)"><b>Subhang</b> · 11:42</span><span class="t wrap" style="font-weight:400">@swarm01 split the list by service?</span><span class="s" style="font-size:12px;white-space:normal;line-height:16px;color:var(--wait)">stored · not delivered live: session is closed (completed, process exited)</span></span></div>
+          </div>
+        </main>
+        <div class="banner"><svg class="ic"><use href="#i-info"/></svg><span>No live session. Messages are stored here.</span><span class="act">Reopen</span></div>
+        <div class="composer"><div class="row1"><div class="box">Also mark which the CLI calls</div><span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span></div></div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w">return</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Discussion, keyboard up: messaging a closed session</b>The web's Messages door, now a segment. Each message carries the server's delivery outcome. "✓ delivered live" went to the PTY. Sent after completion, the message is stored on its anchor and the sender is told so in the node's words (<code>recipient_session_closed</code>). <span class="route">…/session/[id]?seg=discussion</span></div>
+  </div>
+</div>
+<div class="why">The honesty rules of <code>session-stats.ts</code> carry over unchanged: <b>hollow is not zero</b>, exact digits rather than "18.2k" in a post-mortem, no cost (no per-model rate table exists for work sessions), and no exit code (the work_session state carries none). Delivery is three-valued: <code>accepted</code> is not "delivered". The row shows "delivering…" until the delivery row settles.</div>
+
+<h3>The terminal</h3>
+<p><b>v1 scope (lane 08):</b> the terminal is read-only in v1, so watching, selection, scrollback, landscape and reconnect ship first, and typing with the keys bar is v2. The terminal is a full-screen route (<code>/session/[id]/terminal</code>). The canvas is near-black in both themes. A mono chrome strip states the verdict, the grid size and any armed modifiers. Below it sits the keys bar for the keys a phone keyboard lacks. Whether you may type is server truth (<code>driveMode</code>); whether you may watch is <code>shareMode</code>.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Session</span></span></div>
+          <div class="title">Terminal<span class="sub">Quiet list tiles + one-row header</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <div class="ss-term">
+          <div class="ss-strip"><span class="lv">● running</span><span>50×22</span><span class="am">ctrl armed</span><span class="r">you can type</span></div>
+<div class="term"><span class="g">●</span> Running the tile tests before I tick
+  the last criterion.
+
+<span class="g">●</span> Bash(bun run --cwd packages/tm8-ui test
+       src/panels/list)
+  <span class="d">└ Waiting…</span>
+
+<span class="d">╭────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="b">Bash command</span>                                   <span class="d">│</span>
+<span class="d">│</span>   bun run --cwd packages/tm8-ui test           <span class="d">│</span>
+<span class="d">│</span>   src/panels/list                              <span class="d">│</span>
+<span class="d">│</span>                                                <span class="d">│</span>
+<span class="d">│</span> Do you want to proceed?                        <span class="d">│</span>
+<span class="d">│</span> <span class="y">&gt; 1. Yes</span>                                       <span class="d">│</span>
+<span class="d">│</span>   2. Yes, and don't ask again for bun run      <span class="d">│</span>
+<span class="d">│</span>   3. No, and tell Claude what to do            <span class="d">│</span>
+<span class="d">╰────────────────────────────────────────────────╯</span>
+<span class="cur"></span></div>
+        </div>
+        <div class="keysbar ss-kb"><div class="kr"><span class="k">esc</span><span class="k">tab</span><span class="k on">ctrl</span><span class="k">alt</span><span class="k">↑</span><span class="k">↓</span><span class="k">←</span><span class="k">→</span><span class="k">/</span><span class="k">-</span><span class="k">paste</span></div><span class="k">Aa</span></div>
+        <div class="keyboard">
+          <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w">return</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Portrait, typing: a harness prompt (v2, proposed)</b>Lane 08 ships the terminal read-only in v1, so this input state, the keys bar and the keyboard are v2. iOS, dark. Reviewer runs in safe mode and Claude Code stopped at its own permission prompt. tm8 cannot see this prompt (R8), so it is answered here: ↓ and Return on the keys bar. Ctrl is sticky: it arms, the next key spends it. "50×22" is honest about width; under 60 columns, full-screen tools wrap. <span class="route">/[server]/[space]/session/[id]/terminal</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div>
+          <div class="title">Terminal<span class="sub">Bridge as an entity</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="banner neutral"><svg class="ic"><use href="#i-eye"/></svg><span>View only. Priya launched this session; only its owner can type (drive: owner).</span></div>
+        <div class="ss-term">
+          <div class="ss-strip"><span class="lv">● running</span><span>46×31 · Priya's size</span><span class="r">scrolled back</span></div>
+<div class="term"><span class="g">●</span> Checking the two child lanes.
+
+<span class="g">●</span> Bash(tm8 entity context 01a17f6b
+       --sections hierarchy)
+  <span class="d">└</span> Bridge as an entity · working
+    <span class="d">├</span> Bridge as an entity — schema
+    <span class="d">│</span>   <span class="g">working</span>
+    <span class="d">└</span> Bridge as an entity — UI
+        <span class="r">crashed: out of memory</span>
+
+<span class="g">●</span> <span class="sl">The UI lane crashed: out of memory.</span>
+  <span class="sl">I'll resume it</span> with a smaller batch once
+  the schema lane lands its migration.
+
+<span class="g">●</span> Bash(tm8 message send --to 01a17f90
+       "Resume with the panel rewrite
+       split in two batches.")
+  <span class="d">└ stored · accepted</span>
+</div>
+          <div class="menu" style="left:24px;top:150px;min-width:0;display:flex"><span class="mi" style="border:0">Copy</span><span class="mi" style="border:0">Select all</span><span class="mi" style="border:0">Share</span></div>
+          <span class="ss-hnd" style="left:8px;top:216px;border-radius:50% 0 50% 50%"></span>
+          <span class="ss-hnd" style="left:122px;top:233px;border-radius:0 50% 50% 50%"></span>
+          <span class="ss-jump"><svg class="ic"><use href="#i-arrow-left" style="transform:rotate(-90deg);transform-origin:center"/></svg>Live · 214 lines below</span>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>View only, selection and scrollback</b>Android, light. The canvas stays dark. A session launched by another member, with drive: owner, cannot be typed into, and the bar says why and by whose dial. A long-press selects text with handles; the floating toolbar copies. Scrolled back, a pill returns to the live line. <span class="route">…/session/[id]/terminal</span></div>
+  </div>
+</div>
+<div class="screen-strip">
+  <div class="shot wide">
+    <figure class="phone landscape" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <div class="ss-term">
+          <div class="ss-strip"><span>‹ Session</span><span>TM8 Mobile app</span><span class="lv">● streaming</span><span>101×15 · wide enough for tools that assume 80 columns</span><span class="r">⤡ exit full screen</span></div>
+<div class="term"><span class="d">$</span> git log --oneline -5
+<span class="y">d87c3a141</span> mobile-design(foundation): shared kit, brief, overview, build/check/shot scripts for the TM8…
+<span class="y">fcc49604b</span> R1/S7b: readiness per used provider — make the R2 seeding gate reachable (#955)
+<span class="y">351140798</span> fix(credentials): PTY recheck fails closed, panel crash fallback, … (security lane A) (#1012)
+<span class="y">e0f25f845</span> fix(git): allow-listed env and no hooks/fsmonitor for server-run git (trust fix #4) (#954)
+<span class="y">83713cfc9</span> fix(sql): repoint family — 1-arg resume gate, expire_pending identity guard (367) (#1014)
+<span class="d">$</span> node build.mjs
+  00-overview.html                         s-overview               29.8 KB
+built dist/index.html: 1 sections, 114 KB
+<span class="d">$</span> tm8 message send --to 01a182a2 "Foundation merged; lanes go."
+message.send stored · msg 01a182b1 on 01a182a2 · <span class="g">8 sessions accepted</span>
+<span class="d">$</span> <span class="cur"></span></div>
+          <div class="keysbar ss-kb"><div class="kr"><span class="k">esc</span><span class="k">tab</span><span class="k">ctrl</span><span class="k">alt</span><span class="k">↑</span><span class="k">↓</span><span class="k">←</span><span class="k">→</span><span class="k">/</span><span class="k">-</span><span class="k">|</span><span class="k">~</span><span class="k">paste</span></div><span class="k">Aa</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Landscape: full screen</b>Watching works in v1; the keys bar is v2. Rotating hides every piece of chrome except the strip and the keys bar. The PTY is resized to 101 columns and the strip's width note changes from "full-screen tools will wrap" to "wide enough for tools that assume 80 columns". The safe-area inset on the island side is kept. <span class="route">…/session/[id]/terminal (landscape)</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div>
+          <div class="title">Terminal<span class="sub">Mobile design lane 04…</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <div class="banner"><span class="spinner" style="width:14px;height:14px"></span><span>Reconnecting · attempt 2. The screen is the last frame, 13:39:52.</span></div>
+        <div class="ss-term ss-dim">
+          <div class="ss-strip"><span class="am">◌ reconnecting</span><span>46×30</span></div>
+<div class="term"><span class="g">●</span> Write(docs/features/mobile/
+       rn-app-design/sections/
+       04-sessions.html)
+  <span class="d">└ Wrote 612 lines</span>
+
+<span class="g">●</span> Bash(node check.mjs
+       sections/04-sessions.html)
+  <span class="d">└</span> ok 04-sessions.html: 31 phones
+    0 error(s), 0 warning(s)
+
+<span class="g">●</span> Bash(node build.mjs &amp;&amp; node shot.mjs
+       dist/index.html --section
+       s-sessions --phones)
+  <span class="d">└ Running…</span>
+</div>
+        </div>
+        <div class="keysbar ss-kb dim"><div class="kr"><span class="k">esc</span><span class="k">tab</span><span class="k">ctrl</span><span class="k">alt</span><span class="k">↑</span><span class="k">↓</span><span class="k">←</span><span class="k">→</span><span class="k">/</span></div><span class="k">Aa</span></div>
+        <div class="ss-note" style="text-align:center">Keys are off until it reconnects. Nothing typed is queued.</div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Reconnecting</b>Android, dark. The socket dropped, so the last frame stays on screen, dimmed and timestamped, and is never presented as live. Keys (v2) are disabled with the reason given. If the verdict turns to exited, the canvas swaps for the outcome screen (see States). <span class="route">…/session/[id]/terminal</span></div>
+  </div>
+</div>
+<div class="why">The keys bar keeps the web's measured choices (<code>mobileKeys.ts</code>): esc, tab, sticky ctrl and alt, and arrows that respect DECCKM. It adds <b>/ - | ~ paste</b>, which iOS hides on the second keyboard page, plus <b>Aa</b> for the font ladder 9–15 (13 is the shared default). The width readout is kept on purpose: "A phone at 390px gets somewhere in the forties. Saying so is the point."</div>
+
+<h3>Launch</h3>
+<p>Launching is a sheet over the screen it came from: a task, any entity, or a teammate. Every control maps to a <code>tm8 session spawn</code> flag: <code>--teammate --task/--about --workdir --base-ref --access-mode --reasoning-effort --credential-source --memory --context --interaction-profile</code>. On Android the same form is an M3 full-screen dialog, with the same semantics: it has no address, Back dismisses it, and your picks are kept.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"></div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="brandc">Cancel</span><span class="h">Launch session</span><span class="brandc" style="font-weight:600">Launch</span></div>
+          <div class="sheet-b">
+            <div class="row" style="min-height:36px"><span class="ss-tag">from</span><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Desktop-shell reflow overflow (tablet-768)</span></div>
+            <div class="ss-sec" style="display:flex;justify-content:space-between">Teammate<span style="color:var(--brand);text-transform:none;letter-spacing:0">All 9 ›</span></div>
+            <div class="row"><span class="rad on"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Worker</span><span class="s" style="font-size:13px">Opus 5.5 · ● 1 live session already</span></span></div>
+            <div class="row off"><span class="rad"></span><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Dreamer</span><span class="s" style="font-size:13px;white-space:normal">No persisted model for Claude Code</span></span></div>
+                        <div class="ss-sec">Model · effort</div>
+            <div class="row"><span class="main"><span class="t" style="font-size:15px">Opus 5.5 <span class="ss-mono muted">claude-opus-5-5</span></span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></div>
+            <div class="filters"><span class="f on">Default</span><span class="f">Low</span><span class="f">Medium</span><span class="f">High</span><span class="f">Extra high</span></div>
+            <div class="ss-sec">Working directory</div>
+            <div class="segmented" style="margin-top:2px"><span class="seg on">Project · tm8</span><span class="seg">Scratch</span></div>
+            <div class="row"><span class="rad on"></span><span class="main"><span class="t" style="font-size:15px">Worktree</span><span class="s" style="font-size:13px;white-space:normal;line-height:17px">An isolated checkout on its own branch. Nothing else can edit it while this session runs.</span></span></div>
+            <div class="row"><span class="rad"></span><span class="main"><span class="t" style="font-size:15px">Current branch</span><span class="s" style="font-size:13px;white-space:normal;line-height:17px">The shared checkout as it stands, uncommitted work included.</span></span></div>
+          </div>
+          <div class="ss-sheetf">node · 12 of 40 session slots free</div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Launch sheet (top)</b>Launched from a task. Teammates are ordered recents first, then by name. A teammate the node can't launch is drawn disabled with the mechanism ("No persisted model for Claude Code"). Effort and access start at <em>Default</em>, so opening the sheet never pins a posture. <span class="route">/[server]/[space]/launch?subject=[id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></div><div class="title" style="font-size:20px">Launch session</div><div class="trail"><span class="btn ghost sm disabled">Launch</span></div></header>
+        <main class="content">
+          <div class="ss-sec">Access</div>
+          <div class="ss-tiles">
+            <span><b>Default</b>the teammate and node decide</span><span><b>Plan</b>read only</span>
+            <span><b>Safe</b>ask for untrusted actions</span><span><b>Accept edits</b>workspace write</span>
+            <span class="on"><b>Auto</b>run what is safe, escalate the rest</span><span><b>Full access</b>bypass safeguards</span>
+          </div>
+          <div class="ss-sec">Memories · this session only</div>
+          <div class="row"><span class="check square on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t" style="font-size:15px">Prefer bun over npm in this repo</span></span><span class="ss-tag">teammate</span></div>
+          <div class="ss-sec">Context</div>
+          <div class="input area" style="margin:0 16px;min-height:40px;padding:8px 12px;font-size:15px">Repro is tablet-768 on board; start from DEF-041.</div>
+          <div class="ss-ref"><b>The node refused: session concurrency cap reached.</b><span>40 of 40 slots used; completed (✓) ones do not count. Complete or stop a finished session, then launch again. Your picks are kept.</span></div>
+        </main>
+        <div class="ss-sheetf">node · 0 of 40 slots free<span class="btn primary sm disabled">Launch</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Launch (lower half) and a refusal</b>Android, light: a full-screen dialog. Each access mode has one line of explanation. Credentials (one row per provider, opening the picker) sit above Memories. Memories ride this session only. The node's refusal renders in the dialog with its cause, what did not happen, and the remedy. Launch stays disabled with that reason. <span class="route">/[server]/[space]/launch</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"></div><div class="title">Task</div><div class="trail"></div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall"><div class="handle"></div><div class="sheet-h"><span class="h">Launch session</span></div></div>
+        <div class="scrim" style="z-index:12;background:transparent"></div>
+        <div class="sheet" style="z-index:13;height:76%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="brandc">Back</span><span class="h">Credential</span><span class="brandc" style="font-weight:600">Done</span></div>
+          <div class="segmented" style="margin-top:0"><span class="seg on">Anthropic</span><span class="seg">GitHub</span></div>
+          <div class="ss-note" style="font-size:13px">Whose Anthropic credential this session uses. The value never leaves the server.</div>
+          <div class="list lines">
+            <div class="row"><span class="rad"></span><span class="main"><span class="t" style="font-size:15px">Auto</span><span class="s" style="font-size:12px;white-space:normal;line-height:16px">expected: Space default. The server resolves it at launch.</span></span></div>
+            <div class="row off"><span class="rad"></span><span class="main"><span class="t" style="font-size:15px">Yours</span><span class="s" style="font-size:12px">off: you haven't connected Anthropic</span></span></div>
+            <div class="row"><span class="rad on"></span><span class="main"><span class="t" style="font-size:15px">Space default</span><span class="s" style="font-size:12px">Anthropic — space default</span></span></div>
+            <div class="row"><span class="rad"></span><span class="main"><span class="t" style="font-size:15px">Space ▸ Anthropic — space default</span></span></div>
+            <div class="row off"><span class="rad"></span><span class="main"><span class="t" style="font-size:15px">Node</span><span class="s" style="font-size:12px;white-space:normal;line-height:16px">off: the node admin has turned node fallback off</span></span></div>
+          </div>
+          <div class="ss-note">Unavailable: Yours (not connected) · Node (node fallback off). Connect yours in Settings › Credentials.</div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Credential picker</b>Dark, stacked over the launch sheet, one tab per provider. Options the policy or the account excludes are <em>drawn disabled with the reason in their own text</em>: a hidden option would read as "does not exist". Auto states a prediction, not an outcome. <span class="route">sheet in /launch (no address)</span></div>
+  </div>
+</div>
+<div class="why">The web's <code>canLaunch</code> rule is kept: every refusal names its <em>mechanism</em> ("Pick a teammate — a session runs as a persona, never anonymously"). A refusal from the node renders in the sheet and never as a toast apology (T5-5). After an accepted launch the sheet closes, a toast reads "Launching Worker…", and the row appears as <span class="pill pending">starting</span> under its task and at the top of Work › Sessions, journalled by <code>clientMutationId</code>. Dispatch stays a separate action whose label says the sheet's settings are not used.</div>
+
+<h3>Running now: the fleet</h3>
+<p>Every live session across every signed-in server, grouped by server and then space. As with Inbox's "All servers", "what is running" is a question about the person, not about the active space. Collapsed roots keep the state remembered for this list.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><span>Done</span></span></div><div class="title">Running now<span class="sub">3 servers</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span></div></header>
+        <div class="notice"><span class="app">t8</span><div class="nb"><div class="t">Session exited: done</div><div class="s">Facade audit · swarm01 completed with a receipt</div></div><span class="time">now</span></div>
+        <main class="content">
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>tm8.sh · Atelier<span class="r">13 running</span></div>
+          <div class="list tree ss-c">
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live ho"></i></span><span class="main"><span class="t">Desktop-shell reflow overflow…</span><span class="s"><span class="pill pending">starting</span>Worker · just now</span></span></a>
+            <a class="row tall root"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Coordinator</span><span class="ss-sum">8 children · 8 live</span></span><span class="ss-tr">42m</span></a>
+            <a class="row tall root"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator</span><span class="ss-sum">2 children · 1 live</span></span><span class="ss-tr">31m</span></a>
+            <a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live am"></i></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting for you</span>Worker</span></span><span class="ss-tr">3h 50m</span></a>
+          </div>
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>tm8.sh · Playground<span class="r">nothing running</span></div>
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>acme-node<span class="r"><span class="pill failed">offline</span></span></div>
+          <div class="refusal" style="margin-top:4px"><div class="h">This server could not be reached</div><p>2 sessions were live when it was last read, at 13:12. Read it again, or open its last copy.</p></div>
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>local · 127.0.0.1:4611<span class="r">reading…</span></div>
+          <div class="row"><span class="skeleton" style="width:36px;height:36px;border-radius:9px"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40"></span></span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Running now, with a push arriving</b>Each server group loads on its own. Playground is empty, acme-node is unreachable (its last count is cached and labelled with a time, never presented as current), and local is still reading. The push "Session exited: done" opens that session's Live view. <span class="route">/running (proposed)</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div><div class="title">Running now</div><div class="trail"></div></header>
+        <main class="content">
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>tm8.sh · Atelier<span class="r">13 running</span></div>
+          <div class="list ss-c" style="position:relative;overflow:hidden">
+            <div class="swipe-actions"><span class="act read"><svg class="ic"><use href="#i-message"/></svg>Message</span><span class="act del"><svg class="ic"><use href="#i-stop"/></svg>Stop</span></div>
+            <a class="row tall swiped" style="background:var(--paper)"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator</span></span></a>
+          </div>
+          <div class="ss-srv"><svg class="ic"><use href="#i-server"/></svg>local · 127.0.0.1:4611<span class="r">1 running</span></div>
+          <div class="list ss-c"><a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-terminal"/></svg></span><span class="main"><span class="t">Terminal · tm8</span><span class="s"><span class="pill working">running</span>shell · Subhang</span></span><span class="ss-tr">3h</span></a></div>
+          <div class="scrim"></div>
+          <div class="dialog ss-d3"><div class="d-b"><div class="h">This session hasn't completed.</div><p><b>It's working on:</b> Bridge as an entity · working.<br><br><b>Mark complete &amp; close</b>: confirm the receipt and pass the claim check. <b>Stop without completing</b>: its claims are released, its tasks show "No live session", and it can be resumed later.</p></div><div class="d-a"><span>Cancel</span><span class="destructive">Stop without completing</span><span class="bold">Mark complete &amp; close</span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Swipe → Stop, with the outcome asked</b>Android, dark. Swipe left reveals Message and Stop. Stop on an open session opens the web's "hasn't completed" dialog, which makes you say which ending you mean. A plain terminal (no persona) gets a terminal glyph, not an agent avatar. <span class="route">/running (proposed)</span></div>
+  </div>
+</div>
+
+<h3>Tools</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Tools</span></span></div><div class="title">Tool<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-tool"/></svg>Tool · v3 · bash</span><div class="title ss-mono" style="font-size:22px">graphify-refresh</div><div class="meta"><span class="pill info nodot">tm8: read</span>timeout 600s · edited Mon by Subhang</div></div>
+          <div class="ss-note" style="font-size:14px;color:var(--ink-2);padding-top:0">Rebuild the merged code graph for a launch project: one AST pass of a clean ref, no model call.</div>
+          <div class="banner info"><svg class="ic"><use href="#i-info"/></svg><span>This tool can read tm8 as you while it runs. Its access ends when it exits.</span></div>
+          <div class="ss-lab">Inputs</div>
+          <div class="list lines">
+            <div class="row"><span class="main"><span class="t" style="font-size:15px">project <span class="ss-tag">path</span></span></span><span class="ss-mono muted">/home/tm8/projects/tm8</span></div>
+            <div class="row"><span class="main"><span class="t" style="font-size:15px">space <span class="ss-tag">string · required</span></span></span><span class="ss-mono muted">01a0fb3d…</span></div>
+            <div class="row"><span class="main"><span class="t" style="font-size:15px">ref <span class="ss-tag">string</span></span></span><span class="ss-mono muted">origin/main</span></div>
+            <div class="row"><span class="main"><span class="t" style="font-size:15px">dry_run <span class="ss-tag">bool</span></span></span><span class="switch"></span></div>
+          </div>
+          <div style="padding:10px 16px 0"><span class="btn primary block"><svg class="ic"><use href="#i-play"/></svg>Run</span></div>
+          <div class="ss-note">Runs as a terminal session on tm8.sh that you can watch. It runs no container: tool runs have none today.</div>
+          <div class="ss-lab">Runs</div>
+          <div class="list lines">
+            <a class="row"><span class="pill working">Running</span><span class="main"><span class="s" style="font-size:13px">Coordinator · 13:38 · 1m 04s</span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></a>
+            <a class="row"><span class="pill exited">Exited 0</span><span class="main"><span class="s" style="font-size:13px">Subhang · 13:12 · 41s</span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></a>
+            <a class="row"><span class="pill failed">Timed out</span><span class="main"><span class="s" style="font-size:13px">Worker · Sun · 10m</span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Tool page</b>Declared inputs render as a form by type: path and string fields, int and number fields with a numeric keypad and min/max, a switch for bool, a menu for enum, secrets as "from a credential", never echoed. Run pins the version you loaded. Each run is a session: tapping it opens that terminal. "Exited 0" is grey, the same as the web's run chip. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Tools</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content">
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-tool"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:15px">graphify-refresh</span><span class="s" style="font-size:13px"><span class="pill working">Running</span>bash · tm8 read</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-tool"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:15px">doctor</span><span class="s" style="font-size:13px"><span class="pill failed">Exited 1</span>bash · no tm8 access · Mon</span></span></a>
+          </div>
+          <div class="empty" style="padding-top:28px"><svg class="ic"><use href="#i-tool"/></svg><p>Tools are reusable scripts with declared inputs. They are written on the web or with <span class="ss-mono">tm8 tool create</span>.</p></div>
+          <span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Tools list</b>Android, dark. A flat list, since tools do not nest. Each row shows its latest run state; tool runs are hidden from Sessions (they belong in the tool's history). The FAB opens create on the web, because a source editor has no phone layout yet. <span class="route">/[server]/[space]/k/tools</span></div>
+  </div>
+</div>
+
+<h3>Connectors (MCP)</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Connectors</span></span></div><div class="title">Connector</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-mcp"/></svg>Connector · Remote · Just me + Shared</span><div class="title">github</div><div class="meta"><span class="pill done">connected</span>approved for Atelier · on by default</div></div>
+          <div class="ss-lab">Your connection</div>
+          <div class="list lines"><a class="row"><span class="avatar sm">S</span><span class="main"><span class="t" style="font-size:15px">@subhangR</span><span class="s" style="font-size:13px">last used 13:31 · scopes: repo, read:org</span></span></a></div>
+          <div class="ss-lab">Shared connection</div>
+          <div class="list lines"><a class="row"><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t" style="font-size:15px">tm8-bot</span><span class="s" style="font-size:13px">connected by Subhang · everyone's sessions act as it</span></span></a>
+          <a class="row"><span class="main"><span class="s" style="color:var(--brand)">Manage credentials in Settings</span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></a></div>
+          <div class="ss-lab">Tools it exposes<span class="more">Test connection</span></div>
+          <div class="list lines">
+            <div class="row"><span class="main"><span class="t ss-mono" style="font-size:14px">create_pull_request</span></span></div>
+            <div class="row"><span class="main"><span class="t ss-mono" style="font-size:14px">get_file_contents</span></span></div>
+            <div class="row"><span class="main"><span class="t ss-mono" style="font-size:14px">search_code</span></span></div>
+            <div class="row"><span class="main"><span class="t ss-mono" style="font-size:14px">list_issues</span></span></div>
+          </div>
+          <div class="ss-lab">Activity</div>
+          <div class="refusal" style="margin-top:2px"><div class="h">Call history isn't available yet</div><p>Connector call history arrives with the audit views (<span class="ss-mono">mcp.audit.list</span>). An empty table here would read as "no calls".</p></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Connector page</b>Dark. Status uses the contract's vocabulary (Connected · Not connected · Needs reconnect · Awaiting approval · Disabled by an admin…). Credentials stay in Settings (lane 02); this page only links there. Activity says why it is empty instead of drawing a table. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Connectors</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content">
+          <div class="filters"><span class="f on">All</span><span class="f">Needs attention</span><span class="f">Shared</span></div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-mcp"/></svg></span><span class="main"><span class="t">github</span><span class="s" style="font-size:13px"><span class="pill done">connected</span>Remote · Just me + Shared</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-mcp"/></svg></span><span class="main"><span class="t">linear</span><span class="s" style="font-size:13px"><span class="pill wait">needs reconnect</span>expired</span></span><span class="btn sm">Reconnect</span></a>
+          </div>
+          <div class="ss-note">Adding a connector and the space's MCP settings live in Settings › Space (lane 02).</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Connectors list</b>Android, light. A flat list. The remedy the row's status offers (Connect · Reconnect · Approve, admin-only) sits on the row itself. <span class="route">/[server]/[space]/k/connectors</span></div>
+  </div>
+</div>
+
+<h3>Containers</h3>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div><div class="title">Container</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-container"/></svg>Container · shell · utho · vm</span><div class="title ss-mono" style="font-size:20px">utho-prod-7777</div><div class="meta"><span class="pill working">running</span>since 09:14 · persistent · on tm8.sh</div></div>
+          <div class="ent-actions"><span class="btn primary"><svg class="ic"><use href="#i-terminal"/></svg>Terminal</span><span class="btn"><svg class="ic"><use href="#i-pause"/></svg>Pause</span><span class="btn"><svg class="ic"><use href="#i-stop"/></svg>Stop</span></div>
+          <div class="ss-lab">Resources<span class="more q">heartbeat 14s ago</span></div>
+          <div class="ss-meter"><span>CPU</span><div class="progress"><i style="width:12%"></i></div><span>12%</span></div>
+          <div class="ss-meter"><span>Memory</span><div class="progress"><i style="width:34%"></i></div><span>1,412 / 4,096 MiB</span></div>
+          <div class="ss-meter"><span>Disk</span><div class="progress wait"><i style="width:40%"></i></div><span>8,240 / 20,480 MiB</span></div>
+          <div class="ss-lab">Hosts · 2 sessions</div>
+          <div class="list lines">
+            <a class="row"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live am"></i></span><span class="main"><span class="t" style="font-size:15px">Security lane A</span><span class="s" style="font-size:13px">Worker</span></span><span class="pill waiting">waiting</span></a>
+            <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-terminal"/></svg></span><span class="main"><span class="t" style="font-size:15px">Terminal · tm8</span><span class="s" style="font-size:13px">shell · Subhang</span></span><span class="pill working">running</span></a>
+          </div>
+          <div class="ss-lab">Surfaces · ports</div>
+          <div class="list lines"><div class="row"><span class="main"><span class="s" style="font-size:13px">terminal · http &nbsp; :3000 → <span class="ss-mono">utho-prod-7777.tm8.sh</span></span></span><span class="ss-tag">space</span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Container page</b>Android, light. Machine status, then usage from the heartbeat. A null usage renders "No heartbeat yet", never zeros. "Hosts" lists the sessions whose processes run in it (<code>runs_in</code>) and their teammates. Terminal opens <span class="ss-mono">container terminal</span> as a new session. Destroy sits in ⋮ behind a typed confirm. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title hidden">Containers</div><div class="trail"><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div><div class="big">Containers</div></header>
+        <main class="content">
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-container"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:16px">utho-prod-7777</span><span class="s" style="font-size:13px"><span class="pill working">running</span>shell · vm · 2 sessions</span></span><span class="ss-tr">CPU 12%</span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-container"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:16px">dev-box</span><span class="s" style="font-size:13px"><span class="pill idle">paused</span>desktop · microvm · no sessions</span></span><span class="ss-tr">—</span></a>
+          </div>
+          <div class="ss-note">Containers nest only through <span class="ss-mono">--parent</span>. When one does, this list becomes a tree, by the same rule as Sessions.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Containers list</b>iOS, dark. A paused machine has no usage, so its trailing figure is "—" rather than 0%. Status words are the contract's nine (requested … failed). <span class="route">/[server]/[space]/k/containers</span></div>
+  </div>
+</div>
+
+<h3>Worktrees</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Session</span></span></div><div class="title">Worktree<span class="sub">tm8 · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-worktree"/></svg>Worktree · 01a182b0</span><div class="title ss-mono" style="font-size:20px">tm8/01a182a9…</div><div class="meta"><span class="pill working">active</span>base origin/main @ fcc4960</div></div>
+          <div class="ss-step"><span class="on">active</span><span>merged · abandoned</span><span>deleted</span></div>
+          <div class="ss-lab">Git<span class="more q">read 6s ago</span></div>
+          <dl class="kv ss-kv"><dt>Ahead · behind</dt><dd>1 · 0 of origin/main</dd><dt>Working tree</dt><dd>clean</dd><dt>Changed vs base</dt><dd>+2,904 −0 · 13 files</dd></dl>
+          <div class="list lines"><a class="row"><span class="main"><span class="s" style="color:var(--brand)">View diff</span></span><svg class="ic muted"><use href="#i-chevron-right"/></svg></a></div>
+          <div class="ss-lab">Session</div>
+          <div class="list lines"><a class="row tall"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s" style="font-size:13px"><span class="pill working">working</span>Coordinator</span></span></a></div>
+          <div class="ss-lab">Pull request</div>
+          <div class="ss-note" style="font-size:13px">No pull request yet.</div>
+          <div class="ss-lab">Contention</div>
+          <div class="ss-note" style="font-size:13px">No overlapping touched paths with the project's other active lanes.</div>
+          <div class="btnrow" style="padding:10px 16px"><span class="btn sm outline">Mark merged…</span><span class="btn sm outline">Mark abandoned…</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Worktree page</b>The branch, its base, a live git read (<code>execution.gitStatus</code> / <code>gitDiff</code>), its session, its PR, and contention with other lanes. Merged and abandoned are <em>recorded claims</em>: the server can refuse a false merge claim but cannot observe one, and reconciliation never infers either. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Worktrees</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span></div></header>
+        <main class="content">
+          <div class="ss-lab">Active · 2</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:14px">tm8/01a182a9…</span><span class="s" style="font-size:13px"><span class="pill working">active</span>Coordinator · ↑1</span></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:14px">tm8/01a182ca…</span><span class="s" style="font-size:13px"><span class="pill working">active</span>Opus 5.5 1M Teammate</span></span></a>
+          </div>
+          <div class="ss-lab">Merged · 1</div>
+          <div class="list lines"><a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:14px">tm8/01a16f0e…</span><span class="s" style="font-size:13px"><span class="pill merged">merged</span>PR #1012</span></span></a></div>
+          <div class="ss-lab">Abandoned · 1</div>
+          <div class="list lines"><a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t ss-mono" style="font-size:14px">tm8/01a15d22…</span><span class="s" style="font-size:13px"><span class="pill exited">abandoned</span>Repoint family, first try</span></span></a></div>
+          <div class="ss-note">Deleted worktrees (directory removed) are hidden; use the filter to show them.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Worktrees list</b>Android, dark. Grouped by the forward-only lifecycle. A flat list, since worktrees have no parent of their own kind. <span class="route">/[server]/[space]/k/worktrees</span></div>
+  </div>
+</div>
+
+<h3>States</h3>
+<p>Drawn at 75%. Loading (skeletons), empty and offline are drawn in context above: Running now's local group, Playground, acme-node, and the offline Transcript.</p>
+<div class="screen-strip ss-s75">
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Running now</span></span></div><div class="title">Session</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ss-head"><span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17c2e</span><div class="tt">Facade audit</div><div class="ss-meta"><span class="pill done">completed</span>swarm01 · ran 1h 12m</div></div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="empty" style="padding:24px 24px 12px"><svg class="ic" style="color:var(--run)"><use href="#i-success"/></svg><div class="h">Completed</div><p>Receipt recorded: the close-out message on this session.</p></div>
+          <div class="ss-msg" style="margin-top:4px"><b>swarm01 · 11:20</b><br>Facade audit done: 14 dead endpoints, 3 docs written, PR #1208 opened.</div>
+          <div class="ss-note" style="text-align:center;padding-top:12px">ran 1h 12m · completed 2h ago · process closed 2h ago</div>
+          <div class="btnrow" style="padding:8px 16px"><span class="btn">Reopen (resume)</span><span class="btn disabled">Follow-up</span></div>
+          <div class="ss-note" style="text-align:center">Follow-up sessions come with D4. Until then, start a new session on the same tasks. The session record, discussion and connections stay.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>Exited: done</b>The push opens here. Completed shows the receipt message, and the receipt links into Discussion. Follow-up is disabled with its reason. <span class="route">…/session/[id]?seg=live</span></div>
+  </div>
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div><div class="title">Session</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ss-head"><span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · local</span><div class="tt">Terminal · tm8</div><div class="ss-meta"><span class="pill stale">stale</span>shell · Subhang · since 10:02</div></div>
+          <div class="empty" style="padding:28px 24px 12px"><svg class="ic" style="color:var(--wait)"><use href="#i-warning"/></svg><div class="h">stale — node restarted</div><p>This session reported running, but its process is gone. Liveness never lies.</p></div>
+          <div style="padding:4px 24px;display:flex;flex-direction:column;gap:8px"><span class="btn primary">Resume session</span><span class="btn">Mark lost</span></div>
+          <div class="ss-note" style="text-align:center">Resume marks the lost process and continues the same conversation now. No "reconnect" is offered, because it cannot work.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>Stale</b>Android, dark. The record contradicts the node, so the page says so and offers the only honest remedies. <span class="route">…/session/[id]</span></div>
+  </div>
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"></div></header>
+        <main class="content">
+          <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a17a55</span><div class="title">Repoint family: 1-arg resume gate</div><div class="meta"><span class="pill blocked">blocked</span>waiting on Marco since Tue</div></div>
+          <div class="banner block"><svg class="ic"><use href="#i-warning"/></svg><span>No live session. Worker's session crashed 3h ago: server restart.</span></div>
+          <div class="ent-actions" style="padding-top:12px"><span class="btn primary"><svg class="ic"><use href="#i-play"/></svg>Resume</span><span class="btn">Launch new</span></div>
+          <div class="ss-lab">Sessions · 1</div>
+          <div class="list tree"><a class="row tall root"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live rd"></i></span><span class="main"><span class="t">Repoint family: 1-arg resume…</span><span class="s"><span class="pill failed">crashed</span>Worker · 3h</span></span></a></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>"No live session" on a task</b>The task page is lane 05's. This lane owns the liveness banner and the Sessions section: the reason in the session's own words, plus Resume and Launch. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot"><div class="phone-wrap">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Back</span></span></div><div class="title">Session</div><div class="trail"></div></header>
+        <main class="content">
+          <div class="ss-head"><span class="eyebrow"><svg class="ic"><use href="#i-session"/></svg>Session · 01a17d41 · started by Lena</span><div class="tt">Patch vulnerable dependencies</div><div class="ss-meta"><span class="pill wait">finished, not closed out</span>Worker</div></div>
+          <div class="segmented s5"><span class="seg on">Live</span><span class="seg">Transcript</span><span class="seg">Context</span><span class="seg">Stats</span><span class="seg">Discussion</span></div>
+          <div class="empty" style="padding:28px 24px 12px"><svg class="ic"><use href="#i-lock"/></svg><div class="h">You can't watch this session</div><p>Lena hasn't shared it with the space (watch: none). You can read its record and discussion; its terminal and transcript are its owner's.</p><span class="btn sm">Message Lena</span></div>
+        </main>
+        <div class="ss-dock"><span class="btn primary disabled"><svg class="ic"><use href="#i-lock"/></svg>Terminal · not shared</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure></div>
+    <div class="cap"><b>Permission denied to view</b>Android, light. The record is readable but the stream is not. Each part that is closed says by whose dial. <span class="route">…/session/[id]</span></div>
+  </div>
+</div>
+
+<h3>Routes</h3>
+<table class="route-table">
+  <thead><tr><th style="width:42%">Route</th><th>Screen</th><th style="width:30%">Params · notes</th></tr></thead>
+  <tbody>
+    <tr><td>/[server]/[space]/(tabs)/work?seg=sessions</td><td>Work › Sessions: the launched-by tree (lane 05's chrome, this lane's rows)</td><td>tab=running|interrupted|completed|stopped · mine=1 · needs=1; expansion state lives in list memory</td></tr>
+    <tr><td>/[server]/[space]/session/[id]</td><td>Session page: Live · Transcript · Context · Stats · Discussion</td><td>seg=live (default) · msg=[id] scrolls Discussion to the message (receipt links)</td></tr>
+    <tr><td>/[server]/[space]/session/[id]/terminal</td><td>Full-screen terminal, portrait or landscape</td><td>read-only is server truth (driveMode), never a param</td></tr>
+    <tr><td>/[server]/[space]/session/[id]/prompt</td><td>System prompt viewer, read-only <b>(proposed)</b></td><td>from Context</td></tr>
+    <tr><td>/[server]/[space]/launch</td><td>Launch sheet (iOS) / full-screen dialog (Android); the credential picker is a nested sheet with no route</td><td>subject=[entity id] · teammate=[team_member id]</td></tr>
+    <tr><td>/running</td><td>Running now: the fleet across every signed-in server <b>(proposed, new)</b></td><td>a modal stack above the tabs; entered from Work › Sessions and from a session push</td></tr>
+    <tr><td>/[server]/[space]/k/tools · k/connectors · k/containers · k/worktrees</td><td>Kind lists (lane 05's list route; rows from this lane)</td><td>a list is a tree whenever any row has a parent of its own kind</td></tr>
+    <tr><td>/[server]/[space]/e/[id]</td><td>tool · mcp_server · container · worktree bodies; work_session redirects to /session/[id]</td><td>a tool run is a session: tapping a run opens its /session/[id]/terminal</td></tr>
+    <tr><td>tm8://[host]/s/[space]/e/[sessionId] · push session.exited / session.waiting</td><td>→ /[server]/[space]/session/[id]?seg=live</td><td>cold stack [Work › Sessions, session]; the payload carries ids only, never content</td></tr>
+  </tbody>
+</table>
+
+<h3>Components</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Component</th><th style="width:14%">Size</th><th>Behaviour</th><th style="width:20%">Platform</th></tr></thead>
+  <tbody>
+    <tr><td class="code">SessionRow (tree)</td><td>66pt; 84pt collapsed parent</td><td>Disclosure cell (20pt), agent avatar with process dot (green · amber · hollow amber · red · grey), title on one line, verdict pill + teammate, trail with duration + model id. 20pt indent per depth, hairline guide, "N children · M live" on a collapsed parent, "N more" after two children.</td><td>Android 72dp, ripple; the shell kind uses a terminal glyph</td></tr>
+    <tr><td class="code">VerdictPill</td><td>22pt</td><td>The word from <code>sessionRowWord</code>, lowercased, tone from the table above. Only "streaming" pulses.</td><td>same</td></tr>
+    <tr><td class="code">SessionHeader</td><td>~150pt → 44pt</td><td>Eyebrow (or parent chain), title, verdict row, teammate · model · mode, chips. Collapses into the top bar on scroll.</td><td>iOS large-title feel; Android collapsing app bar</td></tr>
+    <tr><td class="code">NowCard · Recent</td><td>58pt · tool card</td><td>From the transcript tail: the in-flight call ("no result yet · 8s") and the last calls, with the read's age.</td><td>same</td></tr>
+    <tr><td class="code">WaitingForm</td><td>card</td><td>Pending forms answered inline (same port as the form page). The answer is delivered, or queued until the session resumes.</td><td>same</td></tr>
+    <tr><td class="code">SessionDock</td><td>60pt</td><td>Terminal + Message while live; Resume / Reopen when ended; disabled with its reason when not attachable, offline or not shared.</td><td>Android pill buttons</td></tr>
+    <tr><td class="code">TerminalCanvas</td><td>fills</td><td>xterm.js in one WebView (lane 08). Read-only in v1; typing is v2. JetBrains Mono, ladder 9–15. The PTY is resized to the phone's grid when you may drive, otherwise drawn at the PTY's own size.</td><td>landscape = full screen</td></tr>
+    <tr><td class="code">ChromeStrip</td><td>22pt mono</td><td>Verdict · cols×rows · armed modifiers · "you can type" / "view only" / "reconnecting".</td><td>same</td></tr>
+    <tr><td class="code">KeysBar</td><td>46pt / 48dp</td><td>esc tab ctrl alt ↑ ↓ ← → / - | ~ paste, scrolling, with Aa pinned. Ctrl/alt are sticky for one key; arrows send DECCKM-aware sequences.</td><td>above the system keyboard</td></tr>
+    <tr><td class="code">LaunchForm</td><td>large detent</td><td>Sections map to spawn flags. Refusals render in the sheet; the footer shows capacity ("12 of 40 session slots free", or "no session limit").</td><td>Android: M3 full-screen dialog</td></tr>
+    <tr><td class="code">CredentialPicker</td><td>76% sheet</td><td>Per provider: Auto · Yours · Space default · Space ▸ each · Node. Excluded options stay visible, disabled with the reason. A GitHub authorship line under GitHub.</td><td>same</td></tr>
+    <tr><td class="code">FleetGroup</td><td>header 36pt</td><td>Server › space header with its own count or reachability. Each group loads on its own; offline groups show cached data with its time.</td><td>same</td></tr>
+    <tr><td class="code">ToolInputField · RunRow</td><td>44pt</td><td>One control per declared input type. The run pill follows <code>runLabel</code>: Running green, Exited 0 grey, any other ending red.</td><td>numeric keypad on Android/iOS</td></tr>
+    <tr><td class="code">ResourceMeter · LifecycleStepper</td><td>30pt</td><td>Container usage from the heartbeat (null → "No heartbeat yet"). Worktree active → merged|abandoned → deleted, forward-only.</td><td>same</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures &amp; haptics</h3>
+<table class="spec">
+  <thead><tr><th style="width:24%">Gesture</th><th>Result</th><th style="width:16%">iOS</th><th style="width:16%">Android</th></tr></thead>
+  <tbody>
+    <tr><td>Tap row / chip</td><td>Push the session or entity page (always a full screen; ruling 2026-10-18)</td><td>—</td><td>—</td></tr>
+    <tr><td>Tap disclosure chevron</td><td>Expand or collapse children; remembered per list</td><td>selection</td><td>CLOCK_TICK</td></tr>
+    <tr><td>Long-press chevron</td><td>Expand or collapse everything beneath</td><td>impactLight</td><td>LONG_PRESS</td></tr>
+    <tr><td>Long-press row</td><td>Context menu with a preview: Terminal, Message, Copy link, then this state's verbs (Complete…, Stop…, Resume)</td><td>impactMedium</td><td>LONG_PRESS</td></tr>
+    <tr><td>Swipe row left</td><td>Live: Message · Stop (Stop asks "hasn't completed"). Interrupted: Resume · Complete</td><td>impactLight at threshold</td><td>GESTURE_THRESHOLD_ACTIVATE</td></tr>
+    <tr><td>Pull to refresh</td><td>Re-read the list and the liveness verdicts</td><td>impactLight</td><td>system</td></tr>
+    <tr><td>Verdict changes on screen</td><td>Working → waiting, a crash, completed</td><td>notificationWarning / Error / Success</td><td>REJECT / CONFIRM</td></tr>
+    <tr><td>Terminal tap</td><td>Focus and raise the keyboard, only when you may drive; otherwise the view-only bar pulses</td><td>— / notificationWarning</td><td>— / REJECT</td></tr>
+    <tr><td>Terminal long-press, drag handles</td><td>Select text; Copy · Select all · Share</td><td>selection</td><td>TEXT_HANDLE_MOVE</td></tr>
+    <tr><td>Terminal drag / fling</td><td>Scrollback; the "Live · N lines below" pill returns to the live line</td><td>—</td><td>—</td></tr>
+    <tr><td>Pinch on terminal · Aa</td><td>Step the font ladder (9–15); the strip re-states cols×rows</td><td>selection per step</td><td>CLOCK_TICK</td></tr>
+    <tr><td>Rotate</td><td>Full-screen landscape terminal; the PTY is resized</td><td>—</td><td>—</td></tr>
+    <tr><td>Keys bar ctrl / alt</td><td>Arm for the next key</td><td>impactLight</td><td>KEYBOARD_TAP</td></tr>
+    <tr><td>Paste (multi-line)</td><td>Confirm first: "Paste 12 lines into the terminal?"</td><td>notificationWarning</td><td>CONFIRM</td></tr>
+    <tr><td>Launch</td><td>Accepted → sheet closes, a Starting row appears. Refused → stays open with the refusal</td><td>notificationSuccess / Error</td><td>CONFIRM / REJECT</td></tr>
+    <tr><td>Tap a disabled option</td><td>Its reason is restated inline (no hidden tooltip)</td><td>notificationWarning</td><td>REJECT</td></tr>
+    <tr><td>Drag sheet down · Android back</td><td>Dismiss the launch sheet; picks kept as a draft. Back closes the sheet before the screen pops</td><td>—</td><td>predictive back</td></tr>
+  </tbody>
+</table>
+<div class="why">The rules carried over from the web: entity = full screen and pickers = sheets (CONTRACT §4); "sheet content is never the subject of a share", which is why the credential picker has no address while /launch keeps the overview's route; one surface at a time; the Back Contract (stack cap 12, cold link lands on Work › Sessions); disabled-with-reason everywhere (L6, "a refused control is not a control").</div>
+
+<div class="callout open"><b>Open questions for the owner</b>
+1. <b>Harness prompts (R8)</b>: should the node ship a detector so "waiting for you" also covers a Claude Code permission prompt in the PTY? Today only forms count, and the app shows "no result yet".<br>
+2. <b>/running</b> is a new cross-server route. Should a watched session also get an iOS Live Activity / Android ongoing notification? (Proposed; nothing exists today.)<br>
+3. <b>Tool runs</b> have no container (<code>ToolRun</code> carries none). Widen the facade with <code>runs_in</code> for tool sessions so "runs on" can be drawn?<br>
+4. <b>Connector call audit</b> waits on <code>mcp.audit.list</code>, so the page says so for now.<br>
+5. <b>Live stats</b>: the web reads Stats only after exit (one read, with file accounting). Should a live session get a polled partial tail, labelled as partial?<br>
+6. <b>Typing into a streaming agent</b>: add a client "Take over" guard even when drive is allowed?<br>
+7. <b>Keys bar</b>: is adding / - | ~ paste to the web's set acceptable as the shared default?
+</div>
+</section>
