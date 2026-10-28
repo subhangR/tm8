@@ -243,14 +243,23 @@ export class OptionBag {
     return this.bag.has(name);
   }
 
-  /** Positive integer options: `--limit`, `--depth`, `--expect-version`, … */
+  /**
+   * Integer options: `--limit`, `--depth`, `--expect-version`, … Sign is the
+   * command's to check (most refuse <= 0 themselves); magnitude is checked
+   * here, because past 2^53 `Number` rounds and the Server would be handed a
+   * different integer than the caller typed.
+   */
   integer(name: string): number | undefined {
     const raw = this.value(name);
     if (raw === undefined) return undefined;
     if (!/^-?\d+$/.test(raw)) {
       throw new CliError(`--${name} expects an integer, got ${JSON.stringify(raw)}`, EXIT_USAGE);
     }
-    return Number(raw);
+    const n = Number(raw);
+    if (!Number.isSafeInteger(n)) {
+      throw new CliError(`--${name} is out of range, got ${raw}`, EXIT_USAGE);
+    }
+    return n;
   }
 
   names(): string[] {
@@ -464,7 +473,11 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
       throw new CliError(`--${name} may be given only once (got ${raw.length})`, EXIT_USAGE);
     }
     const only = raw[0];
-    if (only === true || only === undefined) {
+    // `--space=` is a caller who meant to name something and named nothing.
+    // Passing '' on would not fall back to the session's Space: it would be a
+    // flag-sourced Space that differs from the session's, and route the call
+    // through a space link to nowhere.
+    if (only === true || only === undefined || only.trim() === '') {
       throw new CliError(`--${name} requires a value`, EXIT_USAGE);
     }
     return only;

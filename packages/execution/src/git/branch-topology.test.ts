@@ -180,6 +180,49 @@ describe('readBranchTopology — against real git', () => {
   });
 });
 
+describe('readBranchTopology — measuring against the right ref', () => {
+  it('measures against origin/<default> when the clone has no local twin of it', async () => {
+    // A lane checkout: origin/HEAD names `main`, but no local `main` exists.
+    // Measured against a bare `main`, every rev-list failed and every branch
+    // came back 0/0 — which `merged` reported as fully merged.
+    const lane = join(base, 'lane');
+    await git(['init', '-b', 'main', lane], base);
+    await writeFile(join(lane, 'README.md'), 'x\n');
+    await git(['add', '.'], lane);
+    await git([...AUTHOR, 'commit', '-m', 'initial'], lane);
+    await git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], lane);
+    await git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], lane);
+    await git(['checkout', '-b', 'work'], lane);
+    await writeFile(join(lane, 'w.txt'), 'w\n');
+    await git(['add', '.'], lane);
+    await git([...AUTHOR, 'commit', '-m', 'work'], lane);
+    await git(['branch', '-D', 'main'], lane);
+
+    const topology = await readBranchTopology(lane);
+    expect(topology).toMatchObject({ defaultBranch: 'main', defaultBranchSource: 'origin_head' });
+    expect(topology.branches.find((b) => b.name === 'work'))
+      .toMatchObject({ ahead: 1, behind: 0, merged: false });
+  });
+
+  it('a tag sharing a branch\'s name does not stand in for the branch', async () => {
+    // `refs/tags/<name>` outranks `refs/heads/<name>` in short-name lookup.
+    const tagged = join(base, 'tagged');
+    await git(['init', '-b', 'main', tagged], base);
+    await writeFile(join(tagged, 'README.md'), 'x\n');
+    await git(['add', '.'], tagged);
+    await git([...AUTHOR, 'commit', '-m', 'initial'], tagged);
+    await git(['tag', 'feat'], tagged); // the tag sits ON main: 0 ahead
+    await git(['checkout', '-b', 'feat'], tagged);
+    await writeFile(join(tagged, 'f.txt'), 'f\n');
+    await git(['add', '.'], tagged);
+    await git([...AUTHOR, 'commit', '-m', 'feat work'], tagged);
+
+    const topology = await readBranchTopology(tagged);
+    expect(topology.branches.find((b) => b.name === 'feat'))
+      .toMatchObject({ ahead: 1, merged: false });
+  });
+});
+
 describe('readBranchTopology — the default-branch ladder', () => {
   /** A fake runner is the only way to fix which rung answers. */
   const runnerFor = (
@@ -198,7 +241,7 @@ describe('readBranchTopology — the default-branch ladder', () => {
 
   const INSIDE = { 'rev-parse --is-inside-work-tree': { code: 0, stdout: 'true\n' } };
   const NO_BRANCHES = {
-    'for-each-ref --format=%(refname:short)%1f%(objectname)%1f%(committerdate:iso-strict)%1f%(upstream:short)%1f%(HEAD)%1f%(contents:subject) --sort=-committerdate --count=201 refs/heads':
+    'for-each-ref --format=%(refname)%1f%(objectname)%1f%(committerdate:iso-strict)%1f%(upstream:short)%1f%(HEAD)%1f%(contents:subject) --sort=-committerdate --count=201 refs/heads':
       { code: 0, stdout: '' },
   };
 

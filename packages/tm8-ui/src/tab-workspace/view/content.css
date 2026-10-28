@@ -157,8 +157,8 @@
   border: 0;
   background: none;
 }
-/* THE TOKEN READING (task 01a14b00): the context chip in its own middle
-   section, between the kind's icons and the shared ones. It shows the context
+/* THE TOKEN READING (task 01a14b00): the context chip, the last item of the
+   top section, after the kind's icons (task 01a18253). It shows the context
    size alone, small (task 01a181e2); % · cache · age are the ⋯ menu's line
    and the details card's, which opens to the left, centred on it. */
 .tws-astrip-section--stats:not(:has(.pn-context)) {

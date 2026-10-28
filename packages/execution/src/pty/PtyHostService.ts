@@ -553,6 +553,12 @@ export class PtyHostService {
     this.sessions.set(sessionId, entry);
 
     proc.onData((data: string | Buffer) => {
+      // A killed or replaced process can still flush output between the signal
+      // and its exit (a HUP trap, a TUI restoring the screen). Nobody reads the
+      // old entry's ring any more, and markBusy below would report a
+      // stopped session as `busy` again — the same late-event identity rule
+      // onExit applies.
+      if (this.sessions.get(sessionId) !== entry) return;
       const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
       // The lazy mirror is built from the ring, which is only the whole stream
       // until its first eviction — so build it before an append that could

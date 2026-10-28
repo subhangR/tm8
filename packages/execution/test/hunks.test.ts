@@ -206,6 +206,31 @@ describe('buildSubsetPatch', () => {
     expect(patch).toContain('@@ -9,1 +10,1 @@');
   });
 
+  it('keeps git\'s anchor for pure insertions and pure deletions', () => {
+    // A zero-count side is anchored on a NEIGHBOURING line, not on its own
+    // start: git writes an insertion after old line 10 as `+12` here (one line
+    // added above it, plus one for "after"), and a deletion of old lines 10-11
+    // as `+10` (one above, minus one for "before"). Dropping hunk 1 removes
+    // only its +1 — the anchor offset must survive.
+    const insertion = [
+      '--- a/f', '+++ b/f',
+      '@@ -1,1 +1,2 @@', ' a', '+added',
+      '@@ -10,0 +12,2 @@', '+x', '+y',
+      '',
+    ].join('\n');
+    const ins = parseUnifiedDiff(insertion);
+    expect(buildSubsetPatch(ins, selectHunks(ins, [2]))).toContain('@@ -10,0 +11,2 @@');
+
+    const deletion = [
+      '--- a/f', '+++ b/f',
+      '@@ -1,1 +1,2 @@', ' a', '+added',
+      '@@ -10,2 +10,0 @@', '-x', '-y',
+      '',
+    ].join('\n');
+    const del = parseUnifiedDiff(deletion);
+    expect(buildSubsetPatch(del, selectHunks(del, [2]))).toContain('@@ -10,2 +9,0 @@');
+  });
+
   it('preserves the function-context suffix after the closing @@', () => {
     const parsed = parseUnifiedDiff(TWO_HUNKS);
     const patch = buildSubsetPatch(parsed, selectHunks(parsed, [1]));

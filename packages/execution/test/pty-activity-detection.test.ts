@@ -68,6 +68,26 @@ describe('PtyHostService block detection -- the writer `needs-you` was waiting f
     expect(log.every((e) => e.id === sessionId)).toBe(true);
   }, 20000);
 
+  it('reports nothing for output a KILLED process flushes on its way out', async () => {
+    // kill() removes the entry at once, but the process can still write
+    // between SIGHUP and its exit. That late output used to flip a session the
+    // operator had just stopped back to `busy`.
+    const log: { id: string; activity: PtyActivity }[] = [];
+    host = makeHost(log);
+    const sessionId = 'killed-then-talks';
+    host.spawn({
+      sessionId,
+      command: "trap 'echo goodbye; sleep 0.3; exit 0' HUP; echo hello; while :; do sleep 0.05; done",
+      cwd: '/tmp',
+      env: {},
+    });
+    await waitFor(() => log.some((e) => e.activity === 'idle'));
+    const before = log.length;
+    host.kill(sessionId);
+    await wait(800);
+    expect(log.slice(before)).toEqual([]);
+  }, 20000);
+
   it('does NOT report idle for a PTY that has never produced a byte', async () => {
     const log: { id: string; activity: PtyActivity }[] = [];
     host = makeHost(log);
