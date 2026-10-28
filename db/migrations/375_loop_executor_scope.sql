@@ -1,5 +1,5 @@
 -- =============================================================================
--- 360 · THE LOOP EXECUTOR CAN SEE LOOPS OUTSIDE THE NODE OWNER'S SPACES
+-- 375 · THE LOOP EXECUTOR CAN SEE LOOPS OUTSIDE THE NODE OWNER'S SPACES
 --       (task 01a17937-4b06, measured on prod 26 Oct 2026).
 --
 -- THE BUG, measured. The seeded `Dreamer daily sweep` in space 01a0fb3d was
@@ -82,7 +82,7 @@ set search_path = public, internal, pg_temp as $$
 $$;
 
 comment on function internal.is_loops_worker() is
-  '360: true only inside a transaction the in-process loop executor opened. The '
+  '375: true only inside a transaction the in-process loop executor opened. The '
   'claim is bound by db/client.ts from a closed list and never from a request; a '
   'node admin over HTTP is not a loop worker.';
 
@@ -160,7 +160,7 @@ set search_path = public, internal, pg_temp as $$
 $$;
 
 comment on function public.loops_due_for_executor(integer) is
-  '360: due loops across every space, for the in-process loop executor only '
+  '375: due loops across every space, for the in-process loop executor only '
   '(internal.is_loops_worker). Read-only. `act_as_identity` is the human who '
   'armed the loop (343), else the space owner, else NULL when the space has no '
   'active member left to act as.';

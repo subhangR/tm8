@@ -100,7 +100,7 @@ export interface DbClaims {
    * jobs and the loop executor set it; no HTTP, CLI or MCP claims builder does,
    * and `identity/claims.ts` never binds it. `internal.is_tracking_worker()`
    * reads it to let the tracking doors span spaces, and
-   * `internal.is_loops_worker()` (360) to let the loop executor READ due loops
+   * `internal.is_loops_worker()` (375) to let the loop executor READ due loops
    * across spaces — and nothing else does. A name outside
    * `BACKGROUND_JOB_CLAIMS` binds as `''`.
    */
@@ -112,7 +112,7 @@ export interface DbClaims {
  * widens what a tracking door accepts, so the set of callers that can hold it
  * is a list a reviewer can read.
  *
- * `loops.execute-due` (360) is the narrowest of the three: it opens ONE
+ * `loops.execute-due` (375) is the narrowest of the three: it opens ONE
  * read-only function, `public.loops_due_for_executor`, and no write door at
  * all. The executor's writes run under the loop's own space claims instead —
  * see that migration's header.

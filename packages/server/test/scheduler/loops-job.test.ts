@@ -30,7 +30,7 @@ function dueLoop(over: Partial<DueLoop> = {}): DueLoop {
     prompt: 'do it',
     config: null,
     version: 1,
-    // 360: the identity this firing runs as, resolved by the due read. Every
+    // 375: the identity this firing runs as, resolved by the due read. Every
     // loop here has one; `loops-space-visibility.pg.test.ts` covers the real
     // resolution against Postgres and the orphaned (null) case.
     actAsIdentity: 'identity-space-1-owner',
@@ -75,7 +75,7 @@ function harness(opts: {
 
   const port: LoopExecutorPort = {
     dueReadClaims: async () => CLAIMS,
-    // 360: in production these are per-loop claims for the loop's own space.
+    // 375: in production these are per-loop claims for the loop's own space.
     // Here the shape is what matters, not the identity.
     claimsForLoop: (_loop, actAsIdentity) => ({ ...CLAIMS, identityId: actAsIdentity }),
     liveSessionIds: () => opts.live ?? [],

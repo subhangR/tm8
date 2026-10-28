@@ -241,7 +241,7 @@ describe('the backgroundJob claim', () => {
      *
      *   - `main.ts`: the composition root, binding the two tracking jobs (306).
      *   - `facade/execution-handlers.ts`: `createLoopExecutorPort.dueReadClaims`
-     *     (360), binding `loops.execute-due` for the loop executor's ONE
+     *     (375), binding `loops.execute-due` for the loop executor's ONE
      *     cross-space read. It is in this file rather than main.ts because the
      *     port is built here; the claim is still reachable only from the
      *     in-process scheduler, and the firing path it hands back deliberately

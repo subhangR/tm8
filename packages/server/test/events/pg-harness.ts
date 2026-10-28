@@ -33,7 +33,7 @@ async function applyClaims(client: { query: (sql: string, params?: unknown[]) =>
   if (claims.nodeAdmin !== undefined) bindings.push(['tm8.node_admin', claims.nodeAdmin ? 'true' : 'false']);
   if (claims.requestId !== undefined) bindings.push(['tm8.request_id', claims.requestId]);
   /**
-   * `tm8.background_job` (306, 360). MIRRORS db/client.ts:457, including both
+   * `tm8.background_job` (306, 375). MIRRORS db/client.ts:457, including both
    * of its refusals — a name outside the closed list and a space-pinned caller
    * each bind `''`. A harness that bound this claim more freely than the real
    * client would let a test prove a background door open that production

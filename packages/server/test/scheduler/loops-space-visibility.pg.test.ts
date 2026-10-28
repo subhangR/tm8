@@ -1,5 +1,5 @@
 /**
- * WHY THE SEEDED `Dreamer daily sweep` NEVER FIRED, and what 360 changed.
+ * WHY THE SEEDED `Dreamer daily sweep` NEVER FIRED, and what 375 changed.
  *
  * THE MEASUREMENT (prod, 26 Oct 2026). The loop seeded into space 01a0fb3d was
  * enabled, due 2026-10-03, and 23 days later had `last_run_at` NULL,
@@ -122,7 +122,7 @@ function jobFor(db: Db, readAs: DbClaims): {
   return { run: (warned) => job.run(ctx(warned)), fired, firedAs };
 }
 
-describe('the loop executor reaches loops outside the node owner spaces (360)', () => {
+describe('the loop executor reaches loops outside the node owner spaces (375)', () => {
   let database: W1ScratchDatabase;
   let db: TestDb;
   let spaceId: string;
@@ -184,7 +184,7 @@ describe('the loop executor reaches loops outside the node owner spaces (360)', 
   });
 
   it('THE OLD READ still returns nothing, so RLS was not widened to fix this', async () => {
-    // The pre-360 due read, verbatim, under the pre-360 claims — including
+    // The pre-375 due read, verbatim, under the pre-375 claims — including
     // nodeAdmin, because `member_space_ids()` has no node-admin bypass. It must
     // STILL see zero rows: the fix is a narrow door, not a loosened policy, and
     // if this ever returns a row then general entity reads have been widened.

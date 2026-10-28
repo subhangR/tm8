@@ -42,7 +42,7 @@ export interface DueLoop {
   readonly config: Record<string, unknown> | null;
   readonly version: number;
   /**
-   * The identity THIS firing runs as (360): the human who armed the loop
+   * The identity THIS firing runs as (375): the human who armed the loop
    * (`armed_by_identity_id`, 343 — already the provenance root of a firing)
    * while their membership is active, else the space owner. Null when the
    * space has no active member left to act as — such a loop cannot be fired OR
@@ -65,7 +65,7 @@ export interface DueLoop {
  */
 export interface LoopExecutorPort {
   /**
-   * Claims for the CROSS-SPACE due read, and for nothing else (360).
+   * Claims for the CROSS-SPACE due read, and for nothing else (375).
    *
    * These bind `tm8.background_job = 'loops.execute-due'`, which opens exactly
    * one read-only function. They are deliberately NOT what a firing runs under:
@@ -113,7 +113,7 @@ export interface LoopsJobOptions {
 }
 
 /**
- * The due read goes through `loops_due_for_executor` (360), NOT a direct select.
+ * The due read goes through `loops_due_for_executor` (375), NOT a direct select.
  *
  * The predicates and the ordering moved into that function unchanged; what the
  * door adds is the ability to see a loop at all. A direct
@@ -172,7 +172,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
     timeoutMs: 10 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
       // The cross-space read, under the job claim and nothing else; each firing
-      // then runs under its OWN loop's space claims (360).
+      // then runs under its OWN loop's space claims (375).
       const due = await db.query<DueLoop>(await port.dueReadClaims(), DUE_LOOPS_SQL, [maxPerTick]);
       if (due.length === 0) return { skipped: true, reason: 'no loops are due' };
 

@@ -3048,7 +3048,7 @@ export function createLoopExecutorPort(deps: {
   const { db, pty, spawnService, resolveOwner } = deps;
 
   /**
-   * The cross-space DUE READ only (360).
+   * The cross-space DUE READ only (375).
    *
    * Still the node's loopback owner — a scheduled firing has no HTTP request
    * and therefore no caller identity — but now carrying the job claim that
