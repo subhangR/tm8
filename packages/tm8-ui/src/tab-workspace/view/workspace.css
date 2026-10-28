@@ -1002,6 +1002,12 @@
   border: 0;
   border-top: 1px solid var(--pn-line);
 }
+.tws-rail-more-heading {
+  padding: var(--pn-space-2) var(--pn-space-2) var(--pn-space-1);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
 .tws-rail-more-empty {
   padding: var(--pn-space-2);
   color: var(--pn-ink-3);

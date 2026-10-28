@@ -7,7 +7,7 @@
  */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { homeRootKinds } from '../../domain';
+import { homeRailGroups, homeRootKinds } from '../../domain';
 import { DESIGN_KIND } from '../../domain/design';
 import { loadRailPins } from '../../stores/homeRailStore';
 import { getRailStore, RAIL_EXPANDED_KEY, railPinsKey, resetRailStores } from '../runtime/railStore';
@@ -315,6 +315,22 @@ describe('pinned-only rail: More kinds is a popover (task 01a181da-c799)', () =>
     expect(within(card).getByTestId('tws-rail-sources')).toBeTruthy();
     fireEvent.click(more);
     expect(popover()).toBeNull();
+  });
+
+  it('the card groups the kinds under the Home rail headings, pinned kinds left out (task 01a18266)', () => {
+    mountPinnedOnly();
+    const pins = getRailStore(SPACE).getState().pins;
+    fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
+    const drawn = Array.from(popover()!.querySelectorAll<HTMLElement>('[data-group]')).map((g) => ({
+      label: g.querySelector('.tws-rail-more-heading')!.textContent,
+      kinds: Array.from(g.querySelectorAll<HTMLElement>('button[data-kind]')).map((b) => b.dataset.kind),
+    }));
+    const expected = homeRailGroups()
+      .map((g) => ({ label: g.label, kinds: g.kinds.map((c) => c.kind).filter((k) => !pins.includes(k)) }))
+      .filter((g) => g.kinds.length > 0);
+    expect(drawn).toEqual(expected);
+    expect(drawn.map((g) => g.label)).toEqual(expect.arrayContaining(['Work', 'Library', 'Code', 'Admin']));
+    expect(within(popover()!).getByRole('group', { name: 'Code' })).toBeTruthy();
   });
 
   it('a row opens its kind and closes the card', () => {
