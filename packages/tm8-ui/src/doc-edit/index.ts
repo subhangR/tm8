@@ -60,6 +60,7 @@ export { RichBody, slashItems, type SlashItem } from './rich/RichBody';
 export { RichDocView } from './rich/RichDocView';
 export { encodeMinimal, reserialise, richExtensions, roundTrips } from './rich/markdown';
 export { BODY_FIELD, DocTitleField } from './DocTitleField';
+export { titleFromBody, useAutoTitle } from './autoTitle';
 export { clearLiveTitle, setLiveTitle, useLiveTitle } from './liveTitles';
 export {
   FRESH_DOC_TITLE,

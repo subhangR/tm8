@@ -208,8 +208,12 @@ const CREDENTIAL_OPTIONS: readonly { value: LaunchCredentialSource | null; label
 
 const HARNESS_OPTIONS: readonly { value: 'minimal' | 'inherit' | null; label: string; hint: string }[] = [
   { value: null, label: 'Teammate default', hint: 'Whatever this teammate is configured for' },
-  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only · no claude.ai connectors' },
-  { value: 'inherit', label: 'Full', hint: 'Every plugin, connector and skill the account has installed' },
+  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only' },
+  // D4: the surface decides plugins and skills, NEVER connectors. Both surfaces
+  // run `--strict-mcp-config` with the session's own tm8 connectors, so `Full`
+  // does not load the operator's MCP servers and `Lean` does not strip the ones
+  // a launch selected. Saying otherwise sent people to the wrong control.
+  { value: 'inherit', label: 'Full', hint: 'Every plugin and skill the account has installed · connectors come from the Connectors picker, not the harness' },
 ];
 
 const PROVIDER_WORD: Readonly<Record<string, string>> = {

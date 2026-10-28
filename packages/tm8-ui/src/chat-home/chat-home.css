@@ -728,6 +728,27 @@ button.tch-entity-chip:hover {
 }
 
 .tch-load-error { flex-direction: column; margin: auto; }
+
+/* The way into older pages of a long chat — also what a scroll to the top
+   triggers, so it reads as a status while that page is in flight. */
+.tch-older {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 12px;
+}
+.tch-older__button {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.tch-older__button:disabled { cursor: progress; opacity: 0.7; }
 .tch-submit-error { margin: 0 4px 5px; }
 
 .tch-composer-wrap {
@@ -2173,6 +2194,7 @@ button.tch-entity-chip:hover {
   gap: var(--pn-space-1);
   align-items: center;
   min-width: 0;
+  max-width: 100%;
   padding: 2px var(--pn-space-1);
   border: 0;
   border-radius: var(--pn-r-sm);
@@ -2195,9 +2217,33 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 }
 
 .tch-ledger-tree__title {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A row's status: the dot alone, the word in its tooltip and accessible name
+   (task 01a15340). `flex: none` so a long title truncates and the dot never
+   squeezes, wraps or slides off the row. */
+.tch-ledger-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-idle);
+}
+
+.tch-ledger-dot[data-tone='run'] { background: var(--pn-run); }
+.tch-ledger-dot[data-tone='wait'] { background: var(--pn-wait); }
+.tch-ledger-dot[data-tone='block'] { background: var(--pn-block); }
+.tch-ledger-dot[data-tone='info'] { background: var(--pn-info); }
+.tch-ledger-dot[data-tone='brand'] { background: var(--pn-brand-2); }
+.tch-ledger-dot[data-pulse] { animation: pnPulse 1.6s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-ledger-dot[data-pulse] { animation: none; }
 }
 
 /* A title still standing in for a name we do not have reads quieter — the
@@ -2314,6 +2360,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 
 .tch-lpanel__title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2358,6 +2406,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-pop__trigger:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 .tch-pop__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tch-pop__sub { flex: none; color: var(--pn-ink-4); }
+/* The ⚙ chip's "· Worker": who the chat runs as, quieter than the role, and the part that ellipsizes. */
+.tch-pop__runsas { min-width: 0; color: var(--pn-ink-4); }
 .tch-pop__gear { font: var(--pn-fs-label) var(--pn-ui); line-height: 1; }
 .tch-pop__badge {
   position: absolute;
@@ -2866,6 +2916,10 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-switch[data-on] { background: var(--pn-brand); }
 .tch-switch[data-on] .tch-switch__knob { left: 14px; }
 
+/* The composer's project chip (ProjectChip): the project on the row. */
+.tch-project .tch-pop__trigger { max-width: 180px; }
+.tch-project__menu { display: grid; gap: 1px; }
+
 /* The submenu beside the panel (fixed; MenuRows positions it). */
 .tch-submenu {
   display: grid;
@@ -3101,8 +3155,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-jev { position: relative; display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .tch-jev .jev-entry { flex-direction: row; gap: 0; }
 .tch-jev .jev-entry__bar { flex-wrap: nowrap; }
-.tch-jev .jev-entry__button { padding: 3px 8px; font-size: 11px; max-width: 200px; }
-.tch-jev .jev-link { white-space: nowrap; font-size: 11px; }
+.tch-jev .jev-entry__button { padding: 3px 8px; font-size: var(--pn-fs-micro); max-width: 200px; }
+.tch-jev .jev-link { white-space: nowrap; font-size: var(--pn-fs-micro); }
 /* The panel states what asking cost; the foot chip stays short. */
 .tch-jev .jev-entry__button > .jev-cost { display: none; }
 .tch-jev .jev-entry__pop {
@@ -3126,10 +3180,80 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   padding: 2px 4px 2px 8px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-2);
 }
 .tch-jev-ref__mark { color: var(--pn-brand-2); font-weight: 600; }
 .tch-jev-ref__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1; }
+.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: var(--pn-fs-sm); line-height: 1; }
 .tch-jev-ref__remove:hover { color: var(--pn-ink); }
+
+/* -------------------------------------------------------------------------
+   §10.4 CONNECTORS — the ＋ sheet's section and the composer chip.
+   The rows themselves are `mcp-toggles` (mcp/mcp.css), shared with the launch
+   dialogs; these rules only place them and draw the chip.
+   ------------------------------------------------------------------------- */
+.tch-connectors {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+
+.tch-connectors-chip {
+  flex: 0 0 auto;
+}
+
+.tch-connectors-chip__face {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  gap: 4px;
+}
+
+.tch-connectors-chip__n {
+  /* THROUGH THE SCALE, not a px literal (`type-scale-ban.test.ts`). 12px IS
+     `--pn-fs-label` exactly, so this is the same rendered size — it is now a
+     size the scale can move. The literal arrived with the chip and left this
+     guard red on main alongside the hex below. */
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `[]` — every connector deliberately off. Struck through, because a plain 0
+   is indistinguishable from a Space that has no connectors at all. */
+.tch-connectors-chip__face[data-off] .tch-connectors-chip__n {
+  text-decoration: line-through;
+}
+
+/* Something switched on needs reconnecting. A dot, not a colour on the count:
+   the count is still true.
+
+   INK, NOT AMBER (S32). Two things were wrong with `var(--pn-warn, #c88a00)`:
+   `--pn-warn` is not a token this app defines — `tokens.css` has the caution
+   ramp as `--pn-wait`/`--pn-wait-soft` — so the raw hex was the value actually
+   painting, not a dead fallback, and it tripped the package hex ban. And the
+   colour it painted is the one thing the composer may not carry: "no yellow
+   shit should be shown in the chat composer" (Subhang, 2026-10-18, enforced by
+   composer-no-warning-tone.test.tsx, which reads this sheet). §10.4 drew this
+   as an amber dot; the standing rule overrides that. The dot's presence and
+   its accessible label carry "needs reconnect" — the colour never had to. */
+.tch-connectors-chip__dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-ink-2);
+}
+
+/* INSIDE A POPOVER ONLY. The list scrolls on its own there, so a Space with
+   twenty connectors cannot push the skill checklist above it out of reach —
+   but the same rule applied to every mount CLIPPED the full-width sheet after
+   two rows and silently hid the rest of the Space's connectors, which is the
+   worse failure of the two and is exactly what the screenshot caught. */
+.tch-popmenu .tch-connectors {
+  max-height: 320px;
+  overflow-y: auto;
+}

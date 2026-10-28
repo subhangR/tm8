@@ -88,7 +88,32 @@ export const OPERATIONS = [
   { name: 'mcp.credentials.unshare', method: 'POST', path: '/v2/mcp/credentials/:credentialId/unshare', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.begin', method: 'POST', path: '/v2/mcp/servers/:serverId/oauth/begin', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.audit.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/audit', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'mcp.proxy.request', method: 'POST', path: '/v2/mcp/sessions/:sessionId/servers/:serverId', kind: 'command', status: 'v1' },
+  // §11. The connector catalog (§8.2) is NODE-level static data, so the Space is
+  // an optional QUERY param: given one, each entry also reports where it is
+  // already registered there, which is what Discover's "Added" / "Requested"
+  // states read (B16).
+  { name: 'mcp.catalog.list', method: 'GET', path: '/v2/mcp/catalog', kind: 'read', status: 'v1' },
+  // A MEMBER asks the Space's admins to add a connector. It creates the
+  // connector UNAPPROVED — inert until an admin approves with
+  // `mcp.servers.update` — plus an attention request on it (B13, §10.1).
+  { name: 'mcp.servers.request', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/request', kind: 'command', status: 'v1', humanOnly: true },
+  // §5.5 / D9. Member-owned, NODE-level tokens (no `:spaceId` in the path, by
+  // design): one token acts as its member across the Spaces it lists, and the
+  // Space it may touch is checked per call on `/mcp`. humanOnly on all three —
+  // a credential that acts as a member is minted by that member, never by their
+  // agent carrying their identity — and an `mcp` token can reach none of them,
+  // because every non-/mcp transport refuses it outright.
+  { name: 'mcp.tokens.create', method: 'POST', path: '/v2/mcp/tokens', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.list', method: 'GET', path: '/v2/mcp/tokens', kind: 'read', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.revoke', method: 'POST', path: '/v2/mcp/tokens/:tokenId/revoke', kind: 'command', status: 'v1', humanOnly: true },
+  // §6/§10.6 (S6). The provenance OUTCOME of a launch, for the session debug
+  // view: the recorded root, the bearer chain nearest-hop-first, the Spaces it
+  // crossed, and whether that root is still admitted to every one of them. A
+  // thin pass-through of `public.mcp_session_provenance`, which owns the whole
+  // rule — the debug view must not re-derive §6 from parts it can see.
+  { name: 'mcp.sessions.provenance', method: 'GET', path: '/v2/mcp/sessions/:sessionId/provenance', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
@@ -275,6 +300,30 @@ export const OPERATIONS = [
   // Stop the running turn (the composer's ■ / Esc). Before this the UI had a
   // Stop button and the server had no operation behind it.
   { name: 'chat.interrupt',          method: 'POST',   path: '/v2/chats/:id/interrupt',                     kind: 'command', status: 'v1' },
+  // G4 — change a LIVE thread's connectors. Before this, a chat's selection was
+  // written once at creation (`save_chat_mcp_selections`, `on conflict do
+  // nothing`) and there was no way to change it afterwards.
+  // No `humanOnly` flag: the chat family carries its own guard
+  // (`refuseChatRuntimeBearer`, chat/handlers.ts) rather than
+  // `requireHumanSession`, and the flag's invariant is "flagged iff wrapped in
+  // requireHuman(Link)Session". `test/chat/handlers-human-only.test.ts` holds
+  // every chat.* operation to the refusal instead, this one included.
+  { name: 'chat.setMcpSelections',   method: 'POST',   path: '/v2/chats/:id/mcp-selections',                kind: 'command', status: 'v1' },
+  // §10.4 — READ the stored selection back. The write above answers the stored
+  // value, which is enough for the client that made it and no use at all to the
+  // one that merely OPENED the thread: §10.4's sheet has to say "Using: Space
+  // defaults" or "Using: Custom" before the user touches anything, and since
+  // 354 that distinction IS the row's existence (S21: no row = defaults).
+  //
+  // `humanOnly`, UNLIKE its sibling above, and the asymmetry is not an
+  // oversight. The write's human gate is layer 2 in SQL —
+  // `update_chat_mcp_selections` calls `internal.require_human_auth_kind()` —
+  // so the family's own `refuseChatRuntimeBearer` is all layer 1 needs there.
+  // `read_mcp_launch_selections` (298) has NO such gate: it checks
+  // `internal.entity_readable` and nothing else, so an agent session would
+  // read it. This door therefore carries `requireHumanSession` for real, and
+  // the flag says so.
+  { name: 'chat.getMcpSelections',   method: 'GET',    path: '/v2/chats/:id/mcp-selections',                kind: 'read',    status: 'v1', humanOnly: true },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
@@ -821,12 +870,19 @@ export const MOUNTED_OPERATIONS: readonly OperationBinding[] =
 /** Reserved operations — must answer `501 not_implemented`, never 404. */
 export const RESERVED_OPERATIONS = OPERATIONS.filter((op) => op.status === 'reserved');
 
-/** Substitute `:params` in an operation path. Throws on missing params. */
+/**
+ * Substitute `:params` in an operation path. Throws on missing params, and on
+ * a `.` or `..` value: `encodeURIComponent` leaves dots alone, so a bound
+ * `messages.list` with `anchorId: '..'` resolved to `/v2/messages` — another
+ * route than the one named, reached by every client that does `new URL(path)`.
+ * Percent-encoding cannot save it: URL parsing reads `%2e%2e` as `..` too.
+ */
 export function bindPath(name: OperationName, params: Record<string, string> = {}): string {
   const op = getOperation(name);
   return op.path.replace(/:([A-Za-z]+)/g, (_, p: string) => {
     const v = params[p];
     if (v === undefined) throw new Error(`bindPath(${name}): missing param :${p}`);
+    if (v === '.' || v === '..') throw new Error(`bindPath(${name}): param :${p} may not be a dot segment`);
     return encodeURIComponent(v);
   });
 }

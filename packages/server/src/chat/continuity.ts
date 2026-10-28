@@ -25,6 +25,8 @@ export interface HistoricalTurn {
   readonly state: string;
   readonly failure: unknown;
   readonly model: string | null;
+  /** Set on the oldest turn of a bounded read: how many earlier turns the read left out. */
+  readonly omittedEarlierTurns?: number;
 }
 export interface ProjectionOptions {
   readonly snapshotId: string;
@@ -42,13 +44,19 @@ interface Evidence {
 
 /** Canonicalize recursively; hashes must not depend on object insertion order. */
 export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    return `{${Object.entries(value).filter(([, v]) => v !== undefined)
+  return canonicalWith(value, null);
+}
+function canonicalWith(value: unknown, memo: WeakMap<object, string> | null): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  const known = memo?.get(value);
+  if (known !== undefined) return known;
+  const json = Array.isArray(value)
+    ? `[${value.map(v => canonicalWith(v, memo)).join(',')}]`
+    : `{${Object.entries(value).filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, v]) => `${JSON.stringify(key)}:${canonicalJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
+      .map(([key, v]) => `${JSON.stringify(key)}:${canonicalWith(v, memo)}`).join(',')}}`;
+  memo?.set(value, json);
+  return json;
 }
 export function historyDigest(value: unknown): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
@@ -62,8 +70,13 @@ export function sameCoverage(a: CoverageCursor, b: CoverageCursor): boolean {
 
 function evidenceFor(turn: HistoricalTurn): Evidence[] {
   const { authSessionId: _privateSession, ...input } = turn.input;
-  const records: Evidence[] = [{ sourceId: turn.userMessageId, role: 'user',
-    turnOrdinal: turn.ordinal, content: input }];
+  const records: Evidence[] = [];
+  if (turn.omittedEarlierTurns) records.push({ sourceId: `omitted-turns:before-${turn.ordinal}`,
+    role: 'continuity_notice', turnOrdinal: turn.ordinal, content: { omittedTurns: {
+      throughOrdinal: turn.ordinal - 1, count: turn.omittedEarlierTurns }, omittedDetail: true,
+      instruction: 'Earlier turns were not read into this history. '
+        + 'Read them through authorized tm8 tools if they matter; do not replay them.' } });
+  records.push({ sourceId: turn.userMessageId, role: 'user', turnOrdinal: turn.ordinal, content: input });
   // Thinking and usage are not portable memory. Final body repeats text parts.
   const texts = turn.parts.filter(part => part.kind === 'text');
   const textItems = new Map<string, { revision: number; text: string }>();
@@ -119,6 +132,13 @@ function omitted(value: unknown): boolean {
 
 /** Pure renderer: data serialization cannot dispatch any provider tool. */
 export function projectHistory(turns: readonly HistoricalTurn[], options: ProjectionOptions): BootstrapContext {
+  // The budget loops below re-render the same records up to a dozen times; each
+  // (immutable) record and content object is serialized once. Output is
+  // byte-identical to `canonicalJson`. Unmemoized, a 60-turn tool-heavy chat
+  // took ~10 s of synchronous CPU per turn — the server's event loop, blocked.
+  const memo = new WeakMap<object, string>();
+  const canonicalJson = (value: unknown) => canonicalWith(value, memo);
+  const historyDigest = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
   if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 1024) {
     throw new Error('continuity_context_overflow: history budget is too small');
   }
@@ -164,8 +184,10 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     const shrunk = reduce(original, floor);
     const sizes = shrunk.map(record => Buffer.byteLength(canonicalJson(record), 'utf8') + 1);
     const ordinals = [...new Set(original.map(record => record.turnOrdinal))];
+    // Turns the bounded read already left out are part of the same omitted prefix.
+    const unread = eligible[0]?.omittedEarlierTurns ?? 0;
     const noticeFor = (through: number, count: number): Evidence => ({ sourceId: `omitted-turns:${ordinals[0]}-${through}`,
-      role: 'continuity_notice', turnOrdinal: ordinals[0]!, content: { omittedTurns: { fromOrdinal: ordinals[0], throughOrdinal: through, count },
+      role: 'continuity_notice', turnOrdinal: ordinals[0]!, content: { omittedTurns: { fromOrdinal: ordinals[0]! - unread, throughOrdinal: through, count: count + unread },
         omittedDetail: true, instruction: 'Earlier turns were omitted to fit the history budget. '
           + 'Read them through authorized tm8 tools if they matter; do not replay them.' } });
     let remaining = Buffer.byteLength(PREFIX, 'utf8') + 2 + sizes.reduce((sum, size) => sum + size, 0);
@@ -203,12 +225,29 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     ] };
 }
 
-/** Read existing canonical rows under current authority; no UI entity joins. */
+/** Newest turns read into one history; older ones are named by a notice, never silently dropped. */
+export const HISTORY_TURN_WINDOW = 256;
+/** Newest assistant parts read into one history (each payload is capped at 8 KiB by the read). */
+export const HISTORY_PART_WINDOW = 4096;
+
+/**
+ * Read existing canonical rows under current authority; no UI entity joins.
+ *
+ * BOUNDED NEWEST-FIRST, NOT REFUSED. The projection keeps a ~32 KiB budget and
+ * already drops the oldest turns behind a notice, so a read past the windows
+ * can only ever feed turns the projection would drop. This used to THROW
+ * `continuity_unavailable` once a chat passed 256 turns or 4096 assistant
+ * parts — and since a chat only grows, every later turn of that chat failed in
+ * "history read" for good: a long WhatsApp-bridged chat went permanently
+ * silent. Now the newest window is read, older turns are named by one
+ * `omittedEarlierTurns` notice, and turns whose parts fell outside the part
+ * window keep their user/assistant bodies with an explicit omission notice.
+ */
 export async function readPortableHistory(
   db: Db, auth: DbClaims, chatId: string, ordinal: number, highWater: number,
 ): Promise<HistoricalTurn[]> {
   return db.tx(auth, async q => {
-    const turns = await q.query<{
+    const newestFirst = await q.query<{
       turn_id: string; turn_ordinal: string; user_message_id: string; agent_message_id: string | null;
       input_snapshot: Record<string, unknown> | null; user_body: string; attachments: unknown;
       author_id: string; assistant_body: string | null; assistant_available: boolean; assistant_edited: boolean; user_available: boolean; state: string; failure: unknown; model: string | null;
@@ -223,38 +262,59 @@ export async function readPortableHistory(
        left join public.messages a on a.entity_id=aa.id
        where t.chat_id=$1 and t.turn_ordinal<$2
          and (t.input_history_seq is null or t.input_history_seq<=$3)
-       order by t.turn_ordinal limit 257`, [chatId, ordinal, highWater]);
-    // Refuse an incomplete source read; never silently omit an unbounded prefix.
-    if (turns.length === 257) throw new Error('continuity_unavailable: history requires a cached checkpoint');
-    const ids = turns.flatMap(t => t.agent_message_id && t.assistant_available && !t.assistant_edited ? [t.agent_message_id] : []);
+       order by t.turn_ordinal desc limit ${HISTORY_TURN_WINDOW + 1}`, [chatId, ordinal, highWater]);
+    const truncated = newestFirst.length > HISTORY_TURN_WINDOW;
+    const turns = newestFirst.slice(0, HISTORY_TURN_WINDOW).reverse();
+    let omittedEarlierTurns = 0;
+    if (truncated && turns[0]) {
+      const [row] = await q.query<{ count: string }>(
+        `select count(*) count from public.chat_turns t
+          where t.chat_id=$1 and t.turn_ordinal<$2
+            and (t.input_history_seq is null or t.input_history_seq<=$3)`,
+        [chatId, Number(turns[0].turn_ordinal), highWater]);
+      omittedEarlierTurns = Number(row?.count ?? 1);
+    }
+    // Newest agent message first, so a capped part read keeps the newest detail.
+    const ids = [...turns].reverse()
+      .flatMap(t => t.agent_message_id && t.assistant_available && !t.assistant_edited ? [t.agent_message_id] : []);
     const parts = ids.length ? await q.query<HistoryPart & { message_id: string }>(
-      `select message_id, seq, kind,
-         case when octet_length(payload::text)<=8192 then payload else
-           jsonb_strip_nulls(jsonb_build_object('id',payload->'id','tool_call_id',payload->'tool_call_id',
-             'name',payload->'name','state',payload->'state','is_error',payload->'is_error',
-             'itemId',payload->'itemId','revision',payload->'revision','operation',payload->'operation',
-             'text',left(payload->>'text',2048),'args',jsonb_build_object('excerpt',left((payload->'args')::text,512)),
-             'content',jsonb_build_object('excerpt',left((payload->'content')::text,1024)),
-             'sourceDigest',encode(sha256(convert_to(payload::text,'UTF8')),'hex'),
-             'sourceRef',message_id::text||':part:'||seq::text,'omittedDetail',true)) end payload
-       from public.message_parts
-       where message_id=any($1::uuid[]) and kind in ('text','tool_call','tool_result','error','done')
-         and (chat_capture_seq is null or chat_capture_seq<=$2)
-       order by message_id, seq limit 4097`, [ids, highWater]) : [];
-    if (parts.length === 4097) throw new Error('continuity_unavailable: history requires a cached checkpoint');
+      `select p.message_id, p.seq, p.kind,
+         case when octet_length(p.payload::text)<=8192 then p.payload else
+           jsonb_strip_nulls(jsonb_build_object('id',p.payload->'id','tool_call_id',p.payload->'tool_call_id',
+             'name',p.payload->'name','state',p.payload->'state','is_error',p.payload->'is_error',
+             'itemId',p.payload->'itemId','revision',p.payload->'revision','operation',p.payload->'operation',
+             'text',left(p.payload->>'text',2048),'args',jsonb_build_object('excerpt',left((p.payload->'args')::text,512)),
+             'content',jsonb_build_object('excerpt',left((p.payload->'content')::text,1024)),
+             'sourceDigest',encode(sha256(convert_to(p.payload::text,'UTF8')),'hex'),
+             'sourceRef',p.message_id::text||':part:'||p.seq::text,'omittedDetail',true)) end payload
+       from public.message_parts p
+       join unnest($1::uuid[]) with ordinality w(id, n) on w.id=p.message_id
+       where p.kind in ('text','tool_call','tool_result','error','done')
+         and (p.chat_capture_seq is null or p.chat_capture_seq<=$2)
+       order by w.n, p.seq limit ${HISTORY_PART_WINDOW + 1}`, [ids, highWater]) : [];
     const byMessage = new Map<string, HistoryPart[]>();
-    for (const part of parts) {
+    for (const part of parts.slice(0, HISTORY_PART_WINDOW)) {
       const list = byMessage.get(part.message_id) ?? [];
       list.push(part); byMessage.set(part.message_id, list);
     }
-    return turns.map(t => ({ turnId: t.turn_id, ordinal: Number(t.turn_ordinal),
+    // Past the part window, the message the cut landed in (the first part NOT
+    // kept) is partial: keep none of its parts rather than a misleading prefix.
+    // Older messages have none.
+    const complete = new Set(byMessage.keys());
+    if (parts.length > HISTORY_PART_WINDOW) complete.delete(parts[HISTORY_PART_WINDOW]!.message_id);
+    const partsOmitted = (t: typeof turns[number]) => parts.length > HISTORY_PART_WINDOW
+      && !!t.agent_message_id && ids.includes(t.agent_message_id) && !complete.has(t.agent_message_id);
+    return turns.map((t, index) => ({ turnId: t.turn_id, ordinal: Number(t.turn_ordinal),
       userMessageId: t.user_message_id, agentMessageId: t.agent_message_id,
       input: !t.user_available ? { sourceRef:t.user_message_id,body:null,omittedDetail:true,reason:'source deleted or unavailable' }
         : t.input_snapshot ? { ...t.input_snapshot, body:t.user_body,attachments:t.attachments,
           ...(t.input_snapshot.body!==t.user_body ? {projectionNotice:'source was edited after queueing; current authorized content shown'} : {}) }
         : { body:t.user_body,attachments:t.attachments,actorId:t.author_id,attribution:'legacy_unknown' },
       assistantBody: t.assistant_body, assistantNotice: t.agent_message_id && (!t.assistant_available || t.assistant_edited)
-        ? 'assistant source edited or unavailable; earlier part payloads omitted' : null, parts: byMessage.get(t.agent_message_id ?? '') ?? [],
-      state: t.state, failure: t.failure, model: t.model }));
+        ? 'assistant source edited or unavailable; earlier part payloads omitted'
+        : partsOmitted(t) ? 'older tool detail omitted to bound the history read; final body kept' : null,
+      parts: complete.has(t.agent_message_id ?? '') ? byMessage.get(t.agent_message_id!)! : [],
+      state: t.state, failure: t.failure, model: t.model,
+      ...(index === 0 && omittedEarlierTurns ? { omittedEarlierTurns } : {}) }));
   });
 }

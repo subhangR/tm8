@@ -28,17 +28,22 @@
  * LIVE COUNTS (task 01a111a2-f9ad, design log R42) on four kinds only — Tasks,
  * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
  * badge. Expanded: the number right-aligned in the row.
+ *
+ * MORE KINDS IS A POPOVER (Subhang, 2026-10-28, task 01a181da-c799): in the
+ * pinned-only rail, ⋯ opens a card beside the rail listing every unpinned
+ * kind and source — a row opens it, its pin button pins it — instead of
+ * folding the rest open inside the rail, which grew the rail past the window.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { homeRootKinds, type KindConfig } from '../../domain';
+import { homeRootKinds, KindIcon, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
-import { browserSources } from '../adapters/browserSources';
+import { browserSources, type BrowserSource } from '../adapters/browserSources';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { useShellFrame } from './context';
 import { isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
-import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
-import { RailAttention, RailUser } from './RailStatus';
+import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_PIN_ART } from './railArt';
+import { RailAttention, RailPopoverButton, RailUser } from './RailStatus';
 import { useCustomKindsVersion } from '../../data/custom-kinds';
 import { BrandMark } from '../../kit/BrandMark';
 import { isPinnedRailEnabled } from './navigatorFlag';
@@ -57,16 +62,6 @@ export { HOLD_MS, useHold } from './railParts';
 
 /** The More kinds ⋯ — three dots on `VectorIcon`'s 16×16 grid (as Navigator's). */
 const MORE_ART = ['M4 8h.01', 'M8 8h.01', 'M12 8h.01'];
-/** Whether the pinned-only rail's More kinds fold is open. Remembered, per device. */
-const RAIL_MORE_OPEN_KEY = 'tm8.workspace.rail-more-open';
-
-function readMoreOpen(): boolean {
-  try {
-    return window.localStorage.getItem(RAIL_MORE_OPEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 export function WorkspaceRail() {
   const customKinds = useCustomKindsVersion();
@@ -79,22 +74,13 @@ export function WorkspaceRail() {
   const counts: RailCounts = useRailCounts();
   const topRef = useRef<HTMLDivElement>(null);
   /* PINNED ONLY (`tm8.ui.navigator = 'rail'`): the rail draws the pins, and
-     every other kind and source waits behind one More kinds row, folded by
-     default. Read once per mount, as the navigator flag is. */
+     every other kind and source waits in the More kinds popover. Read once
+     per mount, as the navigator flag is. */
   const pinnedOnly = useMemo(() => isPinnedRailEnabled(), []);
-  const [moreOpen, setMoreOpen] = useState(readMoreOpen);
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(RAIL_MORE_OPEN_KEY, moreOpen ? '1' : '0');
-    } catch {
-      // No storage ⇒ the fold lasts as long as the page.
-    }
-  }, [moreOpen]);
-  const showRest = !pinnedOnly || moreOpen;
 
   const pinned = useMemo(() => workspacePinnedKinds(pins), [pins, customKinds]);
   const railRef = useRef<HTMLElement>(null);
-  const more = useScrollHints(topRef, `${pinned.length}:${showRest}`);
+  const more = useScrollHints(topRef, pinned.length);
   /* EVERY KIND (Subhang, 2026-10-10): the whole Home population, no Work
      filter. A pinned kind MOVES to Pinned and leaves the list; an unpinned
      one comes back at the TOP of the list, most recent first (2026-10-07). */
@@ -209,27 +195,37 @@ export function WorkspaceRail() {
         ) : null}
         {pinnedOnly ? (
           <div className="tws-rail-group" role="group" aria-label="More" data-testid="tws-rail-more">
-            <RailTip label={expanded ? null : moreOpen ? 'Fewer kinds' : 'More kinds'}>
-              <button
-                type="button"
-                className="tws-rail-btn tws-rail-kind"
-                aria-expanded={moreOpen}
-                aria-controls="tws-rail-rest"
-                aria-label={moreOpen ? 'Fewer kinds' : 'More kinds'}
-                data-testid="tws-rail-more-toggle"
-                onClick={() => setMoreOpen((open) => !open)}
-              >
-                <span className="tws-rail-icon">
-                  <VectorIcon paths={MORE_ART} size={16} strokeWidth={2} />
-                </span>
-                {expanded ? <span className="tws-rail-label">{moreOpen ? 'Fewer kinds' : 'More kinds'}</span> : null}
-              </button>
-            </RailTip>
+            <RailPopoverButton
+              label="More kinds"
+              tip="More kinds"
+              icon={<VectorIcon paths={MORE_ART} size={16} strokeWidth={2} />}
+              expanded={expanded}
+              testId="tws-rail-more-toggle"
+              popoverLabel="More kinds"
+              variant="more"
+              align="start"
+              inRail
+            >
+              {(close) => (
+                <RailMoreKinds
+                  kinds={kinds}
+                  currentKind={browserKind}
+                  currentSource={currentSource}
+                  onOpenKind={(kind) => {
+                    close();
+                    openKind(kind);
+                  }}
+                  onOpenSource={(id) => {
+                    close();
+                    selectSource(id);
+                  }}
+                  onTogglePin={togglePin}
+                />
+              )}
+            </RailPopoverButton>
           </div>
-        ) : null}
-        {showRest ? (
-          <div id="tws-rail-rest" className="tws-rail-rest">
-            {pinnedOnly ? <hr className="tws-rail-rule" /> : null}
+        ) : (
+          <>
             <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
               {kinds.map((config) => kindButton(config, 'list'))}
             </div>
@@ -246,8 +242,8 @@ export function WorkspaceRail() {
                 />
               ))}
             </div>
-          </div>
-        ) : null}
+          </>
+        )}
       </div>
       <hr className="tws-rail-rule" />
       {/* THE THREE (Subhang, 2026-10-07): Needs you, you, expand. The avatar
@@ -277,5 +273,87 @@ export function WorkspaceRail() {
         {announcement}
       </span>
     </nav>
+  );
+}
+
+/**
+ * THE MORE KINDS CARD: every kind the rail does not pin, then the sources. A
+ * row opens it (and closes the card); a kind's pin button pins it, which moves
+ * it onto the rail and out of this list while the card stays open, so several
+ * can be pinned in a row. Focus stays in the card, on the next pin button.
+ */
+function RailMoreKinds({
+  kinds,
+  currentKind,
+  currentSource,
+  onOpenKind,
+  onOpenSource,
+  onTogglePin,
+}: {
+  kinds: readonly KindConfig[];
+  currentKind: string | null | undefined;
+  currentSource: string | null | undefined;
+  onOpenKind(kind: string): void;
+  onOpenSource(sourceId: string): void;
+  onTogglePin(config: KindConfig): boolean;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  const pin = (config: KindConfig, index: number) => {
+    onTogglePin(config);
+    window.setTimeout(() => {
+      const buttons = list.current?.querySelectorAll<HTMLElement>('.tws-rail-more-pin');
+      const next = buttons?.[Math.min(index, buttons.length - 1)];
+      (next ?? list.current)?.focus();
+    }, 0);
+  };
+  const sources: readonly BrowserSource[] = browserSources();
+  return (
+    <div ref={list} className="tws-rail-more-list" tabIndex={-1} data-testid="tws-rail-kinds">
+      {kinds.length === 0 ? <div className="tws-rail-more-empty">Every kind is pinned.</div> : null}
+      {kinds.map((config, index) => (
+        <div key={config.kind} className="tws-rail-more-row">
+          <button
+            type="button"
+            className="tws-menu-row tws-rail-more-open"
+            data-kind={config.kind}
+            aria-current={config.kind === currentKind ? 'true' : undefined}
+            onClick={() => onOpenKind(config.kind)}
+          >
+            <KindIcon kind={config.kind} size={16} />
+            <span className="tws-rail-more-label">{config.labelPlural}</span>
+          </button>
+          <button
+            type="button"
+            className="tws-icon-btn tws-rail-more-pin"
+            aria-label={`Pin ${config.labelPlural}`}
+            title={`Pin ${config.labelPlural} to the rail`}
+            data-pin={config.kind}
+            onClick={() => pin(config, index)}
+          >
+            <VectorIcon paths={RAIL_PIN_ART} size={16} strokeWidth={1.4} />
+          </button>
+        </div>
+      ))}
+      {sources.length > 0 ? (
+        <>
+          <hr className="tws-rail-more-rule" />
+          <div role="group" aria-label="Sources" data-testid="tws-rail-sources">
+            {sources.map((source) => (
+              <button
+                key={source.id}
+                type="button"
+                className="tws-menu-row tws-rail-more-open"
+                data-source={source.id}
+                aria-current={source.id === currentSource ? 'true' : undefined}
+                onClick={() => onOpenSource(source.id)}
+              >
+                <VectorIcon paths={source.art} size={16} />
+                <span className="tws-rail-more-label">{source.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }

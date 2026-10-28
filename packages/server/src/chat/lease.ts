@@ -31,6 +31,11 @@ export class ChatPhaseTimeoutError extends Error {
   }
 }
 
+/** A named startup step ran out of time; `step` is safe to show the human. */
+export class StepTimeoutError extends Error {
+  constructor(readonly step: string) { super(`${step} timed out`); }
+}
+
 /** `operation` names the step for the thrown message, or builds the error itself. */
 export async function deadline<T>(promise: Promise<T>, milliseconds: number,
   operation: string | (() => Error)): Promise<T> {
@@ -38,7 +43,7 @@ export async function deadline<T>(promise: Promise<T>, milliseconds: number,
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(typeof operation === 'function'
-        ? operation() : new Error(`${operation} timed out`)), milliseconds);
+        ? operation() : new StepTimeoutError(operation)), milliseconds);
     })]);
   } finally { if (timer) clearTimeout(timer); }
 }

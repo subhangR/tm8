@@ -1,7 +1,7 @@
 /*
  * Workspace view layout (Spec A §3, design log §1–§3). Tokens only; sizes on
- * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-card),
- * raised (--pn-card + hairline + shadow).
+ * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-x-page-bg:
+ * --pn-card in light, --pn-paper in dark), raised (--pn-card + hairline + shadow).
  */
 .tws-root {
   /* The icon column is always 48px; the expanded rail (R36) widens to 200px
@@ -14,10 +14,11 @@
      every control in it a 28px box 2px from each edge (labels share y = 16). */
   --tws-header-h: 32px;
   --tws-band-ctl: calc(var(--tws-header-h) - 4px);
-  /* The band sits a clear step darker than the --pn-card content plane, so
-     the active tab — --pn-card, joined to the content — reads as selected
-     (task 01a11573: "white, and the tabs a tad bit darker"). Hover and press
-     step darker again. Dark keeps the --pn-paper band it already had. */
+  /* The band sits a clear step darker than the content plane
+     (--pn-x-page-bg), so the active tab — the same plane, joined to the
+     content — reads as selected (task 01a11573: "white, and the tabs a tad
+     bit darker"). Hover and press step darker again. Dark uses the chrome's
+     --pn-surface, the one step below its --pn-paper page. */
   --tws-band: var(--pn-active);
   --tws-band-hover: color-mix(in srgb, var(--pn-active), var(--pn-line-2) 40%);
   --tws-band-press: var(--pn-line-2);
@@ -223,7 +224,7 @@
 }
 .cv2-root[data-theme='dark'] .tws-root,
 [data-theme='dark'] .cv2-root .tws-root {
-  --tws-band: var(--pn-paper);
+  --tws-band: var(--pn-surface);
   --tws-band-hover: var(--pn-active);
   --tws-band-press: var(--pn-line);
   --tws-band-line: var(--pn-line);
@@ -250,7 +251,7 @@
   color: var(--pn-ink-2);
 }
 .tws-tab[data-active] {
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   color: var(--pn-ink);
 }
 .tws-tab-main {
@@ -311,11 +312,6 @@
 .tws-rail-top::-webkit-scrollbar {
   display: none;
 }
-/* The pinned-only rail's folded rest (`tm8.ui.navigator = 'rail'`): a wrapper
-   for the fold alone, so its rules and groups keep the top's own 12px gaps. */
-.tws-rail-rest {
-  display: contents;
-}
 /* The space menu hangs out of the rail over the panel: the rail must not
    clip it (its scrolling top group keeps its own clip). */
 .tws-rail[data-pinned-only] {
@@ -363,8 +359,7 @@
 .tws-rail[data-pinned-only] .tws-rail-group {
   gap: var(--pn-space-2);
 }
-.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule,
-.tws-rail[data-pinned-only] .tws-rail-rest > .tws-rail-rule {
+.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule {
   margin-block: var(--pn-space-1);
 }
 .tws-rail-group,
@@ -710,7 +705,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   overflow: hidden;
 }
 .tws-entity {
@@ -964,6 +959,52 @@
   border-radius: var(--pn-r-sm);
   box-shadow: var(--pn-sh-pop);
   animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+/* THE MORE KINDS CARD (pinned-only rail): one menu row per unpinned kind,
+   its pin button at the right edge, then the sources under a hairline. */
+.tws-rail-pop[data-pop='more'] {
+  width: 260px;
+  padding: var(--pn-space-1);
+}
+.tws-rail-more-list {
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.tws-rail-more-row {
+  display: flex;
+  align-items: center;
+}
+.tws-rail-more-open {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tws-rail-more-open[aria-current='true'] {
+  background: var(--pn-active);
+}
+.tws-rail-more-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-rail-more-pin {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.tws-rail-more-row:hover .tws-rail-more-pin,
+.tws-rail-more-pin:focus-visible {
+  color: var(--pn-ink-2);
+}
+.tws-rail-more-rule {
+  width: 100%;
+  height: 0;
+  margin: var(--pn-space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+}
+.tws-rail-more-empty {
+  padding: var(--pn-space-2);
+  color: var(--pn-ink-3);
 }
 /* THE ACCOUNT CARD (RailUser): status on top, then the account menu inline,
    which brings its own rows and padding. */

@@ -9,6 +9,10 @@ import {
   chatCredentialProviderForModel,
   chatCredentialChoice,
   withChatCredentialChoice,
+  SetChatMcpSelectionsInputSchema,
+  ChatMcpSelectionsResultSchema,
+  McpSelectionsSchema,
+  type ChatMcpSelectionsResult,
   type ChatCredentialIntent,
   type ChatCredentialSelection,
   type LaunchModelEffort,
@@ -26,6 +30,7 @@ import type { HandlerRegistry } from '../facade/registry.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import { claimsFor, requireUuidParam } from '../facade/context.js';
 import { loadEntitySummariesByIds } from '../facade/entity-read.js';
+import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import type { OperationHandler } from '../http/types.js';
 import type { ChatOrchestrator } from './orchestrator.js';
 import { refuseChatRuntimeBearer } from './scope.js';
@@ -301,6 +306,97 @@ function interruptChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHan
 }
 
 /**
+ * `chat.setMcpSelections` (G4, §5.3) — change a LIVE thread's connectors.
+ *
+ * Before this, a thread's selection was written once at creation
+ * (`save_chat_mcp_selections`, `on conflict do nothing`) and `compose` rebinds
+ * with `resume: true`, so the first list always won: there was no way to turn a
+ * connector on in a thread that had already sent a message.
+ *
+ * It needs no chat RUNTIME. The selection is a row, and the change takes effect
+ * at the next turn's compose, so this works on a node whose runtime is absent
+ * or asleep — unlike `interrupt`, which has nothing to interrupt without one.
+ */
+function setChatMcpSelections(facade: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const input = SetChatMcpSelectionsInputSchema.parse(ctx.body);
+    const auth = claimsFor(await facade.owner(), ctx);
+    if (!auth.identityId) throw new CollabError('unauthenticated', 'authentication is required');
+    // `update_chat_mcp_selections` is the authority: human auth kind, no link
+    // caller, the chat's own configurer, membership of the chat's Space, and
+    // every named connector live in that same Space (345). It is not re-checked
+    // here, because a second copy of the rule is a second place to be wrong.
+    const stored = await facade.db.tx(auth, q => q.rpc<ChatMcpSelectionsResult>(
+      'update_chat_mcp_selections',
+      [chatId, input.mcpSelections === null ? null : JSON.stringify(input.mcpSelections)],
+    ));
+    return ChatMcpSelectionsResultSchema.parse(stored);
+  };
+}
+
+/**
+ * `chat.getMcpSelections` (§10.4) — read the stored selection back.
+ *
+ * §10.4's sheet has to open already knowing whether this thread is on Space
+ * defaults or on a human's own list, because the header says which and the
+ * toggles start from it. Since 354 that distinction is the ROW'S EXISTENCE
+ * (S21a): `bind` no longer writes resolved defaults for a chat key, so a null
+ * answer means defaults and a list means a human chose it. There was no door
+ * to ask through — the write answers its own caller and nothing answers the
+ * client that merely opened the thread.
+ *
+ * THREE GUARDS, and each closes something the RPC does not.
+ *
+ * 1. `requireHumanSession` AT THE REGISTRATION. Its sibling write needs no such
+ *    wrapper because `update_chat_mcp_selections` calls
+ *    `internal.require_human_auth_kind()` itself; `read_mcp_launch_selections`
+ *    (298) checks `internal.entity_readable` and NOTHING else, so an agent
+ *    session holding a readable chat id would be answered. A connector list is
+ *    a statement about which of a person's accounts a thread may spend, and it
+ *    is read by people, in a sheet.
+ *
+ * 2. THE LINK REFUSAL, here rather than in the wrapper: `isHumanAuthKind`
+ *    already excludes the `link` auth kind, but a `browser` session that
+ *    entered through a Space link carries `via_link` with a human kind, and
+ *    §10.4's own state for that case is "chats opened through a Space link
+ *    don't get connectors". A surface that refuses to SHOW the list must not
+ *    have a door beside it that hands the list over.
+ *
+ * 3. `:id` MUST BE A CHAT. `read_mcp_launch_selections` is keyed by session id
+ *    and answers for a WORK SESSION key just as readily (that is how `bind`
+ *    reads a resumed session's pinned list). Without this check the operation
+ *    would quietly be a session-selection read mounted on a chat path, which
+ *    is both a lie about what it is and a second, unreviewed door onto launch
+ *    rows. The lookup runs under the caller's own claims, so RLS decides what
+ *    is visible and an unreadable chat is `not_found`, not `forbidden` —
+ *    the same answer `chat.interrupt` gives, for the same reason.
+ */
+function getChatMcpSelections(facade: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const auth = claimsFor(await facade.owner(), ctx);
+    if (!auth.identityId) throw new CollabError('unauthenticated', 'authentication is required');
+    if (auth.viaLinkId) {
+      throw new CollabError('forbidden', 'chats opened through a Space link do not get connectors');
+    }
+    const stored = await facade.db.tx(auth, async q => {
+      const [visible] = await q.query<{ entity_id: string }>(
+        `select c.entity_id from public.chats c join public.entities e on e.id=c.entity_id
+          where c.entity_id=$1 and e.deleted_at is null`, [chatId]);
+      if (!visible) throw new CollabError('not_found', 'chat not found');
+      return q.rpc<unknown>('read_mcp_launch_selections', [chatId]);
+    });
+    // `null` is the ANSWER, not a missing value: this thread is on the Space's
+    // defaults, which are resolved fresh at every turn (S21b).
+    return ChatMcpSelectionsResultSchema.parse({
+      chatId,
+      mcpSelections: stored == null ? null : McpSelectionsSchema.parse(stored),
+    });
+  };
+}
+
+/**
  * Every chat operation is human-only.
  *
  * `credentials.ts` states the reasoning at length and it holds identically
@@ -349,5 +445,10 @@ export function registerChatHandlers(
     'chat.setModel': humanOnly(setChatModel(facade, chat)),
     'chat.setCredentials': humanOnly(setChatCredentials(facade, chat)),
     'chat.interrupt': humanOnly(interruptChat(facade, chat)),
+    'chat.setMcpSelections': humanOnly(setChatMcpSelections(facade)),
+    // `requireHumanSession` and not this file's `humanOnly`: see the handler.
+    // Both wrappers apply — the family's refusal of a runtime bearer, and the
+    // human-kind gate the read's RPC does not carry.
+    'chat.getMcpSelections': requireHumanSession(humanOnly(getChatMcpSelections(facade))),
   });
 }

@@ -22,6 +22,7 @@ import type {
   AgentRuntime,
   ResolveChatLaunchConfig,
   ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
   ChatLaunchConfigInput,
   StartAgentThreadInput,
   TurnItem,
@@ -111,6 +112,13 @@ export interface ChatOrchestratorOptions {
   readonly publisher: ChatTurnPublisher;
   readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /**
+   * §5.3 / S21c. Read before every turn so a selection that moved since the
+   * live child started closes it. Optional, and a composition that omits it
+   * gets exactly the old behaviour: `mcpSelectionFingerprint(undefined)` is a
+   * constant, so it can never differ from itself.
+   */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
   readonly onError?: (error: unknown) => void;
   /**
    * Node-scoped claims for the boot liveness sweep (PR188 review F2). Only the
@@ -124,6 +132,28 @@ function credentialFingerprint(env: Readonly<Record<string, string>> | undefined
   return createHash('sha256').update(
     JSON.stringify(Object.entries(env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
   ).digest('hex');
+}
+
+/**
+ * The connectors a live child was started with, as one comparable value (§5.3).
+ *
+ * Sorted, so the resolver's order never reads as a change, and the account is
+ * part of it: moving a connector from one connected Google account to another
+ * is a different `--mcp-config` even though the same connector stays on.
+ *
+ * `undefined` (no resolver injected) and `null` (the resolver could not find
+ * out) both fold to the SAME constant. That is what keeps the comparison a
+ * no-op for a composition without the port, and what makes a resolver that
+ * starts failing cost one restart rather than one per turn.
+ */
+function mcpSelectionFingerprint(
+  selections: readonly { readonly serverId: string; readonly credentialId?: string }[] | null | undefined,
+): string {
+  if (!selections) return 'unresolved';
+  return selections
+    .map(s => `${s.serverId}:${s.credentialId ?? ''}`)
+    .sort((a, b) => a.localeCompare(b))
+    .join(',');
 }
 
 function claims(identityId: string): DbClaims {
@@ -342,6 +372,16 @@ export class ChatOrchestrator {
     // derived from the model by the launch catalog, so one model is one
     // provider and comparing both would add a field that cannot disagree.
     readonly model: string;
+    /**
+     * §5.3. The connectors this child was actually started with. Recorded for
+     * the same reason `model` is: `chat.setMcpSelections` moves the row, and an
+     * admin flipping `defaultOn` or a human connecting an account moves what
+     * the defaults resolve to, while this process keeps a child running on the
+     * `--mcp-config` and `--allowed-tools` it booted with. Both are startup
+     * values on a running process, so noticing the difference is the only way
+     * the change can ever arrive.
+     */
+    readonly mcpSelectionFingerprint: string;
   }>();
 
   private readonly activeHarnesses=new Map<string,ActiveChatHarness>();
@@ -913,6 +953,12 @@ export class ChatOrchestrator {
     // token mint stays cold-start-only so reuse never invalidates a live token.
     const credentialEnv = await this.options.resolveCredentialEnv?.(credentialInput);
     const fingerprint = credentialFingerprint(credentialEnv);
+    // Resolved, never bound: `bind` needs a fresh `agent_runtime` token and that
+    // mint replaces the live child's own token, so asking `bind` whether to
+    // rebind would revoke the credential of the child it means to keep.
+    const mcpFingerprint = mcpSelectionFingerprint(
+      await this.options.resolveMcpSelection?.(credentialInput),
+    );
     const live = this.liveChats.get(turn.chatId);
     // A live child is reused only when NOTHING that was fixed at spawn has
     // moved. Authorization was the original reason (a different human must not
@@ -927,6 +973,7 @@ export class ChatOrchestrator {
       && live.authorizationAuthKind === authorizationAuthKind
       && live.model === turn.model
       && live.credentialFingerprint === fingerprint
+      && live.mcpSelectionFingerprint === mcpFingerprint
     ) return live.threadId;
     // True when we just tore a live child down, whatever the reason. It is not
     // named for the reason because the CONSEQUENCE is what the next line needs:
@@ -985,6 +1032,7 @@ export class ChatOrchestrator {
       authorizationAuthKind,
       model: turn.model,
       credentialFingerprint: fingerprint,
+      mcpSelectionFingerprint: mcpFingerprint,
       credentialInput,
     });
     return started.threadId;

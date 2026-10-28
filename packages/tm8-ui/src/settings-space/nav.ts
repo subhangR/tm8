@@ -86,6 +86,10 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
           space('account', { keywords: ['name', 'display name', 'avatar', 'identity', 'username'] }),
           space('my-sessions', { keywords: ['sessions', 'sign out', 'devices', 'logout', 'browsers'] }),
           space('credentials', { keywords: ['api key', 'keys', 'token', 'claude', 'codex', 'github', 'login', 'credentials'] }),
+          /* §10.7: a token acts as the member and spans the Spaces they chose,
+             so it is an ACCOUNT row — it is minted outside any one Space, and a
+             Space admin cannot revoke it (§5.5: their lever is the membership). */
+          space('mcp-tokens', { keywords: ['token', 'claude desktop', 'cursor', 'external client', 'bearer'] }),
           space('space-links', { keywords: ['links', 'other spaces', 'connect space'] }),
           space('models', { scope: 'browser', keywords: ['model', 'llm', 'catalog', 'launch'] }),
         ],

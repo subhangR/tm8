@@ -341,12 +341,14 @@ describe('chat launch composition', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-connectors-'));
     const serverId = '019f0000-0000-7000-8000-000000000404';
     const credentialId = '019f0000-0000-7000-8000-000000000405';
-    const name = `connector_${serverId.replaceAll('-', '')}`;
+    // §4.2: the entry name is the connector's server key, which `bind` derives
+    // from the definition it resolved, so the model reads `mcp__gmail__*`.
+    const name = 'gmail';
     let bound: unknown;
     const resolve = createChatLaunchConfigResolver({
       mcpBindings: { bind: async (claims, input) => {
         bound = { claims, input };
-        return [{ serverId, credentialId }];
+        return [{ serverId, credentialId, serverKey: 'gmail' }];
       } },
       db: fakeDb(), dataDir, baseUrl: 'http://127.0.0.1:4610', mcpCliPath: '/tmp/tm8-mcp.js',
     });

@@ -72,6 +72,7 @@ import {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { assignMcpServerKeys } from '@tm8/contract';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -157,6 +158,51 @@ export function codexLoopbackConfigArgs(): string[] {
   return CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
 }
 
+/**
+ * Turn OFF Codex's start-up self-update. NOT a preference — without it a codex
+ * session on this deployment cannot survive its own boot.
+ *
+ * WHAT IT DOES WHEN LEFT ON. Codex checks GitHub releases and the npm registry
+ * on TUI start, caches the answer in `$CODEX_HOME/version.json`, and — if the
+ * running binary is behind — spawns `npm install @openai/codex` AS A DIRECT
+ * CHILD and tears its own TUI down. tm8's PTY sees its child exit and records
+ * the session `failed`. The agent never reads its brief.
+ *
+ * MEASURED 2026-08-22 on this node (codex 0.146.0 installed, 0.149.0 on npm):
+ *   - session 01a028e2 (prod): startedAt 09:52:03.617 → exitedAt 09:52:05.303,
+ *     `failed` in 1.686s, no deliverable. `version.json` was rewritten at
+ *     09:52:01.599Z by that same process with `"latest_version":"0.149.0"`.
+ *   - reproduced twice through `execution.spawn`. `ps -eo pid=,ppid=,args=`
+ *     caught `npm install @openai/codex` with ppid = the codex process, inside
+ *     the session PTY's foreground process group.
+ *   - with this override: the same spawn was still alive and `idle` at 141s,
+ *     zero updater children, system prompt and task prompt both delivered.
+ *
+ * WHY THIS KEY AND NOT `--disable in_app_updates`. That feature flag looked like
+ * the gate and is not: `codex --disable in_app_updates features list` does report
+ * `in_app_updates … false`, and a session spawned with it set STILL forked the
+ * updater and STILL died (session 01a02948, 6.3s). `check_for_update_on_startup`
+ * is a top-level `ConfigToml` field and is the one that actually holds. Verified
+ * accepted by the installed CLI under `--strict-config`.
+ *
+ * WHY THE COMMAND LINE AND NOT `$CODEX_HOME/config.toml`. The config file is
+ * shared node state that tm8 itself appends project-trust entries to and that an
+ * operator may edit; a launch invariant that a session's own agent could rewrite
+ * is not an invariant. The flag travels with the invocation, so it also reaches
+ * resume, which retains these arguments verbatim.
+ *
+ * The unattended-agent argument is the same one behind `--ask-for-approval`
+ * below: a server-hosted PTY has nobody at it to supervise a self-upgrade, and
+ * the node's Codex install lives in root-owned `/usr/lib/node_modules`, so the
+ * upgrade this kills could never have succeeded anyway.
+ */
+export const CODEX_DISABLE_STARTUP_UPDATE_CHECK = 'check_for_update_on_startup=false';
+
+/** Expand the start-up self-update kill switch into its exact CLI argv. */
+export function codexUpdateCheckConfigArgs(): string[] {
+  return ['-c', CODEX_DISABLE_STARTUP_UPDATE_CHECK];
+}
+
 const PERMISSION_MODES: readonly PermissionMode[] = [
   'auto',
   'acceptEdits',
@@ -216,8 +262,15 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
 
 /** The resolved launch posture — one persona, one request, three links. */
 export interface ResolvedLaunchConfig {
-  /** Authorized references only; provider secrets never enter this object. */
-  mcpSelections?: Array<{serverId: string; credentialId?: string}>;
+  /**
+   * Authorized references only; provider secrets never enter this object.
+   *
+   * `serverKey` is the connector's tool prefix (§4.2), written by
+   * `McpSessionBindings.bind` from the definition it resolved. Optional because
+   * a hand-built launch config (tests, embedders) has no resolver behind it;
+   * such a selection keeps the opaque `connector_<hex>` bridge name.
+   */
+  mcpSelections?: Array<{serverId: string; credentialId?: string; serverKey?: string}>;
   mode: AgentMode;
   model: string | null;
   agentTool: string;
@@ -1106,6 +1159,12 @@ export function buildCodexArgs(
     args.push('-c', `mcp_servers.${name}.env_vars=["TM8_AGENT_TOKEN","TM8_SESSION_ID","TM8_BASE_URL"]`);
   }
   if (launch.model) args.push('--model', launch.model);
+
+  // FIRST, and in EVERY posture. The start-up self-update is not gated on the
+  // approval or sandbox policy chosen below, so a bypass session is exactly as
+  // dead as a confined one without this. See the constant's own comment for the
+  // measurement.
+  args.push(...codexUpdateCheckConfigArgs());
 
   // Codex's approval prompts are the SAME unattended-hang hazard the Claude
   // branch documents. tm8's project trust gate is the human authorization, so
@@ -2154,6 +2213,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null;
     manifest.launch.harness = laneHarnessRecord(launch, plugins, skillPlan?.record ?? null);
   }
+  // Outside the `input.harness` branch on purpose: the connector record is not
+  // a harness fact. Both surfaces get exactly the launch's selection (D4), and
+  // a codex lane gets one too.
+  const connectors = connectorManifestRecord(launch.mcpSelections);
+  if (connectors.length > 0) manifest.launch.connectors = connectors;
 
   // The launch-context audit (§6): ids and enums only, after every trim.
   manifest.context = {
@@ -2206,12 +2270,37 @@ export function resolveSessionTitle(
   return `${context.teamMember.name} session`;
 }
 
-/** Internal bridge configs contain UUIDs only, never raw definitions or credential material. */
+/**
+ * Internal bridge configs contain UUIDs only, never raw definitions or
+ * credential material.
+ *
+ * The ENTRY NAME is the connector's server key (§4.2), so the model reads
+ * `mcp__gmail__search_messages`. `assignMcpServerKeys` is the one rule that
+ * names them, collisions included; `--connector <id>` stays a UUID, so the
+ * config still holds ids only.
+ */
 export function connectorBridgeConfig(selections: ResolvedLaunchConfig['mcpSelections']): Record<string,{command:string;args:string[]}> {
   const result: Record<string,{command:string;args:string[]}> = {};
+  const keys = assignMcpServerKeys(selections ?? []);
   for (const selection of selections ?? []) {
     if (!/^[0-9a-f-]{36}$/i.test(selection.serverId)) throw new Error('Invalid MCP connector reference');
-    result[`connector_${selection.serverId.replaceAll('-', '')}`] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
+    result[keys.get(selection.serverId)!] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
   }
   return result;
+}
+
+/**
+ * `manifest.launch.connectors`: the key -> id map the launcher was given (§4.2),
+ * sorted by key. Ids and names only — a bridge entry's argv is in
+ * `launch.command` and its credential is never anywhere. It is recorded for
+ * BOTH harness surfaces, because connectors do not depend on the surface (D4),
+ * and it is what the session debug view reads to say which tool prefix belongs
+ * to which connector (§10.6).
+ */
+export function connectorManifestRecord(
+  selections: ResolvedLaunchConfig['mcpSelections'],
+): { serverKey: string; serverId: string }[] {
+  const keys = assignMcpServerKeys(selections ?? []);
+  return [...keys].map(([serverId, serverKey]) => ({ serverKey, serverId }))
+    .sort((a, b) => (a.serverKey < b.serverKey ? -1 : a.serverKey > b.serverKey ? 1 : 0));
 }

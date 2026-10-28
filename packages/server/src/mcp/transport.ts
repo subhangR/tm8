@@ -5,7 +5,7 @@ import { isIP, type LookupFunction } from 'node:net';
 import { resolvePublicAddresses } from '@tm8/mcp';
 
 export interface McpHttpResult { status: number; headers: Record<string,string>; body: string }
-export interface McpHttpInput { url: string; method: 'GET'|'POST'|'DELETE'; headers?: Record<string,string>; body?: string }
+export interface McpHttpInput { url: string; method: 'GET'|'POST'|'PATCH'|'DELETE'; headers?: Record<string,string>; body?: string }
 /** Policy must come from the approved definition, never request input. */
 export async function mcpHttp(input: McpHttpInput, allowPrivateNetwork = false): Promise<McpHttpResult> {
   const url = new URL(input.url);

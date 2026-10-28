@@ -141,6 +141,28 @@ describe('✦ Ask Jev in the new-chat composer', () => {
     await waitFor(() => expect(jev.inputs[0]?.subjectId).toBe(ABOUT));
   });
 
+  it('a picked project is never the subject: it is not an entity, so the server would refuse it', async () => {
+    const jev = answeringPort(GROUPS);
+    const { port } = createChatHomeFixturePort();
+    const withProjects = { ...port, listProjects: async () => [{ id: 'p-repo' as never, name: 'Repo' }] };
+    const view = render(
+      <ChatHomeScreen
+        port={withProjects}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        coldStart="composer"
+        jev={chatJev(jev)}
+        newChatSeed={{ projectId: 'p-repo' as never }}
+      />,
+    );
+    const box = await waitFor(() => view.getByLabelText('Message the chat agent') as HTMLTextAreaElement);
+    await waitFor(() => expect(view.queryByTestId('tch-compose-refusal')).toBeNull());
+    type(box, 'Fix the invite flow');
+    fireEvent.click(view.getByTestId('jev-entry-button'));
+    await waitFor(() => expect(jev.inputs).toHaveLength(1));
+    expect(jev.inputs[0]?.subjectId).toBe(HOME);
+  });
+
   it('changes nothing until Apply; applied picks go out through chat.start and the opening message', async () => {
     const { view, box, controls } = await renderChat(chatJev(answeringPort(GROUPS)));
     type(box, 'Fix the invite flow');

@@ -27,6 +27,7 @@ import { CraftScreen } from './CraftScreen';
 import { fixtureCraftSource } from './craft-source';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import { blueprintView } from './blueprint-model';
+import { DENSE_CRAFT } from './dense-craft.fixture';
 
 const SPACE = FIXTURE_SPACE_ID;
 
@@ -213,5 +214,23 @@ describe('the canvas keyboard', () => {
     const viewport = view.getByTestId('crf-viewport');
     const describedBy = viewport.getAttribute('aria-describedby')!;
     expect(document.getElementById(describedBy)?.textContent).toContain('Outline and Table');
+  });
+});
+
+describe('the Lines switch', () => {
+  it('shows which edge detail is drawn and asks the host for another', () => {
+    const view = blueprintView(DENSE_CRAFT, undefined, { edgeDetail: 'reduced' });
+    const onEdgeDetail = vi.fn();
+    const r = render(<BlueprintCanvas view={view} ariaLabel="plan" onEdgeDetail={onEdgeDetail} />);
+    const lines = r.getByTestId('crf-edge-detail');
+    expect(within(lines).getByRole('radio', { name: 'Reduced' }).getAttribute('aria-checked')).toBe('true');
+    expect(lines.getAttribute('title')).toContain(`${view.lines.length} of ${DENSE_CRAFT.edges.length - 5} lines drawn`);
+    fireEvent.click(within(lines).getByRole('radio', { name: 'All' }));
+    expect(onEdgeDetail).toHaveBeenCalledWith('all');
+  });
+
+  it('is absent when the host offers no choice', () => {
+    const r = render(<BlueprintCanvas view={blueprintView(PLAN)} ariaLabel="plan" />);
+    expect(r.queryByTestId('crf-edge-detail')).toBeNull();
   });
 });

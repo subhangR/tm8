@@ -21,6 +21,7 @@ import {
   json,
   literal,
   ok,
+  postMessageSql,
   rootClaims,
   runAsync,
   scalar,
@@ -63,13 +64,13 @@ test('two members editing one task at the same version: one wins, the other gets
   // optimistic concurrency is for.
   const results = await Promise.all([
     runAsync(
-      `select public.update_task_content(${uuid(task.id)}, 1, null, 'renamed by A', null, null, null,
-         null, null, null, null, false, ${literal(cmid('race-edit-a'))})`,
+      `select public.update_task_content(${uuid(task.id)}, 1, p_title => 'renamed by A',
+         p_client_mutation_id => ${literal(cmid('race-edit-a'))})`,
       { claims: w.claimsA, verbose: true },
     ),
     runAsync(
-      `select public.update_task_content(${uuid(task.id)}, 1, null, 'renamed by C', null, null, null,
-         null, null, null, null, false, ${literal(cmid('race-edit-c'))})`,
+      `select public.update_task_content(${uuid(task.id)}, 1, p_title => 'renamed by C',
+         p_client_mutation_id => ${literal(cmid('race-edit-c'))})`,
       { claims: claimsC, verbose: true },
     ),
   ]);
@@ -244,13 +245,11 @@ test('two members posting into one thread concurrently: both land, both ordered'
 
   const results = await Promise.all([
     runAsync(
-      `select public.post_message(${uuid(task.id)}, 'from A', null, null, '[]'::jsonb, '[]'::jsonb,
-         ${literal(cmid('race-msg-a'))})`,
+      postMessageSql(task.id, 'from A', { clientMutationId: cmid('race-msg-a') }),
       { claims: w.claimsA, verbose: true },
     ),
     runAsync(
-      `select public.post_message(${uuid(task.id)}, 'from C', null, null, '[]'::jsonb, '[]'::jsonb,
-         ${literal(cmid('race-msg-c'))})`,
+      postMessageSql(task.id, 'from C', { clientMutationId: cmid('race-msg-c') }),
       { claims: claimsC, verbose: true },
     ),
   ]);

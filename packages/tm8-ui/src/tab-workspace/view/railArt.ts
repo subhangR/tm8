@@ -17,3 +17,6 @@ export const RAIL_BELL_ART: readonly string[] = [
  * The `member` kind's mark, not a private copy of it — you ARE a member.
  */
 export const RAIL_USER_ART: readonly string[] = KIND_ART.member;
+
+/** A pushpin: a More kinds row's pin button (the mobile drawer's Pin kinds mark). */
+export const RAIL_PIN_ART: readonly string[] = ['M5.5 2.75h5', 'M6.5 2.75v3.5L4.75 8.75h6.5L9.5 6.25v-3.5', 'M8 8.75v4.5'];

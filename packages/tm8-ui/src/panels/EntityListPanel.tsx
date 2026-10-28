@@ -97,7 +97,7 @@ import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges'
 import { CategoryGlyph, TabGlyph, hasCategoryGlyph, hasTabGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
-import { type LinkedPullRequestFacts } from '../pull-requests';
+import { LinkedPullRequestChips, badgePullRequestFactsOf, mergeLinkedPullRequests, type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { ChildCountToggle } from './list/ChildCountBadge';
 import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
@@ -244,6 +244,12 @@ export interface EntityListPanelProps {
    */
   rowsFor: (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
   /**
+   * One host-supplied fact under a row's title, from a read the summary does
+   * not carry (a project's working folder and trust). Null for a row with
+   * nothing to add, so its height is unchanged.
+   */
+  rowNoteOf?: (row: EntitySummary) => ReactNode | null;
+  /**
    * Rows of ANOTHER kind, for the rows this list's rows launched (331,
    * `list.launches`: the chat list's sessions). Absent ⇒ nothing nests.
    */
@@ -288,16 +294,14 @@ export interface EntityListPanelProps {
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
   /**
-   * STILL DECLARED, NO LONGER READ BY A TILE (task 01a1469f). Both fed chips
-   * §6 cut: `linkedSessionsOf` the leading sessions chip, `linkedPullRequestsOf`
-   * the PR chips. They stay on the props because four hosts pass them
-   * (`WorkspaceView`, `Browser`, `EntityView`, `ChannelView`) and
-   * `linkedPullRequestsOf` is live data the DETAIL panel still renders —
-   * removing them here would be a four-file change that buys nothing and
-   * would have to be undone the day a row wants either fact again.
+   * `linkedSessionsOf` is STILL DECLARED, NO LONGER READ BY A TILE (task
+   * 01a1469f): it fed the leading sessions chip the §6 cut removed. It stays
+   * because four hosts pass it (`WorkspaceView`, `Browser`, `EntityView`,
+   * `ChannelView`).
    *
-   * Named as unread rather than left looking wired: a prop a reader assumes
-   * drives something is worse than one that says it does not.
+   * `linkedPullRequestsOf` IS read again (task 01a18209): a session row's PR
+   * chips merge it with the row's own `badges.pullRequests`, so a PR the
+   * session inherited from a task it worked on still gets its chip.
    */
   linkedSessionsOf?: (id: string) => readonly EntitySummary[];
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
@@ -720,6 +724,9 @@ export interface BoardSnapshot {
  * its tile's top edge. Mirrors `--lp-hoverbar-rise` in panels.css.
  */
 const HOVERBAR_RISE_PX = 24;
+
+/** How many PR chips a session row draws before the PR count takes over (task 01a18209). */
+const SESSION_ROW_PR_CHIPS = 4;
 
 /**
  * WHERE THE HOVER BAR GOES on the tile under the pointer: on the top edge, or
@@ -4905,6 +4912,8 @@ export function Tile({
   );
 
   // ---- the Z1 badge vocabulary, from registry DATA ------------------------
+  const rowNote = props.rowNoteOf?.(row) ?? null;
+
   const slots = list.tile.badges
     .map((spec) => renderBadge(spec.source, row))
     .filter((slot): slot is TileSlot => slot != null);
@@ -5048,6 +5057,60 @@ export function Tile({
     <ParentCrumb parentId={parentOutside} rowTitle={row.title} onOpen={props.onSelect} />
   ) : null;
   if (sessionTree) {
+    /* EACH PR, NOT A COUNT (task 01a18209, Subhang 2026-10-28: "individual pr,
+       ... with link which opens the pr, and shows color of the pr status, like
+       previously"). The chips are the ones this row wore before the §6 cut —
+       `LinkedPullRequestChips`, octicon coloured by lifecycle beside `#number`
+       — and they take the PR count's place on the counts line, under the same
+       switches. At most SESSION_ROW_PR_CHIPS are drawn, newest link first, so
+       the row stays one line of links; past that (or past the server's cap)
+       the PR count comes back after them as the total, and is the door to the
+       rest in the detail panel. */
+    const pullRequestsShown = view.shows('counts') && !hiddenGroups.has('prs');
+    const badgePullRequests = pullRequestsShown ? badgePullRequestFactsOf(row) : [];
+    const allSessionPullRequests = pullRequestsShown
+      ? mergeLinkedPullRequests(badgePullRequests, props.linkedPullRequestsOf?.(row.id) ?? [])
+      : [];
+    const sessionPullRequests = allSessionPullRequests.slice(0, SESSION_ROW_PR_CHIPS);
+    const pullRequestsTruncated = row.badges.pullRequestsTruncated === true;
+    const morePullRequests = allSessionPullRequests.length > SESSION_ROW_PR_CHIPS || pullRequestsTruncated;
+    const countHiddenGroups = sessionPullRequests.length > 0 && !morePullRequests
+      ? new Set([...hiddenGroups, 'prs'])
+      : hiddenGroups;
+    /* The total after the chips. The `prs` counter counts what the session
+       authored or tracks; the graph can add PRs INHERITED from a task it worked
+       on, which that counter never saw. So the count is the counted set plus
+       the graph-only PRs — never fewer than the chips already drawn. */
+    const sessionCounters = morePullRequests
+      ? {
+          ...row.counters,
+          prs: Math.max(
+            row.counters.prs ?? 0,
+            pullRequestsTruncated
+              ? (row.counters.prs ?? 0) + allSessionPullRequests.length - badgePullRequests.length
+              : allSessionPullRequests.length,
+          ),
+        }
+      : row.counters;
+    const sessionCountsLine = sessionPullRequests.length > 0 || (showCounts && hasTileLinkCounts(sessionCounters, countHiddenGroups)) ? (
+      <span className="lp__session-links">
+        {sessionPullRequests.length > 0 ? (
+          /* A chip is a link to GitHub inside a selectable row: the click is
+             the chip's, not the row's. */
+          <span onClick={(event) => event.stopPropagation()}>
+            <LinkedPullRequestChips pullRequests={sessionPullRequests} placement="tile" />
+          </span>
+        ) : null}
+        {showCounts && hasTileLinkCounts(sessionCounters, countHiddenGroups) ? (
+          <TileLinkCounts
+            counters={sessionCounters}
+            entityId={row.id}
+            hiddenGroups={countHiddenGroups}
+            {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
+          />
+        ) : null}
+      </span>
+    ) : null;
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
     const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
@@ -5161,11 +5224,11 @@ export function Tile({
         /* The lane line is cut from the collapsed row (§6: the branch and the
            worktree are detail-panel facts) and so is its worktree door, which
            was the last of the inline relation accordion on this anatomy. */
-        badges={attentionLine || countsLine || hasPendingFormsChip(pendingFormsRead) ? (
+        badges={attentionLine || sessionCountsLine || hasPendingFormsChip(pendingFormsRead) ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
             <PendingFormsChip pending={pendingFormsRead} />
-            {countsLine}
+            {sessionCountsLine}
           </>
         ) : null}
         childCount={childCount}
@@ -5680,6 +5743,7 @@ export function Tile({
           line 1 holds the 29px floor — a row with counts measures ~43px and a
           row without them is unchanged, which is the §6 geometry. */}
       <AttentionTileSubtitle line={attentionLine} />
+      {rowNote ? <div className="lp__tile-note" data-testid="row-note">{rowNote}</div> : null}
       {countsLine ? <div className="lp__tile-counts">{countsLine}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}

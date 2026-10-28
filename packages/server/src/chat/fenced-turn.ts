@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { MessagePartSchema, type ChatTurnUsage } from '@tm8/contract';
 import {
-  type AttemptRef, type GenerationFence, type HarnessRegistry, type HarnessSession,
+  HarnessRuntimeError, type AttemptRef, type GenerationFence, type HarnessRegistry, type HarnessSession,
   type RuntimeConfig, type TerminalOutcome, type UsageFact,
 } from '@tm8/execution';
 import type { Db, DbClaims } from '../db/types.js';
@@ -9,7 +9,7 @@ import type { ClaimedTurn } from './orchestrator.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type { createChatPreparedLaunchResolver, PreparedChatLaunch } from './harness-composition.js';
 import { historyDigest, projectHistory, readPortableHistory } from './continuity.js';
-import { ChatLeaseLostError, ChatPhaseTimeoutError, TurnLease, deadline, retryTransient } from './lease.js';
+import { ChatLeaseLostError, ChatPhaseTimeoutError, StepTimeoutError, TurnLease, deadline, retryTransient } from './lease.js';
 
 export interface TurnAuthority {
   identityId: string; authKind: string; authSessionId: string | null; memberId: string;
@@ -70,7 +70,56 @@ export interface FencedTurnOptions {
     lease?: number; leaseSafety?: number; heartbeatRetry?: number };
 }
 
-export { deadline } from './lease.js';
+export { StepTimeoutError, deadline } from './lease.js';
+
+/**
+ * Postgres rolled the whole transaction back and asks the caller to run it
+ * again. Every fenced RPC is one transaction, so a retry is exact: nothing of
+ * the losing attempt is left behind, and part appends are idempotent by event id.
+ *
+ * Deadlocks are not hypothetical here. Posting a message to a chat takes the
+ * space's event-seq row (the message's event trigger) and THEN the chat row (to
+ * queue the turn); a running turn's fenced write takes the chat row and THEN the
+ * event-seq row (a tool_call part's activity event). A message that arrives
+ * while the agent is mid-tool deadlocks with it, and before this retry the turn
+ * was the victim: it settled as `delivery_unknown` about a second later.
+ */
+const RETRYABLE_SQLSTATES=new Set(['40P01','40001']);
+const FENCED_RPC_ATTEMPTS=4;
+export function sqlStateOf(error: unknown): string | undefined {
+  if (!error || typeof error!=='object') return undefined;
+  const details=(error as {details?:{sqlstate?:unknown}}).details;
+  if (typeof details?.sqlstate==='string') return details.sqlstate;
+  const code=(error as {code?:unknown}).code;
+  return typeof code==='string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
+}
+
+const clip=(text: string, max=500) => text.length>max ? `${text.slice(0,max)}…` : text;
+/**
+ * The operator's view of why a turn failed, stored in `chat_turns.failure.detail`.
+ * Never rendered as the thread's message (that stays the short `message`), so
+ * the raw error text is kept, only bounded.
+ */
+export function describeError(error: unknown, depth=0): Record<string, unknown> {
+  if (!(error instanceof Error)) return {message:clip(String(error))};
+  const cause=depth<3 && error.cause!==undefined ? {cause:describeError(error.cause,depth+1)} : {};
+  const sqlstate=sqlStateOf(error);
+  const code=(error as {code?:unknown}).code;
+  return {name:error.name,message:clip(error.message),
+    ...(typeof code==='string' ? {code} : {}),
+    ...(sqlstate ? {sqlstate} : {}),
+    ...(error instanceof HarnessRuntimeError ? {harness:{code:error.failure.code,stage:error.failure.stage,
+      disposition:error.failure.disposition}} : {}),...cause};
+}
+
+/** What the thread says when a turn ends without an answer and without a reported reason. */
+function terminalFailure(outcome: TerminalOutcome, evidence: string): {code:string;message:string} {
+  if (outcome==='interrupted') return {code:'interrupted',message:'Stopped before the agent finished.'};
+  if (outcome==='failed') return {code:'failed',message:'The agent ended this turn with an error.'};
+  return evidence==='process_exit'
+    ? {code:'runtime_lost',message:'The agent process exited before it finished this turn.'}
+    : {code:'runtime_lost',message:'The agent stopped responding before it finished this turn.'};
+}
 
 /**
  * The IDLE budget: how long the harness may say nothing with no tool call in
@@ -169,7 +218,12 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let agentMessageId=turn.agentMessageId;
   let terminal: {outcome:TerminalOutcome;evidence:'provider_terminal'|'process_exit'|'reconciliation'} | null=null;
   let terminalPart: {eventId:string;seq:number;payload:{reason:'success'|'interrupted'|'error'};persisted:boolean} | undefined;
-  let failure: {code:string;message:string} | null=null;
+  let failure: {code:string;message:string;detail?:Record<string,unknown>} | null=null;
+  // The step in flight, and the last fenced RPC that threw: a failure records
+  // both, so the cause no longer needs the server journal to be found.
+  let step='agent message creation';
+  let failedRpc: string | null=null;
+  let failureShown=false;
   let completed=false;
   let settled=false;
   let preparing=false;
@@ -200,8 +254,18 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     },
   });
   // Every write is fenced by the lease; a refusal anywhere means it is gone.
-  const rpc=<T>(name:string,args:readonly unknown[]) => db.rpc<T>(auth,name,args)
-    .catch((error: unknown) => { lease.observe(error); throw error; });
+  const rpc=async <T>(name:string,args:readonly unknown[]): Promise<T> => {
+    for (let attempt=1;;attempt++) {
+      try { return await db.rpc<T>(auth,name,args); }
+      catch (error) {
+        const state=sqlStateOf(error);
+        if (!state || !RETRYABLE_SQLSTATES.has(state) || attempt>=FENCED_RPC_ATTEMPTS) {
+          failedRpc=name; lease.observe(error); throw error;
+        }
+        await new Promise(resolve=>setTimeout(resolve,20*attempt+Math.random()*40));
+      }
+    }
+  };
   /** Lease-critical writes: the reserved lane, retried while the lease can still be live. */
   const leaseWrite=<T>(name:string,args:readonly unknown[]) => retryTransient(
     () => leaseDb.rpc<T>(auth,name,args),
@@ -215,7 +279,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
    * A step that times out fails the turn with its own name in the thread
    * (`ChatPhaseTimeoutError`), instead of leaving it to look frozen.
    */
-  const step=<T>(phase:string,promise:Promise<T>,milliseconds=options.timeouts?.phase ?? 30_000) =>
+  const bounded=<T>(phase:string,promise:Promise<T>,milliseconds=options.timeouts?.phase ?? 30_000) =>
     deadline(Promise.race([promise,lease.whenLost]),milliseconds,() => new ChatPhaseTimeoutError(phase,milliseconds));
   const append=async (kind:string,payload:unknown,event:string,partSeq=seq) => {
     if (!agentMessageId || !snapshotId) throw new Error('chat output has no sealed message');
@@ -276,6 +340,16 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     }
   };
   const settleTerminal=async (proofTerminal: NonNullable<typeof terminal>) => {
+    step='turn settlement';
+    const succeeded=proofTerminal.outcome==='completed' && proofTerminal.evidence==='provider_terminal';
+    // A turn that ends with no answer and no reported reason used to settle with
+    // `{code:outcome}` and an empty body, which the DB renders as the bare
+    // "Agent turn failed.". Say what is known instead, in the thread too.
+    if (!succeeded && !failure) failure=terminalFailure(proofTerminal.outcome,proofTerminal.evidence);
+    if (!succeeded && failure && !failureShown && !terminalPart?.persisted && failure.code!=='interrupted') {
+      await append('error',{code:failure.code,message:failure.message},`server:${snapshotId}:error`);
+      failureShown=true;
+    }
     terminalPart ??= {eventId:`server:${snapshotId}:done`,seq,payload:{reason:proofTerminal.outcome==='completed'
       && proofTerminal.evidence==='provider_terminal' ? 'success' : proofTerminal.outcome==='interrupted' ? 'interrupted' : 'error'},persisted:false};
     await persistTerminalPart();
@@ -283,18 +357,21 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       ...(terminalPart ? {donePart:{eventId:terminalPart.eventId,seq:terminalPart.seq,payload:terminalPart.payload}} : {})};
     await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
     completed=proofTerminal.outcome==='completed' && proofTerminal.evidence==='provider_terminal';
-    await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text(),usage.value(),
-      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : {code:proofTerminal.outcome}),leaseFence,snapshotId,proof,null]);
+    await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text() || (completed ? '' : failure?.message ?? ''),usage.value(),
+      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : terminalFailure(proofTerminal.outcome,proofTerminal.evidence)),
+      leaseFence,snapshotId,proof,null]);
     settled=true;
   };
   try {
-    agentMessageId ??= await step('creating the reply message',options.createAgentMessage());
+    agentMessageId ??= await bounded('creating the reply message',options.createAgentMessage());
     const harness=turn.agentTool==='claude-code' ? 'claude' : turn.agentTool==='codex' ? 'codex' : null;
     if (!harness) throw new Error('unsupported chat harness');
     const requested={harness,provider:turn.provider,model:turn.model,
       reasoningEffort:typeof turn.claimedConfiguration.reasoningEffort==='string' ? turn.claimedConfiguration.reasoningEffort : null,serviceTier:null} as const;
-    const capabilities=await step('checking the agent runtime',options.registry.admit(requested,['portableBootstrap']));
-    const reserved=await step('reserving the chat runtime',rpc<{nativeGeneration:number;bindingId:string}>('reserve_chat_continuity',[
+    step='harness admission';
+    const capabilities=await bounded('checking the agent runtime',options.registry.admit(requested,['portableBootstrap']));
+    step='continuity reservation';
+    const reserved=await bounded('reserving the chat runtime',rpc<{nativeGeneration:number;bindingId:string}>('reserve_chat_continuity',[
       turn.chatId,leaseFence,{replaceRuntime:true,targetBinding:{agentTool:turn.agentTool,
         protocolRevision:capabilities.protocolRevision,storageScopeId:`pending:${turn.runtimeEpoch}`,
         compatibilityDigest:historyDigest({requested,authority:turn.claimedAuthority,mode:turn.chatMode})}}]));
@@ -303,17 +380,20 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       leaseEpoch:turn.runtimeEpoch,configRevision:turn.configRevision};
     snapshotId=randomUUID();
     const attempt: AttemptRef={turnId:turn.turnId,attemptId:snapshotId,configRevision:turn.configRevision};
-    const history=await step('reading chat history',readPortableHistory(db,{identityId:turn.claimedAuthority.identityId,authKind:turn.claimedAuthority.authKind,
+    step='history read';
+    const history=await bounded('reading chat history',readPortableHistory(db,{identityId:turn.claimedAuthority.identityId,authKind:turn.claimedAuthority.authKind,
       sessionSpaceId:turn.spaceId,...(turn.claimedAuthority.authSessionId ? {authSessionId:turn.claimedAuthority.authSessionId} : {})},
       turn.chatId,turn.turnOrdinal,turn.captureHighWater));
     const bootstrap=projectHistory(history,{snapshotId,currentTurnOrdinal:turn.turnOrdinal,captureHighWater:turn.captureHighWater,
       authorityScopeDigest:historyDigest({authority:turn.claimedAuthority,mode:turn.chatMode}),maxBytes:options.historyBudgetBytes});
-    const sealed=await step('sealing the turn',rpc<{inputDigest:string}>('seal_chat_turn_snapshot',[turn.chatId,leaseFence,snapshotId,{
+    step='snapshot seal';
+    const sealed=await bounded('sealing the turn',rpc<{inputDigest:string}>('seal_chat_turn_snapshot',[turn.chatId,leaseFence,snapshotId,{
       desired:turn.claimedConfiguration,authority:turn.claimedAuthority,
       runtime:{revision:turn.configRevision,target:requested,credentialRevision:null,launchFingerprint:null},
       input:{messageId:turn.userMessageId,body:turn.body,attachments:turn.attachments ?? []},
       historyBudgetBytes:options.historyBudgetBytes,priorCursor:bootstrap.coverage,credentialBinding:null,
     },bootstrap]));
+    step='launch preparation';
     preparing=true;
     const preparation=options.resolvePreparedLaunch({
       chatId:turn.chatId,requesterIdentityId:turn.claimedAuthority.identityId,requesterAuthKind:turn.claimedAuthority.authKind,
@@ -327,26 +407,30 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       if (closed) { void value.launch.release().catch(error=>options.onError?.(error)); return value; }
       prepared=value; return value;
     },error => { preparing=false; throw error; });
-    prepared=await step('preparing credentials and workspace',preparation,options.timeouts?.preparation ?? 30_000);
+    prepared=await bounded('preparing credentials and workspace',preparation,options.timeouts?.preparation ?? 30_000);
     stopIfRequested();
     const config: RuntimeConfig={schemaVersion:1,revision:turn.configRevision,target:prepared.target,
       instructionHash:prepared.instructionHash,toolPolicyHash:prepared.toolPolicyHash,mcpBindingRevision:prepared.mcpBindingRevision,
       cwdIdentity:turn.cwd,credentialBindingId:prepared.credentialBindingId,credentialRevision:prepared.credentialRevision,
       launchFingerprint:prepared.launchFingerprint};
+    step='harness open';
     opening=true;
     const openPromise=options.registry.get(harness).open({fence,config,mode:{kind:'bootstrap',context:bootstrap},launch:prepared.launch})
       .then(value => { session=value; opening=false; if (closed) void cleanup(); return value; },
         error => { opening=false; if (closed) void cleanup(); throw error; });
-    session=await step('starting the agent',openPromise,options.timeouts?.open ?? 30_000);
-    await step('recording the agent start',rpc('record_chat_open',[turn.chatId,leaseFence,snapshotId,{...session.opened,
+    session=await bounded('starting the agent',openPromise,options.timeouts?.open ?? 30_000);
+    step='open record';
+    await bounded('recording the agent start',rpc('record_chat_open',[turn.chatId,leaseFence,snapshotId,{...session.opened,
       runtime:config,credentialBinding:prepared.credentialBinding,nativeStorageScopeId:prepared.launch.nativeStorageScopeId,
       nativeStorageGeneration:prepared.launch.nativeStorageGeneration}]));
     options.track({session,attempt,revalidate:prepared.revalidate});
-    await step('rechecking credentials',prepared.revalidate());
+    step='launch revalidation';
+    await bounded('rechecking credentials',prepared.revalidate());
     stopIfRequested();
     // Commit before submit, even if submit will fail before writing. Recovery
     // after this commit is conservative unless not_sent is explicitly proved.
-    await step('committing dispatch',rpc('begin_chat_dispatch',[turn.chatId,leaseFence,snapshotId,sealed.inputDigest]));
+    step='dispatch commit';
+    await bounded('committing dispatch',rpc('begin_chat_dispatch',[turn.chatId,leaseFence,snapshotId,sealed.inputDigest]));
     barrier=true;
     const current=session;
     const idleBudget=options.timeouts?.observation ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
@@ -403,11 +487,11 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
           await rpc('record_chat_runtime_observation',[turn.chatId,leaseFence,snapshotId,'execution',payload.facts]);
         } else if (payload.kind==='failure') {
           failure={code:payload.failure.code,message:payload.failure.safeMessage};
-          await append('error',failure,event);
+          await append('error',failure,event); failureShown=true;
         } else if (payload.kind==='request') {
           await current.respond(payload.request.requestKey,{decision:'decline'});
           failure={code:'interaction_unavailable',message:'This chat cannot resolve this runtime interaction.'};
-          await append('error',failure,event);
+          await append('error',failure,event); failureShown=true;
         } else if (payload.kind==='terminal') {
           terminalPart={eventId:event,seq,payload:{reason:payload.outcome==='completed' && payload.evidence==='provider_terminal'
             ? 'success' : payload.outcome==='interrupted' ? 'interrupted' : 'error'},persisted:false};
@@ -420,16 +504,23 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       }
     };
     // Start the stream reader before submit; notifications may precede the ACK.
+    step='harness submission';
     observed=consume();
     void observed.catch(()=>undefined);
     const dispatched=await deadline(Promise.race([current.submit({attempt,clientSubmissionId:snapshotId,text:options.prompt,
-      attachmentRefs:(turn.attachments ?? []).map(file=>file.fileEntityId),config}),lease.whenLost]),options.timeouts?.submit ?? 30_000,'harness submission');
+      // The prompt already lists every attached file by tm8 id, and the agent
+      // opens it with its own tm8 tools (orchestrator.ts attachmentLines), as
+      // the legacy runtime did. Raw refs go only to a harness that says it can
+      // take files: sending them to one that cannot failed every such turn.
+      attachmentRefs:capabilities.fileInputs==='supported' ? (turn.attachments ?? []).map(file=>file.fileEntityId) : [],config}),
+      lease.whenLost]),options.timeouts?.submit ?? 30_000,'harness submission');
     if (dispatched.delivery!=='sent') {
       knownNotSent=dispatched.delivery==='not_sent';
       await deadline(current.close('failure'),options.timeouts?.close ?? 15_000,'failed dispatch close');
       await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed dispatch observations');
       throw new Error(dispatched.delivery==='not_sent' ? 'provider_not_sent' : 'delivery_unknown');
     }
+    step='agent output';
     // A Stop that raced submit found no active attempt to cancel; honour it now.
     if (options.stopRequested?.()) void current.cancel(attempt,'user').catch(error=>options.onError?.(error));
     if (dispatched.acknowledgement==='native_ack') await rpc('record_chat_acceptance',[
@@ -445,6 +536,12 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       if (observed) await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed turn observations').catch(error=>options.onError?.(error));
     }
     if (!stoppedBeforeDispatch) options.onError?.(error);
+    // A harness refusal (e.g. attachments it cannot take) carries a safe reason.
+    // Closing the session after it reports `runtime_exit`, which used to settle
+    // the turn as a bare `runtime_lost` and render only "Agent turn failed."
+    const refused=error instanceof HarnessRuntimeError ? error.failure : null;
+    const detail={step,...(failedRpc ? {rpc:failedRpc} : {}),error:describeError(error)};
+    if (refused && !failure) failure={code:refused.code,message:refused.safeMessage,detail};
     // An ACK failure is weaker evidence than an already-durable provider terminal.
     // Its output parts are consumed before this branch and must not gain a second done.
     if (terminal) await settleTerminal(terminal);
@@ -458,20 +555,24 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       failure=stoppedBeforeDispatch
         ? {code:'interrupted',message:'Stopped before the agent received this message.'}
         : knownNotSent ? {code:'provider_not_sent',message:'The provider confirmed this input was not sent.'}
-        : lost ? {code:lost.code,message:barrier ? `${lost.message} ${EFFECTS_NOTE}` : lost.message}
+        : lost ? {code:lost.code,message:barrier ? `${lost.message} ${EFFECTS_NOTE}` : lost.message,detail}
         : silent ? {code:silent.code,message:silent.message}
-        : barrier ? {code:'delivery_unknown',message:'Chat delivery was interrupted; recorded effects may have occurred.'}
-        : timedOut ? {code:timedOut.code,message:timedOut.message}
-        : {code:'preparation_failed',message:'Chat runtime could not prepare this turn.'};
+        : refused ? failure!
+        : barrier ? {code:'delivery_unknown',message:`Chat delivery was interrupted (${failedRpc
+            ? 'the server could not save the agent\'s output' : `${step} failed`}); recorded effects may have occurred.`,detail}
+        : timedOut ? {code:timedOut.code,message:timedOut.message,detail}
+        : error instanceof StepTimeoutError
+          ? {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${error.step} timed out.`,detail}
+        : {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${step} failed.`,detail};
       try {
         // The failure is recorded on the reserved lane and retried while the
         // lease can still be live: a single attempt on a saturated pool is
         // how a failed preparation used to leave its turn frozen.
         if (!barrier) { await leaseWrite('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
         else if (snapshotId) {
-          await append('error',failure,`server:${snapshotId}:error`);
+          await append('error',{code:failure.code,message:failure.message},`server:${snapshotId}:error`);
           await append('done',{reason:'error'},`server:${snapshotId}:done`);
-          await rpc('complete_chat_turn',[turn.turnId,'error',text(),usage.value(),usage.value()?.total_cost_usd ?? null,
+          await rpc('complete_chat_turn',[turn.turnId,'error',text() || failure.message,usage.value(),usage.value()?.total_cost_usd ?? null,
             failure,leaseFence,snapshotId,{outcome:knownNotSent ? 'failed' : 'runtime_lost',evidence:'reconciliation',body:text(),failure},null]);
           settled=true;
         }

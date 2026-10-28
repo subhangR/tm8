@@ -94,6 +94,16 @@ describe('the product UI bundle at the root', () => {
     expect(res.text).toContain('product');
   });
 
+  it('revalidates the HTML entry and caches hashed assets forever', async () => {
+    // A cached index.html outlives the deploy that removed its chunks; a
+    // hashed chunk never changes under its name.
+    for (const path of ['/', '/index.html', '/s/some-space/tasks']) {
+      expect((await fetch(`${base}${path}`)).headers.get('cache-control')).toBe('no-cache');
+    }
+    expect((await fetch(`${base}/assets/app.js`)).headers.get('cache-control'))
+      .toBe('public, max-age=31536000, immutable');
+  });
+
   it('404s a missing asset instead of returning HTML', async () => {
     // The SPA fallback covers extension-less CLIENT ROUTES only. A missing
     // `.js` is a broken build, and answering it with index.html and a 200 is
@@ -101,6 +111,8 @@ describe('the product UI bundle at the root', () => {
     const res = await fetch(`${base}/assets/missing.js`);
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toContain('application/json');
+    // A proxy must not cache "missing": the chunk may exist a moment later.
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).not.toContain('<!doctype');
   });
 

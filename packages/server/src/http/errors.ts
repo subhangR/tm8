@@ -48,6 +48,14 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '22023': 'invalid_input',
   '23514': 'invariant_violation',
   '23503': 'invariant_violation',
+  // A RESTRICT referential action, which PostgreSQL 18 reports under its own
+  // SQLSTATE. Through 17, `ri_ReportViolation` raised every RI failure as a
+  // plain 23503; 18 gives RESTRICT the standard's dedicated 23001, on the
+  // grounds that the foreign key may still be satisfiable and RESTRICT refuses
+  // regardless. Same refusal, same invariant, so the same taxonomy entry —
+  // unmapped it fell to the catch-all and became a retryable 503, exactly the
+  // failure the 22P02 note above describes.
+  '23001': 'invariant_violation',
   '23505': 'invariant_violation',
   '40001': 'version_conflict',
   '53400': 'limit_exceeded',
@@ -141,6 +149,25 @@ function logUnexpected(err: unknown, requestId: string): void {
 }
 
 /**
+ * A REFUSAL IS ALSO EVIDENCE, and until now this server threw it away.
+ *
+ * `logUnexpected` covers the crashes. Everything the taxonomy names —
+ * `invalid_input`, `forbidden`, `payload_too_large`, `unauthenticated` — went
+ * to the client and NOWHERE else, so a refusal was invisible from the node
+ * side. That is not a theoretical gap: a file-attachment failure was reported
+ * with "check the logs and you will see what happened", and the logs held
+ * nothing at all, for every refusal on that path, by construction.
+ *
+ * CODE, STATUS AND THE REQUEST ID ONLY. `details` is deliberately not logged —
+ * it carries entity payloads and `current: EntityDetail` on a version
+ * conflict — and the message is our own prose from the raise site, never
+ * client input. `warn`, not `error`: a refused request is the server working.
+ */
+function logRefusal(err: CollabError, status: number, requestId: string): void {
+  console.warn(`[tm8] refused (requestId=${requestId}) ${status} ${err.code}: ${err.message}`);
+}
+
+/**
  * `Retry-After` in whole seconds, or null when the error does not carry one.
  * Read from `details.retryAfterSeconds` so the raiser owns the number — the
  * writer has no idea what limit was tripped or when its window rolls.
@@ -154,8 +181,9 @@ function retryAfterSecondsOf(err: unknown): number | null {
 
 /** The one and only error writer. */
 export function sendWireError(res: ServerResponse, err: unknown, requestId: string): void {
-  if (!isCollabError(err)) logUnexpected(err, requestId);
   const { status, body } = toWireError(err, requestId);
+  if (isCollabError(err)) logRefusal(err, status, requestId);
+  else logUnexpected(err, requestId);
   if (res.headersSent) {
     res.end();
     return;

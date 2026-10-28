@@ -135,6 +135,9 @@ export function projectTrackingFreshness(
  */
 export const LINKED_PULL_REQUEST_BADGE_CAP = 8;
 
+/** The kinds whose rows carry `badges.pullRequests`: tasks, and what authors PRs. */
+const PULL_REQUEST_HOLDER_KINDS: ReadonlySet<string> = new Set(['task', 'work_session', 'chat']);
+
 export interface LinkedPullRequestBadges {
   /** Newest-linked first, at most `LINKED_PULL_REQUEST_BADGE_CAP`. */
   items: LinkedPullRequestBadge[];
@@ -155,10 +158,17 @@ export interface LinkedPullRequestBadges {
  * reads as a PR being unlinked. So neither side owns this — both call here, and
  * `rows` is structural for exactly the reason `loadUnreadCounts` is.
  *
- * TASK-GATED, so a page of docs and messages pays nothing. That is not just an
- * optimisation: `tracks` is written task→PR (082's completion gate joins it the
- * same way), so a non-task row could not match anyway, and saying so here keeps
- * the query off the read path instead of relying on it returning zero rows.
+ * HOLDER-GATED, so a page of docs and messages pays nothing. That is not just
+ * an optimisation: `tracks` is written task→PR (082's completion gate joins it
+ * the same way) and `authored_from` ends only at a work_session or a chat, so
+ * no other row could match anyway, and saying so here keeps the query off the
+ * read path instead of relying on it returning zero rows.
+ *
+ * SESSIONS AND CHATS TOO (task 01a18209): a session row draws one chip per PR,
+ * not a count, so it needs the PRs themselves. They are exactly the ones the
+ * `prs` counter counts on that row (331): PRs the holder `tracks`, union PRs
+ * `authored_from` it, each PR once — so the chips and the count can never
+ * disagree. Same single query, so still no N+1.
  *
  * The lateral is bounded at `cap + 1` per task: one extra row is the cheapest
  * possible way to know whether the cap LIED, and `truncated` is the difference
@@ -171,8 +181,8 @@ export async function loadLinkedPullRequestBadges(
   rows: readonly { id: string; kind: string }[],
 ): Promise<Map<string, LinkedPullRequestBadges>> {
   const out = new Map<string, LinkedPullRequestBadges>();
-  const taskIds = [...new Set(rows.filter((r) => r.kind === 'task').map((r) => r.id))];
-  if (taskIds.length === 0) return out;
+  const holderIds = [...new Set(rows.filter((r) => PULL_REQUEST_HOLDER_KINDS.has(r.kind)).map((r) => r.id))];
+  if (holderIds.length === 0) return out;
 
   const linked = await q.query<{
     task_id: string;
@@ -191,19 +201,32 @@ export async function loadLinkedPullRequestBadges(
     // that links a long-open PR after a fresh one still means the newest LINK
     // first. `id desc` breaks ties so the cap is deterministic rather than
     // whatever the planner returns.
+    //
+    // The link is either direction: `tracks` holder→PR, or `authored_from`
+    // PR→holder (sessions and chats only; a task holds none). A PR reached by
+    // both is one link, dated by its newest edge — `distinct on` keeps it once.
     `select t.id as task_id, pr.*
        from unnest($1::uuid[]) as t(id)
        cross join lateral (
-         select p.entity_id, p.repo, p.number, p.title, p.state, p.url,
-                p.ci_status, p.mergeable_state, p.head_ref
-           from public.edges g
-           join public.pull_requests p on p.entity_id = g.dst_id
-           join public.entities pe on pe.id = p.entity_id and pe.deleted_at is null
-          where g.type = 'tracks' and g.src_id = t.id
-          order by g.created_at desc, g.id desc
+         select l.entity_id, l.repo, l.number, l.title, l.state, l.url,
+                l.ci_status, l.mergeable_state, l.head_ref
+           from (
+             select distinct on (p.entity_id)
+                    p.entity_id, p.repo, p.number, p.title, p.state, p.url,
+                    p.ci_status, p.mergeable_state, p.head_ref,
+                    g.created_at as linked_at, g.id as edge_id
+               from public.edges g
+               join public.pull_requests p
+                 on p.entity_id = case when g.type = 'tracks' then g.dst_id else g.src_id end
+               join public.entities pe on pe.id = p.entity_id and pe.deleted_at is null
+              where (g.type = 'tracks' and g.src_id = t.id)
+                 or (g.type = 'authored_from' and g.dst_id = t.id)
+              order by p.entity_id, g.created_at desc, g.id desc
+           ) l
+          order by l.linked_at desc, l.edge_id desc
           limit $2
        ) pr`,
-    [taskIds, LINKED_PULL_REQUEST_BADGE_CAP + 1],
+    [holderIds, LINKED_PULL_REQUEST_BADGE_CAP + 1],
   );
 
   for (const row of linked) {

@@ -1,5 +1,4 @@
 import { McpPicker } from '../mcp/McpPicker';
-import { useMcpPort } from '../mcp/context';
 import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -143,7 +142,6 @@ export function NewSessionScreen({
   const [draft, setDraft] = useState(initialDraft ?? '');
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
-  const mcp = useMcpPort();
   const [phase, setPhase] = useState<NewSessionPhase>('idle');
   const [sessionId, setSessionId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,11 +219,16 @@ export function NewSessionScreen({
         throw new Error('The task was created but the node did not return its id.');
       }
 
-      /* STEP 2 — the host is mounted by this render, before the spawn below.
+      /* Q13: A LAUNCH CHOICE APPLIES TO THAT LAUNCH ONLY.
+         This used to write an `equips` edge per picked connector onto the task
+         it had just minted, so choosing Gmail for one session quietly made it
+         a default for every future session on that task — and there was no
+         undo anywhere near the launch screen. Task defaults are set through
+         `McpEquipment` on the task itself, where they can be seen and removed;
+         the launch sends its choice as `mcpSelections` and nothing else.
+
+         STEP 2 — the host is mounted by this render, before the spawn below.
          See the docblock: the paint must happen first. */
-      if (mcp && mcpSelections) {
-        for (const selected of mcpSelections) await mcp.attach(taskId, selected.serverId);
-      }
       setPhase('spawning');
       await new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); });
 
@@ -256,7 +259,7 @@ export function NewSessionScreen({
     } finally {
       inFlight.current = false;
     }
-  }, [ready, commands, spaceId, title, draft, config, spawn, mcp, mcpSelections, onSpawned]);
+  }, [ready, commands, spaceId, title, draft, config, spawn, mcpSelections, onSpawned]);
 
   /* The hand-off. Deliberately NOT inside the spawn promise: the screen owns
      its own transition to `live`, and the host decides when the URL follows. */
@@ -286,9 +289,21 @@ export function NewSessionScreen({
             Describe what you want done. Enter creates the task and starts an agent on it.
           </p>
         </div>
-      <McpPicker teamMemberId={config.teamMemberId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={transitioning} />
         <NewSessionComposer
           {...bind}
+          // §10.5: the Connectors section lives IN the composer's ··· menu,
+          // beside the harness rows, instead of floating above the card where
+          // it used to sit as a bare fieldset.
+          connectors={(
+            <McpPicker
+              teamMemberId={config.teamMemberId ?? undefined}
+              value={mcpSelections}
+              onChange={setMcpSelections}
+              onReady={setMcpReady}
+              disabled={transitioning}
+              layout="grid"
+            />
+          )}
           draft={draft}
           onDraftChange={(next) => {
             setDraft(next);

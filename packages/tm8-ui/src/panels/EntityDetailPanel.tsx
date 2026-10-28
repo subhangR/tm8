@@ -61,6 +61,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
+import { useDetailFreshness } from './detail/freshness';
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import { HeaderSection } from './detail/HeaderSection';
@@ -82,7 +83,8 @@ import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
-import { GovernedBody } from './bodies/GovernedBody';
+import { GovernedWithRecord } from './bodies/GovernedWithRecord';
+import type { ProjectRecordPort } from '../projects/project-record';
 import { MachineBody } from './bodies/MachineBody';
 import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
@@ -480,6 +482,11 @@ export interface EntityDetailPanelProps {
    * a host writes `attachmentsPortFromSeam(seam, spaceId)` and nothing else.
    */
   attachments?: AttachmentsPort | null;
+  /**
+   * The space's project folder records (path, trust, git, `projects.update`)
+   * for the governed body. Absent ⇒ path and trust render as not loaded.
+   */
+  projectRecords?: ProjectRecordPort | null;
   /** An upload landed; the host refetches so the new edge appears. */
   onAttachmentUploaded?: () => void;
   onContentSurfaceChange?: (surface: ContentSurface) => void;
@@ -669,6 +676,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     onTabChange,
     onClose,
   } = props;
+  /* THIS PANEL IS AN OPEN VIEW OF ONE ID, which is the whole qualification the
+     content re-read needs. Mounted ⇒ the content behind `detail.id` is kept
+     fresh across other people's edits; unmounted ⇒ nothing is asked for.
+     One call here serves every archetype below — the doc reader, the drawing
+     canvas, the artifact viewer — because all of them render through it.
+     Above the early returns, with the other unconditional hooks. */
+  useDetailFreshness(detail?.id);
 
   const [uncontrolledTab, setUncontrolledTab] = useState<PanelTab>('content');
   /*
@@ -1086,6 +1100,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         trailing={gateChipFor(detail)}
         stateOptionRefusal={stateOptionRefusalFor(detail)}
         omitArchive
+        omitMembership
       />
     ) : null;
   const strip =
@@ -2513,9 +2528,10 @@ function PanelBody(
 
   if (config.panel.archetype === 'governed') {
     return (
-      <GovernedBody
+      <GovernedWithRecord
         detail={detail}
         blocks={config.panel.blocks ?? []}
+        port={props.projectRecords ?? null}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
       />

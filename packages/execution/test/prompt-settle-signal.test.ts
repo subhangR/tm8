@@ -10,6 +10,11 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { echoAgentPath } from '../src/spawn/manifest.js';
 
+// The interpreter running this suite. `spawn` is given `env: {}`, so the shell
+// has only its compiled-in default PATH and a bare `node` resolves only when it
+// happens to sit in `/usr/bin` or `/usr/local/bin`. See prompt-fidelity.test.ts.
+const NODE = JSON.stringify(process.execPath);
+
 const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -90,7 +95,7 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
       // token scrolled out of the cursor band after ~4 presses, and the verifier
       // correctly read that as "submitted": `delivered` at ~8.7s. Reproduced
       // exactly (8788ms, `delivered`) by delaying setRawMode by 7s.
-      command: `node -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d)); process.stdout.write('ready> ')"`,
+      command: `${NODE} -e "process.stdin.setRawMode(true); process.stdin.on('data', d => process.stdout.write(d)); process.stdout.write('ready> ')"`,
       cwd: '/tmp',
       env: {},
     });
@@ -205,7 +210,7 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
     // which is precisely a TUI that has not drawn its composer yet.
     host.spawn({
       sessionId,
-      command: `node -e "process.stdout.write('booting\\n'); process.stdin.setRawMode(true); process.stdin.resume(); setInterval(() => {}, 1000)"`,
+      command: `${NODE} -e "process.stdout.write('booting\\n'); process.stdin.setRawMode(true); process.stdin.resume(); setInterval(() => {}, 1000)"`,
       cwd: '/tmp',
       env: {},
     });
@@ -289,7 +294,7 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
     });
     const sessionId = 'settle-multiline-first-turn';
     const chunks: Buffer[] = [];
-    host.spawn({ sessionId, command: `node ${echoAgentPath()}`, cwd: '/tmp', env: {} });
+    host.spawn({ sessionId, command: `${NODE} ${echoAgentPath()}`, cwd: '/tmp', env: {} });
     host.onFrames(sessionId, (f) => chunks.push(f));
     const seen = () => Buffer.concat(chunks).toString('utf8');
 
@@ -323,7 +328,7 @@ describe('PtyHostService onPromptSettled -- two-signal prompt delivery', () => {
     const sessionId = 'settle-multiline-swallowed';
     host.spawn({
       sessionId,
-      command: `node -e "process.stdout.write('booting\\n'); process.stdin.setRawMode(true); process.stdin.resume(); setInterval(() => {}, 1000)"`,
+      command: `${NODE} -e "process.stdout.write('booting\\n'); process.stdin.setRawMode(true); process.stdin.resume(); setInterval(() => {}, 1000)"`,
       cwd: '/tmp',
       env: {},
     });

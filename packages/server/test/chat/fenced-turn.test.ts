@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
-import { HarnessRegistry, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
+import { HarnessRegistry, harnessFailure, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
 import { AgentSilentError, DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS, executeFencedTurn,
-  UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
+  StepTimeoutError, UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { CollabError } from '@tm8/contract';
 import { DbPoolExhaustedError } from '../../src/db/client.js';
@@ -147,6 +147,134 @@ it('releases late prepared material and does not open it after timeout',async()=
   await executeFencedTurn(f.options); expect(f.release).not.toHaveBeenCalled();
   late.resolve(await original({}, {}, {})); await sleep(5);
   expect(f.open).not.toHaveBeenCalled(); expect(f.release).toHaveBeenCalledOnce();
+});
+it('names the startup step that timed out in a preparation failure',async()=>{
+  const f=fixture(); const late=deferred<HarnessSession>();
+  f.open.mockImplementation(async()=>late.promise); f.options.timeouts!.open=5;
+  await executeFencedTurn(f.options);
+  const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
+  // The thread names the phase (lease.ts); the stored detail keeps the step.
+  expect(failed.args[2]).toMatchObject({code:'phase_timeout',message:expect.stringContaining('starting the agent took longer than'),
+    detail:{step:'harness open',error:{name:'Error',message:expect.stringContaining('starting the agent')}}});
+});
+it('names a bare deadline timeout in a preparation failure',async()=>{
+  const f=fixture(); f.options.registry.admit=async()=>{ throw new StepTimeoutError('harness admission'); };
+  await executeFencedTurn(f.options);
+  const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
+  expect(failed.args[2]).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: harness admission timed out.',
+    detail:{step:'harness admission',error:{message:'harness admission timed out'}}});
+});
+it('settles a harness refusal with its own reason, not a bare runtime_lost',async()=>{
+  const f=fixture();
+  f.open.mockImplementation(async value=>{
+    const session=f.makeSession(value); let exited=false; let wake=()=>{};
+    return {...session,
+      submit:async()=>{ throw harnessFailure('unsupported_capability','submit','This chat cannot take file attachments yet. Paste the content as text instead.'); },
+      close:async()=>{ exited=true; wake(); return {exited:true,nativeUsable:null}; },
+      observations:(async function*(){
+        if (!exited) await new Promise<void>(r=>{wake=r;});
+        yield {fence:value.fence,attempt:null,nativeTurnId:null,observedAt:new Date().toISOString(),adapterSeq:1,
+          payload:{kind:'runtime_exit' as const}};
+      })()} as HarnessSession;
+  });
+  await executeFencedTurn(f.options);
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(done.args[1]).toBe('error');
+  expect(done.args[5]).toMatchObject({code:'unsupported_capability',
+    message:'This chat cannot take file attachments yet. Paste the content as text instead.',
+    detail:{step:'harness submission',error:{name:'HarnessRuntimeError',harness:{code:'unsupported_capability',stage:'submit'}}}});
+  // The thread shows the reason, not the DB's "Agent turn failed." default.
+  expect(done.args[2]).toBe('This chat cannot take file attachments yet. Paste the content as text instead.');
+  expect(f.calls.some(c=>c.name==='append_chat_message_part' && c.args[2]==='error'
+    && (c.args[3] as {message?:string}).message?.startsWith('This chat cannot take file attachments'))).toBe(true);
+});
+
+it('sends attachments to a harness without file inputs only through the prompt manifest',async()=>{
+  const f=fixture(); const sent:TurnCommand[]=[];
+  (f.options.turn as {attachments:unknown}).attachments=[{fileEntityId:randomUUID(),name:'a.json',mime:'application/json'}];
+  const open=f.open.getMockImplementation()!;
+  f.open.mockImplementation(async input=>{ const s=await open(input);
+    return {...s,submit:async command=>{ sent.push(command); return s.submit(command); }}; });
+  await executeFencedTurn(f.options);
+  expect(sent[0]!.attachmentRefs).toEqual([]);
+  expect(f.calls.find(c=>c.name==='complete_chat_turn')!.args[1]).toBe('completed');
+  // The sealed input still records the attachment.
+  expect((f.calls.find(c=>c.name==='seal_chat_turn_snapshot')!.args[3] as {input:{attachments:unknown[]}}).input.attachments).toHaveLength(1);
+});
+
+it('passes attachment refs to a harness that declares file inputs',async()=>{
+  const f=fixture(); const sent:TurnCommand[]=[]; const file=randomUUID();
+  (f.options.turn as {attachments:unknown}).attachments=[{fileEntityId:file,name:'a.png',mime:'image/png'}];
+  const withFiles={...caps,fileInputs:'supported' as const};
+  const open=f.open.getMockImplementation()!;
+  const registry=new HarnessRegistry([{kind:'codex',capabilities:async()=>withFiles,open:async input=>{ const s=await open(input);
+    return {...s,submit:async command=>{ sent.push(command); return s.submit(command); }}; }}]);
+  await executeFencedTurn({...f.options,registry});
+  expect(sent[0]!.attachmentRefs).toEqual([file]);
+});
+
+it('retries a fenced write that lost a deadlock instead of failing the turn',async()=>{
+  const f=fixture(); const rpc=f.options.db.rpc.bind(f.options.db); let thrown=0;
+  f.options.db.rpc=async(auth,name,args)=>{
+    if(name==='append_chat_message_part' && args?.[2]==='tool_call' && thrown<2) {
+      thrown++; throw Object.assign(new Error('internal database error'),{details:{sqlstate:'40P01'}});
+    }
+    return rpc(auth,name,args);
+  };
+  await executeFencedTurn(f.options);
+  expect(thrown).toBe(2);
+  expect(f.calls.find(c=>c.name==='complete_chat_turn')!.args[1]).toBe('completed');
+  expect(f.options.onError).not.toHaveBeenCalled();
+});
+
+it('records the failing step, RPC and error when an output write fails for good',async()=>{
+  const f=fixture(); const rpc=f.options.db.rpc.bind(f.options.db);
+  f.options.db.rpc=async(auth,name,args)=>{
+    if(name==='append_chat_message_part' && args?.[2]==='tool_call')
+      // Not a fence refusal: that one means the lease is lost (lease.test.ts).
+      throw Object.assign(new Error('permission denied for function append_chat_message_part'),{details:{sqlstate:'42501'}});
+    return rpc(auth,name,args);
+  };
+  await executeFencedTurn(f.options);
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  const failure=done.args[5] as {code:string;message:string;detail:Record<string,unknown>};
+  expect(failure.code).toBe('delivery_unknown');
+  expect(failure.message).toBe("Chat delivery was interrupted (the server could not save the agent's output); recorded effects may have occurred.");
+  expect(failure.detail).toMatchObject({step:'agent output',rpc:'append_chat_message_part',
+    error:{message:'permission denied for function append_chat_message_part',sqlstate:'42501'}});
+  expect(done.args[2]).toBe('final answer');
+  // The part the thread renders carries only the readable reason.
+  const part=f.calls.filter(c=>c.name==='append_chat_message_part' && c.args[2]==='error').at(-1)!.args[3];
+  expect(part).toEqual({code:'delivery_unknown',message:failure.message});
+});
+
+it('names the step and keeps the error when preparation throws',async()=>{
+  const f=fixture();
+  f.resolver.mockImplementationOnce(async()=>{ throw new Error('credential lease refused'); });
+  await executeFencedTurn(f.options);
+  const failure=f.calls.find(c=>c.name==='fail_chat_preparation')!.args[2];
+  expect(failure).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: launch preparation failed.',
+    detail:{step:'launch preparation',error:{name:'Error',message:'credential lease refused'}}});
+});
+
+it('gives a turn whose process exits without a reason a readable failure in the thread',async()=>{
+  const f=fixture();
+  f.open.mockImplementation(async value=>{
+    const session=f.makeSession(value); const sent=deferred<TurnCommand>();
+    return {...session,
+      submit:async command=>{ sent.resolve(command); return session.submit(command); },
+      observations:(async function*(){
+        await sent.promise;
+        yield {fence:value.fence,attempt:null,nativeTurnId:null,observedAt:new Date().toISOString(),adapterSeq:1,
+          payload:{kind:'runtime_exit' as const,expected:false,exitCode:1,signal:null}};
+      })()} as HarnessSession;
+  });
+  await executeFencedTurn(f.options);
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(done.args[5]).toEqual({code:'runtime_lost',message:'The agent process exited before it finished this turn.'});
+  expect(done.args[2]).toBe('The agent process exited before it finished this turn.');
+  const parts=f.calls.filter(c=>c.name==='append_chat_message_part').map(c=>c.args[2]);
+  expect(parts.slice(-2)).toEqual(['error','done']);
 });
 it('never publishes durable completion when settlement fails',async()=>{
   const f=fixture(); const rpc=f.options.db.rpc.bind(f.options.db);

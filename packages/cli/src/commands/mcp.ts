@@ -1,4 +1,4 @@
-import { McpSelectionsSchema, type OperationName } from '@tm8/contract';
+import { McpSelectionsSchema, mcpServerKey, type McpServerView, type OperationName } from '@tm8/contract';
 import { readJsonSource } from '../args.js';
 import { assertKnownOptions } from './entity.js';
 import { requireSpace } from '../context.js';
@@ -21,6 +21,7 @@ const commands: Array<{path:string[];op:OperationName;param?:string;read?:boolea
   {path:['server','update'],op:'mcp.servers.update',param:'serverId'},
   {path:['server','delete'],op:'mcp.servers.delete',param:'serverId'},
   {path:['server','import'],op:'mcp.servers.import',space:true},
+  {path:['server','request'],op:'mcp.servers.request',space:true},
   {path:['server','test'],op:'mcp.servers.test',param:'serverId'},
   {path:['resolve'],op:'mcp.resolve',space:true},
   {path:['credential','list'],op:'mcp.credentials.list',param:'serverId',read:true},
@@ -33,7 +34,7 @@ const commands: Array<{path:string[];op:OperationName;param?:string;read?:boolea
   {path:['oauth','begin'],op:'mcp.oauth.begin',param:'serverId'},
   {path:['oauth','callback'],op:'mcp.oauth.callback',secret:true},
 ];
-export const MCP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.path],run:async (cmd):Promise<ExitCode>=>{
+const MCP_OP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.path],run:async (cmd):Promise<ExitCode>=>{
   assertKnownOptions(cmd,['input','expected-version','mutation-id','limit','cursor','target','credential']);
   const params:Record<string,string>={};
   if(spec.space)params.spaceId=requireSpace(cmd.ctx);
@@ -60,3 +61,182 @@ export const MCP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...sp
   cmd.out.data(await observedInvoke(clientFor(cmd.ctx),spec.op,{params,...(spec.read?{query}:{body})}),data=>JSON.stringify(data,null,2));
   return EXIT_OK;
 }}));
+const MCP_AUDIT_COMMAND:CommandModule={path:['mcp','audit'],run:async (cmd):Promise<ExitCode>=>{
+  // §5.6: Space admins see every call in the Space, members the calls they are the root of.
+  const flags:Record<string,string>={session:'sessionId',chat:'chatId',connector:'serverId',member:'memberId',outcome:'outcome',limit:'limit',cursor:'cursor'};
+  assertKnownOptions(cmd,Object.keys(flags));
+  const query:Record<string,string>={};
+  for(const [flag,key] of Object.entries(flags)){const value=cmd.options.value(flag);if(value!==undefined)query[key]=value;}
+  cmd.out.data(await observedInvoke(clientFor(cmd.ctx),'mcp.audit.list',{params:{spaceId:requireSpace(cmd.ctx)},query}),data=>JSON.stringify(data,null,2));
+  return EXIT_OK;
+}};
+
+/**
+ * `tm8 mcp catalog list` — the §8.2 connector catalog.
+ *
+ * Its own module rather than a row in the table above, because the Space is a
+ * QUERY parameter here, not a path segment: the catalog is node-level static
+ * data, and naming a Space only adds where each entry is already registered
+ * there. It is therefore the one `mcp` read that works outside a Space.
+ */
+async function mcpCatalogList(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,[]);
+  const query:Record<string,string>={};
+  // The ambient Space when there is one; never required, so `tm8 mcp catalog
+  // list` answers before a caller has chosen a Space at all.
+  if(cmd.ctx.space)query.spaceId=cmd.ctx.space.value;
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.catalog.list',{query});
+  cmd.out.data(data,renderCatalog);
+  return EXIT_OK;
+}
+
+function renderCatalog(dto:unknown):string {
+  const items=((dto??{}) as {items?:unknown}).items;
+  if(!Array.isArray(items)||items.length===0)return 'No connectors in the catalog.';
+  return items.map(raw=>{
+    const entry=raw as {id?:unknown;title?:unknown;kind?:unknown;available?:unknown;summary?:unknown;requirement?:unknown;added?:unknown};
+    const added=Array.isArray(entry.added)?entry.added as Array<{approved?:unknown}>:[];
+    const state=entry.available===false?'coming soon'
+      :added.length===0?'not added'
+      :added.some(a=>a.approved===true)?`added (${added.length})`:'requested';
+    return [`${String(entry.id)}  ${String(entry.title)}  [${String(entry.kind)}; ${state}]`,
+      `    ${String(entry.summary??'')}`,
+      ...(entry.requirement?[`    requires: ${String(entry.requirement)}`]:[])].join('\n');
+  }).join('\n');
+}
+
+/**
+ * `tm8 mcp connect <server-id> [--shared]` — connect an account to a connector.
+ *
+ * One command over two very different doors, because "connect" is what the user
+ * wants and the connector's own `auth` decides which door that is: an API key
+ * is a secret this process must never see on a command line, and OAuth is a URL
+ * to open in a browser. Reading the connector first is what lets one verb cover
+ * both, so it is deliberately a composite rather than a table row.
+ */
+async function mcpConnect(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,['input','shared','mutation-id','label']);
+  const serverId=cmd.args[0];
+  if(!serverId)throw new CliError('serverId is required',EXIT_USAGE);
+  const shared=cmd.options.bool('shared');
+  const client=clientFor(cmd.ctx);
+  const server=await observedInvoke<McpServerView>(client,'mcp.servers.get',{params:{serverId},query:{}});
+  const definition=server?.definition;
+  if(!definition)throw new CliError('MCP connector is unavailable',EXIT_USAGE);
+  const label=cmd.options.value('label')??`${mcpServerKey(definition)} account`;
+  if(definition.auth.type==='none'){
+    throw new CliError(`${definition.name} needs no connection: it declares no authentication`,EXIT_USAGE);
+  }
+  if(definition.auth.type==='api_key'){
+    const source=cmd.options.value('input');
+    if(!source||(!source.startsWith('@')&&source!=='-')){
+      throw new CliError('An API key connector needs --input @file or --input -; never pass secrets in arguments',EXIT_USAGE);
+    }
+    let parsed:unknown;
+    try{parsed=await readJsonSource(source);}catch{throw new CliError('Unable to read credential JSON input',EXIT_USAGE);}
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new CliError('--input must contain an object',EXIT_USAGE);
+    const body:Record<string,unknown>={label,...parsed,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
+      scope:shared?'space':'member'};
+    if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+    const data=await observedInvoke<unknown>(client,'mcp.credentials.create',{params:{serverId},body});
+    cmd.out.data(data,()=>`Connected ${definition.name}${shared?' for the whole Space':''}.`);
+    return EXIT_OK;
+  }
+  // OAuth. `scope` belongs to the durable pending-state table (§5.4), and 342
+  // (#1315) added it, so a scope chosen here survives the redirect and `--shared`
+  // asks for a SPACE credential below. The shape probe that guarded this before
+  // 342 landed is gone rather than left dead: it could no longer fire.
+  const body:Record<string,unknown>={label,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
+    ...(shared?{scope:'space'}:{})};
+  if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+  const data=await observedInvoke<unknown>(client,'mcp.oauth.begin',{params:{serverId},body});
+  cmd.out.data(data,dto=>{
+    const begun=(dto??{}) as {authorizationUrl?:unknown;expiresAt?:unknown};
+    return [`Open this URL in a browser signed in to tm8 to finish connecting ${definition.name}:`,
+      String(begun.authorizationUrl??'(no authorization url returned)'),
+      ...(begun.expiresAt?[`The link expires at ${String(begun.expiresAt)}.`]:[])].join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 mcp tokens create|list|revoke` — §5.5 / §10.7, for an external MCP client.
+ *
+ * Its own module rather than rows in the table above for two reasons. The Space
+ * is a LIST in the body, not a path segment, and "all my spaces" is an explicit
+ * choice rather than an omission (hence `--all-spaces` beside `--space`; one of
+ * the two is required, and the server refuses a null list from a space-pinned
+ * session anyway). And `create` has to PRINT A SECRET exactly once, with the
+ * client snippets §10.7 specifies — the table's renderer prints JSON, which
+ * would bury the one line the caller must copy.
+ */
+async function mcpTokensCreate(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,['label','space','all-spaces','expires-in-days','mutation-id']);
+  const label=cmd.options.value('label')??cmd.args[0];
+  if(!label)throw new CliError('--label is required',EXIT_USAGE);
+  const spaces=cmd.options.values('space');
+  const all=cmd.options.bool('all-spaces');
+  // Refused here rather than defaulted: a token for every Space the member will
+  // ever join is a real choice, and silence must not make it.
+  if(all===(spaces.length>0))throw new CliError(
+    'name the spaces with --space <id> (repeatable), or pass --all-spaces for every space you belong to now or join later',EXIT_USAGE);
+  const days=cmd.options.value('expires-in-days');
+  const body:Record<string,unknown>={label,spaceIds:all?null:spaces,
+    clientMutationId:resolveMutationId(cmd.options.value('mutation-id'))};
+  if(days!==undefined){const n=Number(days);
+    if(!Number.isInteger(n)||n<1||n>365)throw new CliError('--expires-in-days must be between 1 and 365',EXIT_USAGE);
+    body.expiresInDays=n;}
+  if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.create',{body});
+  cmd.out.data(data,dto=>{
+    const created=(dto??{}) as {secret?:unknown;endpoint?:unknown;token?:{label?:unknown;expiresAt?:unknown}};
+    return [`Created MCP token ${String(created.token?.label??label)}. It is shown ONCE — copy it now:`,
+      '',`  ${String(created.secret??'(no secret returned)')}`,'',
+      `  claude mcp add --transport http tm8 ${String(created.endpoint??'')} --header "Authorization: Bearer <the token above>"`,
+      '',`Expires ${String(created.token?.expiresAt??'unknown')}. Revoke it with: tm8 mcp tokens revoke <id>`].join('\n');
+  });
+  return EXIT_OK;
+}
+async function mcpTokensList(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,[]);
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.list',{query:{}});
+  cmd.out.data(data,dto=>{
+    const items=((dto??{}) as {items?:unknown}).items;
+    if(!Array.isArray(items)||items.length===0)return 'No MCP tokens. Create one with: tm8 mcp tokens create --label <name> --all-spaces';
+    return items.map(raw=>{
+      const t=raw as {id?:unknown;label?:unknown;spaceIds?:unknown;missingSpaceIds?:unknown;expiresAt?:unknown;lastUsedAt?:unknown;revokedAt?:unknown};
+      const spaces=Array.isArray(t.spaceIds)?`${t.spaceIds.length} space(s)`:'all my spaces';
+      const missing=Array.isArray(t.missingSpaceIds)&&t.missingSpaceIds.length
+        ?`  (${t.missingSpaceIds.length} listed space(s) you are no longer in)`:'';
+      const state=t.revokedAt?'revoked':`expires ${String(t.expiresAt)}`;
+      return `${String(t.id)}  ${String(t.label)}  [${spaces}; ${state}; last used ${String(t.lastUsedAt??'never')}]${missing}`;
+    }).join('\n');
+  });
+  return EXIT_OK;
+}
+async function mcpTokensRevoke(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,['mutation-id']);
+  const tokenId=cmd.args[0];
+  if(!tokenId)throw new CliError('tokenId is required',EXIT_USAGE);
+  const body:Record<string,unknown>={clientMutationId:resolveMutationId(cmd.options.value('mutation-id'))};
+  if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.revoke',{params:{tokenId},body});
+  cmd.out.data(data,()=>'Revoked. Clients using it stop working immediately.');
+  return EXIT_OK;
+}
+
+/**
+ * The table-driven one-operation commands, plus `audit` (§5.6) and the three
+ * composites: `catalog list`, whose Space rides the query, `connect`, which
+ * chooses its door from the connector it reads first, and `tokens`, which
+ * prints a secret once.
+ */
+export const MCP_COMMANDS:CommandModule[]=[
+  ...MCP_OP_COMMANDS,
+  MCP_AUDIT_COMMAND,
+  {path:['mcp','catalog','list'],run:mcpCatalogList},
+  {path:['mcp','connect'],run:mcpConnect},
+  {path:['mcp','tokens','create'],run:mcpTokensCreate},
+  {path:['mcp','tokens','list'],run:mcpTokensList},
+  {path:['mcp','tokens','revoke'],run:mcpTokensRevoke},
+];

@@ -15,6 +15,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { knownAgentConfigDirs } from '../src/transcript/agent-config-dirs.js';
 import { encodeClaudeProjectDir, readSessionTranscript } from '../src/transcript/read-transcript.js';
 
 const temps: string[] = [];
@@ -449,6 +450,26 @@ describe('readSessionTranscript — codex', () => {
     });
     expect(page.available).toBe(true);
     expect(page.entries.map((entry) => entry.text)).toContain('member codex transcript');
+  });
+
+  it('reads a rollout from the session\'s isolated CODEX_HOME when the row names the source home', async () => {
+    // The shape every Codex session since fdb2e3fbd has: the child wrote under
+    // <dataDir>/manifests/mcp-homes/<id>/codex, the row says ~/.codex.
+    const home = await makeHome();
+    const dataDir = join(home, 'data');
+    const sessionId = '55555555-5555-4555-8555-555555555555';
+    await writeCodexConfigDir(join(dataDir, 'manifests', 'mcp-homes', sessionId, 'codex'), 'rollout-iso.jsonl', [
+      meta('native-iso'),
+      userTurn('2026-08-07T10:00:01.000Z', `task <tm8_session_id>${sessionId}</tm8_session_id>`),
+      assistantTurn('2026-08-07T10:00:02.000Z', 'isolated codex transcript'),
+    ]);
+    const page = await readSessionTranscript({
+      sessionId, agentTool: 'codex', nativeSessionId: null, cwd: CWD, home,
+      agentConfigDir: join(home, '.codex'),
+      fallbackAgentConfigDirs: await knownAgentConfigDirs({ agentTool: 'codex', dataDir, home, sessionId }),
+    });
+    expect(page.available).toBe(true);
+    expect(page.entries.map((entry) => entry.text)).toContain('isolated codex transcript');
   });
 
   it('refuses a rollout that only MENTIONS the id in tool output', async () => {

@@ -191,7 +191,11 @@ describe('status words', () => {
   it("renders the model's currentState word when the host supplies no verdict", () => {
     const view = render(<LedgerTree model={fixtureModel()} />);
     const row = view.getAllByTestId('ledger-row')[0]!;
-    expect(row.textContent).toContain('in_progress');
+    const dot = within(row).getByTestId('ledger-dot');
+    expect(dot.getAttribute('aria-label')).toBe('in_progress');
+    expect(dot.getAttribute('title')).toBe('in_progress');
+    // A dot, not a word (task 01a15340): the row's visible text is the title alone.
+    expect(row.textContent).not.toContain('in_progress');
   });
 
   it('renders the host statusOf verdict VERBATIM and lets it win over currentState', () => {
@@ -202,7 +206,10 @@ describe('status words', () => {
       />,
     );
     const row = view.getAllByTestId('ledger-row')[0]!;
-    expect(row.textContent).toContain('Live Coordinator');
+    const dot = within(row).getByTestId('ledger-dot');
+    expect(dot.getAttribute('aria-label')).toBe('Live Coordinator');
+    expect(dot.dataset.tone).toBe('run');
+    expect(row.textContent).not.toContain('Live Coordinator');
     expect(row.textContent).not.toContain('in_progress');
   });
 });

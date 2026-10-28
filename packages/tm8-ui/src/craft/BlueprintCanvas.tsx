@@ -31,7 +31,7 @@ import {
 } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Minimap } from '../graph/Minimap';
-import type { BlueprintLane, BlueprintLine, BlueprintView } from './blueprint-types';
+import type { BlueprintEdgeDetail, BlueprintLane, BlueprintLine, BlueprintView } from './blueprint-types';
 import { BlueprintNode, type NodeEmphasis } from './BlueprintNode';
 import {
   boxOf, findCards, neighbourhood, pathMidpoint, readingOrder, stepSelection, type Box, type NavDirection,
@@ -92,6 +92,8 @@ export interface BlueprintCanvasProps {
    * while empty. Absent ⇒ the box always floats over the canvas.
    */
   findRequest?: number | undefined;
+  /** Present ⇒ the key carries the "Lines" switch (all / reduced / essential). */
+  onEdgeDetail?: ((detail: BlueprintEdgeDetail) => void) | undefined;
 }
 
 export function BlueprintCanvas({
@@ -105,6 +107,7 @@ export function BlueprintCanvas({
   marked,
   chrome = true,
   findRequest,
+  onEdgeDetail,
 }: BlueprintCanvasProps) {
   const uid = useId().replace(/:/g, '');
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -632,7 +635,7 @@ export function BlueprintCanvas({
         </button>
       ) : null}
 
-      {chrome ? <Legend /> : null}
+      {chrome ? <Legend view={view} onEdgeDetail={onEdgeDetail} /> : null}
 
       <div className="crf-nav" role="group" aria-label="Blueprint view controls">
         {chrome && selected ? (
@@ -817,8 +820,21 @@ function Lane({
  * so it never sits on top of the plan it explains. Assignment has no line —
  * it is the docked avatar, and says so.
  */
-function Legend() {
+const EDGE_DETAILS: readonly { id: BlueprintEdgeDetail; label: string; title: string }[] = [
+  { id: 'all', label: 'All', title: 'Every edge is a line' },
+  { id: 'reduced', label: 'Reduced', title: 'Hide ordering lines a longer path already implies; merge lines between the same pair' },
+  { id: 'essential', label: 'Essential', title: 'Reduced, and fold context links (relates to, remembers, uses skill)' },
+];
+
+function Legend({ view, onEdgeDetail }: { view: BlueprintView; onEdgeDetail?: ((detail: BlueprintEdgeDetail) => void) | undefined }) {
   const rows = legendRows();
+  const { merged, implied, folded } = view.hiddenEdges;
+  const hidden = merged + implied + folded;
+  const counts = [
+    implied > 0 ? `${implied} implied` : null,
+    merged > 0 ? `${merged} merged` : null,
+    folded > 0 ? `${folded} folded` : null,
+  ].filter(Boolean).join(', ');
   return (
     <ul className="crf-legend" data-testid="crf-legend" aria-label="Key">
       {rows.map((row) => (
@@ -843,6 +859,31 @@ function Legend() {
         </svg>
         <span className="crf-legend__name">Spec</span>
       </li>
+      {onEdgeDetail ? (
+        <li
+          className="crf-legend__lines"
+          data-testid="crf-edge-detail"
+          title={`${view.lines.length} of ${view.lines.length + hidden} lines drawn${counts ? ` (${counts})` : ''}. The graph keeps every edge.`}
+        >
+          <span className="crf-legend__name">Lines</span>
+          <span role="radiogroup" aria-label="Lines drawn" className="crf-legend__seg">
+            {EDGE_DETAILS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                role="radio"
+                aria-checked={view.edgeDetail === d.id}
+                className="crf-legend__opt"
+                title={d.title}
+                onClick={() => onEdgeDetail(d.id)}
+              >
+                {d.label}
+              </button>
+            ))}
+          </span>
+          {hidden > 0 ? <span className="crf-legend__count">{`${view.lines.length}/${view.lines.length + hidden}`}</span> : null}
+        </li>
+      ) : null}
     </ul>
   );
 }
