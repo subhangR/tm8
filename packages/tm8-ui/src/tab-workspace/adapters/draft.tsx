@@ -15,6 +15,7 @@
  *  - `file`: the upload door (`files/upload`), the file's bytes being its
  *    substance;
  *  - `skill`: `SkillCreateControl` (the skill-file door);
+ *  - `tool`: `ToolCreateControl` (the tool-definition door, `tools.create`);
  *  - `work_session`: the launch sheet (`NewSessionScreen`);
  *  - `chat`: the chat-start flow (`ChatHomeSurface` in its solo composer).
  * `form` is the form builder (`FormDraftBody`, wired in the registry).
@@ -43,6 +44,7 @@ import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
 import { FRESH_DOC_TITLE, markFreshDoc } from '../../doc-edit';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
+import { ToolCreateControl, toolCreateValuesOf } from '../../tools/ToolCreateControl';
 import { onDraftFocusRequest } from '../runtime/draftFocus';
 import type { DraftTabRecord, KindId } from '../runtime/types';
 import { useWorkspace } from '../view/context';
@@ -579,6 +581,46 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
 }
 
 // ---------------------------------------------------------------------------
+// tool: the tool-definition door
+// ---------------------------------------------------------------------------
+
+/**
+ * A tool is created from its definition (`tools.create`), never from a title,
+ * so the draft tab hosts `ToolCreateControl` with `autoOpen`. The form's
+ * values are stored as typed (a remount restores them), the create's busy
+ * state blocks a double submit through the host, and the created tool binds
+ * this tab (the generic `onCreated`), so it opens in the centre at once. A
+ * selection header the node did not store is a toast, never a failed create.
+ */
+function ToolDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmitting }: DraftHostProps) {
+  const { gate, runtime, spaceId } = useWorkspace();
+  const port = gate.data.seam.commands.tools;
+  return (
+    <div className="tws-draft-form tws-draft-tool" data-testid="tws-draft-tool">
+      <DraftHeading kind={tab.kind} />
+      {port ? (
+        <ToolCreateControl
+          spaceId={spaceId}
+          port={port}
+          autoOpen
+          initial={toolCreateValuesOf(values)}
+          onValues={(next) => onValues({ ...next })}
+          onBusy={onSubmitting}
+          onCancel={onCancel}
+          onNotice={(text) => runtime.hooks.toast({ text })}
+          onCreated={({ tool }) => onCreated(tool.id, tool.definition.name)}
+        />
+      ) : (
+        <>
+          <p className="tws-draft-note">Tools are unavailable on this connection.</p>
+          <DraftActions onCancel={onCancel} submitting={false} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // work_session: the launch sheet
 // ---------------------------------------------------------------------------
 
@@ -666,5 +708,6 @@ export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | unde
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;
+  if (form === 'tool-definition') return ToolDraftBody;
   return undefined;
 }

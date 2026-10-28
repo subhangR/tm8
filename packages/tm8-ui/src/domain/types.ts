@@ -1712,7 +1712,7 @@ export interface KindConfig {
    * `list.quickCreate` continues to decide whether the header has a create
    * affordance at all.
    */
-  createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
+  createForm?: 'scheduled-work' | 'file-upload' | 'skill-file' | 'tool-definition';
   /**
    * NEW CREATES THE RECORD AT ONCE, NOT A FORM (Kalai, 2026-10-07: instant
    * create for every kind whose only required field is its title). The draft

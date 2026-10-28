@@ -21,8 +21,10 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'> & {
     create: (spaceId, definition) => call<ToolView>('tools.create', { params: { spaceId }, body: { ...command(), definition } }),
     async setHeader(toolId, header) {
       const result = await seam.commands.setEntityHeader(toolId, { ...command(), ...header });
-      if (result.header) return { stored: true };
-      return { stored: false, reason: result.warnings?.map(warning => warning.message).join('; ') || 'the node returned no header' };
+      // Only an AUTHORED header (version > 0) was stored: a node that admits the
+      // kind returns a derived header at version 0 when it skipped the write.
+      if (result.header && result.header.version > 0) return { stored: true };
+      return { stored: false, reason: result.warnings?.map(warning => warning.message).join('; ') || 'the node returned no authored header' };
     },
     async list(spaceId) {
       const tools: ToolView[] = [];
