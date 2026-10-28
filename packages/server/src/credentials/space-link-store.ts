@@ -25,8 +25,12 @@ import {
   type SpaceLinkInboundView,
 } from '@tm8/contract';
 import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
-import { isInvalidTokenError, resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
-import { DEFAULT_SESSION_TTL_MS } from '../identity/service.js';
+import {
+  isInvalidTokenError,
+  resolveBearerIdentity,
+  SESSION_TTL_MS,
+  type ResolvedAuthSession,
+} from '../identity/pg-auth.js';
 import { loadOrCreateCredentialKey } from './credential-key.js';
 import { bindingAad, openSecret, sealSecret, type SpaceLinkSecretBinding } from './secret-box.js';
 
@@ -226,7 +230,7 @@ export class DbSpaceLinkStore {
     const sessionId = randomUUID();
     const secret = generateSecret();
     const sealed = sealSecret(await this.key(), formatToken(sessionId, secret), binding);
-    const expiresAt = new Date(this.now() + DEFAULT_SESSION_TTL_MS.link).toISOString();
+    const expiresAt = new Date(this.now() + SESSION_TTL_MS.link).toISOString();
     return this.db.rpc<SpaceLink>(claims, 'store_space_link_session', [
       linkId, sessionId, hashToken(secret), expiresAt, sealed.ciphertext, sealed.nonce,
       options.relogin ? 'spaceLinks.relogin' : 'spaceLinks.login', options.clientMutationId ?? null,
@@ -482,7 +486,7 @@ export class DbSpaceLinkStore {
   }): Promise<RemoteClaimOutcome> {
     const sessionId = randomUUID();
     const secret = generateSecret();
-    const expiresAt = new Date(this.now() + DEFAULT_SESSION_TTL_MS.link).toISOString();
+    const expiresAt = new Date(this.now() + SESSION_TTL_MS.link).toISOString();
     const result = await this.db.rpc<ClaimRow>({}, 'claim_remote_space_link', [
       pairingCodeHash(input.pairingCode), input.homeSpaceId, input.homeServerId, input.homeBaseUrl,
       sessionId, hashToken(secret), expiresAt,

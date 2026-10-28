@@ -3047,20 +3047,44 @@ export function createLoopExecutorPort(deps: {
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
-  const claimsForOwner = async (): Promise<DbClaims> => {
+  /**
+   * The cross-space DUE READ only (375).
+   *
+   * Still the node's loopback owner — a scheduled firing has no HTTP request
+   * and therefore no caller identity — but now carrying the job claim that
+   * opens `loops_due_for_executor`. Without it this read is filtered to the
+   * owner's own member spaces, which is exactly the bug: `require_space_member`
+   * has no node-admin bypass and neither does `member_space_ids()`, so a loop
+   * in a space a human created was invisible, not merely unauthorised.
+   */
+  const dueReadClaims = async (): Promise<DbClaims> => {
     const owner = await resolveOwner();
-    // The node's loopback owner, exactly as ghost reconciliation does it: a
-    // scheduled firing has no HTTP request and therefore no caller identity,
-    // and `require_space_member` has no node-admin bypass.
     return {
       identityId: owner.identityId,
       nodeAdmin: owner.isNodeAdmin,
       requestId: 'loop-executor',
+      backgroundJob: 'loops.execute-due',
     };
   };
 
   return {
-    claimsFor: claimsForOwner,
+    dueReadClaims,
+    /**
+     * One firing's claims: the identity the due read resolved for THIS loop —
+     * the human `armed_by_identity_id` names (343), while they are still an
+     * active member of the loop's space.
+     *
+     * Deliberately carries no `backgroundJob` and no `nodeAdmin`: the firing
+     * needs neither, and `resolve_actor` will name this identity's own member
+     * row, so the derived task and the spawned session are attributed to the
+     * human who armed the schedule rather than to the node. That is the same
+     * person 343 already made the provenance root of every firing.
+     */
+    claimsForLoop: (loop, actAsIdentity) => ({
+      identityId: actAsIdentity,
+      nodeAdmin: false,
+      requestId: `loop-executor:${loop.entityId}`,
+    }),
     liveSessionIds: () => pty.liveSessionIds(),
     async fire(loop, claims, firedAt) {
       // The loop is its OWN launchable subject when it names none (§4.4), so
