@@ -161,7 +161,7 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
-  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable' },
+  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]  |  tm8 tool create [<name>] --from-starter <starter> [--runtime bash|python] [--source <@file>] [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable', notes: ['--from-starter <starter> starts from a starter in `tm8 tool starters list`: its definition and selection header; the name argument and every option given override the starter\'s value, and --spec fields replace the starter\'s one by one']},
   'tools.update': { cmd: ['tool', 'edit'], syn: 'tm8 tool edit <name|id> [--source <@file>] [--spec <@file>] [--runtime bash|python] [--description <text>] --expect-version <n> [--mutation-id <id>]', sum: 'Update a stored tool definition', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
   'tools.get': { cmd: ['tool', 'show'], syn: 'tm8 tool show <name|id> [--source]', sum: 'Read a tool and its configured inputs', authz: 'entity', input: 'none', side: 'none' },
   'tools.list': { cmd: ['tool', 'list'], syn: 'tm8 tool list [--words <text>] [--limit <count>] [--cursor <cursor>]', sum: 'List stored tools in a Space', authz: 'space', input: 'none', side: 'none' },
@@ -4976,6 +4976,33 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 tool diff <name>', 'tm8 tool diff <name> --from 3 --to 7'],
   }],
+  // `tool starters list|install` read the starter set shipped in @tm8/contract
+  // (TOOL_STARTERS, generated from examples/tools) and create through
+  // tools.create; the set is static data, so there is no starters operation.
+  ['tool starters list', {
+    path: ['tool', 'starters', 'list'],
+    syntax: 'tm8 tool starters list',
+    summary: 'The starter tools this CLI ships, and whether a tool of each name exists in this Space',
+    notes: [
+      'the starters are data in @tm8/contract, the set the UI offers too; the one call is tools.list, to mark names that already exist',
+      '`existing.matchesStarter` is false when the tool of that name has other source, such as an edited or older copy',
+      '--format json prints every starter in full: runtime, description, source, spec, whenToUse and summary',
+    ],
+    examples: ['tm8 tool starters list', 'tm8 tool starters list --format json'],
+  }],
+  ['tool starters install', {
+    path: ['tool', 'starters', 'install'],
+    syntax: 'tm8 tool starters install [--only <name>...] [--mutation-id <id>]',
+    summary: 'Create the starter tools this Space does not have yet, with their selection headers',
+    notes: [
+      'sugar over tools.list + tools.create + entities.header.set — it adds no catalog operation',
+      'a name that already exists is skipped, never overwritten; --only (repeatable or comma-separated) narrows the set and an unknown name is refused before any call',
+      'one created|skipped|failed row per starter: a refused create does not stop the others, and the exit code is the first refusal\'s',
+      'creates use <mutation-id>:<starter> and headers <mutation-id>:<starter>:header, so a retry with the same --mutation-id never duplicates',
+      'a header that could not be set is a warning on stderr: the tool exists without its when-to-use and summary',
+    ],
+    examples: ['tm8 tool starters install', 'tm8 tool starters install --only url-check --only space-digest'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -5213,7 +5240,12 @@ COMMAND_ORDER.push('style versions');
 COMMAND_OPS.set('tool versions', ['entities.versions', 'tools.get', 'tools.list']);
 COMMAND_OPS.set('tool diff', ['entities.versions', 'tools.get', 'tools.list']);
 const toolRunShowIndex = COMMAND_ORDER.indexOf('tool run-show');
-COMMAND_ORDER.splice(toolRunShowIndex < 0 ? COMMAND_ORDER.length : toolRunShowIndex + 1, 0, 'tool versions', 'tool diff');
+// `tool starters install` leads with the create it exists for, so its help
+// header reports the durable side effect rather than the listing's.
+COMMAND_OPS.set('tool starters list', ['tools.list']);
+COMMAND_OPS.set('tool starters install', ['tools.create', 'tools.list', 'entities.header.set']);
+COMMAND_ORDER.splice(toolRunShowIndex < 0 ? COMMAND_ORDER.length : toolRunShowIndex + 1, 0,
+  'tool versions', 'tool diff', 'tool starters list', 'tool starters install');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 // Lane L1 aliases: each is exactly as available as the operation it spells.
 COMMAND_OPS.set('space-link list', ['spaceLinks.list']);

@@ -1,7 +1,8 @@
-import { TOOL_DEFAULT_TIMEOUT_SECONDS, ToolDefinitionSchema, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { TOOL_DEFAULT_TIMEOUT_SECONDS, TOOL_STARTERS, ToolDefinitionSchema, toolStarterDefinition, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
 import { readJsonSource, readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { isAgentContext } from '../credentials.js';
+import { ApiError, exitCodeFor } from '../errors.js';
 import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_PROTOCOL, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -11,6 +12,7 @@ import { inputFlag, parseToolArgs, parseToolValue, refuseLiteralToolSecrets, ren
 import { readToolSecret } from './tool-secret.js';
 import { attachToolRun } from './tool-terminal.js';
 import { unifiedDiff } from './tool-diff.js';
+import { existingTool, renderInstall, renderStarters, requireStarter, selectStarters, type StarterInstallItem } from './tool-starters.js';
 import { changedFields, FOLDED_VERSIONS_NOTE, renderDiff, renderVersions, snapshotSource, versionRef, versionRows,
   type EntityVersionItem, type ToolDiffResult, type ToolVersionsPage } from './tool-history.js';
 
@@ -61,7 +63,7 @@ async function fileSource(raw: string, option: string): Promise<string> {
   if (!raw.startsWith('@') || raw.length === 1) throw new CliError(`--${option} must use @file`, EXIT_USAGE);
   return readTextSource(raw);
 }
-async function definition(cmd: CommandContext, previous?: ToolDefinition): Promise<ToolDefinition> {
+async function definition(cmd: CommandContext, previous?: ToolDefinition, name?: string): Promise<ToolDefinition> {
   let spec: Record<string, unknown> = {};
   const path = cmd.options.value('spec');
   if (path !== undefined) {
@@ -77,7 +79,7 @@ async function definition(cmd: CommandContext, previous?: ToolDefinition): Promi
   const parsed = ToolDefinitionSchema.safeParse({
     description: '', help: '', inputs: [], tm8Access: 'none', timeoutSeconds: TOOL_DEFAULT_TIMEOUT_SECONDS,
     ...previous, ...spec,
-    name: previous?.name ?? requireArg(cmd, 0, '<name>'),
+    name: name ?? previous?.name ?? requireArg(cmd, 0, '<name>'),
     runtime: cmd.options.value('runtime') ?? previous?.runtime,
     source: sourcePath !== undefined ? await fileSource(sourcePath, 'source') : previous?.source,
     ...(cmd.options.value('description') !== undefined ? { description: cmd.options.value('description') } : {}),
@@ -86,16 +88,19 @@ async function definition(cmd: CommandContext, previous?: ToolDefinition): Promi
   return parsed.data;
 }
 async function toolCreate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['runtime', 'source', 'spec', 'description', 'when-to-use', 'summary', 'keyword', 'mutation-id']);
-  argumentsCount(cmd, 1);
+  assertKnownOptions(cmd, ['from-starter', 'runtime', 'source', 'spec', 'description', 'when-to-use', 'summary', 'keyword', 'mutation-id']);
+  const starterName = cmd.options.value('from-starter'), starter = starterName === undefined ? undefined : requireStarter(starterName);
+  argumentsCount(cmd, starter ? 0 : 1, 1);
   const body = mutation(cmd);
+  // A starter supplies every field; the name argument and each option override it.
+  const created = await definition(cmd, starter && toolStarterDefinition(starter), starter && (cmd.args[0] ?? starter.name));
   let tool: ToolView = await observedInvoke(client(cmd), 'tools.create', {
-    params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition: await definition(cmd) },
+    params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition: created },
   });
   // Selection headers are the universal entity surface, separate from the
   // strict tool-definition DTO. A stable mutation id makes retries safe.
-  const header = headerTextOptions(cmd);
-  if (header) {
+  const header = { ...(starter ? { whenToUse: starter.whenToUse, summary: starter.summary } : {}), ...headerTextOptions(cmd) };
+  if (Object.keys(header).length) {
     await observedInvoke(client(cmd), 'entities.header.set', { params: { id: tool.id }, body: {
       ...body, clientMutationId: `${body.clientMutationId}:header`, ...header,
     } });
@@ -247,6 +252,63 @@ async function toolDiff(cmd: CommandContext): Promise<ExitCode> {
     diff: unifiedDiff(before, after, { from: `${name}@v${older.version}`, to: `${name}@v${newer.version}` }) };
   cmd.out.data(result, renderDiff); return EXIT_OK;
 }
+async function toolsByName(cmd: CommandContext): Promise<Map<string, ToolView>> {
+  const tools = new Map<string, ToolView>();
+  let cursor: string | null = null;
+  do {
+    const page: { items: ToolView[]; nextCursor: string | null } = await observedInvoke(client(cmd), 'tools.list', {
+      params: { spaceId: requireSpace(cmd.ctx) }, query: { limit: '200', ...(cursor ? { cursor } : {}) },
+    });
+    for (const item of page.items) tools.set(item.definition.name, item);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return tools;
+}
+async function toolStartersList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 0);
+  const tools = await toolsByName(cmd);
+  cmd.out.data({ items: TOOL_STARTERS.map(starter => ({ ...starter, existing: existingTool(starter, tools.get(starter.name)) })) }, renderStarters);
+  return EXIT_OK;
+}
+async function toolStartersInstall(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['only', 'mutation-id']); argumentsCount(cmd, 0);
+  const starters = selectStarters(cmd.options.values('only')), body = mutation(cmd), tools = await toolsByName(cmd);
+  const items: StarterInstallItem[] = [];
+  let exit: ExitCode = EXIT_OK;
+  for (const starter of starters) {
+    const existing = tools.get(starter.name);
+    if (existing) { items.push({ name: starter.name, status: 'skipped', reason: 'exists', toolId: existing.id }); continue; }
+    // One mutation id per starter: a retry with the same --mutation-id replays, never duplicates.
+    const clientMutationId = `${body.clientMutationId}:${starter.name}`;
+    let tool: ToolView;
+    try {
+      tool = await observedInvoke(client(cmd), 'tools.create', { params: { spaceId: requireSpace(cmd.ctx) },
+        body: { ...body, clientMutationId, definition: toolStarterDefinition(starter) } });
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      // A name taken since the listing, or by a tool this caller cannot read, is the same skip.
+      if (error.code === 'invariant_violation' && /already has this name/.test(error.message)) {
+        items.push({ name: starter.name, status: 'skipped', reason: 'exists', toolId: null }); continue;
+      }
+      items.push({ name: starter.name, status: 'failed', error: { code: error.code, message: error.message } });
+      if (exit === EXIT_OK) exit = exitCodeFor(error);
+      continue;
+    }
+    let header: 'set' | 'failed' = 'set';
+    try {
+      await observedInvoke(client(cmd), 'entities.header.set', { params: { id: tool.id }, body: {
+        ...body, clientMutationId: `${clientMutationId}:header`, whenToUse: starter.whenToUse, summary: starter.summary,
+      } });
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      // The tool exists either way; a missing header is a notice, as in the UI.
+      header = 'failed';
+      cmd.out.warn(`${starter.name} was created but its selection header was not set: ${error.code}: ${error.message}`);
+    }
+    items.push({ name: starter.name, status: 'created', toolId: tool.id, version: tool.version, header });
+  }
+  cmd.out.data({ items }, renderInstall); return exit;
+}
 export const TOOL_COMMANDS: CommandModule[] = [
   { path: ['tool', 'create'], run: toolCreate }, { path: ['tool', 'edit'], run: toolEdit },
   { path: ['tool', 'show'], run: toolShow }, { path: ['tool', 'list'], run: toolList }, { path: ['tool', 'help'], run: toolHelp },
@@ -254,4 +316,5 @@ export const TOOL_COMMANDS: CommandModule[] = [
   { path: ['tool', 'secret', 'set'], run: cmd => toolSecret(cmd, false) }, { path: ['tool', 'secret', 'unset'], run: cmd => toolSecret(cmd, true) },
   { path: ['tool', 'run'], run: toolRun }, { path: ['tool', 'runs'], run: toolRuns }, { path: ['tool', 'run-show'], run: toolRunShow },
   { path: ['tool', 'versions'], run: toolVersions }, { path: ['tool', 'diff'], run: toolDiff },
+  { path: ['tool', 'starters', 'list'], run: toolStartersList }, { path: ['tool', 'starters', 'install'], run: toolStartersInstall },
 ];

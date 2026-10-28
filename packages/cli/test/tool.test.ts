@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PTY_WS_PROTOCOL, PTY_GRANT_PROTOCOL_PREFIX, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { PTY_WS_PROTOCOL, PTY_GRANT_PROTOCOL_PREFIX, TOOL_STARTERS, toolStarterDefinition, toolStarterNamed, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
 import { parseInvocation } from '../src/args.js';
 import { run } from '../src/run.js';
 import { parseToolArgs, renderToolHelp, type ToolHelp } from '../src/commands/tool-args.js';
@@ -48,6 +48,17 @@ const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<
     execution_version: version, config_revision: Object.keys(config).length, config, secretBindings: [] } },
 });
 let history: ReturnType<typeof stored>[] = [], versionPageCap = 200;
+// Starter installs: the Space's tools (served two per page), and refusals by tool name.
+let spaceTools: ToolView[] | undefined, headerRefused = false;
+let createRefusals: Record<string, { status: number; code: string; message: string }> = {};
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+const toolNamed = (name: string, id: string, source = toolStarterNamed(name)!.source): ToolView =>
+  ({ ...tool, id, version: 3, sourceSha256: sha256(source), definition: { ...definition, name, source } });
+const createdId = (name: string): string => `5555555${TOOL_STARTERS.findIndex(starter => starter.name === name) + 1}-5555-7555-8555-555555555555`;
+const refuse = (res: import('node:http').ServerResponse, status: number, code: string, message: string): void => {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ error: { code, message, retryable: false, requestId: 'test' } }));
+};
 const storedRun = (): ToolRun => ({ id: SESSION, spaceId: SPACE, toolId: TOOL, toolVersion: tool.version,
   sourceSha256: tool.sourceSha256, inputs: {}, state: completed ? 'exited' : 'running', keepOpen,
   exitCode: completed ? exitCode : null, startedAt: null, exitedAt: null, outputTail: 'stored output\n', parentSessionId: null });
@@ -89,8 +100,15 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/tools')) {
         // Name lookup must paginate and match exactly rather than pick a substring.
         if (url.searchParams.has('words') && namePage++ === 0) data = { items: [{ ...tool, definition: { ...tool.definition, name: 'demo-other' } }], nextCursor: 'next' };
-        else data = { items: [tool], nextCursor: null };
-        if (req.method === 'POST') data = tool;
+        else if (spaceTools) {
+          const start = Number(url.searchParams.get('cursor') ?? 0);
+          data = { items: spaceTools.slice(start, start + 2), nextCursor: start + 2 < spaceTools.length ? String(start + 2) : null };
+        } else data = { items: [tool], nextCursor: null };
+        if (req.method === 'POST') {
+          const refusal = createRefusals[body.definition?.name];
+          if (refusal) { refuse(res, refusal.status, refusal.code, refusal.message); return; }
+          data = spaceTools ? { ...tool, id: createdId(body.definition.name), version: 1, definition: body.definition } : tool;
+        }
       } else if (url.pathname.endsWith('/help')) data = { ...help(), ...(helpVersionMismatch ? { version: tool.version + 1 } : {}) };
       else if (url.pathname.endsWith('/run')) {
         if (conflict) {
@@ -111,6 +129,10 @@ beforeAll(async () => {
       }
       else if (url.pathname.includes('/tool-runs/')) data = storedRun();
       else if (url.pathname.endsWith('/secrets/bind')) data = { inputName: 'auth', keyHint: '••••' };
+      else if (url.pathname.endsWith('/header')) {
+        if (headerRefused) { refuse(res, 403, 'forbidden', 'Header writes are not allowed here'); return; }
+        data = { entityId: url.pathname.split('/')[3], version: 1 };
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -127,6 +149,7 @@ beforeEach(() => {
   requests = []; stdout = ''; stderr = ''; fast = false; completed = false; exitCode = 37; keepOpen = false; conflict = false; helpVersionMismatch = false; namePage = 0;
   TerminalSocket.instances = [];
   noReplay = false; statusDelay = 0; noTerminalEnd = false; versionPageCap = 200;
+  spaceTools = undefined; headerRefused = false; createRefusals = {};
   history = [
     stored(6, { source: 'echo one\necho two\n', help: 'New help', inputs: definition.inputs.slice(0, 2) }, { limit: 4 }),
     stored(5, { source: 'echo one\necho two\n' }, { limit: 4 }),
@@ -222,7 +245,7 @@ describe('catalog commands and version pin', () => {
     expect(await run(['tool', 'help', TOOL])).toBe(0); expect(requests.at(-1)!.path).toContain('/help');
     expect(await run(['tool', 'runs', TOOL, '--limit', '3'])).toBe(0); expect(requests.at(-1)!.path).toContain('/runs');
     expect(await run(['tool', 'run-show', SESSION, '--output'])).toBe(0); expect(stdout).toContain('stored output');
-    expect(nounHelp('tool')!.commands).toHaveLength(14);
+    expect(nounHelp('tool')!.commands).toHaveLength(16);
   });
 });
 
@@ -282,6 +305,90 @@ describe('version history', () => {
     for (const bad of ['0', 'latest', '-1', '1.5']) expect(await run(['tool', 'diff', 'demo', '--from', bad])).toBe(2);
     expect(requests).toHaveLength(0);
     expect(await run(['tool', 'versions', 'demo', 'extra'])).toBe(2);
+  });
+});
+
+describe('starters', () => {
+  const OTHER = '66666666-6666-7666-8666-666666666666', URL_CHECK = '77777777-7777-7777-8777-777777777777';
+  it('lists every starter in full and marks names that exist, comparing their source', async () => {
+    spaceTools = [toolNamed('demo', TOOL, 'echo hello'), toolNamed('url-check', URL_CHECK), toolNamed('gh-pr-status', OTHER, 'echo edited')];
+    expect(await run(['tool', 'starters', 'list', '--format', 'json'])).toBe(0);
+    const { items } = JSON.parse(stdout);
+    expect(items.map((item: { name: string }) => item.name)).toEqual(['gh-pr-status', 'slack-notify', 'space-digest', 'url-check']);
+    expect(items[3]).toMatchObject({ ...toolStarterNamed('url-check'), existing: { toolId: URL_CHECK, version: 3, matchesStarter: true } });
+    expect(items[0].existing).toEqual({ toolId: OTHER, version: 3, matchesStarter: false });
+    expect(items[1].existing).toBeNull();
+    // The Space listing pages, so a name past the first page still counts.
+    expect(requests.filter(req => req.path.endsWith('/tools')).map(req => req.query.get('cursor'))).toEqual([null, '2']);
+    stdout = '';
+    expect(await run(['tool', 'starters', 'list'])).toBe(0);
+    expect(stdout).toContain('4 starter tools; install with: tm8 tool starters install [--only <name>...]');
+    expect(stdout).toMatch(/gh-pr-status +bash +exists v3 \(other source\) +List a GitHub/);
+    expect(stdout).toMatch(/url-check +bash +exists v3 +Check that/); expect(stdout).toMatch(/space-digest +python +not installed/);
+  });
+  it('installs the missing starters with their headers and per-starter mutation ids, skipping existing names', async () => {
+    spaceTools = [toolNamed('url-check', URL_CHECK)];
+    expect(await run(['tool', 'starters', 'install', '--mutation-id', 'install-1', '--format', 'json'])).toBe(0);
+    const creates = requests.filter(req => req.method === 'POST' && req.path.endsWith('/tools'));
+    expect(creates.map(req => req.body.definition)).toEqual(['gh-pr-status', 'slack-notify', 'space-digest'].map(name => toolStarterDefinition(toolStarterNamed(name)!)));
+    expect(creates.map(req => req.body.clientMutationId)).toEqual(['install-1:gh-pr-status', 'install-1:slack-notify', 'install-1:space-digest']);
+    const headers = requests.filter(req => req.path.endsWith('/header'));
+    expect(headers.map(req => [req.path.split('/')[3], req.body.clientMutationId, req.body.whenToUse, req.body.summary])).toEqual(
+      ['gh-pr-status', 'slack-notify', 'space-digest'].map(name => [createdId(name), `install-1:${name}:header`, toolStarterNamed(name)!.whenToUse, toolStarterNamed(name)!.summary]));
+    expect(JSON.parse(stdout).items).toEqual([
+      { name: 'gh-pr-status', status: 'created', toolId: createdId('gh-pr-status'), version: 1, header: 'set' },
+      { name: 'slack-notify', status: 'created', toolId: createdId('slack-notify'), version: 1, header: 'set' },
+      { name: 'space-digest', status: 'created', toolId: createdId('space-digest'), version: 1, header: 'set' },
+      { name: 'url-check', status: 'skipped', reason: 'exists', toolId: URL_CHECK },
+    ]);
+  });
+  it('narrows with repeatable or comma-separated --only, and refuses an unknown name before any call', async () => {
+    spaceTools = [];
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--only', 'space-digest,url-check'])).toBe(0);
+    expect(requests.filter(req => req.method === 'POST').map(req => req.body.definition.name)).toEqual(['space-digest', 'url-check']);
+    expect(stdout).toMatch(/created +space-digest +5555555/); expect(stdout).toContain('2 created, 0 skipped, 0 failed');
+    requests = [];
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check,nope'])).toBe(2);
+    expect(stderr).toContain('Unknown starter nope; choose from gh-pr-status, slack-notify, space-digest, url-check');
+    expect(await run(['tool', 'starters', 'install', '--only', ','])).toBe(2);
+    expect(requests).toHaveLength(0);
+  });
+  it('reports a name taken since the listing as skipped, and a refused create as failed without stopping the rest', async () => {
+    spaceTools = [];
+    createRefusals = {
+      'gh-pr-status': { status: 409, code: 'invariant_violation', message: 'a live tool already has this name' },
+      'slack-notify': { status: 403, code: 'forbidden', message: 'Tool creation is not allowed' },
+    };
+    expect(await run(['tool', 'starters', 'install'])).toBe(4);
+    expect(stdout).toMatch(/skipped +gh-pr-status +already exists\n/);
+    expect(stdout).toMatch(/failed +slack-notify +forbidden: Tool creation is not allowed/);
+    expect(stdout).toMatch(/created +space-digest/); expect(stdout).toMatch(/created +url-check/);
+    expect(stdout).toContain('2 created, 1 skipped, 1 failed');
+  });
+  it('keeps a created starter when its header cannot be set, and warns', async () => {
+    spaceTools = []; headerRefused = true;
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--format', 'json'])).toBe(0);
+    expect(JSON.parse(stdout).items).toEqual([{ name: 'url-check', status: 'created', toolId: createdId('url-check'), version: 1, header: 'failed' }]);
+    expect(stderr).toContain('url-check was created but its selection header was not set: forbidden: Header writes are not allowed here');
+  });
+  it('creates from a starter, letting the name, options and spec fields override it', async () => {
+    expect(await run(['tool', 'create', '--from-starter', 'url-check'])).toBe(0);
+    expect(requests.find(req => req.method === 'POST')!.body.definition).toEqual(toolStarterDefinition(toolStarterNamed('url-check')!));
+    expect(requests.find(req => req.path.endsWith('/header'))!.body).toMatchObject({ whenToUse: toolStarterNamed('url-check')!.whenToUse, summary: toolStarterNamed('url-check')!.summary });
+    requests = [];
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-starter-'));
+    writeFileSync(join(dir, 'spec.json'), JSON.stringify({ timeoutSeconds: 30 })); writeFileSync(join(dir, 'tool.sh'), 'echo mine\n');
+    expect(await run(['tool', 'create', 'my-check', '--from-starter', 'url-check', '--source', `@${join(dir, 'tool.sh')}`,
+      '--spec', `@${join(dir, 'spec.json')}`, '--description', 'Mine', '--summary', 'Custom summary'])).toBe(0);
+    const starter = toolStarterNamed('url-check')!;
+    expect(requests.find(req => req.method === 'POST')!.body.definition).toEqual({ ...toolStarterDefinition(starter),
+      name: 'my-check', description: 'Mine', source: 'echo mine\n', timeoutSeconds: 30 });
+    expect(requests.find(req => req.path.endsWith('/header'))!.body).toMatchObject({ whenToUse: starter.whenToUse, summary: 'Custom summary' });
+    requests = [];
+    expect(await run(['tool', 'create', '--from-starter', 'nope'])).toBe(2);
+    expect(await run(['tool', 'create', 'a', 'b', '--from-starter', 'url-check'])).toBe(2);
+    expect(await run(['tool', 'create', '--runtime', 'bash', '--source', `@${join(dir, 'tool.sh')}`])).toBe(2);
+    expect(requests).toHaveLength(0);
   });
 });
 
