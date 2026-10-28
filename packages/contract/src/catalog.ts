@@ -870,12 +870,19 @@ export const MOUNTED_OPERATIONS: readonly OperationBinding[] =
 /** Reserved operations — must answer `501 not_implemented`, never 404. */
 export const RESERVED_OPERATIONS = OPERATIONS.filter((op) => op.status === 'reserved');
 
-/** Substitute `:params` in an operation path. Throws on missing params. */
+/**
+ * Substitute `:params` in an operation path. Throws on missing params, and on
+ * a `.` or `..` value: `encodeURIComponent` leaves dots alone, so a bound
+ * `messages.list` with `anchorId: '..'` resolved to `/v2/messages` — another
+ * route than the one named, reached by every client that does `new URL(path)`.
+ * Percent-encoding cannot save it: URL parsing reads `%2e%2e` as `..` too.
+ */
 export function bindPath(name: OperationName, params: Record<string, string> = {}): string {
   const op = getOperation(name);
   return op.path.replace(/:([A-Za-z]+)/g, (_, p: string) => {
     const v = params[p];
     if (v === undefined) throw new Error(`bindPath(${name}): missing param :${p}`);
+    if (v === '.' || v === '..') throw new Error(`bindPath(${name}): param :${p} may not be a dot segment`);
     return encodeURIComponent(v);
   });
 }
