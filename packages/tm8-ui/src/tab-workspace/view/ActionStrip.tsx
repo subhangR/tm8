@@ -392,15 +392,15 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
             <AttachButton entityId={tab.entityId} />
           </div>
         ) : null}
-      </div>
-
-      {/* MIDDLE — THE TOKEN READING, stacked (task 01a14b00): a session's live
-          context number, portalled here by its panel, or a chat's, published by
-          its screen. It sits between the two sections, away from the icons;
-          pressing it opens the reading's details to the left. */}
-      <div className="tws-astrip-section tws-astrip-section--stats">
-        <div ref={chrome?.setStatsSlot} className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-stats" />
-        {tab.kind === 'chat' ? <ChatStats chatId={tab.entityId} /> : null}
+        {/* THE TOKEN READING, stacked (task 01a14b00): a session's live context
+            number, portalled here by its panel, or a chat's, published by its
+            screen. The top group's last item, right after a session's Terminate
+            (task 01a18253); nothing floats between the groups. Pressing it
+            opens the reading's details to the left. */}
+        <div className="tws-astrip-section tws-astrip-section--stats">
+          <div ref={chrome?.setStatsSlot} className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-stats" />
+          {tab.kind === 'chat' ? <ChatStats chatId={tab.entityId} /> : null}
+        </div>
       </div>
 
       {/* BOTTOM — the actions every kind shares. */}
