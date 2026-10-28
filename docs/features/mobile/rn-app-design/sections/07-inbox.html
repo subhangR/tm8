@@ -177,7 +177,7 @@
         <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title hidden">Inbox</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div><div class="big">Inbox</div></header>
         <main class="content">
           <div class="segmented"><span class="seg">Atelier <span class="badge muted">5</span></span><span class="seg on">All servers <span class="badge muted">6</span></span></div>
-          <div class="banner neutral"><svg class="ic"><use href="#i-wifi-off"/></svg>acme-node unreachable — its rows are from 12:58<span class="act">Try again</span></div>
+          <div class="banner neutral"><svg class="ic"><use href="#i-wifi-off"/></svg>acme-node unreachable — its rows are from 12:58<span class="act">Load again</span></div>
           <div class="section-h">Needs you · 2</div>
           <div class="list lines">
             <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer asked you: which tab bar?</span><span class="s"><span class="att"><b>!</b>3 · 2h</span><span class="srv"><i>A</i>Atelier</span></span></span><span class="trail"><span class="time">11:02</span></span></a>
@@ -313,7 +313,7 @@
   <div class="shot w360">
     <figure class="phone flat" data-os="android" data-theme="dark" data-size="360">
       <div class="ph-screen">
-        <main class="content"><div class="empty" style="padding:28px 28px"><svg class="ic" style="color:var(--block)"><use href="#i-error"/></svg><div class="h">The inbox read failed</div><p>tm8.sh answered <code>upstream_unavailable</code>. Nothing is hidden: there is no data to show, and the badge keeps its last count, marked stale.</p><span class="btn">Try again</span></div></main>
+        <main class="content"><div class="empty" style="padding:28px 28px"><svg class="ic" style="color:var(--block)"><use href="#i-error"/></svg><div class="h">The inbox read failed</div><p>tm8.sh answered <code>upstream_unavailable</code>. Nothing is hidden: there is no data to show, and the badge keeps its last count, marked stale.</p><span class="btn">Load again</span></div></main>
       </div>
     </figure>
     <div class="cap"><b>Read failed — Android dark</b>A failed read is never flattened into an empty list: "we could not ask" is a different fact from "nothing for you". <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
@@ -872,12 +872,12 @@
         <div class="toast" style="position:relative;left:auto;right:auto;bottom:auto;margin:12px 16px 16px"><svg class="ic"><use href="#i-success"/></svg>Back online · synced 2 changes with tm8.sh</div>
       </main></div>
     </figure>
-    <div class="cap"><b>Offline, queued writes, synced</b>Cached data stays readable under an amber banner that says from when. A write made offline shows <span class="pill pending">pending</span> on its row; Send now flushes the queue (the same records, not new sends). Only idempotent writes are queued (messages, read, status, carrying <code>--expect-version</code>). A queued write that comes back refused turns into the refusal card, never a silent drop.</div>
+    <div class="cap"><b>Offline, queued writes, synced — v2</b>Offline writes are v2 (lane 08); v1 shows the cached read and disables writes with the reason. Cached data stays readable under an amber banner that says from when. A write made offline shows <span class="pill pending">pending</span> on its row; Send now flushes the queue (the same records, not new sends). Only idempotent writes are queued (messages, read, status, carrying <code>--expect-version</code>). A queued write that comes back refused turns into the refusal card, never a silent drop.</div>
   </div>
   <div class="shot">
     <figure class="phone flat" data-os="ios" data-theme="dark">
       <div class="ph-screen"><main class="content">
-        <div class="banner block"><svg class="ic"><use href="#i-server"/></svg>tm8.sh isn’t answering · last reached 14:02<span class="act">Try again</span></div>
+        <div class="banner block"><svg class="ic"><use href="#i-server"/></svg>tm8.sh isn’t answering · last reached 14:02<span class="act">Load again</span></div>
         <div class="banner info"><svg class="ic"><use href="#i-info"/></svg>tm8.sh runs 0.41 · this app needs 0.44 for Inbox swipes<span class="act">Why</span></div>
         <div class="banner"><svg class="ic"><use href="#i-warning"/></svg>This app is too old for acme-node · update to keep writing<span class="act">Update</span></div>
         <div class="banner"><svg class="ic"><use href="#i-clock"/></svg>tm8.sh is limiting requests · retrying in 20 s</div>
@@ -968,7 +968,7 @@
     <tr><td>/[server]/[space]/e/[id]?sheet=attention</td><td>Entity attention control</td><td></td></tr>
     <tr><td>/[server]/[space]/e/[id]?sheet=share · ?sheet=qr</td><td>Share sheet · QR</td><td></td></tr>
     <tr><td>/search</td><td>Global search modal</td><td>q · scope=space|all · kind</td></tr>
-    <tr><td>/link?url=</td><td>Link resolver (the “Opening link” screen and its branches)</td><td>the original URL</td></tr>
+    <tr><td>/link?url=</td><td>Link resolver (the “Opening link” screen and its branches) — proposed route</td><td>the original URL</td></tr>
     <tr><td>/[server]/[space]/e/[id] (unavailable)</td><td>Terminal state for a link you cannot see</td><td>reason from the node</td></tr>
   </tbody>
 </table>
