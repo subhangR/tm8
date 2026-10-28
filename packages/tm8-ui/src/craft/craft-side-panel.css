@@ -86,3 +86,64 @@
   display: flex;
   flex-direction: column;
 }
+
+/* THE PINNED RAIL: one header row — [chats] [▾ picker] … [+]. */
+.crf-side__head[data-pinned] {
+  padding: var(--pn-space-1) var(--pn-space-2);
+}
+.crf-side__head[data-pinned] .crf-side__bar {
+  flex-wrap: nowrap;
+}
+.crf-side__newmenu {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.crf-side__plus {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.crf-side__plus:hover,
+.crf-side__plus[aria-expanded='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+}
+.crf-side__newmenu .crf-side__menu {
+  top: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 180px;
+  font-size: var(--pn-fs-label);
+}
+.crf-side__newmenu .crf-side__menu .pn-overflow__item:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+
+/* The compact empty state: the Craft mark, large and muted, and its name. */
+.tch-welcome--host:has(> .crf-intro--compact) {
+  width: 100%;
+  min-width: 0;
+}
+.crf-intro--compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-2);
+  max-width: none;
+  color: var(--pn-ink-4, var(--pn-ink-3));
+}
+.crf-intro--compact .crf-intro__name {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-3);
+}

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
 import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
+import { AgentToolIcon, agentToolKind } from '../../kit/AgentToolIcon';
 import { copyToClipboard } from '../../terminal/domUtils';
 import { useFreshGlow } from '../../domain/useFreshGlow';
 import type { SessionIcon, SessionWord } from '../../domain';
@@ -33,7 +34,6 @@ export function MaestroSessionTile({
   word,
   lineTwo,
   crumb,
-  tasks,
   lane,
   badges,
   childCount,
@@ -41,6 +41,9 @@ export function MaestroSessionTile({
   onToggleChildren,
   onSelect,
   actions,
+  signal,
+  time,
+  rowMenu,
   detail,
   leadMode = false,
 }: {
@@ -94,11 +97,15 @@ export function MaestroSessionTile({
    * avatar's process dot. Absent ⇒ the pre-D1 rendering (record status only).
    */
   word?: SessionWord | null;
-  /** §5.2 line 2: reason and age, such as "Crashed 5m ago: out of memory". */
+  /**
+   * §5.2 line 2 — NO LONGER DRAWN BY THIS TILE (ruling 2026-10-17). The prop
+   * stays because the row's own `title` is the honest place for the sentence
+   * it carries, and because four other surfaces still render it; a host that
+   * passes it is not making a mistake, it is just not getting a second line.
+   */
   lineTwo?: string | null;
   /** §5.3.1 case 7: "↳ under Coordinator X (Completed)". */
   crumb?: string | null;
-  tasks: readonly EntitySummary[];
   /**
    * The ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`, from the
    * session's summary lane facts. Renders beside the PR chips; absent when
@@ -122,7 +129,26 @@ export function MaestroSessionTile({
    * tile hands its own button DOWN and the cluster places it.
    */
   actions?: (own: ReactNode) => ReactNode;
-  /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
+  /**
+   * THE QUIET ROW'S THREE SLOTS (task 01a1469f, design doc 01a1465d §6;
+   * coordinator ruling 2026-10-17: "a session row should read like the rest").
+   *
+   * `signal` is the one mark §6 allows — a live dot, a waiting ring or an
+   * outcome — and it REPLACES the `pn-st__word` pill, which said the same
+   * thing in a word. `time` is the row's own clock and `rowMenu` the `⋯` that
+   * takes its place on hover, exactly as on the other two anatomies.
+   */
+  signal?: ReactNode;
+  time?: ReactNode;
+  /**
+   * A RENDER FUNCTION, like `actions` above and for the same reason: the verbs
+   * are assembled HERE (the cluster, plus this anatomy's own Copy, in the
+   * ruled order) and the trigger and its popover are built by the PANEL, which
+   * owns the open state. Handing the verbs up lets the panel wrap them without
+   * either side having to know how the other draws.
+   */
+  rowMenu?: (verbs: ReactNode) => ReactNode;
+  /** The expanded block (`SessionDetails`), drawn while details are open. */
   detail?: ReactNode;
 }) {
   const { oneSurface } = useMobileSurface();
@@ -176,7 +202,10 @@ export function MaestroSessionTile({
               onToggle={onToggleChildren}
               badge={false}
             />
-            <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
+            {/* The §5.2 sentence moves into the row's tooltip rather than off
+                the row entirely — "Crashed 5m ago: out of memory" is worth a
+                hover even when it is not worth a line. */}
+            <span className="pn-st__title lp__title" title={lineTwo ? `${title} · ${lineTwo}` : `${title} · ${id}`}>
               <span className="pn-st__titleText">{title}</span>
               {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
             </span>
@@ -197,7 +226,7 @@ export function MaestroSessionTile({
         >
           <SessionIcon name="chevron" />
         </button>
-        <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
+        <span className="pn-st__title lp__title" title={lineTwo ? `${title} · ${lineTwo}` : `${title} · ${id}`}>
           <AgentTile
             tool={agentTool}
             shell={sessionKind === 'shell'}
@@ -223,14 +252,19 @@ export function MaestroSessionTile({
         {/* Spec D1: the word says Completed itself; the old `done` tag only
             survives for a row with no session word to show. */}
         {!archived && completed && !word ? <span className="pn-st__tag pn-st__tag--done">done</span> : null}
-        {!archived && word ? (
-          <span
-            className={`pn-st__word pn-st__word--${word.tone}`}
-            data-testid="session-row-word"
-            data-session-case={word.case}
-            title={word.reason ?? word.word}
-          >
-            {word.word}
+        {/* THE WORD PILL IS GONE (§6, ruling 2026-10-17). It said in a word what
+            `signal` now says in a mark, and it was the loudest thing on a
+            sessions list: five different words in five tones down the right
+            edge of every row. The word itself is NOT lost — `TileSignal`
+            carries it as `title` and as screen-reader text, which is the same
+            treatment §6 gives every other kind's status.
+
+            `data-session-case` rides the row instead, so the groups, the tests
+            and the styling that key on the case still have it without a
+            visible pill to hang it on. */}
+        {!archived && signal ? (
+          <span className="pn-st__signal" data-testid="session-row-signal" data-session-case={word?.case}>
+            {signal}
           </span>
         ) : null}
 
@@ -242,16 +276,22 @@ export function MaestroSessionTile({
             <StatusGlyph kind={archived ? 'archived' : word ? GLYPH_OF[word.icon] : status} />
           </span>
         )}
-        <span className="pn-st__actions lp__cluster">
-          {/* The shared cluster, which this anatomy had never rendered at all:
-              its `rowActions` were declared in the registry and dropped on the
-              floor here, while a Close button was hand-rolled beside them.
-              Terminate now comes from the registry (with its dedicated
-              executor), so there is exactly one of it. Copy stays this
-              anatomy's own affordance — it is handed to the cluster rather
-              than drawn after it, so that it lands in the ruled position
-              BEFORE terminate. */}
-          {(!oneSurface || detailsExpanded) && actions?.(
+
+        {/* The row's own clock, and the `⋯` that takes its slot on hover. */}
+        {time}
+
+        {/* THE VERBS, BEHIND THE DOOR (§6, ruling 2026-10-17). The cluster is
+            unchanged — the registry's `rowActions` with this anatomy's own Copy
+            handed INTO it so Copy lands before Terminate, which is the whole
+            reason `actions` is a function. What changed is the container: it
+            used to sit in the row on hover and now hangs off one `⋯`, the
+            same as the other two anatomies.
+
+            The phone keeps its own answer: `oneSurface` still withholds the
+            verbs while the row is closed (§7j''), so a closed phone row is the
+            opener alone whatever the desktop does. */}
+        {rowMenu?.(
+          (!oneSurface || detailsExpanded) && actions?.(
             <button
               type="button"
               className="pn-st__btn"
@@ -264,7 +304,10 @@ export function MaestroSessionTile({
             >
               <SessionIcon name={copied ? 'check' : 'copy'} />
             </button>,
-          )}
+          ),
+        )}
+
+        <span className="pn-st__actions lp__cluster">
           <button
             type="button"
             /* `--ind` names it THE OPENER, exactly as `lp__rowaction--ind` and
@@ -287,15 +330,17 @@ export function MaestroSessionTile({
       </div>
 
       {crumb ? <div className="pn-st__crumb" data-testid="session-row-crumb">{crumb}</div> : null}
-      {lineTwo && !archived ? (
-        <div
-          className={`pn-st__line2${word?.tone === 'block' ? ' pn-st__line2--block' : ''}`}
-          data-testid="session-row-line2"
-          title={lineTwo}
-        >
-          {lineTwo}
-        </div>
-      ) : null}
+      {/* LINE TWO IS GONE FROM THE COLLAPSED ROW (ruling 2026-10-17: "drop any
+          line-two/word that duplicates the time"). Every one of its cases read
+          as a restatement of the clock now on line 1 — "Ended 81d ago",
+          "Failed to start 81d ago", "Stopped by Subhang 2h ago" — so a row
+          spent a whole second line saying what the time already said, and the
+          one extra fact in it (who stopped it) is a detail-panel fact.
+
+          `sessionLineTwo` itself STAYS and is untouched: `SubtreeBody`,
+          `detail/chrome`, `SessionFallback` and `EmptyCenter` all draw it on
+          surfaces that have room for a sentence. This is the LIST's ruling,
+          not the derivation's. */}
       {lane || badges ? (
         <div className="pn-st__badges">
           {lane}
@@ -303,25 +348,11 @@ export function MaestroSessionTile({
         </div>
       ) : null}
 
-      {detailsExpanded && tasks.length > 0 ? (
-        <div className="pn-st__tasklines">
-          {tasks.map((task) => {
-            const taskState = task.state as unknown as { status?: string };
-            return (
-              <div key={task.id} className="pn-st__taskline" title={`${task.title} (${taskState.status ?? 'work item'})`}>
-                <StatusGlyph kind={taskState.status ?? 'open'} size={13} />
-                <span className="pn-st__tasklineLabel">{task.title}</span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* D67 — the state + archive strip, on the SAME disclosure as the task
-          lines. Gated on `detailsExpanded` alone, NOT on `tasks.length`: a
-          session with no linked task still has an archive control, and hanging
-          it off the task list would make it vanish for exactly the rows a user
-          is most likely to be tidying up. */}
+      {/* THE EXPANDED SESSION (Subhang, 2026-10-17). `detail` is the host's
+          `SessionDetails` — status, model, teammate, branch, times, tasks,
+          links, id, and the D67 state/archive strip at its foot. The tile
+          used to draw the task lines itself above a bare D67 strip; the host
+          now owns the whole block so the facts come from one place. */}
       {detailsExpanded ? detail : null}
     </div>
   );
@@ -342,21 +373,10 @@ export function MaestroSessionTile({
  * centred exactly as before and only the count rides the corner.
  */
 function AgentTile({ tool, shell, teammate, childCount, live, streaming, title, processDot = null }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; childCount: number; live: boolean; streaming: boolean; title: string; processDot?: SessionWord['dot'] }) {
-  // A vanilla terminal is not an agent whose tool we failed to record, and the
-  // fallback below would have called it one — `(tool || 'agent')`, glyph and
-  // aria-label alike. It gets its own mark instead.
-  const normalized = shell ? 'shell' : tool === 'claude-code' ? 'claude' : (tool || 'agent').toLowerCase();
-  const label = normalized === 'shell'
-    ? '▮'
-    : normalized === 'claude'
-    ? '✳'
-    : normalized === 'codex'
-      ? '✦'
-      : normalized === 'gemini'
-        ? '✧'
-        : normalized === 'hermes'
-          ? '✣'
-          : '✦';
+  // A vanilla terminal is not an agent whose tool we failed to record, and a
+  // `(tool || 'agent')` fallback would have called it one, mark and aria-label
+  // alike. It gets its own mark instead.
+  const normalized = agentToolKind(tool, { shell });
   const toolName = shell ? 'terminal' : tool || 'agent';
   // A shell has no persona by construction; guarding on it as well as on
   // `teammate` keeps a stray edge from dressing a terminal as an agent.
@@ -394,7 +414,9 @@ function AgentTile({ tool, shell, teammate, childCount, live, streaming, title, 
       ) : null}
       {/* Keeps `pn-agent__mark` in both shapes so the per-tool colour, live
           and streaming rules stay one set of selectors. */}
-      <span className={`pn-agent__mark${persona ? ' pn-agent__tool' : ''}`} aria-hidden>{label}</span>
+      <span className={`pn-agent__mark${persona ? ' pn-agent__tool' : ''}`} aria-hidden>
+        <AgentToolIcon tool={tool} shell={shell} size={persona ? 9 : 13} />
+      </span>
       {childCount > 0 ? (
         <span className="pn-agent__kids" aria-hidden>{childCount}</span>
       ) : null}

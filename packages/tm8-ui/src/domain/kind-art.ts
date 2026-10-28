@@ -26,12 +26,15 @@
  * THE VOCABULARY IS SEMANTIC, NOT DECORATIVE. Every mark is the thing it
  * names, drawn the way the wider world draws it, because an icon a reader has
  * to LEARN is a worse ◇: task = a checked box, doc = a page, channel = a hash,
- * message = a bubble, member = a person, teammate = a bot, PR = a branch,
- * commit = a node on a line, file = a paperclip, project = a folder, worktree
- * = a second copy. Two rules hold the set together: no two kinds share a
- * silhouette (guarded — `registry.test.ts` fails on duplicate artwork), and
- * kinds that live near each other in the UI are drawn as far apart as the
- * grid allows (`doc` a page with a fold, `skill` a bound book, `file` a clip).
+ * message = an envelope, chat = two bubbles, member = a person, teammate = a
+ * bot, PR = a branch, commit = a node on a line, file = a paperclip, project =
+ * a folder, worktree = a second copy. Three rules hold the set together: no
+ * two marks share a silhouette (guarded — `registry.test.ts` and
+ * `kind-art.test.ts` fail on duplicate artwork), kinds that live near each
+ * other in the UI are drawn as far apart as the grid allows (`doc` a page with
+ * a fold, `form` an option list, `skill` a mortarboard, `story` an open book),
+ * and every mark is drawn HERE ONCE — a surface that needs one reads it from
+ * these tables rather than keeping a private copy of the path.
  *
  * THE GRID: 16×16, artwork inset to ~2.4–13.6, stroked at 1.4 in
  * `currentColor` with round caps and joins. Nothing is filled — a filled mark
@@ -81,10 +84,16 @@ export const KIND_ART = {
   ],
 
   /**
-   * A speech bubble, NOT the inherited envelope. A tm8 message is a line in a
-   * conversation; an envelope promises mail, which is a different product.
+   * An envelope. It WAS a single speech bubble, and beside `chat`'s two
+   * bubbles the pair read as one idea drawn twice — "the messages icon looks
+   * like chat" (Subhang, 2026-10-18). A message is one thing sent to an
+   * anchor; the envelope is the one silhouette in the set with no bubble in it,
+   * so chat keeps sole ownership of the bubble.
    */
-  message: ['M13.2 9.6a1.9 1.9 0 0 1-1.9 1.9H6.5L3.4 13.8V5.1a1.9 1.9 0 0 1 1.9-1.9h6a1.9 1.9 0 0 1 1.9 1.9z'],
+  message: [
+    'M3.8 3.6h8.4a1.4 1.4 0 0 1 1.4 1.4v6a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4V5a1.4 1.4 0 0 1 1.4-1.4z',
+    'M2.8 4.6 8 8.4l5.2-3.8',
+  ],
 
   /** A person. */
   member: ['M8 8.3a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2z', 'M3.3 13.6a4.7 4.7 0 0 1 9.4 0'],
@@ -132,14 +141,15 @@ export const KIND_ART = {
   spell: ['M3.2 12.8 9.6 6.4', 'M11.8 2.4l.85 2.05 2.05.85-2.05.85-.85 2.05-.85-2.05L8.9 5.3l2.05-.85z', 'M5.6 3.4v1.7', 'M4.75 4.25h1.7'],
 
   /**
-   * A bound book — a skill is standing knowledge you equip, not an act you
-   * perform. Spell and skill sit side by side in the rail and were ✧ and ✦,
-   * which is the single worst pair in the inherited set.
+   * A mortarboard — a skill is something LEARNED and then equipped. It was a
+   * closed book, and beside `story`'s open book the two were the same
+   * silhouette at 14px (2026-10-18). No book here at all, so the pair cannot
+   * converge again; `spell` stays a wand, the act rather than the know-how.
    */
   skill: [
-    'M8 4.4c-1.3-1-2.8-1.5-4.8-1.5v8.4c2 0 3.5.5 4.8 1.5',
-    'M8 4.4c1.3-1 2.8-1.5 4.8-1.5v8.4c-2 0-3.5.5-4.8 1.5',
-    'M8 4.4v8.4',
+    'M8 3 14 6 8 9 2 6z',
+    'M4.6 7.3v3.1c0 .9 1.5 1.9 3.4 1.9s3.4-1 3.4-1.9V7.3',
+    'M14 6v3.6',
   ],
 
   /** Four tiles — a set of things gathered into one. */
@@ -164,29 +174,25 @@ export const KIND_ART = {
   memory: ['M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z'],
 
   /**
-   * Three nodes in an L, joined by edges — one row holding vertices AND the
-   * flow between them (Craft P1). Deliberately NOT `VIEW_ART.graph`'s
-   * triangle: that mark means the whole-space graph VIEW; this one means one
-   * blueprint entity.
+   * A flowchart: two boxes joined by an elbow — one blueprint, vertices AND
+   * the flow between them (Craft P1). It was three ringed nodes, which is
+   * `pull_request` mirrored; boxes are what keep it off every circle-and-line
+   * mark in the set (`pull_request`, `commit`, `VIEW_ART.graph`, `git`).
    */
-  graph: [
-    'M4.3 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
-    'M11.7 6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
-    'M11.7 13.6a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z',
-    'M6.1 4.2h3.8',
-    'M11.7 7.8v2.2',
-  ],
+  graph: ['M2.4 2.6h5v4h-5z', 'M8.6 9.4h5v4h-5z', 'M4.9 6.6v3.8a1 1 0 0 0 1 1h2.7'],
 
   /**
-   * A speech bubble with a tail, and a second one behind it.
+   * THE chat mark: a bubble with a tail, and a second one answering behind it.
    *
-   * NOT the message mark (one bubble) and not the channel mark (a hash): a chat
-   * is a CONVERSATION — two speakers, durable, with a life longer than any one
-   * message — and the two overlapping bubbles say exactly that at 16px.
+   * ONE mark for chat everywhere — the kind, the rail and phone Chats rows,
+   * the ActionStrip Chat button and the "Chat" verb all draw THIS array, and
+   * `kind-art.test.ts` fails if a bubble is drawn anywhere else. A chat is a
+   * CONVERSATION — two speakers, durable — which the two bubbles say; nothing
+   * else in the set is bubble-shaped (`message` is an envelope).
    */
   chat: [
-    'M5.4 2.6h6.4a1.8 1.8 0 0 1 1.8 1.8v3.4a1.8 1.8 0 0 1-1.8 1.8H9.2L6.6 11.4V9.6H5.4a1.8 1.8 0 0 1-1.8-1.8V4.4a1.8 1.8 0 0 1 1.8-1.8z',
-    'M2.4 6.2v4.6a1.8 1.8 0 0 0 1.8 1.8h1v1.6',
+    'M2.4 3.8a1.4 1.4 0 0 1 1.4-1.4h5.6a1.4 1.4 0 0 1 1.4 1.4v3.6a1.4 1.4 0 0 1-1.4 1.4H5.4L2.4 11.2z',
+    'M10.8 5.6h1.4a1.4 1.4 0 0 1 1.4 1.4v6.6l-2.4-2H7a1.4 1.4 0 0 1-1.4-1.4v-.6',
   ],
 
   /**
@@ -206,15 +212,17 @@ export const KIND_ART = {
   ],
 
   /**
-   * A clipboard with a list on it (`clipboard-list`, the kind's registry
-   * icon, 209). The clip is what separates it from `doc`'s sheet: a form is
-   * a sheet somebody hands you to fill in.
+   * An option list: two empty checkboxes, each with its answer line — a form
+   * is something you FILL IN. It was a clipboard with a list, which at 14px is
+   * a page with lines, i.e. `doc` (2026-10-18). No page outline now, so doc
+   * owns the sheet; the boxes are small and EMPTY, so it is not `task`'s one
+   * large checked box, and there is no frame, so it is not `container`.
    */
   form: [
-    'M5.6 3.2H4.4a1.2 1.2 0 0 0-1.2 1.2v8.4a1.2 1.2 0 0 0 1.2 1.2h7.2a1.2 1.2 0 0 0 1.2-1.2V4.4a1.2 1.2 0 0 0-1.2-1.2h-1.2',
-    'M6.2 2h3.6v2.4H6.2z',
-    'M5.6 7.6h.8M8 7.6h2.6',
-    'M5.6 10.4h.8M8 10.4h2.6',
+    'M3.2 2.8h2.6a.6.6 0 0 1 .6.6V6a.6.6 0 0 1-.6.6H3.2a.6.6 0 0 1-.6-.6V3.4a.6.6 0 0 1 .6-.6z',
+    'M8.4 4.7h5',
+    'M3.2 9.4h2.6a.6.6 0 0 1 .6.6v2.6a.6.6 0 0 1-.6.6H3.2a.6.6 0 0 1-.6-.6V10a.6.6 0 0 1 .6-.6z',
+    'M8.4 11.3h5',
   ],
 
   /**
@@ -262,11 +270,15 @@ export const KIND_ART = {
     'M5.4 11.3a0.7 0.7 0 1 0 0-1.4 0.7 0.7 0 0 0 0 1.4z',
   ],
 
-  /** Two chain links — a space link joins this space to another one (250). */
+  /**
+   * Two overlapping rings — two spaces, joined (250). It was a chain, and the
+   * chain is what the Links (connections) button draws, so an entity and a
+   * panel section wore one mark. Not two-way arrows either: ⇄ is the Transfer
+   * verb's glyph, and moving an entity between spaces is not linking them.
+   */
   space_link: [
-    'M7 9 9 7',
-    'M8.6 4.6 9.8 3.4a2.3 2.3 0 0 1 3.2 3.2l-2.4 2.4a2.3 2.3 0 0 1-3.2 0',
-    'M7.4 11.4 6.2 12.6a2.3 2.3 0 0 1-3.2-3.2l2.4-2.4a2.3 2.3 0 0 1 3.2 0',
+    'M6 4.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z',
+    'M10 4.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z',
   ],
 
   /**
@@ -312,16 +324,11 @@ export const KIND_ART = {
   ],
 
   /**
-   * Two sheets, one behind the other, the front one with a tab line across
-   * its top: a craft is an ordered set of pages, and its
-   * page row is the first thing its screen draws. Distinct from `doc`'s single
-   * folded sheet and `artifact`'s frame.
+   * Layers — a craft is an ordered stack of pages. It was two sheets, one
+   * behind the other, which is `worktree`'s silhouette (2026-10-18). Shared
+   * with the Craft rail VIEW on purpose, the way `channels` shares `channel`.
    */
-  craft: [
-    'M5.4 2.6h6.8a1 1 0 0 1 1 1v6.8',
-    'M3.4 4.8h6.8a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1z',
-    'M2.4 7.4h8.8',
-  ],
+  craft: ['M8 2.6 13.4 5.4 8 8.2 2.6 5.4z', 'M2.6 8 8 10.8 13.4 8', 'M2.6 10.6 8 13.4l5.4-2.8'],
 } as const satisfies Record<string, KindArt>;
 
 /**
@@ -359,22 +366,12 @@ export const VIEW_ART = {
   /** The hash, shared with the `channel` kind ON PURPOSE — it is that list. */
   channels: KIND_ART.channel,
   /**
-   * TWO overlapping bubbles — a conversation, not a message.
-   *
-   * Deliberately NOT `KIND_ART.message` (a single bubble), and the reason is
-   * the distinction the whole view rests on: the `message` kind mark means ONE
-   * message, while this row opens the browser over every CONVERSATION in the
-   * space. The doubled silhouette is that difference drawn.
-   *
-   * Unlike `files`, there is no collision hazard to avoid here — `message` is
-   * `strategy: 'anchored'` with no slug, so it can never be a rail kind row and
-   * its mark never appears in this column. The two marks are kept apart because
-   * they mean different things, not because they would sit side by side.
+   * The envelope, shared with the `message` kind ON PURPOSE: this row opens
+   * the browser over every message in the space, so it IS that list (the
+   * `channels` rule). It was two overlapping bubbles — the chat mark in all
+   * but name, which is how "the messages icon looks like chat" happened.
    */
-  messages: [
-    'M6.2 4.8V3.9a1.6 1.6 0 0 1 1.6-1.6h4.6a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-.5',
-    'M2.2 6.4a1.6 1.6 0 0 1 1.6-1.6h5.2a1.6 1.6 0 0 1 1.6 1.6v3a1.6 1.6 0 0 1-1.6 1.6H5.1L2.2 13.4z',
-  ],
+  messages: KIND_ART.message,
   /** A branch: trunk with a fork, node dots at the tips (Git UI wave). */
   git: [
     'M5.2 5.4a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',
@@ -384,15 +381,13 @@ export const VIEW_ART = {
     'M11.6 6.6c0 2.6-2.2 2.6-4 3.4',
   ],
   /**
-   * An open folder — the Files EXPLORER view (2026-08-10). Deliberately NOT
-   * `KIND_ART.file`: the `file` kind row (Library → Files entities) and this
-   * browser are two different destinations (owner ruling R9) and must not
-   * share a silhouette in one rail.
+   * A file TREE — the Files EXPLORER view (2026-08-10): a folder line with two
+   * files hanging off it. It was an open folder, which beside `project`'s
+   * closed folder is the same silhouette at 14px; and it is deliberately NOT
+   * `KIND_ART.file` either — the `file` kind row and this browser are two
+   * different destinations (owner ruling R9).
    */
-  files: [
-    'M2.4 4.2a1.2 1.2 0 0 1 1.2-1.2h2.6l1.2 1.6h4.6a1.2 1.2 0 0 1 1.2 1.2v.8H2.4z',
-    'M2.4 6.6h11l-1.1 5.4a1.2 1.2 0 0 1-1.18.98H4.7a1.2 1.2 0 0 1-1.18-.98z',
-  ],
+  files: ['M3.2 2.8h3.2', 'M4.4 2.8v8.6h3.2', 'M4.4 7.2h3.2', 'M7.6 6h5v2.4h-5z', 'M7.6 10.2h5v2.4h-5z'],
   /**
    * Three columns of descending height — the kanban silhouette (Board tab,
    * 2026-08-16). Deliberately NOT `KIND_ART.task`: the Board is a VIEW over
@@ -405,16 +400,11 @@ export const VIEW_ART = {
     'M10.6 3.4a.8.8 0 0 1 .8-.8h1.2a.8.8 0 0 1 .8.8v3.2a.8.8 0 0 1-.8.8h-1.2a.8.8 0 0 1-.8-.8z',
   ],
   /**
-   * A pencil over a node — sketching a blueprint (Craft P1, 2026-08-16).
-   * Deliberately NOT `VIEW_ART.graph` (the whole-space graph view) and NOT
-   * `KIND_ART.graph` (one blueprint entity): this mark means the STUDIO —
-   * the surface where a graph is drawn, not the graph itself.
+   * The Craft studio wears the `craft` kind's layers — the rail row IS the
+   * list of crafts. It was a pencil over a node, which beside `drawing`'s
+   * pencil read as the same tool.
    */
-  craft: [
-    'M3.9 5.9a1.7 1.7 0 1 0 0-3.4 1.7 1.7 0 0 0 0 3.4z',
-    'M13.2 5.4 10.6 2.8 4.6 8.8v2.6h2.6z',
-    'M9.4 4l2.6 2.6',
-  ],
+  craft: KIND_ART.craft,
   /**
    * A question mark, hook and dot (Help, 2026-08-19). Deliberately NOT a
    * circled `?` and NOT a lifebuoy: `KIND_ART.commit` is a bare ring and the
@@ -467,18 +457,12 @@ export const SURFACE_ART = {
   terminal: ['M3.4 4.6 7 8l-3.6 3.4', 'M8.6 11.6h4'],
 
   /**
-   * A BUBBLE WITH LINES IN IT — what was said, written down.
-   *
-   * Distinct from both neighbours on purpose: `KIND_ART.message` is an EMPTY
-   * bubble (one message, the entity) and `VIEW_ART.messages` is two overlapping
-   * bubbles (every conversation in the space). This is one conversation with a
-   * body — the transcript file read back.
+   * DIALOGUE LINES — what was said, written down: two lines from one side,
+   * two from the other. It was a bubble with lines in it, and a bubble is
+   * `chat`'s alone now (`kind-art.test.ts`). Distinct from `debug` (ticked
+   * rows) and `logs` (one ragged column) by the alternating indent.
    */
-  transcript: [
-    'M13.2 9.4a1.9 1.9 0 0 1-1.9 1.9H6.6L3.5 13.6V5a1.9 1.9 0 0 1 1.9-1.9h5.9a1.9 1.9 0 0 1 1.9 1.9z',
-    'M6.1 6.4h4.6',
-    'M6.1 8.6h2.8',
-  ],
+  transcript: ['M2.6 4h6.4', 'M2.6 6.6h4.4', 'M7 9.4h6.4', 'M9 12h4.4'],
 
   /**
    * A DIFF: a `+` row above a `−` row.

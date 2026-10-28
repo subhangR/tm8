@@ -118,7 +118,8 @@ const READ_GUIDES = [
      Without them a model cannot tell which Spaces this one links to — the
      space_link entity deliberately carries no row facts. Results are scrubbed
      (space-links.ts); every link write stays human-only and off this surface. */
-  guide('spaceLinks.list', 'List this Space\'s links to other Spaces: link id, targetSpaceId, and your own row '
+  guide('spaceLinks.list', 'List this Space\'s links to other Spaces: link id, targetSpaceId, targetSpaceName '
+    + '(null unless you, or the human you act for while signed in on the link, are a member of the target), and your own row '
     + '(mine.status signed_in|signed_out|left|unreachable, alias, expiresAt, allowSpawn). '
     + 'Adding or signing in to a link is human-only.', {
     params: { spaceId: '<home-space-id>' },

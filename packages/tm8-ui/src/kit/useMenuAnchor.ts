@@ -56,6 +56,12 @@ export function useMenuAnchor(
   menuHeight: number = PANELS_MENU_HEIGHT,
   /** The menu's minimum width — the right-edge clamp cannot push it off-screen. */
   menuWidth = 170,
+  /**
+   * Cap the menu's height to the room on the side it opens toward, so a tall
+   * menu scrolls inside itself instead of running off the viewport. Opt-in:
+   * an inline `max-height` would override the CSS caps the other menus rely on.
+   */
+  fitViewport = false,
 ): MenuAnchor | null {
   const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
   useEffect(() => {
@@ -86,6 +92,7 @@ export function useMenuAnchor(
         ...(up
           ? { top: 'auto', bottom: (window.innerHeight - box.top + 4) / zoom }
           : { top: (box.bottom + 4) / zoom }),
+        ...(fitViewport ? { maxHeight: ((up ? box.top : below) - 12) / zoom } : {}),
         zIndex: 1000,
       },
     });
@@ -103,6 +110,6 @@ export function useMenuAnchor(
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
-  }, [open, boxRef, menuRef, onClose, menuHeight, menuWidth]);
+  }, [open, boxRef, menuRef, onClose, menuHeight, menuWidth, fitViewport]);
   return anchor;
 }

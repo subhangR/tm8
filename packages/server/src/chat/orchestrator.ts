@@ -1,21 +1,29 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   MessagePartSchema,
+  launchModel,
+  CollabError,
+  type LaunchModelEffort,
   type ChatMode,
   type ChatCredentialSelection,
   type ChatTurnUsage,
   type MessageView,
   type SessionTranscriptContext,
 } from '@tm8/contract';
+import type { HarnessRegistry } from '@tm8/execution';
+import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type FencedTurnOptions } from './fenced-turn.js';
+import { deadline, retryTransient } from './lease.js';
+import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
-import { chatModeLine } from './compose.js';
+import { chatModeLine, chatTeamLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
   AgentTurnContentBlock,
   ResolveChatLaunchConfig,
   ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
   ChatLaunchConfigInput,
   StartAgentThreadInput,
   TurnItem,
@@ -28,7 +36,7 @@ interface ChatTurnAttachment {
   readonly mime?: string | null;
 }
 
-interface ClaimedTurn {
+export interface ClaimedTurn {
   readonly turnId: string;
   readonly chatId: string;
   readonly userMessageId: string;
@@ -83,10 +91,35 @@ interface BatchRpcResult {
 
 export interface ChatOrchestratorOptions {
   readonly db: Db;
-  readonly runtime: AgentRuntime;
+  /**
+   * A small pool reserved for lease-critical writes: renewals, a failed
+   * preparation's settlement, the release, and recovery of an abandoned turn.
+   * Without it those queue behind every read on the node, and a saturated
+   * pool turns them into silent losses. Defaults to `db`.
+   */
+  readonly leaseDb?: Db;
+  readonly runtime?: AgentRuntime;
+  readonly registry?: HarnessRegistry;
+  readonly resolvePreparedLaunch?: ReturnType<typeof createChatPreparedLaunchResolver>;
+  readonly nodeId?: string;
+  readonly bootId?: string;
+  readonly historyBudgetBytes?: number;
+  /**
+   * Per-turn step limits handed to every `executeFencedTurn`. Only the two
+   * observation budgets are configured in production (`TM8_CHAT_IDLE_TIMEOUT_MS`,
+   * `TM8_CHAT_TOOL_TIMEOUT_MS`); the rest keep the defaults in fenced-turn.ts.
+   */
+  readonly turnTimeouts?: FencedTurnOptions['timeouts'];
   readonly publisher: ChatTurnPublisher;
-  readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /**
+   * §5.3 / S21c. Read before every turn so a selection that moved since the
+   * live child started closes it. Optional, and a composition that omits it
+   * gets exactly the old behaviour: `mcpSelectionFingerprint(undefined)` is a
+   * constant, so it can never differ from itself.
+   */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
   readonly onError?: (error: unknown) => void;
   /**
    * Node-scoped claims for the boot liveness sweep (PR188 review F2). Only the
@@ -110,6 +143,28 @@ function credentialFingerprint(env: Readonly<Record<string, string>> | undefined
   return createHash('sha256').update(
     JSON.stringify(Object.entries(env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
   ).digest('hex');
+}
+
+/**
+ * The connectors a live child was started with, as one comparable value (§5.3).
+ *
+ * Sorted, so the resolver's order never reads as a change, and the account is
+ * part of it: moving a connector from one connected Google account to another
+ * is a different `--mcp-config` even though the same connector stays on.
+ *
+ * `undefined` (no resolver injected) and `null` (the resolver could not find
+ * out) both fold to the SAME constant. That is what keeps the comparison a
+ * no-op for a composition without the port, and what makes a resolver that
+ * starts failing cost one restart rather than one per turn.
+ */
+function mcpSelectionFingerprint(
+  selections: readonly { readonly serverId: string; readonly credentialId?: string }[] | null | undefined,
+): string {
+  if (!selections) return 'unresolved';
+  return selections
+    .map(s => `${s.serverId}:${s.credentialId ?? ''}`)
+    .sort((a, b) => a.localeCompare(b))
+    .join(',');
 }
 
 function claims(identityId: string): DbClaims {
@@ -459,12 +514,28 @@ async function aboutLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
   });
 }
 
-function promptFor(turn: ClaimedTurn, about: string | null, delivered?: AttachmentDelivery): string {
+/**
+ * The team line (328): read from the TURN, not the body, so the composer's 👥
+ * pick reaches the agent without ever showing in the transcript. Read as the
+ * configuring human, like the subject line.
+ */
+async function teamLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
+  const team = await db.rpc<unknown>(claims(turn.requesterIdentityId), 'chat_turn_team', [turn.turnId]);
+  return chatTeamLine(team);
+}
+
+/** The subject and team lines are context; neither may hold a claimed turn for long. */
+const CONTEXT_READ_TIMEOUT_MS = 10_000;
+/** Attachment reads move up to ATTACHMENT_TURN_MAX_BYTES of blobs, so they get longer, still bounded. */
+const ATTACHMENT_READ_TIMEOUT_MS = 30_000;
+
+function promptFor(turn: ClaimedTurn, about: string | null, team: string | null = null,
+  delivered?: AttachmentDelivery): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
   // (the turn's own override, else the chat default; resolved in SQL).
   const mode = chatModeLine(turn.chatMode);
-  const subject = about ? [about] : [];
+  const subject = [...(team ? [team] : []), ...(about ? [about] : [])];
   const files = attachmentLines(turn, delivered);
   const attribution = attributionLine(turn);
   const from = attribution ? [attribution] : [];
@@ -501,9 +572,175 @@ export class ChatOrchestrator {
     // derived from the model by the launch catalog, so one model is one
     // provider and comparing both would add a field that cannot disagree.
     readonly model: string;
+    /**
+     * §5.3. The connectors this child was actually started with. Recorded for
+     * the same reason `model` is: `chat.setMcpSelections` moves the row, and an
+     * admin flipping `defaultOn` or a human connecting an account moves what
+     * the defaults resolve to, while this process keeps a child running on the
+     * `--mcp-config` and `--allowed-tools` it booted with. Both are startup
+     * values on a running process, so noticing the difference is the only way
+     * the change can ever arrive.
+     */
+    readonly mcpSelectionFingerprint: string;
   }>();
 
-  constructor(private readonly options: ChatOrchestratorOptions) {}
+  private readonly activeHarnesses=new Map<string,ActiveChatHarness>();
+  /** The turn each chat's drain is executing right now, from claim to settle. */
+  private readonly claimedTurns=new Map<string,string>();
+  /**
+   * A Stop that found no running attempt to cancel — the turn was still
+   * preparing, opening, or between track and submit. Keyed by chat, holding
+   * the TURN it was meant for, so a latch can never stop the next queued turn
+   * (often another person's message).
+   */
+  private readonly stopLatches=new Map<string,string>();
+  private recoverySweep: ReturnType<typeof setInterval> | undefined;
+  /** Owner-side recovery of turns this process gave up unsettled, by chat. */
+  private readonly ownRecoveries=new Map<string,ReturnType<typeof setTimeout>>();
+  private readonly bootId: string;
+  constructor(private readonly options: ChatOrchestratorOptions) {
+    this.bootId=options.bootId ?? randomUUID();
+    if (options.registry && (!options.nodeId || !options.resolvePreparedLaunch)) {
+      throw new Error('Production chat requires node identity and prepared launch resolver');
+    }
+  }
+
+  async admitConfiguration(input:{model:string;reasoningEffort:LaunchModelEffort|null}):Promise<void> {
+    const entry=launchModel(input.model);
+    if (!entry || input.reasoningEffort!==null && !entry.efforts.includes(input.reasoningEffort as never)) {
+      throw new CollabError('invalid_input','Chat model or effort is not supported');
+    }
+    if (this.options.registry) await this.options.registry.admit({
+      harness:entry.agentTool==='claude-code' ? 'claude' : 'codex',provider:entry.provider,model:entry.model,
+      reasoningEffort:input.reasoningEffort,serviceTier:null,
+    },['portableBootstrap']);
+  }
+
+  /**
+   * Stop the chat's running turn. `requested` means the turn will end (its own
+   * done frame says how); `not_running` means this node has nothing to stop.
+   *
+   * A turn that has been claimed but has no cancellable attempt yet — it is
+   * preparing its launch, opening the harness, or about to submit — used to be
+   * a silent no-op here, so Stop pressed in the first seconds of a turn did
+   * nothing. Such a stop is latched against the claimed turn and the turn reads
+   * it before it dispatches (see `stopRequested` in fenced-turn.ts).
+   */
+  async interrupt(chatId:string):Promise<'requested'|'not_running'> {
+    const active=this.activeHarnesses.get(chatId);
+    if (active) {
+      const receipt=await active.session.cancel(active.attempt,'user').catch(error=>{ this.options.onError?.(error); return null; });
+      if (receipt?.disposition==='requested' || receipt?.disposition==='already_terminal') return 'requested';
+    }
+    const claimed=this.claimedTurns.get(chatId);
+    if (claimed) { this.stopLatches.set(chatId,claimed); return 'requested'; }
+    if (this.options.registry) return 'not_running';
+    // Legacy (pre-harness) runtime: a thread that is not running throws.
+    return await this.options.runtime?.interrupt(chatId).catch(() => false) ? 'requested' : 'not_running';
+  }
+
+  /**
+   * Recover turns whose owner died or stopped renewing its lease, then drain
+   * the queues behind them — on boot AND periodically.
+   *
+   * Boot alone was not enough. A turn whose settlement or release failed keeps
+   * the chat's lease, `claim_next_chat_turn` refuses every claim behind it, and
+   * nothing woke that chat again when the lease ran out: every later message
+   * queued silently until the next server restart. `recover_chat_attempt` only
+   * acts on a lease that has expired (or on this node's previous boot), so
+   * running it on an interval never steals a live turn.
+   */
+  startRecoverySweep(intervalMs=60_000): void {
+    if (!this.options.sweepClaims || !this.options.registry || this.recoverySweep) return;
+    let running=false;
+    this.recoverySweep=setInterval(() => {
+      if (running) return;
+      running=true;
+      void this.recoverStale().catch(error=>this.options.onError?.(error)).finally(() => { running=false; });
+    },intervalMs);
+    this.recoverySweep.unref?.();
+  }
+
+  stopRecoverySweep(): void {
+    if (this.recoverySweep) clearInterval(this.recoverySweep);
+    this.recoverySweep=undefined;
+    for (const timer of this.ownRecoveries.values()) clearTimeout(timer);
+    this.ownRecoveries.clear();
+  }
+
+  /**
+   * The owner's own recovery of a turn it gave up unsettled (`onAbandoned`):
+   * its lease was lost, or its outcome could not be recorded even after
+   * retries. The durable lease may still be live, so `recover_chat_attempt`
+   * runs once the owner's latest estimate of its expiry has passed, then the
+   * queue behind it is drained. Until this existed the only way out was the
+   * periodic sweep — which, before 376, could not even see most chats.
+   *
+   * `wait_owner` means the database still sees a live lease (or nothing to
+   * recover); the attempt is repeated with backoff a bounded number of times
+   * and the chat is woken each time, because a claim with nothing runnable
+   * simply returns null.
+   */
+  private scheduleOwnRecovery(chatId:string,requesterIdentityId:string,turn:{turnId:string;attemptNo:number},
+    recoverAfter:number,attempt=1): void {
+    const MAX_ATTEMPTS=12;
+    const pending=this.ownRecoveries.get(chatId);
+    if (pending) clearTimeout(pending);
+    const backoff=attempt===1 ? 1_000 : Math.min(60_000,2_000*2**(attempt-2));
+    const timer=setTimeout(() => {
+      this.ownRecoveries.delete(chatId);
+      void (async () => {
+        let again=false;
+        try {
+          const result=await (this.options.leaseDb ?? this.options.db).rpc<{disposition?:string}|null>(claims(requesterIdentityId),
+            'recover_chat_attempt',[chatId,turn.turnId,turn.attemptNo,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+          again=result?.disposition==='wait_owner';
+          console.warn(`[chat] owner recovery of chat ${chatId} turn ${turn.turnId}: ${result?.disposition ?? 'no result'}`);
+        } catch (error) {
+          again=true;
+          console.error(`[chat] owner recovery of chat ${chatId} turn ${turn.turnId} failed (attempt ${attempt}): ${errorMessage(error)}`);
+          this.options.onError?.(error);
+        }
+        await this.wake(chatId,requesterIdentityId);
+        if (again && attempt<MAX_ATTEMPTS && !this.ownRecoveries.has(chatId)) {
+          this.scheduleOwnRecovery(chatId,requesterIdentityId,turn,Date.now(),attempt+1);
+        }
+      })();
+    },Math.max(0,recoverAfter-Date.now())+backoff);
+    timer.unref?.();
+    this.ownRecoveries.set(chatId,timer);
+  }
+
+  /**
+   * The listing runs as the node admin through `list_recoverable_chats`, never
+   * as a plain SELECT: chats and chat_turns are under RLS, so a direct query saw
+   * only the chats in the owner's own spaces and a stale chat anywhere else
+   * stayed stuck for good (prod 2026-10-20: 124 of 240 chats visible). Each chat
+   * is still recovered and drained as its own configuring identity.
+   */
+  private async recoverStale(): Promise<void> {
+    const sweep=this.options.sweepClaims;
+    if (!sweep) return;
+    const rows=await this.options.db.query<{kind:'stale'|'queued';chat_id:string;configured_by_identity_id:string;
+      turn_id:string|null;attempt_no:number|null}>(sweep,
+      'select kind,chat_id,configured_by_identity_id,turn_id,attempt_no from public.list_recoverable_chats($1,$2)',
+      [this.options.nodeId,this.bootId]);
+    for (const row of rows) {
+      if (row.kind!=='stale') continue;
+      try {
+        await this.options.db.rpc(claims(row.configured_by_identity_id),
+          'recover_chat_attempt',[row.chat_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+      } catch (error) { this.options.onError?.(error); }
+    }
+    // Wake stale chats too: recovery may have just requeued their turn or freed
+    // the queue behind it. A claim with nothing runnable returns null.
+    const woken=new Set<string>();
+    for (const row of rows) {
+      if (woken.has(row.chat_id)) continue;
+      woken.add(row.chat_id);
+      void this.wake(row.chat_id,row.configured_by_identity_id);
+    }
+  }
 
   /**
    * F2 (PR188 review): reconcile durable state with process reality at boot.
@@ -521,6 +758,10 @@ export class ChatOrchestrator {
   async reconcileOnBoot(): Promise<void> {
     const sweep = this.options.sweepClaims;
     if (!sweep) return;
+    if (this.options.registry) {
+      await this.recoverStale();
+      return;
+    }
     try {
       const stale = await this.options.db.query<{
         entity_id: string;
@@ -605,16 +846,25 @@ export class ChatOrchestrator {
   async wakeForMessages(requesterIdentityId: string, messages: readonly MessageView[]): Promise<void> {
     const anchors = [...new Set(messages.map((message) => message.state.anchorId))];
     if (anchors.length === 0) return;
-    const configured = await this.options.db.query<{
-      entity_id: string;
-      configured_by_identity_id: string;
-    }>(
-      claims(requesterIdentityId),
-      `select entity_id, configured_by_identity_id
-         from public.chats
-        where entity_id = any($1::uuid[])`,
-      [anchors],
-    );
+    // Never rejects, like `wake`: the facade fires this after the message
+    // commit without awaiting it, so a failed lookup here would surface as an
+    // unhandled rejection and take the node down.
+    let configured: Array<{ entity_id: string; configured_by_identity_id: string }>;
+    try {
+      configured = await this.options.db.query<{
+        entity_id: string;
+        configured_by_identity_id: string;
+      }>(
+        claims(requesterIdentityId),
+        `select entity_id, configured_by_identity_id
+           from public.chats
+          where entity_id = any($1::uuid[])`,
+        [anchors],
+      );
+    } catch (error) {
+      this.options.onError?.(error);
+      return;
+    }
     await Promise.all(configured.map((row) => (
       this.wake(row.entity_id, row.configured_by_identity_id)
     )));
@@ -622,13 +872,55 @@ export class ChatOrchestrator {
 
   private async drain(chatId: string, requesterIdentityId: string): Promise<void> {
     for (;;) {
-      const turn = await this.options.db.rpc<ClaimedTurn | null>(
-        claims(requesterIdentityId),
-        'claim_next_chat_turn',
-        [chatId],
-      );
-      if (!turn) return;
-      await this.runTurn(turn);
+      if (this.options.registry && this.options.resolvePreparedLaunch) {
+        const leaseToken=randomUUID();
+        // Taken before the claim: the lease it writes cannot start earlier.
+        const claimedAt=Date.now();
+        // A claim that lost a race for a pool client is retried, not dropped:
+        // dropping it left the message queued until some later wake.
+        const turn=await retryTransient(() => this.options.db.rpc<FencedClaim|null>(claims(requesterIdentityId),'claim_next_chat_turn',[
+          chatId,2,{nodeId:this.options.nodeId,bootId:this.bootId,
+            leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]),{until:() => claimedAt+30_000,
+          onRetry:error => this.options.onError?.(error)});
+        if (!turn) return;
+        this.claimedTurns.set(chatId,turn.turnId);
+        const pending=this.ownRecoveries.get(chatId);
+        if (pending) { clearTimeout(pending); this.ownRecoveries.delete(chatId); }
+        try {
+          // The team line (328) rides on the production path too; it used to be
+          // read only by the legacy runtime, so a coordinator's 👥 pick never
+          // reached a harness-run chat.
+          const about=await this.readAbout(turn);
+          const team=await this.readTeam(turn);
+          // Only the Claude harness takes content blocks (imageInputs).
+          const delivered=await this.readAttachments(turn,turn.agentTool==='claude-code');
+          const prompt=promptFor(turn,about,team,delivered);
+          await executeFencedTurn({db:this.options.db,registry:this.options.registry,
+            ...(this.options.leaseDb ? {leaseDb:this.options.leaseDb} : {}),claimedAt,
+            onAbandoned:({recoverAfter}) => this.scheduleOwnRecovery(chatId,requesterIdentityId,turn,recoverAfter),
+            resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
+            prompt,...(delivered && delivered.content.length>0 ? {content:delivered.content} : {}),
+            historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
+            createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
+            untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
+            stopRequested:()=>this.stopLatches.get(chatId)===turn.turnId,
+            ...(this.options.turnTimeouts ? {timeouts:this.options.turnTimeouts} : {}),
+            onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
+        } catch (error) {
+          // One turn that could not settle must not end the drain for the turns
+          // queued behind it. The next claim refuses while that turn still holds
+          // the lease; `onAbandoned` has scheduled this owner's own recovery for
+          // when it expires (the sweep remains the backstop).
+          this.options.onError?.(error);
+        } finally {
+          this.claimedTurns.delete(chatId);
+          if (this.stopLatches.get(chatId)===turn.turnId) this.stopLatches.delete(chatId);
+        }
+      } else {
+        const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);
+        if (!turn) return;
+        await this.runTurn(turn);
+      }
     }
   }
 
@@ -637,9 +929,49 @@ export class ChatOrchestrator {
    * onError and the turn goes out without the line, rather than failing a turn
    * the human is waiting on.
    */
+  /**
+   * The team is context too, and best-effort the same way. A node whose
+   * database predates 328 has no `chat_turn_team` yet: that is not an error
+   * worth reporting on every turn, just a turn without the line.
+   */
+  private async readTeam(turn: ClaimedTurn): Promise<string | null> {
+    try {
+      // Bounded like every other step before launch: context never holds a turn.
+      return await deadline(teamLine(this.options.db, turn), CONTEXT_READ_TIMEOUT_MS, 'chat team read');
+    } catch (error) {
+      const failure = error as { code?: string; details?: { sqlstate?: string } } | null;
+      // 42883 undefined_function: raw from pg, or preserved by db/errors.ts.
+      if (failure?.code !== '42883' && failure?.details?.sqlstate !== '42883') this.options.onError?.(error);
+      return null;
+    }
+  }
+
+  /**
+   * Attached files' contents, read as the configuring human (RLS) and bounded
+   * like every other context read. `takesContent` is false for a harness that
+   * cannot take content blocks (Codex today; ClaudeHarnessAdapter `imageInputs`
+   * is the one that can): its turn keeps the id manifest, each line saying why
+   * nothing is attached. Without a blob reader the
+   * manifest is unchanged. A failed or slow read never fails the turn.
+   */
+  private async readAttachments(turn: ClaimedTurn, takesContent: boolean): Promise<AttachmentDelivery | undefined> {
+    const blobs = this.options.attachmentBlobs;
+    const files = turnFiles(turn).slice(0, TURN_ATTACHMENT_MAX);
+    if (!blobs || files.length === 0) return undefined;
+    const every = (note: string): AttachmentDelivery =>
+      ({ notes: new Map(files.map((file) => [file.fileEntityId, note])), content: [] });
+    if (!takesContent) return every('not attached: this agent cannot take file contents');
+    try {
+      return await deadline(loadAttachmentContent(this.options.db, blobs, turn), ATTACHMENT_READ_TIMEOUT_MS, 'chat attachment read');
+    } catch (error) {
+      this.options.onError?.(error);
+      return every('not attached: unreadable');
+    }
+  }
+
   private async readAbout(turn: ClaimedTurn): Promise<string | null> {
     try {
-      return await aboutLine(this.options.db, turn);
+      return await deadline(aboutLine(this.options.db, turn), CONTEXT_READ_TIMEOUT_MS, 'chat subject read');
     } catch (error) {
       this.options.onError?.(error);
       return null;
@@ -706,14 +1038,14 @@ export class ChatOrchestrator {
     try {
       const threadId = await this.ensureRuntime(turn);
       const about = await this.readAbout(turn);
-      const delivered = this.options.attachmentBlobs && turnFiles(turn).length > 0
-        ? await loadAttachmentContent(this.options.db, this.options.attachmentBlobs, turn)
-        : undefined;
+      const team = await this.readTeam(turn);
+      // The legacy runtime port takes content blocks itself (runtime.ts AgentTurnInput).
+      const delivered = await this.readAttachments(turn, true);
       const input = {
-        text: promptFor(turn, about, delivered),
+        text: promptFor(turn, about, team, delivered),
         ...(delivered && delivered.content.length > 0 ? { content: delivered.content } : {}),
       };
-      for await (const item of this.options.runtime.sendTurn(threadId, input)) {
+      for await (const item of this.options.runtime!.sendTurn(threadId, input)) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.
@@ -744,7 +1076,7 @@ export class ChatOrchestrator {
       'complete_chat_turn',
       [
         turn.turnId,
-        terminal.reason === 'success' || terminal.reason === 'closed' ? 'completed' : 'error',
+        terminal.reason === 'success' ? 'completed' : 'error',
         text,
         finalUsage,
         totalCost,
@@ -769,7 +1101,7 @@ export class ChatOrchestrator {
       const currentLive = this.liveChats.get(turn.chatId);
       this.liveChats.delete(turn.chatId);
       if (currentLive) {
-        await this.options.runtime.close(currentLive.threadId).catch(() => undefined);
+        await this.options.runtime!.close(currentLive.threadId).catch(() => undefined);
         await this.options.db.rpc(
           claims(turn.requesterIdentityId),
           'mark_chat_runtime_state',
@@ -823,6 +1155,9 @@ export class ChatOrchestrator {
 
   /** Credential mutations also stop already-running chats that lose their selection. */
   async recheckCredentials(): Promise<void> {
+    await Promise.all([...this.activeHarnesses.values()].map(async active=>{
+      try { await active.revalidate(); } catch { await active.session.cancel(active.attempt,'revocation'); }
+    }));
     if (!this.options.resolveCredentialEnv) return;
     await Promise.all([...this.liveChats.entries()].map(async ([chatId, live]) => {
       try {
@@ -832,7 +1167,7 @@ export class ChatOrchestrator {
           matches = credentialFingerprint(env) === live.credentialFingerprint;
         } catch { /* Unreadable policy/credential refuses continued reuse. */ }
         if (matches || this.liveChats.get(chatId) !== live) return;
-        await this.options.runtime.close(live.threadId);
+        await this.options.runtime!.close(live.threadId);
         if (this.liveChats.get(chatId) !== live) return;
         this.liveChats.delete(chatId);
         await this.options.db.rpc(claims(live.credentialInput.requesterIdentityId),
@@ -861,6 +1196,12 @@ export class ChatOrchestrator {
     // token mint stays cold-start-only so reuse never invalidates a live token.
     const credentialEnv = await this.options.resolveCredentialEnv?.(credentialInput);
     const fingerprint = credentialFingerprint(credentialEnv);
+    // Resolved, never bound: `bind` needs a fresh `agent_runtime` token and that
+    // mint replaces the live child's own token, so asking `bind` whether to
+    // rebind would revoke the credential of the child it means to keep.
+    const mcpFingerprint = mcpSelectionFingerprint(
+      await this.options.resolveMcpSelection?.(credentialInput),
+    );
     const live = this.liveChats.get(turn.chatId);
     // A live child is reused only when NOTHING that was fixed at spawn has
     // moved. Authorization was the original reason (a different human must not
@@ -875,6 +1216,7 @@ export class ChatOrchestrator {
       && live.authorizationAuthKind === authorizationAuthKind
       && live.model === turn.model
       && live.credentialFingerprint === fingerprint
+      && live.mcpSelectionFingerprint === mcpFingerprint
     ) return live.threadId;
     // True when we just tore a live child down, whatever the reason. It is not
     // named for the reason because the CONSEQUENCE is what the next line needs:
@@ -882,7 +1224,7 @@ export class ChatOrchestrator {
     // start a new one, or the switch would cost the user the conversation.
     let closedLiveRuntime = false;
     if (live) {
-      await this.options.runtime.close(live.threadId);
+      await this.options.runtime!.close(live.threadId);
       this.liveChats.delete(turn.chatId);
       await this.options.db.rpc(
         claims(turn.requesterIdentityId),
@@ -892,7 +1234,7 @@ export class ChatOrchestrator {
       closedLiveRuntime = true;
     }
     const mode = closedLiveRuntime || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
-    const launch = await this.options.resolveLaunchConfig({ ...credentialInput, mode });
+    const launch = await this.options.resolveLaunchConfig!({ ...credentialInput, mode });
     const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
       threadId: turn.chatId,
@@ -913,7 +1255,7 @@ export class ChatOrchestrator {
     await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'live']);
     let started;
     try {
-      started = await this.options.runtime.startThread(input);
+      started = await this.options.runtime!.startThread(input);
       // A revoke can commit while startThread awaits the vendor's boot. It
       // found no registered live chat then, so close that race before sending.
       if (this.options.resolveCredentialEnv) {
@@ -923,7 +1265,7 @@ export class ChatOrchestrator {
         }
       }
     } catch (error) {
-      if (started) await this.options.runtime.close(started.threadId);
+      if (started) await this.options.runtime!.close(started.threadId);
       await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'stopped']);
       throw error;
     }
@@ -933,6 +1275,7 @@ export class ChatOrchestrator {
       authorizationAuthKind,
       model: turn.model,
       credentialFingerprint: fingerprint,
+      mcpSelectionFingerprint: mcpFingerprint,
       credentialInput,
     });
     return started.threadId;

@@ -73,11 +73,15 @@
 .mcp-picker button:focus-visible,
 .mcp-equipment button:focus-visible,
 .mcp-settings a:focus-visible,
-.mcp-settings input:focus-visible,
-.mcp-settings select:focus-visible,
-.mcp-settings textarea:focus-visible {
+.mcp-settings select:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;
+}
+/* Text fields tint their own border instead of drawing an outline box. */
+.mcp-settings input:not([type='checkbox'], [type='radio']):focus-visible,
+.mcp-settings textarea:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
 }
 
 .mcp-settings button[type='submit'],
@@ -231,4 +235,257 @@
   .mcp-form select {
     min-height: 44px;
   }
+}
+
+/* -------------------------------------------------------------------------
+   §10.0 ConnectorToggleList — the one row list the chat sheet, the launch
+   dialogs and the debug view share. Rows carry `data-status` (the §10.0
+   vocabulary) so the status colour is one rule per state rather than a colour
+   chosen at each call site.
+   ------------------------------------------------------------------------- */
+.mcp-toggles {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--pn-ink, inherit);
+  /* A CONTAINER, so the row layout below asks how wide THIS LIST is rather
+     than how wide the window is. The same component is drawn at 272px in the
+     ＋ menu, 340px in the composer chip's popover, ~240px in a launch grid
+     cell and ~1100px in the launch dialog — a viewport media query answered
+     "wide" for all five and drew a 1100px row's five columns inside a 272px
+     popover, with the status printed over the connector's own name. The task
+     tiles use the same tool for the same reason. */
+  container-type: inline-size;
+}
+
+.mcp-toggles__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-toggles__using {
+  font-weight: 600;
+}
+
+.mcp-toggles__note,
+.mcp-toggles__why {
+  margin: 4px 0;
+  color: var(--pn-ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcp-toggles__filter {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.mcp-toggles__filter-label {
+  font-size: 12px;
+  color: var(--pn-ink-2);
+}
+
+.mcp-toggles__filter input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-paper, transparent);
+  color: inherit;
+  font: inherit;
+}
+
+.mcp-toggles__rows {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * A GRID, NOT A FLEX ROW, above 560px — and the difference is legible rather
+ * than cosmetic. Drawn with `flex` the name grew, so every row's status began
+ * at a different x: "Needs reconnect", "Not connected" and "Awaiting approval"
+ * each landed wherever its connector's title ended, and the one thing a person
+ * scans this list for — which rows are not ready — could not be scanned down a
+ * column. Fixed columns put every status under every other status.
+ *
+ * Below 560px it falls back to wrapping flex, because four columns in a 272px
+ * ＋ menu is four columns of two characters each.
+ */
+.mcp-toggles__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+@container (min-width: 560px) {
+  .mcp-toggles[data-layout='list'] .mcp-toggles__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 72px minmax(170px, 260px) 62px minmax(0, 150px);
+    align-items: baseline;
+    column-gap: 12px;
+  }
+
+  /* The account picker spans the full row UNDER it, so a long account label
+     never squeezes the status column — but it is capped, because a select
+     stretched to 1100px reading "Choose for me" is not a wider control, it is
+     a mistake that looks like one. */
+  .mcp-toggles[data-layout='list'] .mcp-toggles__account {
+    grid-column: 1 / -1;
+    max-width: 320px;
+  }
+}
+
+.mcp-toggles[data-layout='grid'] .mcp-toggles__rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 16px;
+}
+
+.mcp-toggles__name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 120px;
+}
+
+.mcp-toggles__name small,
+.mcp-toggles__status small {
+  display: block;
+  color: var(--pn-ink-2);
+  font-size: 12px;
+}
+
+.mcp-toggles__access,
+.mcp-toggles__status {
+  color: var(--pn-ink-2);
+  font-size: 12px;
+}
+
+/* The action is the last column and is drawn left-aligned in it, so Connect,
+   Reconnect and Approve stack under one another instead of ending flush. */
+.mcp-toggles__row > a,
+.mcp-toggles__why {
+  font-size: 12px;
+}
+
+.mcp-toggles__status[data-status='ready'] {
+  color: var(--pn-ok, var(--pn-ink-2));
+}
+
+/* INK, NOT AMBER, AND DELIBERATELY SO (S32). `--pn-warn` does not exist, so
+   this already painted as ink-2 — but writing the real caution token here
+   would be wrong rather than a fix: THIS SHEET IS SHARED WITH THE COMPOSER.
+   `ConnectorToggleList` renders these rows in the chat composer's connectors
+   sheet as well as in the launch dialogs and the debug view, and the composer
+   carries no yellow (Subhang, 2026-10-18; composer-no-warning-tone.test.tsx
+   reads `mcp.css` for exactly this). The ⚠ glyph and the status words carry
+   the state. The amber ramp lives in `connectors.css`, which only the settings
+   surfaces import. */
+.mcp-toggles__status[data-status='needs_reconnect'],
+.mcp-toggles__status[data-status='credential_expired'],
+.mcp-toggles__status[data-status='credential_revoked'],
+.mcp-toggles__status[data-status='credential_definition_changed'],
+.mcp-toggles__status[data-status='server_unavailable'] {
+  color: var(--pn-ink-2);
+}
+
+.mcp-toggles__status[data-status='stdio_not_trusted'],
+.mcp-toggles__status[data-status='access_denied'] {
+  color: var(--pn-block);
+}
+
+.mcp-toggles__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mcp-toggles__readonly {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mcp-toggles__account {
+  display: grid;
+  flex-basis: 100%;
+  gap: 2px;
+  max-width: 320px;
+  font-size: 12px;
+}
+
+.mcp-toggles__account > span {
+  color: var(--pn-ink-2);
+}
+
+.mcp-toggles__account select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-paper, transparent);
+  color: inherit;
+  font: inherit;
+}
+
+.mcp-toggles__reset,
+.mcp-toggles__foot {
+  font-size: 12px;
+}
+
+.mcp-toggles__reset {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcp-toggles__reset:hover:not(:disabled) {
+  background: var(--pn-hover);
+  border-color: var(--pn-ink-4);
+}
+
+.mcp-toggles__reset:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .mcp-toggles__row {
+    align-items: stretch;
+  }
+
+  .mcp-toggles__name {
+    flex-basis: 100%;
+  }
+
+  .mcp-toggles__switch input {
+    min-width: 44px;
+    min-height: 28px;
+  }
+}
+
+.mcp-toggles__acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }

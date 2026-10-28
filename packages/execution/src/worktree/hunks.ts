@@ -188,9 +188,9 @@ export function selectHunks(parsed: ParsedDiff, indices: readonly number[]): Hun
  * consumer) are entitled to trust, and because a header that lies is a trap
  * for whoever touches this next. The unit tests are its only enforcement.
  *
- * So the new side is RECOMPUTED from the cumulative delta of the hunks
- * actually included, and the emitted patch is correct by construction rather
- * than by git's tolerance.
+ * So the new side is RECOMPUTED: git's own new start, less the net lines of
+ * every earlier hunk the selection drops. The emitted patch is correct by
+ * construction rather than by git's tolerance.
  */
 export function buildSubsetPatch(parsed: ParsedDiff, selected: readonly Hunk[]): string {
   if (parsed.binary) {
@@ -206,9 +206,19 @@ export function buildSubsetPatch(parsed: ParsedDiff, selected: readonly Hunk[]):
   }
 
   const parts: string[] = [...parsed.preamble];
-  let delta = 0;
+  const chosen = new Set(selected.map((h) => h.index));
   for (const h of selected) {
-    const newStart = h.oldStart + delta;
+    // Git's own new-side start, minus the net lines of every EARLIER hunk the
+    // selection leaves out. Deriving it from `oldStart` instead is wrong for
+    // the two shapes whose new start is not the old start shifted: a pure
+    // insertion (`@@ -5,0 +6,2 @@` — git anchors on the line AFTER) and a pure
+    // deletion (`@@ -5,2 +4,0 @@` — the line BEFORE).
+    let skipped = 0;
+    for (const other of parsed.hunks) {
+      if (other.index >= h.index) break;
+      if (!chosen.has(other.index)) skipped += other.newCount - other.oldCount;
+    }
+    const newStart = h.newStart - skipped;
     // `@@ -a,b +c,d @@` — counts of 1 are still written explicitly. Git accepts
     // both spellings, and the explicit one is what `git diff` itself emits for
     // multi-line hunks, so a round-trip through here reads like git's output.
@@ -216,7 +226,6 @@ export function buildSubsetPatch(parsed: ParsedDiff, selected: readonly Hunk[]):
     // Preserve the function-context suffix git puts after the closing `@@`.
     const suffix = h.heading.slice(h.heading.indexOf(' @@') + 3);
     parts.push(heading + suffix, ...h.body);
-    delta += h.newCount - h.oldCount;
   }
   return parts.join('\n') + '\n';
 }

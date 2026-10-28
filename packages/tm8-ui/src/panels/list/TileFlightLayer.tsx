@@ -104,19 +104,16 @@ export interface ResolvedFlight {
  * What flies, per kind — matched to the SVG graph's markers so the two
  * surfaces stay one vocabulary (`session-graph.css`: filled, open, barred).
  *
- * The message glyph is the HOUSE speech bubble — the same PATH DATA as
- * `KIND_ART.message`, reused verbatim. Not an envelope, and the reason is
- * written where that artwork lives: "a tm8 message is a line in a
- * conversation; an envelope promises mail, which is a different product."
+ * The message glyph is the HOUSE envelope — the same PATH DATA as
+ * `KIND_ART.message`, reused by reference so the two cannot drift (a bubble
+ * here would be the chat mark, and chat is not what flies between tiles).
  *
- * SAME GEOMETRY, DIFFERENT INK, and the difference is deliberate rather than
- * an oversight (raised in review of PR #591). Kind art is authored stroked and
- * `kind-art.ts` says it must stay that way, because a filled mark reads as
- * "selected" beside stroked ones in a badge row. This is not a badge row: a
- * 13px outline crossing tiles of every state — selected, live, hovered — turns
- * to mud, and the SVG graph's own message marker is filled for the same reason
- * (`session-graph.css`, `.sg-pulse-arrow--message`). So the flight fills, and
- * the claim it makes is that this is the same SHAPE, not the same rendering.
+ * STROKED, like the other two flights. It used to be FILLED, which suited the
+ * old one-path bubble (raised in review of PR #591: a 13px outline crossing
+ * tiles of every state turns to mud). An envelope cannot be filled — its flap
+ * is an open stroke inside the outline, and filling the outline buries it,
+ * leaving a plain block — so it flies stroked at the same 1.5 the delegation
+ * chevron and completion bar already fly at.
  */
 const FLIGHT_ART: Record<SessionPulseKind, readonly string[]> = {
   [SESSION_PULSE_KIND.message]: KIND_ART.message,
@@ -301,7 +298,6 @@ export function TileFlightLayer({
                 paths={FLIGHT_ART[flight.kind]}
                 size={13}
                 strokeWidth={1.5}
-                filled={flight.kind === SESSION_PULSE_KIND.message}
               />
             </span>
           </span>

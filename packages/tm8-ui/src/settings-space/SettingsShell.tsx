@@ -16,24 +16,34 @@ import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
-import { SectionAbsent, SectionFrame } from './SectionFrame';
+import { SectionAbsent, SectionFrame, SectionScopeContext } from './SectionFrame';
+import { OverviewSection } from './OverviewSection';
+import { SETTINGS_SCOPE_CHIP, scopeOfSection, settingsNavRowLabel, visibleSettingsNav, type SettingsAccess } from './nav';
 import { SECTION_NOT_MOUNTED } from './reasons';
-import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
+import { DESKTOP_ONLY_SECTIONS, PHONE_READ_ONLY_TAGS, PHONE_SECTION_HINTS, PHONE_SECTION_ICONS, PHONE_SETTINGS_GROUPS, phoneLiveHint } from './phone-sections';
+import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionDef, type SettingsSectionId, type SettingsShellProps } from './types';
 
 export function SettingsShell({
   port,
   sections,
-  initialSection = 'members',
+  initialSection,
   onSectionChange,
+  onSectionClear,
   nodeKey = 'local',
   onAxesChanged,
   onLeftSpace,
   sectionIds,
   onOpenSpaceAdmin,
   onOpenNodeAdmin,
+  onOpenNodeSection,
   framed = false,
+  stacked = false,
+  onOpenAppearance,
 }: SettingsShellProps) {
-  const [active, setActive] = useState<SettingsSectionId>(initialSection);
+  /* Stacked opens on the LIST unless the address named a section: a phone
+     that landed on Members & roles would hide that the list exists. The
+     desktop opens on the Overview for the same reason (settings redesign). */
+  const [active, setActive] = useState<SettingsSectionId | null>(initialSection ?? (stacked ? null : 'overview'));
   const [data, setData] = useState<SettingsData>({
     space: null,
     members: [],
@@ -167,6 +177,153 @@ export function SettingsShell({
   const visibleActive = visibleSections.some((s) => s.id === active) ? active : visibleSections[0]?.id;
 
   const spaceLabel = data.space?.name ?? '—';
+  /* The host hands the admin doors only to a viewer holding the role
+     (GateApp's `adminAccess`), so their presence IS the access answer — the
+     same one the frame nav is gated on. */
+  const access: SettingsAccess = { space: !!onOpenSpaceAdmin, node: !!onOpenNodeAdmin };
+  const openNode = onOpenNodeSection ?? (onOpenNodeAdmin ? () => onOpenNodeAdmin() : undefined);
+
+  const loadErrorNote = loadError ? (
+    <div className="set-absent" data-testid="settings-load-error">
+      <span className="set-absent__head">{loadError}</span>
+      <span className="set-absent__why">
+        the sections below show what did load — nothing here is filled in from a cache
+      </span>
+    </div>
+  ) : null;
+
+  const sectionBody = (id: SettingsSectionId) => (
+    <SectionScopeContext.Provider value={scopeOfSection(id)}>
+    <SectionBody
+      id={id}
+      access={access}
+      openable={visibleSections.map((s) => s.id)}
+      onOpenNode={openNode}
+      data={data}
+      sections={sections}
+      onGo={go}
+      port={port}
+      onProfileSaved={refreshIdentity}
+      onMembersChanged={refreshMembers}
+      {...(onLeftSpace ? { onLeftSpace } : {})}
+      onInvitesChanged={refreshInvites}
+      onMenuWritten={(menu) => setData((d) => ({ ...d, menu }))}
+      onSpaceWritten={spaceWritten}
+      onAxesChanged={refreshAxes}
+      onWorkflowsChanged={refreshWorkflows}
+      nodeKey={nodeKey}
+      phone={stacked}
+    />
+    </SectionScopeContext.Provider>
+  );
+
+  if (stacked) {
+    /* A section the address named but this scope does not list (a member
+       following an admin's link) falls back to the list, not to a neighbour. */
+    const open = visibleSections.find((s) => s.id === active) ?? null;
+    return (
+      <div className="set-root set-root--stacked cv2-root" data-stacked="true" data-testid="settings-stacked">
+        {open ? (
+          <section className="set-stack__page" aria-label={open.heading}>
+            <button
+              type="button"
+              className="set-stack__back"
+              data-testid="settings-back"
+              aria-label="Back to Settings"
+              onClick={() => {
+                setActive(null);
+                onSectionClear?.();
+              }}
+            >
+              <span aria-hidden>‹</span>
+              <span>Settings</span>
+            </button>
+            {loadErrorNote}
+            {DESKTOP_ONLY_SECTIONS.has(open.id) ? (
+              <DesktopOnlySection def={open} />
+            ) : (
+              <div className="set-body">{sectionBody(open.id)}</div>
+            )}
+          </section>
+        ) : (
+          <nav className="set-stack" aria-label="Settings sections">
+            <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
+            {loadErrorNote}
+            {onOpenSpaceAdmin ? (
+              <div className="set-stack__group">
+                <ul className="set-stack__rows">
+                  <li>
+                    <button type="button" className="set-stack__row" onClick={onOpenSpaceAdmin}>
+                      <span className="set-stack__tile" data-tone="run" aria-hidden>⚿</span>
+                      <span className="set-stack__text">
+                        <span className="set-stack__label">Space admin</span>
+                        <span className="set-stack__hint">Owner and admin settings</span>
+                      </span>
+                      <span className="set-stack__chev" aria-hidden>›</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            ) : null}
+            {PHONE_SETTINGS_GROUPS.map((group) => {
+              const rows = group.ids
+                .map((id) => visibleSections.find((s) => s.id === id))
+                .filter((s): s is SettingsSectionDef => !!s);
+              if (rows.length === 0) return null;
+              return (
+                <div key={group.title} className="set-stack__group">
+                  <h2 className="set-stack__title">{group.title}</h2>
+                  <ul className="set-stack__rows">
+                    {rows.map((s) => {
+                      const icon = PHONE_SECTION_ICONS[s.id];
+                      const desktop = DESKTOP_ONLY_SECTIONS.has(s.id);
+                      const tag = desktop ? 'desktop' : PHONE_READ_ONLY_TAGS[s.id];
+                      const hint = phoneLiveHint(s.id, data) ?? PHONE_SECTION_HINTS[s.id];
+                      /* The space's own mark, as drawn, where the space has a name. */
+                      const glyph = s.id === 'profile' && data.space?.name ? spaceMark(data.space.name) : icon.glyph;
+                      return (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className={`set-stack__row${s.danger ? ' set-stack__row--danger' : ''}${desktop ? ' set-stack__row--off' : ''}`}
+                            data-section={s.id}
+                            onClick={() => go(s.id)}
+                          >
+                            <span className="set-stack__tile" data-tone={icon.tone} aria-hidden>{glyph}</span>
+                            <span className="set-stack__text">
+                              <span className="set-stack__label">{s.label}</span>
+                              {hint ? <span className="set-stack__hint" data-testid={`settings-hint-${s.id}`}>{hint}</span> : null}
+                            </span>
+                            {tag ? <span className="set-stack__tag" data-tag={tag}>{tag}</span> : null}
+                            <span className="set-stack__chev" aria-hidden>›</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                    {/* THERE IS NO APPEARANCE SECTION. Light / dark lives in the
+                        account sheet, so this row points there (↗) rather than
+                        copying it — two switches for one setting drift. */}
+                    {group.title === 'You' && onOpenAppearance ? (
+                      <li>
+                        <button type="button" className="set-stack__row" data-testid="settings-appearance" onClick={onOpenAppearance}>
+                          <span className="set-stack__tile" data-tone="idle" aria-hidden>◐</span>
+                          <span className="set-stack__text">
+                            <span className="set-stack__label">Appearance</span>
+                            <span className="set-stack__hint">Light / dark lives in your account menu</span>
+                          </span>
+                          <span className="set-stack__chev" aria-hidden>↗</span>
+                        </button>
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
+              );
+            })}
+          </nav>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="set-root cv2-root" data-framed={framed || undefined}>
@@ -175,64 +332,108 @@ export function SettingsShell({
           {onOpenSpaceAdmin && <button type="button" className="set-nav__row" onClick={onOpenSpaceAdmin}>Space admin</button>}
           {onOpenNodeAdmin && <button type="button" className="set-nav__row" onClick={onOpenNodeAdmin}>Node admin</button>}
           <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
-          {visibleSections.filter((s) => !s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row"
-              aria-current={visibleActive === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <div className="set-nav__spacer" />
-          {visibleSections.filter((s) => s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row set-nav__row--danger"
-              aria-current={visibleActive === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
+          {legacyNavGroups(visibleSections, access).map((group) => (
+            <div key={group.id} className="set-nav__group" role="group" aria-label={group.label ?? undefined}>
+              {group.label ? (
+                <span className="set-nav__heading" title={group.description}>
+                  {group.label}
+                  {group.scope ? <span className="set-nav__scope">{SETTINGS_SCOPE_CHIP[group.scope]}</span> : null}
+                </span>
+              ) : null}
+              {group.rows.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`set-nav__row${row.danger ? ' set-nav__row--danger' : ''}`}
+                  aria-current={visibleActive === row.id ? 'true' : undefined}
+                  onClick={() => go(row.id)}
+                >
+                  {row.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>}
 
         <div className="set-body">
-          {loadError ? (
-            <div className="set-absent" data-testid="settings-load-error">
-              <span className="set-absent__head">{loadError}</span>
-              <span className="set-absent__why">
-                the sections below show what did load — nothing here is filled in from a cache
-              </span>
-            </div>
-          ) : null}
-          {visibleActive && <SectionBody
-            id={visibleActive}
-            data={data}
-            sections={sections}
-            onGo={go}
-            port={port}
-            onProfileSaved={refreshIdentity}
-            onMembersChanged={refreshMembers}
-            {...(onLeftSpace ? { onLeftSpace } : {})}
-            onInvitesChanged={refreshInvites}
-            onMenuWritten={(menu) => setData((d) => ({ ...d, menu }))}
-            onSpaceWritten={spaceWritten}
-            onAxesChanged={refreshAxes}
-            onWorkflowsChanged={refreshWorkflows}
-            nodeKey={nodeKey}
-          />}
+          {loadErrorNote}
+          {visibleActive && sectionBody(visibleActive)}
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * The unframed shell's own nav (the legacy bar), grouped by the same scope
+ * model as the frame nav. Sections this shell lists but the model does not
+ * (the two node sections with space-shaped ids, on the unscoped legacy shell)
+ * land under Server rather than vanishing.
+ */
+function legacyNavGroups(visible: readonly SettingsSectionDef[], access: SettingsAccess) {
+  const shown = new Set(visible.map((s) => s.id));
+  const placed = new Set<SettingsSectionId>();
+  const take = (id: SettingsSectionId, label?: string) => {
+    placed.add(id);
+    const def = visible.find((s) => s.id === id)!;
+    return { id, label: label ?? def.label, danger: !!def.danger };
+  };
+  const groups: { id: string; label: string | null; description?: string; scope?: keyof typeof SETTINGS_SCOPE_CHIP; rows: ReturnType<typeof take>[] }[] = [];
+  if (shown.has('overview')) groups.push({ id: 'overview', label: null, rows: [take('overview')] });
+  /* Role gating is the shell's `sectionIds`, not the nav's: an unframed
+     shell lists every section its scope was given. */
+  for (const group of visibleSettingsNav({ space: true, node: access.node })) {
+    const rows = group.subgroups.flatMap((subgroup) => subgroup.rows)
+      .flatMap((row) => (row.target.scope === 'space' && shown.has(row.target.section) ? [take(row.target.section, settingsNavRowLabel(row))] : []));
+    if (rows.length) groups.push({ id: group.id, label: group.label, description: group.description, scope: group.scope, rows });
+  }
+  const rest = visible.filter((s) => !placed.has(s.id)).map((s) => take(s.id));
+  if (rest.length) {
+    const server = groups.find((g) => g.id === 'node');
+    if (server) server.rows.push(...rest);
+    else groups.push({ id: 'node', label: 'Server', description: 'Node admins only — reaches every space on this server.', scope: 'node', rows: rest });
+  }
+  return groups;
+}
+
+/** The space's initial, the mark it carries where it has no logo. */
+function spaceMark(name: string): string {
+  return ([...name.trim()][0] ?? '⌂').toUpperCase();
+}
+
+/**
+ * A section that lists on the phone but does not open there. It names why and
+ * hands over the address, which is the one thing a phone can usefully do with
+ * an editor it cannot draw.
+ */
+function DesktopOnlySection({ def }: { def: SettingsSectionDef }) {
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  return (
+    <div className="mobile-empty set-stack__refusal" data-testid="settings-desktop-only" data-section={def.id}>
+      <p>“{def.label}” doesn’t have a phone layout yet.</p>
+      <p>It works on a desktop — this link opens it there.</p>
+      <button
+        type="button"
+        className="mobile-empty__out"
+        onClick={() => {
+          const href = typeof window === 'undefined' ? '' : window.location.href;
+          void (navigator.clipboard?.writeText(href) ?? Promise.reject(new Error('no clipboard'))).then(
+            () => setCopied('copied'),
+            () => setCopied('failed'),
+          );
+        }}
+      >
+        {copied === 'copied' ? 'Link copied' : copied === 'failed' ? 'Copy failed — use the address bar' : 'Copy link for desktop'}
+      </button>
+    </div>
+  );
+}
+
 function SectionBody({
   id,
+  access,
+  openable,
+  onOpenNode,
   data,
   sections,
   onGo,
@@ -246,8 +447,12 @@ function SectionBody({
   onAxesChanged,
   onWorkflowsChanged,
   nodeKey,
+  phone,
 }: {
   id: SettingsSectionId;
+  access: SettingsAccess;
+  openable: readonly SettingsSectionId[];
+  onOpenNode?: SettingsShellProps['onOpenNodeSection'];
   data: SettingsData;
   sections: SettingsShellProps['sections'];
   onGo: (id: SettingsSectionId) => void;
@@ -261,6 +466,8 @@ function SectionBody({
   onAxesChanged: () => void;
   onWorkflowsChanged: () => void;
   nodeKey: string;
+  /** The stacked phone arrangement: sections with a phone layout take it. */
+  phone: boolean;
 }) {
   const injected = sections?.[id];
   if (injected !== undefined) return <>{injected}</>;
@@ -268,6 +475,8 @@ function SectionBody({
   const def = SETTINGS_SECTIONS.find((s) => s.id === id)!;
 
   switch (id) {
+    case 'overview':
+      return <OverviewSection data={data} access={access} openable={openable} onOpen={onGo} onOpenNode={onOpenNode} />;
     case 'members':
       return (
         <MembersSection
@@ -367,7 +576,7 @@ function SectionBody({
       // Space-wide and server-stored; self-loading through the shared
       // `useChatDefaults` cache. Writes are NOT caught here — the section
       // renders the server's refusal beside the row it belongs to.
-      return <ChatDefaultsSection heading={def.heading} nodeKey={nodeKey} wiring={port.chatDefaults} />;
+      return <ChatDefaultsSection heading={def.heading} nodeKey={nodeKey} wiring={port.chatDefaults} phone={phone} />;
     case 'axes':
       /* W2 — the real registry, read off the same settings round trip as
          invites. The refusal this replaces (AXES_UNREADABLE) was measured
@@ -391,6 +600,9 @@ function SectionBody({
             onAxesChanged();
           }}
           tasksUsing={(axis) => port.tasksUsingAxis(axis)}
+          /* Read-only on the phone (mockup 01a14cc4): an axis edit changes
+             what every workflow keys on, which is desktop work. */
+          readOnly={phone}
         />
       );
     case 'workflows':

@@ -108,3 +108,87 @@
   align-items: center;
   justify-content: center;
 }
+
+/*
+ * THE FRAME WITH THE MERGED NAVIGATOR ON (`tm8.ui.navigator`, design doc
+ * 01a1465d-a2b7 §9). Overrides on `[data-nav]`, so the three-column grid above
+ * is exactly what renders with the flag off.
+ *
+ * TWO SHAPES, because §9 draws two:
+ *   `[data-nav-panel='slot']` — the screen's panel IS the navigator's lower
+ *   area (Settings' FrameNav), so the frame has ONE left column.
+ *   otherwise — the panel keeps its own column beside the navigator, which is
+ *   Craft phase 1 with `CraftSidePanel` untouched.
+ */
+.tws-root.app-frame[data-nav] {
+  grid-template-columns: var(--tws-nav-w, 300px) var(--tws-browser-w, 300px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'header header top top'
+    'nav browser content strip';
+}
+.tws-root.app-frame[data-nav][data-nav-panel='slot'],
+.tws-root.app-frame[data-nav][data-panel='none'] {
+  grid-template-columns: var(--tws-nav-w, 300px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'header header top'
+    'nav content strip';
+}
+.tws-root.app-frame[data-nav][data-expanded] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'top top'
+    'content strip';
+}
+/* In the slot the panel is a flex child of the navigator, not a grid area. */
+.app-frame-panel[data-in-nav] {
+  grid-area: auto;
+  border-right: 0;
+}
+.tws-root.app-frame[data-nav] .tws-nav {
+  border-right: 1px solid var(--pn-line);
+}
+/* The navigator's resizer sits on the nav | next-column hairline. */
+.tws-root[data-nav] .tws-nav-resizer {
+  grid-area: nav;
+}
+
+/*
+ * THE PINNED-ONLY RAIL'S SHELL (`tm8.ui.navigator = 'rail'`), for a mode that
+ * passes `pinnedMode`: Work's layout (workspace.css `[data-pinned-rail]`) —
+ * the rail and the panel run the full height, and only the content column has
+ * the top band over it. Collapsed, the panel's track is zero.
+ */
+.tws-root.app-frame[data-pinned-rail]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) var(--tws-browser-w, 320px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'rail browser top top'
+    'rail browser content strip';
+}
+.tws-root.app-frame[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
+}
+/* A pinned mode with no panel at all (the Crafts home): no empty column. */
+.tws-root.app-frame[data-pinned-rail][data-panel='none']:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
+}
+/* Observe: the screen's portalled controls, below PanelTop. */
+.app-frame-panel-host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+/* Craft (pinned): the band leads with the crafts switcher, and it meets the
+   panel's own hairline rather than drawing a second one. */
+.tws-root.app-frame[data-pinned-rail='craft'] .app-frame-top {
+  border-left: 0;
+}
+.tws-root.app-frame[data-pinned-rail] .app-frame-top .tws-mode-switcher-slot {
+  flex: 0 1 auto;
+  align-items: center;
+  padding-left: 0;
+}
+.tws-root.app-frame[data-pinned-rail] .app-frame-top .tws-mode-switcher-slot::before {
+  content: none;
+}

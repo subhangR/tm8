@@ -126,7 +126,7 @@ describe('paste takes the agent-readable set (R2)', () => {
 
     fireEvent.paste(area, clipboard([new File(['x'], 'report.pdf', { type: 'application/pdf' })]));
     expect(start).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.getByText('✓ uploaded')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('uploaded')).toBeTruthy());
 
     type(area, 'see attached');
     fireEvent.keyDown(area, { key: 'Enter' });

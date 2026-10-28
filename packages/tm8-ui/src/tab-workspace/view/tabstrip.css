@@ -46,6 +46,26 @@
   font-size: var(--pn-fs-label);
 }
 
+/* ---- the pinned-only rail's lead: [workspace ▾] ----
+   The mode ends the left header; its switcher starts the strip, with a
+   hairline before the tabs. */
+.tws-ts-modes {
+  display: flex;
+  align-items: flex-start;
+  flex: none;
+  height: var(--tws-band-ctl, 36px);
+  margin-top: 2px;
+  margin-right: var(--pn-space-2);
+  padding-right: var(--pn-space-2);
+  border-right: 1px solid var(--tws-band-line, var(--pn-line));
+}
+.tws-ts-modes .tws-mode-switcher-slot {
+  flex: none;
+  padding-left: 0;
+}
+.tws-ts-modes .tws-mode-switcher-slot::before {
+  content: none;
+}
 .tws-ts-leading {
   display: flex;
   align-items: center;
@@ -111,8 +131,8 @@
   color: var(--pn-ink);
 }
 .tws-ts-tab[data-active] {
-  --tws-ts-bg: var(--pn-card);
-  background: var(--pn-card);
+  --tws-ts-bg: var(--pn-x-page-bg);
+  background: var(--pn-x-page-bg);
   color: var(--pn-ink);
 }
 .tws-ts-tab[data-dragging] {

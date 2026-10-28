@@ -123,11 +123,14 @@ describe('handleWorkKey — creation and the browser', () => {
 
   it('l 1…l 9 switch the browser to that pinned rail kind, in the rail\'s order', () => {
     const rt = runtime();
-    // The default pins, top to bottom: chats, tasks, sessions.
+    // The default pins, top to bottom: chats, tasks, sessions, docs,
+    // artifacts, teammates (design doc 01a1465d-a2b7 decision 1).
     handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:2' }, () => {});
     expect(rt.store.getState().browsers.main.kind).toBe('task');
     handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:3' }, () => {});
     expect(rt.store.getState().browsers.main.kind).toBe('work_session');
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:6' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('team_member');
 
     // The rail is the user's: unpin chats and the numbers follow.
     getRailStore(rt.spaceId).getState().togglePin('chat');
@@ -139,9 +142,9 @@ describe('handleWorkKey — creation and the browser', () => {
     const rt = runtime();
     rt.dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' }, source: 'click' });
     const notify = vi.fn();
-    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:7' }, notify);
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:9' }, notify);
     expect(rt.store.getState().browsers.main.kind).toBe('doc');
-    expect(notify).toHaveBeenCalledWith('Only 3 pinned on the rail.');
+    expect(notify).toHaveBeenCalledWith('Only 6 pinned on the rail.');
   });
 
   it('r on a tab with nothing to launch says so', () => {

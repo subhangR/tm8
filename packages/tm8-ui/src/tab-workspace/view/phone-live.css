@@ -12,114 +12,186 @@
 }
 @keyframes phl-blink { to { visibility: hidden; } }
 
-.phl-scrim {
+/* The popup is portaled under its own `.cv2-root` for the tokens, which also
+   brings the app's `zoom: 1.1`; sized in vh, a zoomed phone overflowed the
+   window by a tenth and pushed its controls over the page. */
+.cv2-root.phl-scrim {
+  zoom: 1;
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
   background: var(--pn-scrim);
 }
 .phl {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  max-height: 96vh;
+  gap: 24px;
+  max-width: 100%;
+  max-height: 100%;
 }
-.phl-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.phl-devices {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 999px;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-}
-.phl-device,
-.phl-text,
-.phl-close {
-  border: 0;
-  background: transparent;
-  color: var(--pn-ink-2);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.phl-device { padding: 4px 14px; border-radius: 999px; }
-.phl-device[aria-checked='true'] { background: var(--pn-run); color: var(--pn-card); }
-.phl-text { margin-left: auto; padding: 4px 10px; border-radius: 999px; background: var(--pn-card); }
-.phl-close {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--pn-card);
-}
-.phl-text:hover,
-.phl-close:hover { color: var(--pn-ink); }
-.phl-devices + .phl-close { margin-left: auto; }
 
-/* The phone: a dark bezel, a notch (iPhone) or a punch-hole (Android), the
-   screen, and the home bar. The screen is the terminal, edge to edge. */
+/* THE PHONE: an iPhone 16 Pro Max is 77.6 x 163 mm with a 440 x 956 pt screen;
+   the frame keeps that ratio and fits the window's height. */
 .phl-phone {
+  --phl-h: min(860px, calc(100vh - 32px));
   position: relative;
+  flex: none;
   box-sizing: border-box;
-  width: min(400px, 92vw);
-  height: min(820px, calc(96vh - 90px));
-  padding: 44px 12px 26px;
-  border-radius: 52px;
+  height: var(--phl-h);
+  aspect-ratio: 464 / 980;
+  padding: calc(var(--phl-h) * 0.0122);
+  border-radius: calc(var(--phl-h) * 0.07);
   background: black;
-  box-shadow: 0 0 0 2px color-mix(in srgb, black 70%, white), 0 24px 60px var(--pn-scrim);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, black 55%, white),
+    0 0 0 5px color-mix(in srgb, black 85%, white),
+    0 24px 60px var(--pn-scrim);
 }
-.phl-phone--android { border-radius: 34px; padding-top: 34px; }
-.phl-notch {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  width: 110px;
-  height: 24px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: color-mix(in srgb, black 80%, white);
-}
-.phl-phone--android .phl-notch { width: 12px; height: 12px; top: 12px; }
-.phl-home {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  width: 120px;
-  height: 4px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: color-mix(in srgb, black 40%, white);
+.phl-phone--android {
+  aspect-ratio: 436 / 940;
+  border-radius: calc(var(--phl-h) * 0.05);
 }
 .phl-screen {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border-radius: 10px;
-  background: var(--pn-card);
+  border-radius: calc(var(--phl-h) * 0.058);
+  background: black;
   display: flex;
   flex-direction: column;
 }
+.phl-phone--android .phl-screen { border-radius: calc(var(--phl-h) * 0.04); }
 .phl-screen > * { flex: 1; min-height: 0; }
+.phl-screen > .phl-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(var(--phl-h) * 0.0605);
+  padding: 0 9% 0 11%;
+  color: white;
+  font-weight: 600;
+  font-size: calc(var(--phl-h) * 0.019);
+  background: black;
+}
+.phl-status__icons { width: calc(var(--phl-h) * 0.07); height: auto; }
+.phl-phone--android .phl-status { height: calc(var(--phl-h) * 0.045); padding: 0 6%; }
+.phl-screen .term-host { zoom: 1; min-height: 0; }
+/* Dynamic Island (iPhone) / punch-hole camera (Pixel), over the screen like the real ones. */
+.phl-island {
+  position: absolute;
+  top: calc(var(--phl-h) * 0.024);
+  left: 50%;
+  width: 28%;
+  height: calc(var(--phl-h) * 0.033);
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: black;
+  pointer-events: none;
+}
+.phl-phone--android .phl-island { width: calc(var(--phl-h) * 0.024); height: calc(var(--phl-h) * 0.024); }
 
-.phl-setup {
+.phl-fit { position: relative; overflow: hidden; display: flex; }
+.phl-fit > * { flex: 1; min-height: 0; }
+.phl-idle {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: color-mix(in srgb, white 60%, black);
+  background: linear-gradient(160deg, color-mix(in srgb, black 80%, white), black);
+}
+.phl-idle__big { font-size: 17px; font-weight: 600; color: white; }
+
+/* THE SIDE PANEL: every control lives here, never over the phone or the page. */
+.phl-side {
+  box-sizing: border-box;
+  width: 320px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  box-shadow: 0 12px 40px var(--pn-scrim);
+}
+.phl-head { display: flex; align-items: center; gap: 8px; }
+.phl-title { font-weight: 700; font-size: 15px; }
+.phl-watching {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px 2px 20px;
+  border-radius: 999px;
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font-weight: 600;
+  font-size: 12px;
+}
+.phl-watching .tws-astrip-phone__dot { top: 50%; left: 8px; right: auto; margin-top: -3.5px; }
+.phl-close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.phl-close:hover { background: var(--pn-line); color: var(--pn-ink); }
+.phl-devices {
+  display: flex;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--pn-line);
+}
+.phl-device {
+  flex: 1;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.phl-device[aria-checked='true'] { background: var(--pn-run); color: var(--pn-card); }
+.phl-device:disabled { opacity: 0.4; cursor: default; }
+.phl-spec { margin: -4px 0 0; font-size: 12px; color: var(--pn-ink-3); }
+.phl-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 20px 16px;
-  color: var(--pn-ink);
+  padding-top: 12px;
+  border-top: 1px solid var(--pn-line);
 }
-.phl-setup > * { flex: none; }
-.phl-label { font-weight: 600; }
+.phl-h { margin: 0; font-size: 13px; font-weight: 700; }
 .phl-command {
+  display: block;
+  padding: 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  font-family: var(--pn-mono, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.phl-ask {
   box-sizing: border-box;
   width: 100%;
   padding: 8px;
@@ -127,26 +199,110 @@
   border-radius: 8px;
   background: var(--pn-card);
   color: var(--pn-ink);
-  font-family: var(--pn-mono, monospace);
+  font: inherit;
+  font-size: 13px;
   resize: vertical;
 }
-.phl-note { margin: 0; color: var(--pn-ink-3); }
-.phl-screen > .phl-note { display: flex; align-items: center; justify-content: center; }
+.phl-note { margin: 0; font-size: 12px; color: var(--pn-ink-3); }
 .phl-note--error { color: var(--pn-danger, var(--pn-ink)); }
-.phl-start {
+.phl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.phl-start,
+.phl-secondary {
   align-self: flex-start;
   padding: 6px 16px;
   border: 0;
   border-radius: 999px;
-  background: var(--pn-run);
-  color: var(--pn-card);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
-.phl-start:disabled { opacity: 0.5; cursor: default; }
-.phl-foot { margin: 0; color: white; opacity: 0.85; }
+.phl-start { background: var(--pn-run); color: var(--pn-card); }
+.phl-secondary { background: var(--pn-line); color: var(--pn-ink); }
+.phl-start:disabled,
+.phl-secondary:disabled { opacity: 0.5; cursor: default; }
+
+/* A narrow window: the panel goes under a smaller phone, and the whole popup scrolls. */
+@media (max-width: 760px) {
+  .cv2-root.phl-scrim { align-items: flex-start; overflow: auto; }
+  .phl { flex-direction: column; gap: 16px; max-height: none; }
+  .phl-phone { --phl-h: min(640px, calc(100vh - 120px)); }
+  .phl-side { width: min(440px, 100%); max-height: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .tws-astrip-phone__dot { animation: none; }
 }
+
+/* The live frame, drawn as a real image over the terminal (which would blur it to its cell grid). */
+.phl-screen > .phl-frame {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: calc(var(--phl-h) * 0.0605);
+  width: 100%;
+  height: auto;
+  flex: none;
+  object-fit: cover;
+  object-position: top;
+  background: white;
+}
+.phl-phone--android .phl-screen > .phl-frame { top: calc(var(--phl-h) * 0.045); }
+.phl-screen .xterm-viewport { scrollbar-width: none; }
+.phl-screen .xterm-viewport::-webkit-scrollbar { display: none; }
+.phl-file { position: relative; display: inline-flex; align-items: center; align-self: flex-start; cursor: pointer; }
+.phl-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.phl-file--off { opacity: 0.5; pointer-events: none; }
+.phl-link { border: 0; background: none; padding: 0; font: inherit; font-size: 12px; color: var(--pn-run); cursor: pointer; }
+.phl-run__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.phl-now { margin: 0; font-size: 12px; padding: 6px 8px; border-radius: 6px; background: var(--pn-run-soft); color: var(--pn-ink); }
+.phl-now--fail { background: color-mix(in srgb, var(--pn-block) 14%, transparent); }
+.phl-cases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
+.phl-case { display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; align-items: baseline; font-size: 12.5px; padding: 3px 4px; border-radius: 4px; }
+.phl-case__mark { font-weight: 700; text-align: center; }
+.phl-case__ms { font-size: 11px; color: var(--pn-ink-3); font-variant-numeric: tabular-nums; }
+.phl-case--planned { color: var(--pn-ink-3); }
+.phl-case--run { background: var(--pn-run-soft); }
+.phl-case--run .phl-case__mark { color: var(--pn-run); }
+.phl-case--ok .phl-case__mark { color: var(--pn-run); }
+.phl-case--fail .phl-case__mark,
+.phl-case--fail .phl-case__name { color: var(--pn-block); }
+.phl-done { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; background: var(--pn-line); }
+.phl-done--ok strong { color: var(--pn-run); }
+.phl-done--fail strong { color: var(--pn-block); }
+.phl-done span { font-size: 12px; color: var(--pn-ink-3); }
+
+/* The report, over the phone. */
+.phl-report-scrim { position: fixed; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 0.45); }
+.phl-report {
+  width: min(960px, 94vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+}
+.phl-report__head { display: flex; align-items: flex-start; gap: 10px; }
+.phl-report__head > div { flex: 1; }
+.phl-report__head h2 { margin: 0 0 2px; font-size: 18px; }
+.phl-report__asked { font-size: 13px; white-space: pre-wrap; }
+.phl-report__sum { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.phl-report__sum > div { padding: 8px 14px; border-radius: 10px; background: var(--pn-line); font-size: 12px; color: var(--pn-ink-3); }
+.phl-report__sum b { display: block; font-size: 18px; color: var(--pn-ink); }
+.phl-report__sum .is-ok b { color: var(--pn-run); }
+.phl-report__sum .is-fail b { color: var(--pn-block); }
+.phl-report__cases { list-style: none; margin: 0; padding: 0; }
+.phl-rcase { display: flex; gap: 18px; justify-content: space-between; padding: 14px 0; border-top: 1px solid var(--pn-line); font-size: 13px; }
+.phl-rcase__text { flex: 1; min-width: 0; }
+.phl-rcase h3 { margin: 0 0 2px; font-size: 14px; }
+.phl-rcase p { margin: 4px 0; }
+.phl-rcase__verdict { font-weight: 700; }
+.phl-rcase--ok .phl-rcase__verdict { color: var(--pn-run); }
+.phl-rcase--fail .phl-rcase__verdict { color: var(--pn-block); }
+.phl-rcase--planned .phl-rcase__verdict,
+.phl-rcase--run .phl-rcase__verdict { color: var(--pn-ink-3); }
+.phl-rcase__error { white-space: pre-wrap; font-size: 11.5px; max-height: 140px; overflow: auto; padding: 8px; border-radius: 6px; background: var(--pn-line); }
+.phl-rcase__shot { width: 200px; flex: none; align-self: flex-start; border-radius: 10px; border: 1px solid var(--pn-line); }
+.phl-downloads { display: inline-flex; gap: 6px; flex-wrap: wrap; }

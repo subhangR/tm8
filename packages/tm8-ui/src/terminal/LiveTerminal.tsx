@@ -12,12 +12,14 @@ import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { attachOsc52Clipboard } from './osc52.js';
 import { createInlineImageAddon } from './inlineImages.js';
+import { watchScreenSignals, type ScreenSignal } from './screenSignals.js';
 import { ptyTransport } from './pty/ptyTransport.js';
 import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { describePtyAttachRefusal } from './pty/ptyAttachRefusal.js';
 import { spaceSessionFor } from '../auth/space-sessions';
 import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
+import { webglPool } from './pty/webglPool.js';
 import { attachTouchScroll } from './touchScroll.js';
 import { registerScrollTerminal, scrollTerminalLines } from './scrollTerminal';
 import {
@@ -189,6 +191,8 @@ export interface LiveTerminalProps {
    */
   onCtrlSpent?: () => void;
   onAltSpent?: () => void;
+  /** Frames, user vars and clears from a program streaming a screen (`screenSignals.ts`). */
+  onScreenSignal?: (signal: ScreenSignal) => void;
 }
 
 /**
@@ -216,7 +220,7 @@ function applyTerminalPadding(term: Terminal, padding: number, appliedRef: { cur
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent, onAltSpent },
+  { sessionId, serverBaseUrl = '', live, autoFocus = false, fontSize, onResize, onExit, onCtrlSpent, onAltSpent, onScreenSignal },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -260,6 +264,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   const onResizeRef = useRef(onResize);
   const onExitRef = useRef(onExit);
   const onCtrlSpentRef = useRef(onCtrlSpent);
+  const onScreenSignalRef = useRef(onScreenSignal);
   /**
    * THE STICKY-CTRL LATCH.
    *
@@ -290,6 +295,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
   onResizeRef.current = onResize;
   onExitRef.current = onExit;
   onCtrlSpentRef.current = onCtrlSpent;
+  onScreenSignalRef.current = onScreenSignal;
 
   // Both soft-keyboard input and toolbar keys consume the same sticky modifiers.
   const sendInput = (data: string) => {
@@ -383,8 +389,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     // Inline images (IIP/SIXEL) so a program can stream real frames — an
     // agent's browser screen — through the PTY. Limits in inlineImages.ts.
     term.loadAddon(createInlineImageAddon());
+    // Registered after the addon, so it hears each frame first and passes it on.
+    const screenSignals = watchScreenSignals(term, (signal) => onScreenSignalRef.current?.(signal));
     applyTerminalPadding(term, xterm.options.padding, appliedPaddingRef);
     patchXtermRenderServiceDimensions(term);
+    // WebGL when shown, DOM otherwise — at most 8 contexts page-wide, so the
+    // browser's ~16 cap never silently kills one. Policy in pty/webglPool.ts.
+    const unregisterWebgl = webglPool.register(sessionId, term);
     termRef.current = term;
     fitRef.current = fit;
     // Keyboard scrolling from outside the terminal (the Work tab's ↑/↓).
@@ -407,6 +418,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
           // Terminal may have been evicted after parsing the last replay byte.
         }
         term.element.style.removeProperty('visibility');
+        // Replay hid the element, so a pool pass during it saw it hidden.
+        webglPool.schedule();
         // Deliberately does NOT re-arm the repaint nudge. It used to, which
         // meant a normal attach forced TWICE — once from the mount's
         // scheduleResize and again here — and, because this runs on every
@@ -785,7 +798,12 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       onExitRef.current?.(id, exitCode);
     });
 
-    const resizeObserver = new ResizeObserver(scheduleResize);
+    // A display:none → shown flip changes the box, so the observer is also the
+    // fastest "became visible" signal the WebGL pool gets.
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleResize();
+      webglPool.schedule();
+    });
     resizeObserver.observe(container);
 
     // The mint's answer, when the answer is no. Subscribed BEFORE openSession
@@ -842,6 +860,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       clientFittedSessions.delete(sessionId);
       serverPtySizes.delete(sessionId);
       unregisterScroll();
+      screenSignals.dispose();
+      unregisterWebgl();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

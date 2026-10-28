@@ -5,6 +5,14 @@
  * Run it:  bun run audit:mobile          (starts vite, measures, writes JSON + PNGs)
  *          bun run audit:mobile -- --viewport phone-390 --route tasks
  *
+ * EXIT CODE (t-noscroll): non-zero when any PHONE row scrolls sideways — the
+ * document's `scrollWidth` exceeds its `clientWidth`, or any element that a
+ * thumb can pan (`overflow-x: auto|scroll`) has `scrollWidth > clientWidth`,
+ * or any rendered element's right edge lies past the viewport (clipped off by
+ * the frame, so it cannot be scrolled to either). The other numbers are
+ * reported, not gated. A row that lands in the wrong shell (shell 'none' when
+ * the app fails to boot) also fails the run: its zeros are not evidence.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS, stated as the failure it prevents rather than the feature it
  * is: `vitest` cannot see a single defect this program fixes. jsdom loads no
@@ -135,6 +143,7 @@ const SPACE = 'sp-atelier';
  * before-number in hand.
  */
 const VIEWPORTS = [
+  { name: 'phone-360', width: 360, height: 780, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'phone-390', width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'phone-430', width: 430, height: 932, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'tablet-768', width: 768, height: 1024, deviceScaleFactor: 2, isMobile: true, hasTouch: true, expectShell: 'desktop' },
@@ -285,6 +294,32 @@ function measureInPage({ MIN_TAP, EPS }) {
     .filter(({ r }) => Math.min(r.width, r.height) < MIN_TAP)
     .map(({ el, r }) => ({ w: Math.round(r.width), h: Math.round(r.height), path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) }));
 
+  /*
+   * SIDEWAYS SCROLLERS (t-noscroll). The per-element right-edge count above
+   * finds content cut off; this finds content a thumb can PAN to — an element
+   * whose computed `overflow-x` lets the user scroll it and whose content is
+   * wider than its box. That is `scrollWidth > clientWidth` measured where it
+   * means something: on the scroller itself, not on the document, which the
+   * clipping frame keeps at exactly the viewport width (see the header).
+   *
+   * `hidden` and `clip` are excluded on purpose: they cannot be panned by a
+   * finger, and an ellipsis label is `hidden` with a wider scrollWidth by
+   * design. Content they cut is the right-edge count's business.
+   *
+   * `.kit-zfig__viewport` is the one exemption: a zoomed figure is panned on
+   * purpose, in both directions, by the reader who zoomed it.
+   */
+  const hScrollers = all
+    .filter((el) => {
+      if (el.scrollWidth <= el.clientWidth + EPS) return false;
+      if (el.classList.contains('kit-zfig__viewport')) return false;
+      const ox = getComputedStyle(el).overflowX;
+      return ox === 'auto' || ox === 'scroll';
+    })
+    .filter((el) => rendered(el.getBoundingClientRect()))
+    .slice(0, 12)
+    .map((el) => ({ path: pathOf(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+
   return {
     /** The reference every right edge below is compared against. */
     viewportWidth: vw,
@@ -294,6 +329,10 @@ function measureInPage({ MIN_TAP, EPS }) {
     innerWidth: window.innerWidth,
     scrollWidth: document.documentElement.scrollWidth,
     bodyScrollWidth: document.body.scrollWidth,
+    /* The t-noscroll gate: both must be clean on a phone row. */
+    docScrollsX: document.documentElement.scrollWidth > vw + EPS,
+    hScrollerCount: hScrollers.length,
+    hScrollers,
     /* THE HEADLINE. Everything above it is context. */
     overflowCount: over.length,
     worstRightEdge: Math.round(worstRight),
@@ -384,12 +423,23 @@ const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
 if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome' });
+/* AUDIT_CHROME: a host with no system Chrome points this at a headless shell
+   binary instead (see trap 1); it needs a single process to launch there. */
+const launchBrowser = () => process.env.AUDIT_CHROME
+  ? chromium.launch({ executablePath: process.env.AUDIT_CHROME, args: ['--no-sandbox', '--no-zygote', '--single-process', '--disable-gpu'] })
+  : chromium.launch({ channel: 'chrome' });
+let browser = null;
 const rows = [];
 const problems = [];
+const noscrollFailures = [];
+/* Rows measured in the wrong shell. Unbuilt workspace packages make vite 500,
+   every row lands in shell 'none', and every gate below passed vacuously. */
+const wrongShell = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
+  /* One browser per viewport: a single-process shell crashes on a second context. */
+  browser = await launchBrowser();
   const ctx = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.deviceScaleFactor,
@@ -415,6 +465,11 @@ for (const vp of VIEWPORTS) {
        about React having committed the screen and fonts having swapped in — and
        a font swap moves every text box, which is exactly what we measure. */
     await page.waitForTimeout(1200);
+    /* A lazy screen shows "Loading …" until its chunk arrives, which on a busy
+       host is longer than any fixed settle. A loading card is not the screen. */
+    try {
+      await page.waitForFunction(() => !/^Loading\b/.test((document.body.innerText || '').trim()), null, { timeout: 90_000 });
+    } catch { /* recorded as-is; firstText shows it */ }
     try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
     await page.waitForTimeout(300);
 
@@ -423,7 +478,24 @@ for (const vp of VIEWPORTS) {
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
     const shellOk = m.shell === vp.expectShell;
-    if (!shellOk) problems.push(`${vp.name}/${route.name}: expected ${vp.expectShell} shell, got '${m.shell}' (coarsePointer=${m.coarsePointer})`);
+    if (!shellOk) {
+      const msg = `${vp.name}/${route.name}: expected ${vp.expectShell} shell, got '${m.shell}' (coarsePointer=${m.coarsePointer})`;
+      problems.push(msg);
+      wrongShell.push(msg);
+    }
+    /* THE GATE. A phone screen that scrolls sideways fails the run. */
+    if (vp.expectShell === 'mobile' && shellOk && (m.docScrollsX || m.hScrollerCount > 0)) {
+      noscrollFailures.push(`${vp.name}/${route.name}: scrolls sideways — document ${m.scrollWidth}/${m.viewportWidth}, ${m.hScrollerCount} panning element(s)${m.hScrollers[0] ? ` e.g. ${m.hScrollers[0].path} ${m.hScrollers[0].scrollWidth}/${m.hScrollers[0].clientWidth}` : ''}`);
+    }
+    /* THE CLIP GATE (task 01a14e1d). The frame CLIPS, so a row can pass the
+       scroll gate above while its controls sit past the right edge where no
+       thumb can reach them: the created-entities strip ran to x=1195 at 360
+       and this gate's predecessor called it clean. Any rendered element right
+       of the viewport fails a phone row. */
+    if (vp.expectShell === 'mobile' && shellOk && m.overflowCount > 0) {
+      const root = m.overflowRoots[0];
+      noscrollFailures.push(`${vp.name}/${route.name}: clipped off the right edge — ${m.overflowCount} element(s), worst right ${m.worstRightEdge}/${m.viewportWidth}${root ? ` e.g. ${root.path} (right ${root.right})` : ''}`);
+    }
     if (pageErrors.length) problems.push(`${vp.name}/${route.name}: page error — ${pageErrors[0]}`);
     /* The reference must be the width we asked the device for. If the page's own
        layout box has drifted from it, every right-edge comparison in this row is
@@ -455,13 +527,14 @@ for (const vp of VIEWPORTS) {
     console.log(
       `${vp.name.padEnd(13)} ${route.name.padEnd(10)} overflow=${String(m.overflowCount).padStart(4)}` +
       `  worstRight=${String(m.worstRightEdge).padStart(5)}  scrollW=${String(m.scrollWidth).padStart(5)}/${m.viewportWidth}` +
+      `  hScroll=${String(m.hScrollerCount).padStart(2)}` +
       `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}  [${m.shell}]${flag}`,
     );
   }
   await ctx.close();
+  await browser.close();
 }
 
-await browser.close();
 stop();
 
 /* A DIRTY TREE IS A PROBLEM, not a footnote: the sha in this file would name a
@@ -479,6 +552,7 @@ const report = {
   epsilonPx: EPS,
   space: SPACE,
   problems,
+  noscrollFailures,
   rows,
 };
 writeFileSync(`${outDir}/${label}.json`, JSON.stringify(report, null, 2) + '\n');
@@ -486,4 +560,15 @@ console.log(`\nwrote ${outDir}/${label}.json  (${rows.length} rows)`);
 if (problems.length) {
   console.log(`\n${problems.length} PROBLEM(S) — rows above marked WRONG SHELL are not evidence:`);
   for (const p of problems) console.log('  ! ' + p);
+}
+if (wrongShell.length) {
+  console.log(`\n${wrongShell.length} ROW(S) MEASURED THE WRONG SHELL — this run is not evidence. Shell 'none' usually means the app did not boot: build the workspace packages (\`bun run typecheck\` at the repo root) and check vite's output for a 500. First: ${wrongShell[0]}`);
+  process.exitCode = 1;
+}
+if (noscrollFailures.length) {
+  console.log(`\n${noscrollFailures.length} PHONE ROW FAILURE(S) — scrolls sideways or clips content off the right edge (t-noscroll gate):`);
+  for (const f of noscrollFailures) console.log('  ✗ ' + f);
+  process.exitCode = 1;
+} else {
+  console.log('\nno phone row scrolls sideways or clips content off its right edge (t-noscroll gate)');
 }

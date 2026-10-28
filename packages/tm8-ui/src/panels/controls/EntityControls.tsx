@@ -69,6 +69,7 @@ import type {
 import {
   KindIcon,
   PROCESS_CONTROL,
+  actionGlyph,
   SHARING_CONTROL,
   REASONS,
   getKind,
@@ -718,6 +719,7 @@ export function EntityControlStrip({
   variant = 'lines',
   collapseEmptyDates = false,
   omitArchive = false,
+  omitMembership = false,
   inlineEditors = false,
   trailing,
   stateOptionRefusal,
@@ -741,6 +743,12 @@ export function EntityControlStrip({
    * ejected onto a second line — landing a few pixels under `✕` Close.
    */
   omitArchive?: boolean;
+  /**
+   * The HOST draws collection membership itself. The task page does, in its
+   * COLLECTIONS section, so a second "In no collection or story" row among
+   * the properties said the same absence twice (task 01a15e22).
+   */
+  omitMembership?: boolean;
   /** Status and priority show their VALUE and open a picker on click. */
   inlineEditors?: boolean;
   /**
@@ -911,7 +919,7 @@ export function EntityControlStrip({
           )
         : null}
 
-      {list.membership
+      {list.membership && !omitMembership
         ? line(
             list.membership.label,
             <RowMembershipControl row={row} props={props} control={list.membership} />,
@@ -1007,7 +1015,7 @@ function ChipMenu({
           setOpen((was) => !was);
         }}
       >
-        {current}
+        <span className="lp__chiplabel">{current}</span>
         <span className="lp__chipmenu__caret" aria-hidden>▾</span>
       </button>
       {open ? (
@@ -1481,11 +1489,13 @@ function RowAssignControl({
             ))
           : '♙'}
       </span>
-      {assigned.length === 0
-        ? control.emptyLabel
-        : assigned.length === 1
-          ? actorName(assigned[0])
-          : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      <span className="lp__chiplabel">
+        {assigned.length === 0
+          ? control.emptyLabel
+          : assigned.length === 1
+            ? actorName(assigned[0])
+            : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      </span>
     </span>
   );
 
@@ -1678,11 +1688,13 @@ export function RowMembershipControl({
     <span aria-hidden>{glyph}</span>
   ) : (
     <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
-      {names.length === 0
-        ? control.emptyLabel
-        : names.length === 1
-          ? names[0]
-          : `${names[0]} +${names.length - 1}`}
+      <span className="lp__chiplabel">
+        {names.length === 0
+          ? control.emptyLabel
+          : names.length === 1
+            ? names[0]
+            : `${names[0]} +${names.length - 1}`}
+      </span>
     </span>
   );
 
@@ -2215,11 +2227,11 @@ export function RowSharingControl({
   const headId = useId();
 
   const refuse = (reason: UnavailableReason) => (
-    <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
+    <DisabledIconControl label={def.label} glyph={actionGlyph(def)} reason={reason} />
   );
   if (!props.onShareSession) return refuse(NOT_WIRED_REASON);
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={def.label} glyph={def.icon} />;
+    return <CheckingPermission label={def.label} glyph={actionGlyph(def)} />;
   }
   const availability = def.availability({
     ...props.ctx,
@@ -2299,7 +2311,7 @@ export function RowSharingControl({
           setOpen((v) => !v);
         }}
       >
-        <span aria-hidden>{def.icon}</span>
+        <span aria-hidden>{actionGlyph(def)}</span>
       </button>
       {open && anchor
         ? createPortal(
@@ -2393,7 +2405,7 @@ export function RowAction({
 }) {
   const def = resolveAction(ref_);
   const wide = variant === 'wide';
-  const mark = glyph ?? def.icon;
+  const mark = glyph ?? actionGlyph(def);
   const ctx: ActionContext = {
     ...props.ctx,
     entityId: row.id,

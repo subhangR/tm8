@@ -16,8 +16,10 @@ import { getWorkspaceListStore } from '../bridge/workspaceList';
 import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
-import { isWorkspaceKind, LAYOUT_BOUNDS, type KindId } from '../runtime/types';
+import { isWorkspaceKind, type KindId } from '../runtime/types';
 import { Browser } from './Browser';
+import { Navigator } from './Navigator';
+import { browserBounds, isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { ContentHost } from './ContentHost';
 import { useWorkspaceStore } from '../runtime/store';
 import { WorkspaceProvider, useWorkspace, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
@@ -46,6 +48,19 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
   /* The icon rail's expanded flag pushes the browser: 48 → 200px. The width
      transition runs only around a toggle, never during a browser drag. */
   const railExpanded = useStore(getRailStore(spaceId), (s) => s.expanded);
+  /* THE MERGED NAVIGATOR (`tm8.ui.navigator`, design doc 01a1465d-a2b7): one
+     column in place of the rail + browser pair. Read once per mount — a flag
+     that changed under a live view would swap the whole left side mid-session,
+     and the flag is set from the console before a reload. */
+  const navigator = useMemo(() => isNavigatorEnabled(), []);
+  const navCollapsedStored = useStore(getRailStore(spaceId), (s) => s.collapsed);
+  const navCollapsed = navigator && (navCollapsedStored ?? false);
+  /* THE PINNED-ONLY RAIL (Subhang 2026-10-17): the rail runs the full height,
+     the list panel carries the tm8 mark in its own top row (no left header),
+     and « on that row collapses the panel to leave the rail alone. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
+  const panelCollapsed = pinnedRail && (navCollapsedStored ?? false);
+  const bounds = useMemo(() => browserBounds(), []);
   const [railAnimating, setRailAnimating] = useState(false);
   const railMounted = useRef(false);
   useEffect(() => {
@@ -141,6 +156,9 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
 
   const style = {
     '--tws-browser-w': `${layout.browserWidth}px`,
+    /* The navigator rides the same persisted width (§10: the stored field is
+       still `browserWidth`), and the collapsed strip is the rail's 48px. */
+    '--tws-nav-w': navCollapsed ? 'var(--tws-rail-w-collapsed)' : `${layout.browserWidth}px`,
     '--tws-rail-w': railExpanded ? 'var(--tws-rail-w-expanded)' : 'var(--tws-rail-w-collapsed)',
   } as CSSProperties;
   return (
@@ -148,25 +166,40 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
       <div
         className="tws-root"
         data-expanded={layout.expanded || undefined}
+        data-nav={navigator || undefined}
+        data-nav-collapsed={navCollapsed || undefined}
+        data-pinned-rail={pinnedRail || undefined}
+        data-panel-collapsed={panelCollapsed || undefined}
         data-rail-expanded={railExpanded || undefined}
         data-rail-animating={railAnimating || undefined}
         style={style}
         data-testid="tab-workspace"
       >
-        {layout.expanded ? null : <LeftHeader />}
-        <TabStrip leading={layout.expanded ? <RestoreNavigation /> : undefined} />
-        {layout.expanded ? null : <WorkspaceRail />}
-        {layout.expanded ? null : <Browser />}
-        {layout.expanded ? null : (
-          <div className="tws-resizer">
+        {layout.expanded || pinnedRail ? null : <LeftHeader />}
+        <TabStrip
+          leading={layout.expanded ? <RestoreNavigation /> : panelCollapsed ? <ShowPanel spaceId={spaceId} /> : undefined}
+        />
+        {/* ONE COLUMN OR TWO. With the navigator on, the kind's list is the
+            navigator's lower slot (§2); with it off, the rail and the browser
+            are the two columns they have always been. */}
+        {layout.expanded ? null : navigator ? (
+          <Navigator slot={<Browser />} />
+        ) : (
+          <>
+            <WorkspaceRail />
+            {panelCollapsed ? null : <Browser />}
+          </>
+        )}
+        {layout.expanded || navCollapsed || panelCollapsed ? null : (
+          <div className={navigator ? 'tws-resizer tws-nav-resizer' : 'tws-resizer'}>
             <PanelResizer
               side="left"
-              label="Work browser"
+              label={navigator ? 'Navigator' : 'Work browser'}
               width={layout.browserWidth}
-              minWidth={LAYOUT_BOUNDS.browserWidth.min}
-              maxWidth={LAYOUT_BOUNDS.browserWidth.max}
+              minWidth={bounds.min}
+              maxWidth={bounds.max}
               onResize={setBrowserWidth}
-              onReset={() => setBrowserWidth(LAYOUT_BOUNDS.browserWidth.initial)}
+              onReset={() => setBrowserWidth(bounds.initial)}
             />
           </div>
         )}
@@ -180,6 +213,22 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
 
 /* "sidebar-show": a panel outline with its left column drawn in. */
 const SIDEBAR_SHOW_ART = ['M2.5 3.5h11v9h-11z', 'M6 3.5v9', 'M3.8 6h1M3.8 8h1'];
+
+/** The pinned-only rail's way back from a collapsed panel, at the strip's head. */
+export function ShowPanel({ spaceId }: { spaceId: string }) {
+  return (
+    <button
+      type="button"
+      className="tws-icon-btn"
+      aria-label="Show panel"
+      title="Show panel"
+      data-testid="tws-show-panel"
+      onClick={() => getRailStore(spaceId).getState().setCollapsed(false)}
+    >
+      <VectorIcon paths={SIDEBAR_SHOW_ART} size={16} />
+    </button>
+  );
+}
 
 /** Spec A §14: the strip's far-left cluster while the navigation is expanded away. */
 function RestoreNavigation() {

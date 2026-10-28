@@ -201,6 +201,7 @@ export type SessionCase =
   | 'waiting'
   | 'ready'
   | 'idle_no_tasks'
+  | 'idle'
   | 'stale'
   | 'unverified'
   | 'finished_open'
@@ -363,6 +364,15 @@ export function sessionRowWord(
       const age = ageLabel(ctx.activityAt ?? null, ctx.now ?? Date.now());
       return word('idle_no_tasks', age ? `Idle ${age}` : 'Idle', 'idle', 'ring-dot', 'green', false,
         'This session never claimed a task. Complete it with a receipt when it is done.');
+    }
+    // An idle process has finished its turn and sits at its prompt. It is
+    // alive, but it is not working, and drawing it with Working's green dot
+    // made every open session on the list look busy (Subhang, 2026-10-17:
+    // "the status reflects on the color icon").
+    if (rec.status === 'idle') {
+      const age = ageLabel(ctx.activityAt ?? null, ctx.now ?? Date.now());
+      return word('idle', age ? `Idle ${age}` : 'Idle', 'idle', 'ring-dot', 'green', false,
+        'The agent finished its turn and is waiting at its prompt. Message it, or complete it when it is done.');
     }
     return word('working', ctx.streaming ? 'Streaming' : 'Working', 'run', 'ring-dot', 'green', false);
   }

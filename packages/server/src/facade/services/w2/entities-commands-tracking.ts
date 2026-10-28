@@ -52,7 +52,15 @@ import {
   type HeaderRpcResult,
 } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, requireParam, requireUuidParam } from '../../context.js';
+import {
+  claimsFor,
+  commandEnvelope,
+  cursorInstant,
+  cursorUuid,
+  limitOf,
+  requireParam,
+  requireUuidParam,
+} from '../../context.js';
 import { resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
@@ -215,20 +223,6 @@ export function childCursor(parentId: string, after: { position: number; id: str
     : [fp, -Number.MAX_VALUE, '00000000-0000-0000-0000-000000000000']);
 }
 
-function cursorUuid(value: unknown): string {
-  const id = String(value ?? '');
-  if (!UUID_RE.test(id)) throw new CollabError('invalid_cursor', 'cursor contains an invalid entity id');
-  return id;
-}
-
-function cursorIso(value: unknown): string {
-  const timestamp = String(value ?? '');
-  if (timestamp.length === 0 || Number.isNaN(Date.parse(timestamp))) {
-    throw new CollabError('invalid_cursor', 'cursor contains an invalid timestamp');
-  }
-  return timestamp;
-}
-
 function contentString(content: Record<string, unknown>, ...keys: string[]): string | null {
   for (const key of keys) {
     const value = content[key];
@@ -290,7 +284,20 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
         },
       };
     }
-    case 'commit':
+    case 'commit': {
+      // Parity with the pull_request arm above, and not cosmetic parity: the
+      // panel's link-summary row reads `state.url` and `state.stale` for BOTH
+      // kinds (GenericBody's LinkSummaryBlock is deliberately kind-agnostic).
+      // A commit projected neither, so `open ↗` could never render even though
+      // `public.commits.url` held the link, and the "stale — refetch to update"
+      // badge could never appear on a commit at all. The entity that the
+      // "commits are not synced" report was about had no way to say it was
+      // unsynced.
+      //
+      // `entity_content` returns the whole `public.commits` row minus
+      // `entity_id` (011/015/017), exactly as it does for pull requests, so all
+      // of this arrives here with no query change.
+      const fetchedAt = contentString(content, 'fetched_at', 'fetchedAt');
       return {
         ...summary,
         title: contentString(content, 'message') || contentString(content, 'sha') || 'Commit',
@@ -300,8 +307,22 @@ function enrichSummaryFields(summary: EntitySummary, row: EnrichmentRow): Entity
           sha: contentString(content, 'sha') ?? '',
           message: contentString(content, 'message') ?? '',
           committedAt: contentString(content, 'committed_at', 'committedAt'),
+          // ADDITIVE ONLY, and it changes nothing on screen: the DETAILS block
+          // renders from `content`, which has always carried every column of
+          // `public.commits`, so the author was already visible there. Mirrored
+          // onto `state` for typed consumers, consistent with `message`, `sha`
+          // and `committedAt` being duplicated from content for the same reason.
+          author: contentString(content, 'author'),
+          url: contentString(content, 'url') ?? undefined,
+          fetchedAt,
+          // The one that matters. `fetched_at` is stamped only by
+          // `apply_commit_facts`, so null means "no provider has ever answered
+          // about this row" — which is precisely the 57-of-86 placeholder state
+          // that was reported and could not be seen.
+          stale: fetchedAt === null,
         },
       };
+    }
     case 'project':
       return {
         ...summary,
@@ -598,12 +619,12 @@ async function queryConnections(
     if (query.sort === 'type') {
       if (decoded.k.length !== 4) throw new CollabError('invalid_cursor', 'invalid type-sorted connection cursor');
       const type = params.add(String(decoded.k[1] ?? ''));
-      const at = params.add(cursorIso(decoded.k[2]));
+      const at = params.add(cursorInstant(decoded.k[2]));
       const id = params.add(cursorUuid(decoded.k[3]));
       where.push(`(g.type, g.created_at, g.id) ${compare} (${type}, ${at}::timestamptz, ${id}::uuid)`);
     } else {
       if (decoded.k.length !== 3) throw new CollabError('invalid_cursor', 'invalid connection cursor');
-      const at = params.add(cursorIso(decoded.k[1]));
+      const at = params.add(cursorInstant(decoded.k[1]));
       const id = params.add(cursorUuid(decoded.k[2]));
       where.push(`(${sortColumn}, g.id) ${compare} (${at}::timestamptz, ${id}::uuid)`);
     }
@@ -1240,16 +1261,19 @@ function acceptanceCriteria(
 
 /**
  * "Made during a session" (Design Rules §2.3): `authored_from`, entity ->
- * work_session, recorded by the SERVER from the caller's verified work session
- * (the bearer token), never asserted by a client (308; it replaces the CLI's
- * unverified `created_in`). The RPC records only when that session is live and
- * its participating teammate created the entity, so it is a no-op for a human
- * caller, a foreign entity, or an entity that already has one.
+ * work_session or chat, recorded by the SERVER from the caller's verified work
+ * session or chat runtime (the bearer token), never asserted by a client (308;
+ * it replaces the CLI's unverified `created_in`; 327 adds chats). The RPC
+ * records only when that origin's teammate created the entity, so it is a
+ * no-op for a human caller, a foreign entity, or an entity that already has
+ * one. It is what the chat's created-here strip reads (`filters.createdIn`).
  */
-async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
-  const workSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
-  if (!workSessionId || !entityId) return;
-  await q.rpc('record_authored_from', [entityId, workSessionId]);
+export async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
+  const originId = ctx.identity.kind === 'bearer'
+    ? ctx.identity.workSessionId ?? ctx.identity.runtimeChatId ?? null
+    : null;
+  if (!originId || !entityId) return;
+  await q.rpc('record_authored_from', [entityId, originId]);
 }
 
 async function attachInitialConnections(
@@ -2065,7 +2089,7 @@ export class W2EntitiesCommandsTrackingService {
         if (decoded.k.length !== 3 || decoded.k[0] !== fp) {
           throw new CollabError('invalid_cursor', 'activity cursor does not match this entity');
         }
-        params.push(cursorIso(decoded.k[1]), cursorUuid(decoded.k[2]));
+        params.push(cursorInstant(decoded.k[1]), cursorUuid(decoded.k[2]));
         keyset = 'and (a.created_at, a.id) < ($2::timestamptz, $3::uuid)';
       }
       const rows = await q.query<ActivityRow>(

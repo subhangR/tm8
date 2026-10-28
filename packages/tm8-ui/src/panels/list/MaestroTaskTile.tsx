@@ -4,8 +4,8 @@ import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
 import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
-import { ChildCountBadge } from './ChildCountBadge';
 import { useFreshGlow } from '../../domain/useFreshGlow';
+import { ChildCountToggle } from './ChildCountBadge';
 import './maestro-task-tile.css';
 
 export interface TaskTileProgress {
@@ -43,6 +43,10 @@ export interface MaestroTaskTileProps {
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
+  /** `↑ parent`, after the title, when this root's parent is not listed. */
+  parentCrumb?: ReactNode;
+  /** Drawn only to hold subtasks that matched the tab (task 01a14b92). */
+  context?: boolean;
   onSelect?: () => void;
   status: {
     label: string;
@@ -86,6 +90,19 @@ export interface MaestroTaskTileProps {
   creator: ActorSummary | null;
   /** Compact facts that stay visible on the collapsed tile. */
   badges?: ReactNode;
+  /**
+   * THE QUIET ROW'S THREE NEW SLOTS (task 01a1469f, design doc 01a1465d §6).
+   * Handed in as nodes rather than derived here, because every one of them is
+   * a fact about the ENTITY and this component knows no kind: `urgent` is the
+   * only priority a row still shows, `time` is the row's own clock, and
+   * `rowMenu` is the `⋯` that takes the time's place on hover.
+   *
+   * The ORDER they land in is this component's business and not the host's,
+   * which is the same reason `actions` is one slot rather than three.
+   */
+  urgent?: ReactNode;
+  time?: ReactNode;
+  rowMenu?: ReactNode;
   actions: ReactNode;
   detailsExpanded: boolean;
   flowOpen: boolean;
@@ -114,9 +131,14 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     childCount,
     childrenExpanded,
     onToggleChildren,
+    parentCrumb,
+    context = false,
     onSelect,
     status,
     statusControl,
+    urgent,
+    time,
+    rowMenu,
     lead,
     progress,
     assignees,
@@ -156,6 +178,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}
+      data-context={context ? 'true' : undefined}
       data-details={detailsExpanded ? 'open' : undefined}
       data-flow={flowOpen ? 'open' : undefined}
       data-streaming={status.streaming ? 'true' : 'false'}
@@ -169,26 +192,14 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </span>
         ) : (
           <>
-        {hasChildren ? (
-          <button
-            type="button"
-            className={
-              childrenExpanded ? 'pn-tt__arrow pn-tt__arrow--expanded' : 'pn-tt__arrow'
-            }
-            aria-label={`${childrenExpanded ? 'Collapse' : 'Expand'} ${title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
-            aria-expanded={childrenExpanded}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleChildren();
-            }}
-          >
-            <ChevronRight />
-          </button>
-        ) : (
-          <span className="pn-tt__arrow pn-tt__arrow--empty" aria-hidden>
-            <ChevronRight />
-          </span>
-        )}
+        {/* THE CHEVRON SLOT IS A SPACER NOW. The children are the count on
+            the status mark's corner (task 01a14b92), so this keeps the column
+            the status mark lines up in and stops being a control — two
+            controls with the accessible name "Expand X, 2 children" on one row
+            read as one broken control. */}
+        <span className="pn-tt__arrow pn-tt__arrow--empty" aria-hidden>
+          <ChevronRight />
+        </span>
 
         {/* The visually-hidden word stays in BOTH forms: it is the row's own
             read-out of the fact, and a status a sighted user reads as a dot
@@ -209,10 +220,22 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             />
           )}
           <span className="pn-tt__status-text">{status.label}</span>
-          <ChildCountBadge count={childCount} />
+          {/* The children, on the status mark's corner — the disclosure. The
+              mark itself is the state picker here, so the count is the button
+              (task 01a14b92: one rule for every tree kind, no `▸ N` chip). */}
+          {hasChildren ? (
+            <ChildCountToggle
+              count={childCount}
+              expanded={childrenExpanded}
+              rowTitle={title}
+              onToggle={onToggleChildren}
+            />
+          ) : null}
         </span>
           </>
         )}
+
+        {urgent}
 
         <button
           type="button"
@@ -227,6 +250,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           {title}
           {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </button>
+
+        {parentCrumb}
 
         <TaskProgressFigure progress={progress} />
 
@@ -273,6 +298,12 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         ) : null}
 
         {attentionChip ?? (attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null)}
+
+        {/* THE TIME, AND THE `⋯` THAT TAKES ITS SLOT ON HOVER (§6). Both are
+            `flex: none` in the same trailing position and only one is drawn at
+            a time, so the row's width is identical hovered and not. */}
+        {time}
+        {rowMenu}
 
         <div className="pn-tt__actions lp__cluster">
           {!oneSurface || detailsExpanded ? actions : null}

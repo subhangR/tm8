@@ -66,14 +66,14 @@ function renderRow(message: MessageView) {
   );
 }
 
-describe('feed gutter author avatars', () => {
+describe('feed byline author avatars', () => {
   it('no avatar on the author — the monogram, no img (every author today)', () => {
     const { container } = renderRow(msg());
-    expect(container.querySelector('.chs-gutter .kit-avatar')).not.toBeNull();
-    expect(container.querySelector('.chs-gutter .kit-avatar__img')).toBeNull();
+    expect(container.querySelector('.tch-turn__byline .kit-avatar')).not.toBeNull();
+    expect(container.querySelector('.tch-turn__byline .kit-avatar__img')).toBeNull();
   });
 
-  it('an author avatar URL reaches the gutter img', () => {
+  it('an author avatar URL reaches the byline img', () => {
     const withAvatar = msg({
       state: {
         kind: 'message',
@@ -89,9 +89,9 @@ describe('feed gutter author avatars', () => {
     } as Partial<MessageView>);
     const { container } = renderRow(withAvatar);
     expect(
-      container.querySelector('.chs-gutter .kit-avatar__img')?.getAttribute('src'),
+      container.querySelector('.tch-turn__byline .kit-avatar__img')?.getAttribute('src'),
     ).toBe('https://example.test/alex.png');
     // The byline name is still the text carrier — never the image alone.
-    expect(container.querySelector('.chs-byline__who')?.textContent).toBe('alex');
+    expect(container.querySelector('.tch-turn__byline strong')?.textContent).toBe('alex');
   });
 });

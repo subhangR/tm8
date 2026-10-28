@@ -20,6 +20,7 @@ import {
   json,
   literal,
   ok,
+  postMessageSql,
   runAsync,
   scalar,
   uuid,
@@ -30,13 +31,11 @@ const w = buildWorld('ledger');
 test('entities.create: a replayed cmid returns the original entity and creates nothing new', () => {
   const id = cmid('create-task');
   const first = json(
-    `select public.create_task(${uuid(w.spaceA)}, 'idempotent task', null, '', '{}'::jsonb, null,
-       null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`,
+    `select public.create_task(${uuid(w.spaceA)}, 'idempotent task', p_client_mutation_id => ${literal(id)})`,
     { claims: w.claimsA },
   );
   const replay = json(
-    `select public.create_task(${uuid(w.spaceA)}, 'idempotent task', null, '', '{}'::jsonb, null,
-       null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`,
+    `select public.create_task(${uuid(w.spaceA)}, 'idempotent task', p_client_mutation_id => ${literal(id)})`,
     { claims: w.claimsA },
   );
 
@@ -51,8 +50,7 @@ test('entities.create: a replayed cmid returns the original entity and creates n
 test('a replay does not re-run the body: no second activity row, no second event', () => {
   const id = cmid('no-side-effects');
   const created = json(
-    `select public.create_task(${uuid(w.spaceA)}, 'once only', null, '', '{}'::jsonb, null,
-       null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`,
+    `select public.create_task(${uuid(w.spaceA)}, 'once only', p_client_mutation_id => ${literal(id)})`,
     { claims: w.claimsA },
   ).entity.id;
 
@@ -68,8 +66,7 @@ test('a replay does not re-run the body: no second activity row, no second event
   assert.ok(Number(eventsBefore) > 0, 'control: the original mutation stamped its cmid onto its events');
 
   ok(
-    `select public.create_task(${uuid(w.spaceA)}, 'once only', null, '', '{}'::jsonb, null,
-       null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`,
+    `select public.create_task(${uuid(w.spaceA)}, 'once only', p_client_mutation_id => ${literal(id)})`,
     { claims: w.claimsA },
   );
 
@@ -91,27 +88,19 @@ test('a replay does not re-run the body: no second activity row, no second event
 
 test('messages.post: replay returns the same message, and domain idempotency agrees', () => {
   const id = cmid('post');
-  const first = json(
-    `select public.post_message(${uuid(w.channelA)}, 'hello once', null, null,
-       '[]'::jsonb, '[]'::jsonb, ${literal(id)})`,
-    { claims: w.claimsA },
-  );
-  const replay = json(
-    `select public.post_message(${uuid(w.channelA)}, 'hello once', null, null,
-       '[]'::jsonb, '[]'::jsonb, ${literal(id)})`,
-    { claims: w.claimsA },
-  );
-  assert.equal(replay.entity.id, first.entity.id);
+  const first = json(postMessageSql(w.channelA, 'hello once', { clientMutationId: id }), { claims: w.claimsA });
+  const replay = json(postMessageSql(w.channelA, 'hello once', { clientMutationId: id }), { claims: w.claimsA });
+  assert.deepEqual(replay.messageIds, first.messageIds);
   assert.equal(
     scalar(`select count(*) from public.messages where body = 'hello once'`, { claims: w.claimsA }),
     '1',
     'exactly one message may exist',
   );
-  // post_message ALSO keeps its pre-ledger domain idempotency on
-  // (author_id, client_msg_id) — belt and braces, and the unique index proves it.
+  // The batch stamps the cmid onto the message as its message_batch_id (it
+  // leaves the legacy client_msg_id null), so the one message is findable by it.
   assert.equal(
     scalar(
-      `select count(*) from public.messages where author_id = ${uuid(w.memberA)} and client_msg_id = ${literal(id)}`,
+      `select count(*) from public.messages where author_id = ${uuid(w.memberA)} and message_batch_id = ${literal(id)}`,
       { claims: w.claimsA },
     ),
     '1',
@@ -121,14 +110,12 @@ test('messages.post: replay returns the same message, and domain idempotency agr
 test('one cmid belongs to one operation: reusing it for a different one is refused', () => {
   const id = cmid('cross-op');
   ok(
-    `select public.create_task(${uuid(w.spaceA)}, 'owns the cmid', null, '', '{}'::jsonb, null,
-       null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`,
+    `select public.create_task(${uuid(w.spaceA)}, 'owns the cmid', p_client_mutation_id => ${literal(id)})`,
     { claims: w.claimsA },
   );
   denied(
     'ledger_replay: a cmid already used for entities.create, reused for messages.post',
-    `select public.post_message(${uuid(w.channelA)}, 'stealing a cmid', null, null,
-       '[]'::jsonb, '[]'::jsonb, ${literal(id)})`,
+    postMessageSql(w.channelA, 'stealing a cmid', { clientMutationId: id }),
     { claims: w.claimsA, expect: '23514' },
   );
   denied(
@@ -150,9 +137,11 @@ test('execution.spawn: a retried spawn returns the original session, not a secon
 
   assert.equal(first.__tm8_replayed, false, 'the fresh call must be distinguishable in-process');
   assert.equal(replay.__tm8_replayed, true, 'the retry must be marked so SpawnService never boots twice');
+  // command_ledger has no policy and no grant for tm8_app (by design), so this
+  // read goes through the owner connection.
   const stored = json(
     `select result from public.command_ledger where client_mutation_id = ${literal(id)}`,
-    { claims: w.claimsA },
+    { url: OWNER_URL },
   );
   assert.equal(
     Object.hasOwn(stored, '__tm8_replayed'),
@@ -233,8 +222,7 @@ test('CONCURRENT double-submit of one cmid: both callers agree on one result', a
   // twice at once, so both transactions pass ledger_replay before either has
   // recorded anything. ledger_record's ON CONFLICT is what has to settle it.
   const id = cmid('concurrent');
-  const sql = `select public.create_task(${uuid(w.spaceA)}, 'concurrent submit', null, '', '{}'::jsonb,
-      null, null, 'medium', '[]'::jsonb, null, null, null, 'attached_to', ${literal(id)})`;
+  const sql = `select public.create_task(${uuid(w.spaceA)}, 'concurrent submit', p_client_mutation_id => ${literal(id)})`;
 
   const [a, b] = await Promise.all([
     runAsync(sql, { claims: w.claimsA }),

@@ -139,9 +139,18 @@ describe('the row action cluster is one shape across all three anatomies', () =>
    * their own container and their own hand-assembled contents before this.
    */
   it.each([
-    ['task', 'pn-tt__actions'],
-    ['work_session', 'pn-st__actions'],
-    ['doc', 'lp__rowactions'],
+    /* The control card's verbs moved behind the `⋯` with the standard
+       tile's (task 01a1469f); `pn-tt__actions` keeps only the details
+       opener, which is the row's and not the menu's. */
+    ['task', 'lp__rowmenu-pop'],
+    /* The session's verbs moved behind the `⋯` with the other two anatomies
+       (ruling 2026-10-17); `pn-st__actions` keeps only the details opener. */
+    ['work_session', 'lp__rowmenu-pop'],
+    /* The standard tile's container is the `⋯` menu's pop since the quiet
+       tile (task 01a1469f, design doc 01a1465d §6): the verbs are the same
+       cluster, behind one trigger in the time's slot instead of floating over
+       the end of the row. */
+    ['doc', 'lp__rowmenu-pop'],
   ])('%s carries the shared cluster class alongside its own container', (kind, own) => {
     const { container } = mount(kind, DELETABLE);
     const cluster = firstCluster(container);
@@ -154,13 +163,32 @@ describe('the row action cluster is one shape across all three anatomies', () =>
    * `.lp__hoverbar`, which panels.css floats on the tile's top edge, and the
    * disclosure stays outside it — the opener belongs to the row, not the bar.
    */
-  it.each(['task', 'work_session', 'doc'])('%s puts its verbs in the hover bar and keeps the disclosure out of it', (kind) => {
+  /**
+   * THE STANDARD TILE KEEPS THE SAME SPLIT, ONE LEVEL OUT (task 01a1469f).
+   *
+   * Its verbs are still the one cluster and still inside the hover bar; what
+   * moved is the DISCLOSURE, which is now a sibling of the `⋯` trigger in the
+   * row rather than the cluster's trailing child. Same ruling — "the opener
+   * belongs to the row, not the bar" — read at the row's level, because the
+   * `⋯` took the cluster off the row and the opener had to stay on it.
+   */
+  it.each(['doc', 'task', 'work_session'])('%s puts its verbs in the hover bar and leaves the disclosure in the row', (kind) => {
     const { container } = mount(kind, kind === 'work_session' ? SESSION : DELETABLE);
     const cluster = firstCluster(container);
     const bars = cluster.querySelectorAll(':scope > .lp__hoverbar');
     expect(bars.length).toBe(1);
     expect(verbsIn(bars[0] as HTMLElement)).toEqual(verbsIn(cluster));
-    expect(cluster.lastElementChild?.classList.contains('lp__hoverbar')).toBe(false);
+
+    /* The opener, one per anatomy and each its own: `row-details-toggle` on
+       the standard tile, `pn-tt__ind` on the control card, `pn-st__btn--ind`
+       on the session tree. All three outside the menu. */
+    const opener = container.querySelector('[data-testid="row-details-toggle"], .pn-tt__ind, .pn-st__btn--ind')!;
+    expect(cluster.contains(opener)).toBe(false);
+    expect(opener.closest('.lp__row1, .pn-tt__main, .pn-st__main')).not.toBeNull();
+    /* And the `⋯` that opens the cluster is in the row beside it. */
+    const trigger = container.querySelector('[data-testid="row-menu-trigger"]')!;
+    expect(trigger.closest('.lp__row1, .pn-tt__main, .pn-st__main')).not.toBeNull();
+    expect(cluster.contains(trigger)).toBe(false);
   });
 
   /**
@@ -268,7 +296,12 @@ describe('the row action cluster is one shape across all three anatomies', () =>
       'chat-about',
       'Copy session ID',
       'terminate',
-      'Expand details',
+      /* NO 'Expand details'. The opener left this cluster when the verbs moved
+         behind the `⋯` (ruling 2026-10-17) and now sits in the row beside the
+         trigger — the case two blocks down asserts it is there, exactly once.
+         The ruled ORDER, which is what this test is for, is untouched: the
+         anatomy's own Copy still lands after the middle verbs and before
+         terminate, which is why the tile hands it down. */
     ]);
   });
 });
@@ -316,7 +349,10 @@ describe("the session tile publishes what the phone rule selects on (7j'')", () 
    */
   it('marks the disclosure — and nothing else — as the opener', () => {
     const { container } = mount('work_session', SESSION);
-    const cluster = firstCluster(container).parentElement!;
+    /* Scoped to the ROW now, not the cluster: the opener stayed in
+       `pn-st__actions` while the verbs moved behind the `⋯`, so "exactly one
+       opener" is a claim about the whole row and reads truer there. */
+    const cluster = container.querySelector('.pn-st__main')!;
     const openers = [...cluster.querySelectorAll('.pn-st__btn--ind')];
     expect(openers).toHaveLength(1);
     expect(openers[0]!.getAttribute('aria-label')).toBe('Expand details');

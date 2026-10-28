@@ -34,6 +34,7 @@ import { render } from '@testing-library/react';
 import type { ActorSummary, EntityDetail, EntityId } from '@tm8/contract';
 import {
   REASONS as DOMAIN_REASONS,
+  actionGlyph,
   allKinds,
   getKind,
   resolveAction,
@@ -247,7 +248,7 @@ describe('what the phone action menu contains is derived, not typed out', () => 
       const row = items.find((i) => i.id === ref);
       expect(row, `${ref} has a row`).toBeDefined();
       expect(row?.label).toBe(def.label);
-      expect(row?.glyph).toBe(def.icon);
+      expect(row?.glyph).toEqual(actionGlyph(def));
     }
   });
 
@@ -390,5 +391,42 @@ describe('what the phone action menu contains is derived, not typed out', () => 
     });
     expect(items.some((i) => i.id === 'resume')).toBe(true);
     expect(items.some((i) => i.id === 'terminate')).toBe(false);
+  });
+});
+
+/**
+ * A DOCUMENT READS FULL SCREEN ON A PHONE (owner ruling 2026-10-19): the phone
+ * header names it, so the panel draws no title row, no attachment drop zone,
+ * no injected Messages section and no presence footer around the body. The
+ * desktop keeps every one of them.
+ */
+describe('a doc on a phone is its body', () => {
+  const DOC: EntityDetail = fixtureDetails['doc-layout-spec']!;
+  const docControls = (): ControlHost => ({ ...controlHost(), kind: 'doc', capabilitiesOf: () => DOC.capabilities });
+  const MESSAGES = <section data-testid="injected-messages" />;
+  /* An upload port, so the strip has a reason to draw wherever it is allowed. */
+  const attachments = { startUpload: vi.fn() } as never;
+
+  it('draws the reader and none of the chrome around it', () => {
+    const { getByTestId, queryByTestId } = onPhone({ detail: DOC, controls: docControls(), beforeLinked: MESSAGES, attachments });
+    expect(getByTestId('reader-surface')).not.toBeNull();
+    expect(queryByTestId('panel-header')).toBeNull();
+    expect(queryByTestId('attachment-strip')).toBeNull();
+    expect(queryByTestId('injected-messages')).toBeNull();
+    expect(queryByTestId('panel-footer')).toBeNull();
+  });
+
+  it('a task on a phone keeps its header, attachments and footer', () => {
+    const { getByTestId } = onPhone({ beforeLinked: MESSAGES, attachments });
+    expect(getByTestId('panel-header')).not.toBeNull();
+    expect(getByTestId('attachment-strip')).not.toBeNull();
+    expect(getByTestId('panel-footer')).not.toBeNull();
+  });
+
+  it('the desktop doc panel is unchanged', () => {
+    const { getByTestId } = onDesktop({ detail: DOC, controls: docControls(), attachments });
+    expect(getByTestId('panel-header')).not.toBeNull();
+    expect(getByTestId('attachment-strip')).not.toBeNull();
+    expect(getByTestId('panel-footer')).not.toBeNull();
   });
 });

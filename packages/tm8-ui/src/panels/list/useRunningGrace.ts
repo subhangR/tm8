@@ -14,6 +14,12 @@
  * was off are another tab's (Interrupted's, say), and none of them ever left
  * Running — treating them as leavers put every interrupted session in the
  * Running tab for 10 s after each switch back.
+ *
+ * NO GRACE FOR A PROCESS THAT REALLY ENDED (task 01a14b35). `ended(id)` true
+ * means the store already records the session's process as gone, so the
+ * last-seen summary ("Finished, still open") would be a lie, and a closed
+ * session lingered ~10 s in Running. Such a row leaves at once; the grace is
+ * kept for rows whose store record still says live (a late or reordered read).
  * The pure half is `withGrace` (domain/session-outcome.ts).
  */
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +29,7 @@ export function useRunningGrace<R extends { id: string }>(
   rows: readonly R[],
   enabled: boolean,
   graceMs: number = RUNNING_GRACE_MS,
+  ended?: (id: string) => boolean,
 ): readonly R[] {
   const previous = useRef<readonly R[]>(rows);
   const lingering = useRef(new Map<string, { row: R; leftAt: number }>());
@@ -49,7 +56,7 @@ export function useRunningGrace<R extends { id: string }>(
 
   const now = Date.now();
   for (const [id, l] of lingering.current) {
-    if (now - l.leftAt >= graceMs) lingering.current.delete(id);
+    if (now - l.leftAt >= graceMs || ended?.(id) === true) lingering.current.delete(id);
   }
   // The query's own array when nothing lingers, so memos downstream hold.
   const shown = enabled && lingering.current.size > 0 ? withGrace(rows, lingering.current, now, graceMs) : rows;

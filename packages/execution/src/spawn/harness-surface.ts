@@ -4,19 +4,18 @@
 // config home carry: claude.ai-synced plugins (sales, marketing, operations,
 // product-management, productivity), their skill listings, ~225 claude.ai
 // connector tool names with their MCP server instructions, and the harness
-// `Artifact` tool. None of it is tm8 work, and all of it is re-sent on every
-// request of every lane — measured at ~13-16k tokens per request (doc
-// 01a0d2e9, "Where lane tokens go now"). Chat threads already launch isolated
-// (`ClaudeHeadlessAdapter.buildArgs`); this module is the lane half.
+// `Artifact` tool. (The connector names are the one item this module does not
+// decide: `--strict-mcp-config` already keeps them out of BOTH surfaces — see
+// WHAT THE SURFACE DOES NOT DECIDE below.) None of it is tm8 work, and all of
+// it is re-sent on every request of every lane — measured at ~13-16k tokens
+// per request (doc 01a0d2e9, "Where lane tokens go now"). Chat threads already
+// launch isolated (`ClaudeHeadlessAdapter.buildArgs`); this module is the lane
+// half.
 //
 // `minimal` (the default) strips that surface. It does NOT use
 // `--setting-sources` — that also drops the user's permissions and hooks — and
 // it does NOT use `--disable-slash-commands`, which disables every skill,
 // including the repo's own. It turns off exactly these:
-//   - MCP servers: `--strict-mcp-config` with an empty config. Under strict
-//     mode claude.ai connectors are not loaded at all. tm8 lanes reach tm8
-//     through the `tm8` CLI, so tm8 owns no MCP server a lane needs. A
-//     persona's `capabilities.launch.mcpServers` is the explicit opt-in.
 //   - Plugins: every plugin found in the lane's config home that is not on
 //     the allowlist is set `false` in a flag-level `enabledPlugins`; every one
 //     that is (persona `plugins`, or the plugin of an equipped plugin skill)
@@ -37,8 +36,30 @@
 //     publish with `tm8 artifact publish`; the harness tool publishes outside
 //     tm8, and its prompt tells agents not to use it.
 //
-// `inherit` restores the bare command exactly, for a teammate that genuinely
-// needs the operator's plugins or connectors.
+// It turns off NO MCP server, and that is not an omission: see below.
+//
+// `inherit` applies none of those trims, for a teammate that genuinely needs
+// the operator's plugins, their skill listings or the harness `Artifact` tool.
+// It is NOT the bare command: the connector flags below are not the surface's
+// to add back.
+//
+// WHAT THE SURFACE DOES NOT DECIDE: CONNECTORS (D4, G17).
+//
+// Both surfaces get `--strict-mcp-config` and exactly the same `--mcp-config`:
+// the session's own tm8 connector bridges, one entry per bound MCP selection
+// (`connectorBridgeConfig`). `buildAgentCommand` pushes those two flags BEFORE
+// it branches on the surface, so `inherit` is not an escape hatch to the
+// operator's MCP servers and `minimal` does not strip connectors a launch
+// chose. Under strict mode no claude.ai connector and no `~/.claude.json` or
+// `.mcp.json` entry is loaded on EITHER surface; the way to give a lane an MCP
+// server is to register a connector in tm8 and select it (D3).
+//
+// `capabilities.launch.mcpServers` is NOT an opt-in any more. A raw
+// `{name: serverConfig}` bag can carry a token in its env or headers, so
+// `asMcpServers` admits only `{}` / absent and throws on anything else; it is
+// validated and never launched. `MINIMAL_MCP_CONFIG` and `minimalMcpConfig`
+// survive for that refusal and for the config registry, not as the config a
+// lane runs.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -359,7 +380,12 @@ function hasSkillFile(dir: string): boolean {
   }
 }
 
-/** The empty MCP config a `minimal` lane runs under `--strict-mcp-config`. */
+/**
+ * The empty MCP config, kept as the published constant for the config registry
+ * and as `minimalMcpConfig`'s answer. NOT what a lane runs: every lane, on
+ * either surface, runs its connector bridges (see WHAT THE SURFACE DOES NOT
+ * DECIDE at the top of this file).
+ */
 export const MINIMAL_MCP_CONFIG = '{"mcpServers":{}}';
 
 /** Env a `minimal` Claude lane runs with, on top of `composeEnv`. */
@@ -488,10 +514,14 @@ export type HarnessSurfaceSource = 'launch' | 'env' | 'inherited' | 'persona' | 
 /**
  * `manifest.launch.harness` for a lane tm8 manages (design 01a0d348 §3.6):
  * the surface and who chose it, and under `minimal` everything the lane's
- * flags turn on or off — plugins (`pluginDecisions`), the MCP servers kept
- * under `--strict-mcp-config` (names only: a server config can carry a
- * token), and every skill `skillOverrides` names (`laneSkillPlan`). Built
- * from the same values `buildAgentCommand` reads, so the record and argv agree.
+ * flags turn on or off — plugins (`pluginDecisions`) and every skill
+ * `skillOverrides` names (`laneSkillPlan`). Built from the same values
+ * `buildAgentCommand` reads, so the record and argv agree.
+ *
+ * `mcpServers` here is a persona `capabilities.launch.mcpServers` bag, which is
+ * now always empty (`asMcpServers` refuses any other value), and it is NOT the
+ * lane's connectors: those are surface-independent and recorded separately as
+ * `launch.connectors` (§4.2, `connectorManifestRecord`).
  */
 export function laneHarnessRecord(
   launch: {
@@ -521,9 +551,10 @@ export function laneHarnessRecord(
 }
 
 /**
- * The `--mcp-config` a `minimal` lane runs under `--strict-mcp-config`: empty
- * unless the teammate opted MCP servers back in (`capabilities.launch.mcpServers`,
- * the same `{ name: serverConfig }` shape as a `.mcp.json` `mcpServers` block).
+ * `asMcpServers` plus the empty config: it REFUSES a raw
+ * `capabilities.launch.mcpServers` bag and otherwise answers empty. There is no
+ * opt-in left here — a lane's MCP servers are its tm8 connectors, named by
+ * `connectorBridgeConfig` and passed by `buildAgentCommand` on both surfaces.
  */
 export function minimalMcpConfig(servers: Record<string, unknown> | undefined): string {
   asMcpServers(servers);

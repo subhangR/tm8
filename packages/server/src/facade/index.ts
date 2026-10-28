@@ -2,6 +2,8 @@ import { registerToolHandlers } from '../tools/handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
+import { registerMcpAuditHandlers } from '../mcp/audit.js';
+import { registerMcpTokenHandlers } from '../mcp/tokens.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
@@ -234,6 +236,11 @@ export function registerFacadeHandlers(
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerMcpDefinitionHandlers(registry, facade);
+  registerMcpAuditHandlers(registry, facade);
+  // §5.5: `mcp.tokens.*` is mounted unconditionally, like the audit read. It
+  // needs no MCP runtime — it mints and revokes rows — and a node whose
+  // `/mcp` endpoint is not wired still lets a member revoke a token.
+  registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
@@ -281,7 +288,7 @@ export function registerFacadeHandlers(
   // delivery drain (214) plugs into its post-commit hooks when main.ts built one.
   registerW2FormHandlers(registry, facade, deps.formDelivery ?? {});
   registerW2InboxReadMarksHandlers(registry, facade);
-  registerW2SavedViewsActionsHandlers(registry, deps);
+  registerW2SavedViewsActionsHandlers(registry, facade);
 
   /**
    * G04 is the second seam to REPLACE rather than only add. It owns

@@ -16,6 +16,7 @@ import {
   MessagePartSchema,
   decodeCursor,
   encodeCursor,
+  type EntityId,
   type MessagePart,
   type MessageView,
   type Page,
@@ -24,7 +25,7 @@ import { createHash } from 'node:crypto';
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, limitOf, requireUuidParam } from '../context.js';
+import { claimsFor, cursorInstant, cursorUuid, limitOf, requireUuidParam } from '../context.js';
 import {
   assembleSummaries,
   contentOf,
@@ -162,6 +163,17 @@ export async function toMessageViews(
   );
   const inFlight = new Set(inFlightRows.map((r) => r.agent_message_id));
 
+  // `authored_from` is writer-gated to `message_recorder`: read, never input.
+  // Same query as `entities.feed:provenance`, so a transcript page carries its
+  // own provenance instead of needing a feed read beside it.
+  const authoredRows = await q.query<{ src_id: string; dst_id: string }>(
+    `select g.src_id, g.dst_id
+       from public.edges g
+      where g.type = 'authored_from' and g.src_id = any($1::uuid[])`,
+    [rows.map((r) => r.id)],
+  );
+  const authoredFrom = new Map(authoredRows.map((r) => [r.src_id, r.dst_id]));
+
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
     const part = MessagePartSchema.parse({
@@ -205,6 +217,7 @@ export async function toMessageViews(
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
       ...(messageParts ? { parts: messageParts } : {}),
       ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
+      ...(authoredFrom.has(row.id) ? { sourceWorkSessionId: authoredFrom.get(row.id) as EntityId } : {}),
     });
   }
   return views;
@@ -336,7 +349,7 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
         if (k.length !== 3 || k[0] !== fingerprint) {
           throw new CollabError('invalid_cursor', 'cursor does not match this message thread');
         }
-        params.push(String(k[1]), String(k[2]));
+        params.push(cursorInstant(k[1]), cursorUuid(k[2]));
         const comparator = order === 'newest' ? '<' : '>';
         // `msg.entity_id` rather than `e.id`: identical value — the join is
         // `msg.entity_id = e.id` — but the keyset now runs against `messages`

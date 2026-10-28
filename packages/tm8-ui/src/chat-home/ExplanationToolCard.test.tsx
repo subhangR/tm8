@@ -36,6 +36,26 @@ describe('Explain-mode presentation tools', () => {
     expect(view.container.textContent).not.toContain('explain_diagram');
   });
 
+  it('wears ONE header line: no eyebrow on screen, source and expand in the header, a capped frame', () => {
+    const view = render(<TurnParts parts={toolParts('mcp__tm8__explain_diagram', {
+      title: 'How a create reaches the transcript',
+      source: 'flowchart LR\n  call --> fold --> row',
+    })} />);
+    const card = view.getByTestId('explain-diagram');
+    // The kind is the glyph's accessible name, not an uppercase eyebrow.
+    expect(card.querySelector('.tch-explain__glyph')!.getAttribute('title')).toBe('Mermaid diagram');
+    expect(card.querySelector('details')).toBeNull();
+    expect(card.querySelector('.tch-explain__source')).toBeNull();
+    const source = view.getByRole('button', { name: 'source' });
+    fireEvent.click(source);
+    expect(source.getAttribute('aria-expanded')).toBe('true');
+    expect(card.querySelector('.tch-explain__source')!.textContent).toContain('call --> fold --> row');
+    const frame = card.querySelector('.tch-explain__frame')!;
+    expect(frame.hasAttribute('data-expanded')).toBe(false);
+    fireEvent.click(view.getByRole('button', { name: 'expand' }));
+    expect(frame.hasAttribute('data-expanded')).toBe(true);
+  });
+
   it('draws verified persisted and inferred graph links differently and opens real entity nodes', () => {
     const open = vi.fn();
     const result = {
@@ -119,11 +139,12 @@ describe('Explain-mode presentation tools', () => {
       title: 'Mode guide', body: '# Guide', spaceId: 'space-a',
     }, { id: '019f0000-0000-7000-8000-000000000105', kind: 'doc', title: 'Mode guide' })} />);
     /* The durable-output card is retired: a created doc reads as the same
-       thing as a created task — the ledger's create card (L4's fold) — and
-       its progress is an ordinary step line. */
+       thing as a created task — one row of the run's receipt, which IS its
+       step (the step list leaves it out). */
     expect(docView.queryByTestId('durable-explanation-output')).toBeNull();
     expect(docView.queryByText('Durable document')).toBeNull();
-    expect(docView.getByTestId('chat-step-line').textContent).toContain('Created doc “Mode guide”');
+    expect(docView.getByTestId('chat-ledger-create').textContent).toContain('Mode guide');
+    expect(docView.queryByTestId('chat-step-line')).toBeNull();
     expect(docView.container.textContent).not.toContain('doc_create');
   });
 

@@ -27,18 +27,87 @@ export interface RouterTarget {
    * both real implementations provide it.
    */
   historyDepth?(): number;
+  /**
+   * Walk one entry back — the phone's ‹ when the entry below is one this tab
+   * wrote (CONTRACT §5 ruling 1: Back is real history, `history.back()`).
+   * Optional for the same reason as `historyDepth`.
+   */
+  back?(): void;
+}
+
+/**
+ * THE OVERLAY MARKER (CONTRACT §5, task t-layers, 2026-10-18).
+ *
+ * An open drawer or sheet pushes ONE same-URL history entry whose state carries
+ * this key (`stores/overlayHistory.ts`), so Android Back dismisses the layer
+ * instead of leaving the screen. It is not a route: the address does not
+ * change, `hashchange` never fires for it, and the codec never sees it.
+ *
+ * The router has to know about it in exactly two places, both below:
+ *
+ *   - A PUSH made while the marker is the current entry REPLACES it. Tapping a
+ *     drawer destination navigates while the drawer's marker is on top; a
+ *     plain push would bury the marker, and the next Back would land on a
+ *     same-URL entry that does nothing. Replacing gives `[chat, destination]`,
+ *     which is the history a reader expects.
+ *   - A REPLACE (a settle) keeps the marker's state, so a settle that lands
+ *     while a sheet is open does not silently strip the entry Back is about to
+ *     dismiss.
+ */
+export const OVERLAY_STATE_KEY = 'tm8Overlay';
+
+/** The overlay id a history state names, or null for an ordinary entry. */
+export function overlayIdOf(state: unknown): string | null {
+  if (!state || typeof state !== 'object') return null;
+  const id = (state as Record<string, unknown>)[OVERLAY_STATE_KEY];
+  return typeof id === 'string' ? id : null;
+}
+
+const PATH_LINK = /^\/(?:s\/([^/]+)\/)?e\/([^/]+)\/?$/;
+
+/**
+ * THE PATH SPELLING OF AN ENTITY LINK, as the hash this router reads.
+ *
+ * `https://tm8.sh/e/{id}` is what people and agents type when they share a
+ * thing, and the node answers every extension-less path with `index.html`. But
+ * this router only reads the hash, so that link booted with an empty one and
+ * last-place won: the phone landed on whatever list it had open last and the
+ * item never opened. `/e/{id}` becomes `#/e/{id}` (the bare form, which
+ * `redirect` stitches onto the last-active space) and `/s/{space}/e/{id}`
+ * becomes `#/s/{space}/e/{id}`. Anything else is not a path link: null.
+ */
+export function hashOfPathLink(pathname: string): string | null {
+  const match = PATH_LINK.exec(pathname);
+  if (!match) return null;
+  const [, space, id] = match;
+  return space ? `#/s/${space}/e/${id}` : `#/e/${id}`;
 }
 
 export function createBrowserTarget(win: Window = window): RouterTarget {
+  /* A path link is respelled in place before the first read, and only when the
+     hash is empty: a hash always outranks the path it rides on. A replace, so
+     Back does not return to the path form and bounce. */
+  const pathHash = win.location.hash.length > 2 ? null : hashOfPathLink(win.location.pathname);
+  if (pathHash) win.history.replaceState(win.history.state, '', `/${win.location.search}${pathHash}`);
   return {
     getHash: () => win.location.hash || '#/',
     setHash: (hash, opts = {}) => {
+      const onMarker = overlayIdOf(win.history.state) !== null;
       if (opts.replace) {
         // replaceState keeps the settle out of the back stack (LLD §6 history
         // discipline: normalization never creates a history entry).
-        win.history.replaceState(null, '', hash);
+        win.history.replaceState(onMarker ? win.history.state : null, '', hash);
       } else if (win.location.hash !== hash) {
-        win.location.hash = hash;
+        if (onMarker) {
+          // The push consumes the overlay marker (see OVERLAY_STATE_KEY).
+          // replaceState fires no hashchange, so send the one a push would
+          // have, for the listeners that are not this router.
+          const oldURL = win.location.href;
+          win.history.replaceState(null, '', hash);
+          win.dispatchEvent(new HashChangeEvent('hashchange', { oldURL, newURL: win.location.href }));
+        } else {
+          win.location.hash = hash;
+        }
       }
     },
     subscribe: (cb) => {
@@ -47,6 +116,7 @@ export function createBrowserTarget(win: Window = window): RouterTarget {
       return () => win.removeEventListener('hashchange', handler);
     },
     historyDepth: () => win.history.length,
+    back: () => win.history.back(),
   };
 }
 

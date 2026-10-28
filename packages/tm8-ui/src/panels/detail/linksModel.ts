@@ -163,9 +163,12 @@ function mergeBothWays(relations: Relation[]): Relation[] {
 function primaryOf(relations: Relation[]): Relation {
   const rank = (rel: Relation): number => {
     if (rel.unresolvedHard) return 0;
+    // 330: a session this one launched is filed under Launched sessions even
+    // though it also carries provenance (its authored_from to the launcher).
+    if (rel.family === 'launched') return 1;
     if (rel.family === 'sessions') return 60;
     if (rel.type === 'relates_to') return 50;
-    return 1 + ['code', 'work', 'files', 'people'].indexOf(rel.family);
+    return 2 + ['code', 'work', 'files', 'people'].indexOf(rel.family);
   };
   return relations.reduce((best, rel) => (rank(rel) < rank(best) ? rel : best));
 }

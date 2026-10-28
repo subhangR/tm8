@@ -46,6 +46,11 @@ export function failureCopy(failure: AuthFailure): { lead: string; body: string 
         lead: 'Sign-in failed',
         body: ' — the server refused that handle and password.',
       };
+    case 'setup-code-refused':
+      return {
+        lead: 'That setup code did not work',
+        body: ' — it may be mistyped or already used. On the server, run tm8 auth claim --show for the current one.',
+      };
     case 'storage-blocked':
       return {
         lead: 'This browser is blocking storage',

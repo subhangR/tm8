@@ -213,7 +213,7 @@ describe('session liveness', () => {
     expect(seen).toEqual([{ method: 'GET', pathname: bindPath('execution.liveness', { spaceId: SPACE }), body: undefined }]);
     expect(result.stdout).toContain(SESSION);
     expect(result.stdout).toContain('boot_1');
-    expect(result.stdout).toContain('capacity: 3/8 in use');
+    expect(result.stdout).toContain('capacity: 3/8 in use (agent sessions not completed, whole node)');
     expect(result.stderr).toBe('');
   });
 
@@ -569,6 +569,14 @@ describe('session complete', () => {
     const r = await drive(['session', 'complete', SESSION, '--receipt', receipt, '--close-process']);
     expect(r.code).toBe(0);
     expect(body()).toMatchObject({ receiptMessageId: receipt, closeProcess: true });
+  });
+
+  it('--keep-process sends closeProcess false; with --close-process it is a usage error', async () => {
+    const r = await drive(['session', 'complete', SESSION, '--keep-process']);
+    expect(r.code).toBe(0);
+    expect(body()).toMatchObject({ closeProcess: false });
+    const both = await drive(['session', 'complete', SESSION, '--keep-process', '--close-process']);
+    expect(both.code).not.toBe(0);
   });
 
   it('inside a session the id defaults to TM8_SESSION_ID', async () => {

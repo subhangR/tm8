@@ -7,9 +7,10 @@
  * `ViewSelector` is also mounted by the Restore cluster's ⋯ while the
  * navigation is expanded away (Spec A §14), so both doors open one menu.
  */
-import { cloneElement, isValidElement, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { BrandMark } from '../../kit/BrandMark';
 import { useShellFrame } from './context';
+import { isPinnedRailEnabled } from './navigatorFlag';
 
 /** Below this browser width the space switcher draws its monogram only (design log §2, §4). */
 const NARROW_BROWSER_W = 300;
@@ -21,6 +22,10 @@ export function LeftHeader() {
   const switcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
     ? cloneElement(gate.switcherSlot, { collapsed: narrow, quiet: true })
     : gate.switcherSlot;
+  /* The pinned-only rail: the mark, the space and — at the far end, over the
+     list column — the mode. The mode's own switcher (workspaces) leads the
+     tab strip instead (`TabStrip`), across the column edge. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
       <div className="tws-mark-cell">
@@ -31,8 +36,14 @@ export function LeftHeader() {
       <div className="tws-space-slot" data-narrow={narrow || undefined}>
         {switcher}
       </div>
-      <ViewSelector variant="label" />
-      {gate.modeSwitcherSlot ? <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">{gate.modeSwitcherSlot}</div> : null}
+      {pinnedRail ? (
+        <div className="tws-left-mode" data-testid="tws-left-mode">
+          <ViewSelector variant="label" />
+        </div>
+      ) : (
+        <ViewSelector variant="label" />
+      )}
+      {!pinnedRail && gate.modeSwitcherSlot ? <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">{gate.modeSwitcherSlot}</div> : null}
     </header>
   );
 }

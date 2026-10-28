@@ -41,7 +41,9 @@ const LIVE_SESSION_STATUSES = new Set(['spawning', 'running', 'idle']);
 const ENDED_SESSION_STATUSES = new Set(['exited', 'failed']);
 const TEAM_MODES = new Set<TeamMemberMode>(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']);
 /** Edge types drawn between nodes: the followed set plus membership and blocking. */
-const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on'];
+// 330: `launched_by` is drawn (session -> its launcher) though not walked: it
+// took over the session -> session parent line the map used to draw.
+const DRAWN_EDGE_TYPES = [...STORY_FOLLOWED_EDGE_TYPES.filter((t) => t !== 'parent'), 'contains', 'depends_on', 'launched_by'];
 
 interface TrailRow {
   entity_id: string;
@@ -220,8 +222,8 @@ export async function loadStoryPage(
   const factOf = new Map(facts.map((f) => [f.id, f]));
 
   // Session -> persona (`participates_in`, team_member -> session) and what
-  // each session is `working_on`. Spawned-by is the session's parent_id
-  // (Design Rules §2.3; `dispatched_by` is deprecated by 303). Read for every
+  // each session is `working_on`, and who launched it (`launched_by`, 330;
+  // it replaced the parent_id lineage and `dispatched_by`). Read for every
   // session in the trail even when the edge itself was not walked: the team
   // layer is about the sessions.
   const sessionIds = facts.filter((f) => f.kind === 'work_session').map((f) => f.id);
@@ -230,13 +232,16 @@ export async function loadStoryPage(
        from public.edges g
       where (g.type = 'participates_in' and g.dst_id = any($1::uuid[]))
          -- 299: only ACTIVE claims put a session at a task (one robot per claim).
-         or (g.type = 'working_on' and g.src_id = any($1::uuid[]) and (g.props->>'endedAt') is null)`,
+         or (g.type = 'working_on' and g.src_id = any($1::uuid[]) and (g.props->>'endedAt') is null)
+         or (g.type = 'launched_by' and g.src_id = any($1::uuid[]))`,
     [sessionIds],
   );
   const personaOf = new Map<string, string>();
   const workingOn = new Map<string, string[]>();
+  const launchedBy = new Map<string, string>();
   for (const g of sessionEdges) {
     if (g.type === 'participates_in') personaOf.set(g.dst_id, g.src_id);
+    else if (g.type === 'launched_by') launchedBy.set(g.src_id, g.dst_id);
     else if (factOf.has(g.dst_id)) workingOn.set(g.src_id, [...(workingOn.get(g.src_id) ?? []), g.dst_id]);
   }
 
@@ -460,7 +465,10 @@ export async function loadStoryPage(
       mode: personaMode,
       taskIds,
       rootIds: rootIdsOf.get(f.id) ?? [],
-      dispatchedById: f.parent_id && factOf.get(f.parent_id)?.kind === 'work_session' ? f.parent_id : null,
+      dispatchedById: (() => {
+        const launcher = launchedBy.get(f.id);
+        return launcher && factOf.get(launcher)?.kind === 'work_session' ? launcher : null;
+      })(),
     };
   });
 

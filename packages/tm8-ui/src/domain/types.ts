@@ -596,6 +596,13 @@ export interface ActionDef {
   id: ActionRef;
   label: string;
   icon: IconRef;
+  /**
+   * A DRAWN mark for the verb, on the `KIND_ART` grid. Present, it replaces
+   * `icon` wherever a surface can draw (`actionGlyph`); `icon` remains the
+   * text fallback. Set where the verb shares a kind's meaning — `chat-about`
+   * wears the chat mark, so chat is one picture everywhere.
+   */
+  art?: KindArt;
   availability(ctx: ActionContext): ActionAvailability;
   run(ctx: ActionContext): Promise<void> | void;
   /**
@@ -689,6 +696,24 @@ export interface StatusCategoryTab {
   alert?: boolean;
 }
 
+/**
+ * THE SHAPE OF A KIND'S ONE SIGNAL (`ListConfig.tile.signal`).
+ *
+ *   avatar   — the assignee / owner face the kind's badge sources already
+ *              resolve. Drawn by the tile from its existing `avatar` slot, so
+ *              a row has exactly one answer to "whose face is this".
+ *   liveness — the seam's verdict: a filled dot while the process is up, a
+ *              ring while it waits on the viewer, ✓ / ✕ once it ended. NOT the
+ *              record's status field (R-UI-5).
+ *   count    — a number on `state[field]`; zero and absence both draw nothing.
+ *   presence — a busy/idle dot, busy being `state[field]` present.
+ */
+export type TileSignalSpec =
+  | { from: 'avatar' }
+  | { from: 'liveness' }
+  | { from: 'count'; field: string; label: string }
+  | { from: 'presence'; field: string };
+
 export interface ListConfig {
   /** task: current / completed. */
   sections?: readonly ListSection[];
@@ -752,6 +777,12 @@ export interface ListConfig {
    * animates the wire those draw.
    */
   tree?: { by: 'hierarchy'; guideLines: boolean; messagePulse?: boolean };
+  /**
+   * THE ROWS THIS LIST'S ROWS LAUNCHED, nested under them (331). Names the
+   * kind loaded alongside the list (`work_session`) through
+   * `launchedRowsFilter`; each drawn with ITS kind's anatomy. Needs `tree`.
+   */
+  launches?: string;
   tile: {
     badges: readonly TileBadgeSpec[];
     /**
@@ -769,6 +800,17 @@ export interface ListConfig {
      * which draws nothing rather than an empty bar.
      */
     progress?: (row: EntitySummary) => TileProgress | null;
+    /**
+     * THE ONE SIGNAL this kind's row draws (design doc 01a1465d §6, approved
+     * 2026-10-16). Absent ⇒ the row draws none, which is the answer for
+     * docs, artifacts, memories, files and most of the registry.
+     *
+     * Declared here rather than derived in the tile because WHICH fact is a
+     * kind's live one is a registry judgment: a chat's is its unread count, a
+     * session's is whether the process is up. The renderer
+     * (`panels/list/TileSignal.tsx`) knows the four SHAPES and no kinds.
+     */
+    signal?: TileSignalSpec;
   };
   /** '● N live'. The count is rows ∩ the seam liveness snapshot, never a derivation. */
   liveCount?: {
@@ -1217,6 +1259,9 @@ export type ContentBlockKind =
   | 'trust-card'
   | 'live-sessions'
   | 'unlink-footer'
+  // …the project page's git and filterable work list (task 01a15a00)…
+  | 'git-status'
+  | 'work-list'
   // …and the restricted body's five.
   | 'status-banner'
   | 'preview'

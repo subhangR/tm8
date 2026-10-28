@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category', 'launchedBy', 'parentIn', 'idIn']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -435,6 +435,12 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
      clause is decidable here exactly like the status axes — an absent
      category never matches a present clause (`NULL = any(...)` semantics). */
   if (!matchesAxis(clauses.category, summary.category)) return 'out';
+  /* 331: the launcher rides the session's state (`launchedBy`, 330), so a
+     session launched from a listed chat arrives live. */
+  if (!matchesAxis(clauses.launchedBy, state.launchedBy)) return 'out';
+  /* Tile children (task 01a14b92): an expanded row's children, by parent. */
+  if (!matchesAxis(clauses.parentIn, summary.parentId ?? undefined)) return 'out';
+  if (!matchesAxis(clauses.idIn, summary.id)) return 'out';
 
   return 'in';
 }
@@ -759,3 +765,10 @@ export const selectIsPending = (clientMutationId: string) => (s: DomainStoreStat
   s.pendingMutations[clientMutationId] === true;
 export const selectConnectionsStale = (id: EntityId) => (s: DomainStoreState): boolean =>
   s.staleConnections[id] === true;
+/**
+ * The version an open view of `id` should re-read to, or undefined when the
+ * cached content is current. A NUMBER rather than a boolean so a consumer can
+ * key one re-read per announced version — see `DomainState.staleDetails`.
+ */
+export const selectDetailStaleVersion = (id: EntityId) => (s: DomainStoreState): number | undefined =>
+  s.staleDetails[id];

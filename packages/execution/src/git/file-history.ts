@@ -111,6 +111,22 @@ async function assertRepository(
 }
 
 /**
+ * The path a numstat entry names AFTER the revision. A rename is printed as
+ * `old => new` or, sharing a prefix/suffix, `dir/{old => new}/file`; handing
+ * that display form back as `path` gives `readFileRevisionDiff` a pathspec
+ * that matches nothing, so the renaming revision's diff read back empty.
+ */
+function renameDestination(numstatPath: string): string {
+  const braced = /^(.*)\{([^{}]*) => ([^{}]*)\}(.*)$/.exec(numstatPath);
+  if (braced !== null) {
+    // `{old => }/x` and `{ => new}/x` leave a doubled or leading slash.
+    return `${braced[1]}${braced[3]}${braced[4]}`.replace(/\/{2,}/g, '/').replace(/^\//, '');
+  }
+  const arrow = numstatPath.indexOf(' => ');
+  return arrow === -1 ? numstatPath : numstatPath.slice(arrow + ' => '.length);
+}
+
+/**
  * `git log --follow` for one path: oid, author, date, subject, and the
  * per-revision numstat for the path. `--follow` requires exactly one pathspec,
  * which is exactly this read's shape.
@@ -165,7 +181,7 @@ export async function readFileHistory(
       if (!m) continue;
       additions = m[1] === '-' ? null : Number.parseInt(m[1] as string, 10);
       deletions = m[2] === '-' ? null : Number.parseInt(m[2] as string, 10);
-      revisionPath = m[3] as string;
+      revisionPath = renameDestination(m[3] as string);
       break;
     }
     revisions.push({

@@ -10,6 +10,10 @@ import { EntityListPanel } from '../index';
  * `rowLead="icon"` — the Workspace browser's row lead. No chevron slot on any
  * anatomy; the leading icon is the expand button when (and only when) the row
  * has children, and nothing but that icon changes expansion.
+ *
+ * ONE GRAMMAR (task 01a14b92, superseding the quiet tile's `▸ N` chip): on
+ * every anatomy the lead icon is the disclosure and wears the child count as
+ * a subscript on its corner. The cases below assert it against all three.
  */
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
@@ -19,14 +23,17 @@ const rowsFor =
     rows;
 
 function family(template: EntitySummary, n: number): EntitySummary[] {
-  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null } as EntitySummary;
+  /* The server's live child count rides every row (`childCount`); a leaf
+     says 0, so a template's own count cannot make it read as a parent. */
+  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null, childCount: n } as EntitySummary;
   const kids = Array.from({ length: n }, (_, index) => ({
     ...template,
     id: `${template.kind}-kid-${index}`,
     title: `Child ${index}`,
     parentId: parent.id,
+    childCount: 0,
   }) as EntitySummary);
-  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null } as EntitySummary;
+  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null, childCount: 0 } as EntitySummary;
   return [parent, ...kids, leaf];
 }
 
@@ -45,33 +52,42 @@ describe.each([
   ['doc', docLayoutSpec],
   ['work_session', sessionLive],
 ] as const)('rowLead="icon" on a %s list', (kind, template) => {
-  it('draws no chevron slot, and the lead icon is the only expand control', () => {
+  const control = leadOf;
+
+  it('draws no chevron slot, and has exactly one expand control', () => {
     const { container } = render(
       <EntityListPanel kind={kind} rowsFor={rowsFor(family(template, 2))} ctx={ctx} rowLead="icon" />,
     );
     expect(container.querySelector('.lp__disclosure, .pn-tt__arrow, .pn-st__arrow')).toBeNull();
-    const parentLead = leadOf(tileTitled(container, 'Parent'));
-    expect(parentLead?.tagName).toBe('BUTTON');
-    expect(parentLead?.getAttribute('aria-label')).toBe('Expand Parent, 2 children');
-    expect(parentLead?.getAttribute('aria-expanded')).toBe('false');
-    // A leaf's icon is decoration, not a control.
+    const parent = tileTitled(container, 'Parent');
+    const owned = control(parent);
+    expect(owned?.tagName).toBe('BUTTON');
+    expect(owned?.getAttribute('aria-label')).toBe('Expand Parent, 2 children');
+    expect(owned?.getAttribute('aria-expanded')).toBe('false');
+    /* EXACTLY ONE. Two controls carrying the same accessible name would read
+       as one broken control. */
+    const named = [...parent.querySelectorAll('[aria-label^="Expand Parent"]')];
+    expect(named).toHaveLength(1);
+    // No `▸ N` chip after the title on any anatomy.
+    expect(container.querySelector('.lp__kidchip')).toBeNull();
+    // A leaf has no control at all — its icon is decoration.
     expect(leadOf(tileTitled(container, 'Leaf'))?.tagName).toBe('SPAN');
   });
 
-  it('a click on the icon expands without opening the row; a title click opens without expanding', () => {
+  it('a click on the control expands without opening the row; a title click opens without expanding', () => {
     const onSelect = vi.fn();
     const { container } = render(
       <EntityListPanel kind={kind} rowsFor={rowsFor(family(template, 2))} ctx={ctx} rowLead="icon" onSelect={onSelect} />,
     );
-    const lead = () => leadOf(tileTitled(container, 'Parent'))!;
-    fireEvent.click(lead());
-    expect(lead().getAttribute('aria-expanded')).toBe('true');
+    const owned = () => control(tileTitled(container, 'Parent'))!;
+    fireEvent.click(owned());
+    expect(owned().getAttribute('aria-expanded')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
 
     const title = tileTitled(container, 'Parent').querySelector<HTMLElement>('.pn-tt__title, .lp__title, .pn-st__titleText')!;
     fireEvent.click(title);
     expect(onSelect).toHaveBeenCalledWith(`${kind}-parent`);
-    expect(lead().getAttribute('aria-expanded')).toBe('true');
+    expect(owned().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('a click on a leaf icon falls through and opens the row', () => {
@@ -92,17 +108,17 @@ describe('rowLead="icon" — the reveal latches', () => {
 
   it('opening a child keeps its parent expanded after another row is selected', () => {
     const view = render(panel('task-kid-0'));
-    const lead = () => leadOf(tileTitled(view.container, 'Parent'))!;
-    expect(lead().getAttribute('aria-expanded')).toBe('true');
+    const chip = () => leadOf(tileTitled(view.container, 'Parent'))!;
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
     view.rerender(panel('task-leaf'));
-    expect(lead().getAttribute('aria-expanded')).toBe('true');
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('one click on a revealed parent collapses it', () => {
     const view = render(panel('task-kid-0'));
-    const lead = () => leadOf(tileTitled(view.container, 'Parent'))!;
-    fireEvent.click(lead());
-    expect(lead().getAttribute('aria-expanded')).toBe('false');
+    const chip = () => leadOf(tileTitled(view.container, 'Parent'))!;
+    fireEvent.click(chip());
+    expect(chip().getAttribute('aria-expanded')).toBe('false');
   });
 });
 

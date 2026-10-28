@@ -54,7 +54,7 @@
  * caller who still passes one gets the ordinary unknown-option refusal quoting
  * the real syntax — which is now the honest answer.
  */
-import { normalizeKindAlias } from '@tm8/contract';
+import { CoreEntityKindSchema, normalizeKindAlias, WorkStatusSchema } from '@tm8/contract';
 
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
@@ -657,6 +657,37 @@ function contextSchemaVersion(data: unknown): string | null {
 
 // ── entity query (collections.query) ───────────────────────────────────────
 
+/** Kind spellings agents reach for that are not kinds, and the kind they mean. */
+const KIND_GUESSES: Readonly<Record<string, string>> = Object.freeze({
+  session: 'work_session', sessions: 'work_session', pr: 'pull_request', prs: 'pull_request',
+  tasks: 'task', docs: 'doc', messages: 'message', stories: 'story',
+});
+
+/**
+ * The Server's answer to a bad `--kind` is a bare `invalid_union`, and to a
+ * bad `--status` an enum list that does not say the filter is the WORK status.
+ * Agents reading a linked space asked for `--kind session`, `--status merged`
+ * on pull requests and `--status running` on sessions, and got nothing they
+ * could act on. Refuse here, naming what each flag accepts.
+ */
+function refuseUnknownQueryValues(kinds: readonly string[], status: readonly string[]): void {
+  for (const kind of kinds) {
+    if (CoreEntityKindSchema.safeParse(kind).success || (kind.startsWith('c:') && kind.length > 2)) continue;
+    const guess = KIND_GUESSES[kind.toLowerCase()];
+    throw new CliError(`--kind ${kind} is not a kind`, EXIT_USAGE, {
+      hint: guess ? `did you mean --kind ${guess}? \`tm8 kind list\` shows every kind` : '`tm8 kind list` shows every kind',
+    });
+  }
+  const allowed = WorkStatusSchema.options as readonly string[];
+  for (const value of status) {
+    if (allowed.includes(value)) continue;
+    throw new CliError(`--status ${value} is not a work status`, EXIT_USAGE, {
+      hint: `--status filters the work status (${allowed.join('|')}), which only tasks carry; `
+        + 'a pull request\'s or session\'s own state is not a query filter: query the kind and read each row\'s state',
+    });
+  }
+}
+
 /**
  * `CollectionQuery` is `.strict()`, so an empty `filters` object is a key the
  * caller never asked for and a shape the Server must then decide about. The
@@ -682,6 +713,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   /* `--status`, NOT `--work-status` (phase 9's rename table). The flag names
      the `CollectionQuery.filters` member, and that member is `status` now. */
   const status = cmd.options.values('status');
+  refuseUnknownQueryValues(kinds, status);
   const assigneeIds = cmd.options.values('assignee');
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');

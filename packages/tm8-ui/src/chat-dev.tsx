@@ -18,6 +18,7 @@ import './rich-input/rich-input.css';
    and every rect it reports is 10% too big (44px controls measured 48.4). The
    rest of the file names `.mobile-*` classes this harness does not mount. */
 import './mobile/mobile-chrome.css';
+import './mobile/mobile-noscroll.css';
 import './chat-home/chat-home.css';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
@@ -25,7 +26,26 @@ import { MobileSurfaceProvider } from './mobile';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './chat-home/fixtures';
 import type { ChatModelOption, ChatThreadDetail } from './chat-home/types';
 import type { CockpitStage } from './routes/types';
+import type { FileUploadTask } from './files/upload';
 import './session-graph/session-graph.css';
+import { answer, item, okGroup } from './jev/test-support';
+import type { ChatJevPort } from './chat-home/new-chat-jev';
+
+/* `?jev=1`: ✦ Ask Jev in the new-chat composer (doc 01a154f2), answered from
+   the shared Jev fixtures after a short wait. No OpenAI credential, so a
+   Codex pick would be left out. */
+const DEV_JEV: ChatJevPort = {
+  jev: {
+    suggest: (_spaceId, input) => new Promise((resolve) => {
+      setTimeout(() => resolve(answer(input, {
+        model: okGroup({ tier: 'premium', model: 'claude-opus-5', agentTool: 'claude-code', effort: 'high', need: 2.1, workKind: 'implement', reasons: ['need=2.10 (depth 0.72, breadth 0.55, radius 0.40) -> premium'] }),
+        teammates: okGroup({ items: [item('019f0000-0000-7000-8000-000000000003', 'team_member', 2.6, true, ['space'], 'Researcher')], noFit: false, floor: 1 }),
+      })), 500);
+    }),
+  },
+  homeAnchor: async () => '019f0000-0000-7000-8000-0000000000aa' as EntityId,
+  codexAvailable: async () => false,
+};
 
 /**
  * CHAT WAITING-MARKS SCRATCH HARNESS — same spirit as loader-dev.tsx and
@@ -52,6 +72,7 @@ import './session-graph/session-graph.css';
  *                          ?style=atelier for the retired Atelier tokens,
  *                          ?stage=fleet or ?stage=graph for a stage,
  *                          ?empty=1 for a space with no conversations,
+ *                          ?jev=1 for ✦ Ask Jev in the new-chat composer,
  *                          ?shell=mobile for the phone arrangement,
  *                          ?turns=N for a thread long enough to overflow)
  *
@@ -106,6 +127,19 @@ function Harness() {
   const mobile = params.get('shell') === 'mobile';
   const turns = Number.parseInt(params.get('turns') ?? '', 10);
   const composer = params.get('composer') === '1';
+  /* `?attach=1`: an upload port that never lands and two skills, so the ＋
+     sheet's "Attached to this message" list has something to list
+     (`e2e/capture-plus-sheet.mjs`). */
+  const jevInputs = params.get('jev') === '1' ? { jev: DEV_JEV } : {};
+  const turnInputs = params.get('attach') === '1'
+    ? {
+        attach: (): FileUploadTask => ({ result: new Promise(() => {}), cancel: () => {} }),
+        skillOptions: [
+          { id: 'skill-1', display: 'triage', meta: 'sort the inbox' },
+          { id: 'skill-2', display: 'mobile-web-craft', meta: 'phone layout rules' },
+        ],
+      }
+    : {};
   const { port } = useMemo(
     () => {
       const base = empty
@@ -180,6 +214,7 @@ function Harness() {
       }}
       ref={setHost}
     >
+
       {/* THE PHONE'S SURFACE CONTEXT, and this harness was wrong without it.
           `oneSurface` is what `ComposerSelect` reads to draw its options in a
           sheet rather than the desktop's anchored popover, and what
@@ -207,6 +242,8 @@ function Harness() {
                never had — and any measurement of the tray then describes a row
                no reader sees. */
             soloConversation
+            {...turnInputs}
+            {...jevInputs}
           />
         </MobileSurfaceProvider>
       ) : (
@@ -217,6 +254,8 @@ function Harness() {
           viewerName="Sam"
           stage={stage}
           onStageChange={setStage}
+          {...turnInputs}
+          {...jevInputs}
         />
       )}
     </div>

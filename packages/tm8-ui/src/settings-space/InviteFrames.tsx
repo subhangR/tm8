@@ -104,7 +104,7 @@ const EXPIRY_CHOICES: ReadonlyArray<{ label: string; days: number | null }> = [
  */
 type InviteState = 'live' | 'spent' | 'revoked';
 
-function stateOf(invite: SpaceInviteView): InviteState {
+export function stateOf(invite: SpaceInviteView): InviteState {
   if (invite.revoked) return 'revoked';
   return invite.uses >= invite.maxUses ? 'spent' : 'live';
 }

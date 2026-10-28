@@ -18,12 +18,16 @@
  */
 import type { EdgeDirection } from './edge-verbs';
 
-export type EdgeFamily = 'work' | 'code' | 'files' | 'people' | 'sessions';
+export type EdgeFamily = 'launched' | 'work' | 'code' | 'files' | 'people' | 'sessions';
 
 /** Section order, top to bottom. Blocking is drawn above all of them. */
-export const EDGE_FAMILY_ORDER: readonly EdgeFamily[] = ['work', 'code', 'files', 'people', 'sessions'];
+// 330: a chat's or session's LAUNCHED sessions lead, open, with their live
+// status — they used to be its Children, and they are what a reader of a chat
+// opens Links for. Never folded with the provenance below.
+export const EDGE_FAMILY_ORDER: readonly EdgeFamily[] = ['launched', 'work', 'code', 'files', 'people', 'sessions'];
 
 export const EDGE_FAMILY_LABEL: Readonly<Record<EdgeFamily, string>> = {
+  launched: 'Launched sessions',
   work: 'Work',
   code: 'Code',
   files: 'Files & docs',
@@ -61,6 +65,9 @@ export const EDGE_FAMILIES: Readonly<Record<string, FamilyRow>> = {
   has_member: 'people',
   in_project: 'work',
   in_worktree: 'work',
+  // 330: on the session, who launched it (provenance); on the launcher, the
+  // sessions it launched — their own section.
+  launched_by: { out: 'sessions', in: 'launched' },
   likes: 'people',
   member_of: 'people',
   messaged: 'sessions',

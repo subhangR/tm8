@@ -99,9 +99,13 @@ const APP_VIA_SET_ROLE = process.env.TM8_APP_VIA_SET_ROLE === '1';
  * connection is identical in every way psql cares about and distinguishable in
  * the one way this file cares about.
  */
-export const APP_URL = APP_VIA_SET_ROLE
-  ? `${OWNER_URL}${OWNER_URL.includes('?') ? '&' : '?'}application_name=tm8_app_via_set_role`
-  : withUser(OWNER_URL, 'tm8_app');
+const VIA_SET_ROLE_APP_NAME = 'tm8_app_via_set_role';
+function appUrlFor(ownerUrl) {
+  return APP_VIA_SET_ROLE
+    ? `${ownerUrl}${ownerUrl.includes('?') ? '&' : '?'}application_name=${VIA_SET_ROLE_APP_NAME}`
+    : withUser(ownerUrl, 'tm8_app');
+}
+export const APP_URL = appUrlFor(OWNER_URL);
 
 /**
  * Prefixed to every script that runs on APP_URL under the flag. `set role` is
@@ -109,12 +113,20 @@ export const APP_URL = APP_VIA_SET_ROLE
  * it must come BEFORE any `begin;` the script builds, since a `set local role`
  * inside the transaction would not cover statements the script runs outside it.
  *
- * The `url === APP_URL` test is an identity check against the constant above,
- * NOT a check that the url points at the same database as the owner's. See the
- * note there for why those two are not the same question.
+ * The test is for the `application_name` marker appUrlFor stamps (on APP_URL
+ * and on a freshDatabase's appUrl), NOT a check that the url points at the same
+ * database as the owner's. See the note above for why those two are not the
+ * same question.
  */
+function isAppUrl(url) {
+  try {
+    return new URL(url).searchParams.get('application_name') === VIA_SET_ROLE_APP_NAME;
+  } catch {
+    return false;
+  }
+}
 function asAppRole(script, url) {
-  return APP_VIA_SET_ROLE && url === APP_URL ? `set role tm8_app;\n${script}` : script;
+  return APP_VIA_SET_ROLE && isAppUrl(url) ? `set role tm8_app;\n${script}` : script;
 }
 export const TEST_DB = new URL(OWNER_URL).pathname.replace(/^\//, '');
 
@@ -366,7 +378,7 @@ export function freshDatabase(suffix) {
   if (result.status !== 0) {
     throw new Error(`could not build the fresh database ${name}:\n${result.stdout}\n${result.stderr}`);
   }
-  return { name, ownerUrl: url, appUrl: withUser(url, 'tm8_app') };
+  return { name, ownerUrl: url, appUrl: appUrlFor(url) };
 }
 
 // --- world building ---------------------------------------------------------
@@ -462,9 +474,11 @@ export function buildWorld(tag = 'w', { url = APP_URL } = {}) {
     `select public.create_project('proj-${tag}', '/tmp/tm8-test-${tag}-${spaceA.space.id}', null, 'trusted')`,
     { ...opts, claims: claimsFor(idA, null, true) },
   );
-  ok(`select public.link_project(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
+  // link_project_w2: 234 dropped 007's legacy link_project, and a folder is
+  // visible only to a gate (node) admin since then, so link with that claim.
+  ok(`select public.link_project_w2(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
     ...opts,
-    claims: claimsFor(idA, memberA),
+    claims: claimsFor(idA, memberA, true),
   });
 
   return {
@@ -487,6 +501,50 @@ export function buildWorld(tag = 'w', { url = APP_URL } = {}) {
     claimsB: claimsFor(idB, memberB),
     adminA: claimsFor(idA, memberA, true),
   };
+}
+
+/**
+ * SQL that posts one message through the write surface tm8-server uses.
+ *
+ * 019 revoked the legacy `public.post_message` from tm8_app on purpose
+ * (forge_observer.test.mjs guards that), so a suite that posts through it dies
+ * with "permission denied". `w2_post_message_batch` is what the server calls,
+ * and it REQUIRES a client mutation id, so each call mints a fresh one unless the
+ * caller pins it (a replay test). The result is the batch envelope:
+ * `{ messageIds: [id], messageBatchId, deliveryIntents, ... }`.
+ */
+export function postMessageSql(
+  anchorId,
+  body,
+  { actor = null, parent = null, mentions = [], clientMutationId = null } = {},
+) {
+  const mentionIds = mentions.length ? `array[${mentions.map(uuid).join(', ')}]` : `'{}'::uuid[]`;
+  return (
+    `select public.w2_post_message_batch(array[${uuid(anchorId)}], ${literal(body)}, ` +
+    `${uuid(parent)}, ${mentionIds}, '{}'::uuid[], null, ${uuid(actor)}, ` +
+    `${literal(clientMutationId ?? cmid('post'))})`
+  );
+}
+
+/**
+ * The manifest `launch` block that settles a session's credential binding.
+ *
+ * Since 273 an agent session cannot leave `spawning` while its binding is
+ * `pending`, and record_session_manifest is what settles it, from
+ * launch.effectiveCredentialSources (a manifest with no source for any provider
+ * is refused, 22023). The member rung rolls up to `legacy`, which release 1 still
+ * runs, so a suite that only needs a session to come up spreads this into the
+ * manifest it records.
+ */
+export const LEGACY_LAUNCH = Object.freeze({ effectiveCredentialSources: { anthropic: 'member' } });
+
+/** Record a minimal manifest so the session may run (see LEGACY_LAUNCH). */
+export function bindLegacyCredential(sessionId, opts = {}) {
+  return ok(
+    `select public.record_session_manifest(${uuid(sessionId)}, ` +
+      `${literal(JSON.stringify({ launch: LEGACY_LAUNCH }))}::jsonb)`,
+    opts,
+  );
 }
 
 /** A unique cmid per call site, without needing a random source. */

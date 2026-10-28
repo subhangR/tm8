@@ -371,6 +371,19 @@ describe('message send', () => {
     }
   });
 
+  it('refuses a misspelt flag instead of sending without it', async () => {
+    for (const argv of [
+      ['message', 'send', '--to', ANCHOR, '--mentions', 'act_1', 'hello'],
+      ['message', 'send', '--to', ANCHOR, '--reply_to', 'msg_1', 'hello'],
+      ['message', 'reply', 'msg_1', '--mentions', 'act_1', 'hello'],
+    ]) {
+      const r = await dispatch(argv);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toMatch(/has no --(mentions|reply_to)/);
+      expect(seen).toHaveLength(0);
+    }
+  });
+
   it('refuses a positional body AND --body together', async () => {
     const r = await dispatch(['message', 'send', '--to', ANCHOR, 'inline', '--body', 'other']);
     expect(r.code).toBe(2);

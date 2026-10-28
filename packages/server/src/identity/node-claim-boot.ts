@@ -38,6 +38,12 @@ export interface ClaimAnnouncementOptions {
   url: string;
   nodeMode: 'single' | 'multi';
   /**
+   * Whether a loopback caller resolves to the owner (single mode, auto-owner
+   * not disabled). Then the person at this machine claims with no code, and
+   * the banner leads with the plain URL. Defaults to `nodeMode === 'single'`.
+   */
+  loopbackOwner?: boolean;
+  /**
    * Bootstraps the node owner. REQUIRED, and the requirement is a fix rather
    * than ceremony — see the guard in `announceNodeClaim`.
    */
@@ -141,20 +147,33 @@ export async function announceNodeClaim(opts: ClaimAnnouncementOptions): Promise
     }
   }
 
-  const claimUrl = `${opts.url.replace(/\/$/, '')}/#claim=${encodeURIComponent(token)}`;
+  const origin = opts.url.replace(/\/$/, '');
+  const claimUrl = `${origin}/#claim=${encodeURIComponent(token)}`;
+  const loopbackUrl = opts.url.includes('://127.0.0.1') || opts.url.includes('://localhost') || opts.url.includes('://[::1]');
   log('');
   log('  ┌─ THIS NODE IS UNCLAIMED ─────────────────────────────────────────');
   log('  │  No account here has a password yet, so nobody can sign in.');
-  // "Or any other" machine was true only behind a proxy: a loopback node is
-  // unreachable from elsewhere, and its link names 127.0.0.1.
-  log(opts.url.includes('://127.0.0.1') || opts.url.includes('://localhost') || opts.url.includes('://[::1]')
-    ? '  │  Claim it on this machine (another machine needs a proxy + TM8_PUBLIC_ORIGIN) at:'
-    : '  │  Claim it from any browser that reaches this node at:');
+  if (loopbackUrl && (opts.loopbackOwner ?? opts.nodeMode === 'single')) {
+    // The loopback owner claims with no code (`auth.claim`'s on-box arm), so
+    // the person at this machine gets a plain URL: nothing to copy or keep.
+    log('  │  Open it on this machine and create your account — no setup code needed:');
+    log('  │');
+    log(`  │    ${origin}/`);
+    log('  │');
+    log('  │  From another machine (behind a proxy + TM8_PUBLIC_ORIGIN) use the one-time link:');
+    log(`  │    ${claimUrl}`);
+  } else {
+    // "Or any other" machine was true only behind a proxy: a loopback node is
+    // unreachable from elsewhere, and its link names 127.0.0.1.
+    log(loopbackUrl
+      ? '  │  Claim it on this machine (another machine needs a proxy + TM8_PUBLIC_ORIGIN) at:'
+      : '  │  Claim it from any browser that reaches this node at:');
+    log('  │');
+    log(`  │    ${claimUrl}`);
+  }
   log('  │');
-  log(`  │    ${claimUrl}`);
-  log('  │');
-  if (wrote) log(`  │  Also written to ${tokenPath} (0600).`);
-  log('  │  The token is single-use and is burned the moment it is claimed.');
+  log('  │  Lost this link? On this machine run: tm8 auth claim --show');
+  if (wrote) log(`  │  The code is also in ${tokenPath} (0600), single-use, burned on claim.`);
   log('  └──────────────────────────────────────────────────────────────────');
   log('');
   // Returned, not merely printed: a double-clicked `.app` has no terminal, so

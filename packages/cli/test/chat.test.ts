@@ -125,8 +125,14 @@ const err = (): string => stderr.join('');
 // ---------------------------------------------------------------------------
 
 describe('the module registers exactly its own rows, and the projection agrees', () => {
-  it('owns the seven chat paths and nothing else', () => {
+  it('owns the ten chat paths and nothing else', () => {
     expect(CHAT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
+      // +1 chat connectors (chat.setMcpSelections, G4): the only way to change
+      // a thread's connectors after its first message. MEASURED.
+      'chat connectors',
+      // +1 chat connectors show (chat.getMcpSelections): the READ beside the
+      // write, so a terminal can look without changing anything. MEASURED.
+      'chat connectors show',
       // +1 chat credentials (credential selection). MEASURED on the Tools 3 rebase.
       'chat credentials',
       'chat list',
@@ -136,6 +142,8 @@ describe('the module registers exactly its own rows, and the projection agrees',
       'chat send',
       'chat show',
       'chat start',
+      // +1 chat.interrupt (chat turn management): the composer's Stop.
+      'chat stop',
       'chat turns',
     ]);
   });
@@ -312,6 +320,71 @@ describe('chat list', () => {
     reply = () => envelope({ page: { items: [] } });
     await run(['chat', 'list']);
     expect(out()).toContain('no chats');
+  });
+});
+
+describe('chat connectors', () => {
+  const SERVER = '018f0000-0000-7000-8000-000000000e01';
+
+  it('sends a non-empty selection to chat.setMcpSelections on the chat id', async () => {
+    reply = () => envelope({ chatId: CHAT, mcpSelections: [{ serverId: SERVER }] });
+    expect(await run(['chat', 'connectors', CHAT, '--input', JSON.stringify([{ serverId: SERVER }])])).toBe(0);
+    expect(seen[0]?.method).toBe('POST');
+    expect(seen[0]?.path).toBe(bindPath('chat.setMcpSelections', { id: CHAT }));
+    expect(seen[0]?.body).toMatchObject({ mcpSelections: [{ serverId: SERVER }] });
+    expect(out()).toContain('1 connector selected');
+  });
+
+  /**
+   * THE THREE VALUES, each distinct on the wire. `null` and `[]` are the pair a
+   * flag-shaped spelling could not tell apart, and they mean opposite things:
+   * back to the defaults, versus every connector off.
+   */
+  it('keeps null (back to defaults) and [] (all off) distinct', async () => {
+    reply = () => envelope({ chatId: CHAT, mcpSelections: null });
+    expect(await run(['chat', 'connectors', CHAT, '--input', 'null'])).toBe(0);
+    expect(seen[0]?.body).toMatchObject({ mcpSelections: null });
+    expect(out()).toContain('back on the defaults');
+
+    seen = [];
+    stdout = [];
+    reply = () => envelope({ chatId: CHAT, mcpSelections: [] });
+    expect(await run(['chat', 'connectors', CHAT, '--input', '[]'])).toBe(0);
+    expect(seen[0]?.body).toMatchObject({ mcpSelections: [] });
+    expect(out()).toContain('Every connector is off');
+  });
+
+  /**
+   * `show` is a READ on its own path. The longest registered prefix must win:
+   * if `chat connectors` swallowed `show` as a chat id, the read would become a
+   * write that fails for want of --input — or, with one, changes the thread.
+   */
+  it('show reads chat.getMcpSelections and never writes, telling defaults from custom', async () => {
+    reply = () => envelope({ chatId: CHAT, mcpSelections: null });
+    expect(await run(['chat', 'connectors', 'show', CHAT])).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe('GET');
+    expect(seen[0]?.path).toBe(bindPath('chat.getMcpSelections', { id: CHAT }));
+    expect(out()).toContain('Space defaults');
+
+    seen = [];
+    stdout = [];
+    reply = () => envelope({ chatId: CHAT, mcpSelections: [] });
+    expect(await run(['chat', 'connectors', 'show', CHAT])).toBe(0);
+    expect(seen[0]?.method).toBe('GET');
+    expect(out()).toContain('every connector is off');
+  });
+
+  it('refuses a malformed selection and a missing --input before the wire', async () => {
+    expect(await run(['chat', 'connectors', CHAT])).toBe(2);
+    expect(seen).toHaveLength(0);
+    expect(err()).toContain('--input is required');
+
+    expect(await run(['chat', 'connectors', CHAT, '--input', '[{"serverId":"not-a-uuid"}]'])).toBe(2);
+    expect(seen).toHaveLength(0);
+
+    expect(await run(['chat', 'connectors', CHAT, '--input', '[]', '--mutation-id', 'x'])).toBe(2);
+    expect(seen).toHaveLength(0);
   });
 });
 

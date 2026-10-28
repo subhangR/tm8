@@ -49,14 +49,26 @@ export function blueprintLabelSize(text: string): BlueprintSize {
 }
 
 export type BlueprintMode = 'flow' | 'swimlane';
-/** LR: flow runs left → right (default). TB: top → bottom. */
+/** TB: flow runs top → bottom (default). LR: left → right. */
 export type BlueprintDirection = 'LR' | 'TB';
 /** Swimlane grouping: by assignee (default), by node kind, or by `spec.phase`. */
 export type BlueprintLaneBy = 'assignee' | 'kind' | 'phase';
 
+/**
+ * How many edges the canvas draws — view-only, the row keeps them all (see
+ * `edge-reduction.ts`). 'all': every edge. 'reduced': parallel edges merge and
+ * implied ordering edges go. 'essential': 'reduced' plus context links folded.
+ */
+export type BlueprintEdgeDetail = 'all' | 'reduced' | 'essential';
+/** What the craft canvas draws until the viewer picks otherwise (`blueprintView` itself defaults to 'all'). */
+export const DEFAULT_EDGE_DETAIL: BlueprintEdgeDetail = 'reduced';
+
 export interface BlueprintViewOptions {
   mode?: BlueprintMode;
+  edgeDetail?: BlueprintEdgeDetail;
   direction?: BlueprintDirection;
+  /** How routes are drawn: an S-curve at each jog (default) or rounded orthogonal elbows. */
+  edgeStyle?: 'orthogonal' | 'curved';
   laneBy?: BlueprintLaneBy;
 }
 
@@ -181,6 +193,8 @@ export interface BlueprintLine {
   labelBox: BlueprintBox | null;
   findings: CoherenceFinding[];
   severity: CoherenceSeverity | null;
+  /** Keys of the other edges merged into this line (same drawn pair); empty when it draws one edge. */
+  merged: string[];
   /** @deprecated straight-line fields kept for the current canvas; use `points`/`path`. */
   x1: number; y1: number; x2: number; y2: number;
   cx: number; cy: number;
@@ -247,6 +261,15 @@ export interface BlueprintView {
   findings: readonly CoherenceFinding[];
   /** Edges whose src/dst named no node — surfaced, never silently dropped. */
   danglingEdgeCount: number;
+  edgeDetail: BlueprintEdgeDetail;
+  /**
+   * Edges the reduction did not draw as their own line: `merged` ride on
+   * another line, `implied` are covered by a longer path, `folded` are
+   * context links. All zero at 'all'.
+   */
+  hiddenEdges: { merged: number; implied: number; folded: number };
+  /** Every non-assignment edge key, drawn or not — what a patch diff counts. */
+  edgeKeys: readonly string[];
   lists: {
     byAssignee: readonly BlueprintAssigneeGroup[];
     stages: readonly BlueprintStage[];

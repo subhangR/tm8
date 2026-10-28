@@ -85,8 +85,10 @@
     transform: translateY(-4px);
   }
 }
-.tws-scope-pop :focus-visible,
-.tws-reveal :focus-visible {
+/* Text-entry fields are excluded: a caret already marks focus, and an inset
+   brand outline drew a second gold box inside every textarea/input. */
+.tws-scope-pop :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])),
+.tws-reveal :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
 }

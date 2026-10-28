@@ -230,7 +230,11 @@ export class ContainerService {
 
   async start(req: LifecycleRequest): Promise<void> {
     const { record, provider, handle } = await this.resolveRuntime(req.auth, req.containerId);
-    this.assertStatus(record, ['stopped'], 'start');
+    // `provisioning` is where `create { start: false }` leaves a container: the
+    // runtime exists (resolveRuntime has just insisted on a runtimeRef) and has
+    // never run. Refusing it here left such a container with no verb that could
+    // ever start it; `provisioning -> running` is a legal edge (177).
+    this.assertStatus(record, ['stopped', 'provisioning'], 'start');
     await provider.start(handle);
     await this.graph.setContainerStatus(req.auth, {
       containerId: req.containerId,
@@ -320,7 +324,11 @@ export class ContainerService {
       expectedVersion: req.expectedVersion,
       clientMutationId: req.clientMutationId,
     });
-    if (handle) {
+    // `handle` is always an object — resolveRuntime fills `runtimeRef: ''` when
+    // the record has none — so the guard is the ref itself. A record that never
+    // got a runtime (failed before create, `requested`) has nothing to tear
+    // down, and handing a provider an empty ref is asking it to act on nothing.
+    if (record.runtimeRef) {
       // `destroy` is idempotent by contract — a missing runtime is success —
       // so a record whose runtime is already gone still reaches `destroyed`
       // rather than getting stuck in `destroying` forever.
@@ -495,7 +503,11 @@ export class ContainerService {
     }
     for (const row of due) {
       try {
-        const { record, provider, handle } = await this.resolveRuntime(auth, row.containerEntityId);
+        // A destroy needs no runtime: a record that never got one still has to
+        // reach `destroyed`, and refusing it here retried it on every sweep.
+        const { record, provider, handle } = await this.resolveRuntime(auth, row.containerEntityId, {
+          allowMissingRuntime: row.action === 'destroy',
+        });
         if (row.action === 'stop' && handle) {
           // THROUGH `stopping`, never straight to `stopped`. The guard's edge
           // table (177) has no `running -> stopped` edge, so the direct write
@@ -519,7 +531,7 @@ export class ContainerService {
             containerId: row.containerEntityId, status: 'destroying',
             operation: null, clientMutationId: null,
           });
-          await provider.destroy(handle);
+          if (record.runtimeRef) await provider.destroy(handle);
           await this.graph.setContainerStatus(auth, {
             containerId: row.containerEntityId, status: 'destroyed',
             operation: null, clientMutationId: null,
@@ -538,7 +550,6 @@ export class ContainerService {
           observed: row.reason,
           action: row.action,
         });
-        void record;
       } catch (err) {
         this.log?.('container sweep repair failed', {
           containerId: row.containerEntityId, detail: describe(err),

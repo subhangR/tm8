@@ -249,6 +249,423 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
+/* The pinned-only rail's panel top row: Space: <name> ▾ · ⌕ · ▯. */
+.cv2-root .tws-browser .tws-paneltop {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  box-sizing: border-box;
+  /* ON THE PANEL'S OWN SURFACE (Subhang 2026-10-17): no band fill, no
+     hairline — the title is part of the column, not a box above it. It sits
+     a little lower, and its edges are the widget's below: the stack's 10px
+     gutter on both sides. */
+  height: 44px;
+  margin: var(--pn-space-2) 10px 0;
+  padding: 0;
+  background: transparent;
+}
+/* The wordmark's text and the last icon's glyph sit ON the gutter: their
+   hover boxes hang outside it rather than pushing them in. */
+
+.cv2-root .tws-browser .tws-paneltop > .tws-icon-btn:last-child {
+  margin-right: -6px;
+}
+.cv2-root .tws-browser .tws-paneltop .tws-icon-btn {
+  width: var(--tws-band-ctl, 28px);
+  min-width: var(--tws-band-ctl, 28px);
+  height: var(--tws-band-ctl, 28px);
+}
+/* The panel's title is the space switcher (Subhang 2026-10-17): the space's
+   name at title size, its own popover listing every space. It takes what the
+   row leaves after the icons, and the name ellipsises first. */
+.cv2-root .tws-browser .tws-paneltop__space {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  flex: 0 1 auto;
+  min-width: 0;
+  /* "Space: tm8 ▾" reads as ONE line and is ONE hover target (Subhang
+     2026-10-17: inline, no box). The 6px pad gives the hover fill room; the
+     negative margin keeps "Space:" on the widget's left edge. */
+  height: 32px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-paneltop__space:hover,
+.cv2-root .tws-browser .tws-paneltop__space:has(.shell-switcher__trigger[aria-expanded='true']) {
+  background: var(--pn-hover);
+}
+/* The name is plain text: none of the switcher's own box, fill or shadow. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:hover,
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:focus-visible {
+  background: none;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__space {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A ▾ you can see: the label's size, the muted ink. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__caret {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+}
+/* "Space:" — says what the name is: smaller than the name, muted, never
+   truncated. The NAME is the title (Subhang 2026-10-17). */
+.cv2-root .tws-browser .tws-paneltop__label {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+}
+/* The switcher's own wrapper pads 6px over 4px for the header it was built
+   for; here it would sit the name a pixel below the row's centre line. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher {
+  padding: 0;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__space {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cv2-root .tws-browser .tws-paneltop__spacer {
+  flex: 1;
+}
+/* The pinned-only rail's New chat · New task (Subhang 2026-10-18, option B
+   "paper tile", then joined and shrunk): one black-and-white paper tile split
+   into two halves by a hairline. Paper fill, a hairline edge all round and a
+   soft under-shadow; pressed, a half's shadow turns inward and its mark and
+   label sink a pixel. Black and white only — no brass, whatever the style —
+   and the ink flips in the dark theme. */
+.cv2-root .tws-browser .tws-quicknew {
+  --tws-qn-ink: black;
+  --tws-qn-paper: white;
+  --tws-qn-fill: var(--tws-qn-paper);
+  --tws-qn-shade: black;
+  --tws-qn-edge: color-mix(in srgb, var(--tws-qn-ink) 18%, transparent);
+  flex: none;
+  display: flex;
+  margin: var(--pn-space-2) 10px 10px;
+  overflow: hidden;
+  background: var(--tws-qn-fill);
+  border: 1px solid var(--tws-qn-edge);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--tws-qn-ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--tws-qn-shade) 30%, transparent);
+}
+/* Dark: the tile lifts a shade off the panel, and its shadows need more black
+   to read against it. */
+.cv2-root[data-theme='dark'] .tws-browser .tws-quicknew,
+[data-theme='dark'] .cv2-root .tws-browser .tws-quicknew {
+  --tws-qn-ink: white;
+  --tws-qn-paper: black;
+  --tws-qn-fill: color-mix(in srgb, var(--tws-qn-ink) 8%, var(--tws-qn-paper));
+}
+.cv2-root .tws-browser .tws-quicknew__btn {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: transparent;
+  border: 0;
+  color: var(--tws-qn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    box-shadow 120ms ease-out,
+    background-color 120ms ease;
+}
+.cv2-root .tws-browser .tws-quicknew__btn + .tws-quicknew__btn {
+  border-left: 1px solid var(--tws-qn-edge);
+}
+.cv2-root .tws-browser .tws-quicknew__btn:hover:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--tws-qn-ink) 4%, transparent);
+}
+.cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--tws-qn-ink) 6%, transparent);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 22%, transparent);
+}
+.cv2-root[data-theme='dark'] .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']),
+[data-theme='dark'] .cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--tws-qn-paper) 30%, transparent);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 70%, transparent);
+}
+.cv2-root .tws-browser .tws-quicknew__btn > span {
+  transition: transform 120ms ease-out;
+}
+.cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) > span {
+  transform: translateY(1px);
+}
+.cv2-root .tws-browser .tws-quicknew__btn[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.cv2-root .tws-browser .tws-quicknew__glyph {
+  flex: none;
+  display: inline-flex;
+}
+/* The tile's Terminal asks which project folder first: a menu under the
+   tile, outside its clip (the tile hides overflow for its rounded edge). */
+.cv2-root .tws-browser .tws-quicknew-box {
+  position: relative;
+  flex: none;
+}
+.cv2-root .tws-browser .tws-quicknew-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 6px);
+  left: 10px;
+  right: 10px;
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: var(--pn-sh-md);
+}
+.cv2-root .tws-browser .tws-quicknew-menu__heading {
+  margin: 0;
+  padding: 4px 8px 2px;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-tick) var(--pn-ui);
+}
+.cv2-root .tws-browser .tws-quicknew-menu__opt {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--pn-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-quicknew-menu__opt:hover:not([aria-disabled='true']),
+.cv2-root .tws-browser .tws-quicknew-menu__opt:focus-visible {
+  background: var(--pn-hover);
+  outline: none;
+}
+.cv2-root .tws-browser .tws-quicknew-menu__opt[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cv2-root .tws-browser .tws-quicknew-menu__name,
+.cv2-root .tws-browser .tws-quicknew-menu__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .tws-browser .tws-quicknew-menu__hint {
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+}
+/* Inside the tile's clip, so the ring is drawn inward. */
+.cv2-root .tws-browser .tws-quicknew__btn:focus-visible {
+  outline: 2px solid var(--tws-qn-ink);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tws-browser .tws-quicknew__btn,
+  .cv2-root .tws-browser .tws-quicknew__btn > span {
+    transition: none;
+  }
+}
+/* The new box's kind menu shows every row's ＋ at once, not on hover: the
+   column is a "make one of these" door as much as a switcher. A refused row's
+   ＋ stays faint and says why in its tooltip. */
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth {
+  opacity: 0.7;
+}
+.cv2-root .tws-browser .lp__headtools .tch-rootitem:hover .tch-rootopt__birth:not([aria-disabled='true']),
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth:focus-visible {
+  opacity: 1;
+}
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth[aria-disabled='true'] {
+  opacity: 0.3;
+}
+/* The new box at the end of the kind's row: it keeps its own size and sits
+   on the right; the kind name is what ellipsises. */
+.cv2-root .tws-browser .lp__headtools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+/* The kind's row anchors the list-settings popover, so it hangs under the
+   row at the column's width (the popover rule above expects its row to be
+   the containing block). */
+.cv2-root .tws-browser .lp__head--stack,
+.cv2-root .tws-browser .lp__head {
+  position: relative;
+}
+/* (The default layout's one-row head anchors the funnel and the `⋯` the same
+   way; without it both popovers hung off `.tws-root`, below the viewport.) */
+/* The pinned-only rail's status words sit closer (4px apart, no side pad,
+   not 12px + 2px) so they keep fitting in a narrower column before the row
+   falls back to marks (Subhang 2026-10-17: "threshold even lower"). */
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) {
+  gap: 0;
+}
+/* EVEN SPACING, WITH A DIVIDER (Subhang 2026-10-17: "improve spacing between
+   the statuses"). Each status is its own padded segment and a hairline sits
+   between neighbours, so "Running 8 | Interrupted 30" reads as separate
+   choices rather than one run of words and numbers. */
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) .lp__tab {
+  padding: 0 var(--pn-space-2);
+  gap: 5px;
+}
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) .lp__tab:first-child {
+  padding-left: 0;
+}
+/* An alerting count (sessions' Interrupted) is WHITE on its red pill in both
+   themes — the column's muted count ink must not reach it. */
+.cv2-root .tws-browser .lp__tab .lp__tab-count--alert {
+  color: white;
+}
+/* Status tabs as marks when the column is too narrow for their words: each
+   tab is its status mark and its count, the row shares the width evenly. */
+.cv2-root .tws-browser .lp__tierrow[data-marks] {
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+/* Equal cells, each mark and count centred in its own: the gap between any
+   two statuses is then the same whatever their counts' widths. Scoped under
+   `[data-marks]` so the column's later `.lp__tab { flex: none }` cannot undo
+   it — which it did, packing the marks left and leaving the slack at the end. */
+.cv2-root .tws-browser .lp__tierrow[data-marks] .lp__tab--mark {
+  flex: 1 1 0;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 var(--pn-space-1);
+}
+/* The hairline between statuses, for both layouts: inset top and bottom so
+   it reads as a separator, not a cell border, and never beside the first. */
+.cv2-root .tws-browser .lp__tierrow .lp__tab + .lp__tab {
+  position: relative;
+}
+.cv2-root .tws-browser .lp__tierrow .lp__tab + .lp__tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--pn-line-2);
+}
+.cv2-root .tws-browser .lp__tab--mark .lp__tab-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+/* "not counted yet" on a link switch the server cannot fill: muted, at the
+   row's end, so the switch reads as real but honest. */
+.cv2-root .tws-browser .lp__opthint {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
+/* Group by (pinned-only rail): a quiet heading over each group's rows, on
+   the stack's 10px gutter — the name, then the count of rows on screen. */
+.cv2-root .tws-browser .lp__grouphead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: var(--pn-space-3) 10px var(--pn-space-1);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cv2-root .tws-browser .lp__group:first-child .lp__grouphead {
+  margin-top: var(--pn-space-1);
+}
+.cv2-root .tws-browser .lp__groupcount {
+  font-family: var(--pn-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--pn-ink-4);
+}
+/* The pinned-only rail's search line: the full search bar (28 high, one
+   focus ring on the wrapper, as the old toolbar row's), then the funnel and
+   the ⋯, on the stack's 10px gutter. */
+.cv2-root .tws-browser .lp__searchline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: var(--pn-space-1) 10px 0;
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--pn-space-2);
+  gap: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchinput,
+.cv2-root .tws-browser .lp__searchline .lp__searchinput:focus,
+.cv2-root .tws-browser .lp__searchline .lp__searchinput:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchinput::placeholder {
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow-glyph {
+  color: var(--pn-ink-3);
+}
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;
   margin: 0;
@@ -411,7 +828,8 @@
   min-width: 0;
 }
 
-/* The funnel: 28×28, borderless, a 16px icon in --pn-ink-3. */
+/* The funnel: 24×24, borderless, a 14px icon in --pn-ink-3 (Subhang
+   2026-10-18: the 28px box and 16px icon read too big beside the kind name). */
 .cv2-root .tws-browser .lp__filterbar--merged {
   flex: none;
   position: static;
@@ -419,9 +837,9 @@
 .cv2-root .tws-browser .lp__funnel {
   position: relative;
   box-sizing: border-box;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   padding: 0;
   justify-content: center;
   border: 0;
@@ -431,29 +849,23 @@
   box-shadow: none;
 }
 .cv2-root .tws-browser .lp__funnel svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 .cv2-root .tws-browser .lp__funnel:hover,
 .cv2-root .tws-browser .lp__funnel[aria-expanded='true'] {
   background: var(--pn-hover);
 }
-/* Anything not at its default: brand-soft fill, brand-2 icon, and the count. */
+/* Anything not at its default: ONLY the icon takes the accent — no fill, no
+   glow, no count. The count still rides the button's aria-label. */
 .cv2-root .tws-browser .lp__funnel:has(.lp__chip-count) {
-  background: var(--pn-brand-soft);
   color: var(--pn-brand-2);
 }
+.cv2-root .tws-browser .lp__funnel:has(.lp__chip-count):not(:hover, [aria-expanded='true']) {
+  background: transparent;
+}
 .cv2-root .tws-browser .lp__funnel .lp__chip-count {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  background: var(--pn-brand-2);
-  color: var(--pn-card);
+  display: none;
 }
 .cv2-root .tws-browser .lp__funnel:focus-visible {
   outline: 2px solid var(--pn-brand);

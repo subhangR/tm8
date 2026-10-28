@@ -24,7 +24,7 @@ import type {
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { sha256Hex, UploadCancelledError } from '../files/upload';
+import { randomMutationId, sha256Hex, UploadCancelledError } from '../files/upload';
 
 export interface FolderImportOutcome {
   projectName: string;
@@ -133,7 +133,7 @@ export function startFolderImport(
     destinationParent: destinationParentOverride,
     trust,
     concurrency = 3,
-    newMutationId = () => crypto.randomUUID(),
+    newMutationId = randomMutationId,
     checksum = sha256Hex,
   } = deps;
 

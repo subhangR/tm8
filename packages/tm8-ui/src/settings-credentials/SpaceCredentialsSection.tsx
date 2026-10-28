@@ -54,6 +54,9 @@ import {
   canClaim,
   canLaunchSentence,
   canPollSentence,
+  seedingReasonWord,
+  seedingSentence,
+  seedingUseWord,
   launchReasonWord,
   canManage,
   canMyDefault,
@@ -94,13 +97,19 @@ export interface SpaceCredentialsSectionProps {
    * there; this screen keeps create, add and policy. Absent, no row offers it.
    */
   onOpen?: (credentialId: string) => void;
+  /**
+   * The phone's arrangement (mockup 01a14cc4, tagged "status"): readiness and
+   * each credential's state, with no add, login, share, policy or per-row
+   * verb. Those are desktop work, and the section says so.
+   */
+  statusOnly?: boolean;
 }
 
 function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen }: SpaceCredentialsSectionProps) {
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen, statusOnly = false }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
@@ -157,6 +166,37 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 
   const groups = groupByProvider(rows ?? []);
 
+  if (statusOnly) {
+    return (
+      <SectionFrame title={heading}>
+        <div className="set-spc set-spc--status" data-testid="space-credentials" data-status-only="true">
+          <p className="set-spc__lede">
+            A launch reads yours, then the space&apos;s, then the node&apos;s. Status only on a phone:
+            adding keys, logging in, sharing and policy are on desktop.
+          </p>
+          <ReadinessPanel readiness={readiness} error={readinessError} statusOnly />
+          {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
+          {rows !== null
+            ? SPACE_STORED_PROVIDERS.map((provider) => (
+                <section key={provider} className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={SPACE_PROVIDER_NAME[provider]}>
+                  <h4 className="set-spc__group-title">{SPACE_PROVIDER_NAME[provider]}</h4>
+                  {groups[provider].length === 0 ? (
+                    <p className="set-spc__muted" data-testid={`space-cred-empty-${provider}`}>
+                      No {SPACE_PROVIDER_NAME[provider]} credential in this space yet.
+                    </p>
+                  ) : (
+                    <ul className="set-spc__list">
+                      {groups[provider].map((row) => <CredentialStatusRow key={row.id} row={row} viewer={viewer} />)}
+                    </ul>
+                  )}
+                </section>
+              ))
+            : null}
+        </div>
+      </SectionFrame>
+    );
+  }
+
   return (
     <SectionFrame title={heading}>
       <div className="set-spc" data-testid="space-credentials">
@@ -199,11 +239,13 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 }
 
 /**
- * S7 readiness: two thresholds, each with its own sentence. The connect action
+ * S7 readiness: two thresholds, each with its own sentence, plus S7b's seeding
+ * block — the release-2 gate over the providers THIS SPACE uses (a space
+ * answer, not the viewer's). The connect action
  * takes the member to that provider's group, where adding a key or logging in
  * lives. Nothing here disables anything.
  */
-function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadinessView | null; error: string | null }) {
+function ReadinessPanel({ readiness, error, statusOnly = false }: { readiness: CredentialsSpaceReadinessView | null; error: string | null; statusOnly?: boolean }) {
   if (error) {
     return (
       <div className="set-spc__readiness" data-testid="space-cred-readiness-error" role="status">
@@ -217,11 +259,12 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
     group?.scrollIntoView?.({ block: 'start' });
     group?.focus();
   };
-  const connect = (provider: SpaceCredentialProviderName) => (
+  /* Status only: the connect jump lands on add/login controls that are not drawn. */
+  const connect = (provider: SpaceCredentialProviderName, testId = `space-cred-readiness-connect-${provider}`) => statusOnly ? null : (
     <button
       type="button"
       className="set-spc__readiness-connect"
-      data-testid={`space-cred-readiness-connect-${provider}`}
+      data-testid={testId}
       onClick={() => goTo(provider)}
     >
       Connect {SPACE_PROVIDER_NAME[provider]}
@@ -258,6 +301,31 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
             {readiness.canPoll.missing.map((provider) => (
               <li key={provider} data-testid={`space-cred-readiness-missing-poll-${provider}`}>
                 <span>{SPACE_PROVIDER_NAME[provider]}: a credential this space owns, shared with every member</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div
+        className={`set-spc__threshold ${readiness.seeding.state === 'red' ? 'is-missing' : 'is-ready'}`}
+        data-testid="space-cred-readiness-seeding"
+        data-state={readiness.seeding.state}
+      >
+        <p className="set-spc__threshold-head">Seeding for release 2</p>
+        <p>{seedingSentence(readiness)}</p>
+        {readiness.seeding.state !== 'idle' && readiness.seeding.usedProviders.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.seeding.usedProviders.map((provider) => (
+              <li
+                key={provider}
+                data-testid={`space-cred-readiness-seeding-${provider}`}
+                data-ready={readiness.seeding.providers[provider]?.ready ? 'true' : 'false'}
+              >
+                <span>
+                  {SPACE_PROVIDER_NAME[provider]} (used for {seedingUseWord(readiness, provider)}):{' '}
+                  {seedingReasonWord(readiness, provider) ?? 'seeded'}
+                </span>
+                {readiness.seeding.providers[provider]?.ready ? null : <> {connect(provider, `space-cred-readiness-seeding-connect-${provider}`)}</>}
               </li>
             ))}
           </ul>
@@ -452,6 +520,29 @@ function ProviderGroup({
   );
 }
 
+/** One credential's state and nothing to act on: the phone's status row. */
+function CredentialStatusRow({ row, viewer }: { row: SpaceCredentialView; viewer: SpaceCredentialsViewer | null }) {
+  const statusWord = row.status === 'stale' ? 'failed its last check' : row.status === 'pending' ? 'login not finished' : 'active';
+  const visibility = visibilityWord(row);
+  const sharedWithMe = isSharedWithMe(row, viewer);
+  return (
+    <li className={`set-spc__row set-spc__row--${row.status}`} data-testid={`space-cred-row-${row.id}`}>
+      <div className="set-spc__row-head">
+        <span className="set-spc__label">{row.label}</span>
+        {row.isDefault ? <span className="set-spc__badge set-spc__badge--default">default</span> : null}
+        {visibility ? <span className={`set-spc__badge set-spc__badge--${visibility}`}>{visibility}</span> : null}
+        {sharedWithMe ? <span className="set-spc__badge set-spc__badge--shared">shared with you</span> : null}
+        <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
+      </div>
+      <div className="set-spc__meta">
+        <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
+        {row.keyHint ? <span>ends …{row.keyHint}</span> : null}
+        <span>last used {formatWhen(row.lastUsedAt)}</span>
+      </div>
+    </li>
+  );
+}
+
 function CredentialRow({
   row,
   allRows,
@@ -483,7 +574,7 @@ function CredentialRow({
   const sharesVisible = canSeeShares(row, viewer);
   const sharedWithMe = isSharedWithMe(row, viewer);
   const [sharesOpen, setSharesOpen] = useState(false);
-  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private'>('idle');
+  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private' | 'confirm-public'>('idle');
   const [usage, setUsage] = useState<CredentialsSpaceUsageView | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'probe' | 'plain'>(null);
@@ -564,7 +655,7 @@ function CredentialRow({
           ) : null}
           {owner && row.visibility === 'private' ? (
             <button type="button" className="cred-action" aria-label={`Make public ${row.label}`} disabled={busy !== null}
-              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              onClick={() => { setFailure(null); setMode(mode === 'confirm-public' ? 'idle' : 'confirm-public'); }}>
               Make public
             </button>
           ) : null}
@@ -620,6 +711,24 @@ function CredentialRow({
               {usage ? 'Hide usage' : 'Usage'}
             </button>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* #883 F4: one click used to expose the owner's login and hint and let
+          every member launch as the owner's identity; it now asks first. */}
+      {owner && mode === 'confirm-public' ? (
+        <div className="set-spc__confirm" data-testid={`space-cred-public-confirm-${row.id}`}>
+          <p className="set-spc__warn">
+            Every member of this space will be able to launch with it{row.displayLogin ? `, signed in as ${row.displayLogin}` : ''}, and will see
+            {row.displayLogin ? ' that login and' : ''} its key hint.
+          </p>
+          <div className="cred-card__actions">
+            <button type="button" className="cred-action cred-action--primary" aria-label={`Confirm make public ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              Make public
+            </button>
+            <button type="button" className="cred-action" aria-label={`Keep private ${row.label}`} onClick={() => setMode('idle')}>Keep private</button>
+          </div>
         </div>
       ) : null}
 

@@ -30,6 +30,10 @@ const EXEMPT: Readonly<Record<string, string>> = {
   // space. They read one artifact and its files under RLS, never a
   // credential, and the capability is not an auth session with a link.
   'http/artifact-preview.ts': 'capability viewer claims; no credential read',
+  // 332: the portable-history read is rebuilt from the chat turn's frozen human
+  // author (chats are human-only; a link-bound caller cannot claim a turn) and
+  // reads only that chat's messages and parts, never a credential.
+  'chat/fenced-turn.ts': 'frozen human turn author; reads chat history only',
 };
 
 function sourceFiles(dir: string): string[] {
@@ -49,6 +53,9 @@ describe('via_link claim forwarding (256, W7p)', () => {
   it('names the exact set of files that set the space pin', () => {
     // A new builder lands here first, so it is looked at rather than passed.
     expect(builders).toEqual([
+      // Generation launch checks reconstruct runtime claims from the verified bearer read.
+      'chat/fenced-turn.ts',
+      'chat/harness-composition.ts',
       'facade/context.ts',
       // #884: the invoke executor pins the inner link identity to the link's
       // target in every mode, beside the viaLinkId it already sets.

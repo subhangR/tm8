@@ -103,7 +103,7 @@ function PhoneHost({ port }: { port: ChatHomePort }) {
   );
 }
 
-const GREETING = /New conversation — pick a mode/;
+const GREETING = /Ask anything\. The agent works with your graph/;
 
 describe('a new conversation the viewer opened survives the space being busy', () => {
   /**

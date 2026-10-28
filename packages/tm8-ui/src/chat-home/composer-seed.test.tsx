@@ -27,12 +27,12 @@ const draftOf = (view: ReturnType<typeof render>) =>
   (view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).value;
 
 describe('composer seed (host hook)', () => {
-  it('without a seed or a pin, the composer is exactly as before: empty draft, mode chip present', async () => {
+  it('without a seed or a pin, the composer is exactly as before: empty draft, ⚙ mode chip present', async () => {
     const { port } = createChatHomeFixturePort();
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
     await waitFor(() => view.getByLabelText('Message the chat agent'));
     expect(draftOf(view)).toBe('');
-    expect(view.getByTestId('tch-mode')).toBeTruthy();
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
   });
 
   it('appends once per nonce, after what the viewer typed, and never on a re-render', async () => {
@@ -80,7 +80,7 @@ describe('new-chat settings seed (entity chat §3.4)', () => {
       />,
     );
     await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Opus 5.5'));
-    expect(view.getByTestId('tch-mode').getAttribute('title')).toBe('plan');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('plan');
     await waitFor(() => expect(document.activeElement).toBe(view.getByLabelText('Message the chat agent')));
   });
 

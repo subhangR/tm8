@@ -163,6 +163,8 @@ describe('the block vocabulary is the registry seam', () => {
       'live-sessions',
       'unlink-footer',
       'notice',
+      'git-status',
+      'work-list',
     ]);
   });
 
@@ -178,15 +180,15 @@ describe('trust is a THREE-state fact', () => {
     const { getByTestId } = renderBody({ resource: resource() });
     const card = getByTestId('governed-trust');
     expect(card.getAttribute('data-trust')).toBe('trusted');
-    expect(card.textContent).toContain('Agents may run real terminal sessions in this root');
-    expect(card.textContent).toContain('Untrusting terminates nothing but blocks new runs');
+    expect(card.textContent).toContain('Agents run in this folder without asking first');
+    expect(card.textContent).toContain('Untrusting stops nothing');
   });
 
   it('states the consequence THE OTHER WAY on an untrusted root', () => {
     const { getByTestId } = renderBody({ resource: resource({ trust: 'untrusted' }) });
     const card = getByTestId('governed-trust');
     expect(card.getAttribute('data-trust')).toBe('untrusted');
-    expect(card.textContent).toContain('Agents cannot start terminal sessions in this root');
+    expect(card.textContent).toContain('asks for confirmation first');
   });
 
   it('renders HOLLOW — never "untrusted" — when no node record was read', () => {
@@ -201,7 +203,7 @@ describe('trust is a THREE-state fact', () => {
      */
     expect(within(hollow).queryByText('untrusted')).toBeNull();
     expect(within(hollow).queryByText('trusted')).toBeNull();
-    expect(hollow.textContent).toContain('neither answer is claimed');
+    expect(hollow.textContent).toContain('never shown as untrusted');
   });
 
   it('takes the Untrust reason from the ACTION REGISTRY, not from a local string', () => {
@@ -235,7 +237,7 @@ describe('the execution root row', () => {
 
   it('renders the path HOLLOW with its reason when no record was read', () => {
     const { getByTestId } = renderBody();
-    expect(getByTestId('governed-path-hollow').textContent).toContain('execution root');
+    expect(getByTestId('governed-path-hollow').textContent).toContain('Folder not loaded');
   });
 
   it('renders the repo line from the record, with a real external link', () => {

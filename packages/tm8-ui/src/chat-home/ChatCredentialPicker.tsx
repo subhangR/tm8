@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatCredentialSelection, EntityId, SpaceId } from '@tm8/contract';
 import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
 import type { ChatHomePort } from './types';
+import { PickRow } from './composer/MenuRows';
 
 export function credentialValue(selection: ChatCredentialSelection): string {
   return selection.credentialId ? `space:${selection.credentialId}` : selection.source;
@@ -12,9 +13,12 @@ export function credentialSelection(value: string): ChatCredentialSelection {
     : { source: value as ChatCredentialSelection['source'] };
 }
 
-export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled, backendKeyOnly }: {
+export function ChatCredentialPicker({ port, spaceId, model, value, onChange, disabled, backendKeyOnly, inline = false }: {
   port: ChatHomePort; spaceId: SpaceId | string; value: ChatCredentialSelection;
+  model?: string;
   onChange: (selection: ChatCredentialSelection) => void; disabled: boolean; backendKeyOnly: boolean;
+  /** A labelled native select, for a host that is itself a popover (the composer's settings). */
+  inline?: boolean;
 }) {
   const portRef = useRef(port); portRef.current = port;
   const [credentials, setCredentials] = useState<readonly { id: string; label: string }[]>([]);
@@ -24,7 +28,7 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
     setCredentials([]);
     setNote(null);
     const load = () => {
-      void portRef.current.credentialOptions?.(spaceId).then(
+      void portRef.current.credentialOptions?.(spaceId, model).then(
         rows => { if (live) { setCredentials(rows); setNote(null); } },
         () => { if (live) setNote('Could not read space credentials. You can retry by reopening this chat.'); },
       );
@@ -32,7 +36,7 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
     load();
     window.addEventListener('focus', load);
     return () => { live = false; window.removeEventListener('focus', load); };
-  }, [spaceId]);
+  }, [spaceId, model]);
   const reason = backendKeyOnly ? 'This model requires your own connected provider key' : undefined;
   const options: ComposerSelectOption[] = [
     { id: 'auto', label: 'Auto', hint: 'Your default → connected login → space default → allowed server login' },
@@ -45,8 +49,20 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
   if (value.credentialId && !credentials.some(row => row.id === value.credentialId)) {
     options.push({ id: credentialValue(value), label: 'Selected space credential', disabledReason: 'Unavailable or no longer accessible' });
   }
+  if (inline) {
+    return (
+      <PickRow label="Credentials" ariaLabel="Chat credentials" testId="tch-credentials"
+        choices={options.map(option => ({
+          id: option.id, label: option.label,
+          ...(option.hint ? { hint: option.hint } : {}),
+          ...(option.disabledReason ? { disabledReason: option.disabledReason } : {}),
+        }))}
+        value={credentialValue(value)} onPick={next => onChange(credentialSelection(next))}
+        disabledReason={disabled ? 'credentials cannot change right now' : null} />
+    );
+  }
   return <ComposerSelect label="Chat credentials" testId="tch-credentials" options={options}
     value={credentialValue(value)} onChange={next => onChange(credentialSelection(next))}
     disabled={disabled} emptyNote="No credentials available."
-    note={note ?? 'Changes apply to the next turn. Switching accounts may reset model context; saved messages remain.'} tall />;
+    note={note ?? 'Changes apply to the next turn. The conversation carries across models and accounts.'} tall />;
 }

@@ -126,12 +126,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // being asserted independently of it.
     // The View switcher (task 01a0dc6d, 2026-09-26): the four VIEWS lead the
     // row inside one pill, and Craft/Settings/Help follow as plain tabs.
+    // Home (the `chats` group) left the row with the Home dashboard: its
+    // `dashboard` view now lands in the workspace on every desktop.
     expect(labels).toEqual([
-      'Home', 'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
+      'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim()))
-      .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
+      .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came
@@ -394,7 +396,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
       await waitFor(() => view.getByTestId('workspace-grid'));
       const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
       expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
-        .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
+        .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
       fireEvent.change(select, { target: { value: 'graph' } });
       await waitFor(() => view.getByTestId('graph-screen'));
@@ -605,13 +607,13 @@ describe('detail screens keep what you were looking at', () => {
     const openedText = await settled();
     expect(openedText.length).toBeGreaterThan(0);
 
-    // LEAVE — Home is a different branch of GateApp's view ternary, so
+    // LEAVE — Work is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
-    // selection, and the assertion below is that it no longer does. The Home
+    // selection, and the assertion below is that it no longer does. The Work
     // TAB is the door now that the rail is gone; it is the same branch either
-    // way.
+    // way. (The mode was labelled "Home" until the Home dashboard was removed.)
     fireEvent.click(within(view.getByRole('tablist', { name: 'Screens' }))
-      .getByRole('tab', { name: 'Home' }));
+      .getByRole('tab', { name: 'Work' }));
     await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
 
     // COME BACK.

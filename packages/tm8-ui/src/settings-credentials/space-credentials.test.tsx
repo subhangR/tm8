@@ -43,6 +43,7 @@ import {
   canClaim,
   canLaunchSentence,
   canPollSentence,
+  seedingSentence,
   canManage,
   canMyDefault,
   canRevoke,
@@ -118,6 +119,7 @@ function readinessView(opts: {
   launchMissing?: Partial<Record<Provider, 'no_credential' | 'stale' | 'policy_excludes_space'>>;
   poll?: boolean;
   pollReason?: 'no_space_owned_credential' | 'stale';
+  seeding?: CredentialsSpaceReadinessView['seeding'];
 } = {}): CredentialsSpaceReadinessView {
   const missingOf = opts.launchMissing ?? {};
   const entry = (p: Provider) => {
@@ -137,8 +139,23 @@ function readinessView(opts: {
       ready: poll, missing: poll ? [] : ['github'], credentialId: poll ? 'c-gh' : null,
       activeSpaceOwnedCredentials: poll ? 1 : 0, reason: poll ? null : opts.pollReason ?? 'no_space_owned_credential',
     },
+    seeding: opts.seeding ?? {
+      window: '30 days', agentSessions: 0, sessionsWithoutRecord: 0, githubProjects: 0,
+      usedProviders: [], providers: {}, missing: [], state: 'idle', readyForCut: true,
+    },
   };
 }
+
+/** S7b: a claude-with-git space (anthropic + github used, openai never), github also polled. */
+const CLAUDE_SEEDING: CredentialsSpaceReadinessView['seeding'] = {
+  window: '30 days', agentSessions: 7, sessionsWithoutRecord: 0, githubProjects: 1,
+  usedProviders: ['anthropic', 'github'],
+  providers: {
+    anthropic: { ready: true, needs: ['launch'], launchReason: null, pollReason: null, reason: null },
+    github: { ready: false, needs: ['launch', 'poll'], launchReason: null, pollReason: 'no_space_owned_credential', reason: 'no_space_owned_credential' },
+  },
+  missing: ['github'], state: 'red', readyForCut: false,
+};
 
 function fakePort(opts: {
   viewer?: SpaceCredentialsViewer;
@@ -1108,6 +1125,7 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     const port = fakePort({ rows: ROWS, viewer: shared });
     await mount(port);
     fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm make public My private' }));
     await screen.findByText('“My private” is public: every member can launch with it.');
     expect(port.setVisibility).toHaveBeenCalledWith('c-priv', 'public');
     fireEvent.click(screen.getByRole('button', { name: 'Allow as space default My public' }));
@@ -1121,11 +1139,24 @@ describe('W10d — owner, visibility, claim, my default, usage (doc 13 §7)', ()
     expect(port.clearMyDefault).toHaveBeenCalledWith('anthropic');
   });
 
+  it('#883 F4: make public asks first — the first click changes nothing, Keep private cancels', async () => {
+    const port = fakePort({ rows: ROWS, viewer: shared });
+    await mount(port);
+    fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    const confirm = await screen.findByTestId('space-cred-public-confirm-c-priv');
+    expect(confirm.textContent).toContain('Every member of this space will be able to launch with it');
+    expect(port.setVisibility).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep private My private' }));
+    expect(screen.queryByTestId('space-cred-public-confirm-c-priv')).toBeNull();
+    expect(port.setVisibility).not.toHaveBeenCalled();
+  });
+
   it('a refused visibility change shows the server reason', async () => {
     const port = fakePort({ rows: ROWS, viewer: shared });
     port.setVisibility.mockRejectedValueOnce(new CollabError('forbidden', 'only the owner can change who may use this credential'));
     await mount(port);
     fireEvent.click(screen.getByRole('button', { name: 'Make public My private' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm make public My private' }));
     expect((await screen.findByTestId('space-cred-failure-refused')).textContent).toBe('Refused: only the owner can change who may use this credential');
   });
 
@@ -1210,6 +1241,32 @@ describe('S7 readiness — two thresholds, never one tick', () => {
     await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) }));
     fireEvent.click(await screen.findByTestId('space-cred-readiness-connect-openai'));
     expect(document.activeElement).toBe(screen.getByTestId('space-cred-group-openai'));
+  });
+
+  it('S7b seeding: names the providers THIS space uses and which are missing; openai, never used, is not listed', async () => {
+    await mount(fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' }, poll: false, seeding: CLAUDE_SEEDING }) }));
+    const seeding = await screen.findByTestId('space-cred-readiness-seeding');
+    expect(seeding.getAttribute('data-state')).toBe('red');
+    expect(seeding.textContent).toContain('This space uses Claude (Anthropic) and GitHub');
+    expect(seeding.textContent).toContain('Not seeded yet: GitHub');
+    expect(within(seeding).getByTestId('space-cred-readiness-seeding-anthropic').getAttribute('data-ready')).toBe('true');
+    const github = within(seeding).getByTestId('space-cred-readiness-seeding-github');
+    expect(github.textContent).toContain('used for launches and tracking');
+    expect(github.textContent).toContain('no GitHub credential this space owns');
+    expect(within(seeding).getByTestId('space-cred-readiness-seeding-connect-github')).toBeTruthy();
+    expect(within(seeding).queryByTestId('space-cred-readiness-seeding-openai')).toBeNull();
+    expect(within(seeding).queryByTestId('space-cred-readiness-seeding-connect-anthropic')).toBeNull();
+  });
+
+  it('S7b seeding: green once every used provider is seeded; an idle space says it does not hold up release 2', async () => {
+    const green = { ...CLAUDE_SEEDING, missing: [], state: 'green' as const, readyForCut: true,
+      providers: { ...CLAUDE_SEEDING.providers, github: { ...CLAUDE_SEEDING.providers.github!, ready: true, pollReason: null, reason: null } } };
+    expect(seedingSentence(readinessView({ seeding: green }))).toContain('every one has a space credential. Ready for release 2');
+    expect(seedingSentence(readinessView())).toContain('does not hold up release 2');
+    await mount(fakePort({ readiness: readinessView() }));
+    const seeding = await screen.findByTestId('space-cred-readiness-seeding');
+    expect(seeding.getAttribute('data-state')).toBe('idle');
+    expect(within(seeding).queryAllByRole('listitem')).toHaveLength(0);
   });
 
   it('an unreadable readiness says so and never hides the list', async () => {
@@ -1431,5 +1488,23 @@ describe('992 — share a private credential with one member', () => {
     fireEvent.change(screen.getByLabelText('Member to share My private with'), { target: { value: 'm-harish' } });
     fireEvent.click(screen.getByRole('button', { name: 'Share My private' }));
     await screen.findByText(/not an active member of this space/);
+  });
+});
+
+describe('Space credentials — status only (the phone, mockup 01a14cc4)', () => {
+  it('shows readiness and each credential’s state, with no control that writes', async () => {
+    const onOpen = vi.fn();
+    render(<SpaceCredentialsSection port={fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) })} onOpen={onOpen} statusOnly />);
+    const section = await screen.findByTestId('space-credentials');
+    await screen.findByTestId('space-cred-group-anthropic');
+    await act(async () => {});
+    expect(section.getAttribute('data-status-only')).toBe('true');
+    expect(screen.getByTestId(`space-cred-row-${MINE_DEFAULT.id}`).textContent).toContain('Team Claude');
+    expect(screen.getByTestId(`space-cred-row-${THEIRS.id}`).textContent).toContain('failed its last check');
+    expect(screen.getByTestId('space-cred-readiness-missing-launch-openai')).toBeTruthy();
+    // Nothing to press and nothing to type: adding, login, sharing, policy and
+    // the per-row panel are desktop work.
+    expect(section.querySelectorAll('button')).toHaveLength(0);
+    expect(section.querySelectorAll('input, select, textarea')).toHaveLength(0);
   });
 });

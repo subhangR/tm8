@@ -11,6 +11,8 @@ import { DESIGN_KIND, designContentOf, designStateOf } from '../domain';
 export interface CraftCard {
   id: EntityId;
   title: string;
+  /** The craft's version, for a rename's `expectedVersion`. */
+  version: number;
   /** The kinds of the craft's pages, IN PAGE ORDER (one per page). Empty until read. */
   pageKinds: readonly string[];
   pageCount: number;
@@ -26,6 +28,8 @@ export interface CraftsSource {
   list(): Promise<CraftCard[]>;
   /** Create an empty craft and resolve its id. */
   create(title: string): Promise<EntityId>;
+  /** Rename a craft (the entity's title), at the version the card was read at. */
+  rename(id: EntityId, title: string, expectedVersion: number): Promise<void>;
   /** Call back when the list may have changed. Returns the unsubscribe. */
   subscribe(onChange: () => void): () => void;
 }
@@ -43,6 +47,7 @@ export function cardOfSummary(summary: EntitySummary, chatCount = 0): CraftCard 
   return {
     id: summary.id,
     title: summary.title,
+    version: summary.version,
     pageKinds: designStateOf(summary)?.pageKinds ?? [],
     pageCount: designStateOf(summary)?.pageCount ?? 0,
     chatCount,
@@ -109,6 +114,9 @@ export function craftsSourceFromSeam(seam: Seam, spaceId: SpaceId): CraftsSource
       if (!id) throw new Error('The craft was not created.');
       return id;
     },
+    async rename(id, title, expectedVersion) {
+      await seam.commands.patchEntity(id, { clientMutationId: cmid('rename'), expectedVersion, title });
+    },
     subscribe(onChange) {
       return seam.onEvent((event) => {
         if (event.type !== 'entity.upsert' && event.type !== 'entity.deleted') return;
@@ -132,6 +140,7 @@ export interface FixtureCraft {
   chatCount?: number;
   activityAt?: string;
   running?: boolean;
+  version?: number;
 }
 
 export function fixtureCraftsSource(seed: readonly FixtureCraft[] = []): CraftsSource & {
@@ -147,6 +156,7 @@ export function fixtureCraftsSource(seed: readonly FixtureCraft[] = []): CraftsS
       return crafts.filter((craft) => !nested.has(craft.id)).map((craft) => ({
         id: craft.id,
         title: craft.title,
+        version: craft.version ?? 1,
         pageKinds: craft.pages.map((page) => page.kind),
         pageCount: craft.pages.length,
         chatCount: craft.chatCount ?? 0,
@@ -159,6 +169,13 @@ export function fixtureCraftsSource(seed: readonly FixtureCraft[] = []): CraftsS
       crafts.unshift({ id, title, pages: [], activityAt: new Date().toISOString() });
       for (const listener of listeners) listener();
       return id;
+    },
+    async rename(id, title) {
+      const at = crafts.findIndex((craft) => craft.id === id);
+      const craft = crafts[at];
+      if (!craft) throw Object.assign(new Error('No such craft.'), { code: 'not_found' });
+      crafts[at] = { ...craft, title, version: (craft.version ?? 1) + 1 };
+      for (const listener of listeners) listener();
     },
     subscribe(onChange) {
       listeners.add(onChange);

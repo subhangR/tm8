@@ -92,6 +92,27 @@ export function dayStart(value: string | number | Date | null | undefined): numb
   return t === null ? null : new Date(t).setHours(0, 0, 0, 0);
 }
 
+/**
+ * The phone list's trailing time (t-lists): 'now', '4m', '2h', 'yesterday',
+ * 'Tue', then `shortDate`. Tighter than `relTime` on purpose — it sits
+ * `flex: none` beside a title that gives up its space first, so every
+ * character here is one the title loses at 360px.
+ */
+export function listTime(value: string | number | Date | null | undefined, now: number = Date.now()): string {
+  const t = parseInstant(value);
+  if (t === null) return '';
+  const delta = now - t;
+  if (delta < 60_000) return 'now';
+  const minutes = Math.floor(delta / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const today = new Date(now).setHours(0, 0, 0, 0);
+  if (t >= today) return `${Math.floor(minutes / 60)}h`;
+  const day = 86_400_000;
+  if (t >= today - day) return 'yesterday';
+  if (t >= today - 6 * day) return dateFormat({ weekday: 'short' }, t);
+  return shortDate(t, now);
+}
+
 /** 'Mon 12 Aug' — the compact weekday form day markers and datelines use. */
 export function weekdayDate(value: string | number | Date | null | undefined): string {
   const t = parseInstant(value);

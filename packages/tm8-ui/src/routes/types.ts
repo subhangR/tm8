@@ -16,7 +16,7 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  * (add, rotate, sign in, remove) live in those sections and nowhere else.
  */
 export const SETTINGS_ROUTE_SECTIONS = [
-  'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
+  'overview', 'projects', 'menu', 'connectors', 'credentials', 'mcp-tokens', 'configs', 'space-credentials', 'space-links',
   'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
   'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
   'node-credentials', 'filesystem-access',
@@ -103,6 +103,21 @@ export interface QValue {
   filters?: QueryFilter;
   sortBy?: SortKey;
   groupBy?: GroupByKey;
+  /**
+   * The phone list's narrowing, as the CHOICES the reader made rather than the
+   * filter they compile to: `cat` is a status-tab id (or `all` / `open`), `on`
+   * is `specId:optionId` pairs from the kind's own `list.filters`. Kept as
+   * choices because a filter cannot be read back into which boxes were ticked
+   * (a tab and an archived option both write `deleted`). Additive: a build
+   * that does not know `pick` ignores it and keeps `filters`/`sortBy`.
+   */
+  pick?: ListPick;
+}
+
+/** See `QValue.pick`. */
+export interface ListPick {
+  cat?: string;
+  on?: readonly string[];
 }
 
 /**

@@ -5,6 +5,7 @@
  * tab's scroll lands on its record before the body unmounts. Workstream E.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createKeptChatStore, KeptChatProvider } from '../../chat-home/keptChatSurface';
 import { DraftHost } from '../adapters/draft';
 import { ProjectFileTab } from '../adapters/projectFile';
 import {
@@ -16,6 +17,7 @@ import {
 } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import { getKind } from '../../domain';
+import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { activeTab } from '../runtime/selectors';
 import type { EntityTabRecord, TabId } from '../runtime/types';
@@ -57,6 +59,20 @@ export function ContentHost() {
     host.focus({ preventScroll: true });
   }, [tabId]);
 
+  /* The new-chat screen a draft tab hands over, so its bind to the chat's
+     entity tab does not remount it (task 01a14a83). Dropped the moment its
+     tab is no longer the one on screen. */
+  const [keptChat] = useState(createKeptChatStore);
+  const keptTabId = tab && (tab.type === 'draft' || tab.type === 'entity') ? tab.id : null;
+  const keptEntityId = tab?.type === 'entity' ? tab.entityId : null;
+  useEffect(() => {
+    const held = keptChat.heldTabId();
+    if (held === null) return;
+    const heldChat = keptChat.heldChatId();
+    if (held !== keptTabId || (keptEntityId !== null && heldChat !== keptEntityId)) keptChat.release();
+  }, [keptChat, keptTabId, keptEntityId]);
+  useEffect(() => () => keptChat.release(), [keptChat]);
+
   const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
     // Only the host itself: a field, a button or a terminal inside keeps its keys.
     if (event.target !== event.currentTarget || event.defaultPrevented) return;
@@ -66,6 +82,7 @@ export function ContentHost() {
 
   return (
     <main ref={hostRef} className="tws-content" data-testid="tws-content" tabIndex={-1} onKeyDown={onKeyDown}>
+      <KeptChatProvider store={keptChat}>
       {!tab ? (
         <StartSurface />
       ) : tab.type === 'chooser' ? (
@@ -79,6 +96,7 @@ export function ContentHost() {
       ) : (
         <EntityTab key={tab.id} tab={tab} handleRef={handle} />
       )}
+      </KeptChatProvider>
     </main>
   );
 }
@@ -229,7 +247,11 @@ function TitleBar({
   setSlot: (el: HTMLElement | null) => void;
 }) {
   const [hidden, setHidden] = useState(false);
-  const darkBody = getKind(tab.kind).panel.archetype === 'terminal';
+  /* Dark only over a session's TERMINAL surface; its transcript follows the
+     app theme (task 01a14c39). */
+  const { gate } = useWorkspace();
+  const isSession = getKind(tab.kind).panel.archetype === 'terminal';
+  const darkBody = useSessionShowsTerminal(isSession ? tab.entityId : null, gate.viewerMemberId);
   const darkTheme = useAlwaysDarkTheme();
   const barRef = useRef<HTMLDivElement>(null);
 

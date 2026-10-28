@@ -8,6 +8,7 @@ import './shell/shell.css';
 import './panels/panels.css';
 import './mobile/mobile.css';
 import './mobile/mobile-screens.css';
+import './mobile/mobile-noscroll.css';
 import './mobile/mobile-chrome.css';
 import type { EntityId } from '@tm8/contract';
 import { createFixtureSeam, FIXTURE_SPACE_ID } from './data/fixtures/seam-fixture';

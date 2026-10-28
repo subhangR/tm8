@@ -53,7 +53,15 @@ import { ZoomableFigure } from './ZoomableFigure';
 /** Module-level, so the ~800KB parse happens once per session, not per block. */
 let mermaidModule: Promise<typeof import('mermaid')> | null = null;
 function loadMermaid() {
-  if (mermaidModule === null) mermaidModule = import('mermaid');
+  if (mermaidModule === null) {
+    // A failed load is not memoised. The usual cause is a chunk the last
+    // deploy deleted (see pwa/stale-build.ts), and caching the rejection would
+    // keep every later diagram in this tab dead even after the cause is gone.
+    mermaidModule = import('mermaid').catch((error: unknown) => {
+      mermaidModule = null;
+      throw error;
+    });
+  }
   return mermaidModule;
 }
 

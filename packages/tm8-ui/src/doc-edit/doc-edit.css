@@ -84,6 +84,14 @@
   flex: 1;
 }
 
+/* The rich editor's one row of chrome sits UNDER the text (task 01a15e22),
+   so its rule is on top and it never grows. */
+.cv2-root .de-bar--foot {
+  flex: none;
+  border-bottom: 0;
+  border-top: 1px solid var(--pn-line);
+}
+
 /* The split view's own breadcrumb line (F2a line 146). */
 .cv2-root .de-bar__title {
   font-family: var(--pn-mono);
@@ -172,6 +180,30 @@
   border-radius: 6px;
   padding: 2px 9px;
   flex: none;
+}
+
+/* The glyph-only form (the phone's reader bar): a 36px target, no box. */
+.cv2-root .de-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.cv2-root .de-btn--icon:active {
+  background: var(--pn-hover);
+}
+.cv2-root .rs-bar--phone .hon-disabled--tooltip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
 }
 
 .cv2-root .de-btn--quiet {

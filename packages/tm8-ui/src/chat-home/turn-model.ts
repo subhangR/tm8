@@ -27,9 +27,23 @@ export type ProjectedTurnPart =
 export function projectTurnParts(parts: readonly ChatTurnPart[]): ProjectedTurnPart[] {
   const projected: ProjectedTurnPart[] = [];
   const toolIndex = new Map<string, number>();
+  const textIndex = new Map<string, number>();
 
   for (const part of [...parts].sort((a, b) => a.seq - b.seq)) {
     if (part.kind === 'done') continue;
+    if (part.kind === 'text' && part.itemId) {
+      const index = textIndex.get(part.itemId);
+      const existing = index === undefined ? undefined : projected[index];
+      if (existing?.kind === 'text') {
+        if (part.revision !== undefined && existing.revision !== undefined && part.revision <= existing.revision) continue;
+        projected[index!] = { ...part, seq: existing.seq,
+          text: part.operation === 'replace' ? part.text : existing.text + part.text };
+      } else {
+        textIndex.set(part.itemId, projected.length);
+        projected.push(part);
+      }
+      continue;
+    }
     if (part.kind === 'tool_call') {
       const index = toolIndex.get(part.toolCallId);
       if (index === undefined) {
@@ -189,7 +203,36 @@ export function reconcileDetails(
     arrivals.splice(match, 1);
     return false;
   });
-  return missing.length === 0 ? { ...next, turns } : { ...next, turns: [...turns, ...missing] };
+  /* PAGES THE READER ALREADY LOADED STAY. A re-read returns the NEWEST page
+     only; the older turns before its first one were loaded by scrolling up
+     and are kept IN FRONT, with the cursor that continues past them. If the
+     re-read no longer overlaps what is held (more new turns than a page
+     arrived), the held history has a gap and is dropped — the next scroll
+     reads it again from the new page's cursor. */
+  const firstShared = current.turns.findIndex((turn) => nextIds.has(turn.messageId));
+  const paged = next.olderCursor !== undefined;
+  const older = paged && firstShared > 0 ? current.turns.slice(0, firstShared).filter((turn) => !turn.optimistic) : [];
+  const olderIds = new Set(older.map((turn) => turn.messageId));
+  const after = missing.filter((turn) => !olderIds.has(turn.messageId)
+    && !(paged && firstShared < 0 && !turn.optimistic));
+  return {
+    ...next,
+    turns: [...older, ...turns, ...after],
+    ...(older.length > 0 ? { olderCursor: current.olderCursor ?? null } : {}),
+  };
+}
+
+/**
+ * An older page goes IN FRONT of what is held. Turns already held are skipped,
+ * so a page edge that moved under a concurrent post never draws one twice.
+ */
+export function prependOlderTurns(
+  current: ChatThreadDetail,
+  older: { turns: readonly ChatTurn[]; olderCursor: string | null },
+): ChatThreadDetail {
+  const held = new Set(current.turns.map((turn) => turn.messageId));
+  const fresh = older.turns.filter((turn) => !held.has(turn.messageId));
+  return { ...current, turns: [...fresh, ...current.turns], olderCursor: older.olderCursor };
 }
 
 /** The body the server writes onto the agent message when it claims a turn —
@@ -266,4 +309,3 @@ function emptyAssistantTurn(messageId: EntityId, detail: ChatThreadDetail): Chat
 function nextSeq(parts: readonly ChatTurnPart[]): number {
   return parts.reduce((highest, part) => Math.max(highest, part.seq), -1) + 1;
 }
-

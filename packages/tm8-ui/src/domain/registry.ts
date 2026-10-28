@@ -726,6 +726,8 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
         progress: taskTileProgress,
+        /* §6: a task's live fact is WHO HAS IT. */
+        signal: { from: 'avatar' },
       },
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
@@ -917,6 +919,8 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
+        /* The node's verdict, never `state.status` (R-UI-5). */
+        signal: { from: 'liveness' },
       },
       /* §5.3 header: "● N running" IS the Running tab's count, and
          "⚠ M interrupted" links to the Interrupted tab. */
@@ -1147,7 +1151,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['channelTopic', 'unread', 'workingAgents'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
+      },
       inlineEdit: { title: true },
       assignControl: CHANNEL_MEMBER_CONTROL,
     }),
@@ -1303,7 +1310,12 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
-      tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
+      tile: {
+        badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }],
+        /* Busy is `state.liveWork` being present — the same field the card
+           reads two lines up, so the dot and the card cannot disagree. */
+        signal: { from: 'presence', field: 'liveWork' },
+      },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
     }),
@@ -1374,7 +1386,11 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['prState', 'repository', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }],
+        /* §6 pairs PR with task: the face that owns it. */
+        signal: { from: 'avatar' },
+      },
     }),
     panel: {
       archetype: 'generic',
@@ -1597,17 +1613,17 @@ const ROWS: readonly KindConfig[] = [
     panel: {
       /* kind-bodies-2 handover, applied verbatim: the GOVERNED body. */
       archetype: 'governed',
+      /* The project page (task 01a15a00): the folder everything starts in,
+         its trust, its git, then everything recorded in it with a kind
+         filter. `work-list` replaced `live-sessions` — sessions are one of
+         its filters, with the same liveness word. The unlink footer is off
+         the page until `projects.unlink` has an executor: a dead button was
+         all it drew. */
       blocks: [
-        { block: 'path-row' },
+        { block: 'path-row', label: 'WORKING FOLDER' },
         { block: 'trust-card', params: { action: 'untrust' } },
-        { block: 'live-sessions' },
-        { block: 'unlink-footer', params: { action: 'unlink' } },
-        {
-          block: 'notice',
-          params: {
-            text: 'Projects are a materialized per-space projection of node-level registry rows. Editing, deleting and moving them here is refused by design — manage them in node settings.',
-          },
-        },
+        { block: 'git-status', label: 'GIT' },
+        { block: 'work-list', label: 'IN THIS PROJECT' },
       ],
       capabilityReasons: {
         canEdit: 'Projects are materialized from the node registry — they cannot be edited from a space.',
@@ -1790,7 +1806,19 @@ const ROWS: readonly KindConfig[] = [
      */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'blueprint' }, { block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /*
+       * THE TAB IS THE GRAPH (task 01a14c16, owner ruling 2026-10-18): only
+       * the canvas, with its own find, zoom, minimap and legend — the way a
+       * drawing's tab is the drawing. A `frame` takes the attachment strip
+       * and footer off, `titleBar: false` the title row. Nothing is stranded:
+       * GRAPH held only `graphType`, which the block now speaks for (a mermaid
+       * row draws its source); COLLECTIONS' `contains` edges are listed under
+       * Links in the side column, as Messages and Chat are; Edit, Run and the
+       * ⋯ menu ride the action strip.
+       */
+      composition: 'frame',
+      titleBar: false,
+      blocks: [{ block: 'blueprint' }],
       /* §15.1: declared fields must be reachable — edit is the door. */
       primaries: ['edit'],
     },
@@ -1899,6 +1927,8 @@ const ROWS: readonly KindConfig[] = [
         // row's right edge — the same `weighted` the story page's ring reads.
         // Child stories carry their own bar on their own rows.
         progress: storyTileProgress,
+        /* A story is work with owners, like a task. */
+        signal: { from: 'avatar' },
       },
       sort: [...DEFAULT_SORT, BY_PROGRESS],
       inlineEdit: { title: true },
@@ -2197,6 +2227,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'chatLastTurnAt' },
           { source: 'messages' },
         ],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
       },
       // The header verb is the ONE door a chat is actually born through, and
       // it is `chat-about` rather than `create` for the same reason
@@ -2214,11 +2245,19 @@ const ROWS: readonly KindConfig[] = [
       // is optional, not required.
       quickStart: 'chat-about',
       inlineEdit: { title: true },
+      /* The sessions a chat launched nest under it (Subhang 2026-10-17, "for
+         now": a chat has no sub-chats yet). Data stays as 330 left it — the
+         `launched_by` edge, no parent_id — read in `domain/launched-by.ts`. */
+      tree: { by: 'hierarchy', guideLines: true },
+      launches: 'work_session',
     }),
     panel: {
       archetype: 'conversation',
       conversation: 'chat-thread',
       composition: 'chat',
+      /* The thread IS the tab (Subhang, 2026-10-18): the 36px title row sat
+         empty over the transcript, and the tab's own label names the chat. */
+      titleBar: false,
     },
   },
 

@@ -1,4 +1,5 @@
 import { createMcpPort } from '../../mcp/adapter';
+import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
 import { createToolPort } from '../../tools/adapter';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
@@ -238,6 +239,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
   const seam: RealSeam = {
     mcp: (spaceId) => createMcpPort(http, seam, spaceId),
+    mcpTokens: () => createMcpTokensPort(http, seam),
     // -- lifecycle -----------------------------------------------------------
 
     /**
@@ -423,6 +425,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       linkProject: (spaceId, input) => ops.linkProject(spaceId, input),
       listProjects: () => ops.projects(),
     },
+    projectAdmin: {
+      update: (projectId, input) => ops.updateProject(projectId, input),
+    },
     spaceProjects: {
       directories: (spaceId, path) => ops.spaceProjectDirectories(spaceId, path),
       add: (spaceId, input) => ops.addSpaceProject(spaceId, input),
@@ -517,6 +522,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
       setChatCredentials: (chatId, input) => ops.setChatCredentials(chatId, input),
+      interruptChat: (chatId) => ops.interruptChat(chatId),
       setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),

@@ -41,6 +41,7 @@ import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
@@ -134,6 +135,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_CLIPBOARD_DIR', group: 'Storage & database', summary: 'Where pasted clipboard images land; exported to every agent.', default: '<data dir>/clipboard', definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_MAX_BYTES', group: 'Storage & database', summary: 'Per-image ceiling for a clipboard paste.', default: String(CLIPBOARD_MAX_BYTES_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_RETENTION_DAYS', group: 'Storage & database', summary: 'Days a clipboard bucket survives (0 = keep).', default: String(CLIPBOARD_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
+  { name: 'TM8_MCP_AUDIT_RETENTION_DAYS', group: 'Storage & database', summary: 'Days an MCP call audit row survives (0 = keep).', default: String(MCP_AUDIT_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_PG_PORT', group: 'Storage & database', summary: 'Port of the bundled Postgres sidecar.', default: '5442', definedIn: SIDECAR },
   { name: 'TM8_PG_APP_ROLE', group: 'Storage & database', summary: 'Role the server connects as.', default: 'tm8_app', definedIn: SIDECAR },
   { name: 'TM8_PG_DATABASE', group: 'Storage & database', summary: 'Sidecar database name.', default: 'tm8', definedIn: SIDECAR },
@@ -157,9 +159,12 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
   { name: 'TM8_LOST_SESSION_AFTER_MIN', group: 'Lane launch', summary: 'Minutes without a live process before an open session is marked lost.', default: '10', definedIn: 'packages/server/src/scheduler/jobs/lost-session-reaper.ts' },
+  { name: 'TM8_SESSION_HOME_RETENTION_DAYS', group: 'Lane launch', summary: 'Days an ended session keeps its per-session homes (Codex home, space-key home). After that they are removed, and the session can no longer be resumed or its transcript read (0 = keep while resumable).', default: '0', definedIn: 'packages/server/src/scheduler/jobs/session-artifact-reclaim.ts' },
+  { name: 'TM8_CODEX_HOME_RETENTION_DAYS', group: 'Lane launch', summary: 'Older name, Codex homes only: used when TM8_SESSION_HOME_RETENTION_DAYS is unset.', default: '0', definedIn: 'packages/server/src/scheduler/jobs/session-artifact-reclaim.ts' },
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
   { name: 'TM8_PROJECT_ROOTS', group: 'Lane launch', summary: 'Directories offered when linking a project.', default: null, definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
@@ -168,6 +173,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'HERMES_HOME', group: 'Lane launch', summary: 'Hermes home scanned for skills.', default: null, definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'CLAUDE_MANAGED_SETTINGS_DIR', group: 'Lane launch', summary: 'Claude Code managed-settings directory scanned for skills.', default: '/etc/claude-code', definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'TM8_CHAT_SKILLS_DIR', group: 'Lane launch', summary: 'Skills plugin directory chat threads load.', default: null, definedIn: MAIN },
+  { name: 'TM8_CHAT_IDLE_TIMEOUT_MS', group: 'Lane launch', summary: 'Total silence a chat turn tolerates from the agent before it is stopped. Does not apply while a tool runs.', default: '1800000', definedIn: CONFIG },
+  { name: 'TM8_CHAT_TOOL_TIMEOUT_MS', group: 'Lane launch', summary: 'Silence a chat turn tolerates while one of the agent\'s tool calls is still running. Raised to the idle limit if set below it.', default: '1800000', definedIn: CONFIG },
 
   // ── Containers ───────────────────────────────────────────────────────
   { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate (off disables it).', default: 'on', definedIn: CONFIG },
@@ -194,6 +201,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'OPENAI_API_KEY', group: 'Keys', summary: 'Node fallback OpenAI key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GH_TOKEN', group: 'Keys', summary: 'Node fallback GitHub token (launches and PR tracking).', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GITHUB_TOKEN', group: 'Keys', summary: 'Alternative name for the node GitHub token.', default: null, definedIn: NODE_KEYS, secret: true },
+  { name: 'TM8_GOOGLE_OAUTH_CLIENT_ID', group: 'Keys', summary: 'Client ID of this node\'s Google OAuth client, for the Gmail, Calendar and Drive connectors. Read at each connect and refresh.', default: null, definedIn: MAIN },
+  { name: 'TM8_MCP_CLIENT_SECRET_GOOGLE', group: 'Keys', summary: 'Client secret of the Google OAuth client named by TM8_GOOGLE_OAUTH_CLIENT_ID. Never stored in a connection.', default: null, definedIn: MAIN, secret: true },
   { name: 'TM8_GITHUB_TOKEN', group: 'Keys', summary: 'GitHub token PR tracking prefers over GITHUB_TOKEN / GH_TOKEN.', default: null, definedIn: 'packages/server/src/tracking/github.ts', secret: true },
 ];
 
@@ -262,6 +271,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
+  COORDINATION_INSTRUCTION_CHAT: 'prompt wording for a chat-spawned worker, not a setting',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
   ZERO_COST: 'the zero value of Jev cost accounting',
 };

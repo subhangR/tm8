@@ -326,6 +326,49 @@
 }
 
 /* ==========================================================================
+   THE FLOATING ☰ — THE CHAT SCREEN HAS NO HEADER (task t-topbar)
+
+   Product ruling over audit B2: the chat screen draws no top bar. The ☰ floats
+   over the transcript's top-left corner, the same 44px square it is in the
+   header, on a frosted chip so it reads over whatever turn scrolls under it.
+   The dot rides on it exactly as it does in the header — unread, or a request
+   waiting on you (`data-tone='wait'`).
+
+   Positioned against `.mobile-frame` (which is `position: relative`), not the
+   scroller, so it stays put while the transcript moves. Below the notice host
+   (20) and the sheet host (30): a sheet or the drawer covers it.
+   ========================================================================== */
+
+.mobile-header__menu.mobile-float-menu {
+  position: absolute;
+  inset-block-start: calc(var(--mobile-safe-top) + var(--pn-space-3));
+  inset-inline-start: calc(var(--mobile-safe-left) + var(--pn-space-3));
+  z-index: 10;
+  margin: 0;
+  border-radius: var(--pn-r-md);
+  border: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-surface) 85%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--pn-ink);
+}
+
+.mobile-header__menu.mobile-float-menu:active {
+  background: var(--pn-active);
+}
+
+.mobile-header__dot[data-tone='wait'] {
+  background: var(--pn-wait);
+}
+
+/* THE TRANSCRIPT CLEARS THE ☰. Its first turn would otherwise start under the
+   button; the clearance is the button's own box plus a gap above and below,
+   so turns scroll UNDER it but never rest there. */
+.mobile-frame[data-headless] .tch-transcript {
+  padding-block-start: calc(var(--mobile-header-min) + 2 * var(--pn-space-3));
+}
+
+/* ==========================================================================
    THE HONEST EMPTY STATES
    ========================================================================== */
 

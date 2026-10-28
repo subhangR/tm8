@@ -160,10 +160,10 @@ describe('303 canonical edges', () => {
   });
 
   it('a deprecated type refuses new rows and names its replacement', async () => {
-    expect(await one(`select replaced_by v from public.edge_types where type = 'dispatched_by'`)).toBe('parentId');
+    expect(await one(`select replaced_by v from public.edge_types where type = 'dispatched_by'`)).toBe('launched_by');
     const a = await spawn('dispatcher', [id['origin']!]);
     const b = await spawn('dispatched', [id['origin']!]);
-    await expect(edge(b, 'dispatched_by', a)).rejects.toThrow(/deprecated; use parentId/);
+    await expect(edge(b, 'dispatched_by', a)).rejects.toThrow(/deprecated; use launched_by/);
   });
 
   it('the story walk follows one list, and the contract mirror agrees with it', async () => {

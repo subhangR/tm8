@@ -1,7 +1,7 @@
 /*
  * Workspace view layout (Spec A §3, design log §1–§3). Tokens only; sizes on
- * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-card),
- * raised (--pn-card + hairline + shadow).
+ * the 4/8 grid. Three planes: chrome (--pn-surface), content (--pn-x-page-bg:
+ * --pn-card in light, --pn-paper in dark), raised (--pn-card + hairline + shadow).
  */
 .tws-root {
   /* The icon column is always 48px; the expanded rail (R36) widens to 200px
@@ -14,10 +14,11 @@
      every control in it a 28px box 2px from each edge (labels share y = 16). */
   --tws-header-h: 32px;
   --tws-band-ctl: calc(var(--tws-header-h) - 4px);
-  /* The band sits a clear step darker than the --pn-card content plane, so
-     the active tab — --pn-card, joined to the content — reads as selected
-     (task 01a11573: "white, and the tabs a tad bit darker"). Hover and press
-     step darker again. Dark keeps the --pn-paper band it already had. */
+  /* The band sits a clear step darker than the content plane
+     (--pn-x-page-bg), so the active tab — the same plane, joined to the
+     content — reads as selected (task 01a11573: "white, and the tabs a tad
+     bit darker"). Hover and press step darker again. Dark uses the chrome's
+     --pn-surface, the one step below its --pn-paper page. */
   --tws-band: var(--pn-active);
   --tws-band-hover: color-mix(in srgb, var(--pn-active), var(--pn-line-2) 40%);
   --tws-band-press: var(--pn-line-2);
@@ -36,6 +37,18 @@
   font-size: var(--pn-fs-sm);
   overflow: hidden;
   position: relative;
+}
+/* THE PINNED-ONLY RAIL'S GRID (Subhang 2026-10-17): the rail runs the full
+   height and the list panel too — its own top row holds the tm8 mark — so
+   only the content column has the strip over it. Collapsed, the panel's track
+   is zero and the rail sits against the content. */
+.tws-root[data-pinned-rail]:not([data-expanded]) {
+  grid-template-areas:
+    'rail browser strip'
+    'rail browser content';
+}
+.tws-root[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr);
 }
 .tws-root[data-rail-animating] {
   transition: grid-template-columns var(--pn-dur-base) var(--pn-ease-standard);
@@ -79,6 +92,17 @@
    right-aligned the mode selector. */
 .tws-left-header .tws-view-select {
   padding-left: var(--pn-space-2);
+}
+/* The pinned-only rail's mode, at the far end of the left header (over the
+   list column), right before the column edge. No middle dot: nothing sits
+   beside it. */
+.tws-left-mode {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+}
+.tws-left-header .tws-left-mode .tws-view-select::before {
+  content: none;
 }
 .tws-left-header .tws-view-select::before,
 .tws-mode-switcher-slot::before {
@@ -200,7 +224,7 @@
 }
 .cv2-root[data-theme='dark'] .tws-root,
 [data-theme='dark'] .cv2-root .tws-root {
-  --tws-band: var(--pn-paper);
+  --tws-band: var(--pn-surface);
   --tws-band-hover: var(--pn-active);
   --tws-band-press: var(--pn-line);
   --tws-band-line: var(--pn-line);
@@ -227,7 +251,7 @@
   color: var(--pn-ink-2);
 }
 .tws-tab[data-active] {
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   color: var(--pn-ink);
 }
 .tws-tab-main {
@@ -287,6 +311,56 @@
 }
 .tws-rail-top::-webkit-scrollbar {
   display: none;
+}
+/* The space menu hangs out of the rail over the panel: the rail must not
+   clip it (its scrolling top group keeps its own clip). */
+.tws-rail[data-pinned-only] {
+  overflow: visible;
+}
+/* The pinned-only rail's head: the tm8 mark, then the four modes. The
+   rail runs the full height, so the head starts in the strip's band. */
+.tws-rail-logo {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  align-items: center;
+  width: var(--tws-rail-w-collapsed);
+  /* The panel's title row is 44px under the same 8px top inset, so the mark
+     shares its centre line (Subhang 2026-10-17: heights misaligned). */
+  height: 44px;
+}
+.tws-rail-logo__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tws-rail-logo__btn:hover {
+  background: var(--pn-hover);
+}
+.tws-rail-modes {
+  flex: none;
+}
+.tws-rail-modes .tws-rail-icon svg {
+  width: 18px;
+  height: 18px;
+}
+/* A little tighter in the pinned-only rail (Subhang, 2026-10-17): 8px
+   between icons instead of 12. A hairline keeps 12px either side (8px gap +
+   4px margin), so the groups still read apart. */
+.tws-rail[data-pinned-only] .tws-rail-top,
+.tws-rail[data-pinned-only] .tws-rail-group {
+  gap: var(--pn-space-2);
+}
+.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule {
+  margin-block: var(--pn-space-1);
 }
 .tws-rail-group,
 .tws-rail-bottom {
@@ -473,6 +547,13 @@
   text-align: center;
   pointer-events: none;
 }
+/* Pinned-only rail (Subhang, 2026-10-17): new stays top-left, the in-progress
+   / running count drops to the BOTTOM-right corner, so the two never share
+   the top edge. */
+.tws-rail[data-pinned-only] .tws-rail-count-badge {
+  top: auto;
+  bottom: -2px;
+}
 .tws-rail-count {
   flex: none;
   margin-left: auto;
@@ -624,7 +705,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   overflow: hidden;
 }
 .tws-entity {
@@ -733,7 +814,9 @@
 .tws-menu-row:hover {
   background: var(--pn-hover);
 }
-.tws-root :focus-visible {
+/* Text-entry fields are excluded: a caret already marks focus, and an inset
+   brand outline drew a second gold box inside every textarea/input. */
+.tws-root :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
 }
@@ -820,7 +903,8 @@
 }
 /* The band's generic buttons shrink with it (task 01a11573). */
 .tws-left-header :is(.tws-icon-btn, .tws-quiet-btn),
-.tws-ts-leading :is(.tws-icon-btn, .tws-quiet-btn) {
+.tws-ts-leading :is(.tws-icon-btn, .tws-quiet-btn),
+.tws-ts-modes :is(.tws-icon-btn, .tws-quiet-btn) {
   min-width: var(--tws-band-ctl);
   height: var(--tws-band-ctl);
 }
@@ -876,6 +960,52 @@
   box-shadow: var(--pn-sh-pop);
   animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
 }
+/* THE MORE KINDS CARD (pinned-only rail): one menu row per unpinned kind,
+   its pin button at the right edge, then the sources under a hairline. */
+.tws-rail-pop[data-pop='more'] {
+  width: 260px;
+  padding: var(--pn-space-1);
+}
+.tws-rail-more-list {
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.tws-rail-more-row {
+  display: flex;
+  align-items: center;
+}
+.tws-rail-more-open {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tws-rail-more-open[aria-current='true'] {
+  background: var(--pn-active);
+}
+.tws-rail-more-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-rail-more-pin {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.tws-rail-more-row:hover .tws-rail-more-pin,
+.tws-rail-more-pin:focus-visible {
+  color: var(--pn-ink-2);
+}
+.tws-rail-more-rule {
+  width: 100%;
+  height: 0;
+  margin: var(--pn-space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+}
+.tws-rail-more-empty {
+  padding: var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
 /* THE ACCOUNT CARD (RailUser): status on top, then the account menu inline,
    which brings its own rows and padding. */
 .tws-rail-pop[data-pop='user'] {
@@ -911,4 +1041,95 @@
    itself is the indication, not a ring around the whole content. */
 .tws-content:focus {
   outline: none;
+}
+
+/*
+ * THE NAVIGATOR'S GRID (design doc 01a1465d-a2b7 §4, §10), behind
+ * `tm8.ui.navigator`. TWO columns instead of three: the one navigator column
+ * and the content. Added as an OVERRIDE on `[data-nav]` rather than edited
+ * into the base rule above, because the flag promises that with it off the
+ * three-column grid above is byte-for-byte what renders.
+ */
+.tws-root[data-nav] {
+  /* 300px default, 240–480 by the resizer (§4); `--tws-browser-w` is the
+     persisted field the width still rides on (see `navigatorFlag.ts`).
+     THREE TRACKS, TWO COLUMNS. The middle track exists for the top row alone:
+     the header spans tracks 1–2 and the content spans 2–3, so the body is
+     still the navigator column and the content beside it, to the pixel, while
+     the header is free to run past the column into the top row over the
+     content. Sized `auto`, so it is the header's own overflow and nothing
+     else: at a width where the header fits it collapses to 0 and this grid is
+     the two-column grid it replaced. See `.tws-left-header` below for why the
+     header needed it. */
+  grid-template-columns: var(--tws-nav-w, 300px) auto minmax(0, 1fr);
+  grid-template-areas:
+    'header header strip'
+    'nav content content';
+}
+/*
+ * THE HEADER READS IN FULL AT THE DEFAULT WIDTH (QA finding 1, ruled
+ * 2026-10-17).
+ *
+ * It used to span the navigator's track and nothing more, so at the 300px
+ * default its four children had 288px of content box to share and two of them
+ * ellipsised: the space name lost 24.5px (`Navigator QA` → `Naviga…`) and the
+ * mode's switcher 17.3px (`Mixed` → `M`) — measured in a browser, where
+ * `innerText` still reads the whole string and jsdom reports nothing wrong.
+ * Meanwhile ~1000px of the same row sat empty over the content. With the flag
+ * OFF the header already spans the rail AND the browser (48 + 300 = 348) and
+ * reads in full, so the truncation was the navigator's alone.
+ *
+ * The header now takes the width it needs and the strip starts after it. The
+ * cost is honest and visible: the band's right edge and the hairline under it
+ * no longer line up with the navigator | content boundary below while the
+ * header is overflowing. Narrowing the content to pad the header, or shrinking
+ * the type, would both be larger changes to a surface nobody asked us to
+ * change.
+ *
+ * CAPPED, because the space name is user data. A 60-character space must not
+ * push the tab strip off the far side of the screen, so the overhang stops at
+ * 180px and past that the switcher ellipsises again — the behaviour today,
+ * at a width where it is the only option left.
+ */
+/* `:not(.app-frame)` IS LOAD-BEARING, not tidiness. `AppFrame` (Craft,
+   Settings) renders `class="tws-root app-frame"` and sets `data-nav` too, and
+   its own `[data-nav]` grid (`app-frame.css`) already spans the header over
+   TWO tracks — 300 + 300 = 600px, which is why it never truncated and is not
+   what this fixes. Without the exclusion this `max-width` would clamp that
+   600px band to 480 and leave 120px of the header's own area unpainted. The
+   grid rule above needs no exclusion: `.tws-root.app-frame[data-nav]` is one
+   class more specific and wins on its own. */
+.tws-root[data-nav]:not(.app-frame) .tws-left-header {
+  max-width: calc(var(--tws-nav-w, 300px) + var(--tws-header-overhang-max, 180px));
+}
+/* COLLAPSED, THE OVERHANG IS ZERO. Everything but the mark is `display: none`
+   at 48px (see `navigator.css`), so the header's max-content contribution is
+   the 48px mark cell and the middle track collapses on its own — except for
+   the 12px right padding, which would hold the track open and jog the strip
+   12px off the column edge for nothing. */
+.tws-root[data-nav][data-nav-collapsed]:not(.app-frame) .tws-left-header {
+  max-width: var(--tws-nav-w, 300px);
+  padding-right: 0;
+}
+/* Full screen still hides the whole navigator, as it does today. */
+.tws-root[data-nav][data-expanded] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'strip'
+    'content';
+}
+/* The header spans the navigator's width; the mark stays centred on x = 24 and
+   the space switcher keeps the browser's 12px inset off the column edge. */
+.tws-root[data-nav] .tws-space-slot {
+  margin-left: var(--pn-space-3);
+}
+/* The resizer sits on the navigator | content hairline. The class is the
+   navigator's own: `AppFrame` can have a SECOND resizer for a panel column
+   beside the navigator (Craft), and the two must not claim one track. */
+.tws-root[data-nav] .tws-nav-resizer {
+  grid-area: nav;
+}
+/* The hosted list's own column border is the navigator's, not the browser's. */
+.tws-root[data-nav] .tws-nav {
+  border-right: 1px solid var(--pn-line);
 }

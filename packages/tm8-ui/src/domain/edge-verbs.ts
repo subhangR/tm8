@@ -62,7 +62,8 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   created_in: { out: 'Made during (unverified, legacy)', in: 'Made here (legacy)' },
   defaults_to_profile: { out: 'Defaults to', in: 'Default for' },
   depends_on: { out: 'Depends on', in: 'Needed by' },
-  derived_from: { out: 'Launches', in: 'Launched by' },
+  // `in` is not "Launched by": that names launched_by (330), a session's launcher.
+  derived_from: { out: 'Launches', in: 'Launch task' },
   dislikes: { out: 'Dislikes', in: 'Disliked by' },
   dispatched_by: { out: 'Dispatched by', in: 'Dispatched' },
   disputes: { out: 'Disputes', in: 'Disputed by' },
@@ -73,6 +74,7 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   has_member: { out: 'Has member', in: 'Member of' },
   in_project: { out: 'In project', in: 'In this project' },
   in_worktree: { out: 'In worktree', in: 'In this worktree' },
+  launched_by: { out: 'Launched by', in: 'Launched' },
   likes: { out: 'Likes', in: 'Liked by' },
   member_of: { out: 'Member of', in: 'Has member' },
   messaged: { out: 'Messaged', in: 'Heard from', both: 'Talked with' },

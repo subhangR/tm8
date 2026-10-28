@@ -23,6 +23,8 @@ export interface CraftHandle {
   addExisting(id: EntityId): Promise<boolean>;
   move(id: EntityId, index: number): Promise<void>;
   remove(id: EntityId): Promise<boolean>;
+  /** Rename the craft itself (its title). */
+  rename(title: string): Promise<boolean>;
 }
 
 /** The node's refusal for a craft that would contain itself (lane A's cycle guard). */
@@ -163,6 +165,24 @@ export function useCraft(
     [source, craftId, read, onNotice],
   );
 
+  const rename = useCallback(
+    async (title: string) => {
+      if (!craft || title === craft.title) return true;
+      /* Drawn at once; the craft's own event re-reads it. */
+      setCraft({ ...craft, title });
+      try {
+        await source.rename(craftId, title, craft.version);
+        await read();
+        return true;
+      } catch (error) {
+        onNotice?.(refusalText(error, 'Could not rename the craft.'));
+        void read();
+        return false;
+      }
+    },
+    [source, craftId, craft, read, onNotice],
+  );
+
   return {
     craft,
     state,
@@ -174,5 +194,6 @@ export function useCraft(
     addExisting,
     move,
     remove,
+    rename,
   };
 }

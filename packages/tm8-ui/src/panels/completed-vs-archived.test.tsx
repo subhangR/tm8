@@ -388,12 +388,16 @@ describe('C3 — ONE definition of completed, for every kind', () => {
 
     tab(view, 'Interrupted');
     const failed = tileOf(view.container, 'The run that crashed');
-    expect(failed.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Crashed');
+    /* "In words" is now "in the mark's accessible name" (task 01a1469f,
+       ruling 2026-10-17): §6 allows a session one signal and keeps the word
+       for a screen reader. What this case is ABOUT — that a crash is not a
+       completion — is unchanged and still read off both halves. */
+    expect(failed.querySelector('[data-testid="session-row-signal"]')?.textContent).toContain('Crashed');
     expect(failed.querySelector('.pn-st__tag--done'), 'a crash is not completion').toBeNull();
 
     tab(view, 'Completed');
     const done = tileOf(view.container, 'The run that finished');
-    expect(done.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Completed');
+    expect(done.querySelector('[data-testid="session-row-signal"]')?.textContent).toContain('Completed');
     expect(isStruck(done)).toBe(false);
   });
 

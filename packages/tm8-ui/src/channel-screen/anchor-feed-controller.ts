@@ -198,11 +198,10 @@ export function createAnchorFeedController({
     const token = begin();
     patch({ loadingEarlier: true });
     try {
-      const response = await seam.feed(anchorId, feedQuery({
-        order: current().focusedItemId ? 'oldest' : 'newest',
-        cursor,
-        limit,
-      }));
+      // Always `newest`: from a focused page the older cursor is the server's
+      // `previousCursor`, which is fingerprinted for the order that pages
+      // backward from the `oldest`-ordered `around` window.
+      const response = await seam.feed(anchorId, feedQuery({ order: 'newest', cursor, limit }));
       if (!accepts(token)) return;
       patch((entry) => ({
         ...entry,
@@ -376,6 +375,16 @@ export function createAnchorFeedController({
   };
 
   const attach = (): Unsubscribe => {
+    /*
+     * ATTACHING REVIVES A DISPOSED CONTROLLER. The hook memoises the controller
+     * and disposes it in the effect cleanup, so when React re-runs that effect
+     * on the SAME controller (StrictMode's mount-unmount-mount, a remounted
+     * tab), the second run used to read through a controller that was disposed
+     * for good: every response failed `accepts`, the phase never left
+     * 'loading', and the channel sat on skeletons forever. `generation` was
+     * already bumped by dispose, so any read from before it stays discarded.
+     */
+    disposed = false;
     const offEvent = seam.onEvent((event) => {
       if (eventTouchesAnchor(event, anchorId)) scheduleRefresh();
     });

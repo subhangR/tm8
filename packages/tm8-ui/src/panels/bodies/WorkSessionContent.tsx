@@ -4,8 +4,10 @@ import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
 import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
-import { useMobileSurface } from '../../mobile';
+import { useMessagesDoor, useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
+import { useDismissable } from '../useDismissable';
+import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
 import './work-session-content-phone.css';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
@@ -68,6 +70,18 @@ const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
   context: 'The launch context is a long record of every selection that went into this session. It has no phone arrangement yet; open the session on a desktop to read it.',
   graph: 'The graph is refused on phones outright, at the route as well as here — so this is the same refusal you would meet by following a graph link, not a second opinion about it.',
 };
+
+/**
+ * IN THE WORKSPACE ACTION STRIP THREE VIEWS STAND (task 01a181e2, option B).
+ * Terminal, Transcript and Changes are the everyday moves; Git, Debug, Graph
+ * and Context open from one "More views" tab, which wears the open view's
+ * mark while one of them is shown. Only the strip: the panel bar and the
+ * phone row keep their own arrangements.
+ */
+const STRIP_PINNED: readonly ContentSurface[] = ['terminal', 'transcript', 'changes'];
+
+/** Four panes: the views kept behind the tab. */
+const MORE_VIEWS_ART = ['M3 3h4v4H3z', 'M9 3h4v4H9z', 'M3 9h4v4H3z', 'M9 9h4v4H9z'] as const;
 
 const PHONE_REFUSED_LIST = (Object.keys(PHONE_REFUSED) as ContentSurface[])
   .map((s) => SURFACE_LABEL[s])
@@ -155,7 +169,18 @@ export interface WorkSessionContentProps {
    * tests and any host without a bar still render.
    */
   switchSlot?: HTMLElement | null;
+  /**
+   * The phone's pending-forms banner, drawn directly under the surface row.
+   * The row is the page's top bar there (immersive hides the frame header),
+   * so a banner the panel drew above it read as sitting under the bar. Off
+   * the phone the panel keeps drawing it itself and this is ignored.
+   */
+  belowSwitch?: ReactNode;
 }
+
+/** The header's chevron and a speech bubble, on `VectorIcon`'s 16x16 grid. */
+const UP_ART = ['M10.4 3.6 5.6 8l4.8 4.4'];
+const MESSAGES_ART = ['M2.5 4.2c0-.9.7-1.7 1.7-1.7h7.6c.9 0 1.7.8 1.7 1.7v5.1c0 .9-.8 1.7-1.7 1.7H7l-3 2.5V11h.2c-1 0-1.7-.8-1.7-1.7Z'];
 
 /**
  * The work-session Content switch owns presentation only: which chip is
@@ -186,6 +211,7 @@ export function WorkSessionContent({
   launchContext,
   onSurfaceChange,
   switchSlot = null,
+  belowSwitch = null,
 }: WorkSessionContentProps) {
   /*
    * ONE FORK, FROM THE HOST. Not `useShellKind()` and not a media query: the
@@ -194,7 +220,8 @@ export function WorkSessionContent({
    * chose the shell this body is rendering inside. Off the phone this is
    * `false` and every branch it guards is unreachable by construction.
    */
-  const { oneSurface } = useMobileSurface();
+  const { oneSurface, up } = useMobileSurface();
+  const messagesDoor = useMessagesDoor();
   const [immersive, setImmersive] = useState(true);
 
   // The offered surfaces, in fixed order. On a desktop Terminal is first and is
@@ -207,7 +234,7 @@ export function WorkSessionContent({
     () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph', 'context']),
     [oneSurface],
   );
-  const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+  const preferenceKey = preferenceKeyFor(viewerMemberId, sessionId);
   const initialSurface = useRef<ContentSurface | null>(null);
   if (initialSurface.current === null) {
     initialSurface.current = resolveInitialSurface({ requestedSurface, preferenceKey, oneSurface });
@@ -249,6 +276,12 @@ export function WorkSessionContent({
   const [refusalDismissed, setRefusalDismissed] = useState(false);
   const refusedSurface = refusalDismissed ? null : arrivalRefusal.current;
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
+  /* Told to the chrome outside this body (panel frame, title bar, action
+     strip): only the terminal surface stands in the always-dark scope. */
+  useEffect(() => {
+    reportShownSurface(sessionId, surface);
+  }, [sessionId, surface]);
+  useEffect(() => () => reportShownSurface(sessionId, null), [sessionId]);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [transcriptMounted, setTranscriptMounted] = useState(
     () => initialSurface.current === 'transcript',
@@ -298,21 +331,26 @@ export function WorkSessionContent({
     [onSurfaceChange, preferenceKey],
   );
 
+  // In the action strip the rest of the views sit behind "More views".
+  const inStrip = switchSlot !== null && !oneSurface && switchSlot.closest('.tws-astrip') !== null;
+  const tabSurfaces = inStrip ? surfaces.filter((s) => STRIP_PINNED.includes(s)) : surfaces;
+  const moreSurfaces = inStrip ? surfaces.filter((s) => !STRIP_PINNED.includes(s)) : [];
+
   // Roving tabindex over the surface list — the arrow keys walk whatever chips
-  // are offered rather than a hardcoded pair.
+  // are shown rather than a hardcoded pair.
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = event.currentTarget.dataset.surface as ContentSurface;
-    const index = surfaces.indexOf(current);
+    const index = tabSurfaces.indexOf(current);
     if (index === -1) return;
     let next: ContentSurface | null = null;
     if (event.key === 'ArrowLeft') {
-      next = surfaces[(index - 1 + surfaces.length) % surfaces.length] ?? null;
+      next = tabSurfaces[(index - 1 + tabSurfaces.length) % tabSurfaces.length] ?? null;
     } else if (event.key === 'ArrowRight') {
-      next = surfaces[(index + 1) % surfaces.length] ?? null;
+      next = tabSurfaces[(index + 1) % tabSurfaces.length] ?? null;
     } else if (event.key === 'Home') {
-      next = surfaces[0] ?? null;
+      next = tabSurfaces[0] ?? null;
     } else if (event.key === 'End') {
-      next = surfaces[surfaces.length - 1] ?? null;
+      next = tabSurfaces[tabSurfaces.length - 1] ?? null;
     }
     if (!next) return;
     event.preventDefault();
@@ -367,7 +405,7 @@ export function WorkSessionContent({
    * and its tooltip, so the mark is shorthand for a word that is still there
    * rather than a replacement for one.
    */
-  const tabs = surfaces.map((s) => (
+  const tabs = tabSurfaces.map((s) => (
     <button
       key={s}
       ref={(node) => {
@@ -395,6 +433,18 @@ export function WorkSessionContent({
       {ridesPanelBar ? <VectorIcon paths={SURFACE_ART[s]} size={14} /> : SURFACE_LABEL[s]}
     </button>
   ));
+  if (moreSurfaces.length > 0) {
+    tabs.push(
+      <MoreViews
+        key="more"
+        surfaces={moreSurfaces}
+        current={surface}
+        tabId={tabId}
+        panelId={panelId}
+        onSelect={(s) => select(s)}
+      />,
+    );
+  }
 
   /*
    * THE PHONE'S ROW IS A ROW CONTAINING A TABLIST, not a tablist doing duty as
@@ -426,6 +476,23 @@ export function WorkSessionContent({
         >
           {immersive ? '☰' : '⤢'}
         </button>
+        {/* THE HEADER'S ‹, REDRAWN HERE. Immersive hides the frame header so
+            the terminal keeps its height, and a pushed page without ‹ is a
+            page the reader can only leave by a gesture they may not know
+            (CONTRACT §5). Same action and label as the header's, beside the
+            ☰ exactly as it sits there. With details shown, the header is
+            back and carries its own. */}
+        {immersive && up ? (
+          <button
+            type="button"
+            className="pn-session-up"
+            aria-label={up.label}
+            data-testid="session-up"
+            onClick={up.run}
+          >
+            <VectorIcon paths={UP_ART} size={20} strokeWidth={1.6} />
+          </button>
+        ) : null}
         <div
           className="pn-surface-switch__tabs"
           role="tablist"
@@ -434,6 +501,27 @@ export function WorkSessionContent({
         >
           {tabs}
         </div>
+        {/* THE MESSAGES SECTION AS A DOOR (CONTRACT §5 ruling 8). Below the
+            body is under the composer dock on this page; a section above the
+            dock would take ~140px of a 520px screen from the terminal for
+            good. One 44px button with the count opens the Discussion sheet,
+            the same one "View all" opens, from either mode. */}
+        {messagesDoor ? (
+          <button
+            type="button"
+            className="pn-session-messages"
+            aria-label={messagesDoor.count > 0 ? `Messages, ${messagesDoor.count}` : 'Messages'}
+            data-testid="session-messages-open"
+            onClick={messagesDoor.open}
+          >
+            <VectorIcon paths={MESSAGES_ART} size={18} strokeWidth={1.5} />
+            {messagesDoor.count > 0 ? (
+              <span className="pn-session-messages__n" aria-hidden>
+                {messagesDoor.count > 99 ? '99+' : messagesDoor.count}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {/*
           THE FOUR THAT ARE NOT HERE, SAID OUT LOUD.
 
@@ -509,6 +597,7 @@ export function WorkSessionContent({
       data-arrangement={oneSurface ? 'phone' : 'desktop'}
     >
       {switchEl ? (ridesPanelBar && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
+      {oneSurface ? belowSwitch : null}
 
       {/*
         A ROUTE THAT NAMED A REFUSED SURFACE GETS AN ANSWER ABOUT THAT SURFACE.
@@ -666,6 +755,28 @@ export function WorkSessionContent({
   );
 }
 
+function preferenceKeyFor(viewerMemberId: string | null | undefined, sessionId: string): string {
+  return `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+}
+
+/**
+ * IS THIS SESSION ON ITS TERMINAL — the surface a mounted body reports, else
+ * the one it WILL open on (the same resolution it runs at mount). The chrome
+ * around the body reads this to choose its scope; see `sessionSurfaceShown.ts`.
+ */
+export function useSessionShowsTerminal(
+  sessionId: string | null | undefined,
+  viewerMemberId: string | null | undefined,
+  requestedSurface: ContentSurface | null = null,
+): boolean {
+  const { oneSurface } = useMobileSurface();
+  const shown = useShownSurface(sessionId);
+  if (!sessionId) return false;
+  return isDarkSurface(
+    shown ?? resolveInitialSurface({ requestedSurface, preferenceKey: preferenceKeyFor(viewerMemberId, sessionId), oneSurface }),
+  );
+}
+
 function resolveInitialSurface({
   requestedSurface,
   preferenceKey,
@@ -735,4 +846,94 @@ function writePreference(key: string, surface: ContentSurface): void {
   } catch {
     // Private/restricted storage must not make a local presentation toggle fail.
   }
+}
+
+/**
+ * The strip's "More views" tab: a tab in the switch that opens a menu of the
+ * views that do not stand in the strip. While one of them is shown it is the
+ * selected tab, wearing that view's mark and name, so the strip always says
+ * which view is open.
+ */
+function MoreViews({
+  surfaces,
+  current,
+  tabId,
+  panelId,
+  onSelect,
+}: {
+  surfaces: readonly ContentSurface[];
+  current: ContentSurface;
+  tabId: (s: ContentSurface) => string;
+  panelId: (s: ContentSurface) => string;
+  onSelect: (s: ContentSurface) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const shown = surfaces.includes(current) ? current : null;
+  useDismissable(open, root, () => {
+    setOpen(false);
+    if (root.current?.contains(document.activeElement)) trigger.current?.focus();
+  });
+  useEffect(() => {
+    if (open) root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"], [role="menuitemradio"]')?.focus();
+  }, [open]);
+  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    event.preventDefault();
+    items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+  };
+  const label = shown ? `${SURFACE_LABEL[shown]} (more views)` : 'More views';
+  return (
+    <div className="pn-surface-more" ref={root} role="none">
+      <button
+        ref={trigger}
+        id={shown ? tabId(shown) : undefined}
+        type="button"
+        role="tab"
+        className="pn-surface-switch__tab pn-surface-switch__tab--mark pn-surface-more__trigger"
+        data-testid="work-session-more-views"
+        aria-selected={shown !== null}
+        aria-controls={shown ? panelId(shown) : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        tabIndex={shown ? 0 : -1}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <VectorIcon paths={shown ? SURFACE_ART[shown] : MORE_VIEWS_ART} size={14} />
+      </button>
+      {open ? (
+        <div
+          className="tws-astrip-menu pn-overflow__menu pn-surface-more__menu"
+          role="menu"
+          aria-label="More views"
+          data-testid="work-session-more-views-menu"
+          onKeyDown={onMenuKey}
+        >
+          {surfaces.map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="menuitemradio"
+              aria-checked={s === current}
+              className="pn-overflow__item pn-surface-more__item"
+              data-surface={s}
+              onClick={() => {
+                setOpen(false);
+                onSelect(s);
+                trigger.current?.focus();
+              }}
+            >
+              <VectorIcon paths={SURFACE_ART[s]} size={14} />
+              {SURFACE_LABEL[s]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }

@@ -79,17 +79,17 @@ describe('actorName', () => {
 describe('a left member’s old messages', () => {
   it('the feed byline reads "Noor (left)"', () => {
     const { container } = renderRow(msg(LEFT));
-    expect(container.querySelector('.chs-byline__who')?.textContent).toBe('Noor (left)');
+    expect(container.querySelector('.tch-turn__byline strong')?.textContent).toBe('Noor (left)');
   });
 
   it('an active author’s byline is unchanged', () => {
     const { container } = renderRow(msg(ACTIVE));
-    expect(container.querySelector('.chs-byline__who')?.textContent).toBe('Ada');
+    expect(container.querySelector('.tch-turn__byline strong')?.textContent).toBe('Ada');
   });
 
   it('a persona whose owner left carries the suffix too', () => {
     const { container } = renderRow(msg(PERSONA_OF_LEFT));
-    expect(container.querySelector('.chs-byline__who')?.textContent).toBe('scout (left)');
+    expect(container.querySelector('.tch-turn__byline strong')?.textContent).toBe('scout (left)');
   });
 
   it('the message list’s author name carries it', () => {

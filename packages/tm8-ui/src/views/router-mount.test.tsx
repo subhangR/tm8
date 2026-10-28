@@ -150,8 +150,8 @@ describe('URL → screen', () => {
        nothing, which is what lets last-place apply — asserted below. */
     const target = createMemoryTarget('#/');
     const view = mount(target);
-    /* Revision 11: no memory, no address — the merged Home is the landing. */
-    await waitFor(() => view.getByTestId('home-page'));
+    /* No memory, no address — the workspace is the landing (Home is gone). */
+    await waitFor(() => view.getByTestId('tab-workspace'));
     view.unmount();
   });
 });
@@ -473,8 +473,8 @@ describe('the space the link names outranks the space you last had open', () => 
     const view = mount(target);
     await waitFor(() => view.getByText(/another Space/i));
     /* And it lands them somewhere real rather than on a blank refusal —
-       with no remembered place, that is the merged Home (revision 11). */
-    await waitFor(() => view.getByTestId('home-page'));
+       with no remembered place, that is the workspace (Home is gone). */
+    await waitFor(() => view.getByTestId('tab-workspace'));
     view.unmount();
   });
 });

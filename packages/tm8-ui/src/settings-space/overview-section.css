@@ -1,0 +1,157 @@
+/*
+ * The Settings Overview (OverviewSection.tsx): a search box over one card per
+ * scope. Tokens only (hex-ban.test.ts); both themes by construction.
+ */
+.set-ov {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-block: 4px 16px;
+}
+.set-ov__lede {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.set-ov__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.set-ov__search-label {
+  flex-basis: 100%;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.set-ov__search-input {
+  box-sizing: border-box;
+  flex: 1 1 280px;
+  max-width: 440px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card, var(--pn-paper));
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 13px;
+}
+.set-ov__search-input:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 3px rgba(var(--pn-brand-rgb), 0.18);
+}
+.set-ov__count {
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
+
+/* Two columns where there is room, one where there is not — the measure caps
+   the body at 860px, so two 300px+ cards is the most it ever holds. */
+.set-ov__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.set-ov__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card, var(--pn-paper));
+}
+/* Space has the most rows: it spans the grid so its subgroups sit side by side. */
+.set-ov__card[data-group='space'] { grid-column: 1 / -1; }
+.set-ov__card[data-group='space'] { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 18px; }
+.set-ov__card[data-group='space'] > .set-ov__card-head,
+.set-ov__card[data-group='space'] > .set-ov__card-desc,
+.set-ov__card[data-group='space'] > .set-ov__status { grid-column: 1 / -1; }
+.set-ov__card--locked { background: none; border-style: dashed; }
+
+.set-ov__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-ov__card-title {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--pn-ink);
+}
+.set-ov__card-desc {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.set-ov__status {
+  margin: 2px 0 4px;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+}
+
+.set-ov__sub { min-width: 0; margin-top: 4px; }
+.set-ov__sub-title {
+  margin: 4px 0 2px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.set-ov__sub[data-tone='danger'] .set-ov__sub-title { color: var(--pn-block); }
+.set-ov__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.set-ov__row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'label chip chev' 'hint hint chev';
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-inline: -8px;
+  /* content-box + the negative inline margin: the hover fill reaches 8px
+     past the text on both sides while the label stays on the card's line. */
+  box-sizing: content-box;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.set-ov__row:hover { background: var(--pn-hover); }
+.set-ov__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.set-ov__row-label { grid-area: label; font-size: 13px; font-weight: 500; }
+.set-ov__row .set-scope-chip { grid-area: chip; }
+.set-ov__row-hint {
+  grid-area: hint;
+  color: var(--pn-ink-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-ov__row-chev { grid-area: chev; color: var(--pn-ink-4); font-size: 14px; }
+.set-ov__sub[data-tone='danger'] .set-ov__row-label { color: var(--pn-block); }

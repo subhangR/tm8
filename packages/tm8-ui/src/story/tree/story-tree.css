@@ -65,8 +65,8 @@
 .cv2-root .syt-bound button { margin-left: 6px; }
 .cv2-root .syt-notice:empty { display: none; }
 .cv2-root .syt-notice { padding: 10px 16px; color: var(--pn-ink-2); font-size: 12px; border-top: 1px solid var(--pn-line); }
-.cv2-root .syt-workspace :focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
-.cv2-root .syt-tabs :focus-visible { outline-offset: -3px; }
+.cv2-root .syt-workspace :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-root .syt-tabs :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) { outline-offset: -3px; }
 .cv2-root .syt-rail .stc-head { flex-wrap: wrap; }
 .cv2-root .syt-rail .stc-count { flex-basis: 100%; }
 .cv2-root .syt-rail .stc-fm { grid-template-columns: 26px minmax(0, 1fr); }

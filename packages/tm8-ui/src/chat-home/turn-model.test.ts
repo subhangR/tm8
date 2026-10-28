@@ -6,6 +6,7 @@ import {
   hasUsage,
   mergeChatTurnFrame,
   optimisticTurnId,
+  prependOlderTurns,
   projectTurnParts,
   reconcileDetails,
   settleOptimisticTurn,
@@ -13,6 +14,17 @@ import {
 import type { ChatThreadDetail, ChatTurn } from './types';
 
 describe('rich turn projection', () => {
+  it('replaces a native item snapshot after deltas and ignores stale revisions', () => {
+    const projected = projectTurnParts([
+      { seq: 0, kind: 'text', itemId: 'item-a', operation: 'append', revision: 1, text: 'Hel' },
+      { seq: 1, kind: 'text', itemId: 'item-a', operation: 'append', revision: 2, text: 'lo' },
+      { seq: 2, kind: 'text', itemId: 'item-b', operation: 'append', revision: 1, text: 'Other' },
+      { seq: 3, kind: 'text', itemId: 'item-a', operation: 'replace', revision: 3, phase: 'final', text: 'Hello!' },
+      { seq: 4, kind: 'text', itemId: 'item-a', operation: 'replace', revision: 2, text: 'stale' },
+    ]);
+    expect(projected.map(part => part.kind === 'text' ? part.text : '')).toEqual(['Hello!', 'Other']);
+    expect(projected[0]).toMatchObject({ seq: 0, itemId: 'item-a', revision: 3, phase: 'final' });
+  });
   it('updates one tool card from later append-only state parts', () => {
     const assistant = CHAT_HOME_FIXTURE_THREAD.turns[1]!;
     const projected = projectTurnParts(assistant.parts);
@@ -170,3 +182,40 @@ describe('one usage part per turn (L3, #877)', () => {
     expect(usageSeqs(reconcileDetails(seen, snapshot))).toEqual([5]);
   });
 });
+
+describe('paged transcript', () => {
+  const turn = (n: number): ChatTurn => ({
+    messageId: `m${n}` as EntityId, role: 'user', author: null,
+    createdAt: `2026-10-28T00:00:${String(n).padStart(2, '0')}.000Z`, body: `b${n}`, parts: [],
+  });
+  const page = (ns: number[], olderCursor: string | null): ChatThreadDetail => ({
+    ...structuredClone(CHAT_HOME_FIXTURE_THREAD), turns: ns.map(turn), olderCursor,
+  });
+  const ids = (detail: ChatThreadDetail) => detail.turns.map((t) => t.messageId);
+
+  it('puts an older page in front, skipping turns already held at the edge', () => {
+    const held = page([4, 5, 6], 'c4');
+    // The edge moved under a concurrent post: m4 arrives in both pages.
+    const next = prependOlderTurns(held, { turns: [2, 3, 4].map(turn), olderCursor: 'c2' });
+    expect(ids(next)).toEqual(['m2', 'm3', 'm4', 'm5', 'm6']);
+    expect(next.olderCursor).toBe('c2');
+  });
+
+  /* HINGES ON: the `older` slice in `reconcileDetails`. A live frame re-reads
+     only the NEWEST page; without it the pages the reader scrolled up for were
+     appended AFTER the newest turn, or lost. */
+  it('keeps older pages in front through a newest-page re-read, with their cursor', () => {
+    const held = prependOlderTurns(page([4, 5, 6], 'c4'), { turns: [1, 2, 3].map(turn), olderCursor: null });
+    const next = reconcileDetails(held, page([5, 6, 7], 'c5'));
+    expect(ids(next)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']);
+    expect(next.olderCursor).toBeNull();
+  });
+
+  it('drops held history that no longer touches the newest page, rather than leave a gap', () => {
+    const held = page([1, 2, 3], 'c1');
+    const next = reconcileDetails(held, page([7, 8, 9], 'c7'));
+    expect(ids(next)).toEqual(['m7', 'm8', 'm9']);
+    expect(next.olderCursor).toBe('c7');
+  });
+});
+

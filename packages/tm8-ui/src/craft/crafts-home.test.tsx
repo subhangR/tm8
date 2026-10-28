@@ -112,10 +112,50 @@ describe('the Crafts home grid', () => {
     const view = render(<CraftsHome source={source} onOpenCraft={onOpen} />);
     await waitFor(() => view.getByTestId('dsh-empty'));
     fireEvent.click(view.getByTestId('dsh-new'));
+    /* It asks for a name first, on the default, selected. */
+    const field = view.getByTestId('dsh-new-name') as HTMLInputElement;
+    expect(field.value).toBe('Untitled craft');
+    expect(source.crafts).toHaveLength(0);
+    fireEvent.click(view.getByTestId('dsh-new-name-submit'));
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
     const created = onOpen.mock.calls[0]![0] as EntityId;
     expect(source.crafts.map((d) => d.id)).toEqual([created]);
     expect(source.crafts[0]!.title).toBe('Untitled craft');
+  });
+
+  it('+ New craft takes the typed name; Esc cancels without creating', async () => {
+    const source = seeded();
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} now={NOW} />);
+    await waitFor(() => view.getByTestId('dsh-grid'));
+    fireEvent.click(view.getByTestId('dsh-new'));
+    fireEvent.keyDown(view.getByTestId('dsh-new-name'), { key: 'Escape' });
+    expect(view.queryByTestId('dsh-new-name')).toBeNull();
+    expect(source.crafts).toHaveLength(2);
+
+    fireEvent.click(view.getByTestId('dsh-new'));
+    const field = view.getByTestId('dsh-new-name');
+    fireEvent.change(field, { target: { value: '  Checkout redesign ' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+    expect(source.crafts[0]!.title).toBe('Checkout redesign');
+  });
+
+  it('a card’s ⋯ → Rename edits its name in place', async () => {
+    const source = seeded();
+    const onOpen = vi.fn();
+    const view = render(<CraftsHome source={source} onOpenCraft={onOpen} now={NOW} />);
+    await waitFor(() => view.getByTestId('dsh-grid'));
+    fireEvent.click(view.getAllByTestId('dsh-card-more')[1]!);
+    fireEvent.click(view.getByTestId('dsh-card-rename-item'));
+    const field = view.getByTestId('dsh-card-rename') as HTMLInputElement;
+    expect(field.value).toBe('Passkeys');
+    fireEvent.change(field, { target: { value: 'Passkeys rollout' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(view.getByText('Passkeys rollout')).toBeTruthy());
+    expect(source.crafts.find((c) => c.id === id(2))!.title).toBe('Passkeys rollout');
+    /* Renaming never opened the craft. */
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it('reports a failed create and stays on the home', async () => {
@@ -126,11 +166,13 @@ describe('the Crafts home grid', () => {
       create: async () => {
         throw new Error('kind craft is not known');
       },
+      rename: async () => {},
       subscribe: () => () => {},
     };
     const view = render(<CraftsHome source={source} onOpenCraft={onOpen} onNotice={onNotice} />);
     await waitFor(() => view.getByTestId('dsh-empty'));
     fireEvent.click(view.getByTestId('dsh-empty-new'));
+    fireEvent.click(view.getByTestId('dsh-new-name-submit'));
     await waitFor(() => expect(onNotice).toHaveBeenCalledWith('kind craft is not known'));
     expect(onOpen).not.toHaveBeenCalled();
   });
@@ -184,6 +226,7 @@ describe('the seam-backed crafts source', () => {
       {
         id: id(10),
         title: 'Launch',
+        version: 1,
         pageKinds: ['doc', 'graph'],
         pageCount: 2,
         chatCount: 2,
@@ -196,6 +239,13 @@ describe('the seam-backed crafts source', () => {
 
     expect(await source.create('Untitled craft')).toBe(id(40));
     expect(createEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: 'craft', title: 'Untitled craft', spaceId: SPACE }));
+  });
+
+  it('renames a craft with a title patch at the card’s version', async () => {
+    const patchEntity = vi.fn(async () => ({}));
+    const seam = { commands: { patchEntity }, onEvent: () => () => {} } as unknown as Seam;
+    await craftsSourceFromSeam(seam, SPACE).rename(id(10), 'Launch v2', 4);
+    expect(patchEntity).toHaveBeenCalledWith(id(10), expect.objectContaining({ title: 'Launch v2', expectedVersion: 4 }));
   });
 });
 

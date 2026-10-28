@@ -27,6 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { CraftContent, CraftState, EntityContextCraftPage } from './craft.js';
+import type { LaunchModelEffort } from './launch-models.js';
 import type { WorkspacePrompt, WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
@@ -189,6 +190,15 @@ export interface EntityCounters {
    */
   docs?: number;
   memories?: number;
+  /**
+   * Tracked pull requests / attached artifacts / attached drawings (329),
+   * under the same additive-optional law as `docs`/`memories`.
+   */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
+  /** Work sessions this entity launched (`launched_by`, 331), same law. */
+  sessions?: number;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
 }
@@ -248,6 +258,14 @@ export interface EntitySummary {
    * turning a missing affordance into a blank panel.
    */
   capabilities?: EntityCapabilities;
+  /**
+   * Live direct-child count (`parent_id`, not deleted) — the TRUE number a
+   * list tile's child subscript draws, where the rows on screen may be one
+   * page and one status tab of them (task 01a14b92). Optional for the same
+   * rolling-node reason as `capabilities`: absent = never counted, and the
+   * tile falls back to the children it has loaded.
+   */
+  childCount?: number;
   /**
    * Which of the four lifecycle buckets this entity currently sits in —
    * denormalized from its status onto the envelope, because this is the
@@ -361,7 +379,27 @@ export type CoreEntityState =
        * link it (107), at LOWER confidence than authored_from/in_worktree.
        */
       headRef?: string | null }
-  | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
+  /*
+   * A commit mirror. `url`/`fetchedAt`/`stale` are here for the same reason the
+   * pull request arm above carries them, and they were missing: the panel's
+   * link-summary row reads `state.url` and `state.stale` for BOTH kinds, so a
+   * commit could never render its `open ↗` link — although `public.commits.url`
+   * held one — and could never show that it was unsynced. The reported bug's
+   * own symptom was unobservable on the entity it was about.
+   *
+   * `stale` is required and not optional, matching the pull request arm: "we
+   * have never fetched this" is a fact the projection always knows, and an
+   * absent boolean would read as false, which is the one wrong answer.
+   *
+   * `author` is ADDITIVE ONLY and changes nothing on screen today — the panel's
+   * DETAILS block renders from `content`, which already carries every column of
+   * `public.commits`, so the author has always been visible there. It is
+   * mirrored onto `state` for typed consumers, consistent with `message`, `sha`
+   * and `committedAt`, which are duplicated from content for the same reason.
+   */
+  | { kind: 'commit'; repository: string; sha: string; message: string;
+      committedAt?: string | null; author?: string | null;
+      url?: string; fetchedAt?: string | null; stale: boolean }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell'; description?: string; equipped: boolean }
   | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
@@ -510,6 +548,13 @@ export type CoreEntityState =
        */
       offeredTaskIds?: string[];
       /**
+       * 330: the chat or session that launched this one — its `launched_by`
+       * edge. Lineage is an edge, not `parentId` (a chat is not a session's
+       * parent). Absent = a node that predates the field; null = launched by
+       * a person, with no chat or session behind it.
+       */
+      launchedBy?: string | null;
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
@@ -614,6 +659,10 @@ export type CoreEntityState =
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
       credentialSelection?: ChatCredentialSelection;
+      credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+      reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+      configRevision?: number;
+      runtime?: import('./chat-runtime.js').ChatRuntimeState;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -635,7 +684,23 @@ export type CoreEntityState =
        * cannot see or that was deleted). ABSENT means the answering door did
        * not compute it — a client must not read absence as "no subject".
        */
-      about?: { id: EntityId; kind: EntityKind; title: string } | null }
+      about?: { id: EntityId; kind: EntityKind; title: string } | null;
+      /**
+       * Whether THE VIEWER may change this chat's model (`chat.setModel`, 276),
+       * answered by the server under the viewer's claims from the two conjuncts
+       * `set_chat_model` refuses on: the viewer's identity configured the chat,
+       * and the session is not pinned to another space. Per viewer, like
+       * `capabilities`: two members reading one chat get different answers.
+       *
+       * ABSENT means the answering door did not compute it (a server older
+       * than the field). A client must read absence as UNKNOWN and must not
+       * lock on it — absent is not "someone else's chat".
+       *
+       * It does not say WHICH models: the catalog and `agentTool` decide that
+       * per model. Nor does it cover `spaceLinks.invoke`, which refuses
+       * `chat.setModel` for every caller that arrives over a link.
+       */
+      canSetModel?: boolean }
   /**
    * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
    * carries the surface KINDS that are live and not their detail; the panel
@@ -678,9 +743,10 @@ export interface EntityBadges {
    */
   liveSession?: TaskLiveSession;
   /**
-   * The pull requests this task `tracks`, projected onto the task's OWN
-   * summary. Newest-first by link recency, capped — see
-   * `LinkedPullRequestBadge`.
+   * The pull requests this task `tracks` — or, on a work_session or chat,
+   * the PRs it `tracks` or that are `authored_from` it (the same set its `prs`
+   * counter counts) — projected onto the row's OWN summary. Newest-first by
+   * link recency, capped — see `LinkedPullRequestBadge`.
    *
    * ABSENT MEANS NO CLAIM, never "no linked PRs". A node predating this field
    * omits it, and a reader must fall back to the graph rather than render an
@@ -1260,6 +1326,36 @@ export interface CollectionQuery {
      */
     workedByActorId?: EntityId;
     /**
+     * Additive (327, the chat's created-here strip): the ROOTS made in this
+     * chat or work session — entities whose server-recorded `authored_from`
+     * names it (a session also counts when it is the session's parent, so a
+     * pre-327 spawn is not lost). An entity whose parent was ALSO made there
+     * is not a root and is left to the parent's subtree. Messages and forms
+     * never count: every post in a chat carries `authored_from` too.
+     * Rollup (task 01a14a91): what a session spawned under it (at any depth)
+     * made counts as made here as well.
+     */
+    createdIn?: EntityId;
+    /**
+     * Additive (331, the chat list's launched sessions): work_sessions whose
+     * `launched_by` edge (330) names ANY of these chats or sessions. Bounded
+     * (at most 200 ids) — it is one list page's launchers, never a space.
+     */
+    launchedBy?: EntityId[];
+    /**
+     * Additive (tile children, task 01a14b92): rows whose `parent_id` is ANY
+     * of these — the children an expanded list row draws, whatever their
+     * status, so a status tab filters roots and the children ride along.
+     * Bounded like `launchedBy`: one list page's expanded rows.
+     */
+    parentIn?: EntityId[];
+    /**
+     * Additive (task 01a14b92): these rows by id — the parents a status tab
+     * shows as CONTEXT above the children that matched it, so a subtask whose
+     * parent is done is not orphaned in In progress. Bounded the same way.
+     */
+    idIn?: EntityId[];
+    /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
@@ -1418,6 +1514,13 @@ export interface MessageView extends EntitySummary {
    * everywhere else.
    */
   turnInFlight?: boolean;
+  /**
+   * The work session or chat this message was authored FROM (the recorder-owned
+   * `authored_from` edge), when there is one. Absent on first-party messages.
+   * Rides every message read so a paged transcript needs no second read for
+   * it — the chat surface used to pull a whole `entities.feed` page for this.
+   */
+  sourceWorkSessionId?: EntityId;
 }
 
 // ---------------------------------------------------------------------------
@@ -1445,7 +1548,14 @@ export interface MessageThinkingPart extends MessagePartBase {
 
 export interface MessageTextPart extends MessagePartBase {
   kind: 'text';
-  payload: { text: string };
+  payload: {
+    text: string;
+    /** Native item identity and revision support corrected final snapshots. */
+    itemId?: string;
+    revision?: number;
+    operation?: 'append' | 'replace';
+    phase?: 'commentary' | 'final' | 'unknown';
+  };
 }
 
 export interface MessageToolCallPart extends MessagePartBase {
@@ -1529,11 +1639,29 @@ export interface ChatCredentialSelection {
   /** Only for source=space. Absent means the space default. */
   credentialId?: EntityId;
 }
-export interface SetChatCredentialsInput { credentialSelection: ChatCredentialSelection }
-export interface SetChatCredentialsResult extends SetChatCredentialsInput { chatId: EntityId }
+export interface SetChatCredentialsInput {
+  credentialSelection: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
+}
+export interface SetChatCredentialsResult extends SetChatCredentialsInput {
+  chatId: EntityId;
+  configRevision?: number;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  appliesAt?: 'next_claim';
+}
+
+/** Stop the chat's running turn. Queued turns behind it still run. */
+export type InterruptChatInput = Record<string, never>;
+export interface InterruptChatResult {
+  chatId: EntityId;
+  /** `requested`: the running turn will end and its done frame says how. `not_running`: nothing to stop. */
+  disposition: 'requested' | 'not_running';
+}
 
 export interface StartChatInput {
   credentialSelection?: ChatCredentialSelection;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
   mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
@@ -1553,6 +1681,8 @@ export interface StartChatInput {
   attachmentIds?: EntityId[];
   /** The entity this chat is about; written as an `about` edge. */
   aboutId?: EntityId | null;
+  /** The opening turn's Coordinator team (328) — see `PostMessageInput.team`. */
+  team?: ChatTurnTeam;
   clientMutationId: string;
 }
 
@@ -1563,33 +1693,25 @@ export interface StartChatResult {
 }
 
 /**
- * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
- *
- * The model used to be a write-once fact for a chat's whole life, so finishing a
- * conversation on a stronger model meant abandoning the conversation. It does
- * not any more: a Claude Code session carries turns from different models and
- * `--resume` keeps the transcript across the switch, so the chat's model is a
- * setting, and the turn records what actually ran it.
- *
- * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
- * on the new model until it is moved again. A turn already claimed keeps the
- * model it was stamped with — the claim is the serialization point, so a switch
- * can never rewrite a run that is already under way.
- *
- * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
- * a tool change would invalidate the native session the resume depends on. The
- * server resolves the tool from the launch catalog and the database refuses a
- * mismatch.
+ * Atomically change the desired model, effort and optional credential choice.
+ * Turns claimed after this mutation use its configuration revision; an active
+ * turn retains its immutable snapshot. The catalog selects the harness and
+ * inference provider. Switching harnesses keeps the tm8 conversation through
+ * verified native resume or a bounded portable history seed.
  */
 export interface SetChatModelInput {
   /**
-   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   * A model admitted by the launch catalog and the chat adapter registry.
    *
    * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
    * here, like every other `:id`-addressed command: two places to name the same
    * chat is two places for them to disagree.
    */
   model: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
 }
 
 export interface SetChatModelResult {
@@ -1597,6 +1719,12 @@ export interface SetChatModelResult {
   model: string;
   /** Server-resolved from the catalog; decides which API-key backend is used. */
   provider: string;
+  agentTool?: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  configRevision?: number;
+  appliesAt?: 'next_claim';
 }
 
 export interface ChatTurnDeltaFrame {
@@ -2588,6 +2716,13 @@ export interface AuthClaimStatusResult {
    * flag of its own; an unreadable policy answers `isolated`.
    */
   projectIsolation: ProjectIsolation;
+  /**
+   * Whether THIS CALLER must present the setup token to claim. False on a
+   * claimed node and for the loopback auto-owner, who already acts as owner and
+   * claims without one. A fact about the caller, never about whether a token
+   * exists. Optional so an older node's answer still parses; absent means true.
+   */
+  tokenRequired?: boolean;
 }
 
 /**
@@ -2604,8 +2739,12 @@ export interface AuthClaimStatusResult {
  * what you just chose is a seam the person has to notice.
  */
 export interface AuthClaimInput {
-  /** The `tm8c_…` plaintext from the boot log or `<dataDir>/setup-token`. */
-  token: string;
+  /**
+   * The `tm8c_…` plaintext from the boot log or `<dataDir>/setup-token`.
+   * Omitted only by the loopback auto-owner, who claims without one; from any
+   * other caller an omitted token is `unauthenticated`.
+   */
+  token?: string;
   username: string;
   password: string;
   displayName?: string;
@@ -3343,6 +3482,47 @@ export interface CredentialsSpaceReadinessView {
     activeSpaceOwnedCredentials: number;
     reason: CredentialReadinessPollReason | null;
   };
+  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 370). */
+  seeding: CredentialSeedingView;
+}
+
+/**
+ * R1/S7b (task 01a0e75e, doc 01a0e248 §8.3/S9): the R2 seeding gate, per
+ * provider the space USES — never the caller's answer. Used providers are
+ * derived from agent sessions in the last 30 days (their manifests'
+ * `effectiveCredentialSources`; a session with a manifest but no map infers
+ * anthropic from claude-code/claude and openai from codex); github is also used for polling when the space
+ * has a github.com project. `launch` needs an ACTIVE space default the policy
+ * lets run; `poll` needs an ACTIVE space-owned public github credential. A
+ * space with no agent session in the window is `idle` and never red.
+ */
+export type CredentialSeedingNeed = 'launch' | 'poll';
+export type CredentialSeedingLaunchReason = 'policy_excludes_space' | 'stale' | 'no_default' | 'no_credential';
+export type CredentialSeedingState = 'green' | 'red' | 'idle';
+
+export interface CredentialSeedingProvider {
+  ready: boolean;
+  needs: CredentialSeedingNeed[];
+  launchReason: CredentialSeedingLaunchReason | null;
+  pollReason: CredentialReadinessPollReason | null;
+  /** The first failing need's reason; null when ready. */
+  reason: CredentialSeedingLaunchReason | CredentialReadinessPollReason | null;
+}
+
+export interface CredentialSeedingView {
+  /** The window as Postgres prints an interval, e.g. `30 days`. */
+  window: string;
+  agentSessions: number;
+  /** Agent sessions in the window with no effective-source record: counted, not guessed at. */
+  sessionsWithoutRecord: number;
+  githubProjects: number;
+  usedProviders: SpaceCredentialProviderName[];
+  /** One entry per USED provider only. */
+  providers: Partial<Record<SpaceCredentialProviderName, CredentialSeedingProvider>>;
+  missing: SpaceCredentialProviderName[];
+  state: CredentialSeedingState;
+  /** The R2 gate flag: `state !== 'red'`. */
+  readyForCut: boolean;
 }
 
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */
@@ -3803,6 +3983,28 @@ export interface PostMessageInput extends CommandContext {
    * enqueued chat turn runs under it (else the thread's default mode applies).
    */
   mode?: ChatMode;
+  /**
+   * Optional per-turn Coordinator team chosen at send time. Only meaningful
+   * when the post targets a chat thread: the Server stores it beside the turn
+   * and writes it into the agent's prompt as a `[team: …]` line, so it never
+   * appears in the message body or the transcript. Omitted ⇒ no team line.
+   */
+  team?: ChatTurnTeam;
+}
+
+/** One owner a Coordinator may hand work to: a teammate, or a model-only worker. */
+export interface ChatTurnTeamMember {
+  /** Display name — the teammate's name, or `Worker` for a model-only worker. */
+  name: string;
+  /** Present for a picked teammate. */
+  teammateId?: EntityId;
+  /** Model label as the composer shows it, e.g. `Claude Opus 5.5 (1M)`. */
+  model?: string;
+  effort?: LaunchModelEffort;
+}
+
+export interface ChatTurnTeam {
+  members: ChatTurnTeamMember[];
 }
 
 /** Accepted only at the versioned input migration boundary. */
@@ -5874,14 +6076,20 @@ export interface SpaceProject {
  *     step (migration 326). For a space admin who is not a node admin the path
  *     must lie inside an explicitly configured `TM8_PROJECT_ROOTS`.
  */
+/**
+ * `spaces.projects.create`. Three shapes: `folderId` names the project on a
+ * folder already granted to the Space; `workingDir` registers that folder (a
+ * leading `~/` is the node's home); NEITHER registers the home default
+ * `~/<projectDirName(name)>`, creating it when missing (`project-home.ts`).
+ */
 export interface SpaceProjectCreateInput extends CommandContext {
   folderId?: ProjectId;
   workingDir?: string;
   /** With `workingDir`: create it when it is one missing child of an allowed directory. */
   ensureWorkingDir?: boolean;
-  /** With `workingDir`. Only a node admin may register a folder `trusted`. */
+  /** Without `folderId`. Only a node admin may register a folder `trusted`. */
   trust?: ProjectTrustLevel;
-  /** Defaults to the folder's name; required with `workingDir`. */
+  /** Defaults to the folder's name; required without `folderId`. */
   name?: string;
 }
 
@@ -6523,14 +6731,16 @@ export interface ExecutionTerminateInput extends CommandContext {
  * (Spec D1 §4.1). Settles the outcome as `completed`: the claim check first
  * (`claims_open`, listing each task still working), then the receipt rule
  * (`receipt_required` / `receipt_not_on_anchor`), then every remaining claim
- * ends with `session_completed`. The process is untouched unless
- * `closeProcess`, which then terminates it as `exited_clean`. Idempotent on an
- * already-completed session; refused on a stopped one (`session_stopped`).
- * Completion is a status marker: the session keeps working, and a later claim
- * reopens it.
+ * ends with `session_completed`. Then a live process closes at once as
+ * `exited_clean` — after the reply when the session completes itself — unless
+ * `closeProcess: false`, or the session still has live sessions it launched
+ * (the auto-close job closes it later). Idempotent on an already-completed
+ * session; refused on a stopped one (`session_stopped`). Completion is a
+ * status marker: a later claim or a resume reopens the session.
  */
 export interface ExecutionCompleteInput extends CommandContext {
   receiptMessageId?: string;
+  /** Absent ⇒ close a live agent process; `false` keeps it open; `true` always closes. */
   closeProcess?: boolean;
 }
 
@@ -8225,6 +8435,12 @@ export interface EntityContextV2View {
   outcome?: string | null;
   receiptMessageId?: string | null;
   tasks?: EntityContextRef[];
+  /**
+   * 330 (chat and work_session): the sessions this one launched — their
+   * `launched_by` edges — live first. Not `children`: a launched session has
+   * no parent.
+   */
+  launchedSessions?: EntityContextRef[];
   // chat
   runtimeState?: string | null;
   turnState?: string | null;

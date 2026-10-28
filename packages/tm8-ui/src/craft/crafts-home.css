@@ -56,8 +56,36 @@
 }
 
 .dsh-btn:disabled { opacity: 0.45; cursor: default; }
-.dsh-btn--primary { background: var(--pn-brand); border-color: var(--pn-brand); color: var(--pn-card); }
-.dsh-btn--primary:hover:not(:disabled) { filter: brightness(1.06); }
+/* PRIMARY = THE PAPER TILE (Subhang 2026-10-18): black and white like New
+   chat · New task (#1240) — paper fill, a hairline edge, a soft under-shadow;
+   pressed, the shadow turns inward. No brass, whatever the style; the ink
+   flips in the dark theme. */
+.dsh-btn--primary {
+  --crf-tile-ink: black;
+  --crf-tile-paper: white;
+  --crf-tile-fill: var(--crf-tile-paper);
+  --crf-tile-edge: color-mix(in srgb, var(--crf-tile-ink) 18%, transparent);
+  background: var(--crf-tile-fill);
+  border: 1px solid var(--crf-tile-edge);
+  border-radius: 8px;
+  color: var(--crf-tile-ink);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--crf-tile-ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in srgb, black 30%, transparent);
+  transition: box-shadow 120ms ease-out, background-color 120ms ease;
+}
+[data-theme='dark'] .dsh-btn--primary {
+  --crf-tile-ink: white;
+  --crf-tile-paper: black;
+  --crf-tile-fill: color-mix(in srgb, var(--crf-tile-ink) 8%, var(--crf-tile-paper));
+}
+.dsh-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--crf-tile-ink) 4%, var(--crf-tile-fill));
+}
+.dsh-btn--primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--crf-tile-ink) 6%, var(--crf-tile-fill));
+  box-shadow: inset 0 1px 2px color-mix(in srgb, black 22%, transparent);
+}
 
 .dsh-grid {
   display: grid;
@@ -69,6 +97,7 @@
 }
 
 .dsh-card {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -181,3 +210,59 @@
   line-height: var(--pn-lh-body);
   color: var(--pn-ink-2);
 }
+
+/* ⋯ on a card (rename), shown on hover / focus; the card stays one door. */
+.dsh-card-wrap { position: relative; }
+.dsh-card[data-renaming] { cursor: default; border-color: var(--pn-ink-3); }
+.dsh-card-menu {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.dsh-card-wrap:hover .dsh-card-menu,
+.dsh-card-menu:focus-within,
+.dsh-card-menu[data-open] { opacity: 1; }
+.dsh-card-menu__btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  cursor: pointer;
+}
+.dsh-card-menu__btn:hover { color: var(--pn-ink); border-color: var(--pn-ink-3); }
+.dsh-card-menu__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+}
+.dsh-card-menu__item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  text-align: left;
+  cursor: pointer;
+}
+.dsh-card-menu__item:hover,
+.dsh-card-menu__item:focus-visible { background: var(--pn-surface); outline: none; }
+
+/* The field keeps the card's height: same line box as the name it replaces. */
+.dsh-card__rename { flex: 1; height: 22px; margin: -2px -7px; padding: 0 6px; font-size: var(--pn-fs-sm); font-weight: 600; }

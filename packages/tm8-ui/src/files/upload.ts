@@ -21,6 +21,7 @@
 import type { CommandResult, EntityId, FileUploadGrant, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { rowFromEntity } from './model';
+import { sha256HexOfBytes } from './sha256';
 
 /** What a finished upload gives back. `maxSizeBytes` is the grant's MEASURED
  *  ceiling — the only place this deployment's real cap is knowable. */
@@ -153,12 +154,58 @@ export function createFileUploadTask({
   };
 }
 
+/**
+ * The upload's first step, and once its single point of failure.
+ *
+ * `crypto.subtle` EXISTS ONLY IN A SECURE CONTEXT. https, `http://localhost`
+ * and `http://127.0.0.1` are secure; `http://<hostname>` and `http://<lan-ip>`
+ * are not — and those are supported ways to reach a node (`TM8_BIND` plus
+ * `TM8_ALLOWED_HOSTNAMES`). On such an origin this threw before a single
+ * request left the browser, which is the worst shape a failure can have here:
+ * the node never saw it, so it logged nothing, and every surface rendered the
+ * generic 'Upload failed. Try again.' over a retry that could never succeed.
+ *
+ * The checksum cannot simply be skipped — `files.uploadInit` binds
+ * `checksumSha256` and the node verifies the staged bytes against it — so the
+ * answer is to compute it the other way. WebCrypto stays the path everything
+ * actually takes; `sha256HexOfBytes` is only reached where there is none.
+ */
 export async function sha256Hex(blob: Blob): Promise<string> {
-  if (typeof crypto === 'undefined' || !crypto.subtle) {
-    throw uploadError('upstream_unavailable', 'Secure file checksums are unavailable in this browser.');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const subtle = typeof crypto === 'undefined' ? undefined : crypto.subtle;
+  if (subtle) {
+    const digest = await subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
   }
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return sha256HexOfBytes(bytes);
+}
+
+/**
+ * A client mutation id where `crypto.randomUUID` exists, and one that still
+ * works where it does not.
+ *
+ * `randomUUID` IS SECURE-CONTEXT-GATED, exactly like `crypto.subtle` above. On
+ * `http://<hostname>` it is `undefined`, so every upload threw
+ * `TypeError: crypto.randomUUID is not a function` on its way to the network —
+ * a SECOND secure-context dependency on the same path, and one the checksum
+ * fallback alone does not rescue. Measured, not assumed: on a real non-secure
+ * origin this page reports `isSecureContext: false`, `crypto.subtle:
+ * undefined`, `crypto.randomUUID: undefined`.
+ *
+ * The fallback shape is `authoring/commands.ts`'s, whose docblock already
+ * named this hazard — "a plain-HTTP LAN page would otherwise crash on its
+ * first create rather than degrade". It is reused rather than restated, and
+ * exported so the file lane has ONE copy instead of the four call sites that
+ * each rolled their own bare `crypto.randomUUID()`.
+ *
+ * A mutation id needs to be unique, not unguessable: the server uses it to
+ * reject a replay, never as a capability. Time plus `Math.random` is
+ * sufficient for that and is what the existing fallbacks already use.
+ */
+export function randomMutationId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /**
@@ -168,7 +215,7 @@ export async function sha256Hex(blob: Blob): Promise<string> {
  * function would be a real dependency for a cosmetic gain.
  */
 function defaultMutationId(): string {
-  return crypto.randomUUID();
+  return randomMutationId();
 }
 
 const SAFE_UPLOAD_ERRORS: Readonly<Record<string, string>> = {
@@ -176,15 +223,41 @@ const SAFE_UPLOAD_ERRORS: Readonly<Record<string, string>> = {
   forbidden: 'You do not have permission to upload this file.',
   unauthenticated: 'Sign in again before uploading files.',
   invalid_input: 'This file cannot be uploaded.',
+  /* The rest of what this path can actually raise. They were all landing in
+     the 'Upload failed. Try again.' bucket, which is why a reporter who hit
+     one could not tell anyone WHICH one they hit — the only fact the product
+     gave them was that something went wrong. Each entry states the CAUSE and
+     stops there; the retry sentence is appended below, once, and only when
+     the error says a retry is possible. */
+  not_found: 'What this file was being attached to no longer exists.',
+  rate_limited: 'Too many uploads at once.',
+  version_conflict: 'Something else changed this at the same time.',
+  invariant_violation: 'The node took the bytes but could not record the file.',
+  upstream_unavailable: 'The node could not be reached.',
+  not_implemented: 'This node does not support file uploads.',
 };
 
-/** Never surface transport paths, tokens, or arbitrary server prose. */
+/**
+ * Never surface transport paths, tokens, or arbitrary server prose — the
+ * message is chosen from the CODE, and the code alone.
+ *
+ * 'TRY AGAIN' IS A CLAIM, not punctuation. It is appended only when the error
+ * says it is retryable, because telling someone to retry a `forbidden` or a
+ * missing capability sends them round a loop the product knows is closed. An
+ * error with no `retryable` flag is treated as retryable, matching the wire's
+ * own default for an unknown failure.
+ */
 export function safeUploadReason(error: unknown): string {
   if (error instanceof UploadCancelledError) return 'Upload cancelled.';
-  const code = typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
-    ? (error as { code: string }).code
-    : null;
-  return code ? SAFE_UPLOAD_ERRORS[code] ?? 'Upload failed. Try again.' : 'Upload failed. Try again.';
+  const shape = typeof error === 'object' && error !== null
+    ? (error as { code?: unknown; retryable?: unknown })
+    : {};
+  const code = typeof shape.code === 'string' ? shape.code : null;
+  const known = code ? SAFE_UPLOAD_ERRORS[code] : undefined;
+  if (known) {
+    return shape.retryable === true ? `${known} Try again.` : known;
+  }
+  return shape.retryable === false ? 'Upload failed.' : 'Upload failed. Try again.';
 }
 
 function uploadError(code: string, message: string): Error & { code: string } {

@@ -15,7 +15,7 @@ import type { EntitySummary } from '@tm8/contract';
 
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../../fixtures';
 import { expandTree } from '../../kit/tree-disclosure.testkit';
-import type { ActionContext, QueryFilter } from '../../domain';
+import { KIND_ART, type ActionContext, type QueryFilter } from '../../domain';
 import { EntityListPanel } from '../EntityListPanel';
 import type { MessagePulse } from './useMessagePulses';
 import { findAnchor } from './TileFlightLayer';
@@ -25,11 +25,16 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 const sessions = fixtureSummaries.filter((row) => row.state.kind === 'work_session');
 const [root, mid, leaf, aunt] = sessions;
 
+/* Every row on the Running tab: a child from another session tab folds
+   behind `▸ N ended` (task 01a1821d), which is not what these pin. */
+const running = (row: EntitySummary): EntitySummary =>
+  ({ ...row, state: { ...row.state, status: 'running', outcome: 'open' } }) as EntitySummary;
+
 const chain: readonly EntitySummary[] = [
-  { ...root, parentId: null },
-  { ...mid, parentId: root.id },
-  { ...leaf, parentId: mid.id },
-  { ...aunt, parentId: root.id },
+  { ...running(root), parentId: null },
+  { ...running(mid), parentId: root.id },
+  { ...running(leaf), parentId: mid.id },
+  { ...running(aunt), parentId: root.id },
 ];
 
 const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => chain;
@@ -168,8 +173,9 @@ describe('a message flying across the session tiles', () => {
     const pathsOf = () => [...container.querySelectorAll('.lp__flight path')]
       .map((node) => node.getAttribute('d'));
 
-    const bubble = pathsOf();
-    expect(bubble).toHaveLength(1);
+    // The message flies as the message kind's own envelope, never a bubble.
+    const envelope = pathsOf();
+    expect(envelope).toEqual([...KIND_ART.message]);
 
     rerender(panel([
       { key: 'd1', kind: 'delegation', fromId: root.id, toId: leaf.id, evidence: 'entity' },
@@ -184,7 +190,7 @@ describe('a message flying across the session tiles', () => {
     expect(container.querySelector('[data-flight-kind="completion"]')).toBeTruthy();
 
     // Three kinds, three distinct drawings — not one mark in three colours.
-    expect(new Set([bubble.join(), chevron.join(), barred.join()]).size).toBe(3);
+    expect(new Set([envelope.join(), chevron.join(), barred.join()]).size).toBe(3);
   });
 
   it('marks a failed completion so its glyph can take the blocked colour', () => {
@@ -404,6 +410,10 @@ describe('a message flying across the session tiles', () => {
 
   /** Narrowness: a pulse with budget left still flies on a fresh mount. */
   it('still flies a retained pulse that has time to land', () => {
+    // A frozen clock, like the airborne tests above: against a real one the
+    // 300ms age kept growing through a loaded render and crossed the launch
+    // window in the full suite.
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const view = render(panel([aged('m1', leaf.id, aunt.id, 300)]));
     expandTree(view.container);
     expect(flightsIn(view.container)).toHaveLength(1);

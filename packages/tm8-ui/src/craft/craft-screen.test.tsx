@@ -175,6 +175,23 @@ describe('the craft screen', () => {
     await waitFor(() => view.getByTestId('went-home'));
   });
 
+  it('pressing the title renames the craft; Esc leaves it as it was', async () => {
+    const { view, source } = await mountCraft();
+    await waitFor(() => view.getByTestId('dsn-title-btn'));
+    fireEvent.click(view.getByTestId('dsn-title-btn'));
+    let field = view.getByTestId('dsn-title-rename') as HTMLInputElement;
+    expect(field.value).toBe('Launch plan');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(view.getByTestId('dsn-title').textContent).toBe('Launch plan');
+
+    fireEvent.click(view.getByTestId('dsn-title-btn'));
+    field = view.getByTestId('dsn-title-rename') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'Launch plan v2' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(view.getByTestId('dsn-title').textContent).toBe('Launch plan v2'));
+    expect((await source.read(CRAFT)).title).toBe('Launch plan v2');
+  });
+
   it('draws no Orchestrate, no graph picker and no header chat picker (D4)', async () => {
     const { view } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));

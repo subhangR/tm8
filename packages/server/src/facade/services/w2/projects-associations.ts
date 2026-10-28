@@ -1,9 +1,13 @@
-import { isAbsolute, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { scanSpaceSkills } from '../../../skills/service.js';
 import {
   CollabError,
+  expandHomePath,
   isCollabError,
+  projectDirName,
   type ActorSummary,
   type CorrectProjectAssociationInput,
   type EdgeCorrectionResult,
@@ -227,6 +231,9 @@ interface CorrectionEdgeRow {
   commit_sha: string | null;
   commit_message: string | null;
   commit_committed_at: Date | string | null;
+  commit_author: string | null;
+  commit_url: string | null;
+  commit_fetched_at: Date | string | null;
   project_entity_id: string;
   project_space_id: string;
   project_parent_id: string | null;
@@ -345,6 +352,12 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
       sha: row.commit_sha ?? '',
       message: row.commit_message ?? '',
       committedAt: isoOrNull(row.commit_committed_at),
+      // Parity with the pull request arm above. The third of three places that
+      // build a commit state; the required `stale` is what found it.
+      author: row.commit_author,
+      ...(row.commit_url ? { url: row.commit_url } : {}),
+      fetchedAt: isoOrNull(row.commit_fetched_at),
+      stale: row.commit_fetched_at === null,
     },
   };
 }
@@ -388,6 +401,8 @@ async function loadCorrectionEdge(
             pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
             commit_row.message commit_message, commit_row.committed_at commit_committed_at,
+            commit_row.author commit_author, commit_row.url commit_url,
+            commit_row.fetched_at commit_fetched_at,
             projection.id project_entity_id, projection.space_id project_space_id,
             projection.parent_id project_parent_id, projection.position project_position,
             projection.visibility project_visibility, projection.version project_version,
@@ -893,11 +908,10 @@ export class W2ProjectsAssociationsService {
     const input = ctx.body as SpaceProjectCreateInput;
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    const raw = input.workingDir !== undefined
+    const raw = input.folderId === undefined
       ? await this.registerSpaceFolder(claims, spaceId, {
           name: input.name ?? '',
-          workingDir: input.workingDir,
-          ensureWorkingDir: input.ensureWorkingDir === true,
+          ...newProjectFolder(input),
           trust: input.trust ?? 'untrusted',
           clientMutationId: envelope.clientMutationId ?? null,
         })
@@ -918,7 +932,7 @@ export class W2ProjectsAssociationsService {
   };
 
   /**
-   * `spaces.projects.create` with `workingDir` (migration 326): a space admin
+   * `spaces.projects.create` without `folderId` (migration 326): a space admin
    * registers a folder inside their allowed roots, grants it to the space and
    * names the project, in one step.
    *
@@ -1088,6 +1102,38 @@ export async function allowedWorkingDir(raw: string, roots: readonly string[], e
   const canonical = await canonicalDirectory(raw);
   requireAllowed(canonical, roots);
   return canonical;
+}
+
+/**
+ * THE FOLDER a `spaces.projects.create` without `folderId` registers.
+ *
+ * A given `workingDir` is used as is, a leading `~/` expanded against the
+ * node's home. With NO `workingDir` the project gets the home default,
+ * `~/<projectDirName(name)>`, created by the caller's ensure step. The default
+ * must be a NEW folder: an existing `~/prod-data` reached by naming a project
+ * "prod-data" would be a folder nobody chose, so it is refused and the caller
+ * is told to name it explicitly if that is what they meant.
+ */
+export function newProjectFolder(
+  input: Pick<SpaceProjectCreateInput, 'name' | 'workingDir' | 'ensureWorkingDir'>,
+  home: string = homedir(),
+): { workingDir: string; ensureWorkingDir: boolean } {
+  if (input.workingDir !== undefined) {
+    return { workingDir: expandHomePath(input.workingDir, home), ensureWorkingDir: input.ensureWorkingDir === true };
+  }
+  const dir = projectDirName(input.name ?? '');
+  if (!dir) {
+    throw new CollabError('invalid_input', 'the project name gives no folder name for its default directory; pass workingDir');
+  }
+  const workingDir = join(home, dir);
+  if (existsSync(workingDir)) {
+    throw new CollabError(
+      'conflict',
+      `the default directory ~/${dir} already exists; pass it as workingDir to use it, or choose another name`,
+      { details: { reason: 'default_working_dir_exists' } },
+    );
+  }
+  return { workingDir, ensureWorkingDir: true };
 }
 
 /** `register_space_folder` (324). The path must already be canonical and inside the caller's roots. */

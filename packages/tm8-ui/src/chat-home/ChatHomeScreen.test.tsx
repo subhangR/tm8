@@ -239,9 +239,9 @@ describe('Chat Home', () => {
     // no relaunch, no operation, no row to write. `mode-switch.test.tsx` covers
     // the carrying.
     expect(view.queryByLabelText('Chat teammate')).toBeNull();
-    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
+    expect((view.getByTestId('tch-settings') as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
-    expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('plan');
     // The pinned state is the disabled triggers themselves — the foot carries
     // controls, not copy (user ruling 2026-08-18).
     expect(view.queryByText('pinned for this thread')).toBeNull();
@@ -265,15 +265,14 @@ describe('Chat Home', () => {
     await waitFor(() => expect(view.getByLabelText('Chat model')).toBeTruthy());
 
     fireEvent.click(view.getByLabelText('Chat model'));
-    /* The coordinator runs claude-code only: the codex row is DRAWN, disabled,
-       with the reason — never silently omitted (ac_10). Clicking it does nothing. */
+    // Both harnesses are admitted by the shared chat registry.
     const codexRow = view.getByTestId('tch-model-gpt-5.6-sol');
-    expect(codexRow.getAttribute('aria-disabled')).toBe('true');
-    expect(codexRow.textContent).toContain('Claude Code only');
+    expect(codexRow.getAttribute('aria-disabled')).toBeNull();
     fireEvent.click(codexRow);
+    expect(view.getByLabelText('Chat model').textContent).toContain('GPT 5.6');
     fireEvent.click(view.getByTestId('tch-model-claude-sonnet-4-5'));
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-build'));
+    fireEvent.click(view.getByTestId('tch-settings'));
+    fireEvent.click(view.getByTestId('tch-settings-worker'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -298,7 +297,7 @@ describe('Chat Home', () => {
     expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
-  it('offers Explain and persists it in the write-once chat configuration', async () => {
+  it('still reaches Explain through `/explain` and persists it in the chat configuration', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(
       <ChatHomeScreen
@@ -311,10 +310,13 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-explain'));
+    /* The ⚙ offers three roles; the finer server modes stay reachable by slash. */
+    const box = await waitFor(() => view.getByLabelText('Message the chat agent'));
+    fireEvent.change(box, { target: { value: '/explain' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
     // The trigger states the selection without being opened.
-    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('explain');
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });
@@ -326,9 +328,9 @@ describe('Chat Home', () => {
     // stays live afterwards: the thread's default is not a lock, it is just what
     // a turn runs under when nobody redirects that turn.
     await waitFor(() => {
-      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
+      expect((view.getByTestId('tch-settings') as HTMLButtonElement).disabled).toBe(false);
     });
-    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('explain');
     expect(view.queryByText('pinned for this thread')).toBeNull();
   });
 
@@ -399,7 +401,9 @@ describe('Chat Home', () => {
     fireEvent.click(view.getByRole('button', { name: /stop/i }));
 
     await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
-    expect(view.getByText(/this thread is continuable/i)).toBeTruthy();
+    // No separate "Turn stopped · continuable" line above the composer; the
+    // phase label above is the one statement of it.
+    expect(view.queryByText(/this thread is continuable/i)).toBeNull();
     expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).disabled).toBe(false);
     expect(controls.interrupts).toEqual(['019f0000-0000-7000-8000-000000000010']);
     expect(view.getByText('I found the current context before the turn was stopped.')).toBeTruthy();
@@ -647,6 +651,35 @@ describe('Chat Home', () => {
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
 
     await waitFor(() => expect(view.getByText('Agent turn completed.')).toBeTruthy());
+  });
+
+  it('a Stop ends one turn: the next queued turn (another participant) draws as live again', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} newMutationId={(prefix) => `${prefix}:stop-then-next`} />,
+    );
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Read the current context.' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /stop/i }));
+    await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
+    const chatId = controls.interrupts[0]!;
+    const stoppedTurn = (await port.readThread(chatId)).turns.at(-1)!;
+
+    // A late frame of the STOPPED turn keeps the chat stopped.
+    act(() => { controls.emit({ type: 'chat.turn.done', chatId, messageId: stoppedTurn.messageId, usage: {} }); });
+    expect(view.getByText('Stopped · continuable')).toBeTruthy();
+
+    // Someone else's queued message starts its turn: that is a different agent message.
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta', chatId, messageId: '019f0000-0000-7000-8000-0000000009ff' as never, seq: 0,
+        part: { kind: 'text', text: 'Answering the next message' } as never,
+      });
+    });
+    await waitFor(() => expect(view.queryByText('Stopped · continuable')).toBeNull());
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
   it('says why a running turn cannot be stopped when the port has no interrupt', async () => {

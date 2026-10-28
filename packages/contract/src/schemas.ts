@@ -49,6 +49,7 @@ import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormSt
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import { CraftContentSchema, CraftStateSchema, EntityContextCraftPageSchema } from './craft.js';
 import { TaskProgressSchema } from './progress.js';
+import type { ChatCredentialDisplay, ChatCredentialIntent, ChatRuntimeState } from './chat-runtime.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -98,7 +99,7 @@ import type {
   ServiceKeyProviderName, ServiceKeyView,
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
-  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialSeedingView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceShareInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
@@ -140,6 +141,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
   SetChatModelResult, StartChatInput, ChatCredentialSelection, SetChatCredentialsInput, SetChatCredentialsResult,
+  InterruptChatInput, InterruptChatResult,
   PersonalStyleCreateInput, PersonalStyleUpdateInput, PersonalStyleDeleteInput, StylePushInput,
   StylePullInput, StyleRemoveInput, StylesResolveInput, StylePrefsSetInput, SpaceStyleDefaultSetInput,
   StartChatResult,
@@ -440,6 +442,12 @@ export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
   // 108, additive-optional: absent = a pre-108 node never counted, no claim.
   docs: z.number().int().nonnegative().optional(),
   memories: z.number().int().nonnegative().optional(),
+  // 329, additive-optional on the same terms as 108's pair.
+  prs: z.number().int().nonnegative().optional(),
+  artifacts: z.number().int().nonnegative().optional(),
+  drawings: z.number().int().nonnegative().optional(),
+  // 331: launched sessions, same terms.
+  sessions: z.number().int().nonnegative().optional(),
   viewerReaction: z.enum(['like', 'dislike', 'star']).nullable(),
 }).strict();
 
@@ -573,6 +581,16 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     sha: z.string(),
     message: z.string(),
     committedAt: z.string().nullable().optional(),
+    // Parity with the pull request arm above, and for the same reason: the
+    // panel's link-summary row reads `state.url` and `state.stale` for both
+    // kinds. A commit carried neither, so it could not render its link and
+    // could not say it was unsynced.
+    author: z.string().nullable().optional(),
+    url: z.string().optional(),
+    fetchedAt: z.string().nullable().optional(),
+    // Required, like the pull request arm's. An absent boolean reads as false,
+    // which is exactly the wrong answer for "never fetched".
+    stale: z.boolean(),
   }).strict(),
   z.object({
     kind: z.literal('container'),
@@ -652,6 +670,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     outcomeSource: WorkSessionOutcomeSourceSchema.nullable().optional(),
     outcomeNote: z.string().nullable().optional(),
     offeredTaskIds: z.array(z.string()).optional(),
+    // 330: the chat or session that launched it (its `launched_by` edge).
+    launchedBy: z.string().nullable().optional(),
     // The persona this run acts as, from its latest `participates_in` edge.
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.
@@ -769,6 +789,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('chat'),
     credentialSelection: z.lazy(() => ChatCredentialSelectionSchema).optional(),
+    credentialIntent: z.lazy(() => ChatCredentialIntentSchema).optional(),
+    reasoningEffort: z.lazy(() => ChatReasoningEffortSchema).nullable().optional(),
+    configRevision: z.number().int().positive().optional(),
+    runtime: z.lazy(() => ChatRuntimeStateSchema).optional(),
     teammateId: EntityIdSchema,
     model: z.string().min(1),
     provider: z.string().min(1),
@@ -789,6 +813,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
       kind: EntityKindSchema,
       title: z.string(),
     }).strict().nullable().optional(),
+    // Additive (276 configurer lock): per viewer; absent = not computed, which
+    // a client reads as unknown and never as a refusal.
+    canSetModel: z.boolean().optional(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -921,6 +948,7 @@ function entitySummaryShape() {
     // a parse failure. `EntityDetail` re-declares it REQUIRED after this
     // spread, so detail keeps the stronger guarantee it always had.
     capabilities: EntityCapabilitiesSchema.optional(),
+    childCount: z.number().int().nonnegative().optional(),
     // Additive and OPTIONAL under the same law as `capabilities`: absent means
     // "this entity has no status", which is the truth for every non-task kind
     // in this phase AND the truth a pre-column node reports. See the field's
@@ -1304,6 +1332,10 @@ const CollectionFiltersSchema = z.object({
   inReviewForActorId: EntityIdSchema.optional(),
   mentionedActorId: EntityIdSchema.optional(),
   workedByActorId: EntityIdSchema.optional(),
+  createdIn: EntityIdSchema.optional(),
+  launchedBy: z.array(EntityIdSchema).max(200).optional(),
+  parentIn: z.array(EntityIdSchema).max(200).optional(),
+  idIn: z.array(EntityIdSchema).max(200).optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
@@ -1457,7 +1489,13 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
   z.object({
     seq: z.number().int().nonnegative(),
     kind: z.literal('text'),
-    payload: z.object({ text: z.string() }).strict(),
+    payload: z.object({
+      text: z.string(),
+      itemId: z.string().min(1).optional(),
+      revision: z.number().int().nonnegative().optional(),
+      operation: z.enum(['append', 'replace']).optional(),
+      phase: z.enum(['commentary', 'final', 'unknown']).optional(),
+    }).strict(),
     createdAt: IsoTimestamp,
   }).strict(),
   z.object({
@@ -1507,16 +1545,84 @@ export const ChatCredentialSelectionSchema: z.ZodType<ChatCredentialSelection> =
 }).strict().refine(input => !input.credentialId || input.source === 'space', {
   message: 'credentialId is only valid with source space',
 });
+
+export const ChatReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+
+export const ChatCredentialIntentSchema: z.ZodType<ChatCredentialIntent> = z.object({
+  defaultChoice: z.object({ source: z.enum(['auto', 'member', 'space', 'node']) }).strict(),
+  byProvider: z.object({
+    anthropic: ChatCredentialSelectionSchema.optional(),
+    openai: ChatCredentialSelectionSchema.optional(),
+    kimi: ChatCredentialSelectionSchema.optional(),
+    groq: ChatCredentialSelectionSchema.optional(),
+  }).strict(),
+}).strict();
+
+export const ChatCredentialDisplaySchema: z.ZodType<ChatCredentialDisplay> = z.object({
+  provider: z.enum(['anthropic', 'openai', 'kimi', 'groq']),
+  source: z.enum(['member', 'space', 'node']),
+  credentialId: EntityIdSchema.optional(),
+  label: z.string().optional(),
+  resolutionReason: z.enum(['personal_default', 'member', 'space_default', 'node', 'pinned']),
+}).strict();
+
+export const ChatRuntimeStateSchema: z.ZodType<ChatRuntimeState> = z.object({
+  schemaVersion: z.literal(1),
+  configRevision: z.number().int().positive(),
+  activeTurn: z.object({
+    turnId: EntityIdSchema,
+    configRevision: z.number().int().positive(),
+    generation: z.number().int().positive().nullable(),
+    model: z.string().min(1), provider: z.string().min(1), agentTool: z.string().min(1),
+    reasoningEffort: ChatReasoningEffortSchema.nullable(),
+    status: z.enum(['preparing', 'running', 'cancelling', 'interrupted', 'failed']),
+    credential: ChatCredentialDisplaySchema.optional(),
+  }).strict().nullable(),
+  runtime: z.object({
+    generation: z.number().int().positive().nullable(),
+    phase: z.enum(['starting', 'ready', 'running', 'stopping', 'stopped', 'failed', 'unknown']),
+    continuity: z.enum(['native_verified', 'portable_verified', 'pending', 'unavailable']),
+    observedAt: IsoTimestamp.nullable(),
+  }).strict(),
+  pendingForNextClaim: z.boolean(),
+}).strict();
+
+const chatConfigMutationShape = {
+  expectedConfigRevision: z.number().int().positive().optional(),
+  clientMutationId: z.string().min(1).max(240).optional(),
+};
+const hasPinnedMutationRevision = (input: { clientMutationId?: string; expectedConfigRevision?: number }) =>
+  input.clientMutationId === undefined || input.expectedConfigRevision !== undefined;
 export const SetChatCredentialsInputSchema: z.ZodType<SetChatCredentialsInput> = z.object({
   credentialSelection: ChatCredentialSelectionSchema,
-}).strict();
+  ...chatConfigMutationShape,
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult> = z.object({
   chatId: EntityIdSchema, credentialSelection: ChatCredentialSelectionSchema,
+  configRevision: z.number().int().positive().optional(),
+  credentialIntent: ChatCredentialIntentSchema.optional(),
+  appliesAt: z.literal('next_claim').optional(),
+}).strict();
+
+export const InterruptChatInputSchema: z.ZodType<InterruptChatInput> = z.object({}).strict() as z.ZodType<InterruptChatInput>;
+export const InterruptChatResultSchema: z.ZodType<InterruptChatResult> = z.object({
+  chatId: EntityIdSchema, disposition: z.enum(['requested', 'not_running']),
+}).strict();
+
+/** 328: the Coordinator's team on a chat turn — a field, never body text. */
+const ChatTurnTeamSchema = z.object({
+  members: z.array(z.object({
+    name: z.string().min(1).max(120),
+    teammateId: EntityIdSchema.optional(),
+    model: z.string().min(1).max(120).optional(),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
+  }).strict()).min(1).max(32),
 }).strict();
 
 export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   mcpSelections: McpSelectionsSchema.optional(),
   credentialSelection: ChatCredentialSelectionSchema.optional(),
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
   spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
@@ -1527,6 +1633,7 @@ export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   body: z.string().min(1).max(10000),
   attachmentIds: z.array(EntityIdSchema).max(16).optional(),
   aboutId: EntityIdSchema.nullable().optional(),
+  team: ChatTurnTeamSchema.optional(),
   clientMutationId: z.string().min(1),
 })
   .strict()
@@ -1553,12 +1660,21 @@ export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.
  */
 export const SetChatModelInputSchema: z.ZodType<SetChatModelInput> = z.object({
   model: z.string().min(1),
-}).strict() as z.ZodType<SetChatModelInput>;
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
+  credentialSelection: ChatCredentialSelectionSchema.optional(),
+  ...chatConfigMutationShape,
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 
 export const SetChatModelResultSchema: z.ZodType<SetChatModelResult> = z.object({
   chatId: EntityIdSchema,
   model: z.string().min(1),
   provider: z.string().min(1),
+  agentTool: z.string().min(1).optional(),
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
+  credentialSelection: ChatCredentialSelectionSchema.optional(),
+  credentialIntent: ChatCredentialIntentSchema.optional(),
+  configRevision: z.number().int().positive().optional(),
+  appliesAt: z.literal('next_claim').optional(),
 }).strict() as z.ZodType<SetChatModelResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [
@@ -1594,6 +1710,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
+  sourceWorkSessionId: EntityIdSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
@@ -2265,7 +2382,7 @@ const NodeClaimTokenSchema = z.string().min(8).max(200).regex(/^tm8c_[A-Za-z0-9_
 });
 
 export const AuthClaimInputSchema: z.ZodType<AuthClaimInput> = z.object({
-  token: NodeClaimTokenSchema,
+  token: NodeClaimTokenSchema.optional(),
   username: AuthUsernameSchema,
   password: AuthPasswordSchema,
   displayName: z.string().min(1).max(200).optional(),
@@ -2284,6 +2401,7 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
   projectIsolation: z.enum(['shared', 'isolated']),
+  tokenRequired: z.boolean().optional(),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
@@ -2622,6 +2740,32 @@ const CredentialReadinessProviderSchema = z.object({
   reason: z.enum(['no_credential', 'stale', 'policy_excludes_space']).nullable(),
 }).strict();
 
+const CredentialSeedingPollReasonSchema = z.enum(['no_space_owned_credential', 'stale']);
+const CredentialSeedingLaunchReasonSchema = z.enum(['policy_excludes_space', 'stale', 'no_default', 'no_credential']);
+const CredentialSeedingProviderSchema = z.object({
+  ready: z.boolean(),
+  needs: z.array(z.enum(['launch', 'poll'])),
+  launchReason: CredentialSeedingLaunchReasonSchema.nullable(),
+  pollReason: CredentialSeedingPollReasonSchema.nullable(),
+  reason: z.union([CredentialSeedingLaunchReasonSchema, CredentialSeedingPollReasonSchema]).nullable(),
+}).strict();
+
+const CredentialSeedingViewSchema: z.ZodType<CredentialSeedingView> = z.object({
+  window: z.string(),
+  agentSessions: z.number().int().nonnegative(),
+  sessionsWithoutRecord: z.number().int().nonnegative(),
+  githubProjects: z.number().int().nonnegative(),
+  usedProviders: z.array(SpaceCredentialProviderNameSchema),
+  providers: z.object({
+    anthropic: CredentialSeedingProviderSchema.optional(),
+    openai: CredentialSeedingProviderSchema.optional(),
+    github: CredentialSeedingProviderSchema.optional(),
+  }).strict(),
+  missing: z.array(SpaceCredentialProviderNameSchema),
+  state: z.enum(['green', 'red', 'idle']),
+  readyForCut: z.boolean(),
+}).strict();
+
 export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceReadinessView> = z.object({
   spaceId: z.string(),
   canLaunch: z.object({
@@ -2640,6 +2784,7 @@ export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceRead
     activeSpaceOwnedCredentials: z.number().int().nonnegative(),
     reason: z.enum(['no_space_owned_credential', 'stale']).nullable(),
   }).strict(),
+  seeding: CredentialSeedingViewSchema,
 }).strict();
 
 export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({
@@ -3132,6 +3277,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
+  team: ChatTurnTeamSchema.optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
@@ -3764,14 +3910,18 @@ export const SpaceProjectCreateInputSchema: z.ZodType<SpaceProjectCreateInput> =
   trust: ProjectTrustLevelSchema.optional(),
   name: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((value, context) => {
-  if ((value.folderId === undefined) === (value.workingDir === undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name exactly one of folderId or workingDir' });
+  /* Neither is the home default: a new folder `~/<name>` (project-home.ts). */
+  if (value.folderId !== undefined && value.workingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name at most one of folderId or workingDir' });
   }
-  if (value.workingDir === undefined && (value.ensureWorkingDir !== undefined || value.trust !== undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir and trust apply only with workingDir' });
+  if (value.workingDir === undefined && value.ensureWorkingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir applies only with workingDir' });
   }
-  if (value.workingDir !== undefined && value.name === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required with workingDir' });
+  if (value.folderId !== undefined && value.trust !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'trust applies only to a new folder (workingDir, or none for the home default)' });
+  }
+  if (value.folderId === undefined && value.name === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required unless folderId is given' });
   }
 });
 
@@ -4930,6 +5080,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   outcome: NullableString,
   receiptMessageId: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
+  launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,
   turnState: NullableString,
   turnCount: z.number().int().nonnegative().nullable().optional(),

@@ -57,6 +57,42 @@ function mount(current: EntityId | null, handlers = { home: vi.fn(), craft: vi.f
 const tabTitles = (view: ReturnType<typeof render>) =>
   view.queryAllByTestId('craft-tab').map((tab) => tab.querySelector('[role="tab"]')?.textContent);
 
+describe('renaming the craft on screen', () => {
+  it('▾ → Rename craft turns the name into a field; Enter renames through the source', async () => {
+    const source = seeded();
+    const { view } = mount(id(2), undefined, source);
+    await waitFor(() => expect(view.getByTestId('craft-switcher-trigger').textContent).toContain('Onboarding'));
+    fireEvent.click(view.getByTestId('craft-switcher-trigger'));
+    await waitFor(() => view.getByTestId('craft-switcher-rename-item'));
+    fireEvent.click(view.getByTestId('craft-switcher-rename-item'));
+    const field = view.getByTestId('craft-switcher-rename') as HTMLInputElement;
+    expect(field.value).toBe('Onboarding');
+    fireEvent.change(field, { target: { value: 'Onboarding v2' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(view.getByTestId('craft-switcher-trigger').textContent).toContain('Onboarding v2'));
+    expect(source.crafts.find((c) => c.id === id(2))!.title).toBe('Onboarding v2');
+  });
+
+  it('double-clicking the name renames too, and Esc keeps the old name', async () => {
+    const source = seeded();
+    const { view } = mount(id(3), undefined, source);
+    await waitFor(() => expect(view.getByTestId('craft-switcher-trigger').textContent).toContain('Roadmap'));
+    fireEvent.doubleClick(view.getByTestId('craft-switcher-trigger'));
+    const field = view.getByTestId('craft-switcher-rename');
+    fireEvent.change(field, { target: { value: 'Nope' } });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    await waitFor(() => expect(view.getByTestId('craft-switcher-trigger').textContent).toContain('Roadmap'));
+    expect(source.crafts.find((c) => c.id === id(3))!.title).toBe('Roadmap');
+  });
+
+  it('on Home there is no craft to rename', async () => {
+    const { view } = mount(null);
+    fireEvent.click(view.getByTestId('craft-switcher-trigger'));
+    await waitFor(() => expect(view.getAllByTestId('craft-switcher-row')).toHaveLength(3));
+    expect(view.queryByTestId('craft-switcher-rename-item')).toBeNull();
+  });
+});
+
 describe('the craft switcher', () => {
   it('lists Home first, then every craft', async () => {
     const { view } = mount(id(2));
@@ -65,7 +101,7 @@ describe('the craft switcher', () => {
     const pop = view.getByTestId('craft-switcher-pop');
     await waitFor(() => expect(view.getAllByTestId('craft-switcher-row')).toHaveLength(3));
     const rows = [...pop.querySelectorAll('[role="menuitem"]')].map((row) => row.querySelector('.crf-hsw__name')?.textContent);
-    expect(rows).toEqual(['Home', 'Pricing launch', 'Onboarding', 'Roadmap']);
+    expect(rows).toEqual(['Home', 'Pricing launch', 'Onboarding', 'Roadmap', 'Rename craft']);
   });
 
   it('says Home on Home, and picking routes', async () => {

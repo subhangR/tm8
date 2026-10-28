@@ -29,7 +29,7 @@
 import type { QValue } from './types';
 
 const SORT_KEYS = new Set([
-  'activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority', 'progress',
+  'activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'startDate', 'priority', 'progress',
 ]);
 
 /** The pre-phase-9 spelling of `filters.status` / `groupBy: 'status'`. */
@@ -61,12 +61,13 @@ function fromBase64Url(value: string): Uint8Array {
 }
 
 export function encodeQ(value: QValue): string {
-  // Serialize only the three carried members, in a stable key order, so the
+  // Serialize only the carried members, in a stable key order, so the
   // same query always encodes to the same string (idempotent replaceState).
   const payload: Record<string, unknown> = { v: 1 };
   if (value.filters !== undefined) payload.filters = value.filters;
   if (value.sortBy !== undefined) payload.sortBy = value.sortBy;
   if (value.groupBy !== undefined) payload.groupBy = value.groupBy;
+  if (value.pick !== undefined) payload.pick = value.pick;
   return toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
 }
 
@@ -98,6 +99,20 @@ export function decodeQ(raw: string): QValue | null {
     const current = groupBy === LEGACY_STATUS_KEY ? 'status' : groupBy;
     if (current !== 'status' && current !== 'assignee' && !current.startsWith('axis:')) return null;
     value.groupBy = current as QValue['groupBy'];
+  }
+  if (candidate.pick !== undefined) {
+    const pick = candidate.pick as Record<string, unknown> | null;
+    if (typeof pick !== 'object' || pick === null) return null;
+    const out: NonNullable<QValue['pick']> = {};
+    if (pick.cat !== undefined) {
+      if (typeof pick.cat !== 'string') return null;
+      out.cat = pick.cat;
+    }
+    if (pick.on !== undefined) {
+      if (!Array.isArray(pick.on) || !pick.on.every((x) => typeof x === 'string')) return null;
+      out.on = pick.on as string[];
+    }
+    value.pick = out;
   }
   return value;
 }

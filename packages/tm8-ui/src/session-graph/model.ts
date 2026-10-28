@@ -83,6 +83,8 @@ const RELATION_LABELS: Readonly<Record<string, string>> = {
   'anchored_to:out': 'Anchored to',
   'messaged:out': 'Messaged',
   'messaged:in': 'Messaged by',
+  'launched_by:out': 'Launched by',
+  'launched_by:in': 'Launched',
   'dispatched_by:out': 'Dispatched by',
   'dispatched_by:in': 'Dispatched',
   'follows_up:out': 'Follows up',

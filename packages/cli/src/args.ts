@@ -88,7 +88,8 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'stop',                // session terminate --stop — end the work without completing (Spec D1)
   'complete',            // session terminate --complete — complete the work, then close
   'mark-lost',           // session terminate --mark-lost — record a process that is gone
-  'close-process',       // session complete --close-process
+  'close-process',       // session complete --close-process (closes even with live launched sessions)
+  'keep-process',        // session complete --keep-process — leave the process open
   'keep-open',           // tool run — retain the interactive shell after tool exit
   'grant-only',          // session attach --grant-only
   'presence',            // event watch --presence
@@ -97,6 +98,8 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
+  'shared',              // mcp connect --shared — connect on behalf of the whole Space
+  'all-spaces',          // mcp tokens create --all-spaces — every Space I belong to now or join later
   'no-activate',         // workspace tabs open / files open --no-activate
   'preview',             // workspace files open --preview — the one preview tab, not a kept one
   'discard',             // workspace delete --discard
@@ -138,6 +141,12 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'no-follow-os',        // ...and its opposite; passing both is refused
   'trust-css',           // style use — allow the named space style's css
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
+  // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
+  // particular has to be listed or it would eat the next token and turn a
+  // rehearsal into a write.
+  'dry-run',             // mcp import — plan only, no writes
+  'trust-stdio',         // mcp import — register connectors that run a local command
+  'with-credentials',    // mcp import — also seal each literal token as the member's own private credential
 ]);
 
 /**
@@ -240,14 +249,23 @@ export class OptionBag {
     return this.bag.has(name);
   }
 
-  /** Positive integer options: `--limit`, `--depth`, `--expect-version`, … */
+  /**
+   * Integer options: `--limit`, `--depth`, `--expect-version`, … Sign is the
+   * command's to check (most refuse <= 0 themselves); magnitude is checked
+   * here, because past 2^53 `Number` rounds and the Server would be handed a
+   * different integer than the caller typed.
+   */
   integer(name: string): number | undefined {
     const raw = this.value(name);
     if (raw === undefined) return undefined;
     if (!/^-?\d+$/.test(raw)) {
       throw new CliError(`--${name} expects an integer, got ${JSON.stringify(raw)}`, EXIT_USAGE);
     }
-    return Number(raw);
+    const n = Number(raw);
+    if (!Number.isSafeInteger(n)) {
+      throw new CliError(`--${name} is out of range, got ${raw}`, EXIT_USAGE);
+    }
+    return n;
   }
 
   names(): string[] {
@@ -461,7 +479,11 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
       throw new CliError(`--${name} may be given only once (got ${raw.length})`, EXIT_USAGE);
     }
     const only = raw[0];
-    if (only === true || only === undefined) {
+    // `--space=` is a caller who meant to name something and named nothing.
+    // Passing '' on would not fall back to the session's Space: it would be a
+    // flag-sourced Space that differs from the session's, and route the call
+    // through a space link to nowhere.
+    if (only === true || only === undefined || only.trim() === '') {
       throw new CliError(`--${name} requires a value`, EXIT_USAGE);
     }
     return only;

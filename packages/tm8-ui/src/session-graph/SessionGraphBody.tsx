@@ -262,7 +262,7 @@ export function SessionGraphBody({
         (known.has(pulse.fromId) || known.has(pulse.toId));
       const corroboratingEdgeTouchesGraph =
         event.type === 'edge.upsert' &&
-        (event.edge.type === 'dispatched_by' || event.edge.type === 'messaged') &&
+        (event.edge.type === 'launched_by' || event.edge.type === 'dispatched_by' || event.edge.type === 'messaged') &&
         (known.has(event.edge.source.id) || known.has(event.edge.target.id));
       if (pulseTouchesGraph || corroboratingEdgeTouchesGraph) void load();
     },

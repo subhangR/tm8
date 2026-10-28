@@ -1,5 +1,6 @@
 import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
 import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
 import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
@@ -108,6 +109,10 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.agent_messages, 0) as agent_messages,
   coalesce(ec.docs, 0)     as docs,
   coalesce(ec.memories, 0) as memories,
+  coalesce(ec.prs, 0)       as prs,
+  coalesce(ec.artifacts, 0) as artifacts,
+  coalesce(ec.drawings, 0)  as drawings,
+  coalesce(ec.sessions, 0)  as sessions,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
@@ -147,6 +152,9 @@ export const ENTITY_COLUMNS = `
       and not exists (select 1 from public.edges oc
                        where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
                          and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -172,12 +180,27 @@ export const ENTITY_COLUMNS = `
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
-  cht.credential_selection as chat_credential_selection,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
   chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
   chq.last_turn_at as chat_last_turn_at, cht.context as chat_context,
+  -- canSetModel is the SAME rule set_chat_model enforces (276:119-125),
+  -- evaluated under the viewer's claims: the viewer's IDENTITY (not actor)
+  -- configured the chat, and the session is not pinned to another space.
+  -- The pin is inline, spelled as 276 spells it, so the read and the door
+  -- cannot drift apart; internal.session_space_id() stays off this hot path,
+  -- as 227 asks. No identity cannot set it either (require_identity refuses),
+  -- hence false rather than null. Null off a chat row: there is no chat.
+  case when cht.entity_id is not null then
+    coalesce(cht.configured_by_identity_id = internal.identity_id(), false)
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or cht.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid)
+  end as chat_can_set_model,
   gr.title as graph_title, gr.graph_type as graph_type,
   gr.nodes as graph_nodes, gr.edges as graph_edges,
   gr.layout as graph_layout, gr.source as graph_source,
@@ -253,7 +276,7 @@ export const ENTITY_COLUMNS = `
   (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
-  cm.url as commit_url, cm.author as commit_author,
+  cm.url as commit_url, cm.author as commit_author, cm.fetched_at as commit_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -498,6 +521,12 @@ export interface EntityRow {
   /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
   docs?: number;
   memories?: number;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -561,6 +590,7 @@ export interface EntityRow {
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
   ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -601,6 +631,10 @@ export interface EntityRow {
   chat_title: string | null;
   chat_teammate_id: string | null;
   chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -612,6 +646,8 @@ export interface EntityRow {
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
   chat_context: unknown;
+  /** Per viewer (276's two conjuncts under the caller's claims); null off a chat row. */
+  chat_can_set_model?: boolean | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_nodes: unknown[] | null;
@@ -709,6 +745,7 @@ export interface EntityRow {
   commit_committed_at?: Date | string | null;
   commit_url?: string | null;
   commit_author?: string | null;
+  commit_fetched_at?: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -1990,6 +2027,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // 299 (Spec D1 §3): the outcome of the WORK, beside the process facts.
         ...outcomeFacts(row),
         ...(Array.isArray(row.ws_offered_task_ids) ? { offeredTaskIds: row.ws_offered_task_ids } : {}),
+        ...(row.ws_launched_by !== undefined ? { launchedBy: row.ws_launched_by } : {}),
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a
@@ -2102,10 +2140,18 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'chat',
         credentialSelection: row.chat_credential_selection ?? { source: 'auto' },
-        teammateId: row.chat_teammate_id ?? '',
-        model: row.chat_model ?? '',
-        provider: row.chat_provider ?? '',
-        agentTool: row.chat_agent_tool ?? '',
+        ...(row.chat_config_revision != null ? {
+          configRevision: Number(row.chat_config_revision),
+          reasoningEffort: row.chat_reasoning_effort ?? null,
+          ...(row.chat_credential_intent ? { credentialIntent: row.chat_credential_intent } : {}),
+          ...(row.chat_runtime_public ? { runtime: row.chat_runtime_public } : {}),
+        } : {}),
+        // A deleted chat's row is hidden by `chats_select`: fall back to values
+        // the contract accepts. MIRRORS the projector twin.
+        teammateId: row.chat_teammate_id ?? row.created_by,
+        model: row.chat_model ?? 'unknown',
+        provider: row.chat_provider ?? 'unknown',
+        agentTool: row.chat_agent_tool ?? 'unknown',
         mode: (row.chat_mode ?? 'ask') as ChatMode,
         workdirMode: (row.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
         projectId: row.chat_project_id,
@@ -2115,6 +2161,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         lastTurnAt: isoOrNull(row.chat_last_turn_at),
         context: chatContextOf(row.chat_context),
         ...(ctx.chatSubjects ? { about: ctx.chatSubjects.get(row.id) ?? null } : {}),
+        // Only a computed answer is sent: absent tells the client "unknown",
+        // and a client must not lock the model on unknown.
+        ...(typeof row.chat_can_set_model === 'boolean' ? { canSetModel: row.chat_can_set_model } : {}),
       };
     case 'container': {
       // Hot and small — this rides EVERY list row, so it carries the surface
@@ -2184,6 +2233,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         committedAt: isoOrNull(row.commit_committed_at ?? null),
         ...(row.commit_url ? { url: row.commit_url } : {}),
         ...(row.commit_author ? { author: row.commit_author } : {}),
+        // Same as the projector twin: never fetched means stale.
+        fetchedAt: isoOrNull(row.commit_fetched_at ?? null),
+        stale: (row.commit_fetched_at ?? null) === null,
       } as EntityState;
     case 'space_link':
     case 'server':
@@ -2636,6 +2688,10 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       // an invented 0 would be a different (wrong) claim.
       ...(row.docs === undefined ? {} : { docs: row.docs }),
       ...(row.memories === undefined ? {} : { memories: row.memories }),
+      ...(row.prs === undefined ? {} : { prs: row.prs }),
+      ...(row.artifacts === undefined ? {} : { artifacts: row.artifacts }),
+      ...(row.drawings === undefined ? {} : { drawings: row.drawings }),
+      ...(row.sessions === undefined ? {} : { sessions: row.sessions }),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),
@@ -2960,6 +3016,26 @@ export async function loadChatSubjects(
 }
 
 /**
+ * The live direct-child count on each LIST row (task 01a14b92) — the number a
+ * tile's child subscript draws, where the rows on screen are one page and one
+ * status tab of a family. Collection reads only: `entities.context` output is
+ * frozen byte-for-byte (W2.G13 goldens), so the summary assembly every read
+ * shares stays as it was. One grouped query per page.
+ */
+export async function withChildCounts(q: Querier, items: readonly EntitySummary[]): Promise<EntitySummary[]> {
+  if (items.length === 0) return [...items];
+  const rows = await q.query<{ parent_id: string; count: string }>(
+    `select parent_id, count(*)::text as count
+       from public.entities
+      where parent_id = any($1::uuid[]) and deleted_at is null
+      group by parent_id`,
+    [items.map((item) => item.id)],
+  );
+  const counts = new Map(rows.map((row) => [row.parent_id, Number(row.count)]));
+  return items.map((item) => ({ ...item, childCount: counts.get(item.id) ?? 0 }));
+}
+
+/**
  * Assemble summaries for a set of rows: batch the relations, batch the actors,
  * then map. Two passes over the rows, because `badges.blocked.waitingOn` and
  * `badges.workingActors.task` are themselves `EntitySummary`s — the first pass
@@ -2980,6 +3056,7 @@ export async function assembleSummaries(
   } = {},
 ): Promise<EntitySummary[]> {
   if (rows.length === 0) return [];
+  await attachChatRuntimeFacts(q, rows);
 
   const ids = rows.map((r) => r.id);
   // Sequential, NOT Promise.all: a `Querier` wraps ONE pooled client, and a pg

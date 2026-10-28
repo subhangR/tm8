@@ -73,7 +73,8 @@ async function openTasksScreen() {
   /* Revision 17: the Work tab retired with the unified Home (task 01a00932)
      — the kind screens are reached by their GUARANTEED chord (`g t`), the
      door the keyboard contract promises survives any menu arrangement. */
-  await waitFor(() => view.getByTestId('home-page'));
+  /* The Home dashboard is gone: a no-memory boot lands in the workspace. */
+  await waitFor(() => view.getByTestId('tab-workspace'));
   fireEvent.keyDown(window, { key: 'g' });
   fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => view.getByTestId('entity-view'));

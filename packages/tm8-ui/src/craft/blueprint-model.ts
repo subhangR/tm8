@@ -51,7 +51,8 @@ import {
   type BlueprintViewOptions,
   type RefTitles,
 } from './blueprint-types';
-import { layoutGraph, roundedPath, type Box, type LayoutEdgeInput, type LayoutNodeInput } from './layout';
+import { reduceEdges } from './edge-reduction';
+import { curvedPath, layoutGraph, roundedPath, type Box, type LayoutEdgeInput, type LayoutNodeInput } from './layout';
 
 export * from './blueprint-types';
 
@@ -125,8 +126,10 @@ export function blueprintView(
   const rawEdges: RawEdge[] = Array.isArray(c['edges']) ? (c['edges'] as unknown[]).map((e) => (e && typeof e === 'object' ? e : {}) as RawEdge) : [];
   const storedLayout = (c['layout'] && typeof c['layout'] === 'object' ? c['layout'] : {}) as Record<string, { x?: unknown; y?: unknown }>;
   const mode = options.mode ?? 'flow';
-  const direction = options.direction ?? 'LR';
+  const direction = options.direction ?? 'TB';
+  const edgeStyle = options.edgeStyle ?? 'curved';
   const laneBy: BlueprintLaneBy = options.laneBy ?? 'assignee';
+  const edgeDetail = options.edgeDetail ?? 'all';
 
   // ── Nodes (first key wins; the coherence check reports duplicates) ───────────
   const nodes: NodeInfo[] = [];
@@ -279,22 +282,41 @@ export function blueprintView(
       pinned,
     };
   });
-  const lineMeta = drawn.map((e) => {
+  /* EDGE REDUCTION (view-only): which edges get a line of their own. An edge
+     a warning or error names is never dropped as implied nor folded — it must show. */
+  const drawnMeta = drawn.map((e) => {
     const drawnReversed = e.order === 'dst-first';
     const label = drawnReversed ? e.inverseLabel : e.label;
     return { e, drawnReversed, label };
   });
-  const layoutEdges: LayoutEdgeInput[] = lineMeta.map(({ e, drawnReversed, label }) => ({
+  const flagged = (key: string) => (edgeFindings.get(key) ?? []).some((f) => f.severity !== 'info');
+  const reduction = reduceEdges(drawnMeta.map(({ e, drawnReversed }) => ({
     key: e.key,
     from: drawnReversed ? e.cdst : e.csrc,
     to: drawnReversed ? e.csrc : e.cdst,
     ranked: e.order !== 'none',
+    reducible: e.role === 'dependency' && !flagged(e.key),
+    fold: e.role === 'context' && !flagged(e.key),
+  })), edgeDetail);
+  const metaByKey = new Map(drawnMeta.map((m) => [m.e.key, m]));
+  const lineMeta = reduction.kept.map((key) => {
+    const m = metaByKey.get(key)!;
+    const all = (reduction.carries.get(key) ?? [key]).map((k) => metaByKey.get(k)!);
+    const label = [...new Set(all.map((x) => x.label))].join(' · ');
+    return { ...m, label, all };
+  });
+  const layoutEdges: LayoutEdgeInput[] = lineMeta.map(({ e, drawnReversed, label, all }) => ({
+    key: e.key,
+    from: drawnReversed ? e.cdst : e.csrc,
+    to: drawnReversed ? e.csrc : e.cdst,
+    ranked: all.some((x) => x.e.order !== 'none'),
     label: blueprintLabelSize(label),
   }));
   const placed = layoutGraph(layoutNodes, layoutEdges, {
     direction,
     lanes: mode === 'swimlane' ? lanes.map((l) => ({ key: l.key, label: l.label })) : null,
     pad: PAD,
+    edgeStyle,
   });
 
   // ── Cards ────────────────────────────────────────────────────────────────────
@@ -344,12 +366,12 @@ export function blueprintView(
     }));
 
   // ── Lines ────────────────────────────────────────────────────────────────────
-  const lines: BlueprintLine[] = lineMeta.map(({ e, drawnReversed, label }) => {
+  const lines: BlueprintLine[] = lineMeta.map(({ e, drawnReversed, label, all }) => {
     const route = placed.edges.get(e.key)!;
     const pts = route.points;
     const first = pts[0] ?? { x: 0, y: 0 };
     const last = pts[pts.length - 1] ?? first;
-    const mine = edgeFindings.get(e.key) ?? [];
+    const mine = [...new Set(all.flatMap((x) => edgeFindings.get(x.e.key) ?? []))];
     const lb = route.labelBox;
     return {
       key: e.key,
@@ -359,15 +381,16 @@ export function blueprintView(
       role: e.role,
       knownType: e.known,
       label,
-      sentence: `${e.src} ${e.rawType || 'relates to'} ${e.dst}`,
-      note: e.note,
+      sentence: all.map((x) => `${x.e.src} ${x.e.rawType || 'relates to'} ${x.e.dst}`).join('; '),
+      note: all.map((x) => x.e.note).find((n) => n !== null) ?? null,
       drawnReversed,
       back: route.back,
       points: pts,
-      path: roundedPath(pts),
+      path: edgeStyle === 'curved' ? curvedPath(pts) : roundedPath(pts),
       labelBox: lb,
       findings: mine,
       severity: worst(mine),
+      merged: all.slice(1).map((x) => x.e.key),
       /* LEGACY straight line, port to port, for the canvas that has not moved
          to `path` yet — its label sits on ITS line, not on the routed one. */
       x1: first.x, y1: first.y, x2: last.x, y2: last.y,
@@ -443,6 +466,9 @@ export function blueprintView(
     graphType, source, mode, direction,
     cards, attached, lines, lanes: laneViews, findings,
     danglingEdgeCount: dangling,
+    edgeDetail,
+    hiddenEdges: { merged: reduction.mergedInto.size, implied: reduction.implied.size, folded: reduction.folded.size },
+    edgeKeys: drawn.map((e) => e.key),
     lists: { byAssignee, stages, rows },
     width, height, bounds,
   };

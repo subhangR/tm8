@@ -59,6 +59,7 @@ export type {
   StatusSource,
   TileBadgeSource,
   TileBadgeSpec,
+  TileSignalSpec,
   ValueControl,
   ValueOption,
 } from './types';
@@ -91,7 +92,14 @@ export { CRAFT_KIND, craftContentOf, craftStateOf, type CraftContent, type Craft
 /** @deprecated `design` is `craft` since migration 322; use the Craft names above. */
 export { DESIGN_KIND, designContentOf, designStateOf, type DesignContent, type DesignKind, type DesignPage, type DesignState } from './design';
 export { KindIcon } from './KindIcon';
-export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
+export { actionGlyph } from './actionGlyph';
+export {
+  TILE_LINK_GROUPS,
+  hasTileLinkCounts,
+  tileLinkCountsOf,
+  type TileLinkCount,
+  type TileLinkGroup,
+} from './tile-counts';
 
 export {
   PROCESS_CONTROL,
@@ -150,6 +158,8 @@ export {
   sessionVerbsOf,
   withGrace,
 } from './session-outcome';
+export { LAUNCHERS_PER_READ, launchedByOf, launchedRowsFilter, treeParentOf } from './launched-by';
+export { tileChildCount } from './tile-children';
 export type {
   GroupBulk,
   InterruptedGroup,
@@ -185,6 +195,7 @@ export {
   defaultLaunchTarget,
   describeCapacity,
   describeLaunchManifest,
+  launchConnectorFacts,
   launchHarnessFacts,
   LAUNCH_CONTEXT_ROLE_LABEL,
   LAUNCH_CONTEXT_SOURCE_LABEL,
@@ -270,6 +281,7 @@ export {
   type HomeRailGroup,
   type HomeRoot,
 } from './home-rail';
+export { DRAWER_TREE_KINDS, drawerTreeKinds, isDrawerChatKind } from './drawer-trees';
 
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the

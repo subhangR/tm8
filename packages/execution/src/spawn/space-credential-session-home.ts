@@ -24,8 +24,10 @@
  *   - THE STATE (codex rollouts under `sessions/`, claude transcripts under
  *     `projects/`) stays: resume reads the conversation back from this exact
  *     directory (`native-session.ts`, `claude --resume`), so removing it would
- *     make every space-key session unresumable. Whole-directory retention is
- *     session retention's question, as it is for member homes.
+ *     make every space-key session unresumable. The whole directory goes only
+ *     when nothing can read it again: the node's reclaim job removes it once
+ *     the session is deleted or has no row (and, opted in, once it ended past
+ *     the retention window). See `session-artifact-reclaim.ts`.
  *
  * Location: `<dataDir>/credentials/sessions/<workSessionId>/<provider>/`, every
  * level repaired to 0700 exactly as `agent-credential-home.ts` does. Never
@@ -72,14 +74,16 @@ async function writePrivateFileAtomic(path: string, content: string): Promise<vo
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', PRIVATE_FILE_MODE);
   try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await rename(temp, path);
   } catch (error) {
+    // A failed write or rename must not strand a temp file holding the key:
+    // the scrub and the boot sweep only know the final names.
     await rm(temp, { force: true });
     throw error;
   }

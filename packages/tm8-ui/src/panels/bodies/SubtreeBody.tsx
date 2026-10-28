@@ -12,6 +12,7 @@ import {
   CollapsibleSection,
   EmptySectionsToggle,
   useEmptySectionsRevealed,
+  useFoldState,
   useRegisterEmptySection,
 } from './CollapsibleSection';
 import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock';
@@ -147,6 +148,8 @@ export interface SubtreeBodyProps {
    * Never a fold, never part of the empty set.
    */
   attachmentSlot?: ReactNode;
+  /** The phone page's Messages section, drawn just above LINKED (CONTRACT §5 ruling 8). */
+  beforeLinked?: ReactNode;
   /**
    * Edges the attachment strip already draws as entity tiles (the attach
    * palette's links). They are kept out of LINKED and RUNS so one link is
@@ -213,6 +216,7 @@ export function SubtreeBody({
   attach,
   onAttached,
   attachmentSlot,
+  beforeLinked,
   stripEdgeIds,
   layout,
   rail,
@@ -222,6 +226,9 @@ export function SubtreeBody({
   descriptionSlot,
 }: SubtreeBodyProps) {
   const twoColumn = layout === 'two-column';
+  /* Read by the page's CSS: a self-fetching section (GIT) that cannot join
+     the fold registry marks itself empty, and the stylesheet follows this. */
+  const revealedEmpties = useEmptySectionsRevealed();
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
   const peers = peersOf(detail, stripEdgeIds);
@@ -367,6 +374,7 @@ export function SubtreeBody({
           />
         </CollapsibleSection>
       ) : null}
+      {beforeLinked}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         /* NEVER folded — a folded notice is a notice that was not delivered. */
@@ -386,17 +394,23 @@ export function SubtreeBody({
   );
 
   /*
-   * THE TWO-COLUMN PAGE (task 01a1163a; owner: "the things i need space to
-   * write, that is the main thing, it should not be clutter"). The main
-   * column is the writing — description, then what done means, then the
-   * pieces, then everything the task is connected to, further down. Every
-   * property is in the rail: the host's live controls first, then the facts
-   * the grid composed, drawn once in the same labelled-row voice.
+   * THE TASK PAGE (task 01a1163a; reworked in task 01a15e22).
+   * The page is the writing — description, then what done means, then the
+   * pieces, then everything the task is connected to, then its messages — in
+   * ONE column the full width of the pane.
    *
-   * THE GRID MOVES, IT IS NOT DROPPED. It is the only place a custom kind's
-   * scalars, the axes and the parent are drawn, and its suppression of the
-   * strip's own fields still applies — so nothing is shown twice, and nothing
-   * shown before is lost.
+   * THE PROPERTIES ARE ONE CLICK AWAY, NOT A RAIL (Subhang, 2026-10-21: "do we
+   * need the right panel … hide it under some option that opens"). The rail
+   * squeezed the messages into the middle of the pane; a `Details` row now
+   * carries a one-line summary of the same facts and opens them in place. It
+   * sits at the BOTTOM of the page, after the messages (task 01a164e5): the
+   * page opens on the writing, not on its bookkeeping. The host's live controls, the grid's facts and the
+   * relations are drawn exactly as before, only folded: kept MOUNTED while
+   * closed, so an open picker or a half-typed estimate survives a toggle.
+   *
+   * The name `two-column` is the registry's and is kept: it still means "the
+   * workspace page layout", and renaming a registry value is a migration this
+   * change does not need.
    */
   if (twoColumn) {
     return (
@@ -407,6 +421,7 @@ export function SubtreeBody({
         aria-labelledby="tab-content"
         data-testid="subtree-body"
         data-layout="two-column"
+        data-empties={revealedEmpties ? 'shown' : 'hidden'}
       >
         <div className="sb-layout">
           <div className="sb-main" data-testid="subtree-main">
@@ -414,20 +429,20 @@ export function SubtreeBody({
             {acceptance}
             {rest}
             {activity ? (
-              /* A bounded box, because the conversation scrolls itself and
-                 keeps its composer at its own bottom edge; the page scrolls
-                 past it to nothing, since it is the last thing here. */
-              <section className="sb-activity" aria-label="Activity" data-testid="subtree-activity">
-                <h2 className="sb-activity__label">Activity</h2>
+              /* Messages read from the top, oldest first, like the rest of the
+                 page; the box grows with them up to a cap and then scrolls
+                 itself, keeping its composer at its own bottom edge. */
+              <section className="sb-activity" aria-label="Messages" data-testid="subtree-activity">
+                <h2 className="sb-activity__label">Messages</h2>
                 <div className="sb-activity__surface">{activity}</div>
               </section>
             ) : null}
           </div>
-          <aside className="sb-rail" aria-label="Properties" data-testid="subtree-rail">
+          <DetailsDisclosure detail={detail}>
             {rail ?? null}
             <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
             {railTail ?? null}
-          </aside>
+          </DetailsDisclosure>
         </div>
       </div>
     );
@@ -448,6 +463,72 @@ export function SubtreeBody({
       {rest}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// The task page's Details row — the properties, folded under one line
+// ---------------------------------------------------------------------------
+
+/**
+ * One line that says what the properties are — state, priority, who has it,
+ * when it is due — and opens them in place. Member-name reads only (the
+ * `MetaGrid` idiom), so it stays free of "is this a task?".
+ *
+ * The panel is HIDDEN, not unmounted, while closed: the controls inside own
+ * open pickers and drafts, and the tests that drive them find them either way.
+ */
+function DetailsDisclosure({ detail, children }: { detail: EntityDetail; children: ReactNode }) {
+  const [open, toggle] = useFoldState('details', false);
+  const panelId = `${detail.id}-details`;
+  return (
+    <section className="sb-details" data-open={open ? 'true' : 'false'} data-testid="subtree-details">
+      <button
+        type="button"
+        className="sb-details__head"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={toggle}
+        data-testid="subtree-details-toggle"
+      >
+        <span className={open ? 'pn-fold__caret pn-fold__caret--open' : 'pn-fold__caret'} aria-hidden>
+          ▸
+        </span>
+        <span className="sb-details__label">Details</span>
+        <span className="sb-details__summary">{detailsSummary(detail).join(' · ')}</span>
+      </button>
+      <aside
+        className="sb-rail"
+        id={panelId}
+        aria-label="Properties"
+        data-testid="subtree-rail"
+        hidden={!open}
+      >
+        {children}
+      </aside>
+    </section>
+  );
+}
+
+function detailsSummary(detail: EntityDetail): string[] {
+  const state = detail.state as unknown as Record<string, unknown>;
+  const config = getKind(detail.kind);
+  const parts: string[] = [];
+  const statusKey = statusFieldOf(config);
+  const status = statusKey ? state[statusKey] : undefined;
+  if (typeof status === 'string' && status.length > 0) {
+    parts.push(config.panel.statusPill?.labels?.[status] ?? status.replace(/_/g, ' '));
+  }
+  if (typeof state.priority === 'string' && state.priority.length > 0) {
+    parts.push(`${state.priority} priority`);
+  }
+  if (Array.isArray(state.assignees)) {
+    const names = (state.assignees as EntitySummary['createdBy'][]).map((a) => a.displayName);
+    parts.push(names.length === 0 ? 'unassigned' : names.length > 2 ? `${names[0]} +${names.length - 1}` : names.join(', '));
+  }
+  if (typeof state.dueDate === 'string' && state.dueDate.length > 0) {
+    parts.push(`due ${state.dueDate.slice(0, 10)}`);
+  }
+  return parts;
 }
 
 // ---------------------------------------------------------------------------

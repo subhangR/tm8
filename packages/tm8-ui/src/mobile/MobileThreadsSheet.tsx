@@ -43,7 +43,7 @@
  *
  * ── WHAT THE DRAWER KEEPS ──────────────────────────────────────────────────
  *
- * Two rows where a list used to be: ＋ New conversation (the verb, unchanged
+ * Two rows where a list used to be: ＋ New chat (the verb, unchanged
  * and still one tap from anywhere) and a Chats row carrying the count, which
  * opens this. That is the same shape every kind row has, which is as close to
  * the report's "show the chats also as entity" as the domain honestly allows.
@@ -78,7 +78,7 @@ export function MobileThreadsSheet(props: MobileThreadsSheetProps) {
             <span className="mthreads__mark" aria-hidden>
               <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
             </span>
-            <span className="mthreads__name">New conversation</span>
+            <span className="mthreads__name">New chat</span>
           </button>
         </li>
         {props.threads.map((thread) => (

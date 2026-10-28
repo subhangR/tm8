@@ -30,9 +30,14 @@ describe('own-child handoffs on the current migration chain', () => {
       await entity('story','story');
       await c.query(`insert into public.stories(entity_id,title) values($1,'Context story')`,[ids.story]);
       for (const key of ['parent','child','sibling','terminal','foreign']) {
-        await entity(key,'work_session',['child','terminal'].includes(key) ? ids.parent! : null,key === 'foreign' ? ids.otherSpace : ids.space);
+        await entity(key,'work_session',null,key === 'foreign' ? ids.otherSpace : ids.space);
         await c.query(`insert into public.work_sessions(entity_id,title,status,workdir_mode) values($1,$2,$3,'scratch')`,[ids[key],key,key === 'terminal' ? 'exited' : 'running']);
       }
+      // 330: "own child" is the session this one launched — a launched_by edge
+      // the spawn writer records — not a parent_id.
+      await c.query(`select internal.w1_set_writer('spawn')`);
+      for (const key of ['child','terminal']) await c.query(`insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'launched_by',$4)`,[ids.space,ids[key],ids.parent,ids.member]);
+      await c.query(`select internal.w1_set_writer(null)`);
       for (const [actor,target] of [['actor','parent'],['childActor','child'],['childActor','terminal'],['childActor','sibling']]) await c.query(`insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$4)`,[ids.space,ids[actor!],ids[target!],ids.member]);
     });
   });

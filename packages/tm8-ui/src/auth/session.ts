@@ -78,6 +78,7 @@ export type AuthFailure =
   | { kind: 'name-required' }
   | { kind: 'account-exists'; handle: string }
   | { kind: 'bad-credentials' }
+  | { kind: 'setup-code-refused' }
   | { kind: 'storage-blocked' }
   | { kind: 'server-refused'; message: string }
   | { kind: 'server-unreachable'; message: string };
@@ -173,9 +174,11 @@ function toGateAccount(account: {
  * explain is still one the viewer can act on, and paraphrasing it would
  * manufacture precision.
  */
-function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout'): AuthFailure {
+function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout' | 'claim'): AuthFailure {
   if (err instanceof CollabError) {
     if (err.code === 'unauthenticated' && act === 'login') return { kind: 'bad-credentials' };
+    // On a claim the credential refused is the setup code, never a password.
+    if (err.code === 'unauthenticated' && act === 'claim') return { kind: 'setup-code-refused' };
     if (err.code === 'upstream_unavailable') {
       return { kind: 'server-unreachable', message: err.message };
     }
@@ -515,6 +518,56 @@ export interface NodeClaim {
   claimed: boolean;
   mode: 'single' | 'multi';
   signupPath: 'claim' | 'invite' | 'admin';
+  /**
+   * Whether THIS browser must present the setup token. The server answers
+   * false for the loopback owner, who claims without one. Absent (an older
+   * node) means true.
+   */
+  tokenRequired?: boolean;
+}
+
+/**
+ * The `#claim=` token the server printed, kept for THIS TAB until it is used.
+ *
+ * A FRAGMENT, NOT A QUERY STRING: browsers never send the fragment, so the
+ * token cannot reach an access log, an upstream proxy or a `Referer`. It is
+ * scrubbed from the address bar on first read so a screenshot or the back
+ * button does not carry it.
+ *
+ * WHY IT IS KEPT. Scrubbing used to be the token's only copy: reload the card
+ * mid-setup and the field came back empty, with nothing on screen to recover
+ * it. `sessionStorage` is per tab and dies with it, and the read is idempotent
+ * however many times React mounts the card. Dropped the moment the node is
+ * claimed (`forgetClaimToken`).
+ */
+const CLAIM_TOKEN_KEY = 'tm8ui.auth.claim-token.v1';
+
+export function readClaimToken(): string {
+  try {
+    const hash = globalThis.location?.hash ?? '';
+    const fromLink = new URLSearchParams(hash.replace(/^#/, '')).get('claim')?.trim() ?? '';
+    if (fromLink) {
+      try {
+        window.sessionStorage.setItem(CLAIM_TOKEN_KEY, fromLink);
+      } catch {
+        // No storage: the field still fills now, it just will not survive a reload.
+      }
+      const { pathname, search } = globalThis.location;
+      globalThis.history?.replaceState?.(null, '', `${pathname}${search}`);
+      return fromLink;
+    }
+    return window.sessionStorage.getItem(CLAIM_TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function forgetClaimToken(): void {
+  try {
+    window.sessionStorage.removeItem(CLAIM_TOKEN_KEY);
+  } catch {
+    // Nothing was kept.
+  }
 }
 
 /** Per-server, so switching servers cannot show one node's state for another. */
@@ -568,6 +621,7 @@ export async function fetchNodeClaim(): Promise<NodeClaim | null> {
   try {
     const result = await client.call<NodeClaim>('auth.claim.status');
     writeCachedNodeClaim(serverId, result);
+    if (result.claimed) forgetClaimToken();
     return result;
   } catch {
     return null;
@@ -583,7 +637,7 @@ export async function fetchNodeClaim(): Promise<NodeClaim | null> {
  * `signInToServer` stores one.
  */
 export async function claimNodeOnServer(
-  token: string,
+  token: string | null,
   name: string,
   password: string,
 ): Promise<AuthResult<GateAccount>> {
@@ -596,8 +650,16 @@ export async function claimNodeOnServer(
   const { client, serverId } = clientForActiveServer();
   try {
     const claimed = await client.call<AuthLoginResult>('auth.claim', {
-      body: { token: token.trim(), username: handle, password, displayName: name.trim(), kind: 'browser' },
+      body: {
+        // Null only for the loopback owner, whom the server lets claim without one.
+        ...(token?.trim() ? { token: token.trim() } : {}),
+        username: handle,
+        password,
+        displayName: name.trim(),
+        kind: 'browser',
+      },
     });
+    forgetClaimToken();
     // The node is claimed now by definition — record it before storing the
     // pass so a storage failure still leaves the gate showing sign-in rather
     // than re-offering a ceremony whose token is already burned.
@@ -619,7 +681,7 @@ export async function claimNodeOnServer(
     }
     return storePass(serverId, claimed);
   } catch (err) {
-    return { ok: false, failure: failureFrom(err, 'login') };
+    return { ok: false, failure: failureFrom(err, 'claim') };
   }
 }
 

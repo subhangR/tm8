@@ -37,6 +37,9 @@ import {
   PromptSettlementWaiter,
   readSessionTranscript,
   knownAgentConfigDirs,
+  type SessionHomeFacts,
+  type SessionHomeOwnerFacts,
+  type SessionHomeRetention,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -125,6 +128,7 @@ import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 import { isChatRuntimeBearer, resolveSpawnParentId, runtimeChatIdOf } from '../chat/scope.js';
+import { inheritedSpawnProjectId } from './spawn-project-inheritance.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -1022,6 +1026,9 @@ export class DbGraphPort implements GraphPort {
       input.newTaskTitle ?? null,
       input.storyId ?? null,
       input.sourceWorkSessionId ?? null,
+      // 348. Positional, last: `p_triggered_by_loop_id`. Null for every caller
+      // but the in-process loop executor.
+      input.triggeredByLoopId ?? null,
     ];
     // `aboutEntityId` / `aboutFromChatId` (321): the about edge goes in the SAME
     // transaction as the session, so it binds (Craft doc §4). work_session_about
@@ -1325,7 +1332,12 @@ export class DbGraphPort implements GraphPort {
         agent_config_dir: string | null;
         node_id: string | null;
       }>(
-        `select ws.entity_id, e.space_id, e.parent_id, ws.project_id, ws.workdir_mode,
+        // 330: the coordinator a resumed session reports to is its launcher
+        // (`launched_by`), not parent_id — a chat is not a session's parent.
+        `select ws.entity_id, e.space_id,
+                (select lb.dst_id from public.edges lb
+                  where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) as parent_id,
+                ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
                 ws.status, ws.native_session_id, ws.agent_config_dir, ws.node_id
            from public.work_sessions ws
@@ -1561,6 +1573,39 @@ export class DbGraphPort implements GraphPort {
       [nodeId],
     );
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
+  }
+
+  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<SessionHomeFacts[]> {
+    if (sessionIds.length === 0) return [];
+    const rows = await this.db.rpc<Array<{
+      sessionId: string;
+      status: string;
+      deleted: boolean;
+      workdirMode: string | null;
+      workdirPath: string | null;
+      exitedAt: string | null;
+    }>>(this.claims(auth), 'public.work_session_home_facts', [sessionIds]);
+    if (!Array.isArray(rows)) throw new Error('work_session_home_facts returned no rows array');
+    return rows.map((r) => {
+      const exitedAt = r.exitedAt === null ? null : Date.parse(r.exitedAt);
+      return {
+        sessionId: r.sessionId,
+        status: r.status,
+        deleted: r.deleted === true,
+        workdirMode: r.workdirMode,
+        workdirPath: r.workdirPath,
+        exitedAt: exitedAt !== null && Number.isFinite(exitedAt) ? exitedAt : null,
+      };
+    });
+  }
+
+  async listSessionHomeOwners(auth: GraphAuth, ids: string[]): Promise<SessionHomeOwnerFacts[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.rpc<Array<{ id: string; kind: string; deleted: boolean }>>(
+      this.claims(auth), 'public.session_home_owner_facts', [ids],
+    );
+    if (!Array.isArray(rows)) throw new Error('session_home_owner_facts returned no rows array');
+    return rows.map((r) => ({ id: r.id, kind: r.kind, deleted: r.deleted === true }));
   }
 
   // --- worktree provisioning (design §4) --------------------------------------
@@ -1922,6 +1967,15 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  /**
+   * Remove the per-session artifacts on this node that nothing can read
+   * again (Codex homes, space-key homes, manifest files), and with a
+   * retention set, the homes of sessions that ended longer ago than that.
+   * Never rejects.
+   */
+  reclaimSessionArtifacts(
+    retention: SessionHomeRetention,
+  ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2039,6 +2093,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2066,6 +2127,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2236,6 +2310,13 @@ export function registerExecutionHandlers(
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2258,6 +2339,19 @@ export function registerExecutionHandlers(
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2368,6 +2462,13 @@ const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: s
   endedKind: 'exited_clean',
   endedReason: 'Closed after the session completed its work.',
 };
+
+/**
+ * How long an agent's own `session complete` waits before its process closes:
+ * long enough for the reply to reach its CLI, short enough that the sessions
+ * list moves the row within a couple of seconds.
+ */
+export const SELF_CLOSE_DELAY_MS = 1_000;
 
 async function assembleCommandResult(
   db: Db,
@@ -2946,20 +3047,44 @@ export function createLoopExecutorPort(deps: {
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
-  const claimsForOwner = async (): Promise<DbClaims> => {
+  /**
+   * The cross-space DUE READ only (375).
+   *
+   * Still the node's loopback owner — a scheduled firing has no HTTP request
+   * and therefore no caller identity — but now carrying the job claim that
+   * opens `loops_due_for_executor`. Without it this read is filtered to the
+   * owner's own member spaces, which is exactly the bug: `require_space_member`
+   * has no node-admin bypass and neither does `member_space_ids()`, so a loop
+   * in a space a human created was invisible, not merely unauthorised.
+   */
+  const dueReadClaims = async (): Promise<DbClaims> => {
     const owner = await resolveOwner();
-    // The node's loopback owner, exactly as ghost reconciliation does it: a
-    // scheduled firing has no HTTP request and therefore no caller identity,
-    // and `require_space_member` has no node-admin bypass.
     return {
       identityId: owner.identityId,
       nodeAdmin: owner.isNodeAdmin,
       requestId: 'loop-executor',
+      backgroundJob: 'loops.execute-due',
     };
   };
 
   return {
-    claimsFor: claimsForOwner,
+    dueReadClaims,
+    /**
+     * One firing's claims: the identity the due read resolved for THIS loop —
+     * the human `armed_by_identity_id` names (343), while they are still an
+     * active member of the loop's space.
+     *
+     * Deliberately carries no `backgroundJob` and no `nodeAdmin`: the firing
+     * needs neither, and `resolve_actor` will name this identity's own member
+     * row, so the derived task and the spawned session are attributed to the
+     * human who armed the schedule rather than to the node. That is the same
+     * person 343 already made the provenance root of every firing.
+     */
+    claimsForLoop: (loop, actAsIdentity) => ({
+      identityId: actAsIdentity,
+      nodeAdmin: false,
+      requestId: `loop-executor:${loop.entityId}`,
+    }),
     liveSessionIds: () => pty.liveSessionIds(),
     async fire(loop, claims, firedAt) {
       // The loop is its OWN launchable subject when it names none (§4.4), so
@@ -3020,6 +3145,29 @@ export function createLoopExecutorPort(deps: {
           // prompt — the same channel `--context` uses.
           promptExtra: loop.prompt === '' ? null : loop.prompt,
           clientMutationId: `loop-fire:${firingKey}`,
+        }, {
+          /*
+           * 348, ac1/ac2. THE FIRING'S PROVENANCE ROOT, handed over as a SERVER
+           * FACT and written inside `execution_spawn`'s own transaction.
+           *
+           * It travels in the second argument, not in the SpawnRequest above,
+           * because `SpawnRequest` is what the public `execution.spawn` handler
+           * builds from wire input — a loop id there would be a client naming
+           * the human whose connections its session launches with.
+           *
+           * This REPLACES the post-spawn `writeTriggeredBy` for this branch,
+           * and the ordering is the whole point: the MCP bind runs INSIDE
+           * `spawn`, and `internal.mcp_provenance` (343) reads the schedule
+           * root off this very edge. Written afterwards, as it was, the edge
+           * did not exist yet at bind time and every firing was lent no
+           * connector that needs an account.
+           *
+           * It is also no longer best-effort: `execution_spawn` aborts if it
+           * cannot write the edge, so a firing either has its provenance or
+           * does not happen. 343's decision to give a schedule NO second
+           * rooting tier (B21) depends on that.
+           */
+          triggeredByLoopId: loop.entityId,
         })).sessionId;
       } else {
         // A null runner means "route through the dispatcher" (§4.4). Resolving
@@ -3045,9 +3193,26 @@ export function createLoopExecutorPort(deps: {
           requestId: `loop-fire:${loop.entityId}`,
           clientMutationId: `loop-dispatch-request:${firingKey}`,
         });
+        /*
+         * 348: the session edge is still written HERE, best-effort, for the
+         * dispatcher branch ONLY — and it stays run history rather than
+         * becoming provenance.
+         *
+         * Two reasons a dispatcher must not be handed the loop id the way a
+         * direct firing is. `resolveDispatcherSession` usually REUSES a live
+         * dispatcher that serves the whole Space across every loop and every
+         * caller, so rooting it at one loop's armer would lend that human's
+         * connections to all of its other work. And when it does spawn one, the
+         * dispatcher is launched to ROUTE the task, not to be the firing.
+         *
+         * A dispatcher-routed firing therefore still gets no connector that
+         * needs an account. That is #1316's behaviour and it fails closed; the
+         * worker the dispatcher goes on to spawn is an ordinary delegated
+         * launch with its own bearer chain.
+         */
+        await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       }
 
-      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       return { taskId, sessionId };
     },
   };
@@ -3449,6 +3614,8 @@ function registerHandlers(
       agentTool: session.agent_tool,
       ...(dataDir ? { dataDir } : {}),
       home: process.env.HOME ?? homedir(),
+      // A Codex child's rollouts live in its own isolated CODEX_HOME.
+      sessionId,
     });
 
     // `files=1` also scans the WHOLE transcript for Edit/Write tool calls —
@@ -3572,6 +3739,12 @@ function registerHandlers(
      */
     const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
     const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
+    // An agent that names no project works where its chat or session does.
+    const inheritedProjectId = await inheritedSpawnProjectId(db, claims, {
+      input,
+      agentCaller: isChatRuntimeBearer(ctx) || sourceWorkSessionId !== undefined,
+      parentId: parentSessionId,
+    });
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
@@ -3584,7 +3757,7 @@ function registerHandlers(
       ...(isChatRuntimeBearer(ctx) && runtimeChatIdOf(ctx) ? { aboutFromChatId: runtimeChatIdOf(ctx)! } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
-      projectId: input.projectId ?? null,
+      projectId: input.projectId ?? inheritedProjectId,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
       ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),
@@ -3623,6 +3796,18 @@ function registerHandlers(
       sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
     } }, request));
 
+    // 327: a session records the chat or session that launched it (its
+    // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
+    // "created here" is one edge for every kind. Never at the spawn's expense.
+    const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
+    if (spawnOrigin && parentSessionId === spawnOrigin) {
+      try {
+        await db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin]));
+      } catch (error) {
+        console.warn(`[tm8:spawn] authored_from not recorded for ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     // The Ask Jev run this launch came from (§6: per-launch cost). Only after
     // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
     // run that is absent, in another space or someone else's is logged, not
@@ -3639,9 +3824,9 @@ function registerHandlers(
       }
     }
 
-    // Spawned-by is the new session's parent_id (resolved above; it defaults
-    // to the calling session). 303 deprecated the `dispatched_by` edge that
-    // used to repeat it for dispatcher-mode spawners (Design Rules §2.3).
+    // Launched-by is the `launched_by` edge execution_spawn writes (330) from
+    // the parent resolved above (it defaults to the calling session or chat).
+    // The session gets no parentId: a chat is not a session's parent.
 
     // A dispatcher launched on tasks was told to route them in its first
     // turn; the durable request is stored on each task now that the session
@@ -3947,8 +4132,17 @@ function registerHandlers(
   /**
    * execution.complete (Spec D1 §4.1). All the rules — claim check, receipt,
    * claim ends, the outcome event — are `public.complete_work_session`'s, so
-   * the CLI, the row tick and any later caller cannot disagree. `closeProcess`
-   * then closes a still-live process as `exited_clean`: the work is done.
+   * the CLI, the row tick and any later caller cannot disagree. Then the
+   * still-live process closes as `exited_clean`: the work is done.
+   *
+   * CLOSED AT ONCE (task 01a14b35). The process used to stay open until the
+   * auto-close job's window (30 min by default), so a finished agent sat in
+   * Running as "Finished, still open". Now it closes here unless the caller
+   * says `closeProcess: false`, or the session still has live sessions it
+   * launched (their reports land in its terminal — the auto-close job's own
+   * rule, which then closes it later). An agent completing ITSELF gets its
+   * reply first: the close follows `SELF_CLOSE_DELAY_MS` later, so its CLI
+   * prints the receipt instead of dying mid-call.
    */
   registry.register('execution.complete', async (ctx) => {
     const owner = await resolveOwner();
@@ -3959,14 +4153,61 @@ function registerHandlers(
     const raw = await db.rpc<RpcCommandResult & { outcome?: unknown }>(claims, 'complete_work_session', [
       sessionId, input.receiptMessageId ?? null, envelope.actorId ?? null, envelope.clientMutationId ?? null,
     ]);
-    if (input.closeProcess === true && (await sessionProcessLive(claims, sessionId))) {
-      await rethrowing(() =>
-        spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION }),
-      );
+    if (await closesOnCompletion(claims, sessionId, input.closeProcess)) {
+      if (claims.workSessionId === sessionId) {
+        scheduleSelfClose(claims, sessionId);
+      } else {
+        await rethrowing(() =>
+          spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION }),
+        );
+      }
     }
     const assembled = (await assembleCommandResult(db, claims, raw, owner.identityId)) as Record<string, unknown>;
     return json({ ...assembled, outcome: raw.outcome ?? null });
   });
+
+  /**
+   * Does completing this session close its process now? Only a live one.
+   * `closeProcess: true` always does; `false` never does; absent closes an
+   * agent session that launched no session still alive.
+   */
+  async function closesOnCompletion(claims: DbClaims, sessionId: string, closeProcess: boolean | undefined): Promise<boolean> {
+    if (closeProcess === false) return false;
+    const rows = await db.query<{ status: string; session_kind: string; launched_live: boolean }>(
+      claims,
+      `select ws.status, ws.session_kind,
+              exists (select 1 from public.edges lb
+                        join public.entities ce on ce.id = lb.src_id and ce.deleted_at is null
+                        join public.work_sessions cws on cws.entity_id = ce.id
+                       where lb.dst_id = ws.entity_id and lb.type = 'launched_by'
+                         and cws.status in ('spawning', 'running', 'idle')) launched_live
+         from public.work_sessions ws where ws.entity_id = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row || !['spawning', 'running', 'idle'].includes(row.status)) return false;
+    if (closeProcess === true) return true;
+    return row.session_kind === 'agent' && row.launched_live !== true;
+  }
+
+  /**
+   * The self-completion close, after the reply. Re-reads the outcome first: a
+   * claim taken in between reopened the session, and then it stays. Never
+   * throws — a failure leaves the process to the auto-close job.
+   */
+  function scheduleSelfClose(claims: DbClaims, sessionId: string): void {
+    const timer = setTimeout(() => {
+      void (async () => {
+        if ((await sessionOutcome(claims, sessionId)) !== 'completed') return;
+        if (!(await sessionProcessLive(claims, sessionId))) return;
+        await spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION });
+      })().catch((error: unknown) => {
+        console.warn(`[tm8:complete] closing session ${sessionId} after its completion failed: ${
+          error instanceof Error ? error.message : String(error)}`);
+      });
+    }, SELF_CLOSE_DELAY_MS);
+    timer.unref?.();
+  }
 
   async function sessionOutcome(claims: DbClaims, sessionId: string): Promise<'open' | 'completed' | 'stopped'> {
     const rows = await db.query<{ outcome: string }>(

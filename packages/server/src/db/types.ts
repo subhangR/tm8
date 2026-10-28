@@ -32,6 +32,9 @@
 export interface DbClaims {
   /** Immutable scope from the verified auth session; used only to narrow tool minting. */
   readonly apiScope?: 'read' | 'write' | undefined;
+  /** → `tm8.auth_session_id`. Immutable verified token-row identity; runtime
+   * authorization re-reads its generation ownership at the effect boundary. */
+  readonly authSessionId?: string | undefined;
   /** → `SET LOCAL tm8.identity_id`. The authenticated identity row. */
   readonly identityId?: string | undefined;
   /** → `SET LOCAL tm8.actor_id`. The effective author (acting-as target). */
@@ -94,10 +97,12 @@ export interface DbClaims {
   /**
    * → `SET LOCAL tm8.background_job`. The ninth claim (306, P0e): the name of
    * the IN-PROCESS scheduler job this transaction runs for. Only the tracking
-   * jobs built in main.ts set it; no HTTP, CLI or MCP claims builder does, and
-   * `identity/claims.ts` never binds it. `internal.is_tracking_worker()` reads it
-   * to let the tracking doors span spaces — and nothing else does. A name
-   * outside `BACKGROUND_JOB_CLAIMS` binds as `''`.
+   * jobs and the loop executor set it; no HTTP, CLI or MCP claims builder does,
+   * and `identity/claims.ts` never binds it. `internal.is_tracking_worker()`
+   * reads it to let the tracking doors span spaces, and
+   * `internal.is_loops_worker()` (375) to let the loop executor READ due loops
+   * across spaces — and nothing else does. A name outside
+   * `BACKGROUND_JOB_CLAIMS` binds as `''`.
    */
   readonly backgroundJob?: BackgroundJobClaim | undefined;
 }
@@ -106,8 +111,17 @@ export interface DbClaims {
  * The only values `tm8.background_job` may carry. Closed on purpose: the claim
  * widens what a tracking door accepts, so the set of callers that can hold it
  * is a list a reviewer can read.
+ *
+ * `loops.execute-due` (375) is the narrowest of the three: it opens ONE
+ * read-only function, `public.loops_due_for_executor`, and no write door at
+ * all. The executor's writes run under the loop's own space claims instead —
+ * see that migration's header.
  */
-export const BACKGROUND_JOB_CLAIMS = ['tracking.observer', 'tracking.forge-watcher'] as const;
+export const BACKGROUND_JOB_CLAIMS = [
+  'tracking.observer',
+  'tracking.forge-watcher',
+  'loops.execute-due',
+] as const;
 export type BackgroundJobClaim = (typeof BACKGROUND_JOB_CLAIMS)[number];
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */

@@ -2479,9 +2479,13 @@ export function createFixtureSeam(): FixtureSeam {
           number: (c.number as number) ?? 0, state: 'open', stale: false,
         };
       case 'commit':
+        // `stale: true` matches the pull_request arm's shape and is the honest
+        // value for a locally created mirror: nothing has fetched it from the
+        // forge, which is exactly what a freshly linked commit looks like.
         return {
           kind: 'commit', repository: (c.repository as string) ?? '',
           sha: (c.sha as string) ?? '', message: input.title, committedAt: null,
+          stale: true,
         };
       case 'collection':
         return { kind: 'collection', collectionType: (c.collectionType as string) ?? 'manual', itemCount: 0 };
@@ -2873,6 +2877,8 @@ export function createFixtureSeam(): FixtureSeam {
            `NULL = any(...)` server semantics, mirrored. */
         if (f?.category?.length && !(s.category !== undefined && f.category.includes(s.category))) return false;
         if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.parentIn?.length && !(s.parentId !== null && f.parentIn.includes(s.parentId))) return false;
+        if (f?.idIn?.length && !f.idIn.includes(s.id)) return false;
         if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
         /* Spec D1: the session tabs' outcome axis. Absent outcome = open. */
@@ -3229,6 +3235,7 @@ export function createFixtureSeam(): FixtureSeam {
           || (s.state.kind === 'message' && s.state.rootMessageId === opts.rootMessageId))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map(toMessageView);
+      if (opts?.order === 'newest') rows.reverse();
       return clone(pageOf(rows, opts));
     },
     async handoffs(workSessionId, opts): Promise<Page<HandoffView>> {
@@ -4748,6 +4755,11 @@ export function createFixtureSeam(): FixtureSeam {
         return { chat: clone(chat), messageId: message.id };
       },
 
+      async interruptChat(chatId) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
+        return { chatId, disposition: 'not_running' as const };
+      },
       async setChatCredentials(chatId, input) {
         const chat = requireSummary(chatId);
         if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
@@ -5195,7 +5207,7 @@ export function createFixtureSeam(): FixtureSeam {
           s.state.outcomeSource = 'operator';
           s.state.receiptMessageId = receipt;
         }
-        if (input.closeProcess === true && ['spawning', 'running', 'idle'].includes(s.state.status)) {
+        if (input.closeProcess !== false && ['spawning', 'running', 'idle'].includes(s.state.status)) {
           s.state.status = 'exited';
           s.state.endedKind = 'exited_clean';
           s.state.exitedAt = tick();
@@ -5924,6 +5936,21 @@ export function createFixtureSeam(): FixtureSeam {
           }
           const pollable = inSpace.filter((c) => c.provider === 'github' && (c.ownerAccountId ?? null) === null && c.visibility !== 'private');
           const poll = pollable.filter((c) => c.status === 'active').sort((a, b) => Number(b.isDefault) - Number(a.isDefault))[0] ?? null;
+          // S7b (migration 370): the fixture has no session manifests, so its spaces
+          // are taken to launch Claude with git (anthropic + github used, openai never).
+          // The seeding verdict is the space default under the policy, as on the server.
+          const usedProviders: SpaceCredentialProviderName[] = ['anthropic', 'github'];
+          const seedingProviders: CredentialsSpaceReadinessView['seeding']['providers'] = {};
+          for (const provider of usedProviders) {
+            const p = providers[provider];
+            const launchReason = p.ready && p.via === 'space_default' ? null
+              : !p.spaceSourceAllowed ? 'policy_excludes_space'
+              : p.reason === 'stale' ? 'stale'
+              : p.activeCredentials > 0 ? 'no_default'
+              : 'no_credential';
+            seedingProviders[provider] = { ready: launchReason === null, needs: ['launch'], launchReason, pollReason: null, reason: launchReason };
+          }
+          const seedingMissing = usedProviders.filter((p) => !seedingProviders[p]!.ready);
           return {
             spaceId,
             canLaunch: { ready: missing.length === 0, missing, providers },
@@ -5933,6 +5960,17 @@ export function createFixtureSeam(): FixtureSeam {
               credentialId: poll?.id ?? null,
               activeSpaceOwnedCredentials: pollable.filter((c) => c.status === 'active').length,
               reason: poll ? null : pollable.some((c) => c.status === 'stale') ? 'stale' : 'no_space_owned_credential',
+            },
+            seeding: {
+              window: '30 days',
+              agentSessions: 3,
+              sessionsWithoutRecord: 0,
+              githubProjects: 0,
+              usedProviders,
+              providers: seedingProviders,
+              missing: seedingMissing,
+              state: seedingMissing.length === 0 ? 'green' : 'red',
+              readyForCut: seedingMissing.length === 0,
             },
           };
         },

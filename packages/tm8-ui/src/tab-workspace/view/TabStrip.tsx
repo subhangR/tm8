@@ -33,6 +33,7 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
+import { isPinnedRailEnabled } from './navigatorFlag';
 import { openSideSection, sidePatch, sideSectionOfSubview } from './sideSection';
 import { entityMenuItems, readTranscriptText, type TabMenuItem } from './tabEntityMenu';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
@@ -267,10 +268,14 @@ function StripMenu({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Keep the menu on screen.
+    // Keep the menu on screen. `at` and the rect are VIEWPORT pixels, but a
+    // fixed box inside the shell's `zoom` (the display-scale setting) has its
+    // left/top multiplied by that zoom — so the clamped point is divided back
+    // by it, or at 110% the menu lands 10% further right and runs off-screen.
     const r = el.getBoundingClientRect();
-    const x = Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8));
-    const y = Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8));
+    const zoom = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    const x = Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8)) / zoom;
+    const y = Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8)) / zoom;
     setPos({ x, y });
     el.querySelector<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')?.focus();
   }, [at]);
@@ -489,6 +494,10 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   const tabs = useWorkspaceState(useShallow(visibleTabs));
   const active = useWorkspaceState(activeTabId);
   const expanded = useWorkspaceState((s) => s.layout.expanded);
+  /* The pinned-only rail's strip: the workspace switcher leads the tabs (the
+     mode sits at the end of the left header), and the tab scope (`Mixed ▾`)
+     is not drawn (Subhang 2026-10-17). */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [focusId, setFocusId] = useState<TabId | null>(null);
@@ -903,9 +912,19 @@ export function TabStrip({ leading }: TabStripProps = {}) {
       {restore ? <div className="tws-ts-leading">{restore}</div> : null}
       {/* THE TAB SCOPE, LEFT-MOST (owner, 2026-10-10; Craft redesign §2): a
           small tab stuck to the browser's edge, ahead of the tabs it scopes. */}
-      <div className="tws-ts-scope">
-        <ScopePicker />
-      </div>
+      {pinnedRail ? (
+        <div className="tws-ts-modes" data-testid="tws-ts-modes">
+          {gate.modeSwitcherSlot ? (
+            <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">
+              {gate.modeSwitcherSlot}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="tws-ts-scope">
+          <ScopePicker />
+        </div>
+      )}
       <div
         ref={scrollerRef}
         className="tws-ts-scroll"

@@ -19,8 +19,8 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import type { CraftTab, EntityId, EntitySummary } from '@tm8/contract';
 import { getKind, KindIcon } from '../domain';
-import { MembershipPicker } from '../panels/bodies/MembershipBlock';
-import { NEW_PAGE_KINDS, type CraftPageRow, type NewPageKind } from './craft-source';
+import type { CraftPageRow, NewPageKind } from './craft-source';
+import { NewPageItems } from './CraftPageTabs';
 import '../tab-workspace/view/tabstrip.css';
 import './craft-tab-strip.css';
 
@@ -167,32 +167,12 @@ export function CraftTabStrip(props: CraftTabStripProps) {
               </div>
             ))}
             <div className="cts-menu__sep" role="separator" />
-            <p className="cts-menu__head">+ New page</p>
-            {NEW_PAGE_KINDS.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                role="menuitem"
-                className="pn-overflow__item cts-menu__kind"
-                data-testid={`craft-new-${kind}`}
-                title={kind === 'artifact' ? 'Artifacts are published by the craft agent — this asks it in the chat' : undefined}
-                onClick={() => {
-                  setPagesOpen(false);
-                  props.onNew(kind);
-                }}
-              >
-                <KindIcon kind={kind} size={14} /> {getKind(kind).label}
-              </button>
-            ))}
-            <div className="cts-menu__sep" role="separator" />
-            <MembershipPicker
-              search={props.candidates}
-              excludeIds={excluded}
-              addLabel="Add existing…"
-              onPick={(id) => {
-                setPagesOpen(false);
-                props.onAddExisting(id as EntityId);
-              }}
+            <NewPageItems
+              excluded={excluded}
+              candidates={props.candidates}
+              onNew={props.onNew}
+              onAddExisting={props.onAddExisting}
+              close={() => setPagesOpen(false)}
             />
           </div>
         ) : null}

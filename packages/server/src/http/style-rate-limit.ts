@@ -104,7 +104,11 @@ export class StyleRateLimiter {
       const verdict = limiter.hit(`${family}:${key}`);
       if (!verdict.ok) {
         throw fail('rate_limited', `too many ${opName} calls — wait and try again`, {
+          // `retryAfterMs` is spec §6.7's field (the CLI waits on it);
+          // `retryAfterSeconds` is what the error writer turns into the
+          // `Retry-After` header every other 429 on this server carries.
           retryAfterMs: verdict.retryAfterMs,
+          retryAfterSeconds: Math.max(1, Math.ceil(verdict.retryAfterMs / 1000)),
         });
       }
     }

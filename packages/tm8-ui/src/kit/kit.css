@@ -297,6 +297,18 @@
   /* The serif's own side bearing already spaces the 8; without this the loop
      drifts right of the letters it belongs to. */
   margin-right: -0.04em;
+  /* Moon phase: BootLoader writes --kit-boot-phase (0 at rest, 1 at the
+     turnaround) from the ribbon's clock, and the letters swing with the band
+     — black toward white on light, white toward black on dark, because the
+     theme swaps the two tokens. HALFWAY only (50%, RibbonMark's POLE_SWING):
+     a full swing reached the paper's own colour and the letters vanished.
+     Rest is the pole that contrasts with the paper, so a still frame (reduced
+     motion, first paint) always reads. */
+  color: color-mix(
+    in srgb,
+    var(--pn-x-mark-turn) calc(var(--kit-boot-phase, 0) * 50%),
+    var(--pn-x-mark-rest)
+  );
 }
 
 /* The wordmark ribbon's design box is 360×520, so width follows from height at
@@ -397,7 +409,7 @@
    brand line does not reflow on load. */
 /* The wordmark reads as one word, so it is sized in `em` off whatever brand
    line hosts it — no pixel numbers here, and no type of its own: the letters
-   inherit family, weight and colour from the host. */
+   inherit family and weight from the host; colour is ink (see below). */
 .kit-brandmark {
   display: inline-flex;
   align-items: baseline;
@@ -405,6 +417,8 @@
 }
 .kit-brandmark__letters {
   letter-spacing: -0.01em;
+  /* Monochrome mark: the letters are ink, not the host's brand colour. */
+  color: var(--pn-ink);
 }
 /* The ribbon's wordmark box is 360×520, so width follows from height at that
    ratio. 0.93em is the design's own proportion — it set the box at 520 against
@@ -417,6 +431,12 @@
    leaves ~0.015em of overshoot below the baseline — the small overhang every
    round glyph needs to look level with flat-bottomed ones. */
 .kit-brandmark__eight {
+  /* The still 8 shows ONE metal, so it takes the mid-tone silver: `shade`
+     walks it to near-black and near-white across the band, which is the
+     black/white/silver of the turning mark compressed into one rest pose.
+     (The eclipse finish's two-metal split is not used here — at 11.5px one of
+     its halves always vanishes into the paper.) */
+  --pn-ribbon-ink: var(--pn-x-mark-silver);
   height: 0.93em;
   width: calc(0.93em * 360 / 520);
   position: relative;
@@ -530,3 +550,9 @@
     animation: none;
   }
 }
+
+/* AgentToolIcon — the one drawing of an agent tool. The logos fill with
+   currentColor; Claude takes its own orange, Codex inherits the ink around
+   it. Glyph fallbacks (gemini, hermes, terminal, unknown) size from the font. */
+.kit-tool { flex: 0 0 auto; display: inline-block; vertical-align: middle; line-height: 1; }
+svg.kit-tool--claude { color: var(--pn-x-claude, var(--pn-brand)); }

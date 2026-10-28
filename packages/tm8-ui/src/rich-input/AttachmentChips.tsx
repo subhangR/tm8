@@ -4,7 +4,7 @@
  * A view for hosts without their own upload-list markup. Every state the
  * upload machine can hold is drawn with its own control, and none is silent:
  * uploading can be cancelled, failed says why and offers the retry, uploaded
- * can be removed until the message is sent. The refusal line (a pasted file
+ * is a quiet chip whose × removes it until the message is sent. The refusal line (a pasted file
  * the agent-readable filter declined) and the caret-mode error ride here too
  * so a surface that adopts the hook cannot accidentally swallow either.
  */
@@ -13,12 +13,20 @@ import type { RichInputAttachments } from './useRichInput';
 export function AttachmentChips({
   attachments,
   testId,
+  list = true,
 }: {
   attachments: RichInputAttachments | null;
   testId?: string;
+  /**
+   * `false` draws the refusal and error lines only: a host that lists the
+   * staged files elsewhere (the phone's ＋ sheet) still owes the writer the
+   * reason a paste was declined, where they are typing.
+   */
+  list?: boolean;
 }) {
   if (!attachments) return null;
-  const { staged, refusal, error } = attachments;
+  const { refusal, error } = attachments;
+  const staged = list ? attachments.staged : [];
   if (staged.length === 0 && !refusal && !error) return null;
 
   return (
@@ -37,28 +45,31 @@ export function AttachmentChips({
       {staged.length ? (
         <ul className="ri-attachments__list" aria-label="Attachments" aria-live="polite">
           {staged.map((item) => (
-            <li key={item.id} className="ri-attachment" data-phase={item.phase}>
+            <li key={item.id} className="ri-attachment" data-phase={item.phase} title={item.file.name}>
               <span className="ri-attachment__name">{item.file.name}</span>
-              {item.phase === 'uploading' ? <span role="status">uploading…</span> : null}
-              {item.phase === 'uploaded' ? <span>✓ uploaded</span> : null}
+              {item.phase === 'uploading' ? <span role="status" className="ri-attachment__state">uploading…</span> : null}
+              {/* Ready is the chip's resting look; the word is for screen readers. */}
+              {item.phase === 'uploaded' ? <span className="ri-attachment__sr">uploaded</span> : null}
               {item.phase === 'failed' ? (
                 <span role="alert" className="ri-attachment__error">{item.reason}</span>
               ) : null}
               {item.phase === 'failed' ? (
                 <button
                   type="button"
+                  className="ri-attachment__retry"
                   onClick={() => attachments.retry(item.id)}
                   aria-label={`Try ${item.file.name} again`}
                 >
-                  Try again
+                  retry
                 </button>
               ) : null}
               <button
                 type="button"
                 onClick={() => attachments.remove(item.id)}
                 aria-label={`Remove ${item.file.name}`}
+                title={item.phase === 'uploading' ? 'Cancel upload' : 'Remove'}
               >
-                {item.phase === 'uploading' ? 'Cancel' : 'Remove'}
+                <span aria-hidden>×</span>
               </button>
             </li>
           ))}

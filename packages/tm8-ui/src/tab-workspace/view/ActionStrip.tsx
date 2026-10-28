@@ -1,10 +1,11 @@
 /**
  * The entity action strip (Subhang, feedback round 4; design log R30): a thin,
  * full-height toolbar pinned to the right edge of an entity tab, activity-bar
- * style. Two sections:
+ * style. Three sections:
  *  - top, the kind's own actions: the body's controls (session surfaces, a
  *    frame's controls, a reader's Edit / Download, forms waiting), its own
  *    registry verbs (Edit, Terminate…, Transfer), Connectors and Attach;
+ *  - between them, a session's or chat's token reading, stacked;
  *  - bottom, the actions every kind shares: Links · Messages · Chat (each
  *    opens the side column beside the body — task 01a122b9), Run, Expand ·
  *    More. A split strip (Craft) keeps Entity · Links · Messages instead.
@@ -14,7 +15,10 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
-import { getKind, KindIcon } from '../../domain';
+import { getKind, KindIcon, VIEW_ART } from '../../domain';
+import { VectorIcon } from '../../kit';
+import { ChatContextNumber } from '../../chat-home/ChatContextNumber';
+import { useChatContextFeed } from '../../chat-home/chatContextFeed';
 import { McpEquipment } from '../../mcp/McpEquipment';
 import { useMcpCatalog } from '../../mcp/context';
 import { countMessages } from '../../panels';
@@ -25,7 +29,10 @@ import { useEntityChrome } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import type { EntityTabRecord, SideSection } from '../runtime/types';
 import { openSideSection, sidePatch } from './sideSection';
-import { PhoneLiveButton } from './PhoneLive';
+import { liveCommandOf } from '../../panels/detail/LiveScreenButton';
+import { liveTerminalOf, PhoneLiveButton, PhoneLiveDialog } from './PhoneLive';
+import { WebTestButton, WebTestDialog } from './WebTest';
+import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useWorkspace, useWorkspaceState } from './context';
 import './content.css';
 
@@ -104,6 +111,8 @@ function useStripTips(stats: string) {
       el.removeAttribute('title');
     }
     const open = () => {
+      /* Pressed open while the tip waited (the token reading's details). */
+      if (el.getAttribute('aria-expanded') === 'true') return;
       /* `position: fixed` inside the app's `zoom` scope takes UNZOOMED px while
          a rect reports zoomed ones; divide by the measured scale, or the tip
          drifts further from its button the lower it sits (R32.2). */
@@ -158,8 +167,18 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   const kindConfig = getKind(tab.kind);
   const canvas = kindConfig.panel.composition === 'canvas';
   /* On the always-dark terminal body the strip opens the same dark token scope
-     the panel does, so it reads as part of the surface (R30). */
-  const darkBody = kindConfig.panel.archetype === 'terminal';
+     the panel does, so it reads as part of the surface (R30) — only while the
+     session shows its TERMINAL; on the transcript it follows the app theme
+     like the panel beside it (task 01a14c39). */
+  const sessionOnTerminal = useSessionShowsTerminal(
+    kindConfig.panel.archetype === 'terminal' ? tab.entityId : null,
+    gate.viewerMemberId,
+  );
+  const darkBody = kindConfig.panel.archetype === 'terminal' && sessionOnTerminal;
+  /* A session keeps Run and the phone and website testers in ⋯ (task
+     01a181e2): its strip is for its views, its process and its reading. */
+  const toolsInMenu = kindConfig.panel.archetype === 'terminal';
+  const [tool, setTool] = useState<'phone' | 'web' | null>(null);
   const darkTheme = useAlwaysDarkTheme();
   const attachable = kindConfig.panel.archetype !== 'terminal' && kindConfig.panel.composition == null;
   const stripRef = useRef<HTMLDivElement>(null);
@@ -167,15 +186,21 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle');
 
   /* The session's live reading arrives as the panel's own component in the
-     hidden stats slot; the strip reads it as one line of text. */
+     stats slot; the strip also reads it as one line of text for ⋯. */
   const [stats, setStats] = useState('');
   const statsEl = chrome?.statsSlot ?? null;
   useEffect(() => {
     if (!statsEl) return;
-    const read = () => setStats((statsEl.textContent ?? '').replace(/\s+/g, ' ').trim());
+    /* The chip shows the size alone; its full reading rides `data-reading`. */
+    const read = () =>
+      setStats(
+        (statsEl.querySelector('[data-reading]')?.getAttribute('data-reading') ?? statsEl.textContent ?? '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
     read();
     const mo = new MutationObserver(read);
-    mo.observe(statsEl, { subtree: true, childList: true, characterData: true });
+    mo.observe(statsEl, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-reading'] });
     return () => mo.disconnect();
   }, [statsEl]);
   const tips = useStripTips(stats);
@@ -206,10 +231,14 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   useEffect(() => {
     if (!menuOpen || !setMenuOpen) return;
     const onDown = (e: MouseEvent) => {
+      /* A modal opened from the menu (Run's launch card) is portalled out of
+         it; a press there is not a press away from the menu. */
+      if ((e.target as Element | null)?.closest?.('[aria-modal="true"]')) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       setMenuOpen(false);
       menuRef.current?.querySelector<HTMLButtonElement>('.tws-astrip-more')?.focus();
     };
@@ -232,6 +261,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
       source: 'click',
     });
   const messages = detail ? countMessages(detail, gate.data.messagesOf(tab.entityId)) : 0;
+  const testers = Boolean(detail && detail.deletedAt == null && gate.data.seam?.commands);
 
   const copyLink = () => {
     const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
@@ -257,11 +287,47 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
         data-testid="tws-chat-toggle"
         onClick={() => toggleSide('chat')}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
+        <KindIcon kind="chat" size={14} />
       </button>
     ) : null;
+
+  /* A side column section's toggle (Links, Messages). */
+  const sideButton = (section: 'links' | 'messages') => {
+    if (!detail || canvas) return null;
+    const label = section === 'messages' ? 'Messages' : 'Links';
+    const pressed = sideOpen === section;
+    return (
+      <button
+        key={section}
+        type="button"
+        className="tws-astrip-btn tws-astrip-seg"
+        aria-pressed={pressed}
+        aria-label={section === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
+        data-tip={label}
+        data-testid={`tws-section-${section === 'links' ? 'connections' : 'messages'}`}
+        onClick={() => toggleSide(section)}
+      >
+        {section === 'links' ? (
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) : (
+          <VectorIcon paths={VIEW_ART.messages} size={14} />
+        )}
+        {section === 'messages' && messages > 0 ? (
+          <span className="tws-astrip-badge" aria-hidden="true">
+            {messages > 99 ? '99+' : messages}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
 
   return (
     <>
@@ -326,6 +392,15 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
             <AttachButton entityId={tab.entityId} />
           </div>
         ) : null}
+        {/* THE TOKEN READING, stacked (task 01a14b00): a session's live context
+            number, portalled here by its panel, or a chat's, published by its
+            screen. The top group's last item, right after a session's Terminate
+            (task 01a18253); nothing floats between the groups. Pressing it
+            opens the reading's details to the left. */}
+        <div className="tws-astrip-section tws-astrip-section--stats">
+          <div ref={chrome?.setStatsSlot} className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-stats" />
+          {tab.kind === 'chat' ? <ChatStats chatId={tab.entityId} /> : null}
+        </div>
       </div>
 
       {/* BOTTOM — the actions every kind shares. */}
@@ -334,61 +409,22 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
             each open the column beside the body, and the lit one closes it.
             The body never changes. */}
         <div className="tws-astrip-cluster" role="group" aria-label="Side panel" data-testid="tws-astrip-side">
-          {detail && !canvas
-            ? (['links', 'messages'] as const).map((section) => {
-                const label = section === 'messages' ? 'Messages' : 'Links';
-                const pressed = sideOpen === section;
-                return (
-                  <button
-                    key={section}
-                    type="button"
-                    className="tws-astrip-btn tws-astrip-seg"
-                    aria-pressed={pressed}
-                    aria-label={section === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
-                    data-tip={label}
-                    data-testid={`tws-section-${section === 'links' ? 'connections' : 'messages'}`}
-                    onClick={() => toggleSide(section)}
-                  >
-                    {section === 'links' ? (
-                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                        <path
-                          d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.3"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                        <path
-                          d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                    {section === 'messages' && messages > 0 ? (
-                      <span className="tws-astrip-badge" aria-hidden="true">
-                        {messages > 99 ? '99+' : messages}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })
-            : null}
+          {/* By use (task 01a181e2): Messages, Chat, then Links. */}
+          {sideButton('messages')}
           {chatToggle}
+          {sideButton('links')}
         </div>
 
-        <div className="tws-astrip-cluster">
-          {/* The live phone screen (PhoneLive.tsx): green and blinking while the task streams a test. */}
-          {detail && detail.deletedAt == null && gate.data.seam?.commands ? <PhoneLiveButton detail={detail} /> : null}
-          {/* Run, from the panel's own bar (flows and refusals unchanged). */}
-          <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
-        </div>
+        {toolsInMenu ? null : (
+          <div className="tws-astrip-cluster">
+            {/* The live phone screen (PhoneLive.tsx): green and blinking while the task streams a test. */}
+            {testers ? <PhoneLiveButton detail={detail} /> : null}
+            {/* The website tester (WebTest.tsx): a site built from its GitHub source, tested live. */}
+            {testers ? <WebTestButton detail={detail} /> : null}
+            {/* Run, from the panel's own bar (flows and refusals unchanged). */}
+            <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
+          </div>
+        )}
 
         <div className="tws-astrip-cluster" ref={menuRef}>
           <button
@@ -431,6 +467,27 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
                   {stats}
                 </div>
               ) : null}
+              {/* A session's Run (the panel's own bar, flows unchanged) and testers. */}
+              {toolsInMenu ? (
+                <>
+                  <div
+                    ref={chrome?.setCommonVerbsSlot}
+                    className="tws-astrip-verbs tws-astrip-common tws-astrip-menu-verbs"
+                    data-testid="tws-astrip-common"
+                  />
+                  {testers ? (
+                    <>
+                      <button type="button" className="pn-overflow__item" role="menuitem" data-testid="tws-menu-phone" onClick={() => { setTool('phone'); setMenuOpen?.(false); }}>
+                        Live phone screen
+                      </button>
+                      <button type="button" className="pn-overflow__item" role="menuitem" data-testid="tws-menu-web" onClick={() => { setTool('web'); setMenuOpen?.(false); }}>
+                        Website tester
+                      </button>
+                    </>
+                  ) : null}
+                  <span className="pn-overflow__rule" />
+                </>
+              ) : null}
               {/* Rename (from the panel's save flow) */}
               <div ref={chrome?.setMenuSlot} className="tws-astrip-slot" />
               <button type="button" className="pn-overflow__item" role="menuitem" onClick={copyLink}>
@@ -444,11 +501,27 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
       </div>
       {tips.node}
     </div>
-    {/* The session's live reading, read as text for the Session tooltip and ⋯
-        (R32.4): outside the toolbar, hidden and inert, so nothing invisible
-        is focusable or announced. */}
-    <div ref={chrome?.setStatsSlot} className="tws-astrip-stats-source" hidden inert aria-hidden="true" />
+    {tool === 'phone' && detail ? (
+      <PhoneLiveDialog
+        detail={detail}
+        taskCommand={liveCommandOf(detail, kindConfig.panel.liveScreen)}
+        watch={liveTerminalOf(detail, kindConfig.panel.liveScreen)}
+        onClose={() => setTool(null)}
+      />
+    ) : null}
+    {tool === 'web' && detail ? <WebTestDialog detail={detail} onClose={() => setTool(null)} /> : null}
     </>
+  );
+}
+
+/** A chat tab's context reading, as its open screen holds it (`chatContextFeed`). */
+function ChatStats({ chatId }: { chatId: string }) {
+  const entry = useChatContextFeed(chatId);
+  if (!entry) return null;
+  return (
+    <div className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-chat-stats">
+      <ChatContextNumber context={entry.context} stale={entry.stale} fit="stack" />
+    </div>
   );
 }
 
@@ -493,16 +566,7 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
         data-testid="tws-connectors"
         onClick={() => setOpen((was) => !was)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M6 1.5v3M10 1.5v3M4 4.5h8v3a4 4 0 0 1-8 0zM8 11.5v3"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <KindIcon kind="mcp_server" size={16} />
         {attached > 0 ? (
           <span className="tws-astrip-badge" aria-hidden="true">
             {attached}

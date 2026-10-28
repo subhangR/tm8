@@ -34,7 +34,7 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
 }
 
 /* --- No head rows (Subhang, round 4): the property pills are the body's first
@@ -81,7 +81,10 @@
    theme like every other tab's. The panel drops its always-dark scope for
    them (see `alwaysDark` in EntityDetailPanel), so this rule must step back
    too, or the panel stays black with light-theme ink on it. */
-.cv2-root .tws-panel > .pn-panel[data-archetype='terminal']:not([data-embedded-section='connections']):not([data-embedded-section='discussion']) {
+/* …and only while the panel is in its always-dark scope at all, which is the
+   TERMINAL surface alone (task 01a14c39): the transcript and the other
+   surfaces follow the app theme, like chat, and keep the panel's own ground. */
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-always-dark='true']:not([data-embedded-section='connections']):not([data-embedded-section='discussion']) {
   background: var(--pn-x-term-bg);
 }
 .cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .pn-terminal-stage {
@@ -154,8 +157,44 @@
   border: 0;
   background: none;
 }
-.tws-astrip-stats-source {
+/* THE TOKEN READING (task 01a14b00): the context chip, the last item of the
+   top section, after the kind's icons (task 01a18253). It shows the context
+   size alone, small (task 01a181e2); % · cache · age are the ⋯ menu's line
+   and the details card's, which opens to the left, centred on it. */
+.tws-astrip-section--stats:not(:has(.pn-context)) {
   display: none;
+}
+.tws-astrip-stats .pn-context {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip-stats .pn-context__num {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 36px;
+  height: auto;
+  padding: var(--pn-space-1) 0;
+  line-height: 14px;
+  font-size: 10px;
+  white-space: nowrap;
+  border-color: var(--pn-line);
+}
+.tws-astrip-stats .pn-context__line[data-line='0'] {
+  color: var(--pn-ink-2);
+  font-size: 10px;
+  font-weight: 500;
+}
+.tws-astrip-stats .pn-context__sep {
+  display: none;
+}
+.cv2-root .tws-astrip-stats .pn-context__details {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  right: calc(100% + var(--pn-space-2) + 2px);
+  max-width: none;
 }
 
 /* Every control in the strip: 28x28, centred, 14px icons. */
@@ -567,11 +606,55 @@
   padding: var(--pn-space-6) var(--pn-space-6) 0;
   box-sizing: border-box;
 }
+/* `--pn-active`, not `--pn-hover`: on a dark card the hover step is a shade
+   off the ground and the bars all but vanished. */
 .tws-skeleton-bar {
   display: block;
   height: 12px;
   border-radius: var(--pn-r-xs);
-  background: var(--pn-hover);
+  background: var(--pn-active);
+}
+/* The loading frame paints the loaded body's ground, so the swap changes the
+   content and nothing else (task 01a14c39). A terminal's is the xterm canvas
+   that fills the loaded stage (`--pn-x-term-live-bg`, the style's xterm
+   background): this body carries the always-dark scope (see `EntityTabBody`),
+   so the token resolves to the same colour the canvas paints. */
+.tws-body[data-shape='terminal'] {
+  background: var(--pn-x-term-live-bg);
+}
+.tws-body[data-shape='chat'] {
+  background: var(--pn-paper);
+}
+/* Terminal lines: flush left at the grid's own inset, mono height. */
+.tws-skeleton[data-shape='terminal'] {
+  max-width: none;
+  margin: 0;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) var(--pn-space-3) 0;
+}
+.tws-skeleton[data-shape='terminal'] .tws-skeleton-bar {
+  height: 10px;
+  max-width: 560px;
+}
+/* A conversation: turns down the chat's 760px column, the composer at its foot. */
+.tws-skeleton[data-shape='chat'] {
+  flex: 1;
+  max-width: min(760px, calc(100% - 32px));
+  padding: var(--pn-space-6) 0 var(--pn-space-2);
+}
+.tws-skeleton-turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  flex: 1;
+}
+.tws-skeleton-composer {
+  display: block;
+  flex: none;
+  height: 96px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
 }
 
 
@@ -627,7 +710,7 @@
   align-items: center;
   /* The left edge is the body's measure edge. */
   padding: 0 var(--pn-space-3) 0 max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   border-bottom: 1px solid var(--pn-line);
   transition:
     height var(--pn-dur-fast) var(--pn-ease-out),
@@ -666,7 +749,7 @@
     transition: none;
   }
 }
-.tws-entity-host:has(.pn-panel[data-archetype='terminal']) > .tws-titlebar {
+.tws-entity-host:has(.pn-panel[data-archetype='terminal'][data-always-dark='true'], .tws-body[data-shape='terminal']) > .tws-titlebar {
   background: var(--pn-x-term-bg);
 }
 .tws-titlebar__text {
@@ -704,6 +787,18 @@
    viewing page is very good"): every rule here is scoped to the edit stance. */
 .tws-entity-host:has(.pn-panel[data-archetype='reader'] [data-stance='edit']) > .tws-titlebar {
   padding-left: var(--pn-space-3);
+}
+/* THE TASK PAGE IS FLUSH LEFT (task 01a15e22: "the title should start from
+   the left most"). Its body does not sit in the reading measure, so its title
+   takes the body's own left padding (`.sb-body--two-column`) instead of the
+   measure's centred edge. */
+.tws-entity-host:has(.sb-body--two-column) > .tws-titlebar {
+  padding-left: var(--pn-space-6);
+}
+@container (max-width: 760px) {
+  .tws-entity-host:has(.sb-body--two-column) > .tws-titlebar {
+    padding-left: var(--pn-space-4);
+  }
 }
 .cv2-root .tws-panel .pn-panel[data-archetype='reader']:has([data-stance='edit']) .pn-embedded-head__pills {
   margin-inline: 0;
@@ -786,4 +881,39 @@
   outline: none;
   border-color: var(--pn-line-2);
   background: var(--pn-card);
+}
+
+/* THE SESSION'S "MORE VIEWS" (task 01a181e2): Git, Debug, Graph and Context
+   behind one tab in the switch; its menu opens to the left like ⋯. */
+.pn-surface-more {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip .pn-surface-more__menu {
+  min-width: 150px;
+}
+.cv2-root .pn-surface-more__item {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+}
+.cv2-root .pn-surface-more__item[aria-checked='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+/* A session's Run, in ⋯ as a menu row: the glyph, then its word. */
+.cv2-root .tws-astrip .tws-astrip-menu-verbs {
+  align-items: stretch;
+}
+.cv2-root .tws-astrip .tws-astrip-menu-verbs .pn-btn {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-2);
+}
+.cv2-root .tws-astrip .tws-astrip-menu-verbs .pn-btn::after {
+  content: attr(aria-label);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
 }

@@ -23,7 +23,7 @@
  * the database unless a `CommandContext.actorId` names one deliberately (the
  * acting-as case, which `can_act_as` then authorizes properly).
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, ISO_TIMESTAMP_RE } from '@tm8/contract';
 import type { DbClaims } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import type { RequestContext } from '../http/types.js';
@@ -104,6 +104,7 @@ export function claimsFor(
     // 299 (Spec D1). Only from a verified bearer: the body's `workSessionId`
     // is a routing hint and never names the claimant.
     ...(bearer?.workSessionId ? { workSessionId: bearer.workSessionId } : {}),
+    ...(bearer?.sessionId ? { authSessionId: bearer.sessionId } : {}),
   };
 }
 
@@ -146,6 +147,36 @@ export function requireUuidParam(ctx: RequestContext, name: string): string {
     throw new CollabError('not_found', `no such ${name}: ${value}`);
   }
   return value;
+}
+
+/**
+ * A keyset cursor's instant, or `invalid_cursor`.
+ *
+ * Cursors are client input: base64url JSON a caller can rewrite while keeping
+ * the fingerprint. A value that is not the exact ISO text `MICROS` emits would
+ * otherwise reach `$n::timestamptz` and raise SQLSTATE 22007, which the
+ * taxonomy does not map — a 5xx for what is a client error (DEV-5).
+ * `Date.parse` is not a substitute: it admits `'2026'`, offsets and numbers.
+ */
+export function cursorInstant(raw: unknown): string {
+  if (raw === null || raw === undefined) {
+    throw new CollabError('invalid_cursor', 'invalid cursor: createdAt is missing');
+  }
+  if (typeof raw !== 'string' || !ISO_TIMESTAMP_RE.test(raw)) {
+    throw new CollabError(
+      'invalid_cursor',
+      'invalid cursor: createdAt must be an ISO-8601 UTC timestamp',
+    );
+  }
+  return raw;
+}
+
+/** A keyset cursor's uuid tiebreaker, or `invalid_cursor` (not 22P02's `not_found`). */
+export function cursorUuid(raw: unknown): string {
+  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+    throw new CollabError('invalid_cursor', 'invalid cursor: id must be a uuid');
+  }
+  return raw;
 }
 
 export function optionalUuid(value: unknown, field: string): string | null {

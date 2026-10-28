@@ -1,5 +1,6 @@
 import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
 import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
 import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
@@ -220,6 +221,12 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number | null;
+  artifacts?: number | null;
+  drawings?: number | null;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -279,6 +286,7 @@ interface SummaryRow {
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
   ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -296,6 +304,9 @@ interface SummaryRow {
   commit_sha: string | null;
   commit_message: string | null;
   commit_committed_at: Date | string | null;
+  commit_author: string | null;
+  commit_url: string | null;
+  commit_fetched_at: Date | string | null;
   spell_name: string | null;
   spell_description: string | null;
   skill_name: string | null;
@@ -322,6 +333,11 @@ interface SummaryRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection?: import('@tm8/contract').ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -333,6 +349,8 @@ interface SummaryRow {
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
   chat_context: unknown;
+  /** Per viewer: this read runs under the POLLER's claims. Null off a chat row. */
+  chat_can_set_model?: boolean | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
@@ -419,6 +437,7 @@ select
   e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
+  c.prs, c.artifacts, c.drawings, c.sessions,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
@@ -476,6 +495,9 @@ select
       and not exists (select 1 from public.edges oc
                        where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
                          and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -496,6 +518,9 @@ select
   cm.sha             as commit_sha,
   cm.message         as commit_message,
   cm.committed_at    as commit_committed_at,
+  cm.author          as commit_author,
+  cm.url             as commit_url,
+  cm.fetched_at      as commit_fetched_at,
   sp.name            as spell_name,
   sp.description     as spell_description,
   ${SKILL_REFERENCE_SQL} as skill_reference,
@@ -529,6 +554,10 @@ select
   lp.last_error      as loop_last_error,
   cht.title          as chat_title,
   cht.teammate_id    as chat_teammate_id,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model          as chat_model,
   cht.provider       as chat_provider,
   cht.agent_tool     as chat_agent_tool,
@@ -540,6 +569,14 @@ select
   chq.turn_count     as chat_turn_count,
   chq.last_turn_at   as chat_last_turn_at,
   cht.context        as chat_context,
+  -- MIRRORS entity-read.ts's chat_can_set_model (276:119-125's two conjuncts).
+  -- Per viewer, and that is safe here: the pump polls PER CONNECTION under that
+  -- connection's own claims (pump.ts), so no one viewer's answer is fanned out.
+  case when cht.entity_id is not null then
+    coalesce(cht.configured_by_identity_id = internal.identity_id(), false)
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or cht.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid)
+  end                as chat_can_set_model,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
@@ -764,6 +801,7 @@ export class PgEntityProjector implements EntityProjector {
 
     const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
     if (rows.length === 0) return out;
+    await attachChatRuntimeFacts(q, rows);
 
     const humanMessageAuthors = await loadHumanMessageAuthorIds(q, unique);
 
@@ -896,7 +934,7 @@ export class PgEntityProjector implements EntityProjector {
     // leaving it out would be worse than absent: the chip would render on load
     // and then VANISH on the next live `entity.upsert`, which reads as the PR
     // being unlinked. Same loader as the facade assembler, so the two answers
-    // cannot drift. Skipped entirely when no task is in the batch.
+    // cannot drift. Skipped entirely when no task, session or chat is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
     // `badges.liveSession` (P0g): the same loader as the facade assembler, for
     // the pull-request reason above. Skipped entirely when no task is in the batch.
@@ -1009,6 +1047,10 @@ export class PgEntityProjector implements EntityProjector {
       // and projects 0 like its five elders.
       docs: r.docs ?? 0,
       memories: r.memories ?? 0,
+      prs: r.prs ?? 0,
+      artifacts: r.artifacts ?? 0,
+      drawings: r.drawings ?? 0,
+      sessions: r.sessions ?? 0,
       viewerReaction,
     };
 
@@ -1424,6 +1466,7 @@ export class PgEntityProjector implements EntityProjector {
           // 299 — the outcome facts, the same helper as entity-read.
           ...outcomeFacts(r),
           ...(Array.isArray(r.ws_offered_task_ids) ? { offeredTaskIds: r.ws_offered_task_ids } : {}),
+          ...(r.ws_launched_by !== undefined ? { launchedBy: r.ws_launched_by } : {}),
         };
       case 'file':
         return {
@@ -1444,14 +1487,26 @@ export class PgEntityProjector implements EntityProjector {
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
       }
-      case 'commit':
-        return {
-          kind: 'commit',
+      case 'commit': {
+        // Same three facts the pull request arm above carries, and missing here
+        // for no reason anyone chose: the panel's link-summary row reads
+        // `state.url` and `state.stale` for BOTH kinds, so a commit could never
+        // render its link or say it was unsynced. `stale` being REQUIRED on the
+        // contract type is what surfaced this projection at all — it is one of
+        // three that build a commit state, and only one of them was known about.
+        const base = {
+          kind: 'commit' as const,
           repository: r.commit_repo ?? '',
           sha: r.commit_sha ?? '',
           message: r.commit_message ?? '',
           committedAt: iso(r.commit_committed_at),
+          author: r.commit_author,
+          fetchedAt: iso(r.commit_fetched_at),
+          // Never fetched ⇒ definitionally stale, exactly as the PR arm reads it.
+          stale: r.commit_fetched_at === null,
         };
+        return r.commit_url === null ? base : { ...base, url: r.commit_url };
+      }
       case 'spell':
         return { kind: 'spell', description: r.spell_description ?? undefined, equipped: r.equipped === true };
       case 'skill':
@@ -1571,10 +1626,22 @@ export class PgEntityProjector implements EntityProjector {
         // tile changes shape depending on which door answered.
         return {
           kind: 'chat',
-          teammateId: r.chat_teammate_id ?? '',
-          model: r.chat_model ?? '',
-          provider: r.chat_provider ?? '',
-          agentTool: r.chat_agent_tool ?? '',
+          credentialSelection: r.chat_credential_selection ?? { source: 'auto' },
+          ...(r.chat_config_revision != null ? {
+            configRevision: Number(r.chat_config_revision),
+            reasoningEffort: r.chat_reasoning_effort ?? null,
+            ...(r.chat_credential_intent ? { credentialIntent: r.chat_credential_intent } : {}),
+            ...(r.chat_runtime_public ? { runtime: r.chat_runtime_public } : {}),
+          } : {}),
+          // The `chats_select` policy hides a DELETED chat's row, so an edge
+          // naming a deleted chat (330's launched_by backfill made hundreds)
+          // reads nulls here. Empty strings fail the WorkspaceEvent contract
+          // and wedge the space's feed at that seq; fall back to values the
+          // contract accepts. MIRRORED in entity-read.ts stateOf.
+          teammateId: r.chat_teammate_id ?? r.created_by,
+          model: r.chat_model ?? 'unknown',
+          provider: r.chat_provider ?? 'unknown',
+          agentTool: r.chat_agent_tool ?? 'unknown',
           mode: (r.chat_mode ?? 'ask') as ChatMode,
           workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
           projectId: r.chat_project_id,
@@ -1584,6 +1651,7 @@ export class PgEntityProjector implements EntityProjector {
           lastTurnAt: iso(r.chat_last_turn_at),
           context: chatContextOf(r.chat_context),
           about: chatSubjects.get(r.id) ?? null,
+          ...(typeof r.chat_can_set_model === 'boolean' ? { canSetModel: r.chat_can_set_model } : {}),
         };
       case 'container': {
         // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field

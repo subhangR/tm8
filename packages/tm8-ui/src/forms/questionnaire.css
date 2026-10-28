@@ -96,9 +96,14 @@
   font-size: var(--pn-fs-sm);
 }
 .fq-textarea { resize: vertical; line-height: var(--pn-lh-body); }
-.fq-text:focus-visible, .fq-textarea:focus-visible, .fq-select:focus-visible {
+.fq-select:focus-visible {
   outline: 2px solid rgba(var(--pn-brand-rgb), 0.45);
   outline-offset: 0;
+}
+/* Text fields tint their own border instead of drawing an outline box. */
+.fq-text:focus-visible, .fq-textarea:focus-visible {
+  outline: none;
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
 }
 .fq-textfield { display: flex; flex-direction: column; gap: var(--pn-space-1); }
 .fq-count, .fq-hint { font-size: var(--pn-fs-micro); color: var(--pn-ink-3); }

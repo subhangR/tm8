@@ -4,6 +4,7 @@ export { Chip } from './Chip';
 export { IconBtn } from './IconBtn';
 export { VectorIcon } from './VectorIcon';
 export { BrandMark } from './BrandMark';
+export { AgentToolIcon, ClaudeLogo, CodexLogo, agentToolKind, type AgentToolKind, type AgentToolIconProps } from './AgentToolIcon';
 export { Kbd } from './Kbd';
 export { Avatar, type AvatarProvenance, type AvatarSize } from './Avatar';
 export { DiffView, type DiffViewProps } from './DiffView';
@@ -24,9 +25,17 @@ export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
-export { RibbonMark, RIBBON_LOOP_SECONDS, type RibbonMotion } from './RibbonMark';
+export {
+  RibbonMark,
+  RIBBON_LOOP_SECONDS,
+  ribbonPhase,
+  useRibbonClock,
+  type RibbonFinish,
+  type RibbonMotion,
+} from './RibbonMark';
 export {
   Markdown,
+  MARKDOWN_COMPONENTS,
   headingsIn,
   MD_HEADING_ATTR,
   type DocHeading,
@@ -45,7 +54,8 @@ export {
 export { Timestamp, type TimestampProps } from './Timestamp';
 export {
   CLOCK_TICK_MS, RELATIVE_WINDOW_MS,
-  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime, shortDate, useNow, weekdayDate,
+  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime,
+  listTime, shortDate, useNow, weekdayDate,
 } from './time';
 export {
   PanelResizer,

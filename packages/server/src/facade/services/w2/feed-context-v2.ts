@@ -130,7 +130,8 @@ const HEADER_KINDS: ReadonlySet<string> = new Set(SELECTION_HEADER_KINDS);
  */
 export type V2Section =
   | 'assignment' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
-  | 'acceptance' | 'header' | 'assignees' | 'gate' | 'story' | 'tasks' | 'anchor' | 'attachments' | 'pages';
+  | 'acceptance' | 'header' | 'assignees' | 'gate' | 'story' | 'tasks' | 'anchor' | 'attachments' | 'pages'
+  | 'launched';
 
 /**
  * Names accepted for the section that carries them: `summary` is the body,
@@ -176,7 +177,9 @@ function coreSectionsFor(kind: string): readonly V2Section[] {
     case 'task': return [...header, 'acceptance', 'assignees', 'gate'];
     case 'story': return [...header, 'story'];
     case 'craft': return [...header, 'pages'];
-    case 'work_session': return [...header, 'tasks'];
+    // 330: what a chat or session launched (`launched_by`), its own field.
+    case 'work_session': return [...header, 'tasks', 'launched'];
+    case 'chat': return [...header, 'launched'];
     case 'message': return [...header, 'anchor', 'attachments'];
     default: return header;
   }
@@ -218,6 +221,8 @@ export interface ContextV2LoadPlan {
   readonly sessionCard: boolean;
   /** message: anchor and parent-message refs, attachment sizes. */
   readonly messageCard: boolean;
+  /** chat, work_session (330): the sessions it launched (`launchedSessions[]`). */
+  readonly launched: boolean;
   /** Which halves of the message card the view shows: anchor + parentMessage, attachments. */
   readonly anchor: boolean;
   readonly attachments: boolean;
@@ -263,6 +268,7 @@ export function v2LoadPlan(
       children: isTask || isStory,
       sessionCard: kind === 'work_session',
       messageCard: kind === 'message',
+      launched: kind === 'chat' || kind === 'work_session',
       anchor: kind === 'message',
       attachments: kind === 'message',
       storyCard: isStory,
@@ -290,6 +296,7 @@ export function v2LoadPlan(
     children: has('hierarchy'),
     sessionCard: has('tasks'),
     messageCard: has('anchor') || has('attachments'),
+    launched: has('launched'),
     anchor: has('anchor'),
     attachments: has('attachments'),
     storyCard: has('story'),
@@ -760,6 +767,7 @@ interface Loaded {
   teammate?: string | null;
   story?: EntityContextStory;
   tasks?: EntityContextRef[];
+  launchedSessions?: EntityContextRef[];
   pages?: EntityContextCraftPage[];
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
@@ -1083,6 +1091,24 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     } as EntityContextStory;
   }
 
+  if (plan.launched) {
+    // 330: the sessions this chat or session launched — `launched_by` edges
+    // into it — live ones first, then newest. They are not children (a
+    // launched session has no parent), so a chat's agents see them here.
+    const rows = await listLoader(q, 'launched', 'connections', errors, (tq) => tq.query<RefRow>(
+      `select ${REF_COLUMNS} ${REF_FROM}
+         join public.edges g on g.src_id = e.id and g.dst_id = $1 and g.type = 'launched_by'
+        where e.deleted_at is null
+        order by (ws.status in ('spawning', 'running', 'idle')) desc, e.created_at desc, e.id desc
+        limit ${ROW_LIMIT + 1}`,
+      [id],
+    ));
+    if (rows) {
+      const launchedPage = pageExpand(id, 'connections', 'launched_by', null);
+      loaded.launchedSessions = keep(rows, ROW_LIMIT, 'launchedSessions', loaded, () => launchedPage).map(refOf);
+    }
+  }
+
   if (plan.sessionCard) {
     const persona = await taggedQuerier(q, 'root').query<{ name: string | null }>(
       `select tm.name from public.edges pe
@@ -1396,6 +1422,7 @@ function assemble(
       ...(loaded.blockers ? { blockers: loaded.blockers } : {}),
       ...(loaded.children ? { children: loaded.children } : {}),
       ...(loaded.tasks ? { tasks: loaded.tasks } : {}),
+      ...(loaded.launchedSessions ? { launchedSessions: loaded.launchedSessions } : {}),
       ...(loaded.pages ? { pages: loaded.pages } : {}),
       ...(loaded.connections ? { connections: loaded.connections } : {}),
       ...(loaded.messages ? { messages: loaded.messages } : {}),
@@ -1472,6 +1499,7 @@ function assemble(
     ...(plan.blockers && loaded.blockers ? { blockers: loaded.blockers } : {}),
     ...(loaded.children ? { children: loaded.children } : {}),
     ...(loaded.tasks ? { tasks: loaded.tasks } : {}),
+    ...(loaded.launchedSessions ? { launchedSessions: loaded.launchedSessions } : {}),
     ...(loaded.pages ? { pages: loaded.pages } : {}),
     ...(loaded.messages ? { messages: loaded.messages } : {}),
     asOfSeq: loaded.asOfSeq,
@@ -1567,7 +1595,7 @@ function cutAtCeiling(view: View, id: string, messagesAreCore: boolean, pagers: 
 /** The never-drop sections a view carries, for the 422's `details.core`. */
 function coreSections(view: View, messagesAreCore: boolean): string[] {
   const core = ['root'];
-  for (const key of ['header', 'assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks', 'pages']) {
+  for (const key of ['header', 'assignment', 'acceptance', 'acceptanceWrite', 'outline', 'blockers', 'gate', 'assignees', 'anchor', 'attachments', 'tasks', 'launchedSessions', 'pages']) {
     if (view[key] !== undefined) core.push(key);
   }
   if (messagesAreCore && view.messages !== undefined) core.push('messages');

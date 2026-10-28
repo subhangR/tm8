@@ -7,6 +7,15 @@ import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures'
 import type { ChatCredentialSelection } from '@tm8/contract';
 
 afterEach(cleanup);
+
+/** Credentials are a row in the composer's ⚙ panel, picked from its submenu. */
+function chooseCredential(view: ReturnType<typeof render>, value: string) {
+  fireEvent.click(view.getByTestId('tch-settings'));
+  fireEvent.click(view.getByTestId('tch-credentials'));
+  fireEvent.click(view.getByTestId(`tch-credentials-${value}`));
+}
+const credentialOf = (view: ReturnType<typeof render>) =>
+  view.getByTestId('tch-credentials-value').textContent;
 const SPACE = '019f0000-0000-7000-8000-000000000090';
 const models = [{ model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' }];
 
@@ -15,8 +24,7 @@ it('offers a credential choice before the first chat message', async () => {
   const create = vi.fn(port.startThread.create);
   const view = render(<ChatHomeScreen port={{ ...port, startThread: { ...port.startThread, create } }} spaceId={SPACE} models={models} />);
   await waitFor(() => expect(view.getByTestId('tch-model')).toBeTruthy());
-  fireEvent.click(view.getByLabelText('Chat credentials'));
-  fireEvent.click(view.getByTestId('tch-credentials-member'));
+  chooseCredential(view, 'member');
   const composer = view.getByLabelText('Message the chat agent');
   fireEvent.change(composer, { target: { value: 'Use my account' } });
   fireEvent.keyDown(composer, { key: 'Enter' });
@@ -30,12 +38,11 @@ it('saves a credential change on an existing chat, including during a turn', asy
   const view = render(<ChatHomeScreen port={{ ...port, setCredentials }} spaceId={SPACE} models={models}
     routeThreadId={CHAT_HOME_FIXTURE_THREAD.summary.rootId} />);
   await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet'));
-  fireEvent.click(view.getByLabelText('Chat credentials'));
-  fireEvent.click(view.getByTestId('tch-credentials-node'));
+  chooseCredential(view, 'node');
   await waitFor(() => expect(setCredentials).toHaveBeenCalledWith({
     chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId, credentialSelection: { source: 'node' },
   }));
-  await waitFor(() => expect(view.getByTestId('tch-credentials').textContent).toContain('Server'));
+  await waitFor(() => expect(credentialOf(view)).toBe('Server'));
 });
 
 it('keeps the prior selection and shows a policy refusal', async () => {
@@ -43,10 +50,9 @@ it('keeps the prior selection and shows a policy refusal', async () => {
   const view = render(<ChatHomeScreen port={{ ...port, setCredentials: async () => { throw new Error('Server credential forbidden'); } }}
     spaceId={SPACE} models={models} routeThreadId={CHAT_HOME_FIXTURE_THREAD.summary.rootId} />);
   await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet'));
-  fireEvent.click(view.getByLabelText('Chat credentials'));
-  fireEvent.click(view.getByTestId('tch-credentials-node'));
+  chooseCredential(view, 'node');
   await waitFor(() => expect(view.getByText('Server credential forbidden')).toBeTruthy());
-  expect(view.getByTestId('tch-credentials').textContent).toContain('Auto');
+  expect(credentialOf(view)).toBe('Auto');
 });
 
 it('lists named space credentials and prevents backend models from choosing a server account', async () => {

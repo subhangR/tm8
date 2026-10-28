@@ -210,7 +210,8 @@ describe('Phone: the slot is a full-screen sheet (§3.1)', () => {
 
   it('opens over the whole frame on `new` with the composer, and Close removes it', async () => {
     const view = render(<PhoneHost />);
-    await waitFor(() => expect(view.getAllByTestId('list-tile').length).toBeGreaterThan(0));
+    /* The phone draws its own list rows (t-lists). */
+    await waitFor(() => expect(view.getAllByTestId('phone-list-row').length).toBeGreaterThan(0));
     expect(view.queryByTestId('entity-chat-phone-sheet')).toBeNull();
 
     act(() => navStore.getState().openChat({ about: '01a0-task' as EntityId, thread: 'new' }));
@@ -228,7 +229,8 @@ describe('Phone: the slot is a full-screen sheet (§3.1)', () => {
 
   it('Back (the previous address) closes it', async () => {
     const view = render(<PhoneHost />);
-    await waitFor(() => expect(view.getAllByTestId('list-tile').length).toBeGreaterThan(0));
+    /* The phone draws its own list rows (t-lists). */
+    await waitFor(() => expect(view.getAllByTestId('phone-list-row').length).toBeGreaterThan(0));
     const before = routeOf(navStore.getState());
     act(() => navStore.getState().openChat({ about: '01a0-task' as EntityId, thread: 'new' }));
     await waitFor(() => view.getByTestId('entity-chat-phone-sheet'));

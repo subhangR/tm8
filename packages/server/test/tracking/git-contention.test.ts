@@ -11,7 +11,7 @@
  * not, because the git observation IS the feature.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -94,6 +94,27 @@ describe('git-local reads against real worktrees', () => {
   it('an unreadable path yields null, never an empty set', async () => {
     expect(await touchedPaths(join(root, 'gone'), baseOid)).toBeNull();
     expect(await commitsAhead(join(root, 'gone'), baseOid)).toBeNull();
+  });
+
+  // The lane owns its .git config, and `status` launches a configured
+  // fsmonitor — with the server's environment, before trust fix #4 (01a0e777).
+  it('touchedPaths does not run an fsmonitor planted in the lane\'s repository', async () => {
+    const marker = join(root, 'fsmonitor-ran');
+    const monitor = join(root, 'fsmonitor.sh');
+    writeFileSync(monitor, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+    chmodSync(monitor, 0o755);
+    git(repo, 'config', 'core.fsmonitor', monitor);
+    try {
+      // CONTROL: a plain git in the same lane does run it.
+      git(laneA, 'status', '--porcelain');
+      expect(existsSync(marker)).toBe(true);
+      rmSync(marker);
+
+      expect([...(await touchedPaths(laneA, baseOid))!].sort()).toEqual(['a.ts', 'shared.ts']);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      git(repo, 'config', '--unset', 'core.fsmonitor');
+    }
   });
 
   it('repoFromUrl derives owner/name across url shapes', () => {

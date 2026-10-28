@@ -38,6 +38,7 @@ import {
   type RouterTarget,
 } from '../routes';
 import { reconcileScreenStacks } from './backContract';
+import { recordInbound, recordPush, recordReplace } from './phoneHistory';
 
 /** WLT §5.2 / SPEC-FINAL: three pins, no more. */
 export const MAX_PINNED = 3;
@@ -763,6 +764,9 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
        * silent mis-seed, which is the failure class hardest to see.
        */
       reconcileScreenStacks(navStore.getState().view);
+      /* The phone's ‹ reads this projection (stores/phoneHistory.ts): an
+         inbound address is a Back, a Forward, or a fresh start. */
+      recordInbound(navStore.getState().view);
     } finally {
       applying = false;
     }
@@ -784,6 +788,8 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
     }
     lastWritten = outcome.hash;
     target.setHash(outcome.hash, { replace });
+    if (replace) recordReplace(state.view);
+    else recordPush(state.view);
   };
 
   const unsubscribeTarget = target.subscribe((hash) => {

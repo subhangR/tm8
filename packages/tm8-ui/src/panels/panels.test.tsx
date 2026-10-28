@@ -562,7 +562,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // The tool did not move out of the slot, it moved INTO the corner: two
     // sessions on the same tool are now told apart by whose face is on them.
     expect(slot?.getAttribute('data-teammate-id')).toBe('tm_fable');
-    expect(slot?.querySelector('.pn-agent__tool')?.textContent).toBe('✦');
+    // Codex is drawn as its real mark (an SVG), not the ✦ glyph it used to be.
+    expect(slot?.querySelector('.pn-agent__tool svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label')).toBe('Fable · codex');
     // No children on this row, so the third corner stays EMPTY rather than
     // printing a zero — having no sub-sessions is not a count of them.
@@ -612,7 +613,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const slot = container.querySelector('[data-agent-kind]');
     expect(slot?.querySelector('.kit-avatar')).toBeNull();
-    expect(slot?.querySelector('.pn-agent__mark')?.textContent).toBe('✳');
+    expect(slot?.querySelector('.pn-agent__mark svg[data-tool-kind="claude"]')).not.toBeNull();
     expect(slot?.getAttribute('aria-label')).toBe('claude-code');
   });
 
@@ -873,9 +874,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     const tile = getByTestId('list-tile');
-    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark')?.textContent).toBe('✦');
+    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(tile.querySelector('img')).toBeNull();
-    expect(tile.textContent).toContain('gpt-5.6-sol');
+    /* THE MODEL NAME IS CUT FROM THE ROW (task 01a1469f, design doc 01a1465d
+       §6: "removed from tiles: model"). The glyph above it stays — the agent
+       mark is the session's kind glyph, not a word — and the model is a
+       detail-panel fact now. */
+    expect(tile.textContent).not.toContain('gpt-5.6-sol');
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__radio')).toBeNull();
     expect(queryByText(taskGuideLines.title)).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
@@ -892,7 +898,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const resume = getByRole('button', { name: 'Resume' });
     fireEvent.click(resume);
     expect(onResume).toHaveBeenCalledWith(exited.id);
-    expect(tile.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Ended, not completed');
+    /* The word is the mark's accessible name now (01a1469f): same derivation,
+       same string, drawn as a glyph rather than a pill. */
+    expect(tile.querySelector('[data-testid="session-row-signal"]')?.textContent).toContain('Ended, not completed');
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
@@ -1008,7 +1016,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const tile = compact.getAllByTestId('list-tile')[0]!;
     expect(tile.querySelector('.pn-st__titleText')?.textContent).toBe(sessionStale.title);
-    expect(tile.querySelector('.pn-st__model')?.textContent).toBe(sessionStale.state.kind === 'work_session' ? sessionStale.state.model : null);
+    /* The model left the row with the quiet tile (01a1469f); what D34 is
+       actually about — that the floor adds no second TEXT ROW — is the
+       `pn-st__inforow` assertion below, and it still holds. */
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__inforow')).toBeNull();
   });
 
@@ -1397,6 +1408,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         livenessOf={() => 'live'}
       />,
     );
+    /* Both are running: on Running the worker nests in line. (An earlier test
+       leaves another tab chosen, where it would fold behind `▸ 1 on other
+       tabs` — task 01a1821d.) */
+    fireEvent.click(getByRole('tab', { name: /^Running/ }));
 
     expect(getAllByTestId('list-tile')).toHaveLength(1);
     expect(getAllByTestId('list-tile')[0]?.querySelector('.lp__statusmark--run')).not.toBeNull();
@@ -1413,7 +1428,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="doc" rowsFor={rowsFor([docLayoutSpec])} ctx={ctx} />,
     );
     const tile = getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelector('.lp__meta')?.textContent).toContain('markdown');
+    /* THE ANATOMY IS STILL GENERAL, read off what a doc row now draws. The
+       `.lp__meta` strip this used to assert (`markdown`) is cut — design doc
+       01a1465d §6 — so the general fact is checked on the parts that stayed:
+       a status mark drawn from the kind's own glyph, and the title. A doc
+       declares no `tile.signal`, which is why its signal slot is empty. */
+    expect(tile.querySelector('.lp__meta')).toBeNull();
+    expect(tile.querySelector('.lp__statusmark .lp__kindmark')).not.toBeNull();
+    expect(tile.querySelector('.lp__title')?.textContent).toContain(docLayoutSpec.title);
+    expect(tile.querySelector('.lp__signalslot')?.children.length).toBe(0);
   });
 
   it('the seam VERDICT outranks the record status badge on a session row', () => {
@@ -1493,6 +1516,32 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // and it still opens the dark token scope
     expect(panel.classList.contains('cv2-root')).toBe(true);
     expect(panel.getAttribute('data-theme')).toBe('dark');
+  });
+
+  it('the dark scope follows the SHOWN surface: terminal dark, transcript in the app theme (task 01a14c39)', () => {
+    // Subhang, 2026-10-18: the transcript reads exactly like chat, in whichever
+    // theme is on; the terminal stays black. The viewer's saved choice is the
+    // first paint's answer, so a transcript opens light with no dark flash.
+    const detail = fixtureDetails[sessionStale.id]!;
+    window.localStorage.setItem(`tm8:work-session-surface:v1:anonymous:${detail.id}`, 'transcript');
+    try {
+      const { getByTestId, container } = render(
+        <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+      expect(panel.getAttribute('data-theme')).toBeNull();
+      expect(panel.getAttribute('data-always-dark')).toBeNull();
+
+      fireEvent.click(container.querySelector('button[data-surface="terminal"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(true);
+      expect(panel.getAttribute('data-theme')).toBe('dark');
+
+      fireEvent.click(container.querySelector('button[data-surface="transcript"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+    } finally {
+      window.localStorage.clear();
+    }
   });
 
   it('R5 #4B: the header pill obeys the VERDICT, never the record, on a stale session', () => {

@@ -31,7 +31,7 @@ import {
 } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Minimap } from '../graph/Minimap';
-import type { BlueprintLane, BlueprintLine, BlueprintView } from './blueprint-types';
+import type { BlueprintEdgeDetail, BlueprintLane, BlueprintLine, BlueprintView } from './blueprint-types';
 import { BlueprintNode, type NodeEmphasis } from './BlueprintNode';
 import {
   boxOf, findCards, neighbourhood, pathMidpoint, readingOrder, stepSelection, type Box, type NavDirection,
@@ -86,6 +86,14 @@ export interface BlueprintCanvasProps {
   marked?: { cards: ReadonlySet<string>; lines: ReadonlySet<string> } | undefined;
   /** Full chrome (find, minimap, legend, focus). Off for the panel's inline block. */
   chrome?: boolean | undefined;
+  /**
+   * Present ⇒ "Find a node" lives in the host's strip: the find box is hidden
+   * until summoned (each new value, or the f key) and leaves on Escape or blur
+   * while empty. Absent ⇒ the box always floats over the canvas.
+   */
+  findRequest?: number | undefined;
+  /** Present ⇒ the key carries the "Lines" switch (all / reduced / essential). */
+  onEdgeDetail?: ((detail: BlueprintEdgeDetail) => void) | undefined;
 }
 
 export function BlueprintCanvas({
@@ -98,6 +106,8 @@ export function BlueprintCanvas({
   onOpenEntity,
   marked,
   chrome = true,
+  findRequest,
+  onEdgeDetail,
 }: BlueprintCanvasProps) {
   const uid = useId().replace(/:/g, '');
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +120,20 @@ export function BlueprintCanvas({
   const [hoverLine, setHoverLine] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [query, setQuery] = useState('');
+  const findSummoned = findRequest !== undefined;
+  const [findOpen, setFindOpen] = useState(false);
+  /* Bumped to focus the box once it is on screen. */
+  const [findFocus, setFindFocus] = useState(0);
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocus((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    if (findRequest) openFind();
+  }, [findRequest, openFind]);
+  useEffect(() => {
+    if (findFocus) findRef.current?.focus();
+  }, [findFocus]);
   const [matchIndex, setMatchIndex] = useState(0);
   const drag = useRef<{ id: number; x: number; y: number; from: Camera; moved: boolean } | null>(null);
   const [panning, setPanning] = useState(false);
@@ -159,8 +183,9 @@ export function BlueprintCanvas({
   /**
    * Fit a box. `floor` is the legibility floor: when fitting everything would
    * paint type too small to read, the camera holds the floor and starts at the
-   * flow's BEGINNING (the box's left edge, vertically centred when it fits) —
-   * a flowchart is read from its first stage, not from its middle.
+   * flow's BEGINNING (the box's top-left, centred on any axis that fits — the
+   * first rank of a top-to-bottom plan) — a flowchart is read from its first
+   * stage, not from its middle.
    */
   const fitTo = useCallback(
     (box: Box, floor: number): Camera | null => {
@@ -346,7 +371,7 @@ export function BlueprintCanvas({
       case '/':
         if (!chrome) return;
         event.preventDefault();
-        findRef.current?.focus();
+        openFind();
         return;
       case '.':
         if (!chrome || !selected) return;
@@ -422,9 +447,17 @@ export function BlueprintCanvas({
   const viewRight = camera ? camera.x + size.w / camera.k : 0;
   const moreRight = !!camera && bounds.minX + bounds.width > viewRight + 8;
   const moreLeft = !!camera && bounds.minX < camera.x - 8;
+  /* A top-to-bottom plan overflows the other way: the same nudge, vertical. */
+  const viewBottom = camera ? camera.y + size.h / camera.k : 0;
+  const moreDown = !!camera && bounds.minY + bounds.height > viewBottom + 8;
+  const moreUp = !!camera && bounds.minY < camera.y - 8;
   const nudge = (dir: 1 | -1) => {
     if (!camera) return;
     move({ ...camera, x: camera.x + dir * (size.w / camera.k) * 0.7 });
+  };
+  const nudgeY = (dir: 1 | -1) => {
+    if (!camera) return;
+    move({ ...camera, y: camera.y + dir * (size.h / camera.k) * 0.7 });
   };
   const firstKey = readingOrder(view)[0]?.key ?? null;
   const tabKey = selected && view.cards.some((c) => c.key === selected) ? selected : firstKey;
@@ -532,7 +565,7 @@ export function BlueprintCanvas({
         </g>
       </svg>
 
-      {chrome ? (
+      {chrome && (!findSummoned || findOpen) ? (
         <div className="crf-find" role="search">
           <span className="crf-find__glyph" aria-hidden>⌕</span>
           <input
@@ -555,8 +588,12 @@ export function BlueprintCanvas({
                 event.preventDefault();
                 event.stopPropagation();
                 setQuery('');
+                if (findSummoned) setFindOpen(false);
                 rootRef.current?.focus();
               }
+            }}
+            onBlur={() => {
+              if (findSummoned && !query.trim()) setFindOpen(false);
             }}
           />
           {query.trim() ? (
@@ -585,7 +622,20 @@ export function BlueprintCanvas({
         </button>
       ) : null}
 
-      {chrome ? <Legend /> : null}
+      {chrome && moreUp ? <div className="crf-fade crf-fade--up" aria-hidden /> : null}
+      {chrome && moreDown ? <div className="crf-fade crf-fade--down" aria-hidden /> : null}
+      {chrome && moreUp ? (
+        <button type="button" className="crf-more crf-more--up" data-testid="crf-more-up" aria-label="Show more of the plan above" title="More above" onClick={() => nudgeY(-1)}>
+          <span aria-hidden>˄</span>
+        </button>
+      ) : null}
+      {chrome && moreDown ? (
+        <button type="button" className="crf-more crf-more--down" data-testid="crf-more-down" aria-label="Show more of the plan below" title="More below" onClick={() => nudgeY(1)}>
+          <span aria-hidden>˅</span>
+        </button>
+      ) : null}
+
+      {chrome ? <Legend view={view} onEdgeDetail={onEdgeDetail} /> : null}
 
       <div className="crf-nav" role="group" aria-label="Blueprint view controls">
         {chrome && selected ? (
@@ -770,8 +820,21 @@ function Lane({
  * so it never sits on top of the plan it explains. Assignment has no line —
  * it is the docked avatar, and says so.
  */
-function Legend() {
+const EDGE_DETAILS: readonly { id: BlueprintEdgeDetail; label: string; title: string }[] = [
+  { id: 'all', label: 'All', title: 'Every edge is a line' },
+  { id: 'reduced', label: 'Reduced', title: 'Hide ordering lines a longer path already implies; merge lines between the same pair' },
+  { id: 'essential', label: 'Essential', title: 'Reduced, and fold context links (relates to, remembers, uses skill)' },
+];
+
+function Legend({ view, onEdgeDetail }: { view: BlueprintView; onEdgeDetail?: ((detail: BlueprintEdgeDetail) => void) | undefined }) {
   const rows = legendRows();
+  const { merged, implied, folded } = view.hiddenEdges;
+  const hidden = merged + implied + folded;
+  const counts = [
+    implied > 0 ? `${implied} implied` : null,
+    merged > 0 ? `${merged} merged` : null,
+    folded > 0 ? `${folded} folded` : null,
+  ].filter(Boolean).join(', ');
   return (
     <ul className="crf-legend" data-testid="crf-legend" aria-label="Key">
       {rows.map((row) => (
@@ -796,6 +859,31 @@ function Legend() {
         </svg>
         <span className="crf-legend__name">Spec</span>
       </li>
+      {onEdgeDetail ? (
+        <li
+          className="crf-legend__lines"
+          data-testid="crf-edge-detail"
+          title={`${view.lines.length} of ${view.lines.length + hidden} lines drawn${counts ? ` (${counts})` : ''}. The graph keeps every edge.`}
+        >
+          <span className="crf-legend__name">Lines</span>
+          <span role="radiogroup" aria-label="Lines drawn" className="crf-legend__seg">
+            {EDGE_DETAILS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                role="radio"
+                aria-checked={view.edgeDetail === d.id}
+                className="crf-legend__opt"
+                title={d.title}
+                onClick={() => onEdgeDetail(d.id)}
+              >
+                {d.label}
+              </button>
+            ))}
+          </span>
+          {hidden > 0 ? <span className="crf-legend__count">{`${view.lines.length}/${view.lines.length + hidden}`}</span> : null}
+        </li>
+      ) : null}
     </ul>
   );
 }

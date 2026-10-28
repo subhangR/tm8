@@ -13,6 +13,7 @@ import { loadRailPins } from '../../stores/homeRailStore';
 import { getRailStore, RAIL_EXPANDED_KEY, railPinsKey, resetRailStores } from '../runtime/railStore';
 import { createWorkspaceStore } from '../runtime/store';
 import { isWorkspaceKind } from '../runtime/types';
+import { NAVIGATOR_STORAGE_KEY } from './navigatorFlag';
 import { WorkspaceProvider, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
 import { HOLD_MS, WorkspaceRail } from './WorkspaceRail';
 
@@ -112,6 +113,14 @@ describe('hold to pin', () => {
 });
 
 describe('pinned section', () => {
+  it('the six default pins are Pinned, in order', () => {
+    mount();
+    const pinned = Array.from(
+      screen.getByTestId('tws-rail-pinned').querySelectorAll<HTMLElement>('[data-kind]'),
+    ).map((b) => b.dataset.kind);
+    expect(pinned).toEqual(['chat', 'task', 'work_session', 'doc', 'artifact', 'team_member']);
+  });
+
   it('a pinned kind moves to Pinned and leaves the list', () => {
     mount();
     const pinned = within(screen.getByTestId('tws-rail-pinned'));
@@ -159,7 +168,10 @@ describe('the kind list', () => {
     const kinds = Array.from(list.querySelectorAll<HTMLElement>('[data-kind]')).map((b) => b.dataset.kind);
     const pins = getRailStore(SPACE).getState().pins;
     expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter((k) => !pins.includes(k)));
-    expect(kinds).toContain('doc');
+    /* `doc` is a DEFAULT PIN now (design doc 01a1465d-a2b7 decision 1), so
+       the unpinned kind this asserts is one the defaults do not take. */
+    expect(kinds).toContain('story');
+    expect(kinds).not.toContain('doc');
     /* Not only the kinds Work's browser holds: the admin and code kinds too. */
     expect(kinds).toEqual(expect.arrayContaining(['commit', 'credential', 'memory', 'loop']));
     for (const label of ['Work', 'Library', 'Agents & People', 'Code']) {
@@ -168,16 +180,18 @@ describe('the kind list', () => {
     expect(list.querySelector('[aria-expanded]')).toBeNull();
   });
 
-  it('a kind Work holds opens in the browser; any other opens its kind list', () => {
+  it('every kind opens in the browser, the admin and code kinds too (task 01a14c16)', () => {
     const { dispatch, gate } = mount();
     fireEvent.click(kindButtons('doc')[0]!);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' } }),
     );
-    expect(isWorkspaceKind('credential')).toBe(false);
+    expect(isWorkspaceKind('credential')).toBe(true);
     fireEvent.click(kindButtons('credential')[0]!);
-    expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: 'credential' });
-    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'credential' } }),
+    );
+    expect(gate.navigateTo).not.toHaveBeenCalled();
   });
 
   it('the craft kind opens Craft mode, not a list (Craft redesign §2)', () => {
@@ -270,6 +284,69 @@ describe('the bottom three and the account card', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'Settings' }));
     expect(gate.onSelectViewTab).toHaveBeenCalledWith('settings');
     expect(screen.queryByTestId('tws-rail-user-popover')).toBeNull();
+  });
+});
+
+describe('pinned-only rail: More kinds is a popover (task 01a181da-c799)', () => {
+  const mountPinnedOnly = () => {
+    window.localStorage.setItem(NAVIGATOR_STORAGE_KEY, 'rail');
+    return mount({ viewTabs: [], goHome: vi.fn() } as Partial<WorkspaceGateHandles>);
+  };
+  const rail = () => screen.getByTestId('tws-rail');
+  const popover = () => screen.queryByTestId('tws-rail-more-toggle-popover');
+
+  it('the rail draws only the pins and ⋯; the rest is never inline, open or shut', () => {
+    mountPinnedOnly();
+    const pins = getRailStore(SPACE).getState().pins;
+    const railKinds = () => Array.from(rail().querySelectorAll<HTMLElement>('.tws-rail-btn[data-kind]')).map((b) => b.dataset.kind);
+    expect(railKinds()).toEqual(pins);
+    expect(popover()).toBeNull();
+    const more = screen.getByTestId('tws-rail-more-toggle');
+    expect(more.getAttribute('aria-haspopup')).toBe('dialog');
+    fireEvent.click(more);
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    /* The rail itself did not grow: its own kind buttons are still the pins. */
+    expect(railKinds()).toEqual(pins);
+    const card = popover()!;
+    expect(card.getAttribute('role')).toBe('dialog');
+    expect(card.dataset.pop).toBe('more');
+    const listed = Array.from(card.querySelectorAll<HTMLElement>('button[data-kind]')).map((b) => b.dataset.kind);
+    expect(listed).toEqual(homeRootKinds().map((c) => c.kind).filter((k) => !pins.includes(k)));
+    expect(within(card).getByTestId('tws-rail-sources')).toBeTruthy();
+    fireEvent.click(more);
+    expect(popover()).toBeNull();
+  });
+
+  it('a row opens its kind and closes the card', () => {
+    const { dispatch } = mountPinnedOnly();
+    fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
+    fireEvent.click(popover()!.querySelector<HTMLButtonElement>('button[data-kind="story"]')!);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'story' } }),
+    );
+    expect(popover()).toBeNull();
+  });
+
+  it('a pin button pins the kind onto the rail, out of the card, and the card stays open', () => {
+    vi.useFakeTimers();
+    const { dispatch } = mountPinnedOnly();
+    fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
+    fireEvent.click(within(popover()!).getByRole('button', { name: 'Pin Stories' }));
+    expect(getRailStore(SPACE).getState().pins).toContain('story');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(popover()).not.toBeNull();
+    expect(popover()!.querySelector('[data-kind="story"]')).toBeNull();
+    expect(screen.getByTestId('tws-rail-pinned').querySelector('[data-kind="story"]')).not.toBeNull();
+    expect(screen.getByTestId('tws-rail-live').textContent).toBe('Pinned Stories');
+    act(() => vi.runOnlyPendingTimers());
+    expect(popover()!.contains(document.activeElement)).toBe(true);
+  });
+
+  it('Escape closes the card', () => {
+    mountPinnedOnly();
+    fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(popover()).toBeNull();
   });
 });
 
