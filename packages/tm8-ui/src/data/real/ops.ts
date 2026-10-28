@@ -1257,7 +1257,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     messages(anchorId: EntityId, opts?: MessageListOpts): Promise<Page<MessageView>> {
       return http.call<Page<MessageView>>('messages.list', {
         params: { anchorId },
-        query: { ...pageQuery(opts), rootMessageId: opts?.rootMessageId },
+        query: { ...pageQuery(opts), rootMessageId: opts?.rootMessageId, order: opts?.order },
       });
     },
 

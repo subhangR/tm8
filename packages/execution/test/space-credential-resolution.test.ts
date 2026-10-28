@@ -327,7 +327,7 @@ describe('I3 — an explicit source fails closed, with a sentence naming the fix
   it('a Kimi model on claude-code refuses an explicit space source (#679 routing has one route)', async () => {
     const d = deps(fakePort({ defaults: { anthropic: ANT_DEFAULT } }));
     const e = await refusal(
-      resolve(launch({ credentialSources: { anthropic: 'space' } }, null, 'claude-code', 'kimi-k2-thinking'), d),
+      resolve(launch({ credentialSources: { anthropic: 'space' } }, null, 'claude-code', 'kimi-k3'), d),
     );
     expect(e.message).toContain("credentialSources.anthropic 'space' cannot serve it");
   });
@@ -337,7 +337,7 @@ describe('I3 — an explicit source fails closed, with a sentence naming the fix
   describe('D5 × API-key-backend models (Kimi on claude-code, Groq on codex)', () => {
     const REQUIRE_SPACE = { space: { anthropic: ['space'], openai: ['space'] }, node: {} } as SpaceCredentialPolicies;
     const cases = [
-      { agentTool: 'claude-code', model: 'kimi-k2-thinking', provider: 'anthropic' },
+      { agentTool: 'claude-code', model: 'kimi-k3', provider: 'anthropic' },
       { agentTool: 'codex', model: 'openai/gpt-oss-120b', provider: 'openai' },
     ] as const;
 
@@ -364,14 +364,14 @@ describe('I3 — an explicit source fails closed, with a sentence naming the fix
     it('a policy set AFTER launch refuses the resumed Kimi session (policy is read now)', async () => {
       const recorded = { credentialSources: { anthropic: 'member' } } as SessionLaunchPosture;
       const d = deps(fakePort({ policies: REQUIRE_SPACE }), { home: MEMBER_HOME });
-      const e = await refusal(resolve(launch({}, recorded, 'claude-code', 'kimi-k2-thinking'), d, true));
+      const e = await refusal(resolve(launch({}, recorded, 'claude-code', 'kimi-k3'), d, true));
       expect(e.code).toBe('forbidden');
       expect(d.memberAsks).toEqual([]);
     });
 
     it('the node policy is irrelevant: a backend model has no node route, so "forbid node" still lands on member', async () => {
       const d = deps(fakePort({ policies: { space: {}, node: { anthropic: false } } }), { home: MEMBER_HOME });
-      const r = await resolve(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d);
+      const r = await resolve(launch({}, null, 'claude-code', 'kimi-k3'), d);
       expect(r.launch.effectiveCredentialSources?.anthropic).toBe('member');
     });
   });
@@ -750,8 +750,8 @@ describe('W7p — a link-bound launch never reaches the linking human\'s own cre
 
   it('a model only a member API key serves is refused by name', async () => {
     const d = deps(fakePort({ defaults: both }), { home: MEMBER_HOME });
-    const e = await refusal(linked(launch({}, null, 'claude-code', 'kimi-k2-thinking'), d));
-    expect(e.detail).toMatchObject({ reason: 'member_key_model', model: 'kimi-k2-thinking' });
+    const e = await refusal(linked(launch({}, null, 'claude-code', 'kimi-k3'), d));
+    expect(e.detail).toMatchObject({ reason: 'member_key_model', model: 'kimi-k3' });
     expect(d.memberAsks).toEqual([]);
   });
 

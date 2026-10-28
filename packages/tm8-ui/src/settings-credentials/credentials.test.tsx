@@ -20,7 +20,7 @@ import type {
   CredentialRoutingView,
 } from '@tm8/contract';
 import { CredentialsSection } from './CredentialsSection';
-import { CREDENTIAL_PROVIDER_PRESENTATIONS } from './provider-presentation';
+import { CREDENTIAL_PROVIDER_PRESENTATIONS, presentationOf, providerBinaryLabel } from './provider-presentation';
 import { disconnectVerdictOf, verdictOf, type CredentialsPort } from './port';
 
 function connection(over: Partial<CredentialsStatusView['providers'][number]> & { provider: CredentialProviderName }) {
@@ -414,6 +414,37 @@ describe('the verdict function — four meanings are four values', () => {
       failures: [{ step: 'agentSession', reason: 'x' }],
     })).toBe('partial');
     expect(disconnectVerdictOf({ ...base, revoked: false, failures: [] })).toBe('failed');
+  });
+});
+
+describe('a provider this build does not know (01a0fb54-a2ab) does not crash the panel', () => {
+  // A server newer than the bundle can list a provider the presentation table
+  // has no row for; a bare lookup used to hand `undefined` to verdictOf and the
+  // card, and the panel crashed on `.needsGitCredentialStore`.
+  const future = 'future-agent' as unknown as CredentialProviderName;
+
+  it('verdictOf and the presentation fall back instead of throwing', () => {
+    expect(verdictOf({ provider: future, connected: false, login: null }, 'absent')).toBe('disconnected');
+    expect(verdictOf({ provider: future, connected: false, login: null }, 'present')).toBe('disconnected');
+    expect(presentationOf(future)).toMatchObject({ name: 'future-agent', binary: null, needsGitCredentialStore: false });
+    expect(providerBinaryLabel(future)).toBe('API key');
+  });
+
+  it('renders the known cards and a plain card for the unknown one', async () => {
+    render(
+      <CredentialsSection
+        port={portWith({
+          providers: [
+            connection({ provider: 'anthropic', connected: true, status: 'active' }),
+            connection({ provider: future }),
+          ],
+          gitCredentialStore: 'absent',
+        })}
+      />,
+    );
+    await screen.findByTestId('credential-provider-grid');
+    expect(screen.getAllByTestId(/^credential-card-/)).toHaveLength(2);
+    expect(screen.getByTestId('credential-card-future-agent').textContent).toContain('future-agent');
   });
 });
 

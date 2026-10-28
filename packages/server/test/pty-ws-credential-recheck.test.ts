@@ -4,7 +4,8 @@
  * is the re-ask W10b's switch-to-private/revoke path and main.ts's sweep call.
  * The SQL answer itself is proven in test/db/credential-attach-gate.pg.test.ts;
  * this pins what the server does with it: close refused subjects with 1008,
- * ask once per (session, subject), and leave a socket open when the check fails.
+ * ask once per (session, subject), and close with 1011 when the check itself
+ * fails (fail closed, 01a0fb55).
  */
 import { Duplex } from 'node:stream';
 import type { IncomingMessage } from 'node:http';
@@ -72,7 +73,7 @@ describe('PtyWsServer.recheckCredentialStreams (R9)', () => {
     host = undefined;
   });
 
-  it('closes every socket of a refused subject with 1008, asks once per subject, and leaves the admitted, the unknown and the errored open', async () => {
+  it('closes every socket of a refused subject with 1008 and an errored one with 1011, asks once per subject, and leaves the admitted and the unknown open', async () => {
     host = new PtyHostService({ logger: quiet });
     host.spawn({ sessionId: 's-rc', command: 'sleep 10', cwd: CWD, env: {} });
     const recheck = vi.fn(async (_sessionId: string, subject: string) => {
@@ -102,12 +103,12 @@ describe('PtyWsServer.recheckCredentialStreams (R9)', () => {
     await server.handleUpgrade(upgradeReq('s-rc'), sockets.unnamed, Buffer.alloc(0));
     expect(server.connectionCount()).toBe(5);
 
-    expect(await server.recheckCredentialStreams(['s-rc'])).toBe(2);
+    expect(await server.recheckCredentialStreams(['s-rc'])).toBe(3);
 
     expect(sockets.member1.closeCode()).toBe(1008);
     expect(sockets.member2.closeCode()).toBe(1008);
     expect(sockets.owner.closeCode()).toBeNull();
-    expect(sockets.errored.closeCode()).toBeNull();
+    expect(sockets.errored.closeCode()).toBe(1011);
     expect(sockets.unnamed.closeCode()).toBeNull();
     // One question per (session, subject); 'authenticated' is never asked about.
     expect(recheck.mock.calls.map(([, subject]) => subject).sort()).toEqual(['w10c-errors', 'w10c-member', 'w10c-owner']);
@@ -123,6 +124,44 @@ describe('PtyWsServer.recheckCredentialStreams (R9)', () => {
     recheck.mockClear();
     expect(await server.recheckCredentialStreams()).toBe(0);
     expect(recheck.mock.calls.map(([, subject]) => subject)).not.toContain('w10c-member');
+  });
+
+  it('FAILS CLOSED (01a0fb55): a recheck that raises closes the socket with 1011, logs the error class only, and leaks no secret', async () => {
+    host = new PtyHostService({ logger: quiet });
+    host.spawn({ sessionId: 's-fc', command: 'sleep 10', cwd: CWD, env: {} });
+    const SECRET = 'sk-ant-FailClosedCanary-41f9';
+    class RecheckDbError extends Error {
+      override readonly name = 'RecheckDbError';
+    }
+    const warn = vi.fn();
+    const logger = { ...quiet, warn };
+    const server = createPtyWsServer({
+      pty: host,
+      logger,
+      authorize: async () => ({ ok: true, canDrive: true, subjectIdentity: 'w10c-viewer' }),
+      credentialRecheck: async () => {
+        throw new RecheckDbError(`connection reset while reading credential ${SECRET}`);
+      },
+    });
+    const socket = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('s-fc'), socket, Buffer.alloc(0));
+
+    expect(await server.recheckCredentialStreams(['s-fc'])).toBe(1);
+    expect(socket.closeCode()).toBe(1011);
+    const wire = Buffer.concat(socket.chunks).toString('latin1');
+    expect(wire).toContain('credential recheck failed');
+    expect(wire).not.toContain(SECRET);
+    expect(warn).toHaveBeenCalledWith('PtyWsServer: credential recheck failed; socket closed', {
+      sessionId: 's-fc',
+      error: 'RecheckDbError',
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET);
+
+    // The closed socket types into nothing.
+    const write = vi.spyOn(host, 'write');
+    socket.push(clientBinary('after-close'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(write).not.toHaveBeenCalled();
   });
 
   it('PAIRED POSITIVE: without a configured recheck nothing is closed', async () => {

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { RESUME_FAILED_PREFIX, SpawnService, replayedSelection } from '../src/spawn/SpawnService.js';
 import { resolveAgentBinary } from '../src/spawn/manifest.js';
+import { isolateCodexMcpHome, sessionManifestPath } from '../src/spawn/mcp-home.js';
 import { SpawnError, type WorkSessionResumeInfo } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
 
@@ -508,6 +509,70 @@ describe('SpawnService.resume — guards and orchestration', () => {
         agentConfigDir: originalConfigDir,
       };
       await writeOwningRollout(originalConfigDir);
+      graph.resumeReplayed = true;
+
+      await serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID });
+      expect(graph.nativeIds).toEqual([
+        { sessionId: SESSION_ID, nativeSessionId: 'rollout-scanned' },
+      ]);
+    });
+
+    // The fdb2e3fbd regression: every Codex child runs with CODEX_HOME set to
+    // its own isolated home, so the rollout is THERE — while rows recorded
+    // since then still name the operator's source home.
+    it('resolves the rollout from the session\'s isolated CODEX_HOME when the row names the source home', async () => {
+      graph.resumeInfo = { ...graph.resumeInfo!, agentConfigDir: join(home, '.codex') };
+      await mkdir(join(home, '.codex', 'sessions'), { recursive: true });
+      await writeOwningRollout(join(dataDir, 'manifests', 'mcp-homes', SESSION_ID, 'codex'));
+      graph.resumeReplayed = true;
+
+      const result = await serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID });
+      expect(graph.nativeIds).toEqual([
+        { sessionId: SESSION_ID, nativeSessionId: 'rollout-scanned' },
+      ]);
+      expect(result.reused).toBe(true);
+    });
+
+    it('resolves the rollout when the row records the isolated CODEX_HOME itself', async () => {
+      const isolated = join(dataDir, 'manifests', 'mcp-homes', SESSION_ID, 'codex');
+      graph.resumeInfo = { ...graph.resumeInfo!, agentConfigDir: isolated };
+      await writeOwningRollout(isolated);
+      graph.resumeReplayed = true;
+
+      await serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID });
+      expect(graph.nativeIds).toEqual([
+        { sessionId: SESSION_ID, nativeSessionId: 'rollout-scanned' },
+      ]);
+    });
+
+    it('still refuses a rollout in the isolated home that does not prove ownership', async () => {
+      // Looking in one more directory must not weaken the proof: a rollout
+      // there with no marker for THIS session is not this session's.
+      const day = join(dataDir, 'manifests', 'mcp-homes', SESSION_ID, 'codex', 'sessions', '2026', '07', '31');
+      await mkdir(day, { recursive: true });
+      await writeFile(
+        join(day, 'stranger.jsonl'),
+        [meta('rollout-stranger', projectDir, '2026-07-31T09:00:00Z'), userTurn('no marker here')].join('\n'),
+      );
+      const error = await expectRefusal(
+        serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID }),
+        'conflict',
+      );
+      expect(error.message).toContain('refusing to resume a different or fresh conversation');
+      expect(graph.nativeIds).toHaveLength(0);
+    });
+
+    it('resolves the rollout from the isolated CODEX_HOME the spawn moved the child into', async () => {
+      // The spawn records agentConfigDir BEFORE isolateCodexMcpHome repoints
+      // CODEX_HOME at the session-owned home, so the row names a directory the
+      // child never wrote to. Run the real isolation, exactly as spawn does.
+      const recordedConfigDir = join(home, '.codex');
+      await mkdir(recordedConfigDir, { recursive: true });
+      graph.resumeInfo = { ...graph.resumeInfo!, agentConfigDir: recordedConfigDir };
+      const env: Record<string, string> = { HOME: home, CODEX_HOME: recordedConfigDir };
+      await isolateCodexMcpHome(sessionManifestPath(dataDir, SESSION_ID), env);
+      expect(env.CODEX_HOME).not.toBe(recordedConfigDir);
+      await writeOwningRollout(env.CODEX_HOME);
       graph.resumeReplayed = true;
 
       await serviceWith({ HOME: home }).resume(AUTH, { sessionId: SESSION_ID });

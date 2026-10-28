@@ -54,6 +54,9 @@ import {
   canClaim,
   canLaunchSentence,
   canPollSentence,
+  seedingReasonWord,
+  seedingSentence,
+  seedingUseWord,
   launchReasonWord,
   canManage,
   canMyDefault,
@@ -236,7 +239,9 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 }
 
 /**
- * S7 readiness: two thresholds, each with its own sentence. The connect action
+ * S7 readiness: two thresholds, each with its own sentence, plus S7b's seeding
+ * block — the release-2 gate over the providers THIS SPACE uses (a space
+ * answer, not the viewer's). The connect action
  * takes the member to that provider's group, where adding a key or logging in
  * lives. Nothing here disables anything.
  */
@@ -255,11 +260,11 @@ function ReadinessPanel({ readiness, error, statusOnly = false }: { readiness: C
     group?.focus();
   };
   /* Status only: the connect jump lands on add/login controls that are not drawn. */
-  const connect = (provider: SpaceCredentialProviderName) => statusOnly ? null : (
+  const connect = (provider: SpaceCredentialProviderName, testId = `space-cred-readiness-connect-${provider}`) => statusOnly ? null : (
     <button
       type="button"
       className="set-spc__readiness-connect"
-      data-testid={`space-cred-readiness-connect-${provider}`}
+      data-testid={testId}
       onClick={() => goTo(provider)}
     >
       Connect {SPACE_PROVIDER_NAME[provider]}
@@ -296,6 +301,31 @@ function ReadinessPanel({ readiness, error, statusOnly = false }: { readiness: C
             {readiness.canPoll.missing.map((provider) => (
               <li key={provider} data-testid={`space-cred-readiness-missing-poll-${provider}`}>
                 <span>{SPACE_PROVIDER_NAME[provider]}: a credential this space owns, shared with every member</span> {connect(provider)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div
+        className={`set-spc__threshold ${readiness.seeding.state === 'red' ? 'is-missing' : 'is-ready'}`}
+        data-testid="space-cred-readiness-seeding"
+        data-state={readiness.seeding.state}
+      >
+        <p className="set-spc__threshold-head">Seeding for release 2</p>
+        <p>{seedingSentence(readiness)}</p>
+        {readiness.seeding.state !== 'idle' && readiness.seeding.usedProviders.length > 0 ? (
+          <ul className="set-spc__threshold-missing">
+            {readiness.seeding.usedProviders.map((provider) => (
+              <li
+                key={provider}
+                data-testid={`space-cred-readiness-seeding-${provider}`}
+                data-ready={readiness.seeding.providers[provider]?.ready ? 'true' : 'false'}
+              >
+                <span>
+                  {SPACE_PROVIDER_NAME[provider]} (used for {seedingUseWord(readiness, provider)}):{' '}
+                  {seedingReasonWord(readiness, provider) ?? 'seeded'}
+                </span>
+                {readiness.seeding.providers[provider]?.ready ? null : <> {connect(provider, `space-cred-readiness-seeding-connect-${provider}`)}</>}
               </li>
             ))}
           </ul>
@@ -544,7 +574,7 @@ function CredentialRow({
   const sharesVisible = canSeeShares(row, viewer);
   const sharedWithMe = isSharedWithMe(row, viewer);
   const [sharesOpen, setSharesOpen] = useState(false);
-  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private'>('idle');
+  const [mode, setMode] = useState<'idle' | 'rename' | 'rekey' | 'confirm-delete' | 'confirm-private' | 'confirm-public'>('idle');
   const [usage, setUsage] = useState<CredentialsSpaceUsageView | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'probe' | 'plain'>(null);
@@ -625,7 +655,7 @@ function CredentialRow({
           ) : null}
           {owner && row.visibility === 'private' ? (
             <button type="button" className="cred-action" aria-label={`Make public ${row.label}`} disabled={busy !== null}
-              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              onClick={() => { setFailure(null); setMode(mode === 'confirm-public' ? 'idle' : 'confirm-public'); }}>
               Make public
             </button>
           ) : null}
@@ -681,6 +711,24 @@ function CredentialRow({
               {usage ? 'Hide usage' : 'Usage'}
             </button>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* #883 F4: one click used to expose the owner's login and hint and let
+          every member launch as the owner's identity; it now asks first. */}
+      {owner && mode === 'confirm-public' ? (
+        <div className="set-spc__confirm" data-testid={`space-cred-public-confirm-${row.id}`}>
+          <p className="set-spc__warn">
+            Every member of this space will be able to launch with it{row.displayLogin ? `, signed in as ${row.displayLogin}` : ''}, and will see
+            {row.displayLogin ? ' that login and' : ''} its key hint.
+          </p>
+          <div className="cred-card__actions">
+            <button type="button" className="cred-action cred-action--primary" aria-label={`Confirm make public ${row.label}`} disabled={busy !== null}
+              onClick={() => void run('plain', async () => { await port.setVisibility(row.id, 'public'); return `“${row.label}” is public: every member can launch with it.`; })}>
+              Make public
+            </button>
+            <button type="button" className="cred-action" aria-label={`Keep private ${row.label}`} onClick={() => setMode('idle')}>Keep private</button>
+          </div>
         </div>
       ) : null}
 

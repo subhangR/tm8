@@ -41,10 +41,13 @@ export class TimeoutError extends Error {
   }
 }
 
-/** Timeout for one run: 2× the audio length + 30 s (unknown length: as if it were the max). */
-export function transcribeTimeoutMs(durationSec: number | null | undefined, maxDurationSec: number): number {
+/**
+ * Timeout for one run: `factor`× the audio length + 30 s (unknown length: as if it were the max). factor is
+ * transcription.timeoutFactor (default 2); a small or busy box (2 CPUs shared with agents) needs more.
+ */
+export function transcribeTimeoutMs(durationSec: number | null | undefined, maxDurationSec: number, factor = 2): number {
   const d = durationSec !== null && durationSec !== undefined && Number.isFinite(durationSec) && durationSec > 0 ? durationSec : maxDurationSec
-  return Math.round((2 * d + 30) * 1000)
+  return Math.round((factor * d + 30) * 1000)
 }
 
 export class NoneTranscriber implements Transcriber {

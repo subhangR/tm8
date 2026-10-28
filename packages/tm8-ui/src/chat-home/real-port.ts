@@ -47,6 +47,8 @@ interface ChatListItem {
   state: ChatThreadSummary['state'];
   runtimeState: NonNullable<ChatThreadSummary['runtimeState']>;
   context: SessionTranscriptContext | null;
+  /** The server's per-viewer answer (`state.canSetModel`); absent when it gave none. */
+  canSetModel?: boolean;
 }
 
 /**
@@ -91,8 +93,14 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     state: state.turnState === 'running' || state.turnState === 'queued' ? 'streaming' : 'idle',
     runtimeState: state.runtimeState,
     context: state.context ?? null,
+    /* Copied only when the server answered. An absent answer stays absent all
+       the way to the chip, which reads it as unknown and does not lock. */
+    ...(state.canSetModel !== undefined ? { canSetModel: state.canSetModel } : {}),
   };
 }
+
+/** Messages per transcript page — the newest page on open, then each older page. */
+export const CHAT_TRANSCRIPT_PAGE = 40;
 
 export function createChatHomePortFromSeam(
   seam: Seam,
@@ -204,37 +212,63 @@ export function createChatHomePortFromSeam(
   };
 
   /**
-   * WHICH MESSAGES WERE AUTHORED FROM SOMEWHERE ELSE — one `entities.feed`
-   * read beside the transcript's own.
+   * A page of `messages.list` as turns, OLDEST FIRST (the order they render).
    *
-   * WHY A SECOND READ AND NOT A REPLACEMENT. `messages.list` is the
-   * transcript's read: it is ordered for a transcript, paged for a transcript,
-   * and it is what every chat-home test drives. `entities.feed` is the only
-   * op that projects `authored_from` (`FeedItem.sourceWorkSessionId`,
-   * feed-context.ts:731), and it also carries activity rows this surface does
-   * not draw. So the provenance rides alongside rather than replacing a read
-   * that works — one extra call per thread OPEN, not per message and not per
-   * row of any list.
-   *
-   * SOFT-FAILS TO AN EMPTY MAP. A node that cannot serve the feed for a chat
-   * anchor renders the transcript exactly as it does today; every bubble is
-   * first-party, which is what the surface assumed before this existed. A
-   * provenance read is an enhancement to a conversation, never a gate on
-   * reading it.
+   * WHICH MESSAGES WERE AUTHORED FROM SOMEWHERE ELSE rides each message
+   * (`MessageView.sourceWorkSessionId`, the recorder-owned `authored_from`
+   * edge). It used to come from an `entities.feed` read beside the transcript —
+   * a second copy of every message and its parts, measured on the heaviest
+   * WhatsApp-bridged chat at 1.1 MB and 3.8-5.2 s, slower than the transcript
+   * itself — and it could only ever cover the newest page.
    */
-  const provenanceOf = async (chatId: EntityId): Promise<Map<EntityId, EntityId>> => {
-    const out = new Map<EntityId, EntityId>();
-    try {
-      const page = await seam.feed(chatId, { limit: 100 });
-      for (const item of page.items) {
-        if (item.itemKind !== 'message') continue;
-        const source = item.sourceWorkSessionId;
-        if (source) out.set(item.message.id, source);
-      }
-    } catch {
-      // See the docblock: absent provenance is the pre-existing rendering.
-    }
-    return out;
+  const turnsOf = (chatId: EntityId, messages: readonly MessageView[]) => Promise.all(
+    messages.map(async (message) => ({
+      messageId: message.id,
+      /* THE CHAT'S OWN AGENT TURNS ARE NOT THIRD-PARTY. `createAgentMessage`
+         posts them with `p_source_chat_id = the chat`, so their
+         `authored_from` points here — dropping that case is what keeps the
+         marker meaning "written from somewhere else". */
+      ...(message.sourceWorkSessionId && message.sourceWorkSessionId !== chatId
+        ? { sourceEntityId: message.sourceWorkSessionId }
+        : {}),
+      role: message.state.author?.isAgent ? 'assistant' as const : 'user' as const,
+      author: message.state.author ?? message.createdBy ?? null,
+      createdAt: message.createdAt,
+      body: message.content.body,
+      // F4/F1: the server already returns MessagePart[] on the message
+      // view (MessageView.parts, L2's additive field), normalized through
+      // wire.ts; a supplied readParts bridge stays as an override.
+      parts: message.parts
+        ? message.parts.map(turnPartFromMessagePart)
+        : bridge.readParts ? [...await bridge.readParts(message.id)] : [],
+      // The server has returned these on every message read all along
+      // (`contentOf` → `content.attachments`); this adapter was the one
+      // place that dropped them, so an uploaded image reached the agent
+      // and the durable graph but never the transcript that sent it. `??
+      // []` because a node older than the attachments slice omits the
+      // field entirely, and an absent list is not a malformed message.
+      attachments: message.content.attachments ?? [],
+      ...(message.turnInFlight ? { turnInFlight: true } : {}),
+    })),
+  );
+
+  /**
+   * ONE PAGE OF A CHAT, NEWEST FIRST ON THE WIRE — the way a messaging app
+   * opens a conversation. A long WhatsApp-bridged chat used to be read
+   * oldest-first at `limit: 100`: past 100 messages it showed the OLDEST
+   * hundred and never the conversation's end, and every open (and every
+   * re-read on a live frame) carried the whole history's tool output. The
+   * cursor walks OLDER (`messages.list order=newest`), and the page is
+   * reversed here so callers keep receiving turns oldest-first.
+   */
+  const readPage = async (chatId: EntityId, cursor?: string) => {
+    const page = await seam.messages(chatId, {
+      limit: CHAT_TRANSCRIPT_PAGE,
+      order: 'newest',
+      ...(cursor ? { cursor } : {}),
+    });
+    const messages = [...page.items].reverse();
+    return { messages, olderCursor: page.nextCursor ?? null };
   };
 
   const chatIdsAbout: ChatHomePort['chatIdsAbout'] = async (aboutId) => {
@@ -304,6 +338,7 @@ export function createChatHomePortFromSeam(
         mode: item.mode,
         workdirMode: item.workdirMode,
         projectId: item.projectId,
+        ...(item.canSetModel !== undefined ? { canSetModel: item.canSetModel } : {}),
       },
       state: item.state,
       runtimeState: item.runtimeState,
@@ -326,45 +361,15 @@ export function createChatHomePortFromSeam(
       // no thread root, so this is one ordinary anchor read — no root detail to
       // fetch separately, and no `{ rootMessageId }` scope to pass. The
       // user->agent pairing that threading used to express lives in chat_turns.
-      const [page, teammates, aboutId, provenance] = await Promise.all([
-        seam.messages(chatId, { limit: 100 }),
+      const [page, teammates, aboutId] = await Promise.all([
+        readPage(chatId),
         listTeammates(listSpaceCache.get(chatId) ?? lastSpaceId ?? ''),
         aboutTargetOf(chatId),
-        provenanceOf(chatId),
       ]);
       const teammateLabel = teammates.find((teammate) => teammate.id === item.teammateId)?.label
         ?? 'Agent teammate';
-      const messages = page.items;
-      const turns = await Promise.all(
-        messages.map(async (message) => ({
-          messageId: message.id,
-          /* THE CHAT'S OWN AGENT TURNS ARE NOT THIRD-PARTY. `createAgentMessage`
-             posts them with `p_source_chat_id = the chat`, so their
-             `authored_from` points here — dropping that case is what keeps the
-             marker meaning "written from somewhere else". */
-          ...(provenance.get(message.id) && provenance.get(message.id) !== chatId
-            ? { sourceEntityId: provenance.get(message.id) as EntityId }
-            : {}),
-          role: message.state.author?.isAgent ? 'assistant' as const : 'user' as const,
-          author: message.state.author ?? message.createdBy ?? null,
-          createdAt: message.createdAt,
-          body: message.content.body,
-          // F4/F1: the server already returns MessagePart[] on the message
-          // view (MessageView.parts, L2's additive field), normalized through
-          // wire.ts; a supplied readParts bridge stays as an override.
-          parts: message.parts
-            ? message.parts.map(turnPartFromMessagePart)
-            : bridge.readParts ? [...await bridge.readParts(message.id)] : [],
-          // The server has returned these on every message read all along
-          // (`contentOf` → `content.attachments`); this adapter was the one
-          // place that dropped them, so an uploaded image reached the agent
-          // and the durable graph but never the transcript that sent it. `??
-          // []` because a node older than the attachments slice omits the
-          // field entirely, and an absent list is not a malformed message.
-          attachments: message.content.attachments ?? [],
-          ...(message.turnInFlight ? { turnInFlight: true } : {}),
-        })),
-      );
+      const messages = page.messages;
+      const turns = await turnsOf(chatId, messages);
       return {
         summary: {
           rootId: item.chatId,
@@ -389,6 +394,7 @@ export function createChatHomePortFromSeam(
             mode: item.mode,
             workdirMode: item.workdirMode,
             projectId: item.projectId,
+            ...(item.canSetModel !== undefined ? { canSetModel: item.canSetModel } : {}),
           },
           /* THIS READ'S OWN EVIDENCE BEATS THE CACHE. A claimed turn's marker is
              the server saying, as of this read, that a turn is running — the
@@ -400,7 +406,12 @@ export function createChatHomePortFromSeam(
           context: item.context,
         },
         turns,
+        olderCursor: page.olderCursor,
       } satisfies ChatThreadDetail;
+    },
+    async readOlderTurns(chatId, cursor) {
+      const page = await readPage(chatId, cursor);
+      return { turns: await turnsOf(chatId, page.messages), olderCursor: page.olderCursor };
     },
     startThread: {
       unavailableReason: null,

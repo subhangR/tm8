@@ -29,8 +29,9 @@ import { useEntityChrome } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import type { EntityTabRecord, SideSection } from '../runtime/types';
 import { openSideSection, sidePatch } from './sideSection';
-import { PhoneLiveButton } from './PhoneLive';
-import { WebTestButton } from './WebTest';
+import { liveCommandOf } from '../../panels/detail/LiveScreenButton';
+import { liveTerminalOf, PhoneLiveButton, PhoneLiveDialog } from './PhoneLive';
+import { WebTestButton, WebTestDialog } from './WebTest';
 import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useWorkspace, useWorkspaceState } from './context';
 import './content.css';
@@ -174,6 +175,10 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
     gate.viewerMemberId,
   );
   const darkBody = kindConfig.panel.archetype === 'terminal' && sessionOnTerminal;
+  /* A session keeps Run and the phone and website testers in ⋯ (task
+     01a181e2): its strip is for its views, its process and its reading. */
+  const toolsInMenu = kindConfig.panel.archetype === 'terminal';
+  const [tool, setTool] = useState<'phone' | 'web' | null>(null);
   const darkTheme = useAlwaysDarkTheme();
   const attachable = kindConfig.panel.archetype !== 'terminal' && kindConfig.panel.composition == null;
   const stripRef = useRef<HTMLDivElement>(null);
@@ -186,10 +191,16 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   const statsEl = chrome?.statsSlot ?? null;
   useEffect(() => {
     if (!statsEl) return;
-    const read = () => setStats((statsEl.textContent ?? '').replace(/\s+/g, ' ').trim());
+    /* The chip shows the size alone; its full reading rides `data-reading`. */
+    const read = () =>
+      setStats(
+        (statsEl.querySelector('[data-reading]')?.getAttribute('data-reading') ?? statsEl.textContent ?? '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
     read();
     const mo = new MutationObserver(read);
-    mo.observe(statsEl, { subtree: true, childList: true, characterData: true });
+    mo.observe(statsEl, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-reading'] });
     return () => mo.disconnect();
   }, [statsEl]);
   const tips = useStripTips(stats);
@@ -220,10 +231,14 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   useEffect(() => {
     if (!menuOpen || !setMenuOpen) return;
     const onDown = (e: MouseEvent) => {
+      /* A modal opened from the menu (Run's launch card) is portalled out of
+         it; a press there is not a press away from the menu. */
+      if ((e.target as Element | null)?.closest?.('[aria-modal="true"]')) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       setMenuOpen(false);
       menuRef.current?.querySelector<HTMLButtonElement>('.tws-astrip-more')?.focus();
     };
@@ -246,6 +261,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
       source: 'click',
     });
   const messages = detail ? countMessages(detail, gate.data.messagesOf(tab.entityId)) : 0;
+  const testers = Boolean(detail && detail.deletedAt == null && gate.data.seam?.commands);
 
   const copyLink = () => {
     const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
@@ -274,6 +290,44 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
         <KindIcon kind="chat" size={14} />
       </button>
     ) : null;
+
+  /* A side column section's toggle (Links, Messages). */
+  const sideButton = (section: 'links' | 'messages') => {
+    if (!detail || canvas) return null;
+    const label = section === 'messages' ? 'Messages' : 'Links';
+    const pressed = sideOpen === section;
+    return (
+      <button
+        key={section}
+        type="button"
+        className="tws-astrip-btn tws-astrip-seg"
+        aria-pressed={pressed}
+        aria-label={section === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
+        data-tip={label}
+        data-testid={`tws-section-${section === 'links' ? 'connections' : 'messages'}`}
+        onClick={() => toggleSide(section)}
+      >
+        {section === 'links' ? (
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) : (
+          <VectorIcon paths={VIEW_ART.messages} size={14} />
+        )}
+        {section === 'messages' && messages > 0 ? (
+          <span className="tws-astrip-badge" aria-hidden="true">
+            {messages > 99 ? '99+' : messages}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
 
   return (
     <>
@@ -355,54 +409,22 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
             each open the column beside the body, and the lit one closes it.
             The body never changes. */}
         <div className="tws-astrip-cluster" role="group" aria-label="Side panel" data-testid="tws-astrip-side">
-          {detail && !canvas
-            ? (['links', 'messages'] as const).map((section) => {
-                const label = section === 'messages' ? 'Messages' : 'Links';
-                const pressed = sideOpen === section;
-                return (
-                  <button
-                    key={section}
-                    type="button"
-                    className="tws-astrip-btn tws-astrip-seg"
-                    aria-pressed={pressed}
-                    aria-label={section === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
-                    data-tip={label}
-                    data-testid={`tws-section-${section === 'links' ? 'connections' : 'messages'}`}
-                    onClick={() => toggleSide(section)}
-                  >
-                    {section === 'links' ? (
-                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                        <path
-                          d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.3"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    ) : (
-                      <VectorIcon paths={VIEW_ART.messages} size={14} />
-                    )}
-                    {section === 'messages' && messages > 0 ? (
-                      <span className="tws-astrip-badge" aria-hidden="true">
-                        {messages > 99 ? '99+' : messages}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })
-            : null}
+          {/* By use (task 01a181e2): Messages, Chat, then Links. */}
+          {sideButton('messages')}
           {chatToggle}
+          {sideButton('links')}
         </div>
 
-        <div className="tws-astrip-cluster">
-          {/* The live phone screen (PhoneLive.tsx): green and blinking while the task streams a test. */}
-          {detail && detail.deletedAt == null && gate.data.seam?.commands ? <PhoneLiveButton detail={detail} /> : null}
-          {/* The website tester (WebTest.tsx): a site built from its GitHub source, tested live. */}
-          {detail && detail.deletedAt == null && gate.data.seam?.commands ? <WebTestButton detail={detail} /> : null}
-          {/* Run, from the panel's own bar (flows and refusals unchanged). */}
-          <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
-        </div>
+        {toolsInMenu ? null : (
+          <div className="tws-astrip-cluster">
+            {/* The live phone screen (PhoneLive.tsx): green and blinking while the task streams a test. */}
+            {testers ? <PhoneLiveButton detail={detail} /> : null}
+            {/* The website tester (WebTest.tsx): a site built from its GitHub source, tested live. */}
+            {testers ? <WebTestButton detail={detail} /> : null}
+            {/* Run, from the panel's own bar (flows and refusals unchanged). */}
+            <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
+          </div>
+        )}
 
         <div className="tws-astrip-cluster" ref={menuRef}>
           <button
@@ -445,6 +467,27 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
                   {stats}
                 </div>
               ) : null}
+              {/* A session's Run (the panel's own bar, flows unchanged) and testers. */}
+              {toolsInMenu ? (
+                <>
+                  <div
+                    ref={chrome?.setCommonVerbsSlot}
+                    className="tws-astrip-verbs tws-astrip-common tws-astrip-menu-verbs"
+                    data-testid="tws-astrip-common"
+                  />
+                  {testers ? (
+                    <>
+                      <button type="button" className="pn-overflow__item" role="menuitem" data-testid="tws-menu-phone" onClick={() => { setTool('phone'); setMenuOpen?.(false); }}>
+                        Live phone screen
+                      </button>
+                      <button type="button" className="pn-overflow__item" role="menuitem" data-testid="tws-menu-web" onClick={() => { setTool('web'); setMenuOpen?.(false); }}>
+                        Website tester
+                      </button>
+                    </>
+                  ) : null}
+                  <span className="pn-overflow__rule" />
+                </>
+              ) : null}
               {/* Rename (from the panel's save flow) */}
               <div ref={chrome?.setMenuSlot} className="tws-astrip-slot" />
               <button type="button" className="pn-overflow__item" role="menuitem" onClick={copyLink}>
@@ -458,6 +501,15 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
       </div>
       {tips.node}
     </div>
+    {tool === 'phone' && detail ? (
+      <PhoneLiveDialog
+        detail={detail}
+        taskCommand={liveCommandOf(detail, kindConfig.panel.liveScreen)}
+        watch={liveTerminalOf(detail, kindConfig.panel.liveScreen)}
+        onClose={() => setTool(null)}
+      />
+    ) : null}
+    {tool === 'web' && detail ? <WebTestDialog detail={detail} onClose={() => setTool(null)} /> : null}
     </>
   );
 }

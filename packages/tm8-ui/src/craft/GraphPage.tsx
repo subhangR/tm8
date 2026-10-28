@@ -22,7 +22,7 @@ import type { Seam } from '../data/seam';
 import { Mermaid } from '../kit/Mermaid';
 import { useElementWidth } from '../kit';
 import { blueprintView, nodeRefId } from './blueprint-model';
-import type { BlueprintView, RefInfo, RefTitles } from './blueprint-types';
+import { DEFAULT_EDGE_DETAIL, type BlueprintEdgeDetail, type BlueprintView, type RefInfo, type RefTitles } from './blueprint-types';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import { BlueprintOutline } from './BlueprintOutline';
 import { BlueprintTable } from './BlueprintTable';
@@ -65,6 +65,8 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
   const prevViewRef = useRef<{ version: number; view: BlueprintView } | null>(null);
   const [pickedNode, setNodeKey] = useState<string | null>(null);
   const [viewChoice, setViewChoice] = useState<CraftViewId>('flow');
+  /* Which edges the canvas draws — view-only, the row keeps them all. */
+  const [edgeDetail, setEdgeDetail] = useState<BlueprintEdgeDetail>(DEFAULT_EDGE_DETAIL);
   /* Each strip Find press summons the canvas's find box (a new value). */
   const [findRequest, setFindRequest] = useState(0);
 
@@ -141,9 +143,9 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
   const view = useMemo(
     () =>
       content && (content as { kind?: string }).kind === 'graph'
-        ? blueprintView(content, refTitles, { mode: viewChoice === 'lanes' ? 'swimlane' : 'flow' })
+        ? blueprintView(content, refTitles, { mode: viewChoice === 'lanes' ? 'swimlane' : 'flow', edgeDetail })
         : null,
-    [content, refTitles, viewChoice],
+    [content, refTitles, viewChoice, edgeDetail],
   );
   const viewId: CraftViewId = view ? resolveView(viewChoice, view) : 'flow';
   const selectedNode = view && pickedNode && nodeByKey(view, pickedNode) ? pickedNode : null;
@@ -306,6 +308,7 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
                   onSelect={setNodeKey}
                   marked={marked}
                   findRequest={stripFind ? findRequest : undefined}
+                  onEdgeDetail={setEdgeDetail}
                 />
               )}
             </>

@@ -11,8 +11,9 @@
  *    would clear for everybody the moment one member opened something. Two
  *    members in one space must be able to disagree about what is unseen, and
  *    that is asserted directly below.
- *  · A MARK GOES STALE WHEN THE ENTITY CHANGES. "Seen" means seen AS IT IS NOW,
- *    not seen once and never again.
+ *  · SEEN IS PERMANENT AND EXPLICIT (313). Only a list activation
+ *    (`mark_entity_seen`) records it; opening a detail (`mark_read`) does not,
+ *    and a later change to the entity does not make it unseen again.
  *  · A NON-MEMBER GETS NOTHING. A counter that leaked a total would disclose
  *    the size of a space the caller cannot read.
  */
@@ -36,6 +37,11 @@ function countsFor(identity, actor, spaceId) {
 
 const spaceA = world.spaceA;
 
+// mark_entity_seen is human-only (require_human_auth_kind), like a browser/cli caller.
+const humanA = { ...claimsFor(world.identityA, world.memberA), 'tm8.auth_kind': 'browser' };
+const markSeen = (entityId) =>
+  ok(`select public.mark_entity_seen(${uuid(entityId)}, ${literal(cmid('counts-seen'))})`, { claims: humanA });
+
 test('counts every live kind, with total and unseen as SEPARATE numbers', () => {
   const counts = countsFor(world.identityA, world.memberA, spaceA);
 
@@ -50,24 +56,31 @@ test('counts every live kind, with total and unseen as SEPARATE numbers', () => 
   }
 });
 
-test('an entity nobody has opened is unseen; opening it clears only that row', () => {
+test('an entity nobody has seen is unseen; marking it seen clears only that row', () => {
   const before = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(before.task.unseen, 1, 'never opened ⇒ unseen');
+  assert.equal(before.task.unseen, 1, 'never seen ⇒ unseen');
 
+  // 313: opening a detail (advancing the read cursor) is NOT seeing it in the list.
   ok(`select public.mark_read(${uuid(world.taskA)}, ${literal(cmid('counts-read'))})`, {
     claims: claimsFor(world.identityA, world.memberA),
   });
+  assert.equal(
+    countsFor(world.identityA, world.memberA, spaceA).task.unseen,
+    1,
+    'mark_read does not write seen state',
+  );
 
+  markSeen(world.taskA);
   const after = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(after.task.unseen, 0, 'opened ⇒ no longer unseen');
+  assert.equal(after.task.unseen, 0, 'seen ⇒ no longer unseen');
   // The total must NOT move: reading something does not delete it.
   assert.equal(after.task.total, before.task.total, 'total is unchanged by reading');
 });
 
 test('UNSEEN IS PER VIEWER — the property attention_requests could not provide', () => {
-  // Member A read the task in the previous test. Add a second member to the
+  // Member A saw the task in the previous test. Add a second member to the
   // same space and confirm the row is still unseen for THEM. If this feature
-  // had been built on attention_requests, A's read would have cleared it for
+  // had been built on attention_requests, A's view would have cleared it for
   // everyone, and this assertion is what pins that difference.
   const joined = rows(
     `select entity_id from public.members
@@ -79,10 +92,10 @@ test('UNSEEN IS PER VIEWER — the property attention_requests could not provide
     // Single-member fixture: assert the mark is stored per member rather than
     // globally, which is the same property at the storage layer.
     const marks = rows(
-      `select member_id from public.read_marks where anchor_id = ${uuid(world.taskA)}`,
+      `select member_id from public.entity_seen where entity_id = ${uuid(world.taskA)}`,
       { claims: claimsFor(world.identityA, world.memberA) },
     );
-    assert.equal(marks.length, 1, 'the read mark belongs to exactly one member');
+    assert.equal(marks.length, 1, 'the seen mark belongs to exactly one member');
     assert.equal(
       marks[0].member_id,
       world.memberA,
@@ -93,20 +106,16 @@ test('UNSEEN IS PER VIEWER — the property attention_requests could not provide
   assert.ok(true);
 });
 
-test('a mark goes STALE when the entity changes after it was read', () => {
-  // "Seen" must mean "seen as it is now". A mark that survived every later
-  // edit would silently hide updates behind a number the user already cleared.
-  //
+test('seen is PERMANENT: a change after it was seen does not make it unseen again', () => {
+  // 313 replaced the stale-on-change read marks: a list activation records
+  // seen once, and later activity is surfaced elsewhere, not by this number.
   // Self-contained rather than leaning on the previous test's mark: suites run
-  // against a shared database, and a precondition inherited across tests is a
-  // failure that reports in the wrong place.
-  ok(`select public.mark_read(${uuid(world.taskA)}, ${literal(cmid('counts-read'))})`, {
-    claims: claimsFor(world.identityA, world.memberA),
-  });
+  // against a shared database.
+  markSeen(world.taskA);
   assert.equal(
     countsFor(world.identityA, world.memberA, spaceA).task.unseen,
     0,
-    'precondition: read, and caught up',
+    'precondition: seen',
   );
 
   // Direct table write as the OWNER: tm8_app deliberately holds no INSERT or
@@ -120,7 +129,7 @@ test('a mark goes STALE when the entity changes after it was read', () => {
   );
 
   const after = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(after.task.unseen, 1, 'changed since last read ⇒ unseen again');
+  assert.equal(after.task.unseen, 0, 'changed since it was seen ⇒ still seen');
 });
 
 test('a soft-deleted entity leaves BOTH numbers', () => {
@@ -164,20 +173,18 @@ test('literal guard: the suite named a real space', () => {
 });
 
 /**
- * 068 — the WATERMARK, and the cold-start defect it exists to fix.
+ * 068 — the WATERMARK, and the cold-start defect it exists to fix. 313 moved
+ * it to `members.entities_seen_since`, compared against an entity's CREATION.
  *
- * Measured on the real tm8 space before this landed: 356 live entities against
+ * Measured on the real tm8 space before 068 landed: 356 live entities against
  * 24 read marks, so 93.3% of every kind came back `unseen` and the rail drew
- * each kind's lifetime total twice — once plain, once in bold. `read_marks`
- * had only ever been written for channels, so nothing else could POSSIBLY be
- * marked, and no amount of using the product would have fixed it short of
- * opening every row by hand.
+ * each kind's lifetime total twice — once plain, once in bold.
  */
 test('a member does not inherit history that predates them as unseen', () => {
-  // Everything in Space A already exists. A member whose counters start NOW
+  // Everything in Space A already exists. A member whose watermark starts NOW
   // must see a clean rail: you cannot have failed to see what predates you.
   ok(
-    `update public.members set counters_since = now() + interval '1 second'
+    `update public.members set entities_seen_since = now()
       where space_id = ${uuid(spaceA)} and entity_id = ${uuid(world.memberA)}`,
     { url: OWNER_URL },
   );
@@ -189,21 +196,19 @@ test('a member does not inherit history that predates them as unseen', () => {
   assert.equal(unseen, 0, 'but none of them is news to a member starting now');
 });
 
-test('anything that changes AFTER the watermark is news again', () => {
+test('anything CREATED after the watermark is news', () => {
   // The watermark is a floor, not a mute: it suppresses backlog, and must not
-  // suppress genuine activity that happens afterwards.
-  ok(
-    `update public.entities set activity_at = now() + interval '1 hour'
-      where id = ${uuid(world.taskA)}`,
-    { url: OWNER_URL },
-  );
+  // suppress what arrives afterwards.
+  ok(`select public.create_task(${uuid(spaceA)}, 'after the watermark')`, {
+    claims: claimsFor(world.identityA, world.memberA),
+  });
   const counts = countsFor(world.identityA, world.memberA, spaceA);
-  assert.equal(counts.task.unseen, 1, 'changed after the watermark ⇒ unseen');
+  assert.equal(counts.task.unseen, 1, 'created after the watermark ⇒ unseen');
 });
 
 test('the watermark defaults to member creation, so it is never null', () => {
   const rowsOut = rows(
-    `select count(*) filter (where counters_since is null) as nulls, count(*) as all_members
+    `select count(*) filter (where entities_seen_since is null) as nulls, count(*) as all_members
        from public.members`,
     { claims: claimsFor(world.identityA, world.memberA) },
   );
