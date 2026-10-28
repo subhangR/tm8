@@ -90,11 +90,11 @@ describe('loop management is registry-declared and fully wired', () => {
     const loop = getKind('loop');
     expect(loop.list.quickCreate).toBe(true);
     expect(loop.createForm).toBe('scheduled-work');
-    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual([
-      'title', 'schedule', 'teamMemberId', 'subjectId', 'prompt', 'config',
-    ]);
-    expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
-    expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
+    // Title only: the Edit verb opens the loop form (pickers, server preview),
+    // never raw id or JSON fields (design 01a182d4 §6).
+    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual(['title']);
+    // The loops table, not the generic tile list.
+    expect(loop.list.surface).toBe('loops');
     // `run` LEADS since launching became a denylist (owner ruling 2026-08-17
     // launches `loop`). It does NOT mean "fire this loop now" — that is
     // `loop-controls`, the first panel block, and it stays the loop's own verb.
@@ -593,6 +593,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('uses only the CLOSED §2.2 field vocabulary', () => {
     const CLOSED: readonly (keyof ListConfig)[] = [
+      /* Opened 2026-10-28 (loops, design 01a182d4 §6): a kind whose list is
+         its own table, because an entity summary has no columns. */
+      'surface',
       'sections',
       'categories',
       'tree',

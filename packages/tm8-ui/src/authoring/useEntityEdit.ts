@@ -22,6 +22,7 @@
  * intact so the text is not lost, and the person decides.
  */
 import type { LoopEditor } from '../loops/LoopEditDialog';
+import { getKind } from '../domain';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import {
@@ -193,7 +194,9 @@ export function useEntityEdit(options: EntityEditOptions): EntityEditHandle {
     save,
     cancel,
     dismiss,
-    loopEditor: detail?.kind === 'loop' && commands?.loops && commands.loopForm
+    /* Registry data, never a kind literal (§15.2): the kind whose create is
+       the scheduled-work form is edited by that form too. */
+    loopEditor: detail && getKind(detail.kind).createForm === 'scheduled-work' && commands?.loops && commands.loopForm
       ? { loopId: detail.id, spaceId: detail.spaceId, client: commands.loops, sources: commands.loopForm, onSaved: () => onSaved?.({ patches: [] }) }
       : null,
   };

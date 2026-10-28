@@ -5,6 +5,7 @@ import { getKind } from '../domain';
 import { EntityCreateControl } from './EntityCreateControl';
 import type { AuthoringCommands } from './commands';
 import type { NewTaskHandle } from './useNewTask';
+import { createFixtureLoopsClient } from '../loops/fixture';
 
 afterEach(cleanup);
 
@@ -19,6 +20,8 @@ const commands = {
   createEntity: vi.fn(),
   patchEntity: vi.fn(),
   patchTask: vi.fn(),
+  loops: createFixtureLoopsClient(),
+  loopForm: { query: async () => ({ page: { items: [], nextCursor: null } }) },
 } as unknown as AuthoringCommands;
 
 describe('the registry selects the honest create flow', () => {
@@ -34,7 +37,7 @@ describe('the registry selects the honest create flow', () => {
       </div>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'New loop' }));
-    expect(screen.getByTestId('loop-create-dialog')).toBeTruthy();
+    expect(screen.getByTestId('loop-form')).toBeTruthy();
     expect(immediate.create).not.toHaveBeenCalled();
   });
 
@@ -51,6 +54,6 @@ describe('the registry selects the honest create flow', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'New task' }));
     expect(immediate.create).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId('loop-create-dialog')).toBeNull();
+    expect(screen.queryByTestId('loop-form')).toBeNull();
   });
 });
