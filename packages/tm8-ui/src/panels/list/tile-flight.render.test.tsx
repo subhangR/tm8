@@ -25,11 +25,16 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 const sessions = fixtureSummaries.filter((row) => row.state.kind === 'work_session');
 const [root, mid, leaf, aunt] = sessions;
 
+/* Every row on the Running tab: a child from another session tab folds
+   behind `▸ N ended` (task 01a1821d), which is not what these pin. */
+const running = (row: EntitySummary): EntitySummary =>
+  ({ ...row, state: { ...row.state, status: 'running', outcome: 'open' } }) as EntitySummary;
+
 const chain: readonly EntitySummary[] = [
-  { ...root, parentId: null },
-  { ...mid, parentId: root.id },
-  { ...leaf, parentId: mid.id },
-  { ...aunt, parentId: root.id },
+  { ...running(root), parentId: null },
+  { ...running(mid), parentId: root.id },
+  { ...running(leaf), parentId: mid.id },
+  { ...running(aunt), parentId: root.id },
 ];
 
 const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => chain;

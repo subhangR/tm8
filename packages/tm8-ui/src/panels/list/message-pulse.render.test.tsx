@@ -18,11 +18,16 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 const sessions = fixtureSummaries.filter((row) => row.state.kind === 'work_session');
 const [root, mid, leaf, aunt] = sessions;
 
+/* Every row on the Running tab: a child from another session tab folds
+   behind `▸ N ended` (task 01a1821d), which is not what these pin. */
+const running = (row: EntitySummary): EntitySummary =>
+  ({ ...row, state: { ...row.state, status: 'running', outcome: 'open' } }) as EntitySummary;
+
 const chain: readonly EntitySummary[] = [
-  { ...root, parentId: null },
-  { ...mid, parentId: root.id },
-  { ...leaf, parentId: mid.id },
-  { ...aunt, parentId: root.id },
+  { ...running(root), parentId: null },
+  { ...running(mid), parentId: root.id },
+  { ...running(leaf), parentId: mid.id },
+  { ...running(aunt), parentId: root.id },
 ];
 
 const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => chain;
@@ -143,6 +148,27 @@ describe('session tree message pulse — rendered', () => {
     expect(arrival).toBeTruthy();
     expect(arrival?.querySelector(`[data-session-node="${mid.id}"]`)).toBeTruthy();
     expect(rowOf(leaf.id), 'tree did not auto-expand').toBeNull();
+  });
+
+  it('absorbs into the parent of a child folded behind "ended" (task 01a1821d)', () => {
+    // `leaf` exited: under Running it folds behind `▸ 1 ended` once `mid` opens.
+    const folding: readonly EntitySummary[] = chain.map((row) =>
+      row.id === leaf.id ? ({ ...row, state: { ...row.state, status: 'exited', outcome: 'completed' } }) as EntitySummary : row,
+    );
+    const view = (pulses: readonly MessagePulse[]) => (
+      <EntityListPanel kind="work_session" rowsFor={() => folding} ctx={ctx} messagePulses={pulses} />
+    );
+    const { container, rerender } = render(view([]));
+    const rowOf = (id: string) => container.querySelector(`[data-session-node="${id}"]`);
+    // Opens every row; the fold is its own control and stays shut.
+    expandTree(container);
+    expect(container.querySelector('[data-testid="child-fold"]')?.textContent).toBe('1 ended');
+    expect(rowOf(leaf.id)).toBeNull();
+
+    rerender(view([message('m1', aunt.id, leaf.id)]));
+    const arrival = container.querySelector('[data-pulse-row="to"]');
+    expect(arrival?.querySelector(`[data-session-node="${mid.id}"]`)).toBeTruthy();
+    expect(rowOf(leaf.id), 'the fold did not open to chase it').toBeNull();
   });
 
   it('ignores a pulse whose endpoints are not in this list', () => {
