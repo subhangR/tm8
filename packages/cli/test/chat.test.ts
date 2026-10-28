@@ -125,11 +125,14 @@ const err = (): string => stderr.join('');
 // ---------------------------------------------------------------------------
 
 describe('the module registers exactly its own rows, and the projection agrees', () => {
-  it('owns the nine chat paths and nothing else', () => {
+  it('owns the ten chat paths and nothing else', () => {
     expect(CHAT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       // +1 chat connectors (chat.setMcpSelections, G4): the only way to change
       // a thread's connectors after its first message. MEASURED.
       'chat connectors',
+      // +1 chat connectors show (chat.getMcpSelections): the READ beside the
+      // write, so a terminal can look without changing anything. MEASURED.
+      'chat connectors show',
       // +1 chat credentials (credential selection). MEASURED on the Tools 3 rebase.
       'chat credentials',
       'chat list',
@@ -349,6 +352,27 @@ describe('chat connectors', () => {
     expect(await run(['chat', 'connectors', CHAT, '--input', '[]'])).toBe(0);
     expect(seen[0]?.body).toMatchObject({ mcpSelections: [] });
     expect(out()).toContain('Every connector is off');
+  });
+
+  /**
+   * `show` is a READ on its own path. The longest registered prefix must win:
+   * if `chat connectors` swallowed `show` as a chat id, the read would become a
+   * write that fails for want of --input — or, with one, changes the thread.
+   */
+  it('show reads chat.getMcpSelections and never writes, telling defaults from custom', async () => {
+    reply = () => envelope({ chatId: CHAT, mcpSelections: null });
+    expect(await run(['chat', 'connectors', 'show', CHAT])).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe('GET');
+    expect(seen[0]?.path).toBe(bindPath('chat.getMcpSelections', { id: CHAT }));
+    expect(out()).toContain('Space defaults');
+
+    seen = [];
+    stdout = [];
+    reply = () => envelope({ chatId: CHAT, mcpSelections: [] });
+    expect(await run(['chat', 'connectors', 'show', CHAT])).toBe(0);
+    expect(seen[0]?.method).toBe('GET');
+    expect(out()).toContain('every connector is off');
   });
 
   it('refuses a malformed selection and a missing --input before the wire', async () => {
