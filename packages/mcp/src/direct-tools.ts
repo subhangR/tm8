@@ -550,7 +550,7 @@ async function repoGlob(args: Record<string, unknown>, context: DirectToolContex
     dot: true,
     onlyFiles: true,
     followSymbolicLinks: false,
-    ignore: ['.git/**'],
+    ignore: searchIgnores(pattern),
   })).sort();
   return result('repo_glob', { pattern, paths: all.slice(0, limit), truncated: all.length > limit });
 }
@@ -568,7 +568,7 @@ async function repoGrep(args: Record<string, unknown>, context: DirectToolContex
     dot: true,
     onlyFiles: true,
     followSymbolicLinks: false,
-    ignore: ['.git/**'],
+    ignore: searchIgnores(glob),
   })).sort();
   const matches: Array<Record<string, unknown>> = [];
   let scannedBytes = 0;
@@ -608,6 +608,16 @@ async function repoGrep(args: Record<string, unknown>, context: DirectToolContex
     await worker.terminate();
   }
   return result('repo_grep', { query, ...(glob ? { glob } : {}), matches, scannedFiles, scannedBytes, truncated });
+}
+
+/**
+ * `.git` always; `node_modules` unless the pattern names it. Paths are walked
+ * in sorted order and `node_modules` sorts before `packages/`, so in a
+ * workspace monorepo an unscoped grep spent its whole 50 MB scan budget on
+ * dependencies and returned no match from the project's own source.
+ */
+function searchIgnores(pattern: string | undefined): string[] {
+  return pattern?.includes('node_modules') ? ['.git/**'] : ['.git/**', '**/node_modules/**'];
 }
 
 interface GrepWorkerResult {
@@ -713,8 +723,10 @@ async function repoMultiEdit(args: Record<string, unknown>, context: DirectToolC
   const written: PendingRepoEdit[] = [];
   try {
     for (const entry of pending.values()) {
-      await writeFileNoFollow(entry.target, entry.text);
+      // Recorded BEFORE the write: the open truncates, so a write that fails
+      // part-way has already clobbered this file and it needs restoring too.
       written.push(entry);
+      await writeFileNoFollow(entry.target, entry.text);
     }
   } catch {
     await Promise.allSettled(written.map((entry) => writeFileNoFollow(entry.target, entry.original)));
@@ -1508,7 +1520,14 @@ function applyExactEdit(text: string, oldText: string, newText: string, replaceA
   const count = text.split(oldText).length - 1;
   if (count === 0) throw new DirectToolError('conflict', `oldText was not found in ${path}`);
   if (!replaceAll && count !== 1) throw new DirectToolError('conflict', `oldText occurs ${count} times in ${path}; set replaceAll or provide more context`);
-  return { text: replaceAll ? text.split(oldText).join(newText) : text.replace(oldText, newText), replacements: replaceAll ? count : 1 };
+  // Not `text.replace(oldText, newText)`: a string replacement expands `$&`,
+  // `$$` and `` $` ``, so a newText carrying shell or regex text was written
+  // with those sequences rewritten. The edit is exact; so is the splice.
+  const at = text.indexOf(oldText);
+  return {
+    text: replaceAll ? text.split(oldText).join(newText) : text.slice(0, at) + newText + text.slice(at + oldText.length),
+    replacements: replaceAll ? count : 1,
+  };
 }
 
 async function git(root: string, argv: string[], allowFailure = false, maxBuffer = MAX_OUTPUT_BYTES): Promise<string> {
@@ -1680,8 +1699,19 @@ function htmlToText(html: string): string {
   return decodeHtml(html.replace(/<script\b[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
+const NAMED_ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+/**
+ * One pass, so `&amp;lt;` reads `&lt;` and is not decoded twice into `<`. A
+ * numeric reference past U+10FFFF is left as written: `String.fromCodePoint`
+ * throws on it, which failed the whole fetch on one bad entity.
+ */
 function decodeHtml(text: string): string {
-  return text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_match, value: string) => String.fromCodePoint(Number(value)));
+  return text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|(amp|lt|gt|quot|apos));/g, (match, dec?: string, hex?: string, name?: string) => {
+    if (name) return NAMED_ENTITIES[name]!;
+    const point = dec !== undefined ? Number(dec) : Number.parseInt(hex!, 16);
+    return point <= 0x10ffff ? String.fromCodePoint(point) : match;
+  });
 }
 
 function searchResultUrl(href: string): string {
