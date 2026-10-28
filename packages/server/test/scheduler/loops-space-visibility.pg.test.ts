@@ -115,8 +115,11 @@ function jobFor(db: Db, readAs: DbClaims): {
     fire: async (loop, firingClaims) => {
       fired.push(loop.entityId);
       firedAs.push(String(firingClaims.identityId));
-      return { taskId: `task-${fired.length}`, sessionId: `session-${fired.length}` };
+      // No session row exists for a fake firing; the run keeps session_id null
+      // and the sweep settles it after the launch grace period.
+      return { taskId: null, sessionId: `00000000-0000-4000-8000-${String(fired.length).padStart(12, '0')}` };
     },
+    stopSession: async () => {},
   };
   const job = createLoopsJob({ db, port });
   return { run: (warned) => job.run(ctx(warned)), fired, firedAs };
@@ -270,10 +273,11 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
     expect(firedAs).toEqual([spaceOwner]);
     expect(warned.warnings).toEqual([]);
 
-    // `recordRun` went through the REAL `update_loop`, under the per-loop space
-    // claims. This is the half that proves the firing path has authority and
-    // not just the read: the outcome is on the row, and the loop is no longer
-    // due, so it cannot be re-selected and re-fired on the next tick.
+    // The claim went through the REAL `loop_run_claim` (382) under the worker
+    // claim, and the launch record through `loop_run_launched`. This is the
+    // half that proves the bookkeeping path works and not just the read: the
+    // outcome is on the row, and the loop is no longer due, so it cannot be
+    // re-selected and re-fired on the next tick.
     const [row] = await db.query<{ last_run_at: string | null; last_error: string | null; due: boolean }>(
       claims(spaceOwner),
       `select l.last_run_at, l.last_error, (l.next_run_at <= now()) due
@@ -283,13 +287,23 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
     expect(row!.last_run_at).not.toBeNull();
     expect(row!.last_error).toBeNull();
     expect(row!.due).toBe(false);
+
+    // And the run row: one 'fired' run, as the arming human, under the loop.
+    const runs = await db.query<{ launch: string; trigger: string; acted_as_identity_id: string; attempt: number }>(
+      claims(spaceOwner),
+      `select launch, trigger, acted_as_identity_id, attempt from public.loop_runs where loop_id = $1`,
+      [loopId],
+    );
+    expect(runs).toEqual([{ launch: 'fired', trigger: 'schedule', acted_as_identity_id: spaceOwner, attempt: 1 }]);
   });
 
-  it('an orphaned loop is reported, never skipped in silence', async () => {
+  it('an orphaned loop is parked with a reason, never skipped in silence', async () => {
     // The space's only member is gone (232 tombstone), so there is no identity
-    // left to act as. Such a loop cannot be fired OR recorded against —
-    // `update_loop` needs a member row too — so the one thing the executor must
-    // do is say so. A silent skip here is the original bug wearing a new hat.
+    // left to act as. Such a loop cannot be fired, so the executor parks it
+    // LOUDLY (382 `loops_park_orphans`): `last_error` says 'needs arming', the
+    // warn log names it, and it is no longer selected as due — so it can no
+    // longer starve the queue, and the moment the space has an owner again it
+    // fires once. A silent skip here is the original bug wearing a new hat.
     await db.asOwner(async (q) => {
       await q.query(
         `update public.loops set next_run_at = now() - interval '1 hour' where entity_id = $1`,
@@ -315,8 +329,20 @@ describe('the loop executor reaches loops outside the node owner spaces (375)', 
     const outcome = await run(warned) as { affected?: number; detail?: unknown };
 
     expect(fired).toEqual([]);
-    expect(outcome.detail).toMatchObject({ due: 1, orphaned: 1 });
+    expect(outcome.detail).toMatchObject({ due: 0, orphaned: 1 });
     expect(warned.warnings).toHaveLength(1);
     expect(warned.warnings[0]).toContain('no active member to act as');
+    const [parked] = await db.query<{ last_error: string | null }>(
+      executorClaims(),
+      'select last_error from public.loops where entity_id = $1',
+      [loopId],
+    );
+    expect(parked?.last_error ?? '').toContain('needs arming');
+
+    // Parked once: a second tick neither re-warns nor re-writes the row.
+    const again: Warned = { warnings: [] };
+    const second = await run(again) as { skipped?: boolean; detail?: unknown };
+    expect(again.warnings).toEqual([]);
+    expect(second).toMatchObject({ skipped: true });
   });
 });

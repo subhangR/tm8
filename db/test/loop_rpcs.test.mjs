@@ -664,13 +664,14 @@ test('382 — claim-then-fire: due read, claim, overlap skip/queue/409, launch b
   // Run now while run1 is live: 409 material unless forced; forced fires and records the presser.
   const refused = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-382-manual-refused'))})`, { claims: w.claimsA });
   assert.deepEqual(refused, { claimed: false, reason: 'overlap', waitingOnRunId: claim1.runId });
-  const forced = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(cmid('loop-382-manual-forced'))})`, { claims: w.claimsA });
+  const forcedCmid = cmid('loop-382-manual-forced');
+  const forced = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(forcedCmid)})`, { claims: w.claimsA });
   assert.equal(forced.claimed, true);
   assert.equal(forced.launch, 'fired');
   assert.equal(forced.requestedBy, w.memberA);
   assert.equal(scalar(`select trigger from public.loop_runs where id = ${uuid(forced.runId)}`, { claims: w.claimsA }), 'manual');
   // The same mutation id replays the same claim instead of minting a second run.
-  const replayed = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(cmid('loop-382-manual-forced'))})`, { claims: w.claimsA });
+  const replayed = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(forcedCmid)})`, { claims: w.claimsA });
   assert.equal(replayed.runId, forced.runId);
   denied('loop_run_claim: a non-member may not Run now',
     `select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[])`, { claims: w.claimsB, expect: '42501' });
