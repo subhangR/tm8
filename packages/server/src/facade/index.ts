@@ -1,5 +1,5 @@
 import { registerToolHandlers } from '../tools/handlers.js';
-import { registerLoopHandlers } from '../loops/handlers.js';
+import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
@@ -108,6 +108,15 @@ import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js'
 
 export interface RegisterFacadeHandlersDeps {
   readonly tools?: ToolRuntime;
+  /**
+   * Loops PR2: the executor port `loops.runNow` fires through and
+   * `loops.runs.stop` stops through — the SAME instance the scheduler job
+   * runs, built once in main.ts. A parameter here rather than a field on
+   * `FacadeDeps`, for the reason this header gives for `credentials`: it
+   * reaches exactly one call. Absent: runs are listed and read; Run now and
+   * stop answer 501.
+   */
+  readonly loops?: LoopHandlerDeps;
   readonly mcp?: McpRuntimeHandlerOptions;
   readonly db: Db;
   readonly config: ServerConfig;
@@ -243,7 +252,7 @@ export function registerFacadeHandlers(
   // `/mcp` endpoint is not wired still lets a member revoke a token.
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
-  registerLoopHandlers(registry, facade);
+  registerLoopHandlers(registry, facade, deps.loops);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);

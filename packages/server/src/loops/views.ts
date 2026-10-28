@@ -5,6 +5,7 @@ import {
 import { loadActors, actorOf } from '../facade/entity-read.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import type { Querier } from '../db/types.js';
+import { loopRunsFacts } from './runs.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
 
@@ -41,24 +42,17 @@ const LOOP_SELECT = `
     from public.entities e join public.loops l on l.entity_id = e.id
    where e.deleted_at is null and internal.entity_readable(e.id)`;
 
-/** PR2 replaces this with the loop_runs projection; until then a loop has no recorded runs. */
-export function runsSummaryStub(): { runs: LoopRunsSummary; waitingOnRunId: string | null } {
-  return {
-    runs: { total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 }, usage: { inputTokens: null, outputTokens: null, costUsd: null } },
-    waitingOnRunId: null,
-  };
-}
-
 export interface LoopViewOptions {
   /** loops.get: the next five instants. List rows pass false: no cron stepping per row. */
   withNext: boolean;
 }
 
-function viewOf(row: LoopRow, actors: Map<string, ActorSummary>, options: LoopViewOptions): LoopView {
+function viewOf(row: LoopRow, actors: Map<string, ActorSummary>, options: LoopViewOptions,
+  facts: { runs: LoopRunsSummary; waitingOnRunId: string | null }): LoopView {
   const config = LoopSpawnConfigSchema.safeParse(row.config ?? {});
   const actingMember = row.armer_active ? row.armed_by_member_id : row.fallback_member_id;
   const via = row.armer_active ? 'armer' : row.fallback_member_id ? 'fallback' : 'none';
-  const { runs, waitingOnRunId } = runsSummaryStub();
+  const { runs, waitingOnRunId } = facts;
   const member = row.viewer_member_id !== null;
   return {
     id: row.id, spaceId: row.space_id, version: Number(row.version),
@@ -91,7 +85,16 @@ async function viewsOf(q: Querier, rows: LoopRow[], options: LoopViewOptions): P
   const ids = rows.flatMap(row => [row.created_by, row.armed_by_member_id, row.fallback_member_id])
     .filter((id): id is string => id !== null);
   const actors = await loadActors(q, ids);
-  return rows.map(row => viewOf(row, actors, options));
+  // PR2: the loop_runs projection — total, last run, 24h health, usage, and
+  // the run a queue-concurrency loop is waiting on — batched for the page.
+  const facts = await loopRunsFacts(q, rows.map(row => ({
+    id: row.id, concurrency: row.concurrency, enabled: row.enabled,
+    nextRunAt: row.next_run_at, pausedUntil: row.paused_until,
+  })));
+  const none = { runs: { total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 },
+    usage: { inputTokens: null, outputTokens: null, costUsd: null } }, waitingOnRunId: null } satisfies
+    { runs: LoopRunsSummary; waitingOnRunId: string | null };
+  return rows.map(row => viewOf(row, actors, options, facts.get(row.id) ?? none));
 }
 
 export async function loadLoopView(q: Querier, loopId: string, options: LoopViewOptions = { withNext: true }): Promise<LoopView> {
