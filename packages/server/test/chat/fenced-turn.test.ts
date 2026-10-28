@@ -239,7 +239,7 @@ it('records the failing step, RPC and error when an output write fails for good'
   const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
   const failure=done.args[5] as {code:string;message:string;detail:Record<string,unknown>};
   expect(failure.code).toBe('delivery_unknown');
-  expect(failure.message).toBe("Chat delivery was interrupted (the server could not save the agent's output); recorded effects may have occurred.");
+  expect(failure.message).toBe("Chat delivery was interrupted (the server could not save the agent's output: permission denied for function append_chat_message_part); recorded effects may have occurred.");
   expect(failure.detail).toMatchObject({step:'agent output',rpc:'append_chat_message_part',
     error:{message:'permission denied for function append_chat_message_part',sqlstate:'42501'}});
   expect(done.args[2]).toBe('final answer');
@@ -253,8 +253,20 @@ it('names the step and keeps the error when preparation throws',async()=>{
   f.resolver.mockImplementationOnce(async()=>{ throw new Error('credential lease refused'); });
   await executeFencedTurn(f.options);
   const failure=f.calls.find(c=>c.name==='fail_chat_preparation')!.args[2];
-  expect(failure).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: launch preparation failed.',
+  expect(failure).toMatchObject({code:'preparation_failed',message:'Chat runtime could not prepare this turn: launch preparation failed (credential lease refused).',
     detail:{step:'launch preparation',error:{name:'Error',message:'credential lease refused'}}});
+});
+
+it('scrubs secrets from the stored detail and the thread reason',async()=>{
+  const f=fixture();
+  f.resolver.mockImplementationOnce(async()=>{ throw new Error(
+    'GET https://bot:hunter22@api.example/x failed: Authorization: Bearer abcdefghijklmnop token=s3cr3tvalue sk-ant-abcdefXYZ123 ghp_ABCDEFGHIJKL'); });
+  await executeFencedTurn(f.options);
+  const failure=f.calls.find(c=>c.name==='fail_chat_preparation')!.args[2] as {message:string;detail:{error:{message:string}}};
+  for (const text of [failure.message,failure.detail.error.message]) {
+    for (const secret of ['hunter22','abcdefghijklmnop','s3cr3tvalue','XYZ123','ABCDEFGHIJKL']) expect(text).not.toContain(secret);
+    expect(text).toContain('[redacted]');
+  }
 });
 
 it('gives a turn whose process exits without a reason a readable failure in the thread',async()=>{
@@ -271,8 +283,8 @@ it('gives a turn whose process exits without a reason a readable failure in the 
   });
   await executeFencedTurn(f.options);
   const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
-  expect(done.args[5]).toEqual({code:'runtime_lost',message:'The agent process exited before it finished this turn.'});
-  expect(done.args[2]).toBe('The agent process exited before it finished this turn.');
+  expect(done.args[5]).toEqual({code:'runtime_lost',message:'The agent process exited before it finished this turn (exit code 1).'});
+  expect(done.args[2]).toBe('The agent process exited before it finished this turn (exit code 1).');
   const parts=f.calls.filter(c=>c.name==='append_chat_message_part').map(c=>c.args[2]);
   expect(parts.slice(-2)).toEqual(['error','done']);
 });

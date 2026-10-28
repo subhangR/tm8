@@ -37,6 +37,14 @@ describe('portable history',() => {
     expect(result.renderedContext).toContain('effect_unknown');
     expect(result.renderedContext).toContain('delivery_unknown');
   });
+  it("keeps a failure's operator detail out of the next turn's context",() => {
+    const result=projectHistory([turn(1,{state:'error',failure:{code:'preparation_failed',message:'Chat runtime could not prepare this turn.',
+      detail:{step:'launch preparation',error:{name:'Error',message:'operator-only internals'}}}})],options);
+    expect(result.renderedContext).toContain('preparation_failed');
+    expect(result.renderedContext).toContain('Chat runtime could not prepare this turn.');
+    expect(result.renderedContext).not.toContain('operator-only internals');
+    expect(result.renderedContext).not.toContain('launch preparation');
+  });
   it('reduces deterministically within budget and cites omitted details',() => {
     const input=turn(1,{input:{body:'x'.repeat(50000)}});
     const a=projectHistory([input],{...options,maxBytes:2048});

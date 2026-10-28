@@ -118,10 +118,20 @@ function evidenceFor(turn: HistoricalTurn): Evidence[] {
       instruction:'Prior effects are historical evidence; do not automatically replay missing tool detail.'}});
   if (turn.state !== 'completed' || turn.failure) {
     records.push({ sourceId: turn.turnId, role: 'continuity_notice', turnOrdinal: turn.ordinal,
-      content: { state: turn.state, failure: turn.failure, partialOutput: true,
+      content: { state: turn.state, failure: withoutDetail(turn.failure), partialOutput: true,
         instruction: 'Effects may be unknown. Do not automatically retry this historical request.' } });
   }
   return records;
+}
+
+/**
+ * A failure's `detail` (step, RPC, error, stack-free) is for operators; the
+ * next turn's agent gets only the code and the message the thread showed.
+ */
+function withoutDetail(failure: unknown): unknown {
+  if (!failure || typeof failure !== 'object' || !('detail' in failure)) return failure;
+  const { detail: _detail, ...rest } = failure as Record<string, unknown>;
+  return rest;
 }
 
 function omitted(value: unknown): boolean {

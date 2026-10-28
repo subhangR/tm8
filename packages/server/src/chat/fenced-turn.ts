@@ -96,28 +96,51 @@ export function sqlStateOf(error: unknown): string | undefined {
 
 const clip=(text: string, max=500) => text.length>max ? `${text.slice(0,max)}…` : text;
 /**
+ * Secrets have no business in a failure record. HTTP clients and `pg` can echo
+ * a URL with credentials, a bearer header or a key; the value is replaced and
+ * the shape kept, so the reason stays legible.
+ */
+export function scrubSecrets(text: string): string {
+  return text
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 [redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{6})[A-Za-z0-9_-]+/g, '$1…[redacted]')
+    .replace(/\b(gh[pousr]_)[A-Za-z0-9]{8,}/g, '$1[redacted]')
+    .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/gi, '$1[redacted]@')
+    .replace(/\b((?:api[_-]?key|token|secret|password|passwd|authorization)["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi, '$1[redacted]');
+}
+/**
  * The operator's view of why a turn failed, stored in `chat_turns.failure.detail`.
- * Never rendered as the thread's message (that stays the short `message`), so
- * the raw error text is kept, only bounded.
+ * Never rendered as the thread's message, and never shown to a later turn's
+ * agent (continuity.ts drops it); bounded and scrubbed of secrets.
  */
 export function describeError(error: unknown, depth=0): Record<string, unknown> {
-  if (!(error instanceof Error)) return {message:clip(String(error))};
+  if (!(error instanceof Error)) return {message:clip(scrubSecrets(String(error)))};
   const cause=depth<3 && error.cause!==undefined ? {cause:describeError(error.cause,depth+1)} : {};
   const sqlstate=sqlStateOf(error);
   const code=(error as {code?:unknown}).code;
-  return {name:error.name,message:clip(error.message),
+  return {name:error.name,message:clip(scrubSecrets(error.message)),
     ...(typeof code==='string' ? {code} : {}),
     ...(sqlstate ? {sqlstate} : {}),
     ...(error instanceof HarnessRuntimeError ? {harness:{code:error.failure.code,stage:error.failure.stage,
       disposition:error.failure.disposition}} : {}),...cause};
 }
 
+/** The real error in one short line the thread can show: scrubbed, flattened, clipped. */
+export function shortReason(error: unknown): string {
+  const raw=error instanceof Error ? error.message : String(error);
+  return clip(scrubSecrets(raw).replace(/\s+/g,' ').trim() || 'no message',160);
+}
+
+type RuntimeExit={exitCode:number|null;signal:string|null};
+const exitNote=(exit: RuntimeExit | null) => exit
+  ? ` (exit code ${exit.exitCode ?? 'none'}${exit.signal ? `, signal ${exit.signal}` : ''})` : '';
+
 /** What the thread says when a turn ends without an answer and without a reported reason. */
-function terminalFailure(outcome: TerminalOutcome, evidence: string): {code:string;message:string} {
+export function terminalFailure(outcome: TerminalOutcome, evidence: string, exit: RuntimeExit | null=null): {code:string;message:string} {
   if (outcome==='interrupted') return {code:'interrupted',message:'Stopped before the agent finished.'};
-  if (outcome==='failed') return {code:'failed',message:'The agent ended this turn with an error.'};
-  return evidence==='process_exit'
-    ? {code:'runtime_lost',message:'The agent process exited before it finished this turn.'}
+  if (outcome==='failed') return {code:'failed',message:`The agent ended this turn with an error${exitNote(exit)}.`};
+  return evidence==='process_exit' || exit
+    ? {code:'runtime_lost',message:`The agent process exited before it finished this turn${exitNote(exit)}.`}
     : {code:'runtime_lost',message:'The agent stopped responding before it finished this turn.'};
 }
 
@@ -223,6 +246,8 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   // both, so the cause no longer needs the server journal to be found.
   let step='agent message creation';
   let failedRpc: string | null=null;
+  // How the agent process ended, when it did; named in a runtime_lost/failed reason.
+  let runtimeExit: RuntimeExit | null=null;
   let failureShown=false;
   let completed=false;
   let settled=false;
@@ -345,7 +370,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     // A turn that ends with no answer and no reported reason used to settle with
     // `{code:outcome}` and an empty body, which the DB renders as the bare
     // "Agent turn failed.". Say what is known instead, in the thread too.
-    if (!succeeded && !failure) failure=terminalFailure(proofTerminal.outcome,proofTerminal.evidence);
+    if (!succeeded && !failure) failure=terminalFailure(proofTerminal.outcome,proofTerminal.evidence,runtimeExit);
     if (!succeeded && failure && !failureShown && !terminalPart?.persisted && failure.code!=='interrupted') {
       await append('error',{code:failure.code,message:failure.message},`server:${snapshotId}:error`);
       failureShown=true;
@@ -358,7 +383,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
     completed=proofTerminal.outcome==='completed' && proofTerminal.evidence==='provider_terminal';
     await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text() || (completed ? '' : failure?.message ?? ''),usage.value(),
-      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : terminalFailure(proofTerminal.outcome,proofTerminal.evidence)),
+      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : terminalFailure(proofTerminal.outcome,proofTerminal.evidence,runtimeExit)),
       leaseFence,snapshotId,proof,null]);
     settled=true;
   };
@@ -458,6 +483,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
         } else if (payload.kind==='turn_accepted') {
           await rpc('record_chat_acceptance',[turn.chatId,leaseFence,snapshotId,{nativeTurnId:payload.nativeTurnId}]);
         } else if (payload.kind==='runtime_exit') {
+          runtimeExit={exitCode:payload.exitCode,signal:payload.signal};
           terminal={outcome:'runtime_lost',evidence:'process_exit'};
         } else if (!observation.attempt) continue;
         else if (payload.kind==='text') {
@@ -559,11 +585,11 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
         : silent ? {code:silent.code,message:silent.message}
         : refused ? failure!
         : barrier ? {code:'delivery_unknown',message:`Chat delivery was interrupted (${failedRpc
-            ? 'the server could not save the agent\'s output' : `${step} failed`}); recorded effects may have occurred.`,detail}
+            ? 'the server could not save the agent\'s output' : `${step} failed`}: ${shortReason(error)}); recorded effects may have occurred.`,detail}
         : timedOut ? {code:timedOut.code,message:timedOut.message,detail}
         : error instanceof StepTimeoutError
           ? {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${error.step} timed out.`,detail}
-        : {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${step} failed.`,detail};
+        : {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${step} failed (${shortReason(error)}).`,detail};
       try {
         // The failure is recorded on the reserved lane and retried while the
         // lease can still be live: a single attempt on a saturated pool is
