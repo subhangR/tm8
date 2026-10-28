@@ -65,6 +65,9 @@ export interface HeaderRow {
   task_title: string | null;
   task_description: string | null;
   task_bytes: number | null;
+  tool_name?: string | null;
+  tool_description?: string | null;
+  tool_bytes?: number | null;
   collection_name: string | null;
   collection_description: string | null;
   collection_members: Record<string, number | string> | null;
@@ -167,6 +170,9 @@ const HEADER_SQL = `
          t.title as task_title,
          left(t.description, ${L}) as task_description,
          octet_length(t.description) as task_bytes,
+         tl.definition ->> 'name' as tool_name,
+         left(tl.definition ->> 'description', ${L}) as tool_description,
+         octet_length(tl.definition::text) as tool_bytes,
          col.name as collection_name,
          left(col.description, ${W}) as collection_description,
          case when col.entity_id is null then null else (
@@ -202,6 +208,7 @@ const HEADER_SQL = `
     left join public.files f          on e.kind = 'file'        and f.entity_id = e.id
     left join public.stories sty      on e.kind = 'story'       and sty.entity_id = e.id
     left join public.tasks t          on e.kind = 'task'        and t.entity_id = e.id
+    left join public.tools tl         on e.kind = 'tool'        and tl.entity_id = e.id
     left join public.collections col  on e.kind = 'collection'  and col.entity_id = e.id
     left join public.entity_headers eh on eh.entity_id = e.id
    where e.id = any($2::uuid[]) and e.space_id = $1 and e.deleted_at is null
@@ -247,6 +254,8 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
       return { kind: 'story', description: safeText(row.story_description ?? null, L), bytes: num(row.story_bytes ?? null) };
     case 'task':
       return { kind: 'task', description: safeText(row.task_description, L), bytes: num(row.task_bytes) };
+    case 'tool':
+      return { kind: 'tool', description: safeText(row.tool_description ?? null, L), bytes: num(row.tool_bytes ?? null) };
     case 'collection':
       return {
         kind: 'collection',
@@ -317,6 +326,9 @@ function authoredOf(row: HeaderRow): AuthoredHeader | null {
  * kind's name is its own column, uncut, and is redacted like every other field.
  */
 export function headerNameOf(row: HeaderRow): string {
+  // A tool's title is its definition's name (`titleOf` parses the whole
+  // tool view, which this row does not carry).
+  if (row.kind === 'tool') return safeText(row.tool_name ?? null) ?? 'Tool';
   const memory_statement = row.kind === 'memory' ? safeText(row.memory_statement, L) : row.memory_statement;
   // `titleOf` reads only the kind and that kind's own name column, all selected above.
   return safeText(titleOf({ ...row, memory_statement, deleted_at: null } as unknown as EntityRow))!;

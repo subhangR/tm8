@@ -1,6 +1,7 @@
 import { McpSessionBindings, type McpBindingClaims } from '../mcp/session-bindings.js';
 import { resolveHeaders } from '../headers/resolve.js';
 import { loadDispatcherRoster } from '../launch/roster.js';
+import { loadSpaceTools } from '../launch/tools.js';
 import { loadMemoryDefaults, loadReferenceDefaults, loadSkillDefaults, loadTeammateDefaults } from './spawn-defaults.js';
 import { loadMemoriesById, renderMemoryText, type MemoryRow } from './spawn-memories.js';
 import { loadSkillsById } from '../skills/equipment.js';
@@ -57,6 +58,7 @@ import {
   type ResumeWorkSessionResult,
   type ContextDrop,
   type DispatcherRoster,
+  type SpaceTools,
   type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
@@ -972,6 +974,11 @@ export class DbGraphPort implements GraphPort {
     // A dispatcher's `<context_index>` teammates (design 01a0d348 §8 I8),
     // under the caller's RLS.
     return this.db.tx(this.claims(auth), (q) => loadDispatcherRoster(q, input));
+  }
+
+  async loadSpaceTools(auth: GraphAuth, input: { spaceId: string; limit: number }): Promise<SpaceTools> {
+    // The `<context_index>` tools group (Tools v2 PR-E), under the caller's RLS.
+    return this.db.tx(this.claims(auth), (q) => loadSpaceTools(q, input));
   }
 
   async loadMemoryScores(

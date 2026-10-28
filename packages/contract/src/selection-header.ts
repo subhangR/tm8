@@ -35,7 +35,11 @@ export type SelectionHeaderKind =
   | 'file'
   | 'task'
   | 'collection'
-  | 'story';
+  | 'story'
+  // Both kinds, by the coordinator's union rule (as in migration 380 and
+  // Loops PR1's 378): whoever touches this list keeps 'tool' AND 'loop'.
+  | 'tool'
+  | 'loop';
 
 export const SELECTION_HEADER_KINDS = [
   'skill',
@@ -48,6 +52,8 @@ export const SELECTION_HEADER_KINDS = [
   'task',
   'collection',
   'story',
+  'tool',
+  'loop',
 ] as const satisfies readonly SelectionHeaderKind[];
 
 /**
