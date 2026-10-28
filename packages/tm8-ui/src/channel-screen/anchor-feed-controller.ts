@@ -198,11 +198,10 @@ export function createAnchorFeedController({
     const token = begin();
     patch({ loadingEarlier: true });
     try {
-      const response = await seam.feed(anchorId, feedQuery({
-        order: current().focusedItemId ? 'oldest' : 'newest',
-        cursor,
-        limit,
-      }));
+      // Always `newest`: from a focused page the older cursor is the server's
+      // `previousCursor`, which is fingerprinted for the order that pages
+      // backward from the `oldest`-ordered `around` window.
+      const response = await seam.feed(anchorId, feedQuery({ order: 'newest', cursor, limit }));
       if (!accepts(token)) return;
       patch((entry) => ({
         ...entry,

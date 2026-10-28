@@ -220,10 +220,6 @@ const COMMANDLESS_OPERATIONS = [
       'attentionSignals.clear',
       'attentionSignals.raise',
       'bridge.fetchBlob',
-      // §10.4: `tm8 chat connectors` WRITES a thread's connectors; there is no
-      // terminal form of the read yet, and the gap is stated on the row in
-      // operations.ts rather than papered over with a shared command path.
-      'chat.getMcpSelections',
       // `chat.start` LEFT this set in Wave 2's CLI lane: it is `tm8 chat start`
       // now. It was here because chat v1 exposed the composer only, and the
       // note said the CLI lane would add the noun — this is that lane, so the
@@ -293,11 +289,6 @@ const COMMANDLESS_OPERATIONS = [
       'launch.suggest',
       // SC-3: node admin settings, commandless for the same reason.
       'mcp.proxy.request',
-      // §10.6: the session debug view's provenance read. A terminal rendering
-      // would be a bearer chain of bare uuids with nothing to resolve them
-      // against; `tm8 mcp audit` is the CLI's answer to what a session's
-      // connectors did.
-      'mcp.sessions.provenance',
       'node.credentials.policy.set',
       'node.credentials.status',
       // Status strip: host metrics are a desktop-UI read.

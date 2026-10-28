@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto';
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, limitOf, requireUuidParam } from '../context.js';
+import { claimsFor, cursorInstant, cursorUuid, limitOf, requireUuidParam } from '../context.js';
 import {
   assembleSummaries,
   contentOf,
@@ -349,7 +349,7 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
         if (k.length !== 3 || k[0] !== fingerprint) {
           throw new CollabError('invalid_cursor', 'cursor does not match this message thread');
         }
-        params.push(String(k[1]), String(k[2]));
+        params.push(cursorInstant(k[1]), cursorUuid(k[2]));
         const comparator = order === 'newest' ? '<' : '>';
         // `msg.entity_id` rather than `e.id`: identical value — the join is
         // `msg.entity_id = e.id` — but the keyset now runs against `messages`

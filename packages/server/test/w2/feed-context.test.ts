@@ -339,6 +339,15 @@ function untagged(sql: string): string {
   return sql.slice(tag[0].length);
 }
 
+function withCursorInstant<T extends { created_at: string }>(
+  rows: readonly T[] | undefined,
+): Array<T & { cursor_created_at: string }> {
+  return (rows ?? []).map((row) => ({
+    cursor_created_at: row.created_at,
+    ...row,
+  }));
+}
+
 function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Promise<R[]> {
   return async <R>(tagged: string): Promise<R[]> => {
     const sql = untagged(tagged);
@@ -346,10 +355,12 @@ function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Pro
     switch (marker) {
       case 'entities.feed:anchor':
         return (stub.anchor ?? []) as R[];
+      // The real SELECTs always carry `cursor_created_at` (MICROS text); a stub
+      // row without it would mint a cursor whose instant is `undefined`.
       case 'entities.feed:page':
-        return (stub.page ?? []) as R[];
+        return withCursorInstant(stub.page) as R[];
       case 'entities.feed:locate':
-        return (stub.locate ?? []) as R[];
+        return withCursorInstant(stub.locate) as R[];
       case 'entities.feed:activity':
         return (stub.activity ?? []) as R[];
       case 'entities.feed:deliveries':
@@ -892,6 +903,31 @@ describe('W2.G13 feed cursors', () => {
     await expect(run('cursor=17')).rejects.toMatchObject({ code: 'invalid_cursor' });
   });
 
+  it('rejects a forged keyset value before it reaches SQL', async () => {
+    const fingerprint = feedCursorFingerprint({
+      entityId: IDS.task,
+      scope: 'direct_v1',
+      order: 'newest',
+      predicates: FEED_SCOPE_PREDICATES.direct_v1,
+    });
+    // Right fingerprint and arity, but the instant or the id is not one the
+    // server mints: `::timestamptz` / `::uuid` would raise an unmapped 22007 or
+    // a 22P02 `not_found` instead of `invalid_cursor`.
+    for (const keys of [
+      [fingerprint, '2026', IDS.activity],
+      [fingerprint, '2026-07-26T09:30:00+05:30', IDS.activity],
+      [fingerprint, 123, IDS.activity],
+      [fingerprint, '2026-07-26T09:30:00.000Z', 'not-a-uuid'],
+    ]) {
+      const { db, run } = feedOn(stub);
+      await expect(
+        run(`scope=direct_v1&cursor=${encodeURIComponent(encodeCursor(keys))}`),
+        JSON.stringify(keys.slice(1)),
+      ).rejects.toMatchObject({ code: 'invalid_cursor' });
+      expect(db.sql.some((sql) => sql.includes('entities.feed:page'))).toBe(false);
+    }
+  });
+
   it('binds the fingerprint to the canonical predicate list, not to the caller spelling', () => {
     const a = feedCursorFingerprint({
       entityId: IDS.task,
@@ -1042,21 +1078,29 @@ describe('W2.G13 feed `around` anchoring', () => {
     const decoded = decodeCursor(page.previousCursor!);
     expect(decoded.k).toHaveLength(3);
     // It points at the FIRST item on the page — the boundary a caller pages
-    // backwards from — and carries this feed's fingerprint, not another's.
+    // backwards from — and carries this feed's fingerprint for the OPPOSITE
+    // order: redeemed in the request's own order it would re-read this page.
     expect(decoded.k[2]).toBe(page.items[0]!.itemId);
     expect(decoded.k[0]).toBe(feedCursorFingerprint({
       entityId: IDS.task,
       // 098: the unscoped request above resolved `default` on a task anchor.
       scope: 'task_discussion_v1',
-      order: 'newest',
+      order: 'oldest',
       predicates: FEED_SCOPE_PREDICATES.task_discussion_v1,
     }));
 
-    // And it round-trips: the same feed accepts it rather than rejecting its own
-    // token, which is the failure `handoffs.list` actually shipped.
+    // And it round-trips: the same feed accepts it in the reverse order rather
+    // than rejecting its own token, which is the failure `handoffs.list`
+    // actually shipped...
+    await expect(
+      feedOn(stubWithLead).run(
+        `scope=task_discussion_v1&order=oldest&cursor=${encodeURIComponent(page.previousCursor!)}`,
+      ),
+    ).resolves.toBeTruthy();
+    // ...and refuses it in the request's own order, where it would page forward.
     await expect(
       feedOn(stubWithLead).run(`scope=task_discussion_v1&cursor=${encodeURIComponent(page.previousCursor!)}`),
-    ).resolves.toBeTruthy();
+    ).rejects.toMatchObject({ code: 'invalid_cursor' });
   });
 });
 

@@ -67,7 +67,7 @@ import { cursorAfter, type ActionDiscovery } from './saved-views-actions.js';
 
 import type { Db, DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
-import { claimsFor, requireParam, requireUuidParam } from '../../context.js';
+import { claimsFor, cursorInstant, cursorUuid, requireParam, requireUuidParam } from '../../context.js';
 import { FULL_ENTITY_ID, resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
@@ -1051,10 +1051,18 @@ export class W2FeedContextService {
         });
         const first = rows[0];
         const last = tail.rows.at(-1);
+        // A cursor is a keyset position plus a direction, and the direction is
+        // the ORDER it is redeemed with. Paging back from `first` in this
+        // request's own order would re-read this page, so `previousCursor` is
+        // fingerprinted for the opposite order: redeemed with it, the forward
+        // window runs backward from the page's first item.
+        const reverseFingerprint = feedCursorFingerprint({
+          entityId: id, scope, order: order === 'newest' ? 'oldest' : 'newest', predicates,
+        });
         return this.assemblePage(q, viewerIdentityId, {
           scope, predicates, fingerprint, rows,
           nextCursor: tail.hasMore && last ? cursorAt(fingerprint, last) : null,
-          previousCursor: lead.hasMore && first ? cursorAt(fingerprint, first) : null,
+          previousCursor: lead.hasMore && first ? cursorAt(reverseFingerprint, first) : null,
         });
       }
 
@@ -1064,7 +1072,7 @@ export class W2FeedContextService {
         if (k.length !== 3 || k[0] !== fingerprint) {
           throw new CollabError('invalid_cursor', 'cursor does not match this feed');
         }
-        from = { createdAt: String(k[1]), itemId: String(k[2]) };
+        from = { createdAt: cursorInstant(k[1]), itemId: cursorUuid(k[2]) };
       }
       const page = await readWindow(q, id, predicates, {
         comparator: forwardComparator,

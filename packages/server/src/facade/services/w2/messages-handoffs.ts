@@ -30,6 +30,8 @@ import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import {
   claimsFor,
   commandEnvelope,
+  cursorInstant,
+  cursorUuid,
   limitOf,
   requireParam,
   requireUuidParam,
@@ -712,7 +714,7 @@ export class W2MessagesHandoffsService {
       if (k.length !== 3 || k[0] !== fp) {
         throw new CollabError('invalid_cursor', 'cursor does not match this delivery list');
       }
-      params.push(String(k[1]), String(k[2]));
+      params.push(cursorInstant(k[1]), cursorUuid(k[2]));
       keyset = `and (reserved_at,delivery_id) > ($2::timestamptz,$3::uuid)`;
     }
     return this.deps.db.tx(claims, async (q) => {
@@ -842,7 +844,7 @@ export class W2MessagesHandoffsService {
       if (k.length !== 3 || k[0] !== fp) {
         throw new CollabError('invalid_cursor', 'cursor does not match this handoff list');
       }
-      params.push(String(k[1]), String(k[2]));
+      params.push(cursorInstant(k[1]), String(k[2]));
       keyset = `and (h.created_at,h.handoff_id) > ($4::timestamptz,$5::text)`;
     }
     const rows = await this.deps.db.query<HandoffListRow>(
