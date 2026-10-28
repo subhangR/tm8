@@ -17,6 +17,7 @@ import {
   PANEL_SCENE_CATALOG,
   PANEL_SCENE_KEY,
   nextScene,
+  DEFAULT_PANEL_SCENE,
   readPanelScene,
   setPanelScene,
 } from './panelSceneStore';
@@ -49,19 +50,21 @@ describe('the scene catalog', () => {
     expect(nextScene(first.id).id).toBe(PANEL_SCENE_CATALOG[1]!.id);
   });
 
-  it('remembers the choice, and reads a scene that no longer exists as none', () => {
-    setPanelScene('mountains');
-    expect(window.localStorage.getItem(PANEL_SCENE_KEY)).toBe('mountains');
-    expect(readPanelScene()).toBe('mountains');
-    window.localStorage.setItem(PANEL_SCENE_KEY, 'volcano');
-    expect(readPanelScene()).toBeNull();
+  it('is on by default; a choice — None included — is remembered', () => {
+    window.localStorage.clear();
+    expect(readPanelScene()).toBe(DEFAULT_PANEL_SCENE);
+    setPanelScene('forest');
+    expect(window.localStorage.getItem(PANEL_SCENE_KEY)).toBe('forest');
+    expect(readPanelScene()).toBe('forest');
     setPanelScene(null);
-    expect(window.localStorage.getItem(PANEL_SCENE_KEY)).toBeNull();
+    expect(readPanelScene()).toBeNull();
+    window.localStorage.setItem(PANEL_SCENE_KEY, 'volcano');
+    expect(readPanelScene()).toBe(DEFAULT_PANEL_SCENE);
   });
 });
 
 describe('the panel head', () => {
-  it('draws no scene until one is chosen', () => {
+  it('draws no scene once None is chosen', () => {
     render(<PanelTop searchable />);
     expect(screen.queryByTestId('tws-panel-scene')).toBeNull();
     expect(head().getAttribute('data-scene')).toBeNull();

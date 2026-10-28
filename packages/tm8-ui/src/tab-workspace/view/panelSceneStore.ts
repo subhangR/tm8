@@ -5,6 +5,10 @@
  * vector layers (`PanelScene.tsx`), and PHOTOS, bundled under
  * `public/scenes/` (credits beside them). Or none: the panel as it was.
  *
+ * ON BY DEFAULT (Subhang 2026-10-28: "still the same" — a scene nobody has
+ * turned on is a feature nobody sees): a viewer who has never chosen gets
+ * DEFAULT_PANEL_SCENE. Choosing None is stored as `none`, so it sticks.
+ *
  * A VIEWER'S CHOICE ON THIS DEVICE, like the rail's other preferences: one
  * localStorage key, every space, and other tabs follow by the `storage` event.
  */
@@ -61,14 +65,21 @@ export function nextScene(id: string | null): PanelScene {
 }
 
 export const PANEL_SCENE_KEY = 'tm8.workspace.panel-scene';
+/** What a viewer who has never chosen sees: painted, so it follows the theme. */
+export const DEFAULT_PANEL_SCENE = 'mountains';
+const NONE = 'none';
 
-/** The stored scene id, or `null` for none (or a scene that no longer exists). */
+/**
+ * The stored scene id; `null` for None. Nothing stored — or a scene that no
+ * longer exists — is the default.
+ */
 export function readPanelScene(): string | null {
   try {
     const raw = window.localStorage.getItem(PANEL_SCENE_KEY);
-    return raw !== null && BY_ID.has(raw) ? raw : null;
+    if (raw === NONE) return null;
+    return raw !== null && BY_ID.has(raw) ? raw : DEFAULT_PANEL_SCENE;
   } catch {
-    return null;
+    return DEFAULT_PANEL_SCENE;
   }
 }
 
@@ -78,8 +89,7 @@ let current: string | null | undefined;
 export function setPanelScene(id: string | null): void {
   const next = id !== null && BY_ID.has(id) ? id : null;
   try {
-    if (next === null) window.localStorage.removeItem(PANEL_SCENE_KEY);
-    else window.localStorage.setItem(PANEL_SCENE_KEY, next);
+    window.localStorage.setItem(PANEL_SCENE_KEY, next ?? NONE);
   } catch {
     /* Storage refused (private mode, quota): the choice lasts this page only. */
   }
@@ -106,7 +116,7 @@ function subscribe(fn: () => void): () => void {
   };
 }
 
-/** The chosen scene's id, or `null` for none. */
+/** The chosen scene's id, or `null` for None. */
 export function usePanelScene(): string | null {
   return useSyncExternalStore(subscribe, snapshot, () => null);
 }

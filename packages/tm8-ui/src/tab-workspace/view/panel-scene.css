@@ -125,10 +125,10 @@
   background: hsl(40 40% 98% / 0.35);
 }
 
-/* ---- The picker: a quiet ⛰ that shows when the head is hovered ------------ */
+/* ---- The picker: a quiet ⛰, full strength when the head is hovered -------- */
 
 .cv2-root .tws-browser .tws-paneltop .tws-scenepick {
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity var(--pn-dur-fast, 120ms) var(--pn-ease-standard, ease);
 }
 .cv2-root .tws-browser .tws-panelhead:hover .tws-scenepick,
