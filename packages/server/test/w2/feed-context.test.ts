@@ -903,6 +903,31 @@ describe('W2.G13 feed cursors', () => {
     await expect(run('cursor=17')).rejects.toMatchObject({ code: 'invalid_cursor' });
   });
 
+  it('rejects a forged keyset value before it reaches SQL', async () => {
+    const fingerprint = feedCursorFingerprint({
+      entityId: IDS.task,
+      scope: 'direct_v1',
+      order: 'newest',
+      predicates: FEED_SCOPE_PREDICATES.direct_v1,
+    });
+    // Right fingerprint and arity, but the instant or the id is not one the
+    // server mints: `::timestamptz` / `::uuid` would raise an unmapped 22007 or
+    // a 22P02 `not_found` instead of `invalid_cursor`.
+    for (const keys of [
+      [fingerprint, '2026', IDS.activity],
+      [fingerprint, '2026-07-26T09:30:00+05:30', IDS.activity],
+      [fingerprint, 123, IDS.activity],
+      [fingerprint, '2026-07-26T09:30:00.000Z', 'not-a-uuid'],
+    ]) {
+      const { db, run } = feedOn(stub);
+      await expect(
+        run(`scope=direct_v1&cursor=${encodeURIComponent(encodeCursor(keys))}`),
+        JSON.stringify(keys.slice(1)),
+      ).rejects.toMatchObject({ code: 'invalid_cursor' });
+      expect(db.sql.some((sql) => sql.includes('entities.feed:page'))).toBe(false);
+    }
+  });
+
   it('binds the fingerprint to the canonical predicate list, not to the caller spelling', () => {
     const a = feedCursorFingerprint({
       entityId: IDS.task,
