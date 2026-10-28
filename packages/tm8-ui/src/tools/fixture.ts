@@ -10,7 +10,11 @@ export const fixtureTool: ToolView = {
     inputs: [{ name: 'url', type: 'string', required: true, description: 'URL to check' }, { name: 'limit', type: 'int', min: 1, max: 200, default: 20 }, { name: 'verbose', type: 'bool', default: false }, { name: 'state', type: 'enum', options: ['open', 'closed'], default: 'open' }, { name: 'token', type: 'secret' }],
   }, config: { url: 'https://example.test' }, secretBindings: [],
 };
-/** Today's node answer for a tool header (until the header kind list admits `tool`). */
+/**
+ * The node's answer for a tool header BEFORE migration 380 (PR-E) admits the kind:
+ * the write is skipped with a warning. Tests pass `headerStored: false` to exercise
+ * that fallback; the default simulates a node that stores it, as a node with 380 does.
+ */
 export const HEADER_NOT_STORED = 'a tool cannot carry a selection header; nothing was stored';
 
 /**
