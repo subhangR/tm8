@@ -170,6 +170,13 @@ describe('operation catalog', () => {
     expect(bindPath('entities.get', { id: 'ent_1' })).toBe('/v2/entities/ent_1');
     expect(() => bindPath('entities.get')).toThrowError(/missing param/);
   });
+
+  it('bindPath refuses a dot-segment param that would resolve to another route', () => {
+    // `new URL('/v2/entities/../messages', base)` is `/v2/messages`.
+    expect(() => bindPath('messages.list', { anchorId: '..' })).toThrowError(/dot segment/);
+    expect(() => bindPath('entities.get', { id: '.' })).toThrowError(/dot segment/);
+    expect(bindPath('entities.get', { id: '...' })).toBe('/v2/entities/...');
+  });
 });
 
 describe('DTO schemas', () => {
