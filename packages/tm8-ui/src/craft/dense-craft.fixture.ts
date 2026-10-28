@@ -1,0 +1,76 @@
+/**
+ * A DENSE CRAFT GRAPH, shaped like what the craft chat writes for a real
+ * multi-step plan: every data hand-off is ALSO stated as `depends_on`, some
+ * orderings are restated across several steps, a few pairs carry two edges,
+ * and context links (relates to, remembers, uses skill) hang off most tasks.
+ * Used by the edge-reduction tests and the before/after screenshots.
+ */
+export const DENSE_CRAFT = {
+  kind: 'graph',
+  graphType: 'entity',
+  nodes: [
+    { id: 'tm-ana', spec: { kind: 'team_member', title: 'Ana' } },
+    { id: 'tm-raj', spec: { kind: 'team_member', title: 'Raj' } },
+    { id: 't-research', spec: { kind: 'task', title: 'Research current billing flows' } },
+    { id: 'd-findings', spec: { kind: 'doc', title: 'Billing findings' } },
+    { id: 't-spec', spec: { kind: 'task', title: 'Write the billing v2 spec' } },
+    { id: 'd-spec', spec: { kind: 'doc', title: 'Billing v2 spec' } },
+    { id: 't-schema', spec: { kind: 'task', title: 'Migrate the invoice schema' } },
+    { id: 't-api', spec: { kind: 'task', title: 'Build the invoices API' } },
+    { id: 'a-openapi', spec: { kind: 'artifact', title: 'OpenAPI contract' } },
+    { id: 't-ui', spec: { kind: 'task', title: 'Build the billing page' } },
+    { id: 't-tests', spec: { kind: 'task', title: 'End-to-end billing tests' } },
+    { id: 't-docs', spec: { kind: 'task', title: 'Write the user guide' } },
+    { id: 'd-guide', spec: { kind: 'doc', title: 'Billing user guide' } },
+    { id: 't-launch', spec: { kind: 'task', title: 'Launch billing v2' } },
+    { id: 'm-pci', spec: { kind: 'memory', title: 'PCI scope rules' } },
+    { id: 's-sql', spec: { kind: 'skill', title: 'sql-migrate' } },
+  ],
+  edges: [
+    { src: 't-research', dst: 'tm-ana', type: 'assigned_to' },
+    { src: 't-spec', dst: 'tm-ana', type: 'assigned_to' },
+    { src: 't-schema', dst: 'tm-raj', type: 'assigned_to' },
+    { src: 't-api', dst: 'tm-raj', type: 'assigned_to' },
+    { src: 't-ui', dst: 'tm-ana', type: 'assigned_to' },
+    // data flow
+    { src: 't-research', dst: 'd-findings', type: 'produces' },
+    { src: 't-spec', dst: 'd-findings', type: 'consumes' },
+    { src: 't-spec', dst: 'd-spec', type: 'produces' },
+    { src: 't-schema', dst: 'd-spec', type: 'consumes' },
+    { src: 't-api', dst: 'd-spec', type: 'consumes' },
+    { src: 't-api', dst: 'a-openapi', type: 'produces' },
+    { src: 't-ui', dst: 'a-openapi', type: 'consumes' },
+    { src: 't-docs', dst: 'd-spec', type: 'consumes' },
+    { src: 't-docs', dst: 'd-guide', type: 'produces' },
+    // ordering, restating the data flow and itself
+    { src: 't-spec', dst: 't-research', type: 'depends_on' },
+    { src: 't-schema', dst: 't-spec', type: 'depends_on' },
+    { src: 't-api', dst: 't-spec', type: 'depends_on' },
+    { src: 't-api', dst: 't-schema', type: 'depends_on' },
+    { src: 't-api', dst: 't-research', type: 'depends_on' },
+    { src: 't-ui', dst: 't-api', type: 'depends_on' },
+    { src: 't-ui', dst: 't-spec', type: 'depends_on' },
+    { src: 't-tests', dst: 't-ui', type: 'depends_on' },
+    { src: 't-tests', dst: 't-api', type: 'depends_on' },
+    { src: 't-tests', dst: 't-schema', type: 'depends_on' },
+    { src: 't-docs', dst: 't-spec', type: 'depends_on' },
+    { src: 't-launch', dst: 't-tests', type: 'depends_on' },
+    { src: 't-launch', dst: 't-docs', type: 'depends_on' },
+    { src: 't-launch', dst: 't-ui', type: 'depends_on' },
+    { src: 't-launch', dst: 't-api', type: 'blocked_by' },
+    { src: 't-launch', dst: 't-research', type: 'after' },
+    // a pair stated twice
+    { src: 't-tests', dst: 't-ui', type: 'requires' },
+    // context
+    { src: 't-spec', dst: 't-research', type: 'relates_to' },
+    { src: 't-ui', dst: 'd-spec', type: 'relates_to' },
+    { src: 't-tests', dst: 'd-spec', type: 'relates_to' },
+    { src: 't-docs', dst: 'a-openapi', type: 'relates_to' },
+    { src: 't-spec', dst: 'm-pci', type: 'remembers' },
+    { src: 't-api', dst: 'm-pci', type: 'remembers' },
+    { src: 't-schema', dst: 'm-pci', type: 'remembers' },
+    { src: 't-schema', dst: 's-sql', type: 'equips' },
+  ],
+  layout: {},
+  source: null,
+} as const;

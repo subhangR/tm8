@@ -3,6 +3,7 @@ export {
   badgePullRequestFactsOf,
   chipsForPullRequest,
   indexLinkedPullRequests,
+  mergeLinkedPullRequests,
   pullRequestFactsOf,
   type LinkedPullRequestFacts,
   type PullRequestAttribution,

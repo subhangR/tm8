@@ -16,7 +16,7 @@ import {
 } from '../identity/pg-auth.js';
 import { McpSessionBindings, type McpBindingClaims } from '../mcp/session-bindings.js';
 import {
-  ChatLaunchDirectory, createChatCredentialPreparation,
+  ChatLaunchDirectory, createChatCredentialPreparation, redactedCause,
   type ChatCredentialPreparationPort,
 } from './credential-boundary.js';
 import { chatCredentialRoute, type ChatCredentialBinding, type ChatCredentialResolverOptions } from './credentials.js';
@@ -230,11 +230,15 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
         instructionHash: digest(instructionText), toolPolicyHash: capabilityPlanId,
         mcpBindingRevision: digest(capabilityDescriptor.selections), revalidate,
       };
-    } catch {
+    } catch (error) {
+      const cause = redactedCause(error);
+      // eslint-disable-next-line no-console
+      console.warn('[chat] launch preparation failed', JSON.stringify({ chatId: input.chatId,
+        source: credential.binding.source, cause: cause.message }));
       // Nothing was handed to execution yet, so these resources have no live process owner.
       try { await release(); }
-      catch { throw new CollabError('upstream_unavailable', 'Chat launch cleanup is pending'); }
-      throw new CollabError('forbidden', 'Chat launch could not be prepared');
+      catch { throw Object.assign(new CollabError('upstream_unavailable', 'Chat launch cleanup is pending'), { cause }); }
+      throw Object.assign(new CollabError('forbidden', 'Chat launch could not be prepared'), { cause });
     }
   };
 }

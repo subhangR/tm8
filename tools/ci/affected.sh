@@ -80,7 +80,9 @@ declare -A MODULE_OF=(
   # and their suites (node:test via tsx) run in their own directories, not in CI.
   [integrations]=
   [deploy]=
-  [db]=
+  # db/test, db/migrate.mjs and the rest of db/ run in the migrations job, which also
+  # runs the db/test suites (ci.yml) against the migrate.mjs it ships.
+  [db]=migrations
   [db/migrations]=migrations
 )
 PSEUDO_NODES=(db/migrations db deploy integrations)   # longest prefix first

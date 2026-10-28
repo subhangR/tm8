@@ -37,6 +37,9 @@ import {
   PromptSettlementWaiter,
   readSessionTranscript,
   knownAgentConfigDirs,
+  type SessionHomeFacts,
+  type SessionHomeOwnerFacts,
+  type SessionHomeRetention,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -1572,6 +1575,39 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
   }
 
+  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<SessionHomeFacts[]> {
+    if (sessionIds.length === 0) return [];
+    const rows = await this.db.rpc<Array<{
+      sessionId: string;
+      status: string;
+      deleted: boolean;
+      workdirMode: string | null;
+      workdirPath: string | null;
+      exitedAt: string | null;
+    }>>(this.claims(auth), 'public.work_session_home_facts', [sessionIds]);
+    if (!Array.isArray(rows)) throw new Error('work_session_home_facts returned no rows array');
+    return rows.map((r) => {
+      const exitedAt = r.exitedAt === null ? null : Date.parse(r.exitedAt);
+      return {
+        sessionId: r.sessionId,
+        status: r.status,
+        deleted: r.deleted === true,
+        workdirMode: r.workdirMode,
+        workdirPath: r.workdirPath,
+        exitedAt: exitedAt !== null && Number.isFinite(exitedAt) ? exitedAt : null,
+      };
+    });
+  }
+
+  async listSessionHomeOwners(auth: GraphAuth, ids: string[]): Promise<SessionHomeOwnerFacts[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.rpc<Array<{ id: string; kind: string; deleted: boolean }>>(
+      this.claims(auth), 'public.session_home_owner_facts', [ids],
+    );
+    if (!Array.isArray(rows)) throw new Error('session_home_owner_facts returned no rows array');
+    return rows.map((r) => ({ id: r.id, kind: r.kind, deleted: r.deleted === true }));
+  }
+
   // --- worktree provisioning (design §4) --------------------------------------
   //
   // Six writes and two reads, one door call each. They are separate for the
@@ -1931,6 +1967,15 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  /**
+   * Remove the per-session artifacts on this node that nothing can read
+   * again (Codex homes, space-key homes, manifest files), and with a
+   * retention set, the homes of sessions that ended longer ago than that.
+   * Never rejects.
+   */
+  reclaimSessionArtifacts(
+    retention: SessionHomeRetention,
+  ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2048,6 +2093,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2075,6 +2127,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2245,6 +2310,13 @@ export function registerExecutionHandlers(
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2267,6 +2339,19 @@ export function registerExecutionHandlers(
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -3505,6 +3590,8 @@ function registerHandlers(
       agentTool: session.agent_tool,
       ...(dataDir ? { dataDir } : {}),
       home: process.env.HOME ?? homedir(),
+      // A Codex child's rollouts live in its own isolated CODEX_HOME.
+      sessionId,
     });
 
     // `files=1` also scans the WHOLE transcript for Edit/Write tool calls —

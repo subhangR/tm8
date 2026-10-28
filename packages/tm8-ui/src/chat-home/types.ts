@@ -142,6 +142,14 @@ export interface ChatThreadConfig {
   /** The write-once directory binding. Absent on a port that predates 167. */
   workdirMode?: ChatWorkdirMode;
   projectId?: EntityId | null;
+  /**
+   * Whether THIS viewer may change the chat's model, as the server answered it
+   * (`state.canSetModel`: 276's rule, evaluated under the viewer's claims).
+   * ABSENT means unknown — a node older than the field — and must never lock:
+   * read as "someone else's chat", it would lock every configurer out of their
+   * own chat on every node that predates it.
+   */
+  canSetModel?: boolean;
 }
 
 export interface ChatThreadSummary {
@@ -302,7 +310,19 @@ export interface ChatTurn {
 
 export interface ChatThreadDetail {
   summary: ChatThreadSummary;
+  /** Oldest first. A paging port holds only the newest page(s) here. */
   turns: ChatTurn[];
+  /**
+   * Where the next OLDER page starts (`readOlderTurns`); `null` once the first
+   * turn of the chat is loaded. Absent from a port that reads a chat whole.
+   */
+  olderCursor?: string | null;
+}
+
+/** One older page of a chat, oldest first, and where the page before it starts. */
+export interface ChatOlderTurns {
+  turns: ChatTurn[];
+  olderCursor: string | null;
 }
 
 /**
@@ -454,6 +474,11 @@ export interface ChatHomePort {
    */
   chatIdsAbout(aboutId: EntityId): Promise<readonly EntityId[]>;
   readThread(chatId: EntityId): Promise<ChatThreadDetail>;
+  /**
+   * The page of turns before `cursor` (a `ChatThreadDetail.olderCursor`).
+   * OPTIONAL: a port that reads a chat whole (fixtures) never hands out one.
+   */
+  readOlderTurns?(chatId: EntityId, cursor: string): Promise<ChatOlderTurns>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;
   /**
    * Projects this space can bind a chat to. OPTIONAL: a port without one

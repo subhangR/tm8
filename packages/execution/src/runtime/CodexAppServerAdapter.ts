@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { CODEX_ULTRA_EFFORTS } from '@tm8/contract';
 import { boundedLines, HARNESS_FRAME_MAX_CHARS } from './BoundedLines.js';
 import { composeChatEnv } from './chat-env.js';
 import { harnessFailure } from './HarnessRegistry.js';
@@ -25,6 +26,25 @@ import type {
   TurnCommand,
   UsageFact,
 } from './harness-types.js';
+
+/**
+ * Effort stops this adapter will forward to the Codex app server.
+ *
+ * It is the contract's WIDEST Codex list on purpose. Per-model precision is not
+ * this gate's job: `admitConfiguration` has already refused anything outside the
+ * selected model's own `efforts` (so `ultra` never reaches here for a
+ * `CODEX_EFFORTS` model, and Groq rows stay on low/medium/high). What this gate
+ * exists for is to refuse a value the Codex vocabulary has no stop for at all.
+ *
+ * It used to stop at `xhigh` and carry two values (`none`, `minimal`) that are
+ * not `LaunchModelEffort` at all — a vocabulary copied from an older protocol
+ * and never matched to the catalog. The effect was that every Codex chat run at
+ * `max` (and GPT-6 Astra at `ultra`) failed at open with "Codex reasoning effort
+ * is unsupported" while the picker went on offering the stop, and the message
+ * blamed Codex for a refusal this process made. Codex 0.161.0 does not reject
+ * these values; it does not validate `effort` at all.
+ */
+const CODEX_ADAPTER_EFFORTS: readonly string[] = CODEX_ULTRA_EFFORTS;
 
 const CAPABILITIES: HarnessCapabilities = {
   schemaVersion: 1,
@@ -194,7 +214,7 @@ class CodexSession extends HarnessSessionBase {
     const target = this.input.config.target;
     if (
       target.reasoningEffort !== null &&
-      !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(target.reasoningEffort)
+      !CODEX_ADAPTER_EFFORTS.includes(target.reasoningEffort)
     )
       throw harnessFailure(
         'unsupported_capability',
@@ -322,9 +342,7 @@ class CodexSession extends HarnessSessionBase {
       throw harnessFailure('invalid_config', 'submit', 'A dispatch acknowledgement is pending');
     if (
       command.config.target.reasoningEffort !== null &&
-      !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(
-        command.config.target.reasoningEffort,
-      )
+      !CODEX_ADAPTER_EFFORTS.includes(command.config.target.reasoningEffort)
     )
       throw harnessFailure(
         'unsupported_capability',

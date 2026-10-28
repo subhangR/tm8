@@ -139,16 +139,28 @@ export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps)
     parts.push(reading.used);
   } else if (fit === 'narrow') {
     parts.push(reading.percent ?? reading.used);
+  } else if (fit === 'stack') {
+    /* The action strip shows the context size alone (Subhang, task 01a181e2);
+       the whole reading is the ⋯ menu's line and the details card's. */
+    parts.push(reading.used);
   } else {
     parts.push(reading.used);
     if (reading.percent) parts.push(reading.percent);
     if (fit === 'wide' && reading.cache !== null) parts.push(`cache ${reading.cache}`);
-    if (fit === 'stack' && reading.cache !== null) parts.push(`c${reading.cache}`);
     const age = fit === 'wide' ? reading.age : reading.ageShort;
     if (age) parts.push(age);
   }
 
   const visible = (reading.lastKnown ? '~' : '') + parts.join(' · ');
+  /* The full one-line reading, for a host that shows more than the chip (the
+     strip's ⋯ menu). */
+  const full =
+    fit === 'stack' && reading.tone !== 'loading' && reading.tone !== 'unknown'
+      ? (reading.lastKnown ? '~' : '') +
+        [reading.used, reading.percent, reading.cache !== null ? `cache ${reading.cache}` : null, reading.ageShort]
+          .filter(Boolean)
+          .join(' · ')
+      : visible;
 
   return (
     <span
@@ -157,6 +169,7 @@ export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps)
       data-testid={testId}
       data-tone={reading.tone}
       data-fit={fit}
+      data-reading={full}
     >
       <button
         type="button"

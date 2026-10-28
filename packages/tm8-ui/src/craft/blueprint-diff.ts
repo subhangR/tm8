@@ -57,10 +57,16 @@ export function diffBlueprintViews(prev: BlueprintView, next: BlueprintView): Bl
     else if (was.sig !== sig.sig) changed.push(key);
   }
   const removed = [...before].filter(([key]) => !after.has(key)).map(([key, sig]) => ({ key, title: sig.title }));
-  const prevLines = new Set(prev.lines.map((line) => line.key));
-  const nextLines = new Set(next.lines.map((line) => line.key));
-  const addedLines = [...nextLines].filter((key) => !prevLines.has(key));
-  const removedLines = [...prevLines].filter((key) => !nextLines.has(key)).length;
+  /* EDGES, not drawn lines: an edge the reduction hides (implied, merged,
+     folded) is still in the row, so it is neither added nor removed. An added
+     edge marks the line that draws it, if any. */
+  const prevEdges = new Set(prev.edgeKeys);
+  const nextEdges = new Set(next.edgeKeys);
+  const addedEdges = new Set([...nextEdges].filter((key) => !prevEdges.has(key)));
+  const addedLines = next.lines
+    .filter((line) => addedEdges.has(line.key) || line.merged.some((key) => addedEdges.has(key)))
+    .map((line) => line.key);
+  const removedLines = [...prevEdges].filter((key) => !nextEdges.has(key)).length;
   return {
     added,
     removed,

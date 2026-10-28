@@ -16,6 +16,18 @@
  *   only, so a missing `/assets/x.js` 404s honestly instead of returning HTML
  *   with a 200 (the failure mode that makes SPA bugs unreadable).
  *
+ * Caching (2026-10-20, the "Failed to fetch dynamically imported module" card):
+ * the HTML entry and the other unhashed files go out `no-cache`, so a reload
+ * always revalidates and picks up the build that is actually on disk. Hashed
+ * `/assets/*` go out `immutable`, because their names change whenever their
+ * bytes do. With no header at all, a proxy in front (Cloudflare adds
+ * `max-age=14400` to anything that looks static) decides for us. That never
+ * hurts a hashed chunk, but it can hold an old index.html that points at
+ * chunks the last deploy deleted. A MISSING `/assets/*` falls through to the
+ * JSON `not_found` marked `no-store`: Cloudflare caches that 404 for four hours
+ * otherwise, and a chunk that is only late to arrive (a deploy mid-rotation)
+ * would stay "missing" long after it exists.
+ *
  * When `TM8_UI_DIR` is unset (dev), the handler is absent and unknown paths
  * fall through to the frame's `not_found`.
  *
@@ -53,6 +65,14 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.map': 'application/json; charset=utf-8',
 };
 
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+const REVALIDATE = 'no-cache';
+
+/** Only Vite's content-hashed output under /assets may be cached forever. */
+function cacheControlFor(rootDir: string, file: string): string {
+  return file.startsWith(join(rootDir, 'assets') + sep) ? IMMUTABLE : REVALIDATE;
+}
+
 export interface StaticHandler {
   /** Streams the asset and returns true, or returns false to fall through. */
   serve(pathname: string, res: ServerResponse): Promise<boolean>;
@@ -88,11 +108,16 @@ export function createStaticHandler(uiDir: string): StaticHandler {
     rootDir,
     async serve(pathname, res) {
       const file = await resolveFile(pathname);
-      if (!file) return false;
+      if (!file) {
+        // The frame's error writer merges this into its own headers.
+        if (pathname.startsWith('/assets/')) res.setHeader('cache-control', 'no-store');
+        return false;
+      }
 
       res.writeHead(200, {
         ...BASE_SECURITY_HEADERS,
         'content-type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
+        'cache-control': cacheControlFor(rootDir, file),
       });
       await new Promise<void>((resolveStream, rejectStream) => {
         const stream = createReadStream(file);

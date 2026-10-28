@@ -304,6 +304,9 @@ interface SummaryRow {
   commit_sha: string | null;
   commit_message: string | null;
   commit_committed_at: Date | string | null;
+  commit_author: string | null;
+  commit_url: string | null;
+  commit_fetched_at: Date | string | null;
   spell_name: string | null;
   spell_description: string | null;
   skill_name: string | null;
@@ -346,6 +349,8 @@ interface SummaryRow {
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
   chat_context: unknown;
+  /** Per viewer: this read runs under the POLLER's claims. Null off a chat row. */
+  chat_can_set_model?: boolean | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_node_count: number | null;
@@ -513,6 +518,9 @@ select
   cm.sha             as commit_sha,
   cm.message         as commit_message,
   cm.committed_at    as commit_committed_at,
+  cm.author          as commit_author,
+  cm.url             as commit_url,
+  cm.fetched_at      as commit_fetched_at,
   sp.name            as spell_name,
   sp.description     as spell_description,
   ${SKILL_REFERENCE_SQL} as skill_reference,
@@ -561,6 +569,14 @@ select
   chq.turn_count     as chat_turn_count,
   chq.last_turn_at   as chat_last_turn_at,
   cht.context        as chat_context,
+  -- MIRRORS entity-read.ts's chat_can_set_model (276:119-125's two conjuncts).
+  -- Per viewer, and that is safe here: the pump polls PER CONNECTION under that
+  -- connection's own claims (pump.ts), so no one viewer's answer is fanned out.
+  case when cht.entity_id is not null then
+    coalesce(cht.configured_by_identity_id = internal.identity_id(), false)
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or cht.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid)
+  end                as chat_can_set_model,
   gr.title           as graph_title,
   gr.graph_type      as graph_type,
   coalesce(jsonb_array_length(gr.nodes), 0) as graph_node_count,
@@ -918,7 +934,7 @@ export class PgEntityProjector implements EntityProjector {
     // leaving it out would be worse than absent: the chip would render on load
     // and then VANISH on the next live `entity.upsert`, which reads as the PR
     // being unlinked. Same loader as the facade assembler, so the two answers
-    // cannot drift. Skipped entirely when no task is in the batch.
+    // cannot drift. Skipped entirely when no task, session or chat is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
     // `badges.liveSession` (P0g): the same loader as the facade assembler, for
     // the pull-request reason above. Skipped entirely when no task is in the batch.
@@ -1471,14 +1487,26 @@ export class PgEntityProjector implements EntityProjector {
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
       }
-      case 'commit':
-        return {
-          kind: 'commit',
+      case 'commit': {
+        // Same three facts the pull request arm above carries, and missing here
+        // for no reason anyone chose: the panel's link-summary row reads
+        // `state.url` and `state.stale` for BOTH kinds, so a commit could never
+        // render its link or say it was unsynced. `stale` being REQUIRED on the
+        // contract type is what surfaced this projection at all — it is one of
+        // three that build a commit state, and only one of them was known about.
+        const base = {
+          kind: 'commit' as const,
           repository: r.commit_repo ?? '',
           sha: r.commit_sha ?? '',
           message: r.commit_message ?? '',
           committedAt: iso(r.commit_committed_at),
+          author: r.commit_author,
+          fetchedAt: iso(r.commit_fetched_at),
+          // Never fetched ⇒ definitionally stale, exactly as the PR arm reads it.
+          stale: r.commit_fetched_at === null,
         };
+        return r.commit_url === null ? base : { ...base, url: r.commit_url };
+      }
       case 'spell':
         return { kind: 'spell', description: r.spell_description ?? undefined, equipped: r.equipped === true };
       case 'skill':
@@ -1623,6 +1651,7 @@ export class PgEntityProjector implements EntityProjector {
           lastTurnAt: iso(r.chat_last_turn_at),
           context: chatContextOf(r.chat_context),
           about: chatSubjects.get(r.id) ?? null,
+          ...(typeof r.chat_can_set_model === 'boolean' ? { canSetModel: r.chat_can_set_model } : {}),
         };
       case 'container': {
         // MIRRORS entity-read.ts stateOf. The two must agree exactly: a field

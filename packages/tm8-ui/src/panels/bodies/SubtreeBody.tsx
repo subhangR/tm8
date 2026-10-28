@@ -401,9 +401,10 @@ export function SubtreeBody({
    *
    * THE PROPERTIES ARE ONE CLICK AWAY, NOT A RAIL (Subhang, 2026-10-21: "do we
    * need the right panel … hide it under some option that opens"). The rail
-   * squeezed the messages into the middle of the pane; a `Details` row above
-   * the writing now carries a one-line summary of the same facts and opens
-   * them in place. The host's live controls, the grid's facts and the
+   * squeezed the messages into the middle of the pane; a `Details` row now
+   * carries a one-line summary of the same facts and opens them in place. It
+   * sits at the BOTTOM of the page, after the messages (task 01a164e5): the
+   * page opens on the writing, not on its bookkeeping. The host's live controls, the grid's facts and the
    * relations are drawn exactly as before, only folded: kept MOUNTED while
    * closed, so an open picker or a half-typed estimate survives a toggle.
    *
@@ -423,11 +424,6 @@ export function SubtreeBody({
         data-empties={revealedEmpties ? 'shown' : 'hidden'}
       >
         <div className="sb-layout">
-          <DetailsDisclosure detail={detail}>
-            {rail ?? null}
-            <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
-            {railTail ?? null}
-          </DetailsDisclosure>
           <div className="sb-main" data-testid="subtree-main">
             {description}
             {acceptance}
@@ -442,6 +438,11 @@ export function SubtreeBody({
               </section>
             ) : null}
           </div>
+          <DetailsDisclosure detail={detail}>
+            {rail ?? null}
+            <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
+            {railTail ?? null}
+          </DetailsDisclosure>
         </div>
       </div>
     );

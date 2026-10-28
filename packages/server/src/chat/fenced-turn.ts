@@ -92,15 +92,16 @@ const clip=(text: string, max=500) => text.length>max ? `${text.slice(0,max)}…
  * Never rendered as the thread's message (that stays the short `message`), so
  * the raw error text is kept, only bounded.
  */
-export function describeError(error: unknown): Record<string, unknown> {
+export function describeError(error: unknown, depth=0): Record<string, unknown> {
   if (!(error instanceof Error)) return {message:clip(String(error))};
+  const cause=depth<3 && error.cause!==undefined ? {cause:describeError(error.cause,depth+1)} : {};
   const sqlstate=sqlStateOf(error);
   const code=(error as {code?:unknown}).code;
   return {name:error.name,message:clip(error.message),
     ...(typeof code==='string' ? {code} : {}),
     ...(sqlstate ? {sqlstate} : {}),
     ...(error instanceof HarnessRuntimeError ? {harness:{code:error.failure.code,stage:error.failure.stage,
-      disposition:error.failure.disposition}} : {})};
+      disposition:error.failure.disposition}} : {}),...cause};
 }
 
 /** What the thread says when a turn ends without an answer and without a reported reason. */
