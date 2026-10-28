@@ -165,6 +165,16 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
   },
 ];
 
+/**
+ * HIDDEN, NOT REMOVED (Subhang, 2026-10-28, form 01a181fd-bb58 on task
+ * 01a181da-c799; inventory doc 01a181fd-5c72). These kinds stay in the
+ * contract, the server, the CLI and the spine above. They are only left off
+ * the rail, the workspace rail's More kinds and the switcher. A stored root
+ * or a hand-typed `k/` route still opens their list (`isHomeRootKind`).
+ * Taking a kind out of this set puts it back where the spine seats it.
+ */
+export const HOME_RAIL_HIDDEN_KINDS: ReadonlySet<string> = new Set(['story', 'spell', 'container', 'voice_channel']);
+
 export interface HomeRailGroup {
   id: string;
   label: string;
@@ -173,7 +183,7 @@ export interface HomeRailGroup {
 
 /** The rail, resolved against the live registry. Never empty groups. */
 export function homeRailGroups(): HomeRailGroup[] {
-  const eligible = collectionKinds();
+  const eligible = collectionKinds().filter((config) => !HOME_RAIL_HIDDEN_KINDS.has(config.kind));
   const byKind = new Map<string, KindConfig>(eligible.map((config) => [config.kind, config]));
   const placed = new Set<string>();
   const groups: HomeRailGroup[] = HOME_RAIL_GROUP_SPINE.map((spec) => ({

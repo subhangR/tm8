@@ -51,8 +51,12 @@ describe('the New tab', () => {
     fireEvent.click(screen.getByTestId('tws-chooser-more'));
     const menu = screen.getByRole('menu');
     expect(within(menu).getAllByRole('menuitem').map((b) => b.getAttribute('data-testid'))).toEqual(
-      NEW_KINDS.slice(4).map(({ kind }) => `tws-chooser-new-${kind}`),
+      NEW_KINDS.slice(4)
+        .filter(({ kind }) => kind !== 'story')
+        .map(({ kind }) => `tws-chooser-new-${kind}`),
     );
+    /* Hidden from the rail, so not offered (HOME_RAIL_HIDDEN_KINDS). */
+    expect(screen.queryByTestId('tws-chooser-new-story')).toBeNull();
     expect(screen.queryByTestId('tws-chooser-new-file')).toBeNull();
     expect(screen.queryByTestId('tws-chooser-new-pull_request')).toBeNull();
   });
@@ -60,9 +64,9 @@ describe('the New tab', () => {
   it('a pick from More opens that draft in place of the New tab, and the menu closes', () => {
     const { dispatch } = newTab();
     fireEvent.click(screen.getByTestId('tws-chooser-more'));
-    fireEvent.click(screen.getByTestId('tws-chooser-new-story'));
+    fireEvent.click(screen.getByTestId('tws-chooser-new-drawing'));
     expect(opened(dispatch)).toContainEqual({
-      command: 'workspace.drafts.open', args: { kind: 'story', replaceTabId: 'tab-new' }, source: 'click',
+      command: 'workspace.drafts.open', args: { kind: 'drawing', replaceTabId: 'tab-new' }, source: 'click',
     });
     expect(screen.queryByRole('menu')).toBeNull();
   });

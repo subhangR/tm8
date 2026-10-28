@@ -10,7 +10,7 @@
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NOUNS, commands } from '@tm8/cli/discovery';
-import { CUSTOM_KIND_FALLBACK, EDGE_KINDS, allKinds, homeRootKinds, relationsOf } from '../domain';
+import { CUSTOM_KIND_FALLBACK, EDGE_KINDS, allKinds, homeRootKinds, isHomeRootKind, relationsOf } from '../domain';
 import { ListRootHeader, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from './EntityHelpOverlay';
 import { commandByPath } from './catalog';
@@ -263,7 +263,9 @@ describe('the toolkit reads the live catalog', () => {
     const paths = new Set(commands().map((row) => row.command));
     const knownPath = (line: string) => [...paths].some((path) => line === path || line.startsWith(`${path} `));
     const where = module.kind;
-    if (kindBound && !homeRootKinds().some((k) => k.kind === module.kind)) problems.push(`${where}: not a dropdown kind`);
+    /* A kind hidden from the dropdown (HOME_RAIL_HIDDEN_KINDS) still opens by
+       route, so its page stays valid: selectable is the bar, not listed. */
+    if (kindBound && !isHomeRootKind(module.kind)) problems.push(`${where}: not a dropdown kind`);
     for (const noun of module.toolkit?.nouns ?? []) if (!NOUNS.includes(noun)) problems.push(`${where}: unknown noun ${noun}`);
     for (const path of module.toolkit?.commands ?? []) if (!paths.has(path)) problems.push(`${where}: unknown command ${path}`);
     for (const scene of module.toolkit?.scenes ?? []) {

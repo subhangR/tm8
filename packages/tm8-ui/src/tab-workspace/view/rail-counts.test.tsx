@@ -176,7 +176,9 @@ describe('the rail', () => {
     await waitFor(() => expect(kindButtons('task').map(countOf)).toEqual(['2']));
     expect(kindButtons('work_session').map(countOf)).toEqual(['3']);
     expect(kindButtons('chat').map(countOf)).toEqual(['1']);
-    expect(kindButtons('story').map(countOf)).toEqual(['1']);
+    /* Stories is hidden from the rail (HOME_RAIL_HIDDEN_KINDS, 2026-10-28), so
+       its count has no button to sit on until it is pinned or un-hidden. */
+    expect(kindButtons('story')).toEqual([]);
     const others = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-kind]')).filter(
       (b) => !['task', 'story', 'work_session', 'chat'].includes(b.dataset.kind!),
     );
@@ -247,7 +249,7 @@ describe('unseen counts on the left', () => {
     const doc = kindButtons('doc')[0]!;
     expect(doc.querySelector('[data-testid="tws-rail-unseen"]')?.textContent).toBe('99+');
     expect(doc.getAttribute('aria-label')).toContain('120 unseen');
-    expect(kindButtons('story')[0]!.querySelector('[data-testid="tws-rail-unseen"]')).toBeNull();
+    expect(kindButtons('form')[0]!.querySelector('[data-testid="tws-rail-unseen"]')).toBeNull();
     act(() => getRailStore(SPACE).getState().setExpanded(true));
     expect(task.querySelector('[data-testid="tws-rail-unseen"]')?.parentElement?.className).toBe('tws-rail-icon');
     expect(countOf(task)).toBe('2');

@@ -17,7 +17,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
-import { KindIcon } from '../../domain';
+import { HOME_RAIL_HIDDEN_KINDS, KindIcon } from '../../domain';
 import { NEW_KINDS, NEW_MAIN_COUNT } from '../../keyboard';
 import { getKindAdapter } from '../adapters/registry';
 import type { KindId, TabId } from '../runtime/types';
@@ -117,7 +117,11 @@ export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserPro
     [entityRows, fileRows, q],
   );
 
-  const offered = useMemo(() => NEW_KINDS.filter((entry) => getKindAdapter(entry.kind).creatable === true), []);
+  /* A kind hidden from the rail is not offered here either; its `n` chord stays. */
+  const offered = useMemo(
+    () => NEW_KINDS.filter((entry) => !HOME_RAIL_HIDDEN_KINDS.has(entry.kind) && getKindAdapter(entry.kind).creatable === true),
+    [],
+  );
   const main = offered.slice(0, NEW_MAIN_COUNT);
   const more = offered.slice(NEW_MAIN_COUNT);
   const replace = tabId ? { replaceTabId: tabId } : {};

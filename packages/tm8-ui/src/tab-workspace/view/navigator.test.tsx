@@ -186,9 +186,9 @@ describe('All kinds', () => {
        unreachable in the merge. */
     expect(pop.querySelector('[data-kind="commit"]')).not.toBeNull();
     expect(pop.querySelector('[data-kind="memory"]')).not.toBeNull();
-    fireEvent.click(pop.querySelector<HTMLButtonElement>('[data-kind="story"]')!);
+    fireEvent.click(pop.querySelector<HTMLButtonElement>('[data-kind="form"]')!);
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'story' } }),
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'form' } }),
     );
   });
 
@@ -196,10 +196,10 @@ describe('All kinds', () => {
     mount();
     fireEvent.click(screen.getByTestId('tws-nav-allkinds'));
     const pop = screen.getByTestId('tws-nav-allkinds-pop');
-    const pin = pop.querySelector<HTMLButtonElement>('[data-pin="story"]')!;
+    const pin = pop.querySelector<HTMLButtonElement>('[data-pin="form"]')!;
     expect(pin.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(pin);
-    expect(getRailStore(SPACE).getState().pins).toContain('story');
-    expect(JSON.parse(window.localStorage.getItem(railPinsKey(SPACE))!)).toContain('story');
+    expect(getRailStore(SPACE).getState().pins).toContain('form');
+    expect(JSON.parse(window.localStorage.getItem(railPinsKey(SPACE))!)).toContain('form');
   });
 });

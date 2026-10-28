@@ -170,7 +170,8 @@ describe('the kind list', () => {
     expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter((k) => !pins.includes(k)));
     /* `doc` is a DEFAULT PIN now (design doc 01a1465d-a2b7 decision 1), so
        the unpinned kind this asserts is one the defaults do not take. */
-    expect(kinds).toContain('story');
+    expect(kinds).toContain('form');
+    expect(kinds).not.toContain('story');
     expect(kinds).not.toContain('doc');
     /* Not only the kinds Work's browser holds: the admin and code kinds too. */
     expect(kinds).toEqual(expect.arrayContaining(['commit', 'credential', 'memory', 'loop']));
@@ -320,9 +321,9 @@ describe('pinned-only rail: More kinds is a popover (task 01a181da-c799)', () =>
   it('a row opens its kind and closes the card', () => {
     const { dispatch } = mountPinnedOnly();
     fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
-    fireEvent.click(popover()!.querySelector<HTMLButtonElement>('button[data-kind="story"]')!);
+    fireEvent.click(popover()!.querySelector<HTMLButtonElement>('button[data-kind="form"]')!);
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'story' } }),
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'form' } }),
     );
     expect(popover()).toBeNull();
   });
@@ -331,13 +332,13 @@ describe('pinned-only rail: More kinds is a popover (task 01a181da-c799)', () =>
     vi.useFakeTimers();
     const { dispatch } = mountPinnedOnly();
     fireEvent.click(screen.getByTestId('tws-rail-more-toggle'));
-    fireEvent.click(within(popover()!).getByRole('button', { name: 'Pin Stories' }));
-    expect(getRailStore(SPACE).getState().pins).toContain('story');
+    fireEvent.click(within(popover()!).getByRole('button', { name: 'Pin Forms' }));
+    expect(getRailStore(SPACE).getState().pins).toContain('form');
     expect(dispatch).not.toHaveBeenCalled();
     expect(popover()).not.toBeNull();
-    expect(popover()!.querySelector('[data-kind="story"]')).toBeNull();
-    expect(screen.getByTestId('tws-rail-pinned').querySelector('[data-kind="story"]')).not.toBeNull();
-    expect(screen.getByTestId('tws-rail-live').textContent).toBe('Pinned Stories');
+    expect(popover()!.querySelector('[data-kind="form"]')).toBeNull();
+    expect(screen.getByTestId('tws-rail-pinned').querySelector('[data-kind="form"]')).not.toBeNull();
+    expect(screen.getByTestId('tws-rail-live').textContent).toBe('Pinned Forms');
     act(() => vi.runOnlyPendingTimers());
     expect(popover()!.contains(document.activeElement)).toBe(true);
   });

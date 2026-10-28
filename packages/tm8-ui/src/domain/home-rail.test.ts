@@ -27,6 +27,7 @@ import { describe, expect, it } from 'vitest';
 import { collectionKinds } from './registry';
 import {
   DEFAULT_HOME_RAIL_PINS,
+  HOME_RAIL_HIDDEN_KINDS,
   homeRailGroups,
   homeRailPinnedKinds,
   homeRootKinds,
@@ -85,7 +86,7 @@ describe('the Home icon rail', () => {
   });
 
   it('seats each group exactly as ruled', () => {
-    expect(kindsOf('work')).toEqual(['chat', 'story', 'task', 'work_session', 'form', 'project']);
+    expect(kindsOf('work')).toEqual(['chat', 'task', 'work_session', 'form', 'project']);
     expect(kindsOf('library')).toEqual(['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', 'craft']);
     expect(kindsOf('people')).toEqual(['team_member', 'skill', 'memory', 'member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
@@ -98,8 +99,6 @@ describe('the Home icon rail', () => {
       'tool',
       'style',
       'loop',
-      'spell',
-      'container',
     ]);
   });
 
@@ -156,12 +155,23 @@ describe('the Home icon rail', () => {
     },
   );
 
-  it('lists every collection kind exactly once — no kind is gated', () => {
+  it('lists every collection kind but the hidden ones exactly once', () => {
     // The guard against "fixing" a group by hand-listing kinds: re-cutting the
     // spine must not drop a kind from, or duplicate it in, the population (R3).
+    // The one way off the rail is HOME_RAIL_HIDDEN_KINDS, which is named.
     const railed = homeRailGroups().flatMap((group) => group.kinds.map((config) => config.kind));
-    const expected = collectionKinds().map((config) => config.kind);
+    const expected = collectionKinds()
+      .map((config) => config.kind)
+      .filter((kind) => !HOME_RAIL_HIDDEN_KINDS.has(kind));
     expect([...railed].sort()).toEqual([...expected].sort());
     expect(new Set(railed).size).toBe(railed.length);
+  });
+
+  /* HIDDEN, NOT REMOVED (Subhang, 2026-10-28, task 01a181da-c799). */
+  it.each(['story', 'spell', 'container'])('hides `%s` from the rail and switcher but still opens it by route', (kind) => {
+    expect(collectionKinds().map((config) => config.kind)).toContain(kind);
+    expect(homeRootKinds().map((config) => config.kind)).not.toContain(kind);
+    expect(homeRailGroups().map((group) => group.id)).not.toContain('more');
+    expect(isHomeRootKind(kind)).toBe(true);
   });
 });
