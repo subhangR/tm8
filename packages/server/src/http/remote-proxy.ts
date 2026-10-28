@@ -199,6 +199,30 @@ function forwardedHeaders(
   return next;
 }
 
+/**
+ * COOKIES DO NOT CROSS NODES IN THIS DIRECTION EITHER.
+ *
+ * A remote tm8 Server answers `auth.login` with `Set-Cookie:
+ * __Host-tm8-session=<its token>` and `auth.logout` with the clearing form.
+ * Relayed verbatim, the browser files that cookie under THIS node's host —
+ * replacing the local session with a token this node never issued (every local
+ * call then 401s) or clearing it outright. The remote's pass travels in the
+ * response body and back out in `Authorization`; it never needs a cookie here.
+ *
+ * The relayed body is also served on this node's origin, so it gets the same
+ * `nosniff` every local response carries and a `sandbox` CSP: the relay only
+ * exposes `/v2/*` and `/health`, which are API JSON, and a remote that answers
+ * with HTML must not get a same-origin document out of it.
+ */
+function relayedResponseHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {
+  const next = { ...headers };
+  delete next['access-control-allow-origin'];
+  delete next['set-cookie'];
+  next['x-content-type-options'] = 'nosniff';
+  next['content-security-policy'] = "sandbox; default-src 'none'";
+  return next;
+}
+
 const UPGRADE_STATUS_TEXT: Readonly<Record<number, string>> = {
   401: 'Unauthorized',
   403: 'Forbidden',
@@ -226,6 +250,8 @@ export function refuseUpgrade(socket: Duplex, status: number, body: string): voi
 function responseHead(response: IncomingMessage): string {
   const lines = [`HTTP/1.1 ${response.statusCode ?? 101} ${response.statusMessage ?? 'Switching Protocols'}`];
   for (let i = 0; i < response.rawHeaders.length; i += 2) {
+    // Same rule as `relayedResponseHeaders`: a remote never sets a cookie here.
+    if (response.rawHeaders[i]?.toLowerCase() === 'set-cookie') continue;
     lines.push(`${response.rawHeaders[i]}: ${response.rawHeaders[i + 1]}`);
   }
   return `${lines.join('\r\n')}\r\n\r\n`;
@@ -265,17 +291,25 @@ export function createRemoteServerProxy(resolveTarget: ServerConnectionTargetRes
           method: req.method ?? 'GET',
           headers: forwardedHeaders(req.headers, target, caller),
         }, (reply) => {
-          const headers = { ...reply.headers };
-          delete headers['access-control-allow-origin'];
-          res.writeHead(reply.statusCode ?? 502, headers);
+          res.writeHead(reply.statusCode ?? 502, relayedResponseHeaders(reply.headers));
           reply.pipe(res);
           reply.once('end', resolve);
+          // An upstream that dies mid-body closes without `end`; the headers are
+          // already sent, so cut the client off rather than leave it hanging.
+          reply.once('close', () => {
+            if (!reply.complete) res.destroy();
+            resolve();
+          });
           reply.once('error', reject);
         });
         upstream.once('error', (error) => reject(
           new CollabError('upstream_unavailable', `cannot reach named tm8 Server: ${error.message}`),
         ));
         req.once('aborted', () => upstream.destroy());
+        // A client that leaves must not keep the upstream request open.
+        res.once('close', () => {
+          if (!res.writableFinished) upstream.destroy();
+        });
         req.pipe(upstream);
       });
     },

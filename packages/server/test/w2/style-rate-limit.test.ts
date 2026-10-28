@@ -50,6 +50,13 @@ describe('style rate limits (§6.7)', () => {
     expect(refusal(() => limiter.check('styles.pull', 'me'))).toEqual({ code: 'rate_limited', retryAfterMs: 3_000 });
     // Another identity has its own budget.
     expect(refusal(() => limiter.check('styles.personal.update', 'you'))).toBeNull();
+    // The error writer's `Retry-After` source, alongside the spec's ms field.
+    try {
+      limiter.check('styles.pull', 'me');
+      throw new Error('expected a refusal');
+    } catch (err) {
+      expect((err as CollabError).details).toMatchObject({ retryAfterSeconds: 3 });
+    }
     // Once the burst window rolls, the same caller writes again.
     c.advance(3_000);
     expect(refusal(() => limiter.check('styles.personal.update', 'me'))).toBeNull();
