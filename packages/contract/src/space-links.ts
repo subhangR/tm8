@@ -379,6 +379,8 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setCredentials', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },
+  // Stopping a turn acts on a running chat process, like the writes above.
+  { prefix: 'chat.interrupt', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.submit', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.redeliver', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'containers.create', kinds: 'all', reason: 'process_start', exact: true },

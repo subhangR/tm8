@@ -9,7 +9,7 @@ import {
   WorkspaceSwitchInputSchema,
   WorkspaceUpdateInputSchema,
 } from '@tm8/contract';
-import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
+import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpTokenCreateInputSchema, McpTokenRevokeInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -182,7 +182,7 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  SetChatModelInputSchema, SetChatCredentialsInputSchema,
+  SetChatModelInputSchema, SetChatCredentialsInputSchema, InterruptChatInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   RaiseAttentionSignalInputSchema,
@@ -260,6 +260,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,
   'mcp.servers.import': McpServerImportInputSchema,
+  'mcp.servers.request': McpServerRequestInputSchema,
   'mcp.servers.test': McpServerTestInputSchema,
   'mcp.resolve': McpResolveInputSchema,
   'mcp.credentials.create': McpCredentialCreateInputSchema,
@@ -270,6 +271,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'mcp.oauth.begin': McpOAuthBeginInputSchema,
   'mcp.oauth.callback': McpOAuthCallbackInputSchema,
   'mcp.proxy.request': McpProxyRequestInputSchema,
+  'mcp.tokens.create': McpTokenCreateInputSchema,
+  'mcp.tokens.revoke': McpTokenRevokeInputSchema,
 
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
@@ -440,6 +443,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'chat.start': StartChatInputSchema,
   'chat.setModel': SetChatModelInputSchema,
   'chat.setCredentials': SetChatCredentialsInputSchema,
+  'chat.interrupt': InterruptChatInputSchema,
+  'chat.setMcpSelections': SetChatMcpSelectionsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

@@ -4,6 +4,7 @@ import {
   KindIcon,
   LAUNCH_CONTEXT_ROLE_LABEL,
   LAUNCH_CONTEXT_SOURCE_LABEL,
+  launchConnectorFacts,
   launchContextFacts,
   launchHarnessFacts,
   type ManifestFact,
@@ -71,6 +72,16 @@ export function LaunchContextSection({
   const teammateVisible = context.entries.some((e) => e.role === 'teammate');
   const harness = launchHarnessFacts(record.manifest);
   const harnessFacts = teammateVisible ? harness.facts.filter(hasValue) : [];
+  /*
+   * §10.6 — THE CONNECTORS GROUP, and it is NOT gated on `teammateVisible`.
+   *
+   * The harness rows are gated because some of them are the teammate's own
+   * DECLARATION, which a viewer who cannot read that teammate has no business
+   * seeing. These are not: every row comes from this session's own launch
+   * record, which the viewer is already reading, and it names connector keys
+   * and ids rather than anybody's account or credential.
+   */
+  const connectorFacts = launchConnectorFacts(record.manifest).filter(hasValue);
 
   return (
     <section className="pn-section pn-launch" data-testid="launch-context">
@@ -110,6 +121,10 @@ export function LaunchContextSection({
         facts={harnessFacts}
         testId="launch-context-harness"
       />
+      {/* Its own strip, below the harness, because D4's whole point is that
+          the two are independent: a connector is not something the harness
+          surface grants or strips. */}
+      <FactStrip label="CONNECTORS" facts={connectorFacts} testId="launch-context-connectors" />
     </section>
   );
 }

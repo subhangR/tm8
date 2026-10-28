@@ -42,7 +42,7 @@ import type {
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { fileKindRef } from '../files/port';
-import { createFileUploadTask, type FileUploadTask } from '../files/upload';
+import { createFileUploadTask, randomMutationId, type FileUploadTask } from '../files/upload';
 import { startFolderImport, type FolderImportTask } from './folder-import';
 
 // ---------------------------------------------------------------------------
@@ -407,7 +407,7 @@ export function filesExplorerPortFromSeam(
         throw Object.assign(new Error('This entry cannot be renamed.'), { code: 'invalid_input' });
       }
       await seam.commands.patchEntity(entry.entityId, {
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: randomMutationId(),
         expectedVersion: entry.version,
         title: nextName,
       } as never);
@@ -418,7 +418,7 @@ export function filesExplorerPortFromSeam(
         throw Object.assign(new Error('This entry cannot be trashed.'), { code: 'invalid_input' });
       }
       await seam.commands.deleteEntity(entry.entityId, {
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: randomMutationId(),
       } as never);
     },
 
@@ -427,7 +427,7 @@ export function filesExplorerPortFromSeam(
         throw Object.assign(new Error('This entry cannot be restored.'), { code: 'invalid_input' });
       }
       await seam.commands.restoreEntity(entry.entityId, {
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: randomMutationId(),
       } as never);
     },
 

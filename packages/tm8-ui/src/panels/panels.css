@@ -4705,6 +4705,14 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--pn-line);
 }
+/* The phone's bar: Edit and Download as two glyphs at the right, no rule
+   under them — a slim row that stays put while the document scrolls. */
+.cv2-root .rs-bar--phone {
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 2px 6px;
+  border-bottom: 0;
+}
 .cv2-root .rs-body {
   flex: 1;
   min-height: 0;
@@ -6294,6 +6302,27 @@
 /* The Workspace browser's 18px lead icon is wider than the 16px mark, so its
    rows' titles — and this line, which hangs under the title — sit further in. */
 .cv2-root .lp--toolbar .lp__tile-counts { padding-left: 32px; }
+/* A host fact under the title (a project's folder): one muted line, clipped. */
+.cv2-root .lp__tile-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px 4px 26px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+.cv2-root .lp__tile-note-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-mono);
+}
+.cv2-root .lp__tile-note-flag {
+  flex: none;
+  white-space: nowrap;
+}
+.cv2-root .lp--toolbar .lp__tile-note { padding-left: 32px; }
 .cv2-root .lp__counts {
   display: inline-flex;
   align-items: center;

@@ -260,7 +260,7 @@ export function apiKeyBackendsForAgentTool(
  *
  * Decided by the launch catalog: a model is a Kimi model because its catalog
  * row says `provider: 'moonshot'`, not because of how its id is spelled. Groq's
- * ids have no common prefix (`llama-3.3-70b-versatile`, `qwen/qwen3-32b`), so
+ * ids have no common prefix (`llama-3.3-70b-versatile`, `openai/gpt-oss-120b`), so
  * a spelling rule could not work for both backends anyway.
  *
  * A model that is not in the catalog, or no model at all (the CLI's own

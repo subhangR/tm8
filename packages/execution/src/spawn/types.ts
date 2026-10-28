@@ -28,6 +28,7 @@ import type {
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
+import type { CodexHomeSessionFacts } from './mcp-home.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -821,6 +822,40 @@ export interface CreateWorkSessionInput {
    * own transaction (267). Absent/null creates none.
    */
   newTaskTitle?: string | null;
+  /**
+   * 348: the loop this session is a FIRING of. `execution_spawn` writes the
+   * session -> loop `triggered_by` edge in its own transaction and ABORTS the
+   * spawn if it cannot, because `internal.mcp_provenance` (343) reads the
+   * schedule provenance root off exactly that edge and `bind` runs inside this
+   * spawn. See {@link SpawnServerFacts} for why it does not travel on
+   * `SpawnRequest`.
+   */
+  triggeredByLoopId?: string;
+}
+
+/**
+ * FACTS THE SERVER ESTABLISHED, which a spawn request may not carry.
+ *
+ * Deliberately a SECOND PARAMETER of {@link SpawnService.spawn} rather than
+ * fields on `SpawnRequest`, and the separation is the security property, not
+ * tidiness: `SpawnRequest` is built field by field from the wire input by the
+ * public `execution.spawn` handler, so anything living on it is something a
+ * caller can try to set. A caller cannot reach a parameter the public handler
+ * never passes.
+ *
+ * `ExecutionSpawnInputSchema` is `.strict()` as well, so a client that invents
+ * one of these names on the wire is refused by the schema rather than having it
+ * silently dropped. Two independent barriers, which is the point.
+ */
+export interface SpawnServerFacts {
+  /**
+   * The loop whose firing this spawn IS — set only by the in-process loop
+   * executor (`createLoopExecutorPort.fire`), which holds the loop row it is
+   * firing. This is §6's schedule provenance root (`loops.armed_by_member_id`,
+   * 343) and it must be a SERVER fact: a client that could name a loop here
+   * would be naming the human whose connections its session launches with.
+   */
+  triggeredByLoopId?: string;
 }
 
 export interface CreateWorkSessionResult {
@@ -1255,6 +1290,17 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
+  /**
+   * What the Codex home reclaim needs to know about these sessions
+   * (`public.work_session_home_facts`, 372). Node admin, and NOT filtered by
+   * space membership: a session left out of the answer is treated as having
+   * no row, and its home is removed. Optional: a port without it never
+   * reclaims a home.
+   */
+  listSessionHomeFacts?(
+    auth: GraphAuth,
+    sessionIds: string[],
+  ): Promise<CodexHomeSessionFacts[]>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //
@@ -1481,6 +1527,15 @@ export interface Tm8Manifest {
      * tools, whose surface is not managed.
      */
     harness?: LaunchHarnessRecord;
+    /**
+     * The connector bridge entries this launch gave the agent: the tool prefix
+     * the model reads mapped to the connector it reaches (§4.2), sorted by key.
+     * Ids and names only — no account, no credential, no argv.
+     *
+     * Written for EVERY tool and BOTH harness surfaces, because connectors do
+     * not depend on the surface (D4). Absent when the launch bound none.
+     */
+    connectors?: { serverKey: string; serverId: string }[];
     /**
      * Set by the workspace-trust watchdog when this lane booted into Claude
      * Code's trust dialog despite the seeded entry and tm8 answered it through

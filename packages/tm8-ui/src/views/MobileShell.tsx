@@ -474,10 +474,18 @@ export function MobileShell(props: MobileShellProps) {
    * `undefined` for the other arrival, which is precisely the cold-link case
    * this row is about.
    */
-  const title = titleOf(activeTarget, (target) => {
+  const nameOfEntity = (target: { ref: string; kind: string }) => {
     const row = data.rowsFor(target.kind)(undefined).find((r) => r.id === target.ref);
     return row?.title ?? data.detailOf(target.ref)?.title ?? null;
-  });
+  };
+  /* A DOCUMENT OPEN ON ITS LIST IS NAMED BY ITSELF (owner ruling 2026-10-19):
+     the reader page drops its own title row on the phone, so the header's one
+     line is ‹ and the doc's name rather than ‹ and "Docs". */
+  const openReader =
+    activeTarget?.type === 'kind' && screenStack.selected && getKind(activeTarget.ref).panel.archetype === 'reader'
+      ? nameOfEntity({ ref: screenStack.selected, kind: activeTarget.ref })
+      : null;
+  const title = openReader ?? titleOf(activeTarget, nameOfEntity);
   const [accountOpen, setAccountOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
 

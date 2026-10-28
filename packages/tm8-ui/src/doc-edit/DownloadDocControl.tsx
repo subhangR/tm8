@@ -1,7 +1,10 @@
 import type { EntityDetail } from '@tm8/contract';
-import { DisabledAction, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
+import { VectorIcon } from '../kit';
+import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import { docBodyOf } from './commands';
 import { canPrint } from './printDoc';
+
+const DOWNLOAD_ART = ['M8 2.5v8', 'M4.6 7.2 8 10.6l3.4-3.4', 'M3 13.5h10'];
 
 /**
  * `Download PDF` — the reader bar's second control, built to the same law as
@@ -31,11 +34,14 @@ export function DownloadDocControl({
   detail,
   onDownload,
   label = 'Download PDF',
+  compact = false,
 }: {
   detail: EntityDetail;
   /** Absent ⇒ disabled-with-reason. Never a live control that does nothing. */
   onDownload?: () => void;
   label?: string;
+  /** The phone's form: the glyph alone, named by `label`; a refusal opens on tap. */
+  compact?: boolean;
 }) {
   const reason =
     docBodyOf(detail).trim() === ''
@@ -51,6 +57,23 @@ export function DownloadDocControl({
         : onDownload === undefined
           ? NOT_WIRED_REASON
           : null;
+
+  if (compact) {
+    const glyph = <VectorIcon paths={DOWNLOAD_ART} size={18} />;
+    return reason ? (
+      <DisabledIconControl label={label} reason={reason} glyph={glyph} />
+    ) : (
+      <button
+        type="button"
+        className="de-btn de-btn--icon"
+        aria-label={label}
+        data-testid="doc-download-pdf"
+        onClick={onDownload}
+      >
+        {glyph}
+      </button>
+    );
+  }
 
   if (reason) {
     return (

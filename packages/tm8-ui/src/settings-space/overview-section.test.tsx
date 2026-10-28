@@ -187,9 +187,11 @@ describe('the frame nav, as Settings draws it', () => {
     const onSelect = renderNav();
     const filter = screen.getByRole('searchbox', { name: 'Filter settings' });
     fireEvent.change(filter, { target: { value: 'mcp' } });
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Connectors']);
+    /* Two rows carry 'mcp' since §10.7: the member's own external-client
+       tokens (an Account row, so first) and the Space's connectors. */
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['MCP tokens', 'Connectors']);
     fireEvent.keyDown(filter, { key: 'Enter' });
-    expect(onSelect).toHaveBeenCalledWith('space:connectors');
+    expect(onSelect).toHaveBeenCalledWith('space:mcp-tokens');
   });
 
   it('arrow keys move between rows', () => {

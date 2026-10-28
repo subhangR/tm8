@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { projectHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
+import { HISTORY_PART_WINDOW, HISTORY_TURN_WINDOW, projectHistory, readPortableHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
+import type { Db } from '../src/db/types.js';
 const turn=(ordinal:number,overrides:Partial<HistoricalTurn>={}):HistoricalTurn => ({turnId:`t${ordinal}`,ordinal,
   userMessageId:`u${ordinal}`,agentMessageId:`a${ordinal}`,input:{body:`request ${ordinal}`,attachments:['image-ref'],actorId:'member'},
   assistantBody:'duplicate body',parts:[{seq:0,kind:'text',payload:{text:'answer'}}],state:'completed',failure:null,model:'recorded-model',...overrides});
@@ -76,4 +77,60 @@ describe('portable history',() => {
     expect(result.manifest.find(row=>row.sourceId==='a1')?.treatment).toBe('summarized');
   });
 
+  it('reads a long chat as its newest window instead of refusing every later turn (readyai-main went silent, 2026-10-24)',async () => {
+    // 300 turns x 40 assistant parts: past BOTH read windows. The read used to
+    // throw `continuity_unavailable`, so every new message to the chat failed in
+    // "history read" and the WhatsApp bridge only ever saw "no reply yet".
+    const total=300; const perMessage=40; const queries:string[]=[];
+    const rows=Array.from({length:total},(_,i)=>({turn_id:`t${i+1}`,turn_ordinal:String(i+1),user_message_id:`u${i+1}`,
+      agent_message_id:`a${i+1}`,input_snapshot:null,user_body:`request ${i+1}`,attachments:[],author_id:'member',
+      assistant_body:`answer ${i+1}`,assistant_available:true,assistant_edited:false,user_available:true,state:'completed',failure:null,model:'m'}));
+    const limitOf=(sql:string)=>Number(/limit (\d+)/.exec(sql)![1]);
+    const db={tx:async(_claims:unknown,fn:(q:unknown)=>Promise<unknown>)=>fn({query:async(sql:string,params:unknown[])=>{
+      queries.push(sql);
+      if (sql.includes('count(*)')) return [{count:String(rows.filter(r=>Number(r.turn_ordinal)<Number(params[1])).length)}];
+      if (sql.includes('from public.chat_turns t')) {
+        expect(sql).toContain('order by t.turn_ordinal desc');
+        return rows.filter(r=>Number(r.turn_ordinal)<Number(params[1])).reverse().slice(0,limitOf(sql));
+      }
+      const ids=params[0] as string[];
+      return ids.flatMap(id=>Array.from({length:perMessage},(_,seq)=>({message_id:id,seq,kind:seq===0 ? 'text' : 'tool_call',
+        payload:seq===0 ? {text:`text of ${id}`} : {id:`${id}-c${seq}`,name:'shell',args:{},state:'completed'}}))).slice(0,limitOf(sql));
+    }})} as unknown as Db;
+    const turns=await readPortableHistory(db,{identityId:'member'},'chat',total+1,1000);
+    expect(turns).toHaveLength(HISTORY_TURN_WINDOW);
+    expect(turns[0]!.ordinal).toBe(total-HISTORY_TURN_WINDOW+1);
+    expect(turns[0]!.omittedEarlierTurns).toBe(total-HISTORY_TURN_WINDOW);
+    expect(turns.at(-1)!.ordinal).toBe(total);
+    // The newest messages keep every part; the one the part window cut through
+    // and everything older keep their bodies with an explicit omission notice.
+    const full=Math.floor(HISTORY_PART_WINDOW/perMessage);
+    expect(turns.at(-1)!.parts).toHaveLength(perMessage);
+    expect(turns.find(t=>t.ordinal===total-full+1)!.parts).toHaveLength(perMessage);
+    const cut=turns.find(t=>t.ordinal===total-full)!;
+    expect(cut.parts).toEqual([]); expect(cut.assistantNotice).toMatch(/omitted/);
+    expect(turns[0]!.parts).toEqual([]);
+    const projected=projectHistory(turns,{...options,currentTurnOrdinal:total+1,maxBytes:32768});
+    expect(projected.renderedContext).toContain('request 300');
+    expect(projected.renderedContext).toContain('omittedTurns');
+    expect(projected.renderedContext).not.toContain('"request 1"');
+    expect(Buffer.byteLength(projected.renderedContext)).toBeLessThanOrEqual(32768);
+  });
+  it('reads a short chat whole, with no omission notice',async () => {
+    const rows=[1,2].map(n=>({turn_id:`t${n}`,turn_ordinal:String(n),user_message_id:`u${n}`,agent_message_id:`a${n}`,input_snapshot:null,
+      user_body:`request ${n}`,attachments:[],author_id:'member',assistant_body:`answer ${n}`,assistant_available:true,assistant_edited:false,
+      user_available:true,state:'completed',failure:null,model:'m'}));
+    let counted=false;
+    const db={tx:async(_c:unknown,fn:(q:unknown)=>Promise<unknown>)=>fn({query:async(sql:string,params:unknown[])=>{
+      if (sql.includes('count(*)')) { counted=true; return [{count:'0'}]; }
+      if (sql.includes('from public.chat_turns t')) return [...rows].reverse();
+      return (params[0] as string[]).map(id=>({message_id:id,seq:0,kind:'text',payload:{text:`text of ${id}`}}));
+    }})} as unknown as Db;
+    const turns=await readPortableHistory(db,{identityId:'member'},'chat',3,1000);
+    expect(turns.map(t=>t.ordinal)).toEqual([1,2]);
+    expect(turns.map(t=>t.parts.length)).toEqual([1,1]);
+    expect(turns[0]!.omittedEarlierTurns).toBeUndefined(); expect(turns[0]!.assistantNotice).toBeNull();
+    expect(counted).toBe(false);
+  });
 });
+

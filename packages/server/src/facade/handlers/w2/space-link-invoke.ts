@@ -345,10 +345,14 @@ export function createLinkDispatcher(
       throw new SpaceLinkExecuteFailure('link_kind', new CollabError('forbidden', 'the stored session is not a link session'));
     }
     // Pinned to the link's target Space in EVERY TM8_SPACE_SESSIONS mode, the
-    // way viaLinkId already is. identityFromSession drops the pin under `off`,
-    // and nothing else compares an input spaceId with the target: without
-    // this, an invoke under `off` read and wrote the HOME Space as the member.
-    // A pinned session never carries node admin (K6).
+    // way viaLinkId already is, and nothing else compares an input spaceId
+    // with the target. Since B20 (Q15) identityFromSession no longer drops a
+    // link row's pin under `off` either, so this now RESTATES the pin rather
+    // than restoring it — kept as defence in depth, because it is the target
+    // Space of this dispatch that must be bound, not whatever the stored row
+    // carries. (Before B20, an invoke under `off` read and wrote the HOME
+    // Space as the member without it.) A pinned session never carries node
+    // admin (K6).
     identity = { ...identity, sessionSpaceId: request.targetSpaceId, nodeAdmin: false };
 
     let body: unknown;

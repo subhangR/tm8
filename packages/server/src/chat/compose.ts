@@ -34,6 +34,7 @@ import type {
   ChatLaunchConfigInput,
   ResolveChatLaunchConfig,
   ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
   StartAgentThreadInput,
 } from './runtime.js';
 
@@ -373,10 +374,58 @@ export function createChatLaunchConfigResolver(
   };
 }
 
+/**
+ * Production `ResolveChatMcpSelection` (§5.3, S21c): what connectors the NEXT
+ * turn would get, resolved and discarded.
+ *
+ * The claims are `createChatLaunchConfigResolver`'s `mintClaims` exactly — the
+ * requesting human, with the auth kind omitted when the chat never recorded one
+ * — so this resolves the same set `bind` will resolve a moment later on a cold
+ * start, and `McpSessionBindings.effectiveChatSelection` explains why that
+ * approximation is sound for a comparison and useless as an authority.
+ *
+ * `mcpBindings` is the same optional injection point
+ * `createChatLaunchConfigResolver` takes, so a harness can fake both halves
+ * with one object; the production composition passes neither and both build
+ * their own over the same `db`.
+ */
+export function createChatMcpSelectionResolver(
+  options: { readonly db: Db; readonly mcpBindings?: Pick<McpSessionBindings, 'effectiveChatSelection'> },
+): ResolveChatMcpSelection {
+  return async (input: ChatLaunchConfigInput) => {
+    const claims: DbClaims = input.requesterAuthKind
+      ? { identityId: input.requesterIdentityId, authKind: input.requesterAuthKind }
+      : { identityId: input.requesterIdentityId };
+    const bindings = options.mcpBindings ?? new McpSessionBindings(options.db);
+    try {
+      return await bindings.effectiveChatSelection(claims, {
+        chatId: input.chatId, spaceId: input.spaceId, teamMemberId: input.teammateId,
+      });
+    } catch (error) {
+      /*
+       * A READ THAT ONLY DETECTS CHANGE MUST NOT FAIL A TURN.
+       *
+       * `resolveMcpSelections` raises for a default target it cannot attach and
+       * for an ancestry that breaks its depth bound, and the real `bind` raises
+       * on those too — a moment later, with the authority to say so. Throwing
+       * from here would instead kill a turn that was going to reuse its child
+       * and never needed this answer at all. `null` says "no information", the
+       * turn proceeds, and if the condition is real the launch refuses in the
+       * one place that is entitled to refuse it.
+       */
+      // eslint-disable-next-line no-console
+      console.warn('[chat] connector selection probe failed for', input.chatId,
+        error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  };
+}
+
 export interface ChatBootstrapComposition {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv: ResolveChatCredentialEnv;
+  readonly resolveMcpSelection: ResolveChatMcpSelection;
   readonly onError?: (error: unknown) => void;
   readonly harnessRegistry: HarnessRegistry;
   readonly resolvePreparedLaunch: ResolveChatPreparedLaunch;
@@ -427,6 +476,7 @@ export function composeChatBootstrap(ctx: {
     ),
     resolveLaunchConfig: createChatLaunchConfigResolver(ctx),
     resolveCredentialEnv: createChatCredentialEnvResolver(ctx),
+    resolveMcpSelection: createChatMcpSelectionResolver(ctx),
     onError: (error) => {
       // eslint-disable-next-line no-console
       console.error('[chat]', error instanceof Error ? error.message : String(error));

@@ -13,7 +13,23 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+/*
+ * BUDGETS. The A6 cells poll a live file while a re-login swaps it repeatedly,
+ * so they are real filesystem work whose cost tracks host load.
+ *
+ * MEASURED on main 06f219db7, alone on an idle host: A6 anthropic 2012 ms and
+ * A6 openai 1431 ms, both passing. Under a loaded full check.sh the anthropic
+ * cell took 5049 ms against vitest's 5s default and failed by 49 ms, while its
+ * identical openai twin passed at 3684 ms — the clearest possible sign that the
+ * budget was measuring the host and not the swap. It also passes 3/3 alone and
+ * is byte-identical on main, so no assertion here is in doubt.
+ *
+ * Raised to this directory's server-wide convention rather than a bespoke
+ * number. No assertion is touched.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
+
 
 import { credentialHomeDir } from '../../src/credentials/agent-credential-home.js';
 import {

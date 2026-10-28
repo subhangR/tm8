@@ -34,3 +34,23 @@ it('failed authorization aborts the launch and retires its token',async()=>{
  await expect(service.spawn({identityId:'human'},{spaceId,teamMemberId,mcpSelections:[{serverId}]})).rejects.toThrow('MCP credential revoked');
  expect(graph.transitions.some(s=>s.status==='failed')).toBe(true);
 });
+
+/**
+ * §4.2 end to end: what `bind` resolved reaches the manifest's connector record
+ * through a real spawn. This fixture runs the echo agent (TM8_AGENT_CMD), so
+ * the claude/codex argv half is asserted where it is built, in
+ * mcp-secure-regression.test.ts.
+ */
+it('records the resolved server key -> id map in the launch manifest',async()=>{
+ const second='55555555-5555-4555-8555-555555555555';
+ const {service,graph}=await fixture(async()=>[
+  {serverId,serverKey:'gmail'},{serverId:second,serverKey:'figma',credentialId:'66666666-6666-4666-8666-666666666666'},
+ ]);
+ const result=await service.spawn({identityId:'human'},{spaceId,teamMemberId,mcpSelections:[{serverId},{serverId:second}]});
+ const recorded=graph.manifests.find(entry=>entry.sessionId===result.sessionId);
+ expect(recorded?.manifest.launch.connectors).toEqual([
+  {serverKey:'figma',serverId:second},{serverKey:'gmail',serverId:serverId},
+ ]);
+ // The account never reaches the manifest's connector record.
+ expect(JSON.stringify(recorded?.manifest.launch.connectors)).not.toContain('6666');
+});

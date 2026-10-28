@@ -16,6 +16,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  LEGACY_LAUNCH,
   OWNER_URL,
   buildWorld,
   cmid,
@@ -23,6 +24,7 @@ import {
   json,
   literal,
   ok,
+  postMessageSql,
   rows,
   scalar,
   uuid,
@@ -83,7 +85,8 @@ test('step 2 — the project is registered and linked, and is spawnable from the
   const project = json(
     `select coalesce(jsonb_agg(to_jsonb(p)), '[]'::jsonb) from public.projects p
       where p.id = ${uuid(w.projectId)}`,
-    { claims: w.claimsA },
+    // 234: a project row is readable only by a node (gate) admin.
+    { claims: w.adminA },
   );
   assert.equal(project.length, 1);
   assert.equal(project[0].trust, 'trusted');
@@ -103,8 +106,8 @@ test('step 3 — create a task, and it lands in ready_to_work', () => {
   const created = json(
     `select public.create_task(${uuid(w.spaceA)}, 'Ship the loop', null,
        'The one flow the user hand-tests', '{"type":"code"}'::jsonb, null, null, 'high',
-       '[{"text":"loop runs end to end","done":false}]'::jsonb, 5, null, null, 'attached_to',
-       ${literal(cmid('loop-task'))})`,
+       '[{"text":"loop runs end to end","done":false}]'::jsonb, 5,
+       p_client_mutation_id => ${literal(cmid('loop-task'))})`,
     { claims: w.claimsA },
   );
   state.task = created.entity;
@@ -147,15 +150,21 @@ test('step 4 — spawn a session against that task, with a manifest', () => {
   assert.equal(state.session.content.agent_tool, 'claude');
   assert.equal(state.session.content.node_id, 'node-local');
 
-  // The session is bound to the task it was spawned for, and to its persona
-  // (participates_in, persona -> session; 309 dropped the relates_to duplicate).
+  // The session is bound to the task it was spawned for, to the project's graph
+  // projection (in_project, 021), and to its persona (participates_in, persona ->
+  // session; 309 dropped the relates_to duplicate).
   const edges = rows(
     `select type, dst_id from public.edges where src_id = ${uuid(state.session.id)} order by type`,
     { claims: w.claimsA },
   );
   assert.deepEqual(
-    edges,
-    [{ type: 'working_on', dst_id: state.task.id }],
+    edges.map((e) => e.type),
+    ['in_project', 'working_on'],
+    'spawn must attach the session to its project and its task',
+  );
+  assert.equal(
+    edges.find((e) => e.type === 'working_on').dst_id,
+    state.task.id,
     'spawn must attach the session to its task (working_on)',
   );
   assert.deepEqual(
@@ -169,7 +178,7 @@ test('step 4 — spawn a session against that task, with a manifest', () => {
 
   ok(
     `select public.record_session_manifest(${uuid(state.session.id)},
-       ${literal(JSON.stringify({ prompt: 'Do the thing', skills: ['maestro-worker'], mode: 'coordinated-worker' }))}::jsonb,
+       ${literal(JSON.stringify({ prompt: 'Do the thing', skills: ['maestro-worker'], mode: 'coordinated-worker', launch: LEGACY_LAUNCH }))}::jsonb,
        array['ANTHROPIC_API_KEY','TM8_SESSION_TOKEN'])`,
     { claims: w.claimsA },
   );
@@ -188,9 +197,11 @@ test('step 5 — the session comes up, and the prompt is audited', () => {
       { claims: w.claimsA },
     ),
   );
+  // cmid() mints a fresh id per call, so the one asserted below is held here.
+  const runningCmid = cmid('loop-running');
   ok(
     `select public.work_session_transition(${uuid(state.session.id)}, 'running', null, null, null,
-       ${literal(cmid('loop-running'))})`,
+       ${literal(runningCmid)})`,
     { claims: w.claimsA },
   );
   assert.equal(
@@ -211,7 +222,7 @@ test('step 5 — the session comes up, and the prompt is audited', () => {
     statusEvents.some((event) =>
       event.event_type === 'entity.upsert' &&
       event.entity_id === state.session.id &&
-      event.client_mutation_id === cmid('loop-running')),
+      event.client_mutation_id === runningCmid),
     'a work_session status transition must emit a durable entity.upsert carrying its mutation id',
   );
 
@@ -234,12 +245,16 @@ test('step 5 — the session comes up, and the prompt is audited', () => {
 test('step 6 — the agent reports progress into the task thread, as itself', () => {
   // Authored by the PERSONA, not by the human: this is the attribution the whole
   // can_act_as machinery exists to make safe.
+  // w2_post_message_batch (the server's write surface since 019) returns ids,
+  // not envelopes, so the message is re-read in command shape.
   const progress = json(
-    `select public.post_message(${uuid(state.task.id)}, 'Working on it — 2 of 3 criteria done',
-       ${uuid(w.personaA)}, null, '[]'::jsonb, '[]'::jsonb, ${literal(cmid('loop-progress'))})`,
+    postMessageSql(state.task.id, 'Working on it — 2 of 3 criteria done', {
+      actor: w.personaA,
+      clientMutationId: cmid('loop-progress'),
+    }),
     { claims: w.claimsA },
   );
-  state.message = progress.entity;
+  state.message = commandEntity(progress.messageIds[0]);
 
   assert.equal(state.message.kind, 'message');
   // The other half of 011: without a message content branch the thread renders blank.
@@ -251,24 +266,29 @@ test('step 6 — the agent reports progress into the task thread, as itself', ()
   assert.equal(state.message.content.anchor_id, state.task.id);
   assert.equal(state.message.content.author_id, w.personaA, 'the agent authored it, not its owner');
 
-  // The task's message counter is derived, and the patch carries the new value.
-  const anchorPatch = progress.patches.find((p) => p.id === state.task.id);
-  assert.ok(anchorPatch, 'the anchor must come back as a patch so the client can update its badge');
-  assert.equal(anchorPatch.counters.messages, 1, 'the messages counter must have been maintained');
+  // The task's message counter is derived.
+  assert.equal(
+    commandEntity(state.task.id).counters.messages,
+    1,
+    'the messages counter must have been maintained',
+  );
 
   // A reply threads under it.
   const reply = json(
-    `select public.post_message(${uuid(state.task.id)}, 'Nice', null, ${uuid(state.message.id)},
-       '[]'::jsonb, '[]'::jsonb, ${literal(cmid('loop-reply'))})`,
+    postMessageSql(state.task.id, 'Nice', { parent: state.message.id, clientMutationId: cmid('loop-reply') }),
     { claims: w.claimsA },
   );
-  assert.equal(reply.entity.content.root_message_id, state.message.id, 'a reply carries its thread root');
+  assert.equal(
+    commandEntity(reply.messageIds[0]).content.root_message_id,
+    state.message.id,
+    'a reply carries its thread root',
+  );
 });
 
 test('step 7 — work state moves, and the working_on edge follows the actor', () => {
   const working = json(
     `select public.set_work_state(${uuid(state.task.id)}, 'working', ${uuid(w.personaA)}, null,
-       'agent picked it up', ${literal(cmid('loop-working'))})`,
+       'agent picked it up', ${literal(cmid('loop-working'))}, p_claim => true)`,
     { claims: w.claimsA },
   );
   assert.equal(working.entity.content.work_status, 'working');
@@ -290,7 +310,8 @@ test('step 7 — work state moves, and the working_on edge follows the actor', (
     { claims: w.claimsA, expect: '22023' },
   );
 
-  // Moving back to open retracts the edge rather than leaving a stale one.
+  // Moving back to open ENDS the claim rather than leaving a live one (302 keeps
+  // ended claims as history: endedAt + endReason on the edge, never a delete).
   ok(
     `select public.set_work_state(${uuid(state.task.id)}, 'open', ${uuid(w.personaA)}, null, null,
        ${literal(cmid('loop-reopen'))})`,
@@ -299,11 +320,12 @@ test('step 7 — work state moves, and the working_on edge follows the actor', (
   assert.equal(
     scalar(
       `select count(*) from public.edges
-        where src_id = ${uuid(w.personaA)} and dst_id = ${uuid(state.task.id)} and type = 'working_on'`,
+        where src_id = ${uuid(w.personaA)} and dst_id = ${uuid(state.task.id)} and type = 'working_on'
+          and not (props ? 'endedAt')`,
       { claims: w.claimsA },
     ),
     '0',
-    'returning a task to open must drop the working_on edge',
+    'returning a task to open must end every live working_on claim',
   );
 });
 
@@ -328,9 +350,9 @@ test('step 8 — completion is gated on the acceptance criteria', () => {
 
   // Satisfy the criteria, then complete.
   ok(
-    `select public.update_task_content(${uuid(state.task.id)}, ${current.version}, null, null, null,
-       null, null, null, '[{"text":"loop runs end to end","done":true}]'::jsonb, null, null, false,
-       ${literal(cmid('loop-criteria'))})`,
+    `select public.update_task_content(${uuid(state.task.id)}, ${current.version},
+       p_acceptance_criteria => '[{"text":"loop runs end to end","done":true}]'::jsonb,
+       p_client_mutation_id => ${literal(cmid('loop-criteria'))})`,
     { claims: w.claimsA },
   );
 

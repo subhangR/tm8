@@ -719,6 +719,7 @@ export function EntityControlStrip({
   variant = 'lines',
   collapseEmptyDates = false,
   omitArchive = false,
+  omitMembership = false,
   inlineEditors = false,
   trailing,
   stateOptionRefusal,
@@ -742,6 +743,12 @@ export function EntityControlStrip({
    * ejected onto a second line — landing a few pixels under `✕` Close.
    */
   omitArchive?: boolean;
+  /**
+   * The HOST draws collection membership itself. The task page does, in its
+   * COLLECTIONS section, so a second "In no collection or story" row among
+   * the properties said the same absence twice (task 01a15e22).
+   */
+  omitMembership?: boolean;
   /** Status and priority show their VALUE and open a picker on click. */
   inlineEditors?: boolean;
   /**
@@ -912,7 +919,7 @@ export function EntityControlStrip({
           )
         : null}
 
-      {list.membership
+      {list.membership && !omitMembership
         ? line(
             list.membership.label,
             <RowMembershipControl row={row} props={props} control={list.membership} />,

@@ -1,6 +1,8 @@
 import { ToolRuntime } from './tools/runtime.js';
 import { McpSessionBindings } from './mcp/session-bindings.js';
+import type { McpEndpointRoute } from './mcp/endpoint.js';
 import { loadMcpServer } from './mcp/definitions.js';
+import type { GoogleHostOptions } from './mcp/first-party/google/endpoints.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
 import { WorkspaceService } from './workspace/service.js';
 import { memberForClaims } from './workspace/handlers.js';
@@ -56,7 +58,9 @@ import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
+import { codexHomeRetentionMsFromEnv, createCodexHomeReclaimJob } from './scheduler/jobs/codex-home-reclaim.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
+import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -118,6 +122,7 @@ import {
   type AgentRuntime,
   type ResolveChatLaunchConfig,
   type ResolveChatCredentialEnv,
+  type ResolveChatMcpSelection,
   type ResolveChatPreparedLaunch,
   type ChatHarnessComposition,
 } from './chat/index.js';
@@ -127,6 +132,8 @@ export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /** §5.3: lets a changed connector selection reach the next turn. */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
   readonly harnessRegistry?: HarnessRegistry;
   readonly resolvePreparedLaunch?: ResolveChatPreparedLaunch;
   readonly onError?: (error: unknown) => void;
@@ -175,6 +182,13 @@ export interface BootstrapOptions {
    * a deterministic one so a test run never calls a vendor over the network.
    */
   readonly spaceCredentialProbe?: SpaceCredentialProbe;
+  /**
+   * The Google first-party connector host (§8.1). Absent means the real one:
+   * Google's static endpoints and the client from TM8_GOOGLE_OAUTH_CLIENT_ID and
+   * TM8_MCP_CLIENT_SECRET_GOOGLE. A harness passes a fixture provider so a test
+   * run never calls Google.
+   */
+  readonly googleConnectors?: GoogleHostOptions;
 }
 
 export interface BootstrappedServer {
@@ -376,12 +390,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        // The two observation budgets are operational knobs, so they come from
+        // the environment rather than from a rebuild (see ServerConfig).
+        turnTimeouts: {
+          ...(config.chatIdleTimeoutMs !== undefined ? { observation: config.chatIdleTimeoutMs } : {}),
+          ...(config.chatToolTimeoutMs !== undefined ? { tool: config.chatToolTimeoutMs } : {}),
+        },
         ...(chatBlock.harnessRegistry ? {
           registry: chatBlock.harnessRegistry,
           resolvePreparedLaunch: chatBlock.resolvePreparedLaunch!,
           nodeId: desktopNodeId(dataDir),
         } : {}),
         ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
+        ...(chatBlock.resolveMcpSelection ? { resolveMcpSelection: chatBlock.resolveMcpSelection } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
         // block-form test harnesses must never see sweep queries.
@@ -390,7 +411,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
-  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
+  if (chat && typeof opts.chat === 'function') {
+    void chat.reconcileOnBoot();
+    // Expired leases are recovered while the node runs, not only at the next boot.
+    chat.startRecoverySweep();
+  }
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -480,6 +505,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
 
   let remoteSpaceLinkRoute: RemoteSpaceLinkRoute | undefined;
+  // §7.1 / G14: handed over by `registerMcpRuntimeHandlers`, built from the same
+  // proxy ports as `mcp.proxy.request`, and mounted on the HTTP frame below.
+  let mcpEndpointRoute: McpEndpointRoute | undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -500,6 +528,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         dataDir,
         callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
         definition: (claims, serverId) => db.tx(claims, q => loadMcpServer(q, serverId)),
+        google: opts.googleConnectors ?? {
+          client: () => {
+            const clientId = process.env.TM8_GOOGLE_OAUTH_CLIENT_ID;
+            const clientSecret = process.env.TM8_MCP_CLIENT_SECRET_GOOGLE;
+            return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+          },
+        },
         authorize: async (claims, sessionId, serverId) => {
           if (claims.authKind === 'agent_runtime') {
             if (!claims.authSessionId) throw new CollabError('forbidden', 'MCP runtime unavailable');
@@ -507,6 +542,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
           return mcpBindings.authorize(claims, sessionId, serverId);
         },
+        maxBodyBytes: config.maxBodyBytes,
+        onEndpoint: (route: McpEndpointRoute) => { mcpEndpointRoute = route; },
         recordTest: async (claims, serverId, result) => {
           const health = McpTestResultSchema.parse(result);
           await db.rpc(claims, 'record_mcp_server_health', [serverId, JSON.stringify(health)]);
@@ -869,13 +906,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
+    ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
     ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
-  server.http.once('close', () => chatCleanupRetries.stop());
+  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
@@ -1145,6 +1183,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // §5.6 (346): MCP call audit rows past the node's retention window.
+    scheduler.register(
+      createMcpAuditRetentionJob({
+        db,
+        ...(config.mcpAuditRetentionDays !== undefined ? { retentionDays: config.mcpAuditRetentionDays } : {}),
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-audit-retention' };
+        },
+      }),
+    );
     // Spec D1 §4.4 (299): the ghost reaper. A session recorded live with no
     // process on this node for N minutes (TM8_LOST_SESSION_AFTER_MIN, default
     // 10) becomes `failed / lost` — a process fact; its work stays open.
@@ -1156,6 +1205,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }));
       // Owner ruling Q3: completed sessions idle past the space's window close.
       scheduler.register(createCompletedAutoCloseJob({ close: () => runtime.closeIdleCompleted() }));
+      // Per-session Codex homes of sessions that can no longer be resumed
+      // (TM8_CODEX_HOME_RETENTION_DAYS opts in to removing older ones too).
+      scheduler.register(createCodexHomeReclaimJob({
+        reclaim: (retentionMs) => runtime.reclaimCodexHomes(retentionMs),
+        retentionMs: codexHomeRetentionMsFromEnv(),
+      }));
     }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing

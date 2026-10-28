@@ -5,11 +5,15 @@ const spaceId='00000000-0000-4000-8000-000000000001',target='00000000-0000-4000-
 const first='00000000-0000-4000-8000-000000000004',second='00000000-0000-4000-8000-000000000005';
 type Lineage={id:string;parent_id:string|null;depth:number;path:string[]};
 type Edge={server_id:string;source_id:string;name:string};
-function fixture(lineage:Lineage[],edges:Edge[],readable=true){
+function fixture(lineage:Lineage[],edges:Edge[],readable=true,defaultOn:Edge[]=[]){
  const query=vi.fn(async(sql:string,params:unknown[])=>{
   if(sql.includes('as allowed'))return[{allowed:readable}];
   if(sql.includes('with recursive lineage'))return lineage;
   if(sql.includes('g.dst_id as server_id'))return edges.filter(e=>(params[0] as string[]).includes(e.source_id));
+  // §7.3's space-wide default set. MUST stay above the single-server branch:
+  // this query also starts with `select e.id`, and falling through to that one
+  // returns a server VIEW, whose rows carry no `name` at all.
+  if(sql.includes("definition->>'defaultOn'"))return defaultOn;
   if(sql.startsWith('select e.id'))return[{id:params[0],space_id:spaceId,version:1,security_revision:1,admin:false,definition:{name:edges.find(e=>e.server_id===params[0])?.name??'explicit',transport:'http',url:'https://example.test/mcp',auth:{type:'none'},envKeys:[],headerKeys:[],approved:true}}];
   throw new Error('Unexpected query');
  });return{q:{query,rpc:vi.fn()} as unknown as Querier,query};
@@ -17,6 +21,20 @@ function fixture(lineage:Lineage[],edges:Edge[],readable=true){
 it('inherits only reachable ancestors and picks nearest same-name definitions',async()=>{
  const {q}=fixture([{id:target,parent_id:parent,depth:0,path:[target]},{id:parent,parent_id:null,depth:1,path:[target,parent]}],[{server_id:first,source_id:parent,name:'shared'},{server_id:second,source_id:target,name:'SHARED'}]);
  const result=await resolveMcpSelections(q,{spaceId,targetIds:[target]});expect(result.selections.map(s=>s.server.id)).toEqual([second]);
+});
+it('adds defaultOn connectors to the default set, and any equips attachment outranks one',async()=>{
+ // §7.3: the default set is `defaultOn` UNION the equips lineage.
+ const only=fixture([{id:target,parent_id:null,depth:0,path:[target]}],[],true,[{server_id:first,source_id:spaceId,name:'spacewide'}]);
+ expect((await resolveMcpSelections(only.q,{spaceId,targetIds:[target]})).selections.map(s=>s.server.id)).toEqual([first]);
+ // Same name from both sources: the attachment wins, however distant, because a
+ // space-wide default is the weakest source there is.
+ const both=fixture([{id:target,parent_id:parent,depth:0,path:[target]},{id:parent,parent_id:null,depth:1,path:[target,parent]}],
+  [{server_id:second,source_id:parent,name:'spacewide'}],true,[{server_id:first,source_id:spaceId,name:'SPACEWIDE'}]);
+ expect((await resolveMcpSelections(both.q,{spaceId,targetIds:[target]})).selections.map(s=>s.server.id)).toEqual([second]);
+ // An explicit selection still skips the default set entirely.
+ const explicit=fixture([],[],true,[{server_id:first,source_id:spaceId,name:'spacewide'}]);
+ expect((await resolveMcpSelections(explicit.q,{spaceId,mcpSelections:[]})).selections).toEqual([]);
+ expect(explicit.query).not.toHaveBeenCalled();
 });
 it('refuses distinct same-depth name collisions instead of choosing by iteration order',async()=>{
  const {q}=fixture([{id:target,parent_id:null,depth:0,path:[target]}],[{server_id:first,source_id:target,name:'shared'},{server_id:second,source_id:target,name:'SHARED'}]);

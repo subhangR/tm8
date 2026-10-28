@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { boundedLines } from './BoundedLines.js';
+import { CODEX_ULTRA_EFFORTS } from '@tm8/contract';
+import { boundedLines, HARNESS_FRAME_MAX_CHARS } from './BoundedLines.js';
 import { composeChatEnv } from './chat-env.js';
 import { harnessFailure } from './HarnessRegistry.js';
 import { HarnessSessionBase, validateLaunch } from './HarnessSessionBase.js';
@@ -25,6 +26,25 @@ import type {
   TurnCommand,
   UsageFact,
 } from './harness-types.js';
+
+/**
+ * Effort stops this adapter will forward to the Codex app server.
+ *
+ * It is the contract's WIDEST Codex list on purpose. Per-model precision is not
+ * this gate's job: `admitConfiguration` has already refused anything outside the
+ * selected model's own `efforts` (so `ultra` never reaches here for a
+ * `CODEX_EFFORTS` model, and Groq rows stay on low/medium/high). What this gate
+ * exists for is to refuse a value the Codex vocabulary has no stop for at all.
+ *
+ * It used to stop at `xhigh` and carry two values (`none`, `minimal`) that are
+ * not `LaunchModelEffort` at all — a vocabulary copied from an older protocol
+ * and never matched to the catalog. The effect was that every Codex chat run at
+ * `max` (and GPT-6 Astra at `ultra`) failed at open with "Codex reasoning effort
+ * is unsupported" while the picker went on offering the stop, and the message
+ * blamed Codex for a refusal this process made. Codex 0.161.0 does not reject
+ * these values; it does not validate `effort` at all.
+ */
+const CODEX_ADAPTER_EFFORTS: readonly string[] = CODEX_ULTRA_EFFORTS;
 
 const CAPABILITIES: HarnessCapabilities = {
   schemaVersion: 1,
@@ -54,6 +74,14 @@ const CAPABILITIES: HarnessCapabilities = {
 export interface CodexAppServerAdapterOptions {
   nodeId: string;
   rpcTimeoutMs?: number;
+  /**
+   * `thread/start` and `thread/resume` answer only after Codex has started the
+   * chat's MCP servers, which on a loaded node takes longer than an ordinary
+   * acknowledgement. It stays inside the server's 30s open deadline.
+   */
+  threadRpcTimeoutMs?: number;
+  /** Tests only: the stdout line bound, HARNESS_FRAME_MAX_CHARS by default. */
+  maxFrameChars?: number;
   closeGraceMs?: number;
 }
 export class CodexAppServerAdapter implements HarnessAdapter {
@@ -137,6 +165,7 @@ class CodexSession extends HarnessSessionBase {
         }
       },
       () => this.protocolLost('Codex protocol frame exceeded its bound'),
+      options.maxFrameChars ?? HARNESS_FRAME_MAX_CHARS,
     );
     // Diagnostics are intentionally drained without carrying vendor/secret text to public errors.
     this.child.stderr.on('data', () => {});
@@ -185,7 +214,7 @@ class CodexSession extends HarnessSessionBase {
     const target = this.input.config.target;
     if (
       target.reasoningEffort !== null &&
-      !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(target.reasoningEffort)
+      !CODEX_ADAPTER_EFFORTS.includes(target.reasoningEffort)
     )
       throw harnessFailure(
         'unsupported_capability',
@@ -250,6 +279,7 @@ class CodexSession extends HarnessSessionBase {
         await this.rpc(
           resume ? 'thread/resume' : 'thread/start',
           resume ? { ...params, threadId: resume.native.nativeId } : params,
+          this.options.threadRpcTimeoutMs ?? 20_000,
         ),
       );
     } catch (error) {
@@ -312,9 +342,7 @@ class CodexSession extends HarnessSessionBase {
       throw harnessFailure('invalid_config', 'submit', 'A dispatch acknowledgement is pending');
     if (
       command.config.target.reasoningEffort !== null &&
-      !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(
-        command.config.target.reasoningEffort,
-      )
+      !CODEX_ADAPTER_EFFORTS.includes(command.config.target.reasoningEffort)
     )
       throw harnessFailure(
         'unsupported_capability',
@@ -438,7 +466,11 @@ class CodexSession extends HarnessSessionBase {
       );
     this.child.stdin.write(`${JSON.stringify(frame)}\n`);
   }
-  private rpc(method: string, params: WireObject): Promise<unknown> {
+  private rpc(
+    method: string,
+    params: WireObject,
+    timeoutMs = this.options.rpcTimeoutMs ?? 10_000,
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (this.dead) {
         reject(
@@ -454,16 +486,11 @@ class CodexSession extends HarnessSessionBase {
       const id = ++this.requestSeq;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(
-          harnessFailure(
-            'runtime_lost',
-            'stream',
-            'Codex protocol acknowledgement timed out',
-            'reconcile_before_retry',
-          ),
-        );
-        this.protocolLost('Codex protocol acknowledgement timed out');
-      }, this.options.rpcTimeoutMs ?? 10_000);
+        // Named, so a failed open says which request Codex never answered.
+        const message = `Codex did not answer ${method} within ${timeoutMs / 1000}s`;
+        reject(harnessFailure('runtime_lost', 'stream', message, 'reconcile_before_retry'));
+        this.protocolLost(message);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try {
         this.write({ id, method, params });

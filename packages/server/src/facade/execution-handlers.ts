@@ -37,6 +37,7 @@ import {
   PromptSettlementWaiter,
   readSessionTranscript,
   knownAgentConfigDirs,
+  type CodexHomeSessionFacts,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -125,6 +126,7 @@ import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 import { isChatRuntimeBearer, resolveSpawnParentId, runtimeChatIdOf } from '../chat/scope.js';
+import { inheritedSpawnProjectId } from './spawn-project-inheritance.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -1022,6 +1024,9 @@ export class DbGraphPort implements GraphPort {
       input.newTaskTitle ?? null,
       input.storyId ?? null,
       input.sourceWorkSessionId ?? null,
+      // 348. Positional, last: `p_triggered_by_loop_id`. Null for every caller
+      // but the in-process loop executor.
+      input.triggeredByLoopId ?? null,
     ];
     // `aboutEntityId` / `aboutFromChatId` (321): the about edge goes in the SAME
     // transaction as the session, so it binds (Craft doc §4). work_session_about
@@ -1568,6 +1573,30 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
   }
 
+  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<CodexHomeSessionFacts[]> {
+    if (sessionIds.length === 0) return [];
+    const rows = await this.db.rpc<Array<{
+      sessionId: string;
+      status: string;
+      deleted: boolean;
+      workdirMode: string | null;
+      workdirPath: string | null;
+      exitedAt: string | null;
+    }>>(this.claims(auth), 'public.work_session_home_facts', [sessionIds]);
+    if (!Array.isArray(rows)) throw new Error('work_session_home_facts returned no rows array');
+    return rows.map((r) => {
+      const exitedAt = r.exitedAt === null ? null : Date.parse(r.exitedAt);
+      return {
+        sessionId: r.sessionId,
+        status: r.status,
+        deleted: r.deleted === true,
+        workdirMode: r.workdirMode,
+        workdirPath: r.workdirPath,
+        exitedAt: exitedAt !== null && Number.isFinite(exitedAt) ? exitedAt : null,
+      };
+    });
+  }
+
   // --- worktree provisioning (design §4) --------------------------------------
   //
   // Six writes and two reads, one door call each. They are separate for the
@@ -1927,6 +1956,12 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  /**
+   * Remove the per-session Codex homes of sessions that can no longer be
+   * resumed, and with `retentionMs` set, of sessions that ended longer ago
+   * than that. Never rejects.
+   */
+  reclaimCodexHomes(retentionMs: number | null): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2044,6 +2079,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2071,6 +2113,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimCodexHomes: async (retentionMs: number | null) => {
+      // The loopback owner, as a node admin: the facts door refuses anyone
+      // else, which leaves every home in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimCodexHomes(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
+          { retentionMs },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2241,6 +2296,13 @@ export function registerExecutionHandlers(
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2263,6 +2325,19 @@ export function registerExecutionHandlers(
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimCodexHomes: async (retentionMs: number | null) => {
+      // The loopback owner, as a node admin: the facts door refuses anyone
+      // else, which leaves every home in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimCodexHomes(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
+          { retentionMs },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -3032,6 +3107,29 @@ export function createLoopExecutorPort(deps: {
           // prompt — the same channel `--context` uses.
           promptExtra: loop.prompt === '' ? null : loop.prompt,
           clientMutationId: `loop-fire:${firingKey}`,
+        }, {
+          /*
+           * 348, ac1/ac2. THE FIRING'S PROVENANCE ROOT, handed over as a SERVER
+           * FACT and written inside `execution_spawn`'s own transaction.
+           *
+           * It travels in the second argument, not in the SpawnRequest above,
+           * because `SpawnRequest` is what the public `execution.spawn` handler
+           * builds from wire input — a loop id there would be a client naming
+           * the human whose connections its session launches with.
+           *
+           * This REPLACES the post-spawn `writeTriggeredBy` for this branch,
+           * and the ordering is the whole point: the MCP bind runs INSIDE
+           * `spawn`, and `internal.mcp_provenance` (343) reads the schedule
+           * root off this very edge. Written afterwards, as it was, the edge
+           * did not exist yet at bind time and every firing was lent no
+           * connector that needs an account.
+           *
+           * It is also no longer best-effort: `execution_spawn` aborts if it
+           * cannot write the edge, so a firing either has its provenance or
+           * does not happen. 343's decision to give a schedule NO second
+           * rooting tier (B21) depends on that.
+           */
+          triggeredByLoopId: loop.entityId,
         })).sessionId;
       } else {
         // A null runner means "route through the dispatcher" (§4.4). Resolving
@@ -3057,9 +3155,26 @@ export function createLoopExecutorPort(deps: {
           requestId: `loop-fire:${loop.entityId}`,
           clientMutationId: `loop-dispatch-request:${firingKey}`,
         });
+        /*
+         * 348: the session edge is still written HERE, best-effort, for the
+         * dispatcher branch ONLY — and it stays run history rather than
+         * becoming provenance.
+         *
+         * Two reasons a dispatcher must not be handed the loop id the way a
+         * direct firing is. `resolveDispatcherSession` usually REUSES a live
+         * dispatcher that serves the whole Space across every loop and every
+         * caller, so rooting it at one loop's armer would lend that human's
+         * connections to all of its other work. And when it does spawn one, the
+         * dispatcher is launched to ROUTE the task, not to be the firing.
+         *
+         * A dispatcher-routed firing therefore still gets no connector that
+         * needs an account. That is #1316's behaviour and it fails closed; the
+         * worker the dispatcher goes on to spawn is an ordinary delegated
+         * launch with its own bearer chain.
+         */
+        await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       }
 
-      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       return { taskId, sessionId };
     },
   };
@@ -3584,6 +3699,12 @@ function registerHandlers(
      */
     const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
     const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
+    // An agent that names no project works where its chat or session does.
+    const inheritedProjectId = await inheritedSpawnProjectId(db, claims, {
+      input,
+      agentCaller: isChatRuntimeBearer(ctx) || sourceWorkSessionId !== undefined,
+      parentId: parentSessionId,
+    });
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
@@ -3596,7 +3717,7 @@ function registerHandlers(
       ...(isChatRuntimeBearer(ctx) && runtimeChatIdOf(ctx) ? { aboutFromChatId: runtimeChatIdOf(ctx)! } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
-      projectId: input.projectId ?? null,
+      projectId: input.projectId ?? inheritedProjectId,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
       ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),

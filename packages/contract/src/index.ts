@@ -25,6 +25,7 @@ export * from './chat-runtime.js';
 export * from './membership.js';
 export * from './space-links.js';
 export * from './cross-space-refs.js';
+export * from './project-home.js';
 export * from './servers.js';
 export * from './forms.js';
 export * from './story.js';
@@ -42,6 +43,8 @@ export * from './style-css.js';
 export * from './builtins/index.js';
 
 export * from './mcp.js';
+export * from './mcp-catalog.js';
+export * from './mcp-google.js';
 export * from './workspace-bridge.js';
 export * from './craft-workspace.js';
 

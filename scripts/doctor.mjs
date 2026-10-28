@@ -52,7 +52,7 @@ if (!db.reachable) {
 } else {
   log.info(`database: reachable, ${db.applied}/${db.onDisk} migrations applied`);
   if (db.applied !== db.onDisk) {
-    log.warn("schema is behind the checkout — run `node db/migrate.mjs up`");
+    log.warn("schema is behind the checkout — run `TM8_DATABASE_URL=<url> node db/migrate.mjs up` (add --i-mean-prod for port 5442)");
   }
   log.info(
     `delivery role: ${

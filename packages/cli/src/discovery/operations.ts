@@ -191,6 +191,51 @@ const ROWS: Record<OperationName, Row> = {
   'mcp.oauth.begin': {cmd: ['mcp','oauth','begin'], syn: 'tm8 mcp oauth begin [<id>] --input <@file|->', sum: 'Begin MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
+  'mcp.audit.list': {cmd:['mcp','audit'], syn:'tm8 mcp audit [--session <id>] [--chat <id>] [--connector <id>] [--member <id>] [--outcome <started|succeeded|failed|denied|refreshed>] [--limit <count>] [--cursor <cursor>]', sum:'List MCP connector calls (admins: the Space; members: their own)', authz:'space', input:'none'},
+  'mcp.tokens.create': {cmd:['mcp','tokens','create'], syn:'tm8 mcp tokens create --label <name> [--space <id>]... [--all-spaces] [--expires-in-days <n>]',
+    sum:'Mint an MCP token for an external client — printed ONCE', authz:'server', input:'bound',
+    tags:['mcp','token','claude desktop','cursor','external','connector'],
+    notes:['the token acts as YOU: it reaches the connectors your member can use, in the spaces it lists, and nothing else',
+      'it is printed once and only its hash is stored — there is no command that shows it again',
+      '--all-spaces means every space you belong to NOW OR JOIN LATER; otherwise name them with --space (repeatable)',
+      'it is accepted on POST <origin>/mcp and refused on every other route, this CLI included',
+      'a connector appears to an external client only where an admin turned on "available to external MCP clients"']},
+  'mcp.tokens.list': {cmd:['mcp','tokens','list'], syn:'tm8 mcp tokens list',
+    sum:'List your MCP tokens (never their secrets)', authz:'server', input:'none',
+    tags:['mcp','token','external'],
+    notes:['yours only: a space admin cannot see or revoke another member\'s token — their lever is the membership',
+      'a revoked token is listed for a day, then drops off']},
+  'mcp.tokens.revoke': {cmd:['mcp','tokens','revoke'], syn:'tm8 mcp tokens revoke <token-id>',
+    sum:'Revoke one of your MCP tokens', authz:'server', input:'bound',
+    tags:['mcp','token','external','revoke'],
+    notes:['clients using it stop working immediately, including a call already in flight']},
+  /*
+   * NO CLI COMMAND: this is the data behind one block of the session debug view
+   * (§10.6), and reading it in a terminal would mean rendering a bearer chain
+   * of raw ids with no entity titles to resolve them against. `tm8 mcp audit`
+   * is the terminal's answer to "what did this session's connectors do".
+   */
+  'mcp.sessions.provenance': {cmd:null,
+    sum:'Read the provenance recorded for one session: the human root, the bearer chain, and whether that root is still admitted to every Space it crossed',
+    authz:'entity',input:'none',tags:['mcp','connector','provenance','root','chain','session','debug'],
+    reason:'the session debug view resolves the chain\'s ids to entities; a terminal rendering would be a list of bare uuids',
+    notes:['`recorded:false` is a real answer: the session has no provenance row — launched before the plan, or a chat still on Space defaults',
+      '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
+      '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
+      'human sessions only; a link caller is refused by the RPC itself']},
+  'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
+    tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
+    notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
+      'an entry is a PREFILL, not a connector: adding one still needs an admin (`mcp server create`) and every member still connects their own account',
+      '`requires:` carries what the provider demands of a client like tm8 — read it before the consent screen fails',
+      'an entry marked `coming soon` has no definition yet and cannot be added']},
+  'mcp.servers.request': {cmd:['mcp','server','request'], syn:'tm8 mcp server request --input <@file|-> ({"catalogId":"<id>"} or {"definition":{…}}, optional "note")',sum:'Ask the Space administrators to add a connector',authz:'space',input:'bound',
+    tags:['mcp','connector','request','ask','approve'],
+    notes:['for a member who is not an administrator: it creates the connector UNAPPROVED and raises an attention request on it',
+      'an unapproved connector is inert — it cannot be selected, bound or called, and nothing fetches its URL until an admin approves it',
+      'a catalog request names `catalogId` only; the server takes the definition from the catalog, so a request can never point somewhere else',
+      'an administrator approves with `mcp server update … approved=true`; the requester may withdraw with `entity delete` while it is still unapproved',
+      'human-authenticated only']},
   'mcp.proxy.request': {cmd:null,sum:'Invoke MCP through the authorized session bridge',authz:'session',input:'bound',reason:'internal_session_bridge'},
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
@@ -2074,6 +2119,56 @@ const ROWS: Record<OperationName, Row> = {
     notes: ['Human-only; policy and credential access are checked before use. Applies to the next claimed turn.',
       'Switching account directories may reset native model context; stored tm8 messages survive.'],
   },
+  'chat.interrupt': {
+    cmd: ['chat', 'stop'], syn: 'tm8 chat stop <chat-id>',
+    sum: "Stop a chat's running turn", authz: 'entity', input: 'bound',
+    tags: ['chat', 'stop', 'interrupt', 'cancel', 'turn'],
+    notes: ['ends the running turn only; turns queued behind it still run, because they are other messages — often other people\'s',
+      'a turn still preparing is stopped before its input is sent; `requested` means the turn will end and its done part says how',
+      '`not_running` means this node has no turn to stop for the chat',
+      'any member who can read the chat may stop it; an agent runtime credential is refused'],
+    examples: ['tm8 chat stop <chat-id>'],
+  },
+  'chat.setMcpSelections': {
+    cmd: ['chat', 'connectors'],
+    syn: 'tm8 chat connectors <chat-id> --input <json-source>  (an array of {serverId,credentialId?}, [] for none, null for defaults)',
+    sum: "Change a live chat's MCP connectors — applies from its next turn",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection'],
+    notes: [
+      'before this a chat\'s connectors were fixed at creation; this is the only way to change them afterwards',
+      'three distinct values: `null` goes back to the defaults resolved fresh each turn, `[]` turns every connector off, and a non-empty array REPLACES the selection',
+      'applies from the next turn: a turn already running keeps the connectors it was bound with',
+      'only the human who configures the chat may call it; an agent runtime credential is refused',
+    ],
+    examples: [
+      'tm8 chat connectors <chat-id> --input \'[{"serverId":"<server-id>"}]\'',
+      'tm8 chat connectors <chat-id> --input null',
+    ],
+  },
+  /*
+   * NO CLI COMMAND, and the gap is named rather than hidden: `tm8 chat
+   * connectors` is a WRITE, so a terminal cannot currently look at a thread's
+   * connectors without changing them. This door was added for §10.4's composer
+   * sheet, which has to know "Space defaults" from "Custom" before the user
+   * touches a toggle. A CLI read belongs with the rest of the `chat connectors`
+   * command (one path cannot serve two operations in this table), and is a
+   * follow-up rather than something to fake here.
+   */
+  'chat.getMcpSelections': {
+    cmd: null,
+    sum: "Read a chat's stored MCP connector selection — null means it is on the Space defaults, resolved fresh each turn",
+    authz: 'entity',
+    input: 'none',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection', 'defaults'],
+    reason: 'the terminal form of this read belongs on `tm8 chat connectors`, which today only writes; this door was added for the chat composer sheet',
+    notes: [
+      '`null` is the ANSWER and not a missing value: the thread has no stored row, so it uses the Space defaults resolved at each turn',
+      'a non-empty list, or `[]`, means a human chose it — since 354 a chat\'s own launch no longer writes its resolved defaults back',
+      'human sessions only, and a chat opened through a Space link is refused: a link chat gets no connectors',
+    ],
+  },
   'chat.setModel': {
     cmd: ['chat', 'model'],
     syn: 'tm8 chat model <chat-id> <model>',
@@ -2327,13 +2422,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.projects.create': {
     cmd: ['project', 'add'],
-    syn: 'tm8 project add <folder-id> [--name <name>] | --working-dir <absolute-path> --name <name> [--ensure-working-dir] [--trust trusted|untrusted]  [--space <space-id>] [--mutation-id <id>]',
+    syn: 'tm8 project add <folder-id> [--name <name>] | [--working-dir <absolute-path>] --name <name> [--ensure-working-dir] [--trust trusted|untrusted]  [--space <space-id>] [--mutation-id <id>]',
     sum: "Name the Space's project on a folder granted to that Space, or register a folder on the node for it",
     authz: 'space',
     input: 'bound',
     notes: [
       'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
       '--working-dir registers and grants a folder in one step; a Space admin who is not a node admin may do so only inside an explicitly configured TM8_PROJECT_ROOTS, and only untrusted',
+      'with neither <folder-id> nor --working-dir, --name alone creates the default folder ~/<name> on the node (refused if it already exists) and registers it the same way',
     ],
   },
   'spaces.projects.clone': {
@@ -4284,6 +4380,8 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
+     JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
@@ -4354,7 +4452,9 @@ export const CATALOG_DIGEST =
   // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
   // Re-measured after the request noun's removal (-5 rows) — RECOMPUTED, not adjusted.
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
-  'sha256:cd50377655dfb62a17167c1983cb44d13a7c54a535e1207fee1afc8bf416da29';
+  // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
+  // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4700,6 +4800,26 @@ const COMMAND_ALIASES = new Map<string, {
   // a `chats.postTurn` row would be a second way to ask a question
   // `collections.query` and `messages.post` already answer, on an entity kind
   // whose entire design is that it needs no special door except its birth.
+  // `mcp connect` is the one ALIAS the mcp noun needs, and it is an alias
+  // because the connector decides which door it is: an API-key connector takes
+  // a secret (mcp.credentials.create) and an OAuth one hands back a URL
+  // (mcp.oauth.begin). One verb over both is what a user means by "connect"; two
+  // catalog rows for it would be the same two doors with a worse name.
+  ['mcp connect', {
+    path: ['mcp', 'connect'],
+    syntax: 'tm8 mcp connect <server-id> [--shared] [--label <text>] [--input <@file|->]',
+    summary: 'Connect an account to a connector — an API key, or an OAuth authorization URL to open',
+    notes: [
+      'sugar over mcp.servers.get plus mcp.credentials.create or mcp.oauth.begin — it adds no catalog operation',
+      'the connector\u2019s own auth chooses the door: `api_key` needs --input @file or --input - (a secret never travels in argv), `oauth2` prints an authorization URL to open in a browser signed in to tm8',
+      '--shared connects on behalf of the whole Space rather than just you, and needs a Space admin; for an OAuth connector it is refused until this server can carry a scope through the redirect',
+      'a connector with auth `none` needs no connection at all and is refused as a usage error',
+    ],
+    examples: [
+      'tm8 mcp connect <server-id>',
+      'tm8 mcp connect <server-id> --shared --input @key.json',
+    ],
+  }],
   ['chat list', {
     path: ['chat', 'list'],
     syntax: 'tm8 chat list [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -4987,6 +5107,12 @@ COMMAND_ORDER.splice(
 // but two of its three sub-verbs invoke `containers.computer`, so both
 // operations are named here and the command is as available as its WEAKEST.
 // The form lifecycle verbs sit right after `form open`, which the catalog row owns.
+// `mcp connect` reads the connector, then takes ONE of two doors. Availability
+// is the weakest of all three, because a caller cannot know in advance which
+// door their connector needs.
+COMMAND_OPS.set('mcp connect', ['mcp.servers.get', 'mcp.credentials.create', 'mcp.oauth.begin']);
+const mcpCatalogIndex = COMMAND_ORDER.indexOf('mcp catalog list');
+COMMAND_ORDER.splice(mcpCatalogIndex < 0 ? COMMAND_ORDER.length : mcpCatalogIndex + 1, 0, 'mcp connect');
 COMMAND_OPS.set('form close', ['forms.transition']);
 COMMAND_OPS.set('form cancel', ['forms.transition']);
 COMMAND_OPS.set('form reopen', ['forms.transition']);

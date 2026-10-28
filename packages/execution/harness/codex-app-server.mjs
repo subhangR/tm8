@@ -30,6 +30,8 @@ lines.on('line', (line) => {
       platformFamily: 'unix',
       platformOs: 'macos',
     });
+  else if (frame.method === 'thread/start' && process.env.TM8_FAKE_CODEX_THREAD_START === 'silent')
+    return;
   else if (frame.method === 'thread/start' || frame.method === 'thread/resume') {
     if (frame.method === 'thread/resume' && process.env.TM8_FAKE_CODEX_RESUME === 'missing')
       send({ id: frame.id, error: { code: -32000, message: 'missing' } });
@@ -99,7 +101,12 @@ lines.on('line', (line) => {
       tool: 'read',
       arguments: { id: 'x' },
       status: 'completed',
-      result: { content: [{ type: 'text', text: 'inert result' }] },
+      // One tool result bigger than the old 1 MiB frame bound, in one frame.
+      result: {
+        content: [
+          { type: 'text', text: text === 'big-tool-result' ? 'y'.repeat(2_100_000) : 'inert result' },
+        ],
+      },
       error: null,
     };
     notify('item/completed', { ...params, item: tool });

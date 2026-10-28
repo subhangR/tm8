@@ -126,6 +126,41 @@ describe('the two-column page', () => {
     expect(screen.queryByTestId('panel-embedded-head')).toBeNull();
   });
 
+  it('folds the properties under one Details row, with a summary, closed until asked', () => {
+    mount();
+    const rail = screen.getByTestId('subtree-rail');
+    const toggle = screen.getByTestId('subtree-details-toggle');
+    expect(rail.hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('Details');
+    fireEvent.click(toggle);
+    expect(rail.hidden).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('puts the Details row at the bottom of the page, after the messages', () => {
+    mount(TASK, { discussion: true });
+    const details = screen.getByTestId('subtree-details');
+    const main = screen.getByTestId('subtree-main');
+    expect(within(main).getByTestId('host-discussion')).toBeTruthy();
+    expect(main.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(details.parentElement!.lastElementChild).toBe(details);
+  });
+
+  it('draws one upload button: ＋ Attach under the description, no ＋ Insert a file beside it', () => {
+    mount(TASK, {
+      attachments: {
+        startUpload: () => {
+          throw new Error('unused');
+        },
+      },
+    });
+    const description = screen.getByTestId('task-description-editor');
+    expect(within(description).getByTestId('attachment-strip')).toBeTruthy();
+    expect(within(description).queryByText(/Insert a file/)).toBeNull();
+    expect(within(description).queryByTestId('doc-insert-input')).toBeNull();
+  });
+
   it('is a page layout only: a pinned panel keeps the stacked body', () => {
     mount(TASK, { embedded: false });
     expect(screen.getByTestId('subtree-body').getAttribute('data-layout')).toBeNull();
@@ -415,6 +450,8 @@ describe('the rail refuses Done while the checklist is open, and says why', () =
   });
   const option = (id: string) => {
     const rail = screen.getByTestId('subtree-rail');
+    // The properties are folded under the Details row until it is opened.
+    if (rail.hidden) fireEvent.click(screen.getByTestId('subtree-details-toggle'));
     fireEvent.click(within(rail).getByTestId('row-state-select'));
     return within(rail)
       .getAllByRole('menuitemradio')

@@ -403,6 +403,25 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       ...ok, parentSessionId: 'not-a-session-id',
     }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, mode: 'boss' }).success).toBe(false);
+    /*
+     * 348 (ac1). THE LOOP ID IS A SERVER FACT AND HAS NO WIRE FIELD.
+     *
+     * `execution_spawn` gained `p_triggered_by_loop_id`, which decides the §6
+     * provenance ROOT of a schedule firing — i.e. whose MCP connections the
+     * session launches with. The in-process loop executor reaches it through a
+     * second parameter of `SpawnService.spawn` that the public handler never
+     * fills; a caller must not reach it at all.
+     *
+     * `.strict()` is what makes that a REFUSAL rather than a silent drop, and
+     * the difference matters: dropped, a client could send it and get a
+     * rootless session back while believing otherwise. Asserted here beside a
+     * second invented key, so the cell tests strictness itself and not one
+     * hand-maintained deny-list entry.
+     */
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, triggeredByLoopId: '66666666-6666-4666-8666-666666666666',
+    }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, somethingInvented: 1 }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'member' }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'node' }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'another-member' }).success).toBe(false);
@@ -510,6 +529,13 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(false);
+    // Neither folderId nor workingDir: the home default, which needs a name.
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8', trust: 'untrusted' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({}).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8', ensureWorkingDir: true }).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1', workingDir: '/srv/x', name: 'x' }).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1', trust: 'untrusted' }).success).toBe(false);
     expect(ProjectDirectoryListingSchema.safeParse({
       roots: ['/Users/x'], path: '/Users/x', parentPath: null, separator: '/',
       directories: [{ name: 'tm8', path: '/Users/x/tm8' }], truncated: false,

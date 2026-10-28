@@ -11,10 +11,12 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 
+import { DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS } from '../chat/fenced-turn.js';
 import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS, type StyleRateLimits } from './style-rate-limit.js';
 import type { SpaceSessionsMode } from './types.js';
@@ -64,6 +66,8 @@ export interface ServerConfig {
   readonly clipboardMaxBytes?: number;
   /** Days a clipboard date-bucket survives (`TM8_CLIPBOARD_RETENTION_DAYS`, 0 = keep). */
   readonly clipboardRetentionDays?: number;
+  /** Days an MCP call audit row survives (`TM8_MCP_AUDIT_RETENTION_DAYS`, 0 = keep). §5.6. */
+  readonly mcpAuditRetentionDays?: number;
   /** Seed/repair launchable personas and the current project at boot. */
   readonly launchBootstrap?: boolean;
   /** Absolute current project registered by launch bootstrap. */
@@ -180,6 +184,31 @@ export interface ServerConfig {
    * the wrong ceiling.
    */
   readonly dbStatementTimeoutMs?: number;
+  /**
+   * How long a chat turn tolerates TOTAL silence from the harness before it is
+   * stopped (`TM8_CHAT_IDLE_TIMEOUT_MS`). Default 1800000 (30 min).
+   *
+   * This is the idle limit only: it does NOT apply while a tool call is in
+   * flight — see `chatToolTimeoutMs`, which exists because the Claude adapter
+   * emits no observation between a tool starting and its result arriving, so
+   * for two releases any tool slower than this limit killed the turn and
+   * reported it to the human as an interrupted delivery.
+   *
+   * Lower this to fail a wedged agent faster, but not far: a tool result is
+   * followed by silence until the next COMPLETE assistant message, and that
+   * gap spends THIS budget rather than the tool one.
+   */
+  readonly chatIdleTimeoutMs?: number;
+  /**
+   * The silence a chat turn tolerates while at least one tool call is running
+   * (`TM8_CHAT_TOOL_TIMEOUT_MS`). Default 1800000, equal to the idle default,
+   * so out of the box the two behave as one 30-minute limit. Raised to
+   * `chatIdleTimeoutMs` if set below it.
+   *
+   * The runtime lease is heartbeaten every 30s and each beat extends it by ten
+   * minutes, so a wait this long never loses the lease.
+   */
+  readonly chatToolTimeoutMs?: number;
   /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
@@ -517,6 +546,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   }
 
+  // Both chat budgets REFUSE a zero: `deadline(promise, 0)` fires on the next
+  // tick, so a zero here would not mean "no limit", it would fail every turn.
+  const chatIdleTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_IDLE_TIMEOUT_MS, 'TM8_CHAT_IDLE_TIMEOUT_MS', DEFAULT_CHAT_IDLE_TIMEOUT_MS);
+  const chatToolTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_TOOL_TIMEOUT_MS, 'TM8_CHAT_TOOL_TIMEOUT_MS', DEFAULT_CHAT_TOOL_TIMEOUT_MS);
+
   // An unrecognised value REFUSES rather than falling back to `single`. A typo
   // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
   // exactly how a node ends up auto-authenticating everyone who reaches
@@ -621,6 +657,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     'TM8_CLIPBOARD_RETENTION_DAYS',
     CLIPBOARD_RETENTION_DAYS_DEFAULT,
   );
+  const mcpAuditRetentionDays = envNonNegativeInt(
+    env.TM8_MCP_AUDIT_RETENTION_DAYS,
+    'TM8_MCP_AUDIT_RETENTION_DAYS',
+    MCP_AUDIT_RETENTION_DAYS_DEFAULT,
+  );
 
   return {
     host,
@@ -636,6 +677,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     clipboardDir,
     clipboardMaxBytes,
     clipboardRetentionDays,
+    mcpAuditRetentionDays,
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
@@ -690,6 +732,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     dbPoolMax,
     dbStatementTimeoutMs,
+    chatIdleTimeoutMs,
+    chatToolTimeoutMs,
     ...(livekit ? { livekit } : {}),
   };
 }

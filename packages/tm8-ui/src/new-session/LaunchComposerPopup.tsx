@@ -913,7 +913,22 @@ export function LaunchComposerPopup({
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
-        connectors={<McpPicker teamMemberId={config.teamMemberId ?? undefined} targetId={subject.id} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={pending} />}
+        connectors={(
+          /* §10.5: the launch grid, with D4's note — `Full` restores plugins
+             and skills, never the launcher's personal Claude connectors. */
+          <McpPicker
+            teamMemberId={config.teamMemberId ?? undefined}
+            targetId={subject.id}
+            value={mcpSelections}
+            onChange={setMcpSelections}
+            onReady={setMcpReady}
+            disabled={pending}
+            layout="grid"
+            notice={bind.harnessSurface === 'inherit'
+              ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
+              : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
+          />
+        )}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
