@@ -52,8 +52,9 @@
 /*
  * Every preformatted block the phone can show: markdown fences and the failed-
  * mermaid source (transcripts, docs), the debug and governance dumps, auth
- * evidence, and any bare `<pre>`. `pre-wrap` keeps the author's line breaks and
- * indentation and wraps only what is longer than the screen.
+ * evidence, the MCP client config snippets, and any bare `<pre>`. `pre-wrap`
+ * keeps the author's line breaks and indentation and wraps only what is longer
+ * than the screen.
  */
 .cv2-root[data-shell='mobile'] pre,
 .cv2-root[data-shell='mobile'] .md-fence__pre,
@@ -61,7 +62,8 @@
 .cv2-root[data-shell='mobile'] .pn-debug__pre,
 .cv2-root[data-shell='mobile'] .gov-pre,
 .cv2-root[data-shell='mobile'] .auth-evidence,
-.cv2-root[data-shell='mobile'] .tch-explain__source {
+.cv2-root[data-shell='mobile'] .tch-explain__source,
+.cv2-root[data-shell='mobile'] .set-mcpt__code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-x: visible;
