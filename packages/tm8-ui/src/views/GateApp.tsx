@@ -10,6 +10,7 @@
  * state and the URL, the panels own anatomy. This file is composition only.
  */
 import { EntitySeenProvider } from '../seen-entities/EntitySeen';
+import { DetailFreshnessProvider } from '../panels/detail/freshness';
 import { McpProvider } from '../mcp/context';
 import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
@@ -578,7 +579,17 @@ export function GateApp(props: GateAppProps = {}) {
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
         <EntitySeenProvider scope={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
-          <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
+          {/* Content freshness, above BOTH the desktop and the phone trees for
+              the same reason the stores above it are: every panel that mounts
+              on an id — in a stack, an aux column, the canvas or a phone
+              sheet — re-reads that id's content when someone else edits it,
+              and none of them has to know how. */}
+          <DetailFreshnessProvider
+            staleDetails={data.staleDetails}
+            freshenDetail={data.freshenDetail}
+          >
+            <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
+          </DetailFreshnessProvider>
         </EntitySeenProvider>
       </AttentionProvider>
     </PendingFormsProvider>
