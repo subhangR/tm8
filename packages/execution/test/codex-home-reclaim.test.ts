@@ -11,7 +11,8 @@
 //     A live session and a resumable one are always kept.
 //
 // The PTY-exit, stop and resume wiring through SpawnService is pinned in
-// space-credential-spawn.test.ts.
+// space-credential-spawn.test.ts. The space-key home and manifest file rules
+// that share this reclaim are pinned in session-artifact-reclaim.test.ts.
 
 import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,14 +21,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  codexHomeReclaimReason,
   codexMcpSessionDir,
   isolateCodexMcpHome,
-  reclaimCodexMcpHomes,
   scrubCodexMcpHome,
   sweepCodexMcpHomeSecrets,
-  type CodexHomeSessionFacts,
 } from '../src/spawn/mcp-home.js';
+import {
+  codexHomeReclaimReason,
+  reclaimSessionArtifacts,
+  type SessionHomeFacts,
+} from '../src/spawn/session-artifact-reclaim.js';
 
 const LIVE = '11111111-1111-4111-8111-111111111111';
 const RESUMABLE = '22222222-2222-4222-8222-222222222222';
@@ -151,7 +154,7 @@ describe('Codex session homes after the process', () => {
   });
 
   describe('which sessions can still use their home', () => {
-    const ended = (over: Partial<CodexHomeSessionFacts> = {}): CodexHomeSessionFacts => ({
+    const ended = (over: Partial<SessionHomeFacts> = {}): SessionHomeFacts => ({
       sessionId: RESUMABLE,
       status: 'exited',
       deleted: false,
@@ -190,10 +193,10 @@ describe('Codex session homes after the process', () => {
   });
 
   describe('the reclaim', () => {
-    async function seedAll(): Promise<Map<string, CodexHomeSessionFacts>> {
+    async function seedAll(): Promise<Map<string, SessionHomeFacts>> {
       const existing = join(dataDir, 'worktrees', 'still-here');
       await mkdir(existing, { recursive: true });
-      const facts: CodexHomeSessionFacts[] = [
+      const facts: SessionHomeFacts[] = [
         { sessionId: LIVE, status: 'running', deleted: false, workdirMode: 'project', workdirPath: null, exitedAt: null },
         { sessionId: RESUMABLE, status: 'exited', deleted: false, workdirMode: 'project', workdirPath: null, exitedAt: NOW - DAY },
         { sessionId: DELETED, status: 'exited', deleted: true, workdirMode: 'project', workdirPath: null, exitedAt: NOW - DAY },
@@ -206,7 +209,7 @@ describe('Codex session homes after the process', () => {
       return new Map(facts.map((f) => [f.sessionId, f]));
     }
 
-    function factsFrom(rows: Map<string, CodexHomeSessionFacts>, calls?: string[][]) {
+    function factsFrom(rows: Map<string, SessionHomeFacts>, calls?: string[][]) {
       return async (ids: string[]) => {
         calls?.push(ids);
         return ids.flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []));
@@ -220,11 +223,12 @@ describe('Codex session homes after the process', () => {
     it('keeps live and resumable homes, and removes orphaned, deleted and worktree-gone ones', async () => {
       const rows = await seedAll();
       // LIVE is also live on this node; the rest are judged by the graph alone.
-      const report = await reclaimCodexMcpHomes({
+      const report = await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: (id) => id === LIVE,
         facts: factsFrom(rows),
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
         now: NOW,
       });
 
@@ -242,11 +246,12 @@ describe('Codex session homes after the process', () => {
 
     it('with a retention window, also removes a session that ended longer ago than it', async () => {
       const rows = await seedAll();
-      const report = await reclaimCodexMcpHomes({
+      const report = await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: () => false,
         facts: factsFrom(rows),
-        retentionMs: 30 * DAY,
+        retention: { codexHomeMs: 30 * DAY, spaceHomeMs: null },
         now: NOW,
       });
 
@@ -258,7 +263,8 @@ describe('Codex session homes after the process', () => {
     it('a session that turns live between the read and the removal keeps its home', async () => {
       const rows = await seedAll();
       let resumed = false;
-      const report = await reclaimCodexMcpHomes({
+      const report = await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         // ORPHAN looks dead when the batch is listed, then a resume claims it.
         isLive: (id) => id === ORPHAN && resumed,
@@ -266,7 +272,7 @@ describe('Codex session homes after the process', () => {
           resumed = true;
           return factsFrom(rows)(ids);
         },
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
         now: NOW,
       });
 
@@ -277,11 +283,12 @@ describe('Codex session homes after the process', () => {
     it('asks the graph in bounded batches and stops at the per-call cap', async () => {
       const rows = await seedAll();
       const calls: string[][] = [];
-      const first = await reclaimCodexMcpHomes({
+      const first = await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: () => false,
         facts: factsFrom(rows, calls),
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
         now: NOW,
         batchSize: 3,
         maxReclaims: 1,
@@ -290,11 +297,12 @@ describe('Codex session homes after the process', () => {
       expect(first.reclaimed).toHaveLength(1);
       expect(calls.every((batch) => batch.length <= 3)).toBe(true);
       // The next tick picks up where the cap stopped it.
-      const rest = await reclaimCodexMcpHomes({
+      const rest = await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: () => false,
         facts: factsFrom(rows),
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
         now: NOW,
       });
       expect(first.reclaimed.length + rest.reclaimed.length).toBe(3);
@@ -302,22 +310,24 @@ describe('Codex session homes after the process', () => {
 
     it('a failed graph read throws before anything is removed', async () => {
       await seedAll();
-      await expect(reclaimCodexMcpHomes({
+      await expect(reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: () => false,
         facts: async () => { throw new Error('node admin required'); },
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
         now: NOW,
       })).rejects.toThrow('node admin required');
       expect(await exists(ORPHAN)).toBe(true);
     });
 
     it('is a no-op on a node that never ran Codex', async () => {
-      expect(await reclaimCodexMcpHomes({
+      expect(await reclaimSessionArtifacts({
+        artifacts: ['codex_home'],
         dataDir,
         isLive: () => false,
         facts: async () => [],
-        retentionMs: null,
+        retention: { codexHomeMs: null, spaceHomeMs: null },
       })).toEqual({ examined: 0, reclaimed: [], errors: [] });
     });
   });

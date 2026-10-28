@@ -185,7 +185,9 @@ async function withSourceLock(real:string,work:()=>Promise<void>):Promise<void> 
  *     session cannot come back: its row is gone, it was deleted, or its
  *     worktree was reclaimed (resume refuses all three). The operator can opt
  *     in to a retention window as well, which gives up resume of older
- *     sessions to save disk.
+ *     sessions to save disk. That removal lives in
+ *     `session-artifact-reclaim.ts`, beside the session's other node-local
+ *     leftovers.
  *
  * Nothing here logs a file's contents (I5).
  */
@@ -280,107 +282,3 @@ export async function sweepCodexMcpHomeSecrets(
   return { scrubbed, errors };
 }
 
-/** What the graph knows about a session that has a home here. */
-export interface CodexHomeSessionFacts {
-  sessionId: string;
-  status: string;
-  deleted: boolean;
-  workdirMode: string | null;
-  workdirPath: string | null;
-  /** Epoch ms. Null when the row never recorded an ending. */
-  exitedAt: number | null;
-}
-
-export type CodexHomeReclaimReason = 'no_session' | 'deleted' | 'worktree_gone' | 'retention';
-
-const LIVE_STATUSES = new Set(['spawning', 'running', 'idle']);
-const ENDED_STATUSES = new Set(['exited', 'failed']);
-
-/**
- * Whether a session can no longer use its home, and why. This mirrors what
- * `SpawnService.resume` refuses: a missing or deleted row (`not_found`), and a
- * worktree session whose checkout is gone. A live status always keeps the
- * home, even on a deleted row, because the process may still be writing to
- * it. An unknown status keeps it too. A null `retentionMs` means a resumable
- * session keeps its home indefinitely.
- */
-export function codexHomeReclaimReason(
-  facts: CodexHomeSessionFacts | undefined,
-  opts: { now: number; retentionMs: number | null; worktreeExists: boolean },
-): CodexHomeReclaimReason | null {
-  if (facts === undefined) return 'no_session';
-  if (LIVE_STATUSES.has(facts.status)) return null;
-  if (facts.deleted) return 'deleted';
-  if (!ENDED_STATUSES.has(facts.status)) return null;
-  if (facts.workdirMode === 'worktree' && !opts.worktreeExists) return 'worktree_gone';
-  if (opts.retentionMs !== null && facts.exitedAt !== null && opts.now - facts.exitedAt > opts.retentionMs) {
-    return 'retention';
-  }
-  return null;
-}
-
-/** A path counts as gone only when stat proves it is absent. Any other error keeps the home. */
-async function worktreeExists(path: string | null): Promise<boolean> {
-  if (path === null) return false;
-  try {
-    await stat(path);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    return !(code === 'ENOENT' || code === 'ENOTDIR');
-  }
-}
-
-export interface CodexHomeReclaimReport {
-  examined: number;
-  reclaimed: Array<{ sessionId: string; reason: CodexHomeReclaimReason }>;
-  errors: string[];
-}
-
-/**
- * Remove every home whose session can no longer be resumed.
- *
- * `facts` is called in batches of `batchSize` and must return a row for every
- * session that has one. An id missing from its answer is read as "no
- * session", so it must not be filtered by space membership. `isLive` is
- * checked before the read and again just before each removal, so a resume
- * that starts in between keeps its home. At most `maxReclaims` homes are
- * removed per call and the rest wait for the next tick.
- */
-export async function reclaimCodexMcpHomes(input: {
-  dataDir: string;
-  isLive: (sessionId: string) => boolean;
-  facts: (sessionIds: string[]) => Promise<CodexHomeSessionFacts[]>;
-  retentionMs: number | null;
-  now?: number;
-  batchSize?: number;
-  maxReclaims?: number;
-}): Promise<CodexHomeReclaimReport> {
-  const now = input.now ?? Date.now();
-  const batchSize = input.batchSize ?? 500;
-  const maxReclaims = input.maxReclaims ?? 200;
-  const candidates = (await listCodexMcpHomes(input.dataDir)).filter((id) => !input.isLive(id));
-  const report: CodexHomeReclaimReport = { examined: 0, reclaimed: [], errors: [] };
-  for (let start = 0; start < candidates.length && report.reclaimed.length < maxReclaims; start += batchSize) {
-    const batch = candidates.slice(start, start + batchSize);
-    const known = new Map((await input.facts(batch)).map((row) => [row.sessionId, row]));
-    for (const sessionId of batch) {
-      if (report.reclaimed.length >= maxReclaims) break;
-      report.examined += 1;
-      const facts = known.get(sessionId);
-      const reason = codexHomeReclaimReason(facts, {
-        now,
-        retentionMs: input.retentionMs,
-        worktreeExists: facts?.workdirMode === 'worktree' ? await worktreeExists(facts.workdirPath) : true,
-      });
-      if (reason === null || input.isLive(sessionId)) continue;
-      try {
-        await rm(codexMcpSessionDir(input.dataDir, sessionId), { recursive: true, force: true });
-        report.reclaimed.push({ sessionId, reason });
-      } catch {
-        report.errors.push(sessionId);
-      }
-    }
-  }
-  return report;
-}
