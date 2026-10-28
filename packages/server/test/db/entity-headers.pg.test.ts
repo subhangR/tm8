@@ -221,6 +221,11 @@ beforeAll(async () => {
   await asOwner(async (c) => {
     ids.story = await entity(c, ids.space!, 'story');
     await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Story header', 'Story description')`, [ids.story]);
+    ids.tool = await entity(c, ids.space!, 'tool');
+    await c.query(`insert into public.tools(entity_id, space_id, title, definition) values ($1, $2, 'url-probe', $3)`, [ids.tool, ids.space,
+      { name: 'url-probe', description: 'Probe a URL', help: '', runtime: 'bash', source: 'exit 0', inputs: [], tm8Access: 'none', timeoutSeconds: 60 }]);
+    ids.loop = await entity(c, ids.space!, 'loop');
+    await c.query(`insert into public.loops(entity_id, title, schedule, action, prompt) values ($1, 'Nightly sweep', 'every 1d', 'dispatch', 'sweep')`, [ids.loop]);
   });
 }, 300_000);
 
@@ -252,6 +257,12 @@ describe('set_entity_header / clear_entity_header', () => {
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', whenToUse: 'Open when planning the story', summary: 'Authored summary', keywords: ['planning'], source: 'authored', stale: false });
     await clearHeader(ids.story!, 1);
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ summary: 'Story description', source: 'derived' });
+  });
+
+  it('names a tool by its definition and a loop by its title (loops PR1, Tools PR-E)', async () => {
+    const headers = await resolve([ids.tool!, ids.loop!]);
+    expect(headers.get(ids.tool!)).toMatchObject({ kind: 'tool', name: 'url-probe', summary: 'Probe a URL' });
+    expect(headers.get(ids.loop!)).toMatchObject({ kind: 'loop', name: 'Nightly sweep', summary: 'every 1d · dispatch · sweep' });
   });
 
   it('writes a header without touching the entity version, and records an activity instead of an entity.upsert', async () => {
