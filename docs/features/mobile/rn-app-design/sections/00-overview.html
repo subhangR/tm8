@@ -25,6 +25,7 @@
     <tr><td>Sheets for temporary surfaces (pickers, account, launch).</td><td>Anchored popovers do not survive a 390px header.</td><td>Kept, as native bottom sheets with detents. Android back dismisses the sheet first.</td></tr>
     <tr><td>Five phone screens; other kinds get a generic page.</td><td>Lanes were scoped to chat, doc, task, session, artifact.</td><td>A screen for every kind, driven by one registry — this document draws all 33.</td></tr>
     <tr><td>One server per origin; switching is a URL base.</td><td>The browser is tied to the page's origin.</td><td>Many servers in one app, each with its own sign-in, its spaces, its unread counts; Inbox can read across all of them.</td></tr>
+    <tr><td>Phone lists are flat; only the drawer expands children in place.</td><td>The list lanes were scoped to the five v1 screens.</td><td>Every list is a tree when anything nests — owner ruling 2026-10-28: sessions under their root, subtasks, sub-docs, child stories, expanded to depth 2.</td></tr>
     <tr><td>Honest refusals: "this has no phone layout".</td><td>Unavailable ≠ invisible.</td><td>Kept as a law. Nothing advertises what it cannot do; disabled-with-reason everywhere.</td></tr>
   </tbody>
 </table>
@@ -269,5 +270,6 @@
   </tbody>
 </table>
 
+<div class="callout ruling"><b>Owner ruling · 2026-10-28 · hierarchy is visible</b>"In the current phone app, for sessions and others, the tree structure is not shown in the list — in the app it must be shown." Every kind list is a tree whenever any row has children (sessions launched under a root session, subtasks, sub-docs, child stories): expanded to depth 2 by default, a disclosure chevron on parents, 20pt indent per depth with a hairline guide, a count summary on a collapsed parent ("3 children · 2 live"). Tree is the default layout for Sessions, Tasks, Docs and Stories; entity pages show the parent chain and a Children tree. The web drawer already expands children in place; the phone list dropped it, and this design restores it everywhere.</div>
 <div class="callout ruling"><b>Decision · style</b>The app ships in tm8's current default style — neutral surfaces, system type, the gold accent — because that is what the product defaults to today (owner ruling 2026-10-14) and because the system face is what "native" means on each platform. The ATELIER paper-and-ink theme stays available as a space <code>style</code> the app can paint from. The status ramp is unchanged in both.</div>
 </section>

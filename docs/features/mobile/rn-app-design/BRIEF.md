@@ -217,6 +217,13 @@ only — the sample world below — no lorem ipsum, no "Item 1".
   entity pushes; stack cap 12; a cold link opens as `[kind's tab root, entity]` so Back lands on
   the list; sheets are dismissed by Android back before the screen pops; re-tapping the active tab
   pops to root; long-pressing it shows the stack. Nothing ever jumps several levels.
+- **Hierarchy is visible in every list (owner ruling, 2026-10-28).** Every entity may have a parent
+  of its own kind (subtasks, sessions launched under a root session, sub-docs, child stories). A kind
+  list renders as a TREE whenever any row has children: expanded to depth 2 by default, a disclosure
+  chevron on rows with children, 20pt indent per depth with a hairline guide, and a count summary on a
+  collapsed parent ("3 children · 2 live"). Tree is the default layout for Sessions, Tasks, Docs and
+  Stories; collapse state is remembered per list. Entity pages show the parent chain and a Children
+  tree. Inbox rows stay flat but name the parent in the subtitle.
 - Honest refusals keep their words: "This server could not be reached", "Nobody could count this
   yet", "The node refused: <reason>".
 
