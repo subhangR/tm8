@@ -250,15 +250,41 @@ export class WorktreeManager {
    * this whole design is an argument against.
    */
   async validateRepository(workingDir: string): Promise<{ repoRoot: string }> {
-    let real: string;
+    const real = await this.canonicalWorkingDir(workingDir);
+    await this.probeRepository(real);
+    return { repoRoot: real };
+  }
+
+  /**
+   * §4.1 and §4.3 in one pass, for the launch path: validate the repository
+   * and resolve its base ref. The probe and the base reads are independent
+   * reads of one repository, so they run at once — a launch pays one round of
+   * git processes fewer — and the probe's refusal still wins: a directory that
+   * is not a repository is `not_a_git_repository`, never `base_ref_not_found`.
+   */
+  async resolveRepositoryBase(
+    workingDir: string,
+    baseRef?: string,
+  ): Promise<{ repoRoot: string; ref: string; oid: string }> {
+    const real = await this.canonicalWorkingDir(workingDir);
+    const [probe, base] = await Promise.allSettled([this.probeRepository(real), this.resolveBaseRef(real, baseRef)]);
+    if (probe.status === 'rejected') throw probe.reason;
+    if (base.status === 'rejected') throw base.reason;
+    return { repoRoot: real, ...base.value };
+  }
+
+  private async canonicalWorkingDir(workingDir: string): Promise<string> {
     try {
-      real = await realpath(workingDir);
+      return await realpath(workingDir);
     } catch {
       throw new WorktreeError(
         `project working directory does not exist: ${workingDir}`,
         'invalid_input', 'not_a_git_repository',
       );
     }
+  }
+
+  private async probeRepository(real: string): Promise<void> {
     const probe = await runGit(['-C', real, 'rev-parse', '--git-dir'], this.gitOpts());
     if (probe.code !== 0) {
       throw new WorktreeError(
@@ -266,7 +292,6 @@ export class WorktreeManager {
         'invalid_input', 'not_a_git_repository', { stderr: probe.stderr.trim() },
       );
     }
-    return { repoRoot: real };
   }
 
   /** `git rev-parse --verify <ref>^{commit}` — null oid means "no such commit". */
