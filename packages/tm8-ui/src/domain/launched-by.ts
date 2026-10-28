@@ -57,8 +57,9 @@ export type RowsForKind = (kind: string) => ((filter: QueryFilter) => readonly E
  * THE LAUNCHERS A FLAT SURFACE NAMES (task 01a182c8). A roster that draws
  * sessions side by side cannot nest them, so each launched row names who
  * launched it. Titles come from the rows the surface already holds (`known`,
- * by default the launched rows themselves), then from ONE bounded `idIn` read
- * per launcher kind for the rest — the same bound as `launchedRowsFilter`.
+ * by default the launched rows themselves), then from bounded `idIn` reads,
+ * one per launcher kind, each asking only for the ids still unnamed — the same
+ * bound as `launchedRowsFilter`.
  */
 export function launcherTitlesOf(
   rows: readonly Pick<EntitySummary, 'id' | 'title' | 'state'>[],
@@ -72,12 +73,16 @@ export function launcherTitlesOf(
     return launcher && !titles.has(launcher) ? [launcher] : [];
   }))].sort().slice(0, LAUNCHERS_PER_READ);
   if (missing.length > 0 && rowsFor) {
+    let ask = missing;
     for (const launcherKind of launcherKindsOf(kind)) {
+      if (ask.length === 0) break;
       const read = rowsFor(launcherKind);
       if (!read) continue;
-      for (const row of read({ idIn: missing } as QueryFilter)) {
-        if (missing.includes(row.id)) titles.set(row.id, row.title);
+      for (const row of read({ idIn: ask } as QueryFilter)) {
+        if (ask.includes(row.id)) titles.set(row.id, row.title);
       }
+      /* The next kind is asked only for the ids this one did not name. */
+      ask = ask.filter((id) => !titles.has(id));
     }
   }
   return titles;

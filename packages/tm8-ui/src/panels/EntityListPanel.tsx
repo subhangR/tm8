@@ -4172,9 +4172,9 @@ function TreeRows({
      A LAUNCHER IS A PARENT HERE TOO (task 01a182c8; Subhang, 2026-10-28: the
      sessions a coordinator launched showed "as independent rows, not nested
      under the coordinator"). A session's tree parent is its launcher
-     (`treeParentOf`), and one on a later page, on another tab or filtered out
-     comes in as context the same way — read by id from every kind that can
-     launch one (a session, a chat), and drawn as its own kind. */
+     (`treeParentOf`), and one on a later page or filtered out comes in as
+     context the same way — read by id from every kind that can launch one (a
+     session, a chat), and drawn as its own kind. */
   const contextLists: (readonly EntitySummary[])[] = [];
   if (hierarchical) {
     const readers = contextReadersOf(config, props);
@@ -4187,13 +4187,20 @@ function TreeRows({
       }))].sort().slice(0, CONTEXT_PARENTS_PER_READ);
       if (missing.length === 0) break;
       const found: EntitySummary[] = [];
+      let ask = missing;
       for (const read of readers) {
+        if (ask.length === 0) break;
+        const kept = keepOnly(read({ idIn: ask } as QueryFilter), 'id', ask);
+        /* Each id is asked of the next launcher kind only if this one lacked it. */
+        if (kept.length > 0) ask = ask.filter((id) => !kept.some((row) => row.id === id));
         /* A session parent on ANOTHER session tab stays out: its child sits
            at the top level and names it ("↳ under X (Completed)", §5.3.1
-           case 7). Only a launcher this tab would hold comes in as context. */
-        const parents = keepOnly(read({ idIn: missing } as QueryFilter), 'id', missing).filter(
-          (parent) => !otherSessionTab(parent, sessionTab, config),
-        );
+           case 7). Only a launcher this tab would hold comes in as context.
+           The cached array is kept unless something is dropped, so an
+           unchanged read keeps its identity (`keepOnly`, `useMergedRows`). */
+        const parents = kept.some((parent) => otherSessionTab(parent, sessionTab, config))
+          ? kept.filter((parent) => !otherSessionTab(parent, sessionTab, config))
+          : kept;
         contextLists.push(parents);
         for (const parent of parents) {
           if (have.has(parent.id)) continue;

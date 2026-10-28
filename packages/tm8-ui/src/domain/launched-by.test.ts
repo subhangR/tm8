@@ -38,6 +38,17 @@ describe('launched-by (330)', () => {
     expect(asks).toEqual([['work_session', { idIn: ['chat-1'] }], ['chat', { idIn: ['chat-1'] }]]);
   });
 
+  it('asks the next launcher kind only for the ids the previous one did not name', () => {
+    const rows = [{ id: 'w-1', title: 'Worker', state: { kind: 'work_session', launchedBy: 'coord' } }] as never[];
+    const asks: string[] = [];
+    const titles = launcherTitlesOf(rows, 'work_session', (kind) => () => {
+      asks.push(kind);
+      return kind === 'work_session' ? [{ id: 'coord', title: 'Coordinator' } as never] : [];
+    });
+    expect(titles.get('coord')).toBe('Coordinator');
+    expect(asks).toEqual(['work_session']);
+  });
+
   it('crumbs a launched row only, with the short id when no read named the launcher', () => {
     const titles = new Map([['coord', 'Coordinator']]);
     expect(launchedByCrumb({ kind: 'work_session', launchedBy: 'coord' }, titles)).toBe('↳ launched by Coordinator');
