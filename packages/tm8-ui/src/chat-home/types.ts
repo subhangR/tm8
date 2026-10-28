@@ -302,7 +302,19 @@ export interface ChatTurn {
 
 export interface ChatThreadDetail {
   summary: ChatThreadSummary;
+  /** Oldest first. A paging port holds only the newest page(s) here. */
   turns: ChatTurn[];
+  /**
+   * Where the next OLDER page starts (`readOlderTurns`); `null` once the first
+   * turn of the chat is loaded. Absent from a port that reads a chat whole.
+   */
+  olderCursor?: string | null;
+}
+
+/** One older page of a chat, oldest first, and where the page before it starts. */
+export interface ChatOlderTurns {
+  turns: ChatTurn[];
+  olderCursor: string | null;
 }
 
 /**
@@ -454,6 +466,11 @@ export interface ChatHomePort {
    */
   chatIdsAbout(aboutId: EntityId): Promise<readonly EntityId[]>;
   readThread(chatId: EntityId): Promise<ChatThreadDetail>;
+  /**
+   * The page of turns before `cursor` (a `ChatThreadDetail.olderCursor`).
+   * OPTIONAL: a port that reads a chat whole (fixtures) never hands out one.
+   */
+  readOlderTurns?(chatId: EntityId, cursor: string): Promise<ChatOlderTurns>;
   listTeammates(spaceId: SpaceId | string): Promise<readonly ChatTeammateOption[]>;
   /**
    * Projects this space can bind a chat to. OPTIONAL: a port without one
