@@ -86,7 +86,12 @@ export function stripMarkdown(body: string): string {
  */
 export function plainExcerpt(body: string, max: number): string {
   const flat = flatten(stripMarkdown(body)) || flatten(body);
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+  if (flat.length <= max) return flat;
+  // Never cut between the halves of a surrogate pair: a lone high surrogate
+  // renders as a replacement glyph where an emoji was.
+  let end = max - 1;
+  if (end > 0 && /[\uD800-\uDBFF]/.test(flat[end - 1]!)) end -= 1;
+  return `${flat.slice(0, end)}…`;
 }
 
 function flatten(text: string): string {

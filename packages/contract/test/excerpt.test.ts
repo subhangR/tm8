@@ -116,4 +116,12 @@ describe('plainExcerpt', () => {
     expect(plainExcerpt(body, 200)).toBe('Status Done. See entity-read.ts and the doc.');
     expect(plainExcerpt(body, 20)).toBe('Status Done. See en…');
   });
+
+  it('never cuts an emoji in half at the cap', () => {
+    // 'abc' + '🛠' is five UTF-16 units; a cap of 5 keeps 4 before the
+    // ellipsis, which would end on the emoji's high surrogate.
+    const capped = plainExcerpt('abc🛠 and more', 5);
+    expect(capped).toBe('abc…');
+    expect(capped.length).toBeLessThanOrEqual(5);
+  });
 });
