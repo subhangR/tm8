@@ -141,7 +141,7 @@ const CASES: Case[] = [
     expected: { openai: 'space', github: 'space' } },
   { name: 'codex auto → node', tool: 'codex', model: 'gpt-5.5', expected: { openai: 'node', github: 'node' } },
   // ---- API-key backends: the member's own key, one route ------------------
-  { name: 'Kimi on claude-code (member route)', tool: 'claude-code', model: 'kimi-k2-thinking',
+  { name: 'Kimi on claude-code (member route)', tool: 'claude-code', model: 'kimi-k3',
     member: { home: true }, expected: { anthropic: 'member', github: 'node' } },
   { name: 'Groq on codex (member route)', tool: 'codex', model: 'openai/gpt-oss-120b',
     member: { home: true }, expected: { openai: 'member', github: 'node' } },

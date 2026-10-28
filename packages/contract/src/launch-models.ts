@@ -192,7 +192,7 @@ export const LAUNCH_MODEL_CATALOG = [
   //
   // WHY THEY SAY `claude-code`. Moonshot serves an Anthropic-wire-compatible
   // surface at api.moonshot.ai/anthropic, so these run on the SAME binary as
-  // the Anthropic rows above: `claude --model kimi-k2-thinking`. The redirect
+  // the Anthropic rows above: `claude --model kimi-k3`. The redirect
   // is `API_KEY_BACKEND_ROUTING.kimi` in the execution package, which sets
   // ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN for the session.
   //
@@ -206,39 +206,40 @@ export const LAUNCH_MODEL_CATALOG = [
   //
   // EFFORT IS EMPTY, not merely unspecified. Claude Code's `--effort` maps to
   // Anthropic's extended-thinking budget; Moonshot's models decide their own,
-  // and `kimi-k2-thinking` reasons whether or not a flag asks it to. An empty
-  // list makes the composer draw the dial disabled with "has one fixed effort
-  // level" rather than offering four stops the backend would ignore.
+  // and Moonshot documents no reasoning-effort parameter for any of them. An
+  // empty list makes the composer draw the dial disabled with "has one fixed
+  // effort level" rather than offering four stops the backend would ignore.
+  //
+  // THESE IDS ROT. The four K2 rows this replaces (`kimi-k2-thinking`,
+  // `-thinking-turbo`, `kimi-k2-turbo-preview`, `kimi-k2-0905-preview`) were
+  // discontinued with the whole K2 series on 2026-05-25, and every launch on
+  // them had been failing at the provider since — unnoticed here, because these
+  // rows only ever run on a member's own key. Check
+  // platform.kimi.ai/docs/models rather than assuming a once-correct id is
+  // still served.
+  //
+  // WHY ONLY TWO OF MOONSHOT'S FOUR CURRENT MODELS. `kimi-k2.7-code` and
+  // `kimi-k2.7-code-highspeed` are live and are deliberately NOT offered: they
+  // are reported to reject a request with thinking disabled, Moonshot documents
+  // no reasoning-effort parameter we could use to guarantee the other mode, and
+  // our Kimi rows send no effort at all. The two kept rows have no such
+  // question — `kimi-k2.6` is documented for thinking AND non-thinking modes,
+  // and `kimi-k3` is the model Moonshot's own Claude Code guide points at this
+  // very endpoint. Re-test the K2.7 pair with a real key before adding them.
   {
-    model: 'kimi-k2-thinking',
-    label: 'Kimi K2 Thinking',
+    model: 'kimi-k3',
+    label: 'Kimi K3',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Moonshot reasoning model on Claude Code — runs on your own Kimi key (Settings → Connections)',
+    note: "Moonshot's flagship, 1M context and native vision — runs on your own Kimi key (Settings → Connections)",
     efforts: [],
   },
   {
-    model: 'kimi-k2-thinking-turbo',
-    label: 'Kimi K2 Thinking (Turbo)',
+    model: 'kimi-k2.6',
+    label: 'Kimi K2.6',
     provider: 'moonshot',
     agentTool: 'claude-code',
-    note: 'Faster-serving variant of K2 Thinking — runs on your own Kimi key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'kimi-k2-turbo-preview',
-    label: 'Kimi K2 Turbo',
-    provider: 'moonshot',
-    agentTool: 'claude-code',
-    note: 'Non-reasoning K2 at turbo throughput — runs on your own Kimi key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'kimi-k2-0905-preview',
-    label: 'Kimi K2 (0905)',
-    provider: 'moonshot',
-    agentTool: 'claude-code',
-    note: 'Date-pinned K2 — runs on your own Kimi key (Settings → Connections)',
+    note: 'General model with thinking and non-thinking modes, 256k — runs on your own Kimi key (Settings → Connections)',
     efforts: [],
   },
 
@@ -251,9 +252,30 @@ export const LAUNCH_MODEL_CATALOG = [
   // rule applies: only these rows use the Groq key, and the GPT rows above
   // keep running on the member's OpenAI login.
   //
-  // THE MODEL IDS CARRY THEIR VENDOR PREFIX (`openai/`, `moonshotai/`,
-  // `qwen/`) because that is literally what Groq's API expects; they are not
-  // decoration and must not be tidied away.
+  // THE MODEL IDS CARRY THEIR VENDOR PREFIX (`openai/`) because that is
+  // literally what Groq's API expects; it is not decoration and must not be
+  // tidied away. Note that `llama-3.3-70b-versatile` genuinely has no prefix —
+  // that is Groq's own spelling, not an omission. An `openai/`-named row
+  // running on the GROQ key is also the clearest statement of the per-model
+  // rule above: routing follows who SERVES a model, not what its id is named
+  // after.
+  //
+  // THESE IDS ROT, AND GROQ PUBLISHES THE DATES. Three rows here previously
+  // named models Groq had already shut down: `moonshotai/kimi-k2-instruct-0905`
+  // (2026-04-15), `qwen/qwen3-32b` (2026-07-17) and
+  // `deepseek-r1-distill-llama-70b` (2025-10-02). They are removed rather than
+  // repointed: Groq no longer serves ANY Moonshot or DeepSeek model, and its
+  // suggested replacement for all three is `openai/gpt-oss-120b`, already a row
+  // here. Check console.groq.com/docs/deprecations before trusting a row.
+  //
+  // ONLY GROQ'S *PRODUCTION* MODELS BELONG HERE. Groq says preview models
+  // "should not be used in production environments" and "may be discontinued at
+  // short notice" — which is exactly the failure this catalog just suffered. So
+  // `qwen/qwen3.8-27b`, `minimaxai/minimax-m2.7` and `meta-models/muse-spark-open`
+  // are live, tool-use capable and still deliberately absent. `muse-spark-open`
+  // is the only model on Groq that accepts `xhigh` effort, which is the one
+  // thing worth revisiting if it is ever promoted to production.
+  // `llama-3.1-8b-instant` IS production and simply not offered yet.
   {
     model: 'openai/gpt-oss-120b',
     label: 'GPT-OSS 120B (Groq)',
@@ -271,35 +293,11 @@ export const LAUNCH_MODEL_CATALOG = [
     efforts: GROQ_GPT_OSS_EFFORTS,
   },
   {
-    model: 'moonshotai/kimi-k2-instruct-0905',
-    label: 'Kimi K2 Instruct (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'Kimi K2 served by Groq on the Codex side — a DIFFERENT route to Moonshot than the Kimi rows above, which use Claude Code',
-    efforts: [],
-  },
-  {
     model: 'llama-3.3-70b-versatile',
     label: 'Llama 3.3 70B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
     note: 'Meta Llama 3.3 70B on Groq — runs on your own Groq key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'qwen/qwen3-32b',
-    label: 'Qwen3 32B (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'Qwen3 32B on Groq — runs on your own Groq key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'deepseek-r1-distill-llama-70b',
-    label: 'DeepSeek R1 Distill 70B (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'Reasoning distill on Groq — runs on your own Groq key (Settings → Connections)',
     efforts: [],
   },
 ] as const satisfies readonly LaunchModelCatalogEntry[];
