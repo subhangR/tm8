@@ -111,13 +111,18 @@ writes a run can pin, labelled by their version (`v7`), with when, who (agents
 marked `(agent)`), the fields that differ from the next older definition
 version (`name`, `description`, `runtime`, `source`, `inputs`, `help`,
 `tm8Access`, `timeoutSeconds`, plus `config` and `secrets`) and the first twelve
-hex digits of the source's sha256, the digest every run pins. A stored write is
-a definition version when its snapshot's `execution_version` equals its version
-(every definition edit since migration 381, 2026-10-28) or, for writes older
-than that migration, when its executable fields (source, runtime, inputs,
-tm8Access, timeoutSeconds) differ from the next older stored write. The whole
-history is read; `--limit` caps the rows shown, a `hidden:` line counts the
-configuration and metadata writes left out, and `--cursor` is refused.
+hex digits of the source's sha256, the digest every run pins. The rule the UI
+and the CLI share: a stored version is a definition version when
+`snapshot.content.execution_version` equals its own `version`; a metadata edit
+when its `content.definition` differs from the previous row but the execution
+version is unchanged; otherwise a configuration write, whose definition is
+identical to the previous row. Only for writes older than migration 381
+(2026-10-28) does a fallback apply: such a row is a definition version when its
+executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ
+from the next older stored write, because before 381 the pinned number counted
+separately. The whole history is read; `--limit` caps the rows shown, a
+`hidden:` line counts the configuration and metadata writes left out, and
+`--cursor` is refused.
 
 `--all` lists every stored write instead, one Server page at a time with
 `--limit` and `--cursor`: configuration, secret and name/description/help

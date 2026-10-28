@@ -4605,6 +4605,8 @@ const COMMAND_ALIASES = new Map<string, {
   summary: string;
   notes: readonly string[];
   examples: readonly string[];
+  /** Extra intent words for `tm8 help --query`, beside the path words every alias is tagged with. */
+  tags?: readonly string[];
 }>([
   ['message reply', {
     path: ['message', 'reply'],
@@ -4957,6 +4959,7 @@ const COMMAND_ALIASES = new Map<string, {
     path: ['tool', 'versions'],
     syntax: 'tm8 tool versions <name|id> [--all] [--limit <count>] [--cursor <cursor>]',
     summary: 'The version history of a tool: its definition versions, or with --all every stored write',
+    tags: ['tools', 'version', 'history', 'definition', 'snapshot'],
     notes: [
       'sugar over entities.versions on the tool — it adds no catalog operation',
       'by default the rows are DEFINITION versions, the numbers runs pin as toolVersion: stored writes whose content.execution_version equals their version, plus writes older than migration 381 whose executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ from the next older write; the whole history is read, --limit caps the rows shown and --cursor is refused',
@@ -4970,6 +4973,7 @@ const COMMAND_ALIASES = new Map<string, {
     path: ['tool', 'diff'],
     syntax: 'tm8 tool diff <name|id> [--from <version>] [--to <version>]',
     summary: 'Unified diff of a tool\'s source between two stored versions',
+    tags: ['tools', 'source', 'compare', 'versions', 'changes'],
     notes: [
       'sugar over entities.versions — it adds no catalog operation',
       'defaults: --to is the newest DEFINITION version (see `tm8 tool versions`), --from the definition version just before it; an explicit --from or --to may name any stored write, so a configuration write diffs as no source change',
@@ -4985,17 +4989,19 @@ const COMMAND_ALIASES = new Map<string, {
     path: ['tool', 'starters', 'list'],
     syntax: 'tm8 tool starters list',
     summary: 'The starter tools this CLI ships, and whether a tool of each name exists in this Space',
+    tags: ['tools', 'starter', 'examples'],
     notes: [
       'the starters are data in @tm8/contract, the set the UI offers too; the one call is tools.list, to mark names that already exist',
       '`existing.matchesStarter` is false when the tool of that name has other source, such as an edited or older copy',
       '--format json prints every starter in full: runtime, description, source, spec, whenToUse and summary',
     ],
-    examples: ['tm8 tool starters list', 'tm8 tool starters list --format json'],
+    examples: ['tm8 --space <space-id> tool starters list', 'tm8 tool starters list --format <format>'],
   }],
   ['tool starters install', {
     path: ['tool', 'starters', 'install'],
     syntax: 'tm8 tool starters install [--only <name>...] [--mutation-id <id>]',
     summary: 'Create the starter tools this Space does not have yet, with their selection headers',
+    tags: ['tools', 'starter', 'setup', 'examples'],
     notes: [
       'sugar over tools.list + tools.create + entities.header.set — it adds no catalog operation',
       'a name that already exists is skipped, never overwritten; --only (repeatable or comma-separated) narrows the set and an unknown name is refused before any call',
@@ -5003,7 +5009,7 @@ const COMMAND_ALIASES = new Map<string, {
       'creates use <mutation-id>:<starter> and headers <mutation-id>:<starter>:header, so a retry with the same --mutation-id never duplicates',
       'a header that could not be set is a warning on stderr: the tool exists without its when-to-use and summary',
     ],
-    examples: ['tm8 tool starters install', 'tm8 tool starters install --only url-check --only space-digest'],
+    examples: ['tm8 --space <space-id> tool starters install', 'tm8 tool starters install --only <starter> --only <starter>'],
   }],
   ['node mode', {
     path: ['node', 'mode'],
@@ -5443,6 +5449,17 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
   };
 }
 
+/**
+ * The commands no operation row describes — aliases and sugar such as `message reply`, `task axis`
+ * or `tool versions` — with the intent words `tm8 help --query` ranks them by: their path words and
+ * the alias's own tags. Operation-backed commands are searched through their operation rows.
+ */
+export function aliasCommands(from?: AvailabilityLedger): readonly { command: CommandDiscovery; intentTags: readonly string[] }[] {
+  return COMMAND_ORDER.filter((key) => COMMAND_ALIASES.has(key) && COMMAND_OPS.has(key)).map((key) => {
+    const alias = COMMAND_ALIASES.get(key) as NonNullable<ReturnType<typeof COMMAND_ALIASES.get>>;
+    return { command: commandFrom(key, from), intentTags: [...new Set([...alias.path, ...(alias.tags ?? [])])] };
+  });
+}
 export function commands(from?: AvailabilityLedger): readonly CommandDiscovery[] {
   return COMMAND_ORDER.map((key) => commandFrom(key, from));
 }
