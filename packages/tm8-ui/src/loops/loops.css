@@ -1,5 +1,6 @@
-.cv2-root .loop-create {
-  max-height: min(88vh, 760px);
+.cv2-root .loop-form {
+  max-height: min(90vh, 860px);
+  width: min(620px, 94vw);
   overflow-y: auto;
 }
 
@@ -11,17 +12,6 @@
   color: var(--pn-ink-2);
 }
 
-.cv2-root .loop-create__hint,
-.cv2-root .loop-create__truth {
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.45;
-  color: var(--pn-ink-3);
-}
-
-.cv2-root .loop-create__truth {
-  margin: 0;
-}
 
 .cv2-root .loop-controls {
   display: flex;
@@ -48,4 +38,244 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* -- the create/edit form ------------------------------------------------ */
+
+.cv2-root .loop-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cv2-root .loop-form__segmented {
+  display: inline-flex;
+  border: 1px solid var(--pn-line, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.cv2-root .loop-form__segment {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  background: transparent;
+  border: 0;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.cv2-root .loop-form__segment + .loop-form__segment {
+  border-left: 1px solid var(--pn-line, rgba(0, 0, 0, 0.15));
+}
+
+.cv2-root .loop-form__segment--on {
+  background: var(--pn-ink-1);
+  color: var(--pn-paper, #fff);
+}
+
+.cv2-root .loop-form__schedule,
+.cv2-root .loop-form__row,
+.cv2-root .loop-form__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .loop-form__schedule .au-dialog__input {
+  width: auto;
+}
+
+.cv2-root .loop-form__cron {
+  font-family: var(--pn-mono);
+  min-width: 18ch;
+}
+
+.cv2-root .loop-form__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.cv2-root .loop-form__preview {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pn-wash, rgba(0, 0, 0, 0.04));
+  font-size: 11.5px;
+}
+
+.cv2-root .loop-form__summary {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--pn-ink-1);
+}
+
+.cv2-root .loop-form__next {
+  margin: 0;
+  padding-left: 18px;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-form__muted {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .loop-form__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pn-wash, rgba(0, 0, 0, 0.06));
+  font-size: 11.5px;
+}
+
+.cv2-root .loop-form__chip button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .loop-form__advanced > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-form__advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv2-root .loop-form__spawn,
+.cv2-root .loop-form__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* -- the list ------------------------------------------------------------- */
+
+.cv2-root .loops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+.cv2-root .loops-list__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cv2-root .loops-list__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.cv2-root .loops-list__filter {
+  max-width: 240px;
+  margin-left: auto;
+}
+
+.cv2-root .loops-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.cv2-root .loops-table th {
+  text-align: left;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--pn-line, rgba(0, 0, 0, 0.12));
+}
+
+.cv2-root .loops-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--pn-line, rgba(0, 0, 0, 0.06));
+  color: var(--pn-ink-2);
+  vertical-align: middle;
+}
+
+.cv2-root .loops-table__open {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-ink-1);
+  cursor: pointer;
+  text-align: left;
+}
+
+.cv2-root .loops-table__error {
+  color: var(--pn-warn, #b45309);
+}
+
+.cv2-root .loop-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  background: var(--pn-wash, rgba(0, 0, 0, 0.06));
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-chip--ok { background: rgba(22, 163, 74, 0.14); color: #15803d; }
+.cv2-root .loop-chip--bad { background: rgba(220, 38, 38, 0.14); color: #b91c1c; }
+.cv2-root .loop-chip--warn { background: rgba(217, 119, 6, 0.14); color: #b45309; }
+.cv2-root .loop-chip--live { background: rgba(37, 99, 235, 0.14); color: #1d4ed8; }
+
+.cv2-root .loop-switch {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--pn-line, rgba(0, 0, 0, 0.2));
+  cursor: pointer;
+  padding: 0;
+}
+
+.cv2-root .loop-switch--on {
+  background: #16a34a;
+}
+
+.cv2-root .loop-switch[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cv2-root .loop-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 120ms ease;
+}
+
+.cv2-root .loop-switch--on .loop-switch__knob {
+  transform: translateX(13px);
 }

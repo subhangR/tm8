@@ -347,6 +347,7 @@ export const NEW_KINDS = [
   { kind: 'channel', key: 'h', label: 'New channel' },
   { kind: 'skill', key: 'k', label: 'New skill' },
   { kind: 'team_member', key: 'm', label: 'New teammate' },
+  { kind: 'loop', key: 'l', label: 'New loop' },
 ] as const;
 
 export type NewKind = (typeof NEW_KINDS)[number]['kind'];
