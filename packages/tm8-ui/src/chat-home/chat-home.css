@@ -728,6 +728,27 @@ button.tch-entity-chip:hover {
 }
 
 .tch-load-error { flex-direction: column; margin: auto; }
+
+/* The way into older pages of a long chat — also what a scroll to the top
+   triggers, so it reads as a status while that page is in flight. */
+.tch-older {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 12px;
+}
+.tch-older__button {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.tch-older__button:disabled { cursor: progress; opacity: 0.7; }
 .tch-submit-error { margin: 0 4px 5px; }
 
 .tch-composer-wrap {
