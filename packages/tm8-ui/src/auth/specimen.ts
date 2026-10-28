@@ -89,22 +89,27 @@ export const CLAIM = {
    * dead end, which describes the door this lane was built to remove. Contains
    * "on the tm8 node" because that is literally where the credential is set.
    */
-  claimTitle: 'Claim this node.',
+  claimTitle: 'Set up this tm8 server.',
   /**
    * WRITTEN FOR THE PERSON, NOT THE REVIEWER. This is the first screen a human
-   * ever sees, and the previous version explained itself in operation names
-   * (`auth.claim`) and told the reader to go find `<dataDir>/setup-token` — a
-   * documentation placeholder, printed at somebody who has no idea what a data
-   * dir is. Nobody can act on that.
-   *
-   * What they CAN act on: tm8 printed a link in the terminal they just started
-   * it in. That is the whole answer, and it needs no path, no file, and no
-   * vocabulary. The recovery line is true — `announceNodeClaim` reuses the live
-   * token across an ordinary restart rather than rotating it, so "start it
-   * again and it prints the same link" is a promise the boot path keeps.
+   * ever sees. Off the server's machine the setup code is still needed, but it
+   * arrives with the link tm8 printed, so the body says what to do and nothing
+   * about tokens, files or data dirs. Recovery names the one command that
+   * reprints it (`tm8 auth claim --show`) rather than a restart.
    */
   claimBody:
-    'Nobody owns this tm8 server yet — claiming it makes you the owner. When tm8 started, it printed a one-time setup link in your terminal; open that link and the code below fills itself in. Then pick a name and a password. They are stored on this server only, and they are what you will use to reach it later from your phone or another laptop.',
+    'Nobody owns this server yet. Pick a name and a password to become its owner. They are stored on this server only, and you will use them to sign in here and from your other devices.',
+  /**
+   * The loopback owner's card (`tokenRequired: false`): the person is on the
+   * server's own machine, which the node already trusts as its owner, so there
+   * is no code to find. Just the account.
+   */
+  claimLocalTitle: 'Welcome to tm8.',
+  claimLocalBody:
+    'You are on the machine tm8 runs on, so no setup code is needed. Pick a name and a password. They are stored on this server only, and you will use them to sign in from your phone or another laptop.',
+  /** The setup link carried the code; this replaces a field nobody has to read. */
+  tokenFromLink: 'Setup link recognised — it is used up when you create the account.',
+  tokenHint: 'from the setup link tm8 printed when it started — or run tm8 auth claim --show on the server',
   handleHintTail: 'how agents and members mention you',
   nameHintEmpty: 'your handle is derived from this name',
   gatePasswordHint: '8+ characters · sent to this server, stored only as a hash — use HTTPS off this machine',

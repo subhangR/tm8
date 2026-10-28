@@ -43,42 +43,10 @@ import {
 import { useAuthActions } from './gate-context';
 import { activeNodeLabel } from '../servers/server-key';
 import { failureCopy } from './failures';
-import { handleFrom } from './session';
+import { handleFrom, readClaimToken } from './session';
 import { CLAIM, FIRST_SPACE, NAME_STEP, SERVER } from './specimen';
 import { CLAIM_TOKEN_REQUIRED, CREATE_OWNER, CREATE_SPACE, NAME_SERVER } from './reasons';
 import type { FrameProps } from './types';
-
-/**
- * The `#claim=` token the server printed in its boot link.
- *
- * A FRAGMENT, NOT A QUERY STRING, and that is the whole point: browsers never
- * send the fragment to the server, so the token cannot reach an access log, an
- * upstream proxy, or a `Referer`. An earlier revision used `?claim=`, which
- * would have written a node-ownership capability into the nginx log of exactly
- * the reverse-proxied deployment this feature exists to serve — before the
- * ceremony burns it. Same click for the operator, no disclosure.
- *
- * Read once at mount rather than watched: the field is the state after that,
- * so a viewer editing it is not fighting the URL. The fragment is scrubbed
- * immediately (see below) so it does not linger in the address bar or in
- * session history.
- */
-function readClaimTokenFromUrl(): string {
-  try {
-    const hash = globalThis.location?.hash ?? '';
-    const token = new URLSearchParams(hash.replace(/^#/, '')).get('claim')?.trim() ?? '';
-    if (token && globalThis.history?.replaceState) {
-      // Out of the address bar the moment it is in the field. The token is
-      // still single-use and still burned server-side; this only stops a
-      // shoulder-surfer, a screenshot or a back-button from carrying it.
-      const { pathname, search } = globalThis.location;
-      globalThis.history.replaceState(null, '', `${pathname}${search}`);
-    }
-    return token;
-  } catch {
-    return '';
-  }
-}
 
 /**
  * 1a — Claim, step 1 · you. Oracle L33–L47.
@@ -114,11 +82,11 @@ export function FrameClaim(props: FrameProps) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
-  // Prefilled from `?claim=` so the printed link is one click. It stays an
-  // EDITABLE field rather than a hidden value: an operator who copied the
-  // token out of `<dataDir>/setup-token` has no link to click, and a hidden
-  // field would leave them with a card they cannot complete.
-  const [token, setToken] = useState(() => readClaimTokenFromUrl());
+  // From the `#claim=` link, kept for this tab across a reload (`readClaimToken`).
+  const [token, setToken] = useState(() => readClaimToken());
+  // A token that arrived with the link is not shown as a field the person has
+  // to understand. Only a refusal (a dead or mistyped link) reopens it.
+  const [editToken, setEditToken] = useState(() => !token);
   const handle = handleFrom(name);
   const failure = actions?.failure;
   // "Another" is a different moment from "first run", and the card says so:
@@ -137,9 +105,15 @@ export function FrameClaim(props: FrameProps) {
   // A node that has not answered is treated as CLAIMED, so an unreachable
   // node never renders a ceremony that cannot succeed.
   const unclaimed = actions?.nodeClaim?.claimed === false;
+  // THE NODE SAYS whether this browser needs the token: the loopback owner (the
+  // person on the server's own machine) claims without one. Absent ⇒ needed.
+  const needsToken = unclaimed && actions?.nodeClaim?.tokenRequired !== false;
+  const ready = !needsToken || token.trim().length > 0;
   const submit = unclaimed
-    ? () => void actions?.claimNode(token, name, password)
+    ? () => void actions?.claimNode(needsToken ? token : null, name, password)
     : () => void actions?.createAccount(name, password);
+  const tokenRefused = failure?.kind === 'setup-code-refused';
+  const showTokenField = needsToken && (editToken || tokenRefused);
 
   return (
     // Defect fix: on the review board the chrome carries the oracle's own
@@ -161,7 +135,9 @@ export function FrameClaim(props: FrameProps) {
             : !actions
               ? CLAIM.title
               : unclaimed
-                ? CLAIM.claimTitle
+                ? needsToken
+                  ? CLAIM.claimTitle
+                  : CLAIM.claimLocalTitle
                 : CLAIM.gateTitle}
         </AuthTitle>
         {/* The body has to describe the act the card actually performs. On an
@@ -175,7 +151,9 @@ export function FrameClaim(props: FrameProps) {
             : another
               ? CLAIM.anotherBody
               : unclaimed
-                ? CLAIM.claimBody
+                ? needsToken
+                  ? CLAIM.claimBody
+                  : CLAIM.claimLocalBody
                 : CLAIM.gateBody}
         </AuthBody>
 
@@ -187,24 +165,46 @@ export function FrameClaim(props: FrameProps) {
         ) : null}
 
         {actions ? (
-          <>
-            {unclaimed ? (
+          // A FORM so Enter submits from any field, as every sign-up form does.
+          // The action is a type="button" (AuthAction), and a form with several
+          // fields and no submit button gets NO implicit submission, so Enter is
+          // routed explicitly. `display: contents` keeps the card's gap rhythm.
+          <form
+            className="auth-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (ready && !actions.busy) submit();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+                e.preventDefault();
+                e.currentTarget.requestSubmit();
+              }
+            }}
+          >
+            {showTokenField ? (
               <AuthField
-                label="SETUP TOKEN"
+                label="SETUP CODE"
+                mono
                 value={token}
-                onChange={setToken}
-                hint={
-                  token
-                    ? 'filled in from the setup link \u2014 it works once, and is used up when you claim'
-                    : 'tm8 printed a setup link in the terminal when it started \u2014 open that link and this fills itself in. Lost it? Start tm8 again and it prints the same link.'
-                }
+                onChange={(v) => {
+                  setToken(v);
+                  setEditToken(true);
+                }}
+                autoFocus={!token}
+                hint={CLAIM.tokenHint}
               />
+            ) : needsToken ? (
+              <div className="auth-inset auth-inset--note" data-testid="claim-link-used">
+                <span className="auth-dot auth-dot--run" aria-hidden />
+                <span className="auth-inset__text">{CLAIM.tokenFromLink}</span>
+              </div>
             ) : null}
             <AuthField
               label="YOUR NAME"
               value={name}
               onChange={setName}
-              state="focus"
+              autoFocus={!showTokenField || !!token}
               hint={handle ? `handle @${handle} — ${CLAIM.handleHintTail}` : CLAIM.nameHintEmpty}
             />
             <AuthField
@@ -224,19 +224,19 @@ export function FrameClaim(props: FrameProps) {
                 </button>
               }
             />
-            {!unclaimed || token.trim() ? (
+            {ready ? (
               <AuthAction onClick={submit}>
                 {actions.busy ? CLAIM.actionBusy : another ? CLAIM.anotherAction : CLAIM.gateAction}
               </AuthAction>
             ) : (
               // Disabled-with-reason, per the module's own honesty law: an
               // enabled button here would promise an act the server must
-              // refuse, which is the precise defect this lane closes.
+              // refuse.
               <AuthAction reason={CLAIM_TOKEN_REQUIRED}>
                 {another ? CLAIM.anotherAction : CLAIM.gateAction}
               </AuthAction>
             )}
-          </>
+          </form>
         ) : (
           <>
             <AuthField label="YOUR NAME" value={CLAIM.name} state="focus" hint={CLAIM.nameHint} />

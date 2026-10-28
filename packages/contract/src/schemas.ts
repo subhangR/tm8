@@ -2382,7 +2382,7 @@ const NodeClaimTokenSchema = z.string().min(8).max(200).regex(/^tm8c_[A-Za-z0-9_
 });
 
 export const AuthClaimInputSchema: z.ZodType<AuthClaimInput> = z.object({
-  token: NodeClaimTokenSchema,
+  token: NodeClaimTokenSchema.optional(),
   username: AuthUsernameSchema,
   password: AuthPasswordSchema,
   displayName: z.string().min(1).max(200).optional(),
@@ -2401,6 +2401,7 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
   projectIsolation: z.enum(['shared', 'isolated']),
+  tokenRequired: z.boolean().optional(),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
