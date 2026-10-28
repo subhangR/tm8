@@ -28,7 +28,7 @@ import type {
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
-import type { CodexHomeSessionFacts } from './mcp-home.js';
+import type { SessionHomeFacts, SessionHomeOwnerFacts } from './session-artifact-reclaim.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -1291,16 +1291,27 @@ export interface GraphPort {
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
   /**
-   * What the Codex home reclaim needs to know about these sessions
+   * What the session artifact reclaim needs to know about these sessions
    * (`public.work_session_home_facts`, 372). Node admin, and NOT filtered by
    * space membership: a session left out of the answer is treated as having
-   * no row, and its home is removed. Optional: a port without it never
-   * reclaims a home.
+   * no row, and its Codex home and manifest file are removed. Optional: a
+   * port without it never reclaims anything.
    */
   listSessionHomeFacts?(
     auth: GraphAuth,
     sessionIds: string[],
-  ): Promise<CodexHomeSessionFacts[]>;
+  ): Promise<SessionHomeFacts[]>;
+  /**
+   * Whether ids with no work-session row are any entity at all
+   * (`public.session_home_owner_facts`, 373): a space-key home is keyed by a
+   * work session OR a chat. Node admin, NOT filtered by space membership, for
+   * the same reason. Optional: a port without it keeps every space-key home
+   * whose id has no work-session row.
+   */
+  listSessionHomeOwners?(
+    auth: GraphAuth,
+    ids: string[],
+  ): Promise<SessionHomeOwnerFacts[]>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //

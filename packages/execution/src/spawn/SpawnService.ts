@@ -1,9 +1,13 @@
 import {
   isolateCodexMcpHome,
-  reclaimCodexMcpHomes,
   scrubCodexMcpHome,
   sweepCodexMcpHomeSecrets,
 } from './mcp-home.js';
+import {
+  reclaimSessionArtifacts,
+  type SessionArtifact,
+  type SessionHomeRetention,
+} from './session-artifact-reclaim.js';
 // @tm8/execution — SpawnService: the G1A loop's engine.
 //
 // Owns the four verbs the loop is made of — spawn, prompt, terminate, and the
@@ -366,6 +370,12 @@ const EXIT_STATUS_MAP: Record<PtySessionStatus, WorkSessionStatus> = {
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
+/** How a reclaim error names what it could not remove. Never a path (I5). */
+const ARTIFACT_LABEL: Record<SessionArtifact, string> = {
+  codex_home: 'Codex home',
+  space_home: 'space-key home',
+  manifest: 'manifest file',
+};
 
 /**
  * Tighten an application-owned directory even when it predates the permission
@@ -384,17 +394,30 @@ async function ensurePrivateDirectory(path: string): Promise<void> {
 /**
  * Repair regular files already present in a private data root. Symlinks and
  * special files are deliberately ignored: following one during remediation
- * could chmod a target outside the tm8 data directory.
+ * could chmod a target outside the tm8 data directory. An entry that vanishes
+ * between the listing and the repair needs no repair: the session artifact
+ * reclaim removes ended sessions' manifest files concurrently, and this repair
+ * is cached, so one such race must not fail every later spawn.
  */
 async function repairPrivateFiles(path: string): Promise<void> {
   const entries = await readdir(path, { withFileTypes: true });
   await Promise.all(
     entries.map(async (entry) => {
       const entryPath = join(path, entry.name);
-      const info = await lstat(entryPath);
-      if (info.isFile()) await chmod(entryPath, PRIVATE_FILE_MODE);
+      await ignoreVanished(async () => {
+        const info = await lstat(entryPath);
+        if (info.isFile()) await chmod(entryPath, PRIVATE_FILE_MODE);
+      });
     }),
   );
+}
+
+async function ignoreVanished(repair: () => Promise<void>): Promise<void> {
+  try {
+    await repair();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
 }
 
 /** A 0700 scratch root is sufficient to protect everything below it, but its
@@ -404,8 +427,10 @@ async function repairPrivateChildDirectories(path: string): Promise<void> {
   await Promise.all(
     entries.map(async (entry) => {
       const entryPath = join(path, entry.name);
-      const info = await lstat(entryPath);
-      if (info.isDirectory()) await chmod(entryPath, PRIVATE_DIRECTORY_MODE);
+      await ignoreVanished(async () => {
+        const info = await lstat(entryPath);
+        if (info.isDirectory()) await chmod(entryPath, PRIVATE_DIRECTORY_MODE);
+      });
     }),
   );
 }
@@ -852,44 +877,53 @@ export class SpawnService {
   }
 
   /**
-   * Remove the Codex homes of sessions that can no longer be resumed (see
-   * `codexHomeReclaimReason`), plus, when `retentionMs` is set, those of
-   * sessions that ended longer ago than that. Asks the graph through
-   * `listSessionHomeFacts`, a node-admin read that sees every space. A port
-   * without it reclaims nothing, because a narrower read would make a session
-   * in another space look like an orphan. NEVER THROWS.
+   * Remove the per-session artifacts nothing can read again: Codex homes and
+   * space-key homes of sessions that can no longer be resumed or read, and
+   * manifest files of sessions that are not running (see
+   * `session-artifact-reclaim.ts` for each rule). With a retention set, the
+   * homes of sessions that ended longer ago than that go too. Asks the graph
+   * through `listSessionHomeFacts` and `listSessionHomeOwners`, node-admin
+   * reads that see every space. A port without the first reclaims nothing,
+   * because a narrower read would make a session in another space look like
+   * an orphan. NEVER THROWS.
    */
-  async reclaimCodexHomes(
+  async reclaimSessionArtifacts(
     auth: GraphAuth,
-    opts: { retentionMs: number | null; now?: number },
+    opts: { retention: SessionHomeRetention; now?: number },
   ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }> {
     const listFacts = this.graph.listSessionHomeFacts?.bind(this.graph);
     if (!listFacts) return { reclaimed: 0, errors: [] };
+    const listOwners = this.graph.listSessionHomeOwners?.bind(this.graph);
     try {
-      const report = await reclaimCodexMcpHomes({
+      const report = await reclaimSessionArtifacts({
         dataDir: this.dataDir,
         isLive: (sessionId) => this.pty.hasSession(sessionId) || this.sessionAuth.has(sessionId),
         facts: (sessionIds) => listFacts(auth, sessionIds),
-        retentionMs: opts.retentionMs,
+        ...(listOwners ? { owners: (ids: string[]) => listOwners(auth, ids) } : {}),
+        retention: opts.retention,
         ...(opts.now !== undefined ? { now: opts.now } : {}),
       });
       if (report.reclaimed.length > 0 || report.errors.length > 0) {
-        const reasons: Record<string, number> = {};
-        for (const { reason } of report.reclaimed) reasons[reason] = (reasons[reason] ?? 0) + 1;
-        this.logger?.info('SpawnService: reclaimed Codex session homes', {
+        const reclaimed: Record<string, number> = {};
+        for (const { artifact, reason } of report.reclaimed) {
+          const key = `${artifact}:${reason}`;
+          reclaimed[key] = (reclaimed[key] ?? 0) + 1;
+        }
+        this.logger?.info('SpawnService: reclaimed session artifacts', {
           examined: report.examined,
-          reclaimed: report.reclaimed.length,
-          reasons,
+          reclaimed,
           errors: report.errors,
         });
       }
       return {
         reclaimed: report.reclaimed.length,
-        errors: report.errors.map((sessionId) => ({ message: `session ${sessionId}: could not remove its Codex home` })),
+        errors: report.errors.map(({ sessionId, artifact }) => ({
+          message: `session ${sessionId}: could not remove its ${ARTIFACT_LABEL[artifact]}`,
+        })),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { reclaimed: 0, errors: [{ message: `could not reclaim Codex homes: ${message}` }] };
+      return { reclaimed: 0, errors: [{ message: `could not reclaim session artifacts: ${message}` }] };
     }
   }
 
