@@ -162,7 +162,7 @@ describe('independent OAuth binding and lifecycle', () => {
     p.state.rawRegistration = 'provider-private-detail';
     const error = await p.begin({ clientId: undefined }).catch(value => value);
     expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe('OAuth client registration rejected by provider');
+    expect(error.message).toMatch(/^OAuth client registration rejected by provider: .* answered 403/);
     expect(error.message).not.toContain('provider-private-detail');
   });
   it('uses a dynamically registered confidential client without exposing its secret', async () => {
@@ -264,7 +264,9 @@ describe('independent OAuth binding and lifecycle', () => {
   it('consumes state on denied token exchange and redacts provider error body', async () => {
     const p = await provider(); p.state.tokenStatus = 400; p.state.token = { error: 'access_denied', error_description: 'secret-from-provider' };
     const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
-    await expect(p.oauth.callback({ identityId: 'human' }, input)).rejects.toThrow(/^OAuth token exchange failed$/);
+    const error = await p.oauth.callback({ identityId: 'human' }, input).catch(value => value);
+    expect(error.message).toMatch(/^OAuth token exchange failed: \S+ answered 400 \(access_denied\)/);
+    expect(error.message).not.toContain('secret-from-provider');
     await expect(p.oauth.callback({ identityId: 'human' }, input)).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
   });
@@ -287,7 +289,7 @@ describe('independent OAuth binding and lifecycle', () => {
   });
   it('consumes provider-denied authorization without exchanging a code', async () => {
     const p = await provider(); const auth = await p.begin(); const state = auth.searchParams.get('state')!;
-    await expect(p.oauth.callback({ identityId: 'human' }, { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied$/);
+    await expect(p.oauth.callback({ identityId: 'human' }, { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied by the provider: access_denied\./);
     await expect(p.oauth.callback({ identityId: 'human' }, { state, code: 'late-code' })).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
@@ -317,7 +319,7 @@ describe('independent OAuth binding and lifecycle', () => {
       // token exchange instead of rejecting every issuer-bearing callback.
       const second = await registry.get('mcp.oauth.begin')!(ctx({ clientMutationId: 'begin-again', label: 'fixture' })) as { authorizationUrl: string };
       const secondState = new URL(second.authorizationUrl).searchParams.get('state')!;
-      await expect(callback(ctx({ state: secondState, code: 'code', issuer: p.origin }))).rejects.toThrow(/^OAuth token exchange failed$/);
+      await expect(callback(ctx({ state: secondState, code: 'code', issuer: p.origin }))).rejects.toThrow(/^OAuth token exchange failed: \S+ answered 400/);
       expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
     }
   });

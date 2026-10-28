@@ -94,7 +94,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const path=(ctx:RequestContext,name:string)=>{const value=ctx.params[name];if(!value)throw new CollabError('invalid_input',`${name} required`);return value;};
  const views=(auth:DbClaims,serverId:string|null,id:string|null=null)=>deps.db.rpc<McpCredentialView[]>(auth,'list_mcp_credentials',[serverId,id]);
  const view=async(auth:DbClaims,id:string)=>{const row=(await views(auth,null,id))[0];if(!row)throw new CollabError('not_found','MCP account unavailable');return row;};
- const approved=async(auth:DbClaims,id:string)=>{const server=await options.definition(auth,id);if(!server.definition.approved)throw new CollabError('forbidden','MCP connector is not approved');return server;};
+ const approved=async(auth:DbClaims,id:string)=>{const server=await options.definition(auth,id);if(!server.definition.approved)throw new CollabError('forbidden','MCP connector is not approved: a space administrator must approve it before an account can be connected or a session can use it');return server;};
  registry.registerAll({
   'mcp.credentials.create':requireHumanSession(async ctx=>{
    const input=McpCredentialCreateInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
@@ -146,7 +146,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   }),
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
    const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
-   if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
+   if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input',config.type!=='oauth2'?`OAuth connector required: this connector uses ${config.type} auth, so connect it with an API key instead`:!server.definition.url?'OAuth connector required: an OAuth connector must declare an HTTP url':'OAuth connector required: a human session is required');
    if(server.definition.firstParty===true) {
     // §8.1: Google's own begin — static endpoints and the node's client, never
     // discovery, and nothing from the definition but which service it is.
