@@ -32,7 +32,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../domain/KindIcon';
-import { Pill, type PillTone } from '../kit';
+import type { PillTone } from '../kit';
 import { resolveChatEntity, type ChatEntityResolver } from './EntityChip';
 import { truncateEntityId } from './entity-refs';
 import { kindWord, type ChatLedger } from './ledger';
@@ -324,19 +324,7 @@ function LedgerRow({
       <span className="tch-ledger-tree__title" data-placeholder={title === undefined || undefined}>
         {title ?? truncateEntityId(node.id)}
       </span>
-      {status ? (
-        <Pill
-          tone={status.tone ?? 'idle'}
-          {...(status.dot === 'pulse'
-            ? { dot: 'pulse' as const }
-            : status.dot === 'solid'
-              ? { dot: 'solid' as const }
-              : {})}
-          {...(status.detail ? { title: status.detail } : {})}
-        >
-          {status.word}
-        </Pill>
-      ) : null}
+      {status ? <LedgerDot tone={status.tone ?? 'idle'} dot={status.dot} word={status.word} detail={status.detail} /> : null}
     </>
   );
 
@@ -355,5 +343,38 @@ function LedgerRow({
     <span className="tch-ledger-tree__row" data-testid="ledger-row" data-id={node.id} title={node.id}>
       {body}
     </span>
+  );
+}
+
+/**
+ * A ROW'S STATUS IS A DOT, NOT A WORD (user report 2026-10-19, task 01a15340).
+ * The panel above the composer printed `running` beside every row; with a few
+ * sessions that column of repeated words crowded the titles out and made the
+ * berth ragged. The tone carries the state at a glance and the word moves to
+ * the tooltip and the accessible name, so nothing is lost to a reader who
+ * needs it — status is still never colour alone for assistive tech.
+ */
+export function LedgerDot({
+  tone,
+  dot,
+  word,
+  detail,
+}: {
+  tone: PillTone;
+  dot?: 'solid' | 'pulse' | null | undefined;
+  word: string;
+  detail?: string | undefined;
+}) {
+  const label = detail ? `${word} \u00b7 ${detail}` : word;
+  return (
+    <span
+      className="tch-ledger-dot"
+      data-tone={tone}
+      data-pulse={dot === 'pulse' || undefined}
+      role="img"
+      aria-label={word}
+      title={label}
+      data-testid="ledger-dot"
+    />
   );
 }
