@@ -62,6 +62,7 @@ import { createSessionArtifactReclaimJob, sessionHomeRetentionFromEnv } from './
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
+import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1210,6 +1211,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-session-ending-sweep' };
+        },
+      }),
+    );
+    // §5.4 (342, 377): pending MCP sign-ins past their 10-minute expiry.
+    scheduler.register(
+      createMcpOAuthPendingSweepJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-oauth-pending-sweep' };
         },
       }),
     );

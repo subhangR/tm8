@@ -18,6 +18,8 @@ export interface McpOAuthSecret {
   grantedScopes?: string[];
 }
 export type McpSecret = { kind: 'api_key'; value: string } | McpOAuthSecret;
+/** Why a refresh leaves a connection needing a reconnect (§7.2, B41). possible_reuse is the database's call, never the caller's. */
+export type McpRefreshFailure = 'invalid_grant' | 'scope_reduced';
 interface SealedRow { credentialId: string; spaceId: string; serverId: string; definitionVersion?: number; ciphertext: string; nonce: string; keyId?: string|null }
 
 /** Server-only opener. Never return its values from a facade handler. */
@@ -77,6 +79,33 @@ export class McpCredentialStore {
     const sealed = sealSecret(await this.keys.keyFor(keyId),JSON.stringify(secret),mcpSecretBinding(binding,keyId));
     const ok = await this.db.rpc<boolean>(claims,'refresh_mcp_credential',[binding.spaceId,binding.serverId,binding.credentialId,Buffer.from(nonce,'base64'),sealed.ciphertext,sealed.nonce,secret.kind==='oauth' && secret.expiresAt!==undefined?new Date(secret.expiresAt).toISOString():null,secret.kind==='oauth' && Boolean(secret.refreshToken),keyId]);
     if (!ok) throw new Error('MCP credential changed; reconnect');
+  }
+  /**
+   * §7.2: this connection cannot be used until its owner reconnects. The
+   * database marks it (one-way, B8), decides whether an invalid_grant is a
+   * possible reuse, and puts the inbox item in front of whoever can fix it.
+   */
+  async reportFailure(claims: DbClaims, binding: McpCredentialBinding, reason: McpRefreshFailure): Promise<void> {
+    await this.db.rpc(claims,'report_mcp_credential_failure',[binding.spaceId,binding.serverId,binding.credentialId,reason]);
+  }
+  /**
+   * §9.3(4) kill switch: revoke every MCP connection in a Space (spaceId) or on
+   * the node (null). The rows are revoked locally FIRST, in the database; what
+   * comes back is the rows the caller may then revoke at the provider, opened.
+   * A row that will not open is counted, never thrown: it is already revoked.
+   */
+  async revokeAll(claims: DbClaims, spaceId: string | null): Promise<{ scope: 'space' | 'node'; revoked: number; providerRevoke: Array<{ binding: McpCredentialBinding; secret?: McpSecret }> }> {
+    if (!isHumanAuthKind(claims.authKind) || claims.viaLinkId) throw new Error('MCP credential writes require a human session');
+    const result = await this.db.rpc<{ scope: 'space' | 'node'; revoked: number; providerRevoke: SealedRow[] }>(claims, 'revoke_all_mcp_credentials', [spaceId]);
+    const providerRevoke = [];
+    for (const row of result.providerRevoke) {
+      const binding = { spaceId: row.spaceId, serverId: row.serverId, credentialId: row.credentialId };
+      try {
+        const value = openSecret(await this.keys.keyFor(row.keyId), { ciphertext: Buffer.from(row.ciphertext, 'base64'), nonce: Buffer.from(row.nonce, 'base64') }, mcpSecretBinding(row, row.keyId));
+        providerRevoke.push({ binding, secret: JSON.parse(value) as McpSecret });
+      } catch { providerRevoke.push({ binding }); }
+    }
+    return { scope: result.scope, revoked: Number(result.revoked), providerRevoke };
   }
   /** §5.2 "Make the proxy write it". Best-effort: never fail a tool call on it. */
   async touch(claims: DbClaims, binding: McpCredentialBinding): Promise<void> {

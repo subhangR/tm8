@@ -56,7 +56,7 @@ export function mcpDenyReason(error:unknown):string|null {
 
 export interface McpCallAuditEntry {
  sessionId:string; serverId:string; method:'tools/list'|'tools/call'; tool:string|null;
- outcome:'started'|'succeeded'|'failed'|'denied';
+ outcome:'started'|'succeeded'|'failed'|'denied'|'refreshed';
  grant?:McpProxyGrant|undefined; denyReason?:string|null; latencyMs?:number; requestBytes:number; responseBytes?:number|null;
 }
 /** Written under the session's own runtime bearer: the writer accepts no other. */

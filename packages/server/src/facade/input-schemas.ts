@@ -9,7 +9,7 @@ import {
   WorkspaceSwitchInputSchema,
   WorkspaceUpdateInputSchema,
 } from '@tm8/contract';
-import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpTokenCreateInputSchema, McpTokenRevokeInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
+import { McpCredentialCommandInputSchema, McpCredentialRevokeAllInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpTokenCreateInputSchema, McpTokenRevokeInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -268,6 +268,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'mcp.credentials.revoke': McpCredentialCommandInputSchema,
   'mcp.credentials.share': McpCredentialShareInputSchema,
   'mcp.credentials.unshare': McpCredentialCommandInputSchema,
+  'mcp.credentials.revokeAll': McpCredentialRevokeAllInputSchema,
   'mcp.oauth.begin': McpOAuthBeginInputSchema,
   'mcp.oauth.callback': McpOAuthCallbackInputSchema,
   'mcp.proxy.request': McpProxyRequestInputSchema,

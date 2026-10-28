@@ -26,6 +26,8 @@ export interface FirstPartyHost {
   request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, connection: FirstPartyConnection): Promise<unknown>;
   /** The provider's own refresh; the generic one sends an RFC 8707 `resource` the provider may refuse. */
   refresh(secret: McpOAuthSecret): Promise<McpOAuthSecret>;
+  /** Whether a grant covers at least one tool; a refresh that leaves none marks the connection scope_reduced (B41). */
+  covers?(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): boolean;
 }
 
 /**

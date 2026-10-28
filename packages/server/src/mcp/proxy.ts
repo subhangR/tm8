@@ -1,7 +1,7 @@
 import type { DbClaims } from '../db/types.js';
-import type { McpCredentialBinding, McpCredentialStore, McpOAuthSecret } from './credential-store.js';
+import type { McpCredentialBinding, McpCredentialStore, McpOAuthSecret, McpRefreshFailure } from './credential-store.js';
 import { FirstPartyUnauthorized, type FirstPartyHost } from './first-party/host.js';
-import { refreshOAuth } from './oauth.js';
+import { OAuthTokenError, refreshOAuth } from './oauth.js';
 import { mcpStdio } from './stdio.js';
 import { mcpHttp } from './transport.js';
 
@@ -20,7 +20,7 @@ export interface McpProxyGrant { sessionId:string;identityId:string;launcherIden
    */
   rootIdentityId?:string|null;rootMemberId?:string|null;chain?:string[];chainSpaceIds?:string[] }
 export interface McpProxyPorts {
-  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'|'touch'>>;
+  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'|'touch'|'reportFailure'>>;
   /** Must read live session, launcher, selected connector/account and current membership from DB. */
   authorize(claims:McpRuntimeClaims,sessionId:string,serverId:string):Promise<McpProxyGrant>;
   definition(claims:DbClaims,serverId:string):Promise<McpProxyDefinition>;
@@ -28,12 +28,16 @@ export interface McpProxyPorts {
   firstParty?(definition:McpProxyDefinition):FirstPartyHost|undefined;
 }
 interface Connection { upstreamSession?:string; initialized:boolean; protocolVersion?:string }
+/** Per-call observers. `refreshed` runs once after a refreshed token is saved (§5.6's 'refreshed' audit row). */
+export interface McpProxyEvents { refreshed?():Promise<void> }
+/** What a caller sees when a refresh leaves the connection needing its owner (§7.2). */
+export const MCP_RECONNECT_REQUIRED='MCP OAuth account requires reconnect';
 /** No vendor credential leaves this service. A runtime bearer cannot pick another account. */
 export class McpProxy {
   private readonly connections=new Map<string,Connection>();
   private readonly locks=new Map<string,Promise<void>>();
   constructor(private readonly ports:McpProxyPorts) {}
-  async request(claims:McpRuntimeClaims,sessionId:string,serverId:string,method:'tools/list'|'tools/call',params:Record<string,unknown>={}):Promise<unknown> {
+  async request(claims:McpRuntimeClaims,sessionId:string,serverId:string,method:'tools/list'|'tools/call',params:Record<string,unknown>={},events:McpProxyEvents={}):Promise<unknown> {
     if(!['tools/list','tools/call'].includes(method))throw new Error('MCP method refused');
     const grant=await this.ports.authorize(claims,sessionId,serverId);
     if(grant.sessionId!==sessionId || grant.serverId!==serverId || grant.identityId!==claims.identityId || claims.viaLinkId)throw new Error('MCP session unavailable');
@@ -88,6 +92,16 @@ export class McpProxy {
         let refreshed=false;
         if(!grant.credentialId)throw new Error('Select an MCP account before launch');
         const binding:McpCredentialBinding={spaceId:grant.spaceId,serverId,credentialId:grant.credentialId};
+        // §7.2: set inside the refresh lock, reported after it. A refused grant
+        // throws inside (nothing to save); a scope-reduced one is saved first,
+        // because a rotated refresh token must never be lost.
+        let failure:McpRefreshFailure|undefined;
+        const reconnect=async(reason:McpRefreshFailure):Promise<never>=>{
+          await this.ports.credentials.reportFailure?.(credentialClaims,binding,reason)
+            .catch(error=>{console.warn(`mcp: could not record a ${reason} refresh failure: ${String(error)}`);});
+          throw new Error(MCP_RECONNECT_REQUIRED);
+        };
+        try {
         await credentialLock(JSON.stringify(binding),async()=>{
           const run=async(store:Pick<McpCredentialStore,'read'|'replace'>)=>{
           const opened=await store.read(credentialClaims,binding);
@@ -97,10 +111,13 @@ export class McpProxy {
             if(definition.auth.type!=='oauth2' || secret.resource!==definition.url)throw new Error('MCP account binding mismatch');
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
             if((forceToken!==undefined && secret.accessToken===forceToken) || (secret.expiresAt!==undefined && secret.expiresAt<Date.now()+30000)) {
-              secret=host?await host.refresh(secret):await refreshOAuth(secret,definition.allowPrivateNetwork===true);
+              try {secret=host?await host.refresh(secret):await refreshOAuth(secret,definition.allowPrivateNetwork===true);}
+              catch(error) {if(error instanceof OAuthTokenError && error.oauthError==='invalid_grant')failure='invalid_grant';throw error;}
               await store.replace(credentialClaims,binding,opened.nonce,secret);
               await store.read(credentialClaims,binding);
               refreshed=true;
+              // B41: a partial grant stays active with its covered tools; none covered needs a reconnect.
+              if(host?.covers && !host.covers(definition,secret.grantedScopes)) {failure='scope_reduced';return;}
             }
             headers.authorization=`Bearer ${secret.accessToken}`;connected=secret;
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
@@ -115,6 +132,9 @@ export class McpProxy {
           if(this.ports.credentials.withRefreshLock)await this.ports.credentials.withRefreshLock(credentialClaims,binding,run);
           else await run(this.ports.credentials);
         });
+        } catch(error) {if(failure==='invalid_grant')await reconnect(failure);throw error;}
+        if(failure)await reconnect(failure);
+        if(refreshed)await events.refreshed?.();
         return refreshed;
       };
       await loadAuthorization();

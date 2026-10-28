@@ -15,7 +15,9 @@
  *
  * Permissions: every dump holds the whole database, space_credentials' sealed
  * secrets, key hints and vendor logins included (the node key that opens them
- * stays in dataDir and is never dumped). So every backup directory is 0700 and
+ * stays in dataDir and is never dumped — but these dumps are written UNDER
+ * dataDir, next to that key, so a copy of dataDir carries both; plan §9.2, the
+ * operator guide's "Keep the key apart from the dumps"). So every backup directory is 0700 and
  * every artifact 0600, tightened even when the directory or file already
  * existed looser — mkdir's mode only applies to what it creates.
  *

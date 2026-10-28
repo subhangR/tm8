@@ -31,6 +31,7 @@ const commands: Array<{path:string[];op:OperationName;param?:string;read?:boolea
   {path:['credential','revoke'],op:'mcp.credentials.revoke',param:'credentialId'},
   {path:['credential','share'],op:'mcp.credentials.share',param:'credentialId'},
   {path:['credential','unshare'],op:'mcp.credentials.unshare',param:'credentialId'},
+  {path:['credential','revoke-all'],op:'mcp.credentials.revokeAll'},
   {path:['oauth','begin'],op:'mcp.oauth.begin',param:'serverId'},
   {path:['oauth','callback'],op:'mcp.oauth.callback',secret:true},
 ];

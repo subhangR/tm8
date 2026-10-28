@@ -1,6 +1,6 @@
 import { googleFirstPartyService, type GoogleFirstPartyService, type McpUnavailableTool } from '@tm8/contract';
 import type { McpOAuthSecret } from '../../credential-store.js';
-import type { McpFirstPartyAuthorization, OAuthClient } from '../../oauth.js';
+import { OAuthTokenError, oauthErrorCode, type McpFirstPartyAuthorization, type OAuthClient } from '../../oauth.js';
 import { mcpHttp } from '../../transport.js';
 import { FirstPartyRefused, type FirstPartyConnection, type FirstPartyDefinition, type FirstPartyHost } from '../host.js';
 import { GoogleApi, GoogleApiError, jsonSchema, type GoogleTool } from './api.js';
@@ -62,6 +62,15 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     const granted = new Set(googleScopesFor(this.service(definition), grantedScopes));
     return TOOLS[this.service(definition).catalogId]
       .filter(tool => (!tool.gate || definition.gates?.[tool.gate] === true) && tool.scopes.some(scope => granted.has(scope)));
+  }
+
+  /**
+   * Whether a grant covers at least one of this connector's tools, gates aside.
+   * A refresh that leaves none is scope_reduced (B41); a partial grant is not.
+   */
+  covers(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): boolean {
+    const granted = new Set(googleScopesFor(this.service(definition), grantedScopes));
+    return TOOLS[this.service(definition).catalogId].some(tool => tool.scopes.some(scope => granted.has(scope)));
   }
 
   /**
@@ -154,7 +163,7 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
       url: this.endpoints.token, method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: secret.refreshToken, client_id: client.clientId, client_secret: client.clientSecret }).toString(),
     }, this.privateNetwork);
-    if (response.status !== 200) throw new Error('OAuth token exchange failed');
+    if (response.status !== 200) throw new OAuthTokenError(oauthErrorCode(response.body));
     let value: Record<string, unknown>;
     try { value = JSON.parse(response.body) as Record<string, unknown>; }
     catch { throw new Error('OAuth token exchange failed'); }
@@ -170,6 +179,24 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
       // Google drops its tools at once.
       ...(typeof value.scope === 'string' ? { grantedScopes: value.scope.split(' ').filter(Boolean) } : {}),
     };
+  }
+
+  /**
+   * Revoke tm8's grant at Google (§9.3(4)). This ends the WHOLE grant of the
+   * Google account on tm8's client — every Gmail, Calendar and Drive connection
+   * of that account, in every Space — so only the revoke-all kill switch calls
+   * it, never a single disconnect (B39). Best-effort: false on any failure.
+   */
+  async revoke(secret: McpOAuthSecret): Promise<boolean> {
+    const token = secret.refreshToken ?? secret.accessToken;
+    if (!token || secret.issuer !== this.endpoints.issuer) return false;
+    try {
+      const response = await mcpHttp({
+        url: this.endpoints.revocation, method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token }).toString(),
+      }, this.privateNetwork);
+      return response.status === 200;
+    } catch { return false; }
   }
 
   /**

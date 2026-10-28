@@ -273,6 +273,20 @@ five. `--no-backup` skips it. `TM8_BACKUP_DIR` moves it.
 
 Copy `/var/backups/tm8` off the machine; a backup on the same disk is not one.
 
+**Keep the key apart from the dumps.** The data directory holds
+`.git-credential.key`, the one key that opens every stored credential on the
+node: GitHub tokens and every connected MCP account (Gmail, Slack, …). A
+database dump alone is useless to a thief; a dump **together with** that key
+opens all of them. Both of tm8's own dump locations sit inside the data
+directory, next to the key — `install.sh` writes to `/var/lib/tm8/prod/backups/`
+and the sidecar to `<dataDir>/backups/` — so syncing or copying the data
+directory off the host carries both at once, and so does the cron line above,
+which puts both archives in one directory. Store the data archive (it has the
+key) somewhere other than the dumps, with different access, or point
+`TM8_BACKUP_DIR` outside the data directory and exclude `backups/` from the data
+copy. If a backup that held both may have leaked, use the node-wide **Revoke
+all connections** (`tm8 mcp credential revoke-all`) and have people reconnect.
+
 **Restore:**
 
 ```bash

@@ -339,6 +339,22 @@ export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: I
   /** `space` needs a Space admin and creates a Space-owned row (§5.2). */
   scope: McpCredentialScopeSchema.optional(), accountLabel: z.string().min(1).max(200).optional() }).strict();
 export const McpCredentialCommandInputSchema = z.object({ ...Command, credentialId: Id }).strict();
+/**
+ * §9.3(4) kill switch. With `spaceId`: a Space admin revokes every MCP
+ * connection in the Space, at the provider only for Space-owned ones (B39).
+ * Without: the node operator revokes every MCP connection on the node, each at
+ * its provider, Google included — and must type MCP_REVOKE_ALL_NODE_CONFIRM.
+ */
+export const MCP_REVOKE_ALL_NODE_CONFIRM = 'this signs tm8 out of every connected Google account';
+export const McpCredentialRevokeAllInputSchema = z.object({ ...Command, spaceId: Id.optional(), confirm: z.string().max(200).optional() }).strict()
+  .refine(input => input.spaceId !== undefined || input.confirm === MCP_REVOKE_ALL_NODE_CONFIRM,
+    { message: `Revoking every connection on the node needs confirm: "${MCP_REVOKE_ALL_NODE_CONFIRM}"`, path: ['confirm'] });
+export type McpCredentialRevokeAllInput = z.infer<typeof McpCredentialRevokeAllInputSchema>;
+/** Counts only. `providerRevoked`/`providerFailed` are best-effort provider calls made after the local revoke committed. */
+export const McpCredentialRevokeAllResultSchema = z.object({
+  scope: z.enum(['space', 'node']), revoked: z.number().int(), providerRevoked: z.number().int(), providerFailed: z.number().int(),
+}).strict();
+export type McpCredentialRevokeAllResult = z.infer<typeof McpCredentialRevokeAllResultSchema>;
 export const McpCredentialShareInputSchema = z.object({ ...Command, credentialId: Id, visibility: z.enum(['private', 'selected', 'space']), memberIds: z.array(Id).max(100) }).strict();
 /**
  * Where a same-tab sign-in lands afterwards (§10.2, popup blocked): a path on

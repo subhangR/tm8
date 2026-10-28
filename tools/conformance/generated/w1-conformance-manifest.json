@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66",
+  "catalogDigest": "sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f",
   "catalog": {
-    "total": 382,
-    "v1": 380,
+    "total": 383,
+    "v1": 381,
     "reserved": 2,
-    "http": 380,
+    "http": 381,
     "ws": 1,
-    "registerableV1Http": 378,
+    "registerableV1Http": 379,
     "methods": {
       "GET": 128,
-      "POST": 186,
+      "POST": 187,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 134,
-      "command": 246,
+      "command": 247,
       "stream": 2
     },
-    "uniqueNames": 382,
-    "uniqueBindings": 381
+    "uniqueNames": 383,
+    "uniqueBindings": 382
   },
   "reservedOperations": [
     "search.query",
@@ -379,6 +379,13 @@
         "operation": "mcp.credentials.share",
         "method": "POST",
         "path": "/v2/mcp/credentials/:credentialId/share",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.credentials.revokeAll",
+        "method": "POST",
+        "path": "/v2/mcp/credentials/revoke-all",
         "status": "registered",
         "source": "server-router"
       },
@@ -3078,7 +3085,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 350
+    "unimplementedV1Http": 351
   },
   "schemas": {
     "additive": {
@@ -3671,6 +3678,24 @@
           "mcp",
           "credentials",
           "share"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.credentials.revokeAll",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.credentials.revokeAll",
+        "intentTags": [
+          "mcp",
+          "credentials",
+          "revoke",
+          "all"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
