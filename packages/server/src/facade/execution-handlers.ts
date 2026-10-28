@@ -37,6 +37,7 @@ import {
   PromptSettlementWaiter,
   readSessionTranscript,
   knownAgentConfigDirs,
+  type CodexHomeSessionFacts,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -1572,6 +1573,30 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
   }
 
+  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<CodexHomeSessionFacts[]> {
+    if (sessionIds.length === 0) return [];
+    const rows = await this.db.rpc<Array<{
+      sessionId: string;
+      status: string;
+      deleted: boolean;
+      workdirMode: string | null;
+      workdirPath: string | null;
+      exitedAt: string | null;
+    }>>(this.claims(auth), 'public.work_session_home_facts', [sessionIds]);
+    if (!Array.isArray(rows)) throw new Error('work_session_home_facts returned no rows array');
+    return rows.map((r) => {
+      const exitedAt = r.exitedAt === null ? null : Date.parse(r.exitedAt);
+      return {
+        sessionId: r.sessionId,
+        status: r.status,
+        deleted: r.deleted === true,
+        workdirMode: r.workdirMode,
+        workdirPath: r.workdirPath,
+        exitedAt: exitedAt !== null && Number.isFinite(exitedAt) ? exitedAt : null,
+      };
+    });
+  }
+
   // --- worktree provisioning (design §4) --------------------------------------
   //
   // Six writes and two reads, one door call each. They are separate for the
@@ -1931,6 +1956,12 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  /**
+   * Remove the per-session Codex homes of sessions that can no longer be
+   * resumed, and with `retentionMs` set, of sessions that ended longer ago
+   * than that. Never rejects.
+   */
+  reclaimCodexHomes(retentionMs: number | null): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2048,6 +2079,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2075,6 +2113,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimCodexHomes: async (retentionMs: number | null) => {
+      // The loopback owner, as a node admin: the facts door refuses anyone
+      // else, which leaves every home in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimCodexHomes(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
+          { retentionMs },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {
@@ -2245,6 +2296,13 @@ export function registerExecutionHandlers(
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
         });
       });
+      // The Codex login copy in each per-session CODEX_HOME, for the same
+      // reason and with the same posture.
+      await spawnService.sweepCodexHomeSecrets().catch((error: unknown) => {
+        deps.logger?.warn?.('execution: Codex home sweep failed', {
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+        });
+      });
       try {
         const o = await owner();
         return await spawnService.reconcileNodeGhosts({
@@ -2267,6 +2325,19 @@ export function registerExecutionHandlers(
         );
       } catch (error) {
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+      }
+    },
+    reclaimCodexHomes: async (retentionMs: number | null) => {
+      // The loopback owner, as a node admin: the facts door refuses anyone
+      // else, which leaves every home in place.
+      try {
+        const o = await owner();
+        return await spawnService.reclaimCodexHomes(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
+          { retentionMs },
+        );
+      } catch (error) {
+        return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     reapLost: async (staleAfterMs: number) => {

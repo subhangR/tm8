@@ -614,6 +614,10 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       await expect(stat(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect((await stat(home)).isDirectory()).toBe(true);
       expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
+      // The copy in the session's Codex home goes with it.
+      const codexHome = join(dataDir, 'manifests', 'mcp-homes', sessionId, 'codex');
+      await expect(stat(join(codexHome, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await stat(join(codexHome, 'config.toml'))).isFile()).toBe(true);
     });
 
     it('claude-code: a PTY exit (a kill arrives the same way) drops the approved key suffix and keeps the trust entry and transcripts', async () => {
@@ -790,6 +794,73 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
       const reseeded = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
       expect(reseeded.customApiKeyResponses).toEqual({ approved: [ANT_KEY.slice(-20)], rejected: [] });
       expect(await readFile(transcript, 'utf8')).toBe('{"turn":1}\n');
+    });
+
+    it('codex: a stop takes the login copy and caches out of the Codex home, and a resume copies the login back over the kept rollout', async () => {
+      const port = new FakeSpacePort(events, new Set(['identity-A']));
+      const { spawnIfAbsent } = spyPtyKilled();
+      const svc = service(port);
+      const { sessionId, manifestPath } = await svc.spawn(A, {
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        model: 'gpt-5.5',
+        agentTool: 'codex',
+        credentialSources: { openai: 'space' },
+      });
+      const codexHome = join(dirname(manifestPath), 'mcp-homes', sessionId, 'codex');
+      await mkdir(join(codexHome, 'sessions', '2026'), { recursive: true });
+      const rollout = join(codexHome, 'sessions', '2026', 'rollout.jsonl');
+      await writeFile(rollout, '{"turn":1}\n', 'utf8');
+      await writeFile(join(codexHome, 'state_5.sqlite'), 'state', 'utf8');
+      await writeFile(join(codexHome, 'logs_2.sqlite'), 'log', 'utf8');
+      await mkdir(join(codexHome, 'cache', 'codex_apps_tools'), { recursive: true });
+      // Control: the copy of the login is there while the session runs.
+      expect(await readFile(join(codexHome, 'auth.json'), 'utf8')).toContain(OAI_KEY);
+
+      await svc.terminate(A, sessionId);
+
+      await expect(stat(join(codexHome, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(codexHome, 'logs_2.sqlite'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(codexHome, 'cache'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
+      expect(await readFile(join(codexHome, 'state_5.sqlite'), 'utf8')).toBe('state');
+
+      graph.resumeInfo = {
+        sessionId,
+        spaceId: SPACE_ID,
+        teamMemberId: TEAMMATE_OF_B,
+        parentSessionId: null,
+        projectId: null,
+        taskIds: [],
+        workdirMode: 'scratch',
+        workdirPath: null,
+        mode: 'worker',
+        model: 'gpt-5.5',
+        agentTool: 'codex',
+        title: 'terminated, then resumed',
+        status: 'exited',
+        nativeSessionId: '01a153fc-4bd8-77b0-8da8-ec0bfc730f34',
+        agentConfigDir: null,
+      };
+      graph.postures.set(sessionId, {
+        credentialSources: { openai: 'space' },
+        spaceCredentialIds: { openai: OAI },
+      } as SessionLaunchPosture);
+      port.recorded.set(sessionId, [{ provider: 'openai', spaceCredentialId: OAI }]);
+      port.launcher.set(sessionId, 'identity-A');
+      spawnIfAbsent.mockClear();
+
+      await svc.resume(A, { sessionId });
+
+      expect(spawnIfAbsent).toHaveBeenCalledTimes(1);
+      const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+      expect(env.CODEX_HOME).toBe(codexHome);
+      expect(JSON.parse(await readFile(join(codexHome, 'auth.json'), 'utf8'))).toEqual({
+        auth_mode: 'apikey',
+        OPENAI_API_KEY: OAI_KEY,
+      });
+      expect((await stat(join(codexHome, 'auth.json'))).mode & 0o777).toBe(0o600);
+      expect(await readFile(rollout, 'utf8')).toBe('{"turn":1}\n');
     });
   });
 

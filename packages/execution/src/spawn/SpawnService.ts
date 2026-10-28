@@ -1,4 +1,9 @@
-import { isolateCodexMcpHome } from './mcp-home.js';
+import {
+  isolateCodexMcpHome,
+  reclaimCodexMcpHomes,
+  scrubCodexMcpHome,
+  sweepCodexMcpHomeSecrets,
+} from './mcp-home.js';
 // @tm8/execution — SpawnService: the G1A loop's engine.
 //
 // Owns the four verbs the loop is made of — spawn, prompt, terminate, and the
@@ -779,15 +784,24 @@ export class SpawnService {
   }
 
   /**
-   * Scrub a session's space API key from its per-session home, keeping its
-   * conversation state. Best effort and silent about contents (I5): a failure
-   * is logged by session id only, and the boot sweep retries it.
+   * Scrub a session's space API key from its per-session home, and the
+   * login copy (plus rebuildable caches) from its Codex home, keeping its
+   * conversation state in both. Best effort and silent about contents (I5): a
+   * failure is logged by session id only, and the boot sweep retries it.
    */
-  private async scrubSpaceSecrets(sessionId: string): Promise<void> {
+  private async scrubSessionSecrets(sessionId: string): Promise<void> {
     try {
       await scrubSpaceSessionSecrets(this.dataDir, sessionId);
     } catch (error) {
       this.logger?.warn?.('SpawnService: could not scrub a session space credential home', {
+        sessionId,
+        code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+      });
+    }
+    try {
+      await scrubCodexMcpHome(this.dataDir, sessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not scrub a session Codex home', {
         sessionId,
         code: (error as NodeJS.ErrnoException).code ?? 'unknown',
       });
@@ -815,6 +829,68 @@ export class SpawnService {
       });
     }
     return result;
+  }
+
+  /**
+   * The boot sweep for Codex homes: take the login copy (and the rebuildable
+   * caches) out of every home whose session has no live PTY and no in-flight
+   * claims here. Safe at boot for the same reason as the space-key sweep
+   * above. The conversation stays; resume copies the login in again.
+   */
+  async sweepCodexHomeSecrets(): Promise<{ scrubbed: string[]; errors: string[] }> {
+    const result = await sweepCodexMcpHomeSecrets(
+      this.dataDir,
+      (sessionId) => this.pty.hasSession(sessionId) || this.sessionAuth.has(sessionId),
+    );
+    if (result.scrubbed.length > 0 || result.errors.length > 0) {
+      this.logger?.info('SpawnService: swept Codex session homes', {
+        scrubbed: result.scrubbed.length,
+        errors: result.errors,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Remove the Codex homes of sessions that can no longer be resumed (see
+   * `codexHomeReclaimReason`), plus, when `retentionMs` is set, those of
+   * sessions that ended longer ago than that. Asks the graph through
+   * `listSessionHomeFacts`, a node-admin read that sees every space. A port
+   * without it reclaims nothing, because a narrower read would make a session
+   * in another space look like an orphan. NEVER THROWS.
+   */
+  async reclaimCodexHomes(
+    auth: GraphAuth,
+    opts: { retentionMs: number | null; now?: number },
+  ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }> {
+    const listFacts = this.graph.listSessionHomeFacts?.bind(this.graph);
+    if (!listFacts) return { reclaimed: 0, errors: [] };
+    try {
+      const report = await reclaimCodexMcpHomes({
+        dataDir: this.dataDir,
+        isLive: (sessionId) => this.pty.hasSession(sessionId) || this.sessionAuth.has(sessionId),
+        facts: (sessionIds) => listFacts(auth, sessionIds),
+        retentionMs: opts.retentionMs,
+        ...(opts.now !== undefined ? { now: opts.now } : {}),
+      });
+      if (report.reclaimed.length > 0 || report.errors.length > 0) {
+        const reasons: Record<string, number> = {};
+        for (const { reason } of report.reclaimed) reasons[reason] = (reasons[reason] ?? 0) + 1;
+        this.logger?.info('SpawnService: reclaimed Codex session homes', {
+          examined: report.examined,
+          reclaimed: report.reclaimed.length,
+          reasons,
+          errors: report.errors,
+        });
+      }
+      return {
+        reclaimed: report.reclaimed.length,
+        errors: report.errors.map((sessionId) => ({ message: `session ${sessionId}: could not remove its Codex home` })),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { reclaimed: 0, errors: [{ message: `could not reclaim Codex homes: ${message}` }] };
+    }
   }
 
   /**
@@ -2075,7 +2151,7 @@ export class SpawnService {
           .catch(() => undefined);
       }
       // The session is dead; its space key must not outlive it on disk.
-      await this.scrubSpaceSecrets(sessionId);
+      await this.scrubSessionSecrets(sessionId);
       // R14: nor its agent token in auth_sessions.
       if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
       this.sessionAuth.delete(sessionId);
@@ -2785,7 +2861,7 @@ export class SpawnService {
       if (launchedPty) this.pty.kill(sessionId);
       // A PTY this resume merely FOUND is healthy and still reads its key.
       if (!this.pty.hasSession(sessionId)) {
-        await this.scrubSpaceSecrets(sessionId);
+        await this.scrubSessionSecrets(sessionId);
         // R14: the re-minted agent token of a resume that never ran.
         if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
       }
@@ -3413,7 +3489,7 @@ export class SpawnService {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
     this.toolSessions.delete(sessionId);
-    if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
+    if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
     return outcome;
   }
@@ -3430,7 +3506,8 @@ export class SpawnService {
    * per-session copy (`handlePtyExit`), so a `killed` scrubs it here, before
    * anything that can fail: a stopped session must not keep a copy of a space
    * secret on disk until the next boot sweep. The conversation state stays,
-   * and a resume re-seeds the key from the credential as it reads NOW.
+   * and a resume re-seeds the key from the credential as it reads NOW. The
+   * Codex home's login copy goes in the same call (`scrubSessionSecrets`).
    * `not_found` scrubs nothing: a process that exited on its own was scrubbed
    * by its own exit.
    *
@@ -3455,7 +3532,7 @@ export class SpawnService {
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
-    if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
+    if (outcome === 'killed') await this.scrubSessionSecrets(sessionId);
     if (outcome === 'not_found' && ending.onNotFound === 'skip') return { outcome, recorded: false };
     if (auth === undefined) return { outcome, recorded: false };
 
@@ -3998,9 +4075,10 @@ export class SpawnService {
       status = 'completed';
     }
     // FIRST, before any graph write can fail, and on the ghost path too: the
-    // process that read the space key is gone, so the key leaves the disk. A
-    // kill (containment) arrives here like any other exit.
-    await this.scrubSpaceSecrets(sessionId);
+    // process that read the space key (or the Codex login copy) is gone, so
+    // the secret leaves the disk. A kill (containment) arrives here like any
+    // other exit.
+    await this.scrubSessionSecrets(sessionId);
     if (auth === undefined) {
       this.loud(
         `PTY for session ${sessionId} exited (${status}) with no captured claims — ` +
