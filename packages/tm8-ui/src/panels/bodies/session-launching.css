@@ -1,0 +1,232 @@
+/* THE LAUNCHING PAGE (task 01a182d2) — `SessionLaunching.tsx`.
+   Tokens only (styles/tokens.css), so it follows the theme and the style
+   registry; one accent (the brand) for what is in motion, the run green for
+   what is done, the block red for a failure — and every mark also says itself
+   in words, because status is never colour alone. 4/8 px rhythm throughout. */
+
+.cv2-root .slaunch {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: auto;
+  padding: clamp(var(--pn-space-6), 10vh, 96px) var(--pn-space-4) var(--pn-space-6);
+  background: var(--pn-surface);
+}
+
+.cv2-root .slaunch__card {
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 456px;
+  padding: var(--pn-space-5) var(--pn-space-6) var(--pn-space-6);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md);
+  animation: slaunch-arrive var(--pn-dur-slow) var(--pn-ease-out) both;
+}
+
+/* --- head: state word and clock ------------------------------------------ */
+.cv2-root .slaunch__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  margin-block-end: var(--pn-space-3);
+}
+.cv2-root .slaunch__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-brand-2);
+}
+.cv2-root .slaunch__beacon {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+  box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0.45);
+  animation: slaunch-beacon 1.6s var(--pn-ease-out) infinite;
+}
+.cv2-root .slaunch__clock {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+/* --- what launched -------------------------------------------------------- */
+.cv2-root .slaunch__title {
+  margin: 0;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+.cv2-root .slaunch__line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1) 0;
+  margin: var(--pn-space-1) 0 0;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+}
+.cv2-root .slaunch__fact + .slaunch__fact::before {
+  content: '·';
+  padding-inline: var(--pn-space-2);
+  color: var(--pn-ink-4);
+}
+
+/* --- the phases: a rail of five marks ------------------------------------- */
+.cv2-root .slaunch__phases {
+  list-style: none;
+  margin: var(--pn-space-5) 0 0;
+  padding: 0;
+}
+.cv2-root .slaunch__phase {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px 72px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--pn-space-3);
+  min-block-size: 32px;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-4);
+}
+/* The rail between two marks: done segments carry the run colour. */
+.cv2-root .slaunch__phase + .slaunch__phase::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 9.5px;
+  inset-block-start: -10px;
+  block-size: 20px;
+  inline-size: 1px;
+  background: var(--pn-line-2);
+}
+.cv2-root .slaunch__phase[data-mark='done'] + .slaunch__phase::before {
+  background: var(--pn-run);
+  opacity: 0.45;
+}
+.cv2-root .slaunch__mark {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: var(--pn-r-pill);
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-4);
+}
+.cv2-root .slaunch__label {
+  font-weight: 600;
+}
+.cv2-root .slaunch__detail {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .slaunch__at {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .slaunch__phase[data-mark='done'] { color: var(--pn-ink-2); }
+.cv2-root .slaunch__phase[data-mark='done'] .slaunch__label { color: var(--pn-ink); }
+.cv2-root .slaunch__phase[data-mark='done'] .slaunch__mark {
+  border-color: transparent;
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+.cv2-root .slaunch__phase[data-mark='active'] { color: var(--pn-ink-2); }
+.cv2-root .slaunch__phase[data-mark='active'] .slaunch__label { color: var(--pn-ink); }
+.cv2-root .slaunch__phase[data-mark='active'] .slaunch__mark {
+  border: 2px solid rgba(var(--pn-brand-rgb), 0.22);
+  border-block-start-color: var(--pn-brand);
+  animation: slaunch-spin 0.9s linear infinite;
+}
+
+.cv2-root .slaunch__phase[data-mark='failed'] { color: var(--pn-block); }
+.cv2-root .slaunch__phase[data-mark='failed'] .slaunch__mark {
+  border-color: transparent;
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+
+/* --- notes, failure, verbs ------------------------------------------------- */
+.cv2-root .slaunch__note {
+  margin: var(--pn-space-4) 0 0;
+  font-size: var(--pn-fs-label);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+.cv2-root .slaunch__failure {
+  margin-block-start: var(--pn-space-4);
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-block-soft);
+}
+.cv2-root .slaunch__reason {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cv2-root .slaunch__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin-block-start: var(--pn-space-3);
+}
+.cv2-root .slaunch__actions .pn-btn {
+  padding: var(--pn-space-1) var(--pn-space-3);
+  font-size: var(--pn-fs-label);
+}
+
+/* Settled pages stop signalling motion. */
+.cv2-root .slaunch[data-state='failed'] .slaunch__eyebrow { color: var(--pn-block); }
+.cv2-root .slaunch[data-state='failed'] .slaunch__beacon {
+  background: var(--pn-block);
+  animation: none;
+}
+
+@keyframes slaunch-arrive {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slaunch-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes slaunch-beacon {
+  0% { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(var(--pn-brand-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .slaunch__card,
+  .cv2-root .slaunch__beacon,
+  .cv2-root .slaunch__phase[data-mark='active'] .slaunch__mark {
+    animation: none;
+  }
+}

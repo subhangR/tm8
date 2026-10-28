@@ -25,6 +25,8 @@ import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
 import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
+import { launchTabValues } from '../runtime/launchTabs';
+import { useLaunchRecord } from '../../launch-handoff';
 import { pinFileTab, useFileTabFacts } from '../adapters/projectFile';
 import { FileTypeBadge } from '../../project-file/FileTypeBadge';
 import { baseName } from '../../project-file/paths';
@@ -84,8 +86,12 @@ export function useTabFacts(tab: TabRecord): {
   /** The hover text when it says more than `title — noun` (a file's project and path). */
   tooltip?: string;
 } {
-  const { gate } = useWorkspace();
+  const { gate, runtime } = useWorkspace();
   const file = useFileTabFacts(tab);
+  /* A LAUNCH TAB (task 01a182d2) reads as its launch — the session's title,
+     busy while it starts, an error once it fails — not as "New session". */
+  const launch = tab.type === 'draft' ? launchTabValues(runtime.drafts.get(tab.draftId)) : null;
+  const launchState = useLaunchRecord(launch?.launchId)?.state ?? null;
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
   const { title: savedTitle, deleted, known } = useStore(
@@ -137,7 +143,10 @@ export function useTabFacts(tab: TabRecord): {
   let state: TabState = null;
   let shownTitle = tabTitle(tab, title);
   if (tab.type === 'draft') {
-    state = tab.dirty ? 'unsaved' : null;
+    if (launch) {
+      shownTitle = launch.launch.title || shownTitle;
+      state = launchState === 'failed' ? 'error' : 'running';
+    } else state = tab.dirty ? 'unsaved' : null;
   } else if (entityId) {
     const gone = deleted ? 'deleted' : known ? undefined : probe;
     if (gone) {

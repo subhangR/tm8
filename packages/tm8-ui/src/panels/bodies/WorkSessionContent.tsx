@@ -8,6 +8,8 @@ import { useMessagesDoor, useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
 import { useDismissable } from '../useDismissable';
 import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
+import { SessionLaunching, useSessionLaunching } from './SessionLaunching';
+import type { BootingSession } from '../../launch-handoff';
 import './work-session-content-phone.css';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
@@ -176,6 +178,14 @@ export interface WorkSessionContentProps {
    * the phone the panel keeps drawing it itself and this is ignored.
    */
   belowSwitch?: ReactNode;
+  /**
+   * THE SESSION'S BOOT (task 01a182d2) — its status and recorded phase off the
+   * entity (`bootingSessionOf`). While the session boots, the launching page
+   * stands in for every surface, so a pressed Launch carries on into the same
+   * page after its tab becomes the session's; once the session is up, the
+   * surfaces mount in its place. Absent ⇒ the surfaces, always.
+   */
+  boot?: BootingSession | null;
 }
 
 /** The header's chevron and a speech bubble, on `VectorIcon`'s 16x16 grid. */
@@ -212,7 +222,9 @@ export function WorkSessionContent({
   onSurfaceChange,
   switchSlot = null,
   belowSwitch = null,
+  boot = null,
 }: WorkSessionContentProps) {
+  const launching = useSessionLaunching(boot);
   /*
    * ONE FORK, FROM THE HOST. Not `useShellKind()` and not a media query: the
    * shell decision is `(pointer: coarse) && width < 500` and `GateApp` has made
@@ -584,6 +596,17 @@ export function WorkSessionContent({
       </div>
     )
   ) : null;
+
+  /* Below every hook, so the surfaces keep their state across the boot: none
+     of them mounts — no terminal attach, no poll — until there is a session
+     to attach to. */
+  if (launching) {
+    return (
+      <div className="pn-work-session-content" data-testid="work-session-content" data-surface="launching">
+        <SessionLaunching model={launching} />
+      </div>
+    );
+  }
 
   return (
     <div

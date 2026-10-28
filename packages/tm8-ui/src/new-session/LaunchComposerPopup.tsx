@@ -56,6 +56,7 @@ import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type S
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
+import type { LaunchStarted } from './launch-started';
 import { useOverlayHost } from '../kit/useOverlayHost';
 import { rosterForLaunchScope, useCraftLaunchScope } from './launch-scope';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
@@ -118,6 +119,8 @@ export interface LaunchComposerPopupProps {
   capacity?: LaunchCapacity;
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
+  /** Called synchronously when Launch is pressed, before the node answers. Return true to take over the progress display: the popup dismisses at once and the host owns everything after (progress, success, failure). Return false/undefined to keep the in-card "Launching…" state until onSpawn settles (today's behaviour, kept for hosts that do not implement it). */
+  onLaunchStarted?(launch: LaunchStarted): boolean | void;
   /** The subject's current description, for the read-only peek. */
   loadDescription?: () => Promise<string | null>;
   /** The viewer may edit the task: the peek offers "Edit on the task ↗" (closing onto it). */

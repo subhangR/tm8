@@ -12,5 +12,6 @@ export {
   type LaunchComposerPopupProps,
   type PopupTeammate,
 } from './LaunchComposerPopup';
+export type { LaunchStarted } from './launch-started';
 export { useLaunchComposerState, type LaunchComposerState } from './useLaunchComposerState';
 export { TITLE_MAX, canDeriveTitle, deriveTitle, promptBody } from './prompt-title';

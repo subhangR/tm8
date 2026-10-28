@@ -433,6 +433,14 @@ export type CoreEntityState =
       sharingSetAt?: string | null;
       startedAt: string | null; exitedAt: string | null;
       /**
+       * THE BOOT, AS THE NODE RECORDS IT (task 01a182bb) — the last phase a
+       * launch reached (`work_sessions.boot_phase`) and when it got there.
+       * OPTIONAL: absent on a node that records no boot, and the launching
+       * page then derives its phases from `status` alone.
+       */
+      bootPhase?: WorkSessionBootPhase;
+      bootPhaseAt?: string;
+      /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
        * tell a private credential login terminal from ordinary work (083), and
        * a vanilla shell from an agent (101).
@@ -5104,6 +5112,13 @@ export type Unsubscribe = () => void;
 
 /** Single writer: the execution block's transition function (R29). */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
+
+/**
+ * The phases a launch's boot passes through, in order, or its failure —
+ * `work_sessions.boot_phase`. Each step names the fact REACHED: `lane` is
+ * "checkout ready", `briefing` "prompt composed", `agent` "process started".
+ */
+export type WorkSessionBootPhase = 'admitted' | 'lane' | 'briefing' | 'agent' | 'live' | 'failed';
 
 /**
  * Worktree SEMANTIC lifecycle, forward-only: active → merged|abandoned → deleted.
