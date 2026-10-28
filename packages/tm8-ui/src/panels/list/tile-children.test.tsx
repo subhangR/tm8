@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import type { EntitySummary } from '@tm8/contract';
-import { tileChildCount, type ActionContext, type QueryFilter } from '../../domain';
-import { FIXTURE_SPACE_ID, docLayoutSpec, taskGuideLines } from '../../fixtures';
+import { SESSION_TAB_FILTERS, tileChildCount, type ActionContext, type QueryFilter } from '../../domain';
+import { FIXTURE_SPACE_ID, docLayoutSpec, sessionLive, taskGuideLines } from '../../fixtures';
 import { EntityListPanel } from '../index';
 
 /**
@@ -88,10 +88,86 @@ describe('opening a row reads its children', () => {
     expect(asked.some((f) => 'parentIn' in f)).toBe(false);
 
     fireEvent.click(count);
+    // A task's children ride along whatever their tab (01a14b92): no tab filter on the read.
     expect(asked).toContainEqual({ parentIn: ['t-parent'] });
     const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
     expect(children.textContent).toContain('Kid A');
     expect(children.textContent).toContain('Kid B');
+  });
+});
+
+/**
+ * THE SESSION TABS READ THE TREE THROUGH THE TAB (task 01a1821d). A session tab
+ * asks whether a process is alive, so a Running parent — here a coordinator
+ * that is finished but still open — shows only its live children; the exited
+ * one stays on Completed as a root whose crumb names the parent and its tab.
+ */
+describe('a Running session parent with an exited and a running child', () => {
+  const session = (id: string, title: string, status: string, outcome: string, launchedBy: string | null, sessions = 0) =>
+    ({
+      ...sessionLive,
+      id,
+      title,
+      parentId: null,
+      counters: { ...sessionLive.counters, sessions },
+      state: { ...sessionLive.state, status, outcome, ...(launchedBy ? { launchedBy } : {}) },
+    }) as EntitySummary;
+  const parent = session('ses-coord', 'Coordinator', 'idle', 'completed', null, 2);
+  const live = session('ses-live', 'Live kid', 'running', 'open', parent.id);
+  const ended = session('ses-ended', 'Ended kid', 'exited', 'completed', parent.id);
+  const all = [parent, live, ended];
+
+  /** A node double that honours the session tab axes and the tree reads. */
+  function sessionNode() {
+    const asked: QueryFilter[] = [];
+    const rowsFor = (filter: QueryFilter): readonly EntitySummary[] => {
+      asked.push(filter);
+      const f = filter as { idIn?: string[]; launchedBy?: string[]; sessionStatus?: string[]; sessionOutcome?: string[] };
+      return all.filter((row) => {
+        const st = row.state as unknown as { status: string; outcome: string; launchedBy?: string };
+        if (f.idIn && !f.idIn.includes(row.id)) return false;
+        if (f.launchedBy && !(st.launchedBy && f.launchedBy.includes(st.launchedBy))) return false;
+        if (f.sessionStatus && !f.sessionStatus.includes(st.status)) return false;
+        if (f.sessionOutcome && !f.sessionOutcome.includes(st.outcome)) return false;
+        return true;
+      });
+    };
+    return { rowsFor, asked };
+  }
+  const sessionTile = (container: HTMLElement, id: string) =>
+    container.querySelector<HTMLElement>(`[data-session-node="${id}"]`);
+
+  it('under Running, opening the parent reads and shows only the running child', () => {
+    const { rowsFor, asked } = sessionNode();
+    const { container } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor} rowsForKind={() => rowsFor} ctx={ctx} />,
+    );
+    expect(sessionTile(container, 'ses-ended')).toBeNull();
+    const coord = sessionTile(container, 'ses-coord')!;
+    // Shut, it has read nothing: the subscript is the total.
+    expect(coord.getAttribute('data-children')).toBe('2');
+
+    fireEvent.click(coord.querySelector<HTMLElement>('.pn-st__arrow')!);
+    expect(asked).toContainEqual({ launchedBy: ['ses-coord'], ...SESSION_TAB_FILTERS.running });
+    const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
+    expect(sessionTile(children, 'ses-live')).not.toBeNull();
+    expect(sessionTile(container, 'ses-ended')).toBeNull();
+    // Open, it counts what it shows.
+    expect(sessionTile(container, 'ses-coord')!.getAttribute('data-children')).toBe('1');
+  });
+
+  it('under Completed, the exited child is a root that points at its parent', () => {
+    const { rowsFor } = sessionNode();
+    const { container, getByRole } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor} rowsForKind={() => rowsFor} ctx={ctx} />,
+    );
+    fireEvent.click(getByRole('tab', { name: /^Completed/ }));
+    const tile = sessionTile(container, 'ses-ended')!;
+    expect(tile).not.toBeNull();
+    expect(tile.closest('[data-testid="list-tile-children"]')).toBeNull();
+    expect(sessionTile(container, 'ses-live')).toBeNull();
+    // The session anatomy's `↑ parent`: it names the parent and its tab.
+    expect(tile.querySelector('[data-testid="session-row-crumb"]')?.textContent).toBe('↳ under Coordinator (Running)');
   });
 });
 

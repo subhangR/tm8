@@ -1061,7 +1061,12 @@ function renderLiveness(dto: ExecutionLivenessDto): string {
   if (typeof dto.nodeBootId === 'string') lines.push(`nodeBootId: ${dto.nodeBootId}`);
   if (typeof dto.checkedAt === 'string') lines.push(`checkedAt: ${dto.checkedAt}`);
   if (typeof dto.capacity?.used === 'number' && typeof dto.capacity.total === 'number') {
-    lines.push(`capacity: ${String(dto.capacity.used)}/${String(dto.capacity.total)} in use`);
+    /* Not the list above: the spawn gate counts every space's agent sessions
+       that have not completed (`internal.live_work_session_count`), so a
+       finished-but-open coordinator is live yet does not take a slot. */
+    lines.push(
+      `capacity: ${String(dto.capacity.used)}/${String(dto.capacity.total)} in use (agent sessions not completed, whole node)`,
+    );
   }
   return lines.join('\n');
 }
