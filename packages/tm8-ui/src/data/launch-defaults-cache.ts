@@ -67,6 +67,13 @@ function storageKeyFor(nodeKey: string, spaceId: string): string {
  */
 const memory = new Map<string, Map<string, LaunchDefaultsResult>>();
 
+/**
+ * Bumped by every sign-out sweep. A read asked before the sweep is never
+ * stored after it: an answer still in flight when the viewer signed out is
+ * the previous viewer's rows, and the sweep exists to forget exactly those.
+ */
+let epoch = 0;
+
 function isGroup(value: unknown): boolean {
   const group = value as { items?: unknown; total?: unknown } | null;
   return !!group && typeof group.total === 'number' && Array.isArray(group.items) && group.items.every((item) => {
@@ -142,15 +149,20 @@ export function launchDefaultsLoader(
   const storageKey = storageKeyFor(nodeKey, spaceId);
   /* Never fresh (`freshForMs` 0): every call asks the node — the cache only
      ever answers `peek`, and the reader confirms what it drew. */
-  const load = sharedRead(read, launchDefaultsKey, {
-    onAnswer: (input, result) => { remember(storageKey, launchDefaultsKey(input), result); },
-  });
+  const load = sharedRead((input: LaunchDefaultsInput) => {
+    const asked = epoch;
+    return read(input).then((result) => {
+      if (asked === epoch) remember(storageKey, launchDefaultsKey(input), result);
+      return result;
+    });
+  }, launchDefaultsKey);
   return Object.assign(load, {
     peek: (input: LaunchDefaultsInput) => answersFor(storageKey).get(launchDefaultsKey(input)) ?? null,
   });
 }
 
 export function clearLaunchDefaultsCache(nodeKey: string): void {
+  epoch += 1;
   const prefix = `${KEY_PREFIX}.${nodeKey}.`;
   for (const storageKey of [...memory.keys()]) if (storageKey.startsWith(prefix)) memory.delete(storageKey);
   forgetKeysWithPrefix(prefix);

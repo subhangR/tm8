@@ -70,14 +70,14 @@ describe('sharedRead', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it('hands every answer to onAnswer, and never a failure — which the caller sees and nobody keeps', async () => {
+  it('never keeps a failure — the caller sees it, and the next call asks again', async () => {
     let fail = true;
-    const onAnswer = vi.fn();
-    const shared = sharedRead(async (key: string) => { if (fail) throw new Error('503'); return `ok ${key}`; }, (key) => key, { freshForMs: 60_000, onAnswer, now: () => 0 });
+    const read = vi.fn(async (key: string) => { if (fail) throw new Error('503'); return `ok ${key}`; });
+    const shared = sharedRead(read, (key) => key, { freshForMs: 60_000, now: () => 0 });
     await expect(shared('a')).rejects.toThrow('503');
-    expect(onAnswer).not.toHaveBeenCalled();
     fail = false;
     await expect(shared('a')).resolves.toBe('ok a');
-    expect(onAnswer).toHaveBeenCalledWith('a', 'ok a');
+    await expect(shared('a')).resolves.toBe('ok a');
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });

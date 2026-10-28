@@ -12,17 +12,14 @@
  *  - `keep(answer)` (default: every answer) says whether an answer may be
  *    reused at all — e.g. a "no key yet" answer is never reused, because the
  *    person may be adding one right now.
- *  - `onAnswer(input, answer)` sees every answer the read gives, kept or not
- *    (the launch defaults cache stores them for its next first frame).
- *  - A failure is never kept or passed to `onAnswer`; the caller sees it.
+ *  - A failure is never kept; the caller sees it.
  *
  * Memory only, per instance: the host builds one per space, so nothing here
  * outlives the space it was asked in.
  */
-export interface SharedReadPolicy<I, R> {
+export interface SharedReadPolicy<R> {
   readonly freshForMs?: number;
   readonly keep?: (answer: R) => boolean;
-  readonly onAnswer?: (input: I, answer: R) => void;
   /** The clock; tests pass their own. */
   readonly now?: () => number;
 }
@@ -30,9 +27,9 @@ export interface SharedReadPolicy<I, R> {
 export function sharedRead<I, R>(
   read: (input: I) => Promise<R>,
   keyOf: (input: I) => string,
-  policy: SharedReadPolicy<I, R> = {},
+  policy: SharedReadPolicy<R> = {},
 ): (input: I) => Promise<R> {
-  const { freshForMs = 0, keep = () => true, onAnswer, now = Date.now } = policy;
+  const { freshForMs = 0, keep = () => true, now = Date.now } = policy;
   const inFlight = new Map<string, Promise<R>>();
   const kept = new Map<string, { at: number; answer: R }>();
   return (input: I): Promise<R> => {
@@ -46,7 +43,6 @@ export function sharedRead<I, R>(
         inFlight.delete(key);
         if (keep(answer)) kept.set(key, { at: now(), answer });
         else kept.delete(key);
-        onAnswer?.(input, answer);
         return answer;
       },
       (error: unknown) => { inFlight.delete(key); throw error; },

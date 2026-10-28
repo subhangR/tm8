@@ -113,6 +113,17 @@ describe('across a reload', () => {
 });
 
 describe('an explicit sign-out', () => {
+  it('never stores an answer that was still in flight when the viewer signed out', async () => {
+    const gate = deferred<LaunchDefaultsResult>();
+    const load = cache.launchDefaultsLoader(() => gate.promise, 'local', 'sp-1');
+    const asked = load(input('tm-a'));
+    cache.clearLaunchDefaultsCache('local');
+    gate.resolve(LAUNCH_DEFAULTS);
+    await expect(asked).resolves.toBe(LAUNCH_DEFAULTS);
+    expect(load.peek?.(input('tm-a'))).toBeNull();
+    expect(localStorage.getItem('tm8.launch-defaults.v1.local.sp-1')).toBeNull();
+  });
+
   it('forgets every space of THAT node, in memory and in storage — and no other node', async () => {
     await cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1')(input('tm-a'));
     await cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-2')(input('tm-a'));

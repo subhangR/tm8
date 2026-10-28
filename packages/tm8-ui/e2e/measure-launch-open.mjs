@@ -18,15 +18,18 @@
  * alike; the report is the median and p90 per UI and open.
  *
  * Usage:
- *   node e2e/measure-launch-open.mjs <spaceId> <subjectId> <label>=<origin> [<label>=<origin>…] [--runs 8] [--auth state.json]
+ *   node e2e/measure-launch-open.mjs <spaceId> <subjectId> <label>=<origin> [<label>=<origin>…] [--runs 8] [--auth state.json] [--login user:password]
  * The origins are UI servers (`vite preview`) proxying a dev-slot node — never
  * production. `--auth` is a Playwright storage state of a signed-in viewer:
  * every fresh profile gets its session cookie and `tm8ui.auth.*` keys, and
- * nothing else, so COLD really is cold. The headless-browser kit at
+ * nothing else, so COLD really is cold. A sign-in pass is bound to the origin
+ * that minted it, so on any other origin the page asks to sign in; `--login`
+ * answers that form before the subject loads — never inside a measured open. The headless-browser kit at
  * /home/tm8/prod-data/tools/browser is used when present (this node's
  * Chromium needs its pkey shim).
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { cpus, loadavg } from 'node:os';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -35,6 +38,7 @@ const flag = (name, fallback) => {
 };
 const RUNS = Number(flag('--runs', '8'));
 const AUTH = flag('--auth', null);
+const LOGIN = flag('--login', null);
 const auth = AUTH ? JSON.parse(readFileSync(AUTH, 'utf8')) : null;
 /** The signed-in viewer's session for one UI origin: the cookie, and the auth keys copied onto that origin. */
 const sessionFor = (origin) => (auth ? {
@@ -124,10 +128,26 @@ async function openOnce(page) {
 }
 
 /** Load the subject's page and wait for its Run verb; a first-run welcome dialog is put off ("Later"). */
-async function arrive(page) {
+async function arrive(page, url) {
   const run = page.locator('[data-testid="panel-primary-run"]').first();
   const later = page.getByRole('button', { name: 'Later' });
-  await Promise.race([run.waitFor({ state: 'visible', timeout: 120000 }), later.waitFor({ state: 'visible', timeout: 120000 })]);
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  const shown = () => Promise.race([
+    run.waitFor({ state: 'visible', timeout: 120000 }),
+    later.waitFor({ state: 'visible', timeout: 120000 }),
+    signIn.waitFor({ state: 'visible', timeout: 120000 }),
+  ]);
+  await shown();
+  if (LOGIN && await signIn.isVisible()) {
+    const at = LOGIN.indexOf(':');
+    const fields = page.locator('input');
+    await fields.nth(0).fill(LOGIN.slice(0, at));
+    await fields.nth(1).fill(LOGIN.slice(at + 1));
+    await signIn.click();
+    await signIn.waitFor({ state: 'detached', timeout: 60000 });
+    await page.goto(url);
+    await shown();
+  }
   if (await later.isVisible()) await later.click();
   await run.waitFor({ state: 'visible', timeout: 120000 });
   /* Let boot's reads settle before the press, so the open is measured, not boot. */
@@ -138,17 +158,20 @@ async function measure(ui) {
   const session = sessionFor(ui.origin);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...(session ? { storageState: session } : {}) });
   const page = await context.newPage();
-  await page.goto(`${ui.origin}/#/s/${spaceId}/e/${subjectId}`);
-  await arrive(page);
+  const url = `${ui.origin}/#/s/${spaceId}/e/${subjectId}`;
+  await page.goto(url);
+  await arrive(page, url);
   const cold = await openOnce(page);
   const warm = await openOnce(page);
   await page.reload();
-  await arrive(page);
+  await arrive(page, url);
   const reload = await openOnce(page);
   await context.close();
   return { cold, warm, reload };
 }
 
+const load = () => `load ${loadavg().map((n) => n.toFixed(1)).join(' / ')} on ${String(cpus().length)} cores`;
+const loadAtStart = load();
 const results = Object.fromEntries(uis.map((u) => [u.label, { cold: [], warm: [], reload: [] }]));
 for (let run = 0; run < RUNS; run += 1) {
   for (const ui of run % 2 === 0 ? uis : [...uis].reverse()) {
@@ -166,7 +189,7 @@ function quantile(values, q) {
   return v === Infinity ? `>${WINDOW_MS}` : `${Math.round(v)}`;
 }
 
-console.log(`\nLaunch card open, ms from the Run press (median / p90 over ${RUNS} runs)\n`);
+console.log(`\nLaunch card open, ms from the Run press (median / p90 over ${RUNS} runs) — machine ${loadAtStart} at start, ${load()} at end\n`);
 console.log('ui        open     paint        enabled      strip        strip swaps  requests fired on open');
 for (const ui of uis) {
   for (const open of ['cold', 'warm', 'reload']) {
