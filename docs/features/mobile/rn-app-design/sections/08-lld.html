@@ -1,0 +1,960 @@
+<section class="doc-section" id="s-lld" data-title="Low-level design: the React Native app" data-lane="LLD">
+<style>
+#s-lld .layers { display: grid; grid-template-columns: 128px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+#s-lld .layers .lab { align-self: center; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+#s-lld .layers .box { min-width: 0; }
+#s-lld .flowrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+#s-lld .flowrow .box { flex: 1 1 140px; min-width: 0; }
+#s-lld .flowrow .arr { align-self: center; }
+#s-lld .diagram + .diagram { margin-top: -10px; }
+#s-lld table.wrapcode td.code { white-space: normal; overflow-wrap: anywhere; }
+#s-lld table.spec td .mono, #s-lld table.route-table td .mono { font-family: var(--mono); font-size: 12px; }
+#s-lld .st { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+#s-lld .st.y { color: var(--run); } #s-lld .st.m { color: var(--wait); } #s-lld .st.n { color: var(--block); }
+#s-lld .tag-p { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--info); background: var(--info-soft); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
+#s-lld .phone p { max-width: none; color: var(--ink-2); }
+#s-lld .phone .plain { font-weight: 400; }
+#s-lld .phone .crit-done { font-weight: 400; color: var(--ink-3); text-decoration: line-through; }
+#s-lld .phone .check.queued { background: var(--wait); border-color: var(--wait); color: var(--paper); }
+#s-lld .phone .gap > * + * { margin-top: 14px; }
+#s-lld .phone .fine { margin: 0; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-lld .phone .linkcard { display: flex; flex-direction: column; gap: 6px; }
+#s-lld .phone .linkcard p { margin: 0; font-size: var(--fs-sub); line-height: var(--lh-sub); color: var(--ink-2); }
+#s-lld .phone .sheet .note { padding: 4px 16px 0; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-lld .phone .btnrow.pad { padding: 4px 16px 12px; }
+#s-lld .phone .refusal { margin-top: 0; }
+#s-lld .proj td.code { white-space: pre; }
+</style>
+<header>
+  <div class="lane-eyebrow">08 · Low-level design</div>
+  <h2>Low-level design: the React Native app</h2>
+  <p class="lede">The engineering half of this document, written so an engineer can start <code>apps/mobile</code> in this repo from it. It settles the stack, what the app shares with the web and what it must not, the exact expo-router tree, the multi-server client, the kind registry, state and the write queue, the chat and terminal pipelines, navigation, push, budgets, tests and release, and it lists by operation name the server work the app needs. What is new against the web phone shell: one app holds many servers and talks to each one directly instead of through a same-origin relay, Back is a native stack per tab instead of browser history, and reads survive offline in SQLite while writes keep their mutation ids until the node confirms them.</p>
+</header>
+
+<h3>Architecture at a glance</h3>
+<p>Five layers, each importing only from the layers below it. The app does not keep a second copy of the graph's rules: the contract, the route codec and the chat and receipt folds are the web's own modules, moved into a shared package (§2). Everything that draws is new and native.</p>
+<div class="diagram">
+  <div class="layers">
+    <div class="lab">Screens</div>
+    <div class="box"><b>app/ routes</b><small>expo-router file tree (§3); typed params, parsed with zod at the edge</small></div>
+    <div class="box"><b>src/ui</b><small>Row, Pill, Chip, Avatar, TreeRow, Banner, Sheet: native components on <code>theme.ts</code></small></div>
+    <div class="box"><b>Bodies</b><small>one per archetype (subtree, reader, hub, profile, terminal, conversation, generic…), drawn by lanes 03–06</small></div>
+    <div class="lab">Spine</div>
+    <div class="box brand"><b>Kind registry</b><small><code>src/registry</code>: the only folder that may name a kind (§5)</small></div>
+    <div class="box brand"><b>Verb registry</b><small>verb → operation → availability → enabled, or disabled with a reason</small></div>
+    <div class="box brand"><b>Nav machine</b><small>per-tab stacks, cap 12, cold-link seeding, link resolver (§9)</small></div>
+    <div class="lab">State</div>
+    <div class="box"><b>TanStack Query v5</b><small>fetch lifecycle, dedupe, focus and online managers, persistence</small></div>
+    <div class="box"><b>Entity store per server</b><small>zustand; fed by the shared reducers and the optimistic journal</small></div>
+    <div class="box"><b>Outbox</b><small>SQLite-ordered writes with <code>clientMutationId</code> and <code>expectedVersion</code> (§6, §12)</small></div>
+    <div class="lab">Net · per server</div>
+    <div class="box"><b>HTTP</b><small><code>bindPath(op)</code> from the catalog; bearer token; <code>x-tm8-client</code></small></div>
+    <div class="box"><b>Workspace socket</b><small><code>/v2/ws</code>: subscribe, then resume from the stored cursor; poll fallback</small></div>
+    <div class="box"><b>PTY</b><small><code>tm8-pty-v1</code>, inside the terminal WebView, from an attach grant (§8)</small></div>
+    <div class="lab">Platform</div>
+    <div class="box dark"><b>expo-secure-store</b><small>gate and space-pinned tokens, one entry each</small></div>
+    <div class="box dark"><b>expo-sqlite</b><small>cache, outbox, cursors, list memory, prefs</small></div>
+    <div class="box dark"><b>expo-notifications · AppState · NetInfo</b><small>push, lifecycle, reachability</small></div>
+  </div>
+</div>
+
+<h3>Anatomy of a write: one screen, every layer</h3>
+<p>The screen below is the most ordinary thing the app does: a person moves a task while a teammate is editing the same task. Every numbered part comes from a different layer. If the app gets this screen right, the same mechanisms carry every other kind.</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-warning"/></svg><span>Reviewer changed this task first. Your move to blocked was not applied.</span><span class="act" style="white-space:nowrap">Move again</span></div>
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · v12 · 01a17e52</span>
+            <div class="title">Quiet list tiles + one-row header</div>
+            <div class="meta"><span class="pill review">in review</span><span class="avatar xs agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span>Reviewer<span class="dot"></span>updated 13:38</div>
+          </div>
+          <div class="ent-actions"><span class="btn"><svg class="ic"><use href="#i-refresh"/></svg>Move</span><span class="btn"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="btn"><svg class="ic"><use href="#i-play"/></svg>Launch</span></div>
+          <div class="section-h">Acceptance criteria <span class="more">4 of 5</span></div>
+          <div class="list lines">
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">One title line, one meta line</span></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">Header is one row under 500px</span></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">Status stays a pill with a word</span></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">Rows hold one line at 200% type</span></span></div>
+            <div class="row"><span class="check"></span><span class="main"><span class="t plain">Light and dark screenshots attached</span></span></div>
+          </div>
+          <div class="section-h">Messages <span class="more">View all 6</span></div>
+          <div class="list lines">
+            <div class="row tall"><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s"><b>Reviewer</b> · 13:38</span><span class="t plain">Ticked one: checked on the 360 frame.</span></span></div>
+          </div>
+          <div class="linked"><div class="fam">Linked · about</div><div class="chips"><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Mobile shell contract</span><span class="chip"><svg class="ic"><use href="#i-session"/></svg>Reviewer · exited</span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:262px;top:60px"></span>
+    <span class="an" data-n="2" style="left:4px;top:112px"></span>
+    <span class="an" data-n="3" style="left:4px;top:158px"></span>
+    <span class="an" data-n="4" style="left:4px;top:262px"></span>
+    <span class="an" data-n="5" style="left:4px;top:362px"></span>
+    <span class="an" data-n="6" style="left:4px;top:580px"></span>
+    <span class="an" data-n="7" style="left:4px;top:668px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Scope comes from the route.</b> <code>[server]/[space]</code> params become the first two elements of every query key (<code>['tm8.sh', spaceId, 'entity', id]</code>). The subtitle names the server because the app can hold several (§4).</li>
+    <li><b>The conflict banner.</b> <code>entities.commands.work</code> answered <code>version_conflict</code> (409), and a <code>CollabError</code> of that code carries <code>current: EntityDetail</code> (<code>packages/contract/src/contract.ts</code>). The store rolls the optimistic move back, adopts <code>current</code> without a refetch, and says who changed what and what was not applied (§6).</li>
+    <li><b>The version the next write guards on.</b> <code>v12</code> is <code>EntitySummary.version</code>. Every command sends it as <code>expectedVersion</code>; “Move again” re-issues on v12 with a <em>new</em> mutation id.</li>
+    <li><b>Verbs come from the registry.</b> <code>KindConfig.verbs</code> → verb registry → availability (server capability flags plus a per-node probe) → enabled, or disabled with a reason (L6, <code>packages/tm8-ui/LLD.md</code> §0).</li>
+    <li><b>Optimistic ticks.</b> <code>entities.commands.tick</code> with a fresh <code>clientMutationId</code>. The shared journal (<code>project/journal.ts</code>) captures the prior state and reconciles on the <code>entity.upsert</code> echo that carries the same id.</li>
+    <li><b>Messages below the body</b> for task, doc and session (<code>KindConfig.messages</code>, CONTRACT §5 ruling 8): the latest one from <code>messages.list</code>, “View all” from <code>counters.messages</code>, which the node counted.</li>
+    <li><b>Linked, grouped by edge family.</b> <code>KindConfig.edgeFamilies</code> over <code>entities.context --sections connections</code>. A chip pushes the entity's page; if that page is the entry directly below, the chip acts as Back (§9).</li>
+  </ol>
+</div>
+<div class="why">Why the banner and not a silent refetch. The web's honesty laws (L6/L7) forbid a screen that changes under the reader without saying so. A conflict is a fact about other people's work: Reviewer's tick is real, and the person's move did not happen. The banner names both. A refetch-and-retry loop would overwrite one teammate's work with another's, and it would do it quietly.</div>
+
+<h3>1 · The stack, and what was considered</h3>
+<table class="spec">
+  <thead><tr><th style="width:13%">Concern</th><th style="width:24%">Choice</th><th style="width:19%">Considered</th><th>Why, in tm8's terms</th></tr></thead>
+  <tbody>
+    <tr><td><b>Runtime</b></td><td>Expo SDK 54 · React Native 0.81 · New Architecture (Fabric, TurboModules) · Hermes</td><td>Bare RN CLI; Flutter; Capacitor around tm8-ui; Swift + Kotlin</td><td>One TypeScript codebase that imports <code>@tm8/contract</code> unchanged. Its only dependency is zod 3 and it has no <code>node:</code> imports (checked). Capacitor would ship the web phone shell again, browser-bound Back included, which is the thing this document replaces. Flutter and two native apps could not reuse the contract.</td></tr>
+    <tr><td><b>Language</b></td><td>TypeScript strict + <code>noUncheckedIndexedAccess</code>, <code>exactOptionalPropertyTypes</code>, <code>verbatimModuleSyntax</code></td><td>—</td><td>The repo's compiler (<code>typescript ^5.5</code>). In the contract, an optional field means “never counted” (<code>childCount?</code>, the counters). <code>exactOptionalPropertyTypes</code> stops code from writing <code>undefined</code> as if it were a value.</td></tr>
+    <tr><td><b>Routing</b></td><td>expo-router v6, typed routes (<code>experiments.typedRoutes</code>)</td><td>React Navigation by hand</td><td>File routes give every screen an address (L8: everything navigational is a URL) and give deep links for free. A typed <code>Href</code> turns a bad route into a compile error. React Navigation runs underneath, so stacks and tabs are the native ones.</td></tr>
+    <tr><td><b>Server state</b></td><td>TanStack Query v5 + a normalized entity store per server (zustand v5)</td><td>The web's <code>domain-store.ts</code> whole; RTK Query; a GraphQL-style cache</td><td>Query owns the fetch lifecycle. The normalized table owns the truth, so one <code>entity.upsert</code> updates every list and page that shows the row. The web's pure <code>project/reducers.ts</code> and <code>project/journal.ts</code> are reused unchanged. Its store is not: it is single-server and seam-shaped.</td></tr>
+    <tr><td><b>Client state</b></td><td>zustand v5 (vanilla stores)</td><td>Context; Jotai</td><td>The web already runs zustand 5. The nav machine, list memory and outbox are small vanilla stores that can be tested without React.</td></tr>
+    <tr><td><b>Secrets</b></td><td>expo-secure-store (Keychain, this device only; Android Keystore)</td><td>react-native-keychain</td><td>Maintained by Expo and needs no config plugin. One entry per token, never one blob, so every value stays far below SecureStore's 2 KB guidance.</td></tr>
+    <tr><td><b>Local data</b></td><td>expo-sqlite (async API + <code>kv-store</code>)</td><td>MMKV; WatermelonDB; AsyncStorage</td><td>The cache needs indexes (server, space, kind, parent) and the outbox needs an ordered table. tm8 already has a sync spine (the per-space <code>seq</code>), so a sync engine would be a second one. <code>kv-store</code> covers preferences without adding MMKV.</td></tr>
+    <tr><td><b>Lists</b></td><td>@shopify/flash-list v2</td><td>FlatList; LegendList</td><td>Cell recycling. v2 runs only on the New Architecture and needs no size estimates, which suits mixed-height rows, tree rows and 2,000-part transcripts (§13).</td></tr>
+    <tr><td><b>Motion, gestures</b></td><td>react-native-reanimated 4 (+ react-native-worklets) · react-native-gesture-handler 2</td><td>Animated</td><td>Sheets, swipes and the tree chevron animate on the UI thread. Reanimated 4 needs the New Architecture, which this stack already has.</td></tr>
+    <tr><td><b>Sheets</b></td><td>Routed sheets are expo-router screens with <code>presentation: 'formSheet'</code> (detents, grabber); in-screen sheets use @gorhom/bottom-sheet v5</td><td>gorhom everywhere; react-native-modal</td><td>A routed native sheet is a screen in the stack, so Android Back dismisses it before the screen under it. That is the CONTRACT §5 “layers and back” ruling with no marker entries. gorhom stays for pickers that must not take a route (composer pickers, the long-press preview), with one <code>useSheetBack()</code> hook.</td></tr>
+    <tr><td><b>Terminal</b></td><td>xterm.js 6 + the web's verbatim PTY transport inside one bundled <code>react-native-webview</code> page</td><td>SwiftTerm + the Termux view (native, two codebases); a Skia grid renderer</td><td>L5: the transport and byte stack are a verbatim transplant and a black box. Running the same <code>ptyTransport.ts</code>, <code>writeScheduler.ts</code> and xterm keeps byte handling identical to the desktop. A native emulator would render the same bytes differently and re-implement offset resume. The cost is memory, so one live WebView at a time (§8).</td></tr>
+    <tr><td><b>Push</b></td><td>expo-notifications, delivered through a relay (Expo Push Service in v1)</td><td>Each node calling APNs and FCM itself</td><td>A self-hosted node such as acme-node or local cannot hold the publisher's APNs key, so no node can reach a phone directly. The relay is the only path that works for every server. Payload text is the person's choice, per device (§11).</td></tr>
+    <tr><td><b>Delivery</b></td><td>EAS Build + EAS Update (<code>expo-updates</code>, <code>runtimeVersion: { policy: 'fingerprint' }</code>)</td><td>Local Xcode and Gradle; CodePush</td><td>Reproducible store builds. Over-the-air JS fixes ship only behind a matching native fingerprint, and config plugins carry the entitlements.</td></tr>
+    <tr><td><b>Tests</b></td><td>vitest (shared packages) · jest-expo + React Native Testing Library · Maestro</td><td>Detox</td><td>Shared code stays on the repo's vitest. Maestro flows are YAML that a reviewer can read as the Back Contract's acceptance table (§16).</td></tr>
+  </tbody>
+</table>
+<div class="callout ruling"><b>Decision · terminal renderer</b>xterm.js in a WebView, not a native renderer, for v1 and v1.1. The terminal is the one surface where the repo has a hard law about bytes (L5, <code>packages/tm8-ui/LLD.md</code> §9.1): <code>ptyTransport</code>, <code>visibilityDriver</code>, <code>writeScheduler</code>, <code>runtime</code> and <code>terminalSize</code> are transplanted verbatim and never edited. The WebView runs exactly those files. RN keeps the parts a phone needs natively: the grant mint, the keys bar, the text input, lifecycle and the clipboard. A native renderer comes back only if the WebView misses the §13 memory or latency budget on the low-end Android device, and that would be a decision to re-transplant the byte stack, not a refactor.</div>
+
+<h3>2 · Where the app lives in this repo, and what it shares</h3>
+<p>The repo is a bun workspace over <code>packages/*</code>, <code>apps/*</code> and <code>tools/*</code>, and <code>apps/desktop</code> (Electron 41) already sits under <code>apps/</code>. The phone app goes beside it. One new package, <code>@tm8/client-core</code>, holds what both apps must compute identically. It contains no DOM and no React, so the same files run under Vite and Hermes.</p>
+<div class="tree-list">tm8/                                    <i>bun workspaces: packages/*  apps/*  tools/*</i>
+├─ apps/
+│  ├─ desktop/                          <i>exists: @tm8/desktop, Electron 41</i>
+│  └─ mobile/                           <i>NEW: @tm8/mobile, Expo SDK 54</i>
+│     ├─ app/                           <i>expo-router routes (§3)</i>
+│     ├─ src/
+│     │  ├─ registry/                   <i>KindConfig rows + verbs: the only folder that may name a kind</i>
+│     │  ├─ servers/                    <i>Server model, sign-in flows, SecureStore access</i>
+│     │  ├─ net/                        <i>http.ts · workspace-socket.ts · pty-grant.ts · probe.ts</i>
+│     │  ├─ state/                      <i>query client · entity store · outbox · tree projection · sqlite repos</i>
+│     │  ├─ chat/                       <i>frames → shared turn model; transcript list</i>
+│     │  ├─ terminal/                   <i>TerminalView (WebView host) · KeysBar · bridge.ts</i>
+│     │  ├─ nav/                        <i>stack machine · link resolver · list memory · page place</i>
+│     │  ├─ theme/                      <i>tokens.gen.ts · theme.ts · makeStyles · type roles</i>
+│     │  ├─ push/                       <i>registration · payload → route · categories · badge</i>
+│     │  ├─ i18n/                       <i>en.json · t() · Intl formatters</i>
+│     │  └─ ui/                         <i>Row, Pill, Chip, Avatar, TreeRow, Banner, Sheet, Empty, Refusal…</i>
+│     ├─ terminal-web/                  <i>WebView page: xterm + the verbatim transport → assets/terminal.html</i>
+│     ├─ maestro/                       <i>e2e flows (§16)</i>
+│     └─ app.config.ts · eas.json · metro.config.js · jest.config.js
+└─ packages/
+   ├─ contract/                         <i>exists: imported as-is</i>
+   ├─ pty-protocol/                     <i>exists: @maestro/pty-protocol, golden frames</i>
+   ├─ client-core/                      <i>NEW: @tm8/client-core, extracted from tm8-ui, DOM-free and React-free</i>
+   └─ tm8-ui/                           <i>exists: re-imports what moved, keeps everything that draws</i></div>
+<table class="spec wrapcode">
+  <thead><tr><th style="width:15%">client-core subpath</th><th style="width:31%">Moved from</th><th style="width:24%">What it computes</th><th>How it is shared</th></tr></thead>
+  <tbody>
+    <tr><td class="code">/routes</td><td><code>tm8-ui/src/routes/{codec,q,redirects,types}.ts</code> + <code>createMemoryTarget</code> from <code>transport.ts</code></td><td>parse, build and normalize the web address <code>#/s/&lt;space&gt;/…</code></td><td>Verbatim. The codec's three imports from <code>../domain</code> (<code>ALL_MODES</code>, <code>VIEW_REF_ROUTE</code>, <code>kindBySlug</code>) become imports from <code>/kinds</code>. In the app the codec translates web addresses (links in, share links out). It is not the app's router.</td></tr>
+    <tr><td class="code">/kinds</td><td>the label, slug, strategy and icon-art columns of <code>tm8-ui/src/domain/registry.ts</code>, plus <code>contract/src/kind-info.ts</code> groups</td><td><code>KIND_CORE: Record&lt;CoreEntityKind, KindCore&gt;</code> and the <code>c:*</code> fallback</td><td>A new file. Both registries extend it, so a 34th kind fails both builds, and “same words as the web” is a type, not a hope.</td></tr>
+    <tr><td class="code">/chat</td><td><code>chat-home/{wire, turn-model, ledger, turn-receipt, turn-steps, turn-step-lines, write-classifier, payload-walk, explanation-tools, entity-refs}.ts</code> + the render types from <code>types.ts</code></td><td>frames → parts → projected turns → steps → ledger → receipt</td><td>Verbatim except <code>types.ts</code>, whose port types import <code>ReactNode</code>. Those stay in tm8-ui (§7).</td></tr>
+    <tr><td class="code">/project</td><td><code>tm8-ui/src/data/project/{reducers,journal}.ts</code></td><td>pure per-family event reducers; the optimistic journal keyed by <code>clientMutationId</code></td><td>Verbatim. “No react imports anywhere in src/data” (<code>src/data/LLD.md</code> §3).</td></tr>
+    <tr><td class="code">/keys</td><td><code>tm8-ui/src/terminal/mobileKeys.ts</code></td><td>Esc, Tab, arrow and Ctrl byte sequences; <code>widthVerdict</code></td><td>Verbatim. The file is already “pure on purpose”.</td></tr>
+    <tr><td class="code">/time</td><td>the pure half of <code>tm8-ui/src/kit/time.ts</code> (<code>ageAgo</code>)</td><td>relative-time words</td><td>Split. The file also exports a React hook, and <code>live-turn-status-model.ts</code> needs only the function.</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:24%">Not shared</th><th style="width:36%">Why</th><th>What the app does instead</th></tr></thead>
+  <tbody>
+    <tr><td>Anything touching <code>window</code>, <code>document</code>, <code>history</code>, <code>localStorage</code></td><td><code>routes/transport.ts</code> <code>createBrowserTarget</code>, <code>stores/overlayHistory.ts</code> (popstate markers), <code>stores/phoneHistory.ts</code> (a projection of browser history), <code>servers/server-key.ts</code></td><td>Native stacks replace history. The <em>rules</em> of phoneHistory (cap 12, place per entry, the entry directly below acts as Back) are re-implemented in the nav machine (§9).</td></tr>
+    <tr><td>Every <code>*.css</code>, including <code>tokens.css</code></td><td>RN has no CSS; StyleSheet values are numbers</td><td><code>theme.ts</code> generated from the builtin style docs (§10).</td></tr>
+    <tr><td>Every tm8-ui <code>*.tsx</code></td><td>DOM primitives. Even <code>KindIcon.tsx</code> renders <code>&lt;svg&gt;</code></td><td>The same <code>iconArt</code> path data drawn with react-native-svg.</td></tr>
+    <tr><td><code>data/real/*</code> (socket, connection)</td><td>Bound to <code>visibilitychange</code> and <code>online</code>; one server per page</td><td>The algorithm is ported to <code>net/workspace-socket.ts</code> (§4) with AppState and NetInfo as its lifecycle source.</td></tr>
+    <tr><td>xterm DOM helpers (<code>touchScroll.ts</code>, <code>domUtils.ts</code>, <code>elementVisibility.ts</code>), <code>pwa/*</code></td><td>Browser-only</td><td>They go into <code>terminal-web/</code>, the WebView page, and are never imported by RN.</td></tr>
+  </tbody>
+</table>
+<div class="why">Why one package with subpaths rather than five. It is one node in <code>tools/ci/affected.sh</code>'s dependency graph and one version. The subpaths keep Metro from bundling the 40 KB ledger into a screen that only parses links. The extraction is a move, not a rewrite: the existing vitest files (<code>codec</code>, <code>ledger.test.ts</code>, <code>turn-receipt.test.ts</code>, <code>reducers.test.ts</code>, <code>journal.test.ts</code>) move with their modules and keep running in the <code>small</code> CI module.</div>
+
+<h3>3 · Route tree, typed params and deep links</h3>
+<p>The overview's route table, made exact. <code>[server]</code> is the device-local server key (<code>tm8.sh</code>, <code>acme-node</code>, <code>local</code>), never a URL. <code>[space]</code> is the space id. Tabs use expo-router <em>array groups</em> so that one entity route can be pushed onto whichever tab is current, while a cold link still lands on its kind's tab.</p>
+<div class="tree-list">apps/mobile/app/
+├─ _layout.tsx                          <i>root Stack; providers: Query, Servers, Theme, Outbox. Holds the splash only until</i>
+│                                       <i>SQLite is open and SecureStore is read; it never waits for the network</i>
+├─ index.tsx                            <i>&lt;Redirect&gt;: last scope → /[server]/[space]/chats; no server → /welcome</i>
+├─ welcome.tsx                          <i>first run</i>
+├─ add-server.tsx                       <i>modal · ?link=  URL → probe (auth.claim.status) → sign-in method</i>
+├─ sign-in/[server].tsx                 <i>password · invite · passkey · pairing code · QR · ?link=</i>
+├─ spaces.tsx                           <i>formSheet (medium, large): every server, its spaces, reachability</i>
+├─ outbox.tsx                           <i>formSheet: queued and refused writes, by server (§12)</i>
+├─ link.tsx                             <i>the resolver; always replaced, never left in a stack</i>
+├─ +not-found.tsx                       <i>refusal: “This link does not name a screen in tm8”</i>
+├─ settings/
+│  ├─ _layout.tsx · index.tsx           <i>account, servers, appearance, notifications</i>
+│  ├─ servers/[server].tsx              <i>sign-in state, sessions on this phone, pinning, remove</i>
+│  ├─ appearance.tsx · notifications.tsx
+│  └─ space/[server]/[space]/[section].tsx   <i>credentials · members · links · kinds · mcp</i>
+└─ [server]/[space]/
+   ├─ _layout.tsx                       <i>scope gate: server known and signed in? space a member's? else sign-in or refusal.</i>
+   │                                    <i>Points this server's socket at the space (§4)</i>
+   ├─ chat/new.tsx                      <i>fullScreenModal · ?with=&lt;teammate&gt;&amp;about=&lt;id&gt;</i>
+   ├─ launch.tsx                        <i>formSheet · ?on=&lt;entityId&gt;</i>
+   ├─ search.tsx                        <i>modal · ?q=</i>
+   └─ (tabs)/
+      ├─ _layout.tsx                    <i>Tabs: Chats · Work · Inbox · Browse, four native stacks</i>
+      ├─ (chats,work,inbox,browse)/_layout.tsx   <i>one Stack per group; unstable_settings names each group's</i>
+      │                                 <i>root, so a cold link sits on [tab root, screen]</i>
+      ├─ (chats)/chats.tsx              <i>/tm8.sh/&lt;space&gt;/chats</i>
+      ├─ (work)/work.tsx                <i>?seg=tasks|sessions|stories|board</i>
+      ├─ (inbox)/inbox.tsx              <i>?scope=space|all</i>
+      ├─ (browse)/browse.tsx
+      └─ (chats,work,inbox,browse)/     <i>shared routes: pushed onto the current tab</i>
+         ├─ e/[id]/index.tsx            <i>entity page; registry picks the body; chat, session, channel replace</i>
+         ├─ e/[id]/messages.tsx         <i>?msg=</i>
+         ├─ k/[slug].tsx                <i>?layout=tree|list|board|timeline&amp;sort=</i>
+         ├─ chat/[id].tsx               <i>?turn=&amp;form= (proposed, lane 03)</i>
+         ├─ channel/[id].tsx            <i>?msg=</i>
+         ├─ session/[id]/index.tsx      <i>?tab=live|transcript|context|stats|discussion</i>
+         └─ session/[id]/terminal.tsx   <i>full screen; landscape allowed; ?mode=view|drive</i></div>
+<table class="route-table">
+  <thead><tr><th style="width:32%">Route</th><th style="width:22%">Screen</th><th style="width:22%">Typed params</th><th>Web address it answers</th></tr></thead>
+  <tbody>
+    <tr><td>/welcome · /add-server</td><td>First run · add a server</td><td><code>link?</code>: encoded https or tm8 URL</td><td>—</td></tr>
+    <tr><td>/sign-in/[server]</td><td>Sign in</td><td><code>server: ServerKey</code>, <code>method?</code>, <code>link?</code></td><td>—</td></tr>
+    <tr><td>/spaces · /outbox<span class="tag-p">outbox proposed</span></td><td>Switcher sheet · Outbox sheet</td><td>—</td><td>—</td></tr>
+    <tr><td>/link<span class="tag-p">proposed</span></td><td>Link resolver (transient)</td><td><code>u: string</code></td><td>any address below</td></tr>
+    <tr><td>/[server]/[space]/chats</td><td>Chats root</td><td><code>server: ServerKey</code>, <code>space: SpaceId</code></td><td><code>#/s/{space}/home</code> · <code>/feed</code></td></tr>
+    <tr><td>/[server]/[space]/work</td><td>Work root</td><td><code>seg?</code></td><td><code>#/s/{space}/workspace</code> · <code>/board</code></td></tr>
+    <tr><td>/[server]/[space]/inbox</td><td>Inbox root</td><td><code>scope?</code></td><td><code>#/s/{space}/inbox</code></td></tr>
+    <tr><td>/[server]/[space]/browse</td><td>Browse root</td><td>—</td><td>—</td></tr>
+    <tr><td>/[server]/[space]/k/[slug]</td><td>Kind list, a tree when the data nests</td><td><code>slug: KindSlug</code>, <code>layout?</code>, <code>sort?</code></td><td><code>#/s/{space}/k/{slug}?mode=</code></td></tr>
+    <tr><td>/[server]/[space]/e/[id]</td><td>Entity page</td><td><code>id: EntityId</code></td><td><code>#/s/{space}/e/{id}?origin=</code></td></tr>
+    <tr><td>/[server]/[space]/e/[id]/messages</td><td>Messages on an anchor</td><td><code>msg?</code></td><td>message routes (strategy <code>anchored</code>)</td></tr>
+    <tr><td>/[server]/[space]/chat/[id]</td><td>Chat</td><td><code>turn?</code> <code>form?</code><span class="tag-p">proposed</span></td><td><code>#/s/{space}/e/{chatId}</code></td></tr>
+    <tr><td>/[server]/[space]/channel/[id]</td><td>Channel</td><td><code>msg?</code></td><td><code>#/s/{space}/channel/{id}?msg=</code></td></tr>
+    <tr><td>/[server]/[space]/session/[id]</td><td>Session</td><td><code>tab?</code></td><td><code>#/s/{space}/e/{id}</code> · <code>?session=</code></td></tr>
+    <tr><td>/[server]/[space]/session/[id]/terminal</td><td>Terminal</td><td><code>mode?</code></td><td><code>contentSurface={id}:terminal</code></td></tr>
+    <tr><td>/[server]/[space]/chat/new · /launch · /search</td><td>New chat · launch sheet · search</td><td><code>with?</code> <code>about?</code> · <code>on?</code> · <code>q?</code></td><td>—</td></tr>
+    <tr><td>/settings/space/[server]/[space]/[section]</td><td>Space settings</td><td><code>section</code></td><td><code>#/s/{space}/settings/{section}</code></td></tr>
+  </tbody>
+</table>
+<p>Params arrive as strings and are parsed by one zod schema per route before any query runs: <code>ServerKey</code> <code>^[a-z0-9][a-z0-9.-]{0,62}$</code>, <code>SpaceId</code> a uuid, <code>EntityId</code> the codec's loose “plausibly an entity id” shape gate, <code>KindSlug</code> a registered slug or <code>c-…</code>. A param that fails renders the refusal screen with the bad value named. It never crashes and never falls back silently to a different screen.</p>
+
+<h4>Deep and universal links</h4>
+<table class="spec">
+  <thead><tr><th style="width:20%">Mechanism</th><th style="width:26%">Value</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Custom scheme</td><td><code>scheme: 'tm8'</code> in <code>app.config.ts</code></td><td><code>tm8://&lt;host&gt;/s/&lt;space&gt;/e/&lt;id&gt;</code> and <code>tm8://open?u=&lt;encoded https URL&gt;</code>. Works for every server, including ones added at runtime.</td></tr>
+    <tr><td>iOS universal links</td><td><code>associatedDomains: ['applinks:tm8.sh', 'webcredentials:tm8.sh']</code></td><td>Entitlements are compiled in at build time, so a host added at runtime can never become a universal link. The AASA file matches path <code>/</code> with fragment <code>/s/*</code>.</td></tr>
+    <tr><td>Android App Links</td><td>intent filter <code>https://tm8.sh</code>, <code>autoVerify</code></td><td>Fragments are not matched. Every tm8.sh link opens the app, which is right because tm8.sh serves the app at <code>/</code>.</td></tr>
+    <tr><td>Other hosts</td><td>acme-node, local</td><td>No universal link is possible. The web phone shell offers “Open in TM8” (<code>tm8://open?u=…</code>); paste, QR and share-to-app (v2) feed the same resolver.</td></tr>
+    <tr><td>Per-operator build</td><td>an <code>enterprise-&lt;org&gt;</code> EAS profile adding <code>applinks:&lt;org host&gt;</code></td><td>Only when an operator asks. It is a separate store or MDM build.</td></tr>
+  </tbody>
+</table>
+<div class="diagram">
+  <div class="label">The resolver: any link → one route (nav/link-resolver.ts)</div>
+  <div class="flowrow">
+    <div class="box"><b>1 · Normalize</b><small>https web address · <code>tm8://host/…</code> · <code>tm8://open?u=</code> · push <code>data.h</code></small></div><span class="arr">→</span>
+    <div class="box"><b>2 · Origin → server</b><small>exact scheme + host + port match on <code>baseUrl</code>. No match → <code>/add-server?link=</code></small></div><span class="arr">→</span>
+    <div class="box"><b>3 · Parse</b><small><code>parse(hash)</code> from <code>@tm8/client-core/routes</code> → <code>NavView</code> + dropped classes</small></div><span class="arr">→</span>
+    <div class="box"><b>4 · Space</b><small>a member's space on that server? If not: “You are not a member of this space on tm8.sh”</small></div><span class="arr">→</span>
+    <div class="box"><b>5 · Kind → tab</b><small>cache, then the link's <code>origin</code> slug, then <code>entities.get</code> (3 s budget)</small></div><span class="arr">→</span>
+    <div class="box brand"><b>6 · Navigate</b><small>into <code>(tab)/…</code> as <code>[tab root, screen]</code>; another scope → replace at the root</small></div>
+  </div>
+</div>
+<table class="spec">
+  <thead><tr><th style="width:30%">NavView from the codec</th><th style="width:36%">App route</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td class="code">home · feed</td><td><code>(chats)/chats</code></td><td>The app's home is Chats.</td></tr>
+    <tr><td class="code">workspace · board</td><td><code>(work)/work</code> (<code>?seg=board</code>)</td><td>Desktop-only params (<code>p</code>, <code>pin</code>, <code>t</code>) are dropped and the drop is said once.</td></tr>
+    <tr><td class="code">inbox</td><td><code>(inbox)/inbox</code></td><td></td></tr>
+    <tr><td class="code">kind {slug}</td><td><code>(tab of kind)/k/[slug]</code></td><td>Tab from <code>KindConfig.tab</code>.</td></tr>
+    <tr><td class="code">entity {id, origin}</td><td><code>(tab of kind)/e/[id]</code>, then replaced to chat, session or channel by strategy</td><td>Unknown kind and unreachable server: the resolver keeps the link, shows “This server could not be reached. The link opens when it is back”, and offers Retry.</td></tr>
+    <tr><td class="code">channel {id, msg}</td><td><code>(chats)/channel/[id]?msg=</code></td><td></td></tr>
+    <tr><td class="code">settings {section}</td><td><code>/settings/space/[server]/[space]/[section]</code></td><td>Node-admin sections: refusal with “Open on the web”.</td></tr>
+    <tr><td class="code">files · messages · graph · git</td><td><code>(browse)/k/files</code> · <code>(inbox)/inbox</code> · refusal · refusal</td><td>“This screen is on the web only”, with Open on the web. Unavailable is not invisible.</td></tr>
+  </tbody>
+</table>
+<div class="screen-strip">
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="iconbtn"><svg class="ic"><use href="#i-close"/></svg></span></div>
+          <div class="title">Open link</div>
+          <div class="trail"></div>
+        </header>
+        <main class="content pad gap">
+          <div class="card flat linkcard">
+            <span class="eyebrow"><svg class="ic"><use href="#i-link"/></svg>Link</span>
+            <div class="hl">A task on tm8.sh</div>
+            <span class="mono" style="font-size:var(--fs-foot);color:var(--ink-3)">space 01a0fb3d · task 01a182a2</span>
+            <p>This phone has not signed in to tm8.sh. Sign in once and the link opens in Work.</p>
+          </div>
+          <div class="field"><label>Server</label><div class="input"><svg class="ic"><use href="#i-lock"/></svg>https://tm8.sh</div><span class="help">Reachable · a tm8 server · accounts by invite</span></div>
+          <div class="field"><label>Name on this phone</label><div class="input">tm8.sh</div></div>
+          <span class="btn primary block">Continue to sign in</span>
+          <p class="fine">tm8 never signs in from a link. The link is kept and opens after you sign in.</p>
+          <dl class="kv"><dt>Opens as</dt><dd>Work › Task</dd><dt>Back from it</dt><dd>Work, then leaves the app</dd><dt>Kind from</dt><dd><span class="mono">origin=tasks</span> in the link</dd></dl>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Add-server-first: a link to a server this phone does not know</b>Mechanism face of resolver step 2. The screen belongs to lane 07 and the form to lane 02. The probe is the unauthenticated <code>auth.claim.status</code>, which identifies a tm8 node and how accounts are made on it. The kind comes from the link's <code>origin</code>; the title stays unknown until sign-in, because an id is not a title. <span class="route">/add-server?link=https%3A%2F%2Ftm8.sh%2F%23%2Fs%2F…</span></div>
+  </div>
+  <div class="shot" style="width:460px">
+    <div class="callout ruling" style="margin:0"><b>Rules the resolver keeps</b>
+      <ul style="margin:6px 0 0;padding-left:18px">
+        <li><b>Never signs in from a link.</b> An unknown origin goes to add-server with the full URL shown and a probe. A link cannot add a server, pick an account or switch accounts on its own.</li>
+        <li><b>The kind picks the tab.</b> A cold link opens as <code>[kind's tab root, entity]</code>, so Back lands on the list (overview, native conventions).</li>
+        <li><b>Scope changes replace.</b> A link into another server or space resets the tabs at the root, the way <code>setSpace</code> writes with replace on the web. Back never crosses a space boundary the person did not walk (Back Contract Q4).</li>
+        <li><b>Drops are said once.</b> The codec reports dropped classes (<code>dropNoticeText</code>); desktop-only params such as pins and panel tabs produce one toast, never silence.</li>
+        <li><b>Strategy, never kind.</b> The resolver branches on <code>strategy</code> (<code>anchored</code>, <code>special</code>) the way the web codec does (<code>packages/tm8-ui/LLD.md</code> §1.1). It is the one exception to “no kind literals”.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h3>4 · Servers, sessions and sockets</h3>
+<p>A server on the phone is <em>device-local</em>. It is not the <code>server</code> entity: that one lives in a home space and is reached through its node's relay (<code>servers.list</code>, migration 261, <code>packages/contract/src/servers.ts</code>). The web reaches remote servers through the local node's same-origin relay because S4 refuses every cross-origin preflight (<code>servers/server-key.ts</code>). Native fetch sends no preflight, so the app talks to each origin directly. Bearer requests are also exempt from the S6 header check by construction (<code>checkCsrf</code>, <code>packages/server/src/http/security.ts</code>).</p>
+<pre><code>type ServerKey = string;                 // route segment: 'tm8.sh' | 'acme-node' | 'local'; unique on this phone
+
+interface Server {
+  id: string;                            // ULID minted on this phone; survives renames
+  key: ServerKey;
+  name: string;                          // the label the person chose
+  baseUrl: string;                       // origin only: 'https://tm8.sh' · 'https://tm8.acme.dev' · 'http://127.0.0.1:4611'
+  account: { memberId: EntityId; username: string; displayName: string } | null;   // identity.get
+  session: SealedSession | null;         // handles into SecureStore; a token is never held in JS state
+  reachability: ServerReachStatus;       // 'unknown' | 'reachable' | 'unreachable' | 'offline'  (contract servers.ts)
+  reachCheckedAt: string | null;
+  spaces: SpaceRef[];                    // spaces.list, cached: { id, name, mark }
+  node: NodeInfo | null;                 // GET /v2/meta once it exists (proposed); until then probed per op
+  pins: { spkiSha256: string[] } | null; // optional certificate pinning (§14)
+  push: { deviceId: string | null; previews: 'full' | 'sender' | 'none' };
+}
+
+interface SealedSession {
+  gate: SecureKey;                       // 'tm8:&lt;serverId&gt;:gate': the unpinned session from auth.login
+  spaces: Record&lt;SpaceId, SecureKey&gt;;    // 'tm8:&lt;serverId&gt;:space:&lt;spaceId&gt;': from auth.space.enter
+  kind: 'cli' | 'mobile';                // v1 signs in as 'cli'; 'mobile' is proposed
+  label: string;                         // 'TM8 Mobile · iPhone': what auth.sessions.list shows
+  expiresAt: string;                     // the app warns 7 days before
+}</code></pre>
+<table class="spec">
+  <thead><tr><th style="width:15%">Channel</th><th style="width:30%">Endpoint</th><th style="width:25%">Auth</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><b>REST</b></td><td><code>baseUrl + bindPath(op, params)</code>; the catalog (<code>contract/src/catalog.ts</code>) is the only route source</td><td><code>Authorization: Bearer tm8s_…</code>: space-pinned for space ops, gate for <code>spaces.list</code> and <code>auth.*</code></td><td><code>x-tm8-client: tm8-mobile/1.0.0 (ios; build 42)</code>. <code>{data, requestId}</code> unwraps; <code>{error}</code> becomes <code>CollabError</code> with the server's code. Timeouts 10 s read, 20 s command. One AbortController per screen.</td></tr>
+    <tr><td><b>Workspace socket</b></td><td><code>wss://host/v2/ws</code> (<code>events.subscribe</code>)</td><td>bearer in the upgrade headers (RN's WebSocket takes headers; a browser cannot)</td><td>One per signed-in server, pointed at the visible space: <code>subscribe</code>, then always <code>resume {spaceId, since}</code> (<code>src/data/LLD.md</code> §6 facts 2–4). <code>control.refused</code> is the only ack. Backoff 0.5 s → 8 s with jitter.</td></tr>
+    <tr><td><b>Poll fallback</b></td><td><code>GET /v2/spaces/:spaceId/events?since=</code> (<code>events.poll</code>)</td><td>bearer</td><td>Every 1.5 s while the socket is down; same seq spine, same dispatch.</td></tr>
+    <tr><td><b>PTY</b></td><td><code>/v2/ws?sessionId=&amp;offset=</code> from the <code>execution.streams.attach</code> grant</td><td>subprotocols <code>tm8-pty-v1</code> + <code>tm8-grant.&lt;token&gt;</code>: a short-lived stream capability</td><td>Opened inside the terminal WebView (§8).</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:26%">Version signal</th><th style="width:30%">Today</th><th>What the app does</th></tr></thead>
+  <tbody>
+    <tr><td><code>x-tm8-client</code></td><td>Presence is checked only for cookie requests; nothing reads the value (<code>envelope.ts</code>)</td><td>Sends <code>tm8-mobile/&lt;version&gt;</code>, which names the client in node logs.</td></tr>
+    <tr><td>Event <code>schemaVersion</code> (<code>WORKSPACE_EVENT_SCHEMA_VERSION = 1</code>)</td><td>On every event envelope</td><td>An event newer than the app knows is not applied. The app re-reads that space and shows “Update TM8 to read everything on tm8.sh”.</td></tr>
+    <tr><td>Op availability</td><td><code>not_implemented</code> (501) on reserved ops, for example <code>search.query</code></td><td>The verdict is cached per (server, op) for the session, and every affordance on that op renders disabled with a reason.</td></tr>
+    <tr><td><code>GET /v2/meta</code><span class="tag-p">proposed</span></td><td><span class="st n">missing</span></td><td><code>{contractVersion, catalogSha256, eventSchemaVersion, features[], minClients}</code>. It replaces probing and lets a node refuse a too-old app in words.</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:15%">Sign-in</th><th style="width:30%">Operations</th><th style="width:10%">Status</th><th>On the phone</th></tr></thead>
+  <tbody>
+    <tr><td>Password</td><td><code>auth.login {username, password, kind, label}</code> → <code>tm8s_…</code></td><td><span class="st y">exists</span></td><td>v1. <code>kind: 'cli'</code>: 90-day TTL, and admitted by <code>HUMAN_AUTH_KINDS = ['browser','cli']</code> so human-only doors work. <code>browser</code> would expire in 30 days (<code>SESSION_TTL_MS</code>, <code>packages/server/src/identity/pg-auth.ts</code>).</td></tr>
+    <tr><td>Space entry</td><td><code>auth.space.enter</code></td><td><span class="st y">exists</span></td><td>One pinned token per space. Under <code>TM8_SPACE_SESSIONS=enforce</code> a gate session can call only <code>spaces.list</code> and <code>auth.*</code>.</td></tr>
+    <tr><td>Invite · claim</td><td><code>auth.invite.resolve/signup</code> · <code>auth.claim.status/claim</code></td><td><span class="st y">exists</span></td><td>From an invite link, or first run on <code>local</code>.</td></tr>
+    <tr><td>Pairing code · QR</td><td><code>auth.pairing.create</code> / <code>auth.pairing.redeem</code><span class="tag-p">proposed</span></td><td><span class="st m">partial</span></td><td>The pattern exists for space links only (<code>tm8 link grant</code> → <code>link login --pairing-code</code>). QR encodes <code>tm8://pair?o=&lt;origin&gt;&amp;c=&lt;code&gt;</code>. v1.1.</td></tr>
+    <tr><td>Passkey</td><td><code>auth.passkey.*</code> (WebAuthn RP = host)<span class="tag-p">proposed</span></td><td><span class="st n">missing</span></td><td>ASAuthorization on iOS, Credential Manager on Android. Only for build-time hosts (<code>webcredentials:tm8.sh</code>). v1.1.</td></tr>
+  </tbody>
+</table>
+<p><b>Sign-out</b>, in order: (1) <code>devices.unregister</code> (proposed); (2) <code>auth.logout</code> with the gate token, which takes the pinned sessions with it and closes their event sockets (<code>tm8 help auth</code>); (3) delete the SecureStore entries; (4) delete the server's SQLite rows and query cache. Offline, steps 3–4 run at once and the gate token waits in a revoke-pending slot until the logout call lands: “Signed out on this phone. tm8.sh will be told when it can be reached.”</p>
+<table class="spec">
+  <thead><tr><th style="width:17%">Lifecycle</th><th style="width:30%">Workspace socket</th><th style="width:27%">Queries · outbox</th><th>Terminal · push</th></tr></thead>
+  <tbody>
+    <tr><td>Active</td><td>Open for each signed-in server, subscribed to the <em>visible</em> space only; other spaces get an <code>inbox.list</code> read every 60 s</td><td>focusManager focused; stale visible queries refetch</td><td>WebView attached if the terminal is on screen</td></tr>
+    <tr><td>Background</td><td>Closed after a 30 s grace; cursors saved to SQLite</td><td>Paused; one outbox flush attempt inside the OS grace</td><td>WebView suspended; the OS delivers pushes</td></tr>
+    <tr><td>Foreground</td><td>Reconnect (floor <code>resumeMinIntervalMs</code>), <code>subscribe</code> + <code>resume</code> from the stored cursor. A gap over 10 min means a resync by reads.</td><td>Refetch stale visible queries; flush the outbox</td><td>Reattach with the offset; badge recomputed</td></tr>
+    <tr><td>Push wake</td><td>None</td><td><code>inbox.list</code> for the badge only</td><td>—</td></tr>
+    <tr><td>Space switch</td><td>Same server: <code>unsubscribe</code> + <code>subscribe</code> (reopens with the new pinned token under enforce)</td><td>Tabs reset at the root (replace)</td><td>—</td></tr>
+  </tbody>
+</table>
+<div class="why">Why the resume cursor is persisted when the web keeps it in memory (<code>src/data/LLD.md</code> §6). A page load rehydrates by reads anyway. A phone resumes dozens of times a day, every unlock. Replaying at most 500 events from a stored seq, inside the 7-day retention, is cheaper than re-reading every visible list, and the 10-minute resync rule still covers long gaps.</div>
+
+<h3>5 · The kind registry</h3>
+<p>The law carries over from <code>packages/tm8-ui/LLD.md</code> §1.1 and L2: <b>no kind literal outside <code>src/registry/</code></b>. A per-kind behaviour without a registry field is a spec defect, never an <code>if (kind === …)</code>. An ESLint <code>no-restricted-syntax</code> rule fails the build on the 33 kind strings and on any <code>kind ===</code> comparison outside <code>src/registry/**</code> and test fixtures. It ports tm8-ui's <code>no-kind-literals.test.ts</code>.</p>
+<pre><code>interface KindConfig extends KindCore {        // KindCore = label, labelPlural, slug, strategy, group, iconArt (client-core)
+  tab: 'chats' | 'work' | 'inbox' | 'browse';   // whose stack a cold link seeds (§9)
+  screen: 'entity' | 'chat' | 'session' | 'channel';   // e/[id] replaces to the last three
+  list: {
+    layouts: readonly Layout[];                 // first = default; 'tree' first wherever the kind nests
+    tree: { source: 'parent' | 'launchedBy'; autoDepth: 2 };  // where children come from (§5.1)
+    filters: readonly FilterSpec[]; sort: readonly SortSpec[];
+    tile: { badges: readonly TileBadge[]; live?: 'session-verdict' };
+    create: CreateSpec | null;
+  };
+  body: BodyArchetype;                          // subtree | reader | hub | profile | terminal | conversation |
+                                                // equipment | governed | restricted | scripted | machine | generic
+  blocks?: readonly BlockRef[];                 // fields | link-summary | checks | file-preview | preview | items | pages | runs | settings-home | notice
+  verbs: readonly VerbId[];                     // → verbs.ts: { label, glyph, op, availability }
+  statusPill: StatusSource | null;
+  edgeFamilies: readonly EdgeFamily[];          // what Linked groups: produces · sessions · about · contains · links
+  attention: readonly AttentionRule[];          // what puts a row in Inbox › Needs you
+  messages: 'below-body' | 'under-linked';      // CONTRACT §5 ruling 8
+  offline: { queueable: readonly VerbId[] };    // v2: verbs allowed to wait in the outbox
+}
+export const REGISTRY = { /* 33 rows + 'c:*' */ } satisfies Record&lt;CoreEntityKind | 'c:*', KindConfig&gt;;</code></pre>
+<table class="spec">
+  <thead><tr><th style="width:15%">Kind</th><th style="width:17%">Label (same as web)</th><th style="width:13%">Slug</th><th style="width:8%">Tab</th><th style="width:9%">Route</th><th>Body · blocks</th><th style="width:6%">Lane</th></tr></thead>
+  <tbody>
+    <tr><td class="code">task</td><td>Task · Tasks</td><td class="code">tasks</td><td>Work</td><td>e</td><td>subtree: description, criteria, Children tree</td><td>05</td></tr>
+    <tr><td class="code">story</td><td>Story · Stories</td><td class="code">stories</td><td>Work</td><td>e</td><td>generic · story card, child stories tree</td><td>05</td></tr>
+    <tr><td class="code">collection</td><td>Collection · Collections</td><td class="code">collections</td><td>Work</td><td>e</td><td>generic · items</td><td>05</td></tr>
+    <tr><td class="code">project</td><td>Project · Projects</td><td class="code">projects</td><td>Work</td><td>e</td><td>governed</td><td>05</td></tr>
+    <tr><td class="code">craft</td><td>Craft · Crafts</td><td class="code">crafts</td><td>Work</td><td>e</td><td>generic · pages</td><td>05</td></tr>
+    <tr><td class="code">loop</td><td>Loop · Loops</td><td class="code">loops</td><td>Work</td><td>e</td><td>generic · runs</td><td>05</td></tr>
+    <tr><td class="code">pull_request</td><td>Pull request · Pull requests</td><td class="code">pulls</td><td>Work</td><td>e</td><td>generic · link-summary, checks</td><td>05</td></tr>
+    <tr><td class="code">commit</td><td>Commit · Commits</td><td class="code">commits</td><td>Work</td><td>e</td><td>generic · link-summary</td><td>05</td></tr>
+    <tr><td class="code">work_session</td><td>Session · Sessions</td><td class="code">sessions</td><td>Work</td><td>session</td><td>terminal: parent chain, Children tree</td><td>04</td></tr>
+    <tr><td class="code">worktree</td><td>Worktree · Worktrees</td><td class="code">worktrees</td><td>Browse</td><td>e</td><td>generic</td><td>04</td></tr>
+    <tr><td class="code">tool</td><td>Tool · Tools</td><td class="code">tools</td><td>Browse</td><td>e</td><td>scripted</td><td>04</td></tr>
+    <tr><td class="code">mcp_server</td><td>Connector · Connectors</td><td class="code">connectors</td><td>Browse</td><td>e</td><td>generic · settings-home</td><td>04</td></tr>
+    <tr><td class="code">container</td><td>Container · Containers</td><td class="code">containers</td><td>Browse</td><td>e</td><td>machine</td><td>04</td></tr>
+    <tr><td class="code">chat</td><td>Chat · Chats</td><td class="code">chats</td><td>Chats</td><td>chat</td><td>conversation; list tree source <code>launchedBy</code></td><td>03</td></tr>
+    <tr><td class="code">message</td><td>Message · Messages</td><td>— <i>anchored</i></td><td>Chats</td><td>anchor</td><td>generic · fields; opens its anchor at <code>?msg=</code></td><td>03</td></tr>
+    <tr><td class="code">channel</td><td>Channel · Channels</td><td class="code">channels</td><td>Chats</td><td>channel</td><td>hub</td><td>03</td></tr>
+    <tr><td class="code">voice_channel</td><td>Voice channel · Voice channels</td><td>— <i>special</i></td><td>Chats</td><td>e</td><td>hub</td><td>03</td></tr>
+    <tr><td class="code">form</td><td>Form · Forms</td><td class="code">forms</td><td>Chats</td><td>e</td><td>generic · questions</td><td>03</td></tr>
+    <tr><td class="code">doc</td><td>Doc · Docs</td><td class="code">docs</td><td>Browse</td><td>e</td><td>reader: outline + sub-doc tree</td><td>06</td></tr>
+    <tr><td class="code">file</td><td>File · Files</td><td class="code">files</td><td>Browse</td><td>e</td><td>generic · file-preview</td><td>06</td></tr>
+    <tr><td class="code">drawing</td><td>Drawing · Drawings</td><td class="code">drawings</td><td>Browse</td><td>e</td><td>generic · read-only canvas (edit v1.1)</td><td>06</td></tr>
+    <tr><td class="code">graph</td><td>Graph · Graphs</td><td class="code">graphs</td><td>Browse</td><td>e</td><td>generic</td><td>06</td></tr>
+    <tr><td class="code">artifact</td><td>Artifact · Artifacts</td><td class="code">artifacts</td><td>Browse</td><td>e</td><td>generic · preview (partial, §19)</td><td>06</td></tr>
+    <tr><td class="code">memory</td><td>Memory · Memories</td><td class="code">memories</td><td>Browse</td><td>e</td><td>profile</td><td>06</td></tr>
+    <tr><td class="code">skill</td><td>Skill · Skills</td><td class="code">skills</td><td>Browse</td><td>e</td><td>equipment</td><td>06</td></tr>
+    <tr><td class="code">spell</td><td>Spell · Spells</td><td class="code">spells</td><td>Browse</td><td>e</td><td>generic</td><td>06</td></tr>
+    <tr><td class="code">member</td><td>Member · Members</td><td class="code">members</td><td>Browse</td><td>e</td><td>profile</td><td>06</td></tr>
+    <tr><td class="code">team_member</td><td>Teammate · Teammates</td><td class="code">teammates</td><td>Browse</td><td>e</td><td>profile</td><td>06</td></tr>
+    <tr><td class="code">server</td><td>Server · Servers</td><td class="code">servers</td><td>Browse</td><td>e</td><td>generic</td><td>02</td></tr>
+    <tr><td class="code">space_link</td><td>Space link · Space links</td><td class="code">space-links</td><td>Browse</td><td>e</td><td>generic · settings-home</td><td>02</td></tr>
+    <tr><td class="code">credential</td><td>Credential · Credentials</td><td class="code">credentials</td><td>Browse</td><td>e</td><td>generic · settings-home</td><td>02</td></tr>
+    <tr><td class="code">interaction_profile</td><td>Interaction profile · …profiles</td><td class="code">interaction-profiles</td><td>Browse</td><td>e</td><td>restricted</td><td>02</td></tr>
+    <tr><td class="code">style</td><td>Style · Styles</td><td class="code">styles</td><td>Browse</td><td>e</td><td>generic · fields</td><td>02</td></tr>
+    <tr><td class="code">c:*</td><td>Item · Items</td><td class="code">c-{name}</td><td>Browse</td><td>e</td><td>generic · fields: every custom kind, no code</td><td>—</td></tr>
+  </tbody>
+</table>
+<pre><code>// apps/mobile/src/registry/registry.test.ts
+const CORE = Object.keys(CORE_KIND_INFO) as CoreEntityKind[];       // contract's Record&lt;CoreEntityKind, …&gt;
+test('a row for every core kind, and nothing else', () =&gt; {
+  expect(CORE).toHaveLength(33);
+  expect(Object.keys(REGISTRY).sort()).toEqual([...CORE, 'c:*'].sort());
+});
+test('same words as the web', () =&gt;
+  CORE.forEach((k) =&gt; expect(core(REGISTRY[k])).toEqual(KIND_CORE[k])));    // label, labelPlural, slug, strategy
+test('a custom kind lands on the fallback', () =&gt; expect(configFor('c:incident')).toMatchObject({ body: 'generic', slug: 'c-incident' }));
+test('every verb, block and edge family resolves', () =&gt; /* each id exists in verbs.ts / blocks / families */ {});</code></pre>
+<div class="diagram">
+  <div class="label">The generic entity page: composed from registry data, the same for every kind</div>
+  <div class="flowrow">
+    <div class="box"><b>Header</b><small>eyebrow (label, version, id) + title + <code>statusPill</code> · <code>entities.get</code></small></div><span class="arr">→</span>
+    <div class="box"><b>Parent chain</b><small>“launched by ◆ TM8 Mobile app · Coordinator” · <code>entities.context</code> hierarchy <code>path</code></small></div><span class="arr">→</span>
+    <div class="box"><b>Verbs</b><small><code>verbs</code> → availability → enabled, or disabled with a reason</small></div><span class="arr">→</span>
+    <div class="box"><b>Body</b><small><code>body</code> archetype + <code>blocks</code>; Children as a tree</small></div><span class="arr">→</span>
+    <div class="box"><b>Messages</b><small>latest 3 · <code>messages.list</code></small></div><span class="arr">→</span>
+    <div class="box"><b>Linked</b><small><code>edgeFamilies</code> over the connections section</small></div>
+  </div>
+</div>
+
+<h3>5.1 · Every list is a tree when the data nests</h3>
+<p>Owner ruling, 2026-10-28: the structure must show on the phone. The web drawer already does this (“an item with children — launched sessions under their root, sub-docs, subtasks — has a ▸ and expands in place”, <code>mobile/MobileDrawer.tsx</code>). The phone lists dropped it. The decision is <b>made from data, not from kind</b>: a list renders as a tree when any root on the page has <code>childCount &gt; 0</code>. <code>childCount</code> is the live direct-child count on <code>EntitySummary</code>. When a node never counted it (the field is absent), the app runs the depth-1 query and decides from what comes back. The registry says only where children come from: <code>parent</code> for every kind, and <code>launchedBy</code> for chats, whose sessions are a cross-kind relation (edge 330).</p>
+<table class="spec">
+  <thead><tr><th style="width:14%">Step</th><th style="width:44%">Query (<code>collections.query</code>)</th><th style="width:12%">Bound</th><th>Gives</th></tr></thead>
+  <tbody>
+    <tr><td>Roots</td><td><code>{kinds:[k], parentId: null, filters, sort, limit: 50}</code></td><td>one page</td><td>roots, each with <code>childCount</code></td></tr>
+    <tr><td>Depth 1</td><td><code>filters: {parentIn: [roots with childCount &gt; 0]}</code></td><td>≤ 200 ids</td><td>children of every open root, whatever their status</td></tr>
+    <tr><td>Depth 2</td><td><code>filters: {parentIn: [depth-1 ids with childCount &gt; 0]}</code></td><td>≤ 200 ids</td><td>grandchildren. Deeper parents stay closed and show “▸ 4 more”</td></tr>
+    <tr><td>Context</td><td><code>filters: {idIn: […]}</code></td><td>≤ 200 ids</td><td>Under a status filter, the parent of a matching child shows as context, so it is not orphaned (task 01a14b92)</td></tr>
+    <tr><td>Chats</td><td><code>{kinds:['work_session'], filters: {launchedBy: [chat ids]}}</code> (built from registry data)</td><td>≤ 200 ids</td><td>“▸ 2 sessions” under a chat row</td></tr>
+    <tr><td>One query<span class="tag-p">proposed</span></td><td><code>{…, tree: {depth: 2, perParent: 20}}</code></td><td>one trip</td><td>The ruling's “one query per list”. <span class="st m">partial</span> today: steps 1–3 are three round trips, rendered progressively.</td></tr>
+  </tbody>
+</table>
+<pre><code>type VisibleRow =
+  | { t: 'node'; id: EntityId; depth: number; open: boolean; hasKids: boolean; guides: readonly boolean[]; last: boolean }
+  | { t: 'more'; parentId: EntityId; depth: number; remaining: number }     // childCount − shown; never guessed
+  | { t: 'loading'; parentId: EntityId; depth: number };                   // skeleton rows under an open parent
+
+// state/tree.ts: pure, unit-tested. FlashList gets data = visibleRows(…), keyExtractor = row key,
+// getItemType = row.t. Guides are drawn by each row from guides[] (1pt hairline per ancestor level),
+// not by nesting views, so recycling stays flat.
+function visibleRows(roots, kidsOf, countOf, memory: ListMemory, autoDepth = 2): VisibleRow[];</code></pre>
+<table class="spec proj">
+  <thead><tr><th style="width:6%">#</th><th style="width:10%">t</th><th style="width:8%">depth</th><th style="width:10%">guides</th><th>Row as drawn (Sessions list, Atelier)</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td class="code">node</td><td>0</td><td class="code">[]</td><td>▾ TM8 Mobile app · Coordinator <span class="pill live">live</span> 42 min</td></tr>
+    <tr><td>1</td><td class="code">node</td><td>1</td><td class="code">[│]</td><td>&nbsp;&nbsp;&nbsp;&nbsp;Lane 03 · chat · Fable 5.1 1M Teammate <span class="pill live">live</span></td></tr>
+    <tr><td>2</td><td class="code">node</td><td>1</td><td class="code">[│]</td><td>&nbsp;&nbsp;&nbsp;&nbsp;Lane 08 · lld · Opus 5.5 1M Teammate <span class="pill live">live</span></td></tr>
+    <tr><td>3</td><td class="code">more</td><td>1</td><td class="code">[ ]</td><td>&nbsp;&nbsp;&nbsp;&nbsp;▸ 6 more (childCount 8 − 2 shown)</td></tr>
+    <tr><td>4</td><td class="code">node</td><td>0</td><td class="code">[]</td><td>▸ Bridge as an entity · Coordinator <span class="pill live">live</span> · subtitle “2 children” (closed: per-status words only if children are loaded)</td></tr>
+    <tr><td>5</td><td class="code">node</td><td>0</td><td class="code">[]</td><td>Security lane A · Worker <span class="pill waiting">waiting</span> permission: push to origin</td></tr>
+  </tbody>
+</table>
+<p><b>List memory</b> ports <code>mobile-lists/list-memory.ts</code>. It is keyed by <code>(server, space, listKey)</code> and stores <em>deltas</em> against the default (open to depth 2), so a new row inherits the default without a write. Expansion persists in SQLite <code>kv</code>, capped at 500 ids per list with LRU eviction, so it survives navigation and restarts. Scroll offset and the row that pushed stay in memory: a reload starts at the top, as on the web. A collapsed parent's subtitle uses <code>childCount</code> (“3 subtasks”). It adds “· 1 working” or “· 2 live” only when those children are loaded and their liveness verdict came from <code>execution.liveness</code>. A count the node did not return is absent, not zero.</p>
+
+<h3>6 · State: keys, cache, optimistic writes, conflicts</h3>
+<table class="spec">
+  <thead><tr><th style="width:32%">Query key</th><th style="width:22%">Read</th><th style="width:13%">Fresh for</th><th>Kept current by</th></tr></thead>
+  <tbody>
+    <tr><td class="code">[server, space, 'entity', id]</td><td><code>entities.get</code></td><td>30 s</td><td><code>entity.upsert/deleted</code> patched in place; a conflict's <code>current</code></td></tr>
+    <tr><td class="code">[server, space, 'list', kind, filter]</td><td><code>collections.query</code> + tree steps</td><td>30 s</td><td>Upserts of that kind re-sort ids locally; a parent move (<code>parentId</code> change) refetches</td></tr>
+    <tr><td class="code">[server, space, 'children', id]</td><td><code>entities.children</code></td><td>30 s</td><td>Upserts whose <code>parentId</code> is <code>id</code></td></tr>
+    <tr><td class="code">[server, space, 'context', id, section]</td><td><code>entities.context</code></td><td>60 s</td><td><code>edge.*</code> and <code>message.*</code> on <code>id</code></td></tr>
+    <tr><td class="code">[server, space, 'messages', anchorId]</td><td><code>messages.list</code></td><td>30 s</td><td><code>message.created/updated/deleted</code></td></tr>
+    <tr><td class="code">[server, space, 'transcript', id]</td><td><code>execution.transcript</code></td><td>poll 2 s while live and visible</td><td>The liveness verdict stops the poll</td></tr>
+    <tr><td class="code">[server, space, 'liveness']</td><td><code>execution.liveness</code></td><td>10 s visible</td><td><code>session.process_changed</code></td></tr>
+    <tr><td class="code">[server, 'spaces'] · [server, 'identity']</td><td><code>spaces.list</code> · <code>identity.get</code></td><td>5 min</td><td>—</td></tr>
+    <tr><td class="code">['inbox', server, space] · ['inbox', '*']</td><td><code>inbox.list</code></td><td>60 s</td><td><code>notification.created/read</code></td></tr>
+  </tbody>
+</table>
+<p><b>Normalized cache.</b> Socket events go through the shared <code>@tm8/client-core/project</code> reducers into one entity store per server (entities, edges by id, messages by anchor). List queries hold <em>ids</em> and join through a selector, so one upsert repaints every list, page and chip that shows the row. Hidden stack screens are frozen (<code>react-freeze</code>) and do not re-render on events.</p>
+<table class="spec">
+  <thead><tr><th style="width:5%">#</th><th style="width:28%">Write step</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Build</td><td>Contract input with <code>clientMutationId = ulid()</code> (the CLI's <code>--mutation-id</code>) and <code>expectedVersion = entity.version</code>.</td></tr>
+    <tr><td>2</td><td>Journal, then outbox</td><td><code>journal.applyOptimistic(cmid, patches)</code>, and the outbox row is written to SQLite <em>before</em> the request, so a crash replays it.</td></tr>
+    <tr><td>3</td><td>Success</td><td>Apply <code>CommandResult.patches</code> (authoritative), <code>reconcile(cmid)</code>, delete the row. The event echo with the same id reconciles idempotently.</td></tr>
+    <tr><td>4</td><td><code>version_conflict</code> (409)</td><td><code>rollback(cmid)</code> and adopt <code>error.current</code>. If <code>current</code> already satisfies the intent (criterion ticked, status at target), drop it with “Already done by Reviewer”. Otherwise show the conflict banner; “Move again” re-issues on <code>current.version</code> with a <em>new</em> id.</td></tr>
+    <tr><td>5</td><td>Lost response</td><td><code>upstream_unavailable</code>, a timeout or <code>retryable: true</code>: the row is retried with the <em>same</em> id, which the node deduplicates (commands are “idempotency: required”).</td></tr>
+    <tr><td>6</td><td>Refusal</td><td><code>forbidden</code>, <code>invalid_input</code>, <code>invariant_violation</code>…: rollback and a toast in the node's words, “The node refused: …”.</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:14%">SQLite table</th><th style="width:52%">Columns</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td class="code">servers</td><td>id, key, name, base_url, account_json, reach, push_json, last_used_at</td><td>No tokens, ever</td></tr>
+    <tr><td class="code">entities</td><td>server_id, space_id, id, kind, parent_id, version, activity_at, summary_json, detail_json, fetched_at</td><td>PK (server_id, id); index (server_id, space_id, kind, parent_id)</td></tr>
+    <tr><td class="code">edges · messages</td><td>server_id, id, src, dst, type, props_json · server_id, anchor_id, id, created_at, view_json</td><td>Last 50 messages per anchor</td></tr>
+    <tr><td class="code">lists</td><td>server_id, key_hash, ids_json, next_cursor, fetched_at</td><td>First page only</td></tr>
+    <tr><td class="code">cursors</td><td>server_id, space_id, last_seq</td><td>The resume cursor</td></tr>
+    <tr><td class="code">outbox</td><td>id, server_id, space_id, cmid, op, params_json, body_json, expected_version, depends_on, state, attempts, last_error_json, created_at</td><td>Ordered by id; state queued · sending · needs_you · failed</td></tr>
+    <tr><td class="code">kv</td><td>key, value</td><td>Preferences, list memory, drafts, theme cache</td></tr>
+  </tbody>
+</table>
+
+<h3>7 · The chat pipeline</h3>
+<p>A correction to the brief: <code>ChatTurnItem</code> is not in <code>@tm8/contract</code>. The contract carries <code>MessagePart</code> and the frame types (<code>ChatTurnDeltaFrame</code>, <code>ChatTurnDoneFrame</code>, <code>ChatContextFrame</code>, contract.ts). <code>ChatTurnItem</code> and <code>ChatTurnPart</code> are the web's render types in <code>chat-home/types.ts</code>, and they move to <code>@tm8/client-core/chat</code> with <code>wire.ts</code>, the one place snake_case payloads become flat render parts.</p>
+<div class="diagram">
+  <div class="flowrow">
+    <div class="box dark"><b>/v2/ws frames</b><small><code>chat.turn.delta {chatId, messageId, seq, part}</code> · <code>chat.turn.done {usage}</code> · <code>chat.context</code></small></div><span class="arr">→</span>
+    <div class="box"><b>wire.ts</b><small><code>chatTurnFrameFromWire</code>; absent cost stays absent</small></div><span class="arr">→</span>
+    <div class="box"><b>turn-model.ts</b><small><code>mergeChatTurnFrame</code> (append-only by seq) → <code>projectTurnParts</code>: one card per toolCallId</small></div><span class="arr">→</span>
+    <div class="box"><b>turn-steps · turn-step-lines</b><small>steps fold with words; tool names never reach the surface</small></div><span class="arr">→</span>
+    <div class="box"><b>ledger · turn-receipt</b><small><code>buildChatLedger</code> → <code>buildTurnReceipt</code>: what the turn did to the graph</small></div><span class="arr">→</span>
+    <div class="box brand"><b>RN turn components</b><small>lane 03</small></div>
+  </div>
+</div>
+<table class="spec wrapcode">
+  <thead><tr><th style="width:30%">chat-home file</th><th style="width:10%">DOM-free</th><th style="width:11%">React-free</th><th>Shared how</th></tr></thead>
+  <tbody>
+    <tr><td class="code">wire.ts · turn-model.ts · ledger.ts · turn-receipt.ts · turn-steps.ts · turn-step-lines.ts</td><td class="y">yes</td><td class="y">yes</td><td>Verbatim into <code>/chat</code></td></tr>
+    <tr><td class="code">write-classifier.ts · payload-walk.ts · explanation-tools.ts · entity-refs.ts</td><td class="y">yes</td><td class="y">yes</td><td>Verbatim (no imports, or pure ones only)</td></tr>
+    <tr><td class="code">types.ts</td><td class="y">yes</td><td class="n">no</td><td>Split: render types move; the port types that import <code>ReactNode</code> stay</td></tr>
+    <tr><td class="code">live-turn-status-model.ts</td><td class="y">yes</td><td class="m">indirect</td><td>Moves after <code>kit/time.ts</code> is split (<code>ageAgo</code>)</td></tr>
+    <tr><td class="code">turn-in-progress.ts</td><td class="y">yes</td><td class="n">no (<code>useMemo</code>)</td><td>Per app: a short hook over the shared <code>projectTurnParts</code></td></tr>
+    <tr><td class="code">real-port.ts</td><td class="y">yes</td><td>—</td><td>Not shared: bound to the web Seam. The RN port calls the same ops through the per-server client: <code>chat.start</code>, <code>messages.post</code>, <code>chat.interrupt</code>, <code>chat.setModel</code>, <code>chat.setCredentials</code></td></tr>
+  </tbody>
+</table>
+<p><b>Virtualization.</b> The transcript is a FlashList of <em>turns</em>, not parts, started from the bottom with <code>maintainVisibleContentPosition</code>. One item is one projected turn: byline, text, a collapsed steps row and the receipt. Opened steps render inside their turn. <b>Streaming.</b> Deltas append to the text part by <code>itemId</code>. Frames are coalesced to one store write per animation frame per chat. The live row renders growing plain text and re-renders once as markdown on <code>done</code>, so markdown is never re-parsed per delta. <b>Gaps.</b> Turn frames carry no space <code>seq</code>, so <code>resume</code> cannot replay them. After any gap the open chat re-reads its newest message from <code>messages.list</code> (a chat is the anchor of its own transcript) and merges by part <code>seq</code> (<code>maxPartSeq</code>).</p>
+
+<h3>8 · Sessions and the terminal</h3>
+<table class="spec">
+  <thead><tr><th style="width:18%">Surface</th><th style="width:36%">Source</th><th>Rule carried from the web</th></tr></thead>
+  <tbody>
+    <tr><td>Status and liveness</td><td><code>entities.get</code> + <code>session.outcome_changed</code> / <code>session.process_changed</code>; verdict from <code>execution.liveness</code></td><td><code>statusOf</code> only: live · stale · not-running · unknown. Unknown renders neutral, never live (<code>src/data/LLD.md</code> §9).</td></tr>
+    <tr><td>Transcript tab</td><td><code>execution.transcript</code>, one tail read per session, with the fastest subscriber setting the pace (port of <code>transcript/tail-resource.ts</code>)</td><td>A failed poll never blanks a rendered page; no polling once exited or backgrounded; paging back pauses the tail (<code>useSessionTranscript.ts</code>).</td></tr>
+    <tr><td>Live terminal</td><td>PTY bytes inside the WebView</td><td>View mode in v1. Drive mode in v1.1 (<code>execution.streams.attach --mode drive</code>).</td></tr>
+    <tr><td>Parent chain, Children</td><td><code>entities.context --sections hierarchy</code> (<code>Hierarchy {parent, children, path}</code>)</td><td>Children render as a tree (§5.1).</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:10%">Direction</th><th style="width:15%">Message</th><th style="width:30%">Payload</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>RN → WV</td><td class="code">init</td><td><code>{sessionId, mode, theme, fontSize}</code></td><td>Once per page load. The page is bundled; there is no remote content.</td></tr>
+    <tr><td>WV → RN</td><td class="code">needGrant</td><td><code>{sessionId, mode}</code></td><td>Before every (re)connect. The one injected seam (<code>ptyGrant.ts</code>): the account token never enters the WebView.</td></tr>
+    <tr><td>RN → WV</td><td class="code">grant</td><td><code>{url, token}</code></td><td>Minted by <code>execution.streams.attach</code>; short-lived.</td></tr>
+    <tr><td>RN → WV</td><td class="code">input</td><td><code>{data}</code></td><td>Keys bar and native text input → bytes (<code>/keys</code>). Refused in view mode.</td></tr>
+    <tr><td>RN → WV</td><td class="code">fit · setMode · select · scroll</td><td><code>{w, h}</code> · <code>{mode}</code> · <code>{action}</code> · <code>{to}</code></td><td><code>fit</code> makes the page send <code>resize {cols, rows}</code> on the PTY socket.</td></tr>
+    <tr><td>RN → WV</td><td class="code">suspend · resume</td><td>—</td><td>From AppState; mirrors <code>visibilityDriver</code>'s flush-before-suspend.</td></tr>
+    <tr><td>WV → RN</td><td class="code">attached · size</td><td><code>{next, replayKind}</code> · <code>{cols, rows, verdict}</code></td><td><code>widthVerdict</code> full · narrow · cramped → <code>WIDTH_NOTE</code> under the terminal.</td></tr>
+    <tr><td>WV → RN</td><td class="code">selection · activity</td><td><code>{text}</code> · <code>{active}</code></td><td>RN owns the clipboard. Activity is presentation only, never liveness.</td></tr>
+    <tr><td>WV → RN</td><td class="code">refused · exited · error</td><td><code>{reason, mode}</code> · <code>{code?}</code> · <code>{message}</code></td><td>A refusal ends the attach (<code>ptyAttachRefusal.ts</code>); <code>unauthorized</code> leads to re-sign-in. Exited shows the read-only fallback with a transcript link.</td></tr>
+  </tbody>
+</table>
+<p><b>Reconnect.</b> The in-page transport keeps the raw byte offset and redials with <code>?offset=</code>. The server answers <code>attached</code> plus one replay frame. If the OS kills the WebView process (<code>onContentProcessDidTerminate</code>, <code>onRenderProcessGone</code>), RN builds a fresh page that starts at offset 0 and gets a full replay, the web pool's own eviction rule (“return = fresh instance + offset-0 full replay”, <code>LLD.md</code> §9.2). One live WebView at a time; opening a second terminal tears the first down.</p>
+<div class="why">Why the socket lives inside the WebView and not in RN. Keeping <code>ptyTransport.ts</code> unedited is the law (L5), and that file's offset accounting is the hard-won part. Moving the socket to RN would mean re-implementing it. The price is one bridge round trip per (re)connect for the grant, and a WebView that sees only a short-lived stream capability, never the account session.</div>
+
+<h3>9 · Navigation internals: the stack machine</h3>
+<p>Each tab is its own native stack. A small pure reducer (<code>nav/stack-machine.ts</code>) decides; expo-router and React Navigation actions perform. State per tab is <code>{ entries: Entry[] }</code>, where entries[0] is the tab root and <code>Entry = { dest, place }</code>. <code>dest</code> is keyed by what the screen shows (<code>e:&lt;id&gt;</code>, <code>k:&lt;slug&gt;</code>, as in <code>phoneHistory.ts</code> <code>destKeyOf</code>), and <code>place</code> holds the scroll offset, anchor row and drafts.</p>
+<table class="spec">
+  <thead><tr><th style="width:20%">Event</th><th style="width:28%">Guard</th><th style="width:30%">Action</th><th>Ruling kept</th></tr></thead>
+  <tbody>
+    <tr><td class="code">open(dest)</td><td><code>dest == entries[n-2].dest</code></td><td>pop; the entry below comes back with its place</td><td>CONTRACT §5 ruling 6: a link to the entry directly below acts as Back</td></tr>
+    <tr><td class="code">open(dest)</td><td>otherwise</td><td>push; if n &gt; 12, drop entries[1] (a <code>reset</code> under the visible screen, no animation)</td><td>Ruling 5: cap 12, oldest drops; the tab root never drops</td></tr>
+    <tr><td class="code">back()</td><td>a sheet is open</td><td>dismiss the sheet only</td><td>Layers and back (t-layers): Android Back closes the layer first</td></tr>
+    <tr><td class="code">back()</td><td>n &gt; 1</td><td>pop</td><td>Nothing jumps several levels</td></tr>
+    <tr><td class="code">back()</td><td>n == 1</td><td>Android: system leaves the app (predictive back). iOS: nothing</td><td>Back Contract Q4: leave the app exactly once</td></tr>
+    <tr><td class="code">retap(tab)</td><td>tab active, n &gt; 1 · n == 1</td><td>pop to root · scroll root to top</td><td>Overview native conventions</td></tr>
+    <tr><td class="code">longPress(tab)</td><td>—</td><td>stack menu, newest first; choosing an entry pops to it</td><td>Overview native conventions</td></tr>
+    <tr><td class="code">cold(dest, tab)</td><td>from the resolver</td><td>navigate into <code>(tab)/…</code>; <code>unstable_settings</code> seeds <code>[root, dest]</code></td><td>Overturns R15's mechanism (Up by REPLACE), keeps its outcome: the step up lands on the list</td></tr>
+    <tr><td class="code">scope(server, space)</td><td>—</td><td>replace at the root; all four stacks reset</td><td>Back Contract Q4: never leave the space by Back</td></tr>
+  </tbody>
+</table>
+<p><b>Place.</b> Native stacks keep pushed-under screens mounted, so scroll and drafts survive while an entry is in the stack. An entry that is dropped, or whose process died, gets its place from <code>Entry.place</code> (port of <code>mobile/usePagePlace.ts</code>). Drafts also go to SQLite, because a draft is the person's words; a scroll offset is cheap to lose. <b>Sheets.</b> Routed sheets are stack screens, so Back dismisses them by construction. gorhom sheets register with <code>useSheetBack()</code>, a <code>BackHandler</code> listener that returns true while open. <b>Edge swipe.</b> The native stack's own gesture. CONTRACT §5 ruling 2 (a home-made swipe only in iOS standalone) is retired, because the platform now provides one.</p>
+<table class="spec">
+  <thead><tr><th style="width:42%">Back Contract walk (BACK-CONTRACT.md §6)</th><th style="width:30%">Stack after, in the app</th><th>Back leaves the app?</th></tr></thead>
+  <tbody>
+    <tr><td><b>A.</b> Cold <code>e/{A}?origin=tasks</code> → Back</td><td><code>[Work]</code> (seeded root)</td><td>Not yet. One more Back leaves (Android)</td></tr>
+    <tr><td><b>B.</b> Cold <code>e/{A}</code> → drill B → Back</td><td><code>[Work, A]</code></td><td>no</td></tr>
+    <tr><td><b>C.</b> <code>k/tasks</code> → A → B → Back → Back</td><td><code>[Browse, k/tasks]</code></td><td>no</td></tr>
+    <tr><td><b>D.</b> Browse → <code>k/tasks</code> → A → Back → Back</td><td><code>[Browse]</code></td><td>no; a screen root reached by walking</td></tr>
+  </tbody>
+</table>
+<div class="why">Why walk A differs from the web on purpose. On the web, a pasted link is the whole history, so Back leaves at once and ‹ replaces the page with the list (R15). The native app can seed the list under the entity without inventing a journey, because the list is that kind's tab root and is always there. The outcome R15 protects is the same: the step up lands on the list, and nothing fabricates depth.</div>
+
+<h3>10 · Theming and type</h3>
+<div class="diagram">
+  <div class="flowrow">
+    <div class="box"><b>Builtin style docs</b><small><code>contract/src/builtins/chatgpt-{light,dark}.json</code> (<code>--pn-*</code> tokens), the web's default pair since 2026-10-14</small></div><span class="arr">→</span>
+    <div class="box"><b>gen-theme.ts</b><small>→ <code>src/theme/tokens.gen.ts</code>; CI fails if it is not regenerated</small></div><span class="arr">→</span>
+    <div class="box"><b>theme.ts</b><small><code>{light, dark}</code>: colors, type roles, spacing, radii, platform metrics</small></div><span class="arr">→</span>
+    <div class="box"><b>makeStyles(t =&gt; StyleSheet.create)</b><small>memoized per (scheme, font scale)</small></div><span class="arr">→</span>
+    <div class="box brand"><b>Space style</b><small>default <code>style</code> entity (<code>space.style_default.updated</code>) maps surfaces, ink and brand; cached per space. The status ramp is never overridden.</small></div>
+  </div>
+</div>
+<p>The scheme follows the system unless the person picked one (<code>identity.style_prefs.updated</code>: <code>followOs</code>, <code>darkStyle</code>). The terminal canvas stays near-black in both themes, as on the web (LLD §12).</p>
+<table class="spec">
+  <thead><tr><th style="width:20%">Type role</th><th style="width:16%">Base (iOS Large = 1.0 sp)</th><th style="width:16%">Max multiplier</th><th>Behaviour at the max</th></tr></thead>
+  <tbody>
+    <tr><td>Large title</td><td>34</td><td>1.3</td><td>iOS tab roots only; collapses into the small title on scroll</td></tr>
+    <tr><td>Title 2 (entity title)</td><td>22</td><td>1.5</td><td>Wraps to 3 lines, then truncates; the full title stays in the a11y label</td></tr>
+    <tr><td>Headline · body</td><td>17</td><td>2.0</td><td>Row titles wrap to 2 lines, never below 1 line at any depth</td></tr>
+    <tr><td>Subheadline · footnote</td><td>15 · 13</td><td>2.0 · 1.6</td><td>Meta lines wrap; the pill stays a word</td></tr>
+    <tr><td>Caption · pills</td><td>12 · 11</td><td>1.4</td><td>—</td></tr>
+    <tr><td>Tab labels</td><td>10</td><td>1.0</td><td>iOS Large Content Viewer on long-press instead of scaling</td></tr>
+    <tr><td>Mono (ids) · terminal</td><td>13 · own setting</td><td>1.3 · none</td><td>The terminal uses <code>MOBILE_FONT_SIZES</code> 9–15 and ignores Dynamic Type, so the column count stays honest</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:24%">Metric</th><th style="width:30%">iOS</th><th>Android</th></tr></thead>
+  <tbody>
+    <tr><td>Top bar</td><td>44 pt; large title +52</td><td>56 dp, title left</td></tr>
+    <tr><td>Tab bar</td><td>49 pt + 34 home inset</td><td>80 dp navigation bar with active pill</td></tr>
+    <tr><td>Minimum target</td><td>44 pt</td><td>48 dp</td></tr>
+    <tr><td>Sheet</td><td>system formSheet, grabber, detents medium and large</td><td>bottom sheet, 28 dp corners</td></tr>
+    <tr><td>Back</td><td>‹ + previous title; edge swipe</td><td>← arrow; predictive back gesture</td></tr>
+    <tr><td>Edges</td><td>safe-area-context</td><td>edge-to-edge (enforced from Android 15)</td></tr>
+    <tr><td>Haptics</td><td>UIFeedbackGenerator through expo-haptics</td><td>HapticFeedbackConstants (CONFIRM, REJECT, CLOCK_TICK, LONG_PRESS)</td></tr>
+  </tbody>
+</table>
+
+<h3>11 · Notifications</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Piece</th><th style="width:44%">Design</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>Registration</td><td>Per server, per device: <code>POST /v2/devices</code> <code>{platform, relay:'expo', token, appVersion, locale, previews, label, clientMutationId}</code> → <code>{deviceId}</code>; <code>PUT</code> to rotate the token or change previews; <code>DELETE</code> on sign-out</td><td><span class="st n">missing</span> server work: <code>devices.register/update/unregister</code></td></tr>
+    <tr><td>Dispatch</td><td>The node turns each <code>notification.created</code> row for a registered member into a relay call and deletes tokens the relay reports dead</td><td><span class="st n">missing</span></td></tr>
+    <tr><td>Payload</td><td><code>{title, body, categoryId, threadId, data:{v:1, o:origin, sp, n, e, k, h}}</code>. <code>o</code> maps to a server by exact origin; <code>h</code> is the web address and goes through the same resolver as any link. The text follows the device's <code>previews</code>: full · sender only · none.</td><td><span class="st n">missing</span> contract <code>PushPayloadV1</code></td></tr>
+    <tr><td>Badge</td><td>Sum over signed-in servers of unread <code>inbox.list</code> rows, set by the app on foreground and wake. A node cannot know your other servers' counts, so it never sets the badge.</td><td>client</td></tr>
+    <tr><td>Quiet hours</td><td>The schedule lives on the device. Inside the window the app suppresses its own banners and sounds, and pushes the next window to the device registration (<code>quietUntil</code>) so the node sends passive (iOS) or low-channel (Android) pushes. The OS shows a push before app code runs, so a purely client-side rule cannot silence it.</td><td>client + the devices API</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:18%">Notification kind</th><th style="width:16%">Category</th><th style="width:36%">Route</th><th>Actions</th></tr></thead>
+  <tbody>
+    <tr><td class="code">mention</td><td class="code">tm8.reply</td><td><code>(chats)/channel/[id]?msg=</code> or <code>e/[anchor]/messages?msg=</code></td><td>Reply (text, v1.1) · Mark read</td></tr>
+    <tr><td class="code">assignment</td><td class="code">tm8.task</td><td><code>(work)/e/[id]</code></td><td>Mark read</td></tr>
+    <tr><td class="code">review_request</td><td class="code">tm8.review</td><td><code>(work)/e/[id]</code> (task or PR)</td><td>Open</td></tr>
+    <tr><td class="code">unblock · stale</td><td class="code">tm8.task</td><td><code>(work)/e/[id]</code></td><td>Mark read</td></tr>
+    <tr><td class="code">award · other</td><td class="code">tm8.activity</td><td><code>(inbox)/inbox</code></td><td>—</td></tr>
+  </tbody>
+</table>
+<p>The notification kinds are the contract's <code>NotificationItem.kind</code> (<code>'mention' | 'assignment' | 'award' | 'unblock' | 'review_request' | 'stale' | string</code>). An unknown kind falls back to <code>tm8.activity</code>. Android channels are <code>needs-you</code> (high), <code>mentions</code>, <code>activity</code> (low) and <code>quiet</code>.</p>
+
+<h3>12 · Offline</h3>
+<table class="spec">
+  <thead><tr><th style="width:16%">Class</th><th style="width:40%">What</th><th>How it shows</th></tr></thead>
+  <tbody>
+    <tr><td><b>Readable</b></td><td>Every list, page, message page and transcript page last seen, per server; the last 200 parts of an open chat; Inbox first pages</td><td>Offline banner “Offline · tm8.sh as of 13:31” at the top of content; no spinner for data that is not coming</td></tr>
+    <tr><td><b>Queued</b> (v2)</td><td><code>messages.post</code> · <code>entities.commands.tick</code> · <code>entities.commands.work</code> / <code>complete</code> · <code>inbox.markRead</code></td><td>Pending marks (“queued”), the Outbox sheet, flushed in order on reconnect. In v1 the outbox holds only writes that were sent online and lost their response.</td></tr>
+    <tr><td><b>Refused</b></td><td>Launching a session (<code>execution.spawn</code>), starting or interrupting a chat, terminal input, creating entities, uploads, sign-in, space settings</td><td>Disabled with a reason: “Launching a session needs the server.” The draft is kept; nothing is queued that would run agents later without the person watching.</td></tr>
+  </tbody>
+</table>
+<table class="spec">
+  <thead><tr><th style="width:18%">Conflict rule</th><th>Behaviour on flush</th></tr></thead>
+  <tbody>
+    <tr><td>Ticks · mark read</td><td>Re-based automatically onto <code>current.version</code> (setting a criterion true is commutative). If it is already true, the write is dropped with “already”.</td></tr>
+    <tr><td>Transitions</td><td>If the status is already at the target, the write is dropped. If someone else moved it, the flush stops and asks (Outbox › Needs you). Another person's move is never overwritten silently.</td></tr>
+    <tr><td>Messages</td><td>Append-only, with no version guard; order is kept per anchor. A deleted anchor fails the write with its text offered for copying.</td></tr>
+    <tr><td>Dependencies</td><td>A queued write on the same entity after a stopped one waits (<code>depends_on</code>).</td></tr>
+    <tr><td>Age</td><td>A write older than 7 days (the event retention) is never sent automatically; it asks.</td></tr>
+  </tbody>
+</table>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg><span>Offline · tm8.sh as of 13:31 · 3 queued</span><span class="act">Outbox</span></div>
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · v14 · 01a182a2</span>
+            <div class="title">TM8 Mobile app</div>
+            <div class="meta"><span class="pill working">working</span><span class="pill pending">queued → in review</span></div>
+          </div>
+          <div class="ent-actions"><span class="btn disabled"><svg class="ic"><use href="#i-play"/></svg>Launch session</span><span class="btn"><svg class="ic"><use href="#i-refresh"/></svg>Move</span></div>
+          <div class="refusal"><div class="h">Launching a session needs tm8.sh</div><p>A session starts on the server, so it never waits in the outbox. Reading, ticks, moves and messages still work.</p></div>
+          <div class="section-h">Acceptance criteria <span class="more">2 of 5 · 1 queued</span></div>
+          <div class="list lines">
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">Route tree defined</span></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t crit-done">Shared kit published to all lanes</span></span></div>
+            <div class="row"><span class="check queued"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t plain">Every kind drawn</span></span><span class="trail"><span class="pill pending">queued</span></span></div>
+          </div>
+          <div class="section-h">Messages</div>
+          <div class="list lines">
+            <div class="row tall"><span class="avatar sm c1">S</span><span class="main"><span class="s"><b>Subhang</b> · 13:36 <span class="pill pending">waiting to send</span></span><span class="t wrap plain">Lane 08: model the tree in the LLD too.</span></span></div>
+            <div class="row tall"><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s"><b>Coordinator</b> · 13:31</span><span class="t wrap plain">Foundation written; eight lanes spawned.</span></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Offline: read, queue, refuse (v2)</b>Mechanism face of §12; the task page is lane 05's. The count stays the node's truth (2 of 5) with the queued tick named beside it. Launch is disabled with its reason, not hidden. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg><span>Offline · tm8.sh as of 13:31</span></div>
+          <div class="ent-head"><div class="title">TM8 Mobile app</div></div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Outbox</span><span class="pill pending">tm8.sh offline</span></div>
+          <div class="sheet-b">
+            <div class="section-h">Waiting · 3</div>
+            <div class="list lines">
+              <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Tick a criterion</span><span class="s">TM8 Mobile app · on v14</span></span><span class="trail"><span class="pill pending">queued</span></span></div>
+              <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-refresh"/></svg></span><span class="main"><span class="t">Move to in review</span><span class="s">after the tick</span></span><span class="trail"><span class="pill pending">queued</span></span></div>
+              <div class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-message"/></svg></span><span class="main"><span class="t">Message</span><span class="s">“Lane 08: model the tree…”</span></span><span class="trail"><span class="pill pending">queued</span></span></div>
+            </div>
+            <div class="section-h">Needs you · 1</div>
+            <div class="list lines">
+              <div class="row tall"><span class="kind-ic" style="color:var(--wait)"><svg class="ic"><use href="#i-warning"/></svg></span><span class="main"><span class="t wrap">Move to blocked: Quiet list tiles</span><span class="s">Reviewer changed it first · v11 → v12</span></span></div>
+            </div>
+            <div class="btnrow pad"><span class="btn sm outline">Discard</span><span class="btn sm primary">Move again on v12</span></div>
+            <div class="note">Writes send in the order you made them. A stopped write holds the later ones on the same task.</div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Outbox sheet (v2)</b>Android dark. Grouped by server: waiting writes keep their mutation ids; the conflict from the 13:30 flush asks instead of retrying. Android Back closes the sheet before the page. <span class="route">/outbox</span></div>
+  </div>
+</div>
+
+<h3>Components this design introduces</h3>
+<table class="spec">
+  <thead><tr><th style="width:17%">Component</th><th style="width:17%">Size</th><th>Behaviour</th><th style="width:22%">Platform differences</th></tr></thead>
+  <tbody>
+    <tr><td class="code">ConflictBanner</td><td>full width, 40–56 pt, wait tint</td><td>After <code>version_conflict</code>: who changed what, what was not applied, one action. Clears on the next successful write or on leaving.</td><td>Same on both. Not a snackbar: it must stay while you read.</td></tr>
+    <tr><td class="code">OfflineBanner</td><td>36 pt, <code>i-wifi-off</code></td><td>Per server: “Offline · tm8.sh as of 13:31 · 3 queued”; tap opens the Outbox</td><td>Same</td></tr>
+    <tr><td class="code">PendingMark</td><td>22 pt pill; check with a clock</td><td>Marks unconfirmed optimistic state; tap opens the Outbox at that row</td><td>Same</td></tr>
+    <tr><td class="code">OutboxSheet</td><td>medium and large detents</td><td>By server: Waiting, Needs you, failed; Retry on vN; Discard with confirm</td><td>iOS formSheet; Android bottom sheet, 28 dp</td></tr>
+    <tr><td class="code">LinkResolver</td><td>full screen, transient</td><td>Up to 3 s with words (“Opening a task on tm8.sh…”), then a route, a refusal or add-server; always replaced</td><td>Android Back returns to the app the link came from</td></tr>
+    <tr><td class="code">TreeRow</td><td>row + 20 pt per depth; 20 pt chevron cell; 1 pt guide</td><td>Disclosure toggles; a closed parent shows the count summary; each child is a full row</td><td>Same</td></tr>
+    <tr><td class="code">TerminalView</td><td>fills the route; min 160 pt high (L4 floor)</td><td>WebView host; one live at a time; view only in v1</td><td>WKWebView · Android WebView, hardware layer</td></tr>
+    <tr><td class="code">KeysBar</td><td>46 pt above the keyboard</td><td>Esc Tab Ctrl ↑ ↓ ← → | ~; sticky Ctrl (v1.1)</td><td>iOS input accessory · above the Android IME</td></tr>
+    <tr><td class="code">ScopeSubtitle</td><td>top-bar sub line</td><td>“Atelier · tm8.sh” when more than one server is signed in</td><td>Android: two-line top app bar</td></tr>
+    <tr><td class="code">VerbButton</td><td>40 pt</td><td>Disabled with a reason: a tap shows the reason inline, because a phone has no hover</td><td>Same</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures, interactions and haptics</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Gesture</th><th style="width:16%">Where</th><th>Result</th><th style="width:13%">iOS</th><th style="width:13%">Android</th></tr></thead>
+  <tbody>
+    <tr><td>Tap row or chip</td><td>everywhere</td><td>Push the entity, or pop if it is the entry directly below</td><td>—</td><td>—</td></tr>
+    <tr><td>Long-press row or chip</td><td>lists, transcripts</td><td>Preview sheet; tap in the sheet pushes</td><td>impactMedium</td><td>LONG_PRESS</td></tr>
+    <tr><td>Tap tree chevron</td><td>tree rows</td><td>Toggle; saved to list memory</td><td>selection</td><td>CLOCK_TICK</td></tr>
+    <tr><td>Long-press tree chevron</td><td>tree rows</td><td>Expand or collapse everything under it</td><td>impactLight</td><td>LONG_PRESS</td></tr>
+    <tr><td>Edge swipe · back gesture</td><td>pushed screens</td><td>Back; an open sheet closes first</td><td>system</td><td>predictive back</td></tr>
+    <tr><td>Re-tap active tab</td><td>tab bar</td><td>Pop to root, then scroll to top</td><td>selection</td><td>CLOCK_TICK</td></tr>
+    <tr><td>Long-press tab</td><td>tab bar</td><td>Stack menu</td><td>impactMedium</td><td>LONG_PRESS</td></tr>
+    <tr><td>Pull to refresh</td><td>every list</td><td>Refetch visible queries; offline, the banner pulses and nothing is fetched</td><td>impactLight at threshold</td><td>system</td></tr>
+    <tr><td>Tick a criterion</td><td>task page</td><td>Optimistic check with a mutation id</td><td>selection</td><td>CLOCK_TICK</td></tr>
+    <tr><td>“Move again”</td><td>banner, Outbox</td><td>Re-issue on the current version with a new id</td><td>notificationSuccess on confirm</td><td>CONFIRM</td></tr>
+    <tr><td>Swipe an Outbox row</td><td>Outbox</td><td>Discard, with confirm</td><td>notificationWarning</td><td>REJECT</td></tr>
+    <tr><td>Write refused by the node</td><td>anywhere</td><td>Rollback and a toast in the node's words</td><td>notificationError</td><td>REJECT</td></tr>
+    <tr><td>Pinch</td><td>terminal (v1.1)</td><td>Font step through 9–15</td><td>selection per step</td><td>CLOCK_TICK</td></tr>
+    <tr><td>Shake</td><td>preview builds</td><td>“Report a problem” with the route and request ids, no tokens</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>13 · Performance budgets</h3>
+<table class="spec">
+  <thead><tr><th style="width:18%">Budget</th><th style="width:24%">Target (iPhone 13 · Galaxy A54)</th><th>How it is met</th><th style="width:18%">Measured by</th></tr></thead>
+  <tbody>
+    <tr><td>Cold start to cached content</td><td>≤ 1.2 s · ≤ 2.0 s</td><td>Hermes bytecode; the splash waits only for SQLite and SecureStore; the first page paints from cache before any request</td><td>release-build marks; Maestro launch timing</td></tr>
+    <tr><td>Time to first list</td><td>≤ 300 ms warm · ≤ 1.5 s cold on 4G</td><td>First page from SQLite; <code>limit: 50</code>; tree steps render progressively</td><td>perf suite</td></tr>
+    <tr><td>Scroll</td><td>60 fps, &lt; 1% dropped frames</td><td>FlashList v2 recycling; memoized rows; flat tree rows; frozen hidden screens</td><td>Flashlight (Android), Instruments</td></tr>
+    <tr><td>Transcript, 2,000 parts</td><td>open ≤ 500 ms; 60 fps</td><td>A list of turns, not parts; projection memoized per turn; markdown parsed once per finished text; steps collapsed</td><td>a 2k-part fixture chat</td></tr>
+    <tr><td>Streaming</td><td>delta to paint ≤ 100 ms</td><td>One store write per animation frame per chat</td><td>perf suite</td></tr>
+    <tr><td>Memory</td><td>JS heap ≤ 150 MB with 3 servers; app ≤ 350 MB with one terminal</td><td>At most 5,000 entities in memory per server (LRU to SQLite); one WebView</td><td>Xcode gauge, <code>dumpsys meminfo</code></td></tr>
+    <tr><td>Bundle</td><td>JS ≤ 6 MB bytecode</td><td>Subpath imports from <code>@tm8/contract</code> (contract.ts is 380 KB of source) and client-core</td><td>CI source-map report</td></tr>
+    <tr><td>Resume to live</td><td>≤ 1 s on a known cursor</td><td>Resume replays ≤ 500, then the pump runs at ~200/s; an accelerate loop every 400 ms</td><td>e2e timing</td></tr>
+  </tbody>
+</table>
+
+<h3>14 · Security</h3>
+<table class="spec">
+  <thead><tr><th style="width:22%">Asset or threat</th><th>Control</th></tr></thead>
+  <tbody>
+    <tr><td>Session tokens</td><td>SecureStore only, this device only (not in backups, not migrated). Never in SQLite, logs, crash reports, analytics, push payloads or the WebView.</td></tr>
+    <tr><td>PTY grants</td><td>Minted per attach and given only to the bundled terminal page. Navigation away from it is blocked, there is no remote content, and bridge messages are zod-validated both ways.</td></tr>
+    <tr><td>Logs and analytics</td><td>The logger redacts <code>Authorization</code>, <code>tm8s_</code> and <code>tm8-grant.</code> patterns and never logs request bodies. Analytics is off by default; crash reports are scrubbed in <code>beforeSend</code>.</td></tr>
+    <tr><td>Links</td><td>No automatic sign-in to any host. An unknown origin goes to add-server with the full URL and a probe. Link params are shape-gated by the codec and never executed. Other schemes are refused.</td></tr>
+    <tr><td>Transport</td><td>https required except loopback (<code>local</code>), via ATS <code>NSAllowsLocalNetworking</code> and an Android network-security config. LAN http only in the development profile.</td></tr>
+    <tr><td>Pinning (optional, per server)</td><td>SPKI SHA-256 pins captured on add when the person opts in. A mismatch is a refusal (“tm8.acme.dev presented a different certificate”) with no in-app override.</td></tr>
+    <tr><td>Agent versus human identity</td><td>The app is a human client. It signs in as <code>cli</code> (v1) or <code>mobile</code> (proposed), both inside <code>HUMAN_AUTH_KINDS</code>. It never presents an agent token and never acts as a teammate. Agents are drawn from the actor kind, never inferred.</td></tr>
+    <tr><td>Data at rest</td><td>OS data protection on the sandbox. Sign-out or removing a server deletes its rows, SecureStore entries and device registration. Sensitive screens are blurred in the app switcher (iOS) or set <code>FLAG_SECURE</code> (Android).</td></tr>
+  </tbody>
+</table>
+
+<h3>15 · Accessibility and i18n</h3>
+<table class="spec">
+  <thead><tr><th style="width:20%">Area</th><th>Plan</th></tr></thead>
+  <tbody>
+    <tr><td>Screen readers</td><td>One element per row: “Task, TM8 Mobile app, working, Worker and Coordinator, 2 live sessions”. Pills read as words. A tree row adds “level 2, expanded, 3 children” (<code>accessibilityState.expanded</code>), and its chevron is a separate button.</td></tr>
+    <tr><td>Type and motion</td><td>The §10 roles, tested at 200%. Reduce Motion swaps slides for crossfades (Reanimated <code>ReduceMotion.System</code>).</td></tr>
+    <tr><td>Focus</td><td>Sheets are <code>accessibilityViewIsModal</code> and return focus to the opener; a pop returns focus to the row that pushed (CONTRACT §5).</td></tr>
+    <tr><td>Live regions</td><td>A streaming turn announces “Worker is writing” once, then the finished turn, never every delta.</td></tr>
+    <tr><td>Terminal</td><td>xterm <code>screenReaderMode</code> when VoiceOver or TalkBack is on; the Transcript tab is the accessible reading path.</td></tr>
+    <tr><td>i18n</td><td>All copy through <code>t()</code> keys; kind labels from the registry; Hermes <code>Intl</code> for times, relative times and plurals; <code>expo-localization</code> and RTL-safe start/end layout. v1 ships English only, and server-authored text is never translated. A pseudo-locale build (+40% length) runs in the screenshot tests.</td></tr>
+  </tbody>
+</table>
+
+<h3>16 · Testing</h3>
+<table class="spec">
+  <thead><tr><th style="width:13%">Layer</th><th style="width:19%">Tool</th><th>What</th><th style="width:16%">CI gate</th></tr></thead>
+  <tbody>
+    <tr><td>Unit, shared</td><td>vitest in <code>packages/client-core</code></td><td>The codec round-trips, ledger and receipt fold, reducers and journal (existing tests move with their modules)</td><td><code>small</code></td></tr>
+    <tr><td>Unit, app</td><td>jest-expo</td><td>Registry exhaustiveness (33 + <code>c:*</code>); the no-kind-literals lint; the resolver over every <code>NavView</code>; the stack machine over every event and guard; <code>visibleRows</code>; outbox order and conflict rules; conflict adoption</td><td><code>mobile</code> (new)</td></tr>
+    <tr><td>Component</td><td>RN Testing Library</td><td>An entity page for all 33 kinds composed from registry rows; disabled-with-reason renders words; tree a11y state; banners</td><td><code>mobile</code></td></tr>
+    <tr><td>Contract</td><td>jest against the fixture dataset (<code>tm8-ui/src/fixtures</code>) and a dev node</td><td>Every op the app calls exists (<code>bindPath</code> throws on an unknown op); responses parse with the contract's zod schemas</td><td><code>mobile</code> + nightly</td></tr>
+    <tr><td>E2E</td><td>Maestro, iOS simulator and Android emulator</td><td>Back Contract walks A–D; add-server; cold link → [Work, Task] → Back → Work; offline banner and refusal; sign-out wipes</td><td>nightly + release</td></tr>
+    <tr><td>Screenshot</td><td>Maestro <code>takeScreenshot</code> + pixel diff</td><td>Light and dark × iOS and Android × 100% and 200% type × pseudo-locale</td><td>release</td></tr>
+  </tbody>
+</table>
+<pre><code># maestro/back-contract-A.yaml: a cold arrival, and Back lands on the list
+appId: sh.tm8.mobile
+---
+- openLink: "https://tm8.sh/#/s/${SPACE}/e/${TASK_A}?origin=tasks"
+- assertVisible: "TM8 Mobile app"
+- back
+- assertVisible: { id: "work-root" }        # seeded [Work, A] → Work
+- back
+- assertNotVisible: { id: "work-root" }     # Android: left the app exactly once</code></pre>
+
+<h3>17 · Build and release</h3>
+<table class="spec">
+  <thead><tr><th style="width:17%">EAS profile</th><th style="width:22%">Distribution</th><th style="width:15%">Update channel</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td class="code">development</td><td>dev client, internal</td><td class="code">development</td><td><code>sh.tm8.mobile.dev</code>; LAN http allowed; shake menu</td></tr>
+    <tr><td class="code">preview</td><td>TestFlight internal · Play internal track</td><td class="code">preview</td><td>Release build; OTA from <code>preview</code></td></tr>
+    <tr><td class="code">production</td><td>App Store · Play</td><td class="code">production</td><td><code>sh.tm8.mobile</code>; staged rollout 10% → 100%; an OTA update only for a matching fingerprint</td></tr>
+    <tr><td class="code">enterprise-&lt;org&gt;</td><td>MDM, on request</td><td class="code">production-&lt;org&gt;</td><td>Adds <code>applinks:&lt;org host&gt;</code></td></tr>
+  </tbody>
+</table>
+<p><b>Entitlements</b>: <code>applinks:tm8.sh</code> and <code>webcredentials:tm8.sh</code>; Android App Links for <code>https://tm8.sh</code>. A JS update can never change them; a fingerprint change forces a store build. <b>Store listing</b>: name “TM8”; privacy labels for username and push token, with content processed on the person's own servers; App Review gets a demo space on tm8.sh. <b>CI in <code>tools/ci</code></b>: add <code>apps/mobile</code> as a node and a <code>mobile</code> module in <code>affected.sh</code>, so changes to contract or client-core trigger it. Add a <code>test-mobile</code> job (typecheck, jest, lint) to <code>ci.yml</code> in the same change, because <code>affected.test.sh</code> fails when a module has no job, and fold it into <code>ci-ok.sh</code>. EAS builds, e2e and screenshots run on <code>mobile-v*</code> tags and nightly.</p>
+
+<h3>18 · Phasing</h3>
+<table class="spec">
+  <thead><tr><th style="width:9%">Phase</th><th>Ships</th><th style="width:30%">Waits on</th></tr></thead>
+  <tbody>
+    <tr><td><b>v1</b></td><td>Shell and servers (add, password and invite sign-in, switcher); Chats, Work, Inbox, Browse; the generic entity page for all 33 kinds plus rich bodies for task, doc, session, chat, artifact and PR; trees in every list; read-only terminal; push through the relay; offline <em>reading</em>; outbox for in-flight retries</td><td>Server: devices API and dispatch, AASA and assetlinks files, the <code>cli</code> kind interim</td></tr>
+    <tr><td><b>v1.1</b></td><td>Terminal input (drive mode, keys bar, pinch font); doc editor; drawings; pairing-code and QR sign-in; passkeys for tm8.sh; notification Reply action</td><td>Server: <code>auth.pairing.*</code>, <code>auth.passkey.*</code></td></tr>
+    <tr><td><b>v2</b></td><td>Offline <em>writes</em> (queued messages, ticks, transitions, mark read); voice (<code>voice.token.create</code> already exists); widgets and Live Activities for live sessions; share extension; encrypted push payloads</td><td>Owner rulings on queued creation and the relay</td></tr>
+  </tbody>
+</table>
+
+<h3>19 · Server work this app needs</h3>
+<p>Each item was checked against <code>packages/contract/src/catalog.ts</code> and the CLI help (<code>tm8 help auth</code>, <code>tm8 help --query …</code>, <code>tm8 help event watch</code>, <code>session attach</code>, <code>artifact preview</code>, <code>link login</code>).</p>
+<table class="spec wrapcode">
+  <thead><tr><th style="width:20%">Need</th><th style="width:30%">Operation</th><th style="width:9%">Status</th><th>Evidence</th><th style="width:7%">For</th></tr></thead>
+  <tbody>
+    <tr><td>Device registration</td><td class="code">devices.register · devices.update · devices.unregister</td><td><span class="st n">missing</span></td><td>No device op in the catalog; <code>--query "push notification device register"</code> finds none</td><td>v1</td></tr>
+    <tr><td>Push dispatch + payloads</td><td>relay client on <code>notification.created</code>; contract <code>PushPayloadV1</code></td><td><span class="st n">missing</span></td><td>Inbox rows and events exist (<code>inbox.list</code>, <code>notification.created/read</code>); nothing leaves the node</td><td>v1</td></tr>
+    <tr><td>Pairing code for mobile sign-in</td><td class="code">auth.pairing.create · auth.pairing.redeem</td><td><span class="st m">partial</span></td><td>Exists only for space links: <code>link grant</code> prints a one-time code that <code>spaceLinks.login --pairing-code</code> redeems</td><td>v1.1</td></tr>
+    <tr><td>Passkeys</td><td class="code">auth.passkey.*</td><td><span class="st n">missing</span></td><td><code>--query "passkey webauthn"</code> matches only an artifact note</td><td>v1.1</td></tr>
+    <tr><td>Mobile login kind, 90 days</td><td><code>auth.login {kind:'mobile'}</code> + <code>HUMAN_AUTH_KINDS</code> + <code>internal.require_human_auth_kind()</code> (083)</td><td><span class="st m">partial</span></td><td><code>--kind browser|cli</code> exist; cli is 90 days, browser 30 (<code>SESSION_TTL_MS</code>)</td><td>v1</td></tr>
+    <tr><td>Sign-out revocation</td><td class="code">auth.logout · auth.sessions.revoke</td><td><span class="st y">exists</span></td><td>“a gate session takes its pinned sessions with it”; sockets close</td><td>v1</td></tr>
+    <tr><td>Space-pinned sessions</td><td class="code">auth.space.enter</td><td><span class="st y">exists</span></td><td><code>tm8 help auth space enter</code></td><td>v1</td></tr>
+    <tr><td>WS resume cursor</td><td><code>resume {spaceId, since}</code> on <code>/v2/ws</code>; <code>events.poll ?since=</code></td><td><span class="st y">exists</span></td><td><code>event watch --after</code> sends <code>resume</code>; 7-day retention</td><td>v1</td></tr>
+    <tr><td>Artifact preview URL</td><td class="code">artifacts.preview.start</td><td><span class="st m">partial</span></td><td>“a usable preview URL does not exist until the preview-origin isolation decision lands”; only session fields today</td><td>v1</td></tr>
+    <tr><td>Version and features</td><td class="code">GET /v2/meta</td><td><span class="st n">missing</span></td><td>No meta op; <code>x-tm8-client</code> is never read</td><td>v1</td></tr>
+    <tr><td>Universal-link files</td><td><code>/.well-known/apple-app-site-association</code>, <code>assetlinks.json</code></td><td><span class="st n">missing</span></td><td>The only <code>.well-known</code> code is MCP OAuth</td><td>v1</td></tr>
+    <tr><td>Tree in one query</td><td><code>collections.query {tree: {depth, perParent}}</code></td><td><span class="st m">partial</span></td><td><code>parentId</code>, <code>parentIn</code>, <code>idIn</code> and <code>childCount</code> exist; depth 2 takes 3 trips</td><td>v1</td></tr>
+    <tr><td>Search</td><td class="code">search.query</td><td><span class="st n">missing</span></td><td>Catalog status <code>reserved</code>; the app filters cached titles and says so</td><td>v1</td></tr>
+    <tr><td>Liveness · transcript · attach · probe</td><td class="code">execution.liveness · execution.transcript · execution.streams.attach · auth.claim.status</td><td><span class="st y">exists</span></td><td>catalog v1 rows; <code>session attach --mode view|drive</code></td><td>v1</td></tr>
+  </tbody>
+</table>
+
+<h3>20 · Risks and open questions</h3>
+<table class="spec">
+  <thead><tr><th style="width:34%">Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>The terminal WebView is too heavy on low-end Android</td><td>One WebView at a time; the WebGL addon off on low-memory devices; transcript-only fallback; a budget test on the A54</td></tr>
+    <tr><td>Nodes without outbound internet get no push</td><td>Background fetch of <code>inbox.list</code> (OS-throttled, about 15 min), with the honest words “Notifications from local arrive when TM8 checks”</td></tr>
+    <tr><td>Universal links only for build-time hosts</td><td><code>tm8://open?u=</code>, “Open in TM8” in the web phone shell, per-operator builds</td></tr>
+    <tr><td>The <code>cli</code> kind mislabels the phone's session</td><td>A label in <code>auth.sessions.list</code> now; the <code>mobile</code> kind, which touches three places</td></tr>
+    <tr><td>Expo SDK cadence and New-Architecture-only libraries</td><td>Pin the SDK per release train; one upgrade lane per SDK</td></tr>
+    <tr><td>Edge cases in expo-router array groups</td><td>The resolver navigates with explicit group paths; the e2e walks cover them</td></tr>
+  </tbody>
+</table>
+<div class="callout open"><b>Open questions for the owner</b>
+  <ol style="margin:6px 0 0;padding-left:20px">
+    <li>Sign in as <code>cli</code> in v1 (90 days, admitted by human-only doors) until a <code>mobile</code> kind lands, or wait for the server work?</li>
+    <li>Push relay: Expo Push Service, which sees the alert text unless previews are off, or a tm8-run relay on tm8.sh? And should previews default to full, sender only, or none?</li>
+    <li>Bundle id and name: <code>sh.tm8.mobile</code>, “TM8”?</li>
+    <li>Should v2 queue <code>entities.create</code> with client-minted ids, or keep creation online-only as drawn?</li>
+    <li>Offer per-operator builds for universal links (acme-node), or <code>tm8://</code> only?</li>
+    <li>Ship optional certificate pinning in v1 settings, or defer it?</li>
+    <li>Should the phone offer to import the servers a space already lists (<code>servers.list</code>) into its own device-local list?</li>
+    <li>Is a native terminal renderer ever wanted (an iPad with a hardware keyboard), or is the WebView final?</li>
+  </ol>
+</div>
+</section>
