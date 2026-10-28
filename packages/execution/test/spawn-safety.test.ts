@@ -243,4 +243,29 @@ describe('SpawnService spawn acknowledgement safety', () => {
     });
     expect(transition).toHaveBeenCalledTimes(2);
   });
+
+  it('stops retrying a terminal-state write that never succeeds', async () => {
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4610',
+      dataDir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
+      bootSettlementMs: 25,
+      failedTransitionRetryMs: 1,
+    });
+    vi.spyOn(pty, 'beginPromptHandoff').mockImplementation(() => {});
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(() => {
+      throw new Error('injected spawn failure');
+    });
+    const transition = vi.spyOn(graph, 'transition')
+      .mockRejectedValue(new Error('injected permanent refusal'));
+
+    await expect(service.spawn(AUTH, REQUEST)).rejects.toThrow('injected spawn failure');
+
+    // One write on the failure path, then the bounded retries.
+    await vi.waitFor(() => expect(transition).toHaveBeenCalledTimes(21), { timeout: 5_000 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(transition).toHaveBeenCalledTimes(21);
+  });
 });

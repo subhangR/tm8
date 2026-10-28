@@ -77,7 +77,7 @@ export interface AuthSessionState {
    * node-admin session. Collapsing them would make the 1a card unable to tell
    * a viewer which one it is actually performing.
    */
-  claimNode(token: string, name: string, password: string): Promise<boolean>;
+  claimNode(token: string | null, name: string, password: string): Promise<boolean>;
   signIn(handle: string, password: string): Promise<boolean>;
   signOut(): void;
   clearFailure(): void;
@@ -288,7 +288,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
   );
 
   const claimNode = useCallback(
-    async (token: string, name: string, password: string) => {
+    async (token: string | null, name: string, password: string) => {
       setBusy(true);
       setFailure(null);
       try {

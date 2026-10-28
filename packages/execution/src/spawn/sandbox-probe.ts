@@ -161,6 +161,14 @@ export async function probeCodexSandbox(
 
   cache.set(binary, promise);
   const answer = await promise;
+  // Only a VERDICT about the node is a constant. A timeout (a loaded node at
+  // boot), an execFile throw, or a binary not installed YET says nothing about
+  // the kernel's LSM policy, and memoising it would pin the node to
+  // "unconfined" — or, under TM8_REQUIRE_CODEX_SANDBOX=1, refuse every codex
+  // launch — until the server restarts. Forget it so the next spawn re-asks.
+  if (!answer.usable && answer.reason !== 'probe_failed' && cache.get(binary) === promise) {
+    cache.delete(binary);
+  }
   if (!answer.usable) {
     options.logger?.warn?.('sandbox probe: codex cannot confine commands on this node', {
       binary,

@@ -3007,6 +3007,28 @@
   animation: lp-children-in var(--pn-dur-base) var(--pn-ease-out);
 }
 
+/* `▸ 2 ended` — an open session row's children from another tab, folded
+   (task 01a1821d). A quiet line at child indent, not a row. */
+.cv2-root .lp__fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin: 0 0 0 8px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cv2-root .lp__fold:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__fold:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.cv2-root .lp__fold-caret { display: inline-flex; transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
+.cv2-root .lp__fold-caret--open { transform: rotate(90deg); }
+
 /* --- session pulse — delegation, completion, or message in flight ----------
    AMBIENT, NOT ANNOUNCING. The tree already carries one hairline per nesting
    level; a pulse is that same hairline briefly brightening as the message

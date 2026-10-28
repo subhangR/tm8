@@ -1771,7 +1771,15 @@ verify_running() {
     # No loopback owner in multi mode, so an anonymous read is refused by
     # design — that is the mode working, not the graph failing.
     dim "multi mode: no loopback owner, so the anonymous catalog read is skipped"
-    dim "claim the node with the setup token: $TM8_ENV_DATA_DIR/setup-token (or the boot log)"
+    # One clickable link, not a file path: the person should never have to
+    # open setup-token or ask anyone for its contents.
+    if [[ -r "$TM8_ENV_DATA_DIR/setup-token" ]]; then
+      local claim_origin="${PUBLIC_ORIGIN:-http://127.0.0.1:$TM8_ENV_SERVER_PORT}"
+      info "claim the node: ${claim_origin%/}/#claim=$(tr -d '[:space:]' < "$TM8_ENV_DATA_DIR/setup-token")"
+      dim "lost it later? on this machine: tm8 auth claim --show"
+    else
+      dim "claim the node with the link in the boot log (or, on this machine: tm8 auth claim --show)"
+    fi
   elif [[ -x "$cli" ]]; then
     # A CLEAN env, then our own base URL. Without the strip, an installer run
     # from inside a tm8 agent session reads that session's TM8_AGENT_TOKEN and

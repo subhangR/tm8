@@ -287,6 +287,35 @@ function renderChatConnectors(dto: unknown): string {
     })].join('\n');
 }
 
+/**
+ * `tm8 chat connectors show <chat-id>` — read a thread's stored connectors
+ * without changing them (chat.getMcpSelections). `null` is an answer, not a
+ * gap: the thread has no stored row and is on the Space defaults.
+ */
+async function chatConnectorsShow(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.getMcpSelections', {
+    params: { id: chatId }, query: {},
+  });
+  cmd.out.data(data, renderChatConnectorsShow);
+  return EXIT_OK;
+}
+
+function renderChatConnectorsShow(dto: unknown): string {
+  const stored = ((dto ?? {}) as { mcpSelections?: unknown }).mcpSelections;
+  if (stored === null || stored === undefined) {
+    return 'Space defaults: this chat has no selection of its own, so its connectors are resolved at each turn.';
+  }
+  const picks = Array.isArray(stored) ? stored : [];
+  if (picks.length === 0) return 'Custom: every connector is off for this chat.';
+  return [`Custom: ${picks.length} connector${picks.length === 1 ? '' : 's'} selected:`,
+    ...picks.map((pick) => {
+      const row = (pick ?? {}) as { serverId?: unknown; credentialId?: unknown };
+      return `  ${String(row.serverId)}${row.credentialId ? `  (account ${String(row.credentialId)})` : ''}`;
+    })].join('\n');
+}
+
 function renderModelSet(dto: unknown): string {
   const result = (dto ?? {}) as { model?: unknown; provider?: unknown };
   return [
@@ -503,6 +532,7 @@ export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'stop'], run: chatStop },
   { path: ['chat', 'credentials'], run: chatCredentials },
   { path: ['chat', 'connectors'], run: chatConnectors },
+  { path: ['chat', 'connectors', 'show'], run: chatConnectorsShow },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },
   { path: ['chat', 'send'], run: chatSend },

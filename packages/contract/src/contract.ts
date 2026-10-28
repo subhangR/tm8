@@ -2716,6 +2716,13 @@ export interface AuthClaimStatusResult {
    * flag of its own; an unreadable policy answers `isolated`.
    */
   projectIsolation: ProjectIsolation;
+  /**
+   * Whether THIS CALLER must present the setup token to claim. False on a
+   * claimed node and for the loopback auto-owner, who already acts as owner and
+   * claims without one. A fact about the caller, never about whether a token
+   * exists. Optional so an older node's answer still parses; absent means true.
+   */
+  tokenRequired?: boolean;
 }
 
 /**
@@ -2732,8 +2739,12 @@ export interface AuthClaimStatusResult {
  * what you just chose is a seam the person has to notice.
  */
 export interface AuthClaimInput {
-  /** The `tm8c_…` plaintext from the boot log or `<dataDir>/setup-token`. */
-  token: string;
+  /**
+   * The `tm8c_…` plaintext from the boot log or `<dataDir>/setup-token`.
+   * Omitted only by the loopback auto-owner, who claims without one; from any
+   * other caller an omitted token is `unauthenticated`.
+   */
+  token?: string;
   username: string;
   password: string;
   displayName?: string;

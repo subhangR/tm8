@@ -1408,6 +1408,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         livenessOf={() => 'live'}
       />,
     );
+    /* Both are running: on Running the worker nests in line. (An earlier test
+       leaves another tab chosen, where it would fold behind `▸ 1 on other
+       tabs` — task 01a1821d.) */
+    fireEvent.click(getByRole('tab', { name: /^Running/ }));
 
     expect(getAllByTestId('list-tile')).toHaveLength(1);
     expect(getAllByTestId('list-tile')[0]?.querySelector('.lp__statusmark--run')).not.toBeNull();

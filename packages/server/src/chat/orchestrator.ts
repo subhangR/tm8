@@ -646,16 +646,25 @@ export class ChatOrchestrator {
   async wakeForMessages(requesterIdentityId: string, messages: readonly MessageView[]): Promise<void> {
     const anchors = [...new Set(messages.map((message) => message.state.anchorId))];
     if (anchors.length === 0) return;
-    const configured = await this.options.db.query<{
-      entity_id: string;
-      configured_by_identity_id: string;
-    }>(
-      claims(requesterIdentityId),
-      `select entity_id, configured_by_identity_id
-         from public.chats
-        where entity_id = any($1::uuid[])`,
-      [anchors],
-    );
+    // Never rejects, like `wake`: the facade fires this after the message
+    // commit without awaiting it, so a failed lookup here would surface as an
+    // unhandled rejection and take the node down.
+    let configured: Array<{ entity_id: string; configured_by_identity_id: string }>;
+    try {
+      configured = await this.options.db.query<{
+        entity_id: string;
+        configured_by_identity_id: string;
+      }>(
+        claims(requesterIdentityId),
+        `select entity_id, configured_by_identity_id
+           from public.chats
+          where entity_id = any($1::uuid[])`,
+        [anchors],
+      );
+    } catch (error) {
+      this.options.onError?.(error);
+      return;
+    }
     await Promise.all(configured.map((row) => (
       this.wake(row.entity_id, row.configured_by_identity_id)
     )));

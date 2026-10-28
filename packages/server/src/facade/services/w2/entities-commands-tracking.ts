@@ -52,7 +52,15 @@ import {
   type HeaderRpcResult,
 } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, limitOf, requireParam, requireUuidParam } from '../../context.js';
+import {
+  claimsFor,
+  commandEnvelope,
+  cursorInstant,
+  cursorUuid,
+  limitOf,
+  requireParam,
+  requireUuidParam,
+} from '../../context.js';
 import { resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
@@ -213,20 +221,6 @@ export function childCursor(parentId: string, after: { position: number; id: str
   return encodeCursor(after
     ? [fp, after.position, after.id]
     : [fp, -Number.MAX_VALUE, '00000000-0000-0000-0000-000000000000']);
-}
-
-function cursorUuid(value: unknown): string {
-  const id = String(value ?? '');
-  if (!UUID_RE.test(id)) throw new CollabError('invalid_cursor', 'cursor contains an invalid entity id');
-  return id;
-}
-
-function cursorIso(value: unknown): string {
-  const timestamp = String(value ?? '');
-  if (timestamp.length === 0 || Number.isNaN(Date.parse(timestamp))) {
-    throw new CollabError('invalid_cursor', 'cursor contains an invalid timestamp');
-  }
-  return timestamp;
 }
 
 function contentString(content: Record<string, unknown>, ...keys: string[]): string | null {
@@ -625,12 +619,12 @@ async function queryConnections(
     if (query.sort === 'type') {
       if (decoded.k.length !== 4) throw new CollabError('invalid_cursor', 'invalid type-sorted connection cursor');
       const type = params.add(String(decoded.k[1] ?? ''));
-      const at = params.add(cursorIso(decoded.k[2]));
+      const at = params.add(cursorInstant(decoded.k[2]));
       const id = params.add(cursorUuid(decoded.k[3]));
       where.push(`(g.type, g.created_at, g.id) ${compare} (${type}, ${at}::timestamptz, ${id}::uuid)`);
     } else {
       if (decoded.k.length !== 3) throw new CollabError('invalid_cursor', 'invalid connection cursor');
-      const at = params.add(cursorIso(decoded.k[1]));
+      const at = params.add(cursorInstant(decoded.k[1]));
       const id = params.add(cursorUuid(decoded.k[2]));
       where.push(`(${sortColumn}, g.id) ${compare} (${at}::timestamptz, ${id}::uuid)`);
     }
@@ -2095,7 +2089,7 @@ export class W2EntitiesCommandsTrackingService {
         if (decoded.k.length !== 3 || decoded.k[0] !== fp) {
           throw new CollabError('invalid_cursor', 'activity cursor does not match this entity');
         }
-        params.push(cursorIso(decoded.k[1]), cursorUuid(decoded.k[2]));
+        params.push(cursorInstant(decoded.k[1]), cursorUuid(decoded.k[2]));
         keyset = 'and (a.created_at, a.id) < ($2::timestamptz, $3::uuid)';
       }
       const rows = await q.query<ActivityRow>(

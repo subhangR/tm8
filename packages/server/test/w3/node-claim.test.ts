@@ -48,7 +48,14 @@ describe('first-run node claim, over the public surface', () => {
     );
     // `shared`: a loopback-only single node, read from the internal.node_policy
     // row boot wrote from gatePosture (234), not inferred from `mode`.
-    expect(status).toEqual({ claimed: false, mode: 'single', signupPath: 'claim', projectIsolation: 'shared' });
+    // `tokenRequired: false`: this test client is the loopback auto-owner.
+    expect(status).toEqual({
+      claimed: false,
+      mode: 'single',
+      signupPath: 'claim',
+      projectIsolation: 'shared',
+      tokenRequired: false,
+    });
   });
 
   it('minted a token, and stored ONLY its hash', async () => {
@@ -205,5 +212,80 @@ describe('first-run node claim, over the public surface', () => {
     );
     expect(login.account.username).toBe('amber');
     expect(login.token.startsWith('tm8s_')).toBe(true);
+  });
+});
+
+/**
+ * THE ON-BOX CLAIM NEEDS NO TOKEN; EVERY OTHER CALLER STILL DOES.
+ *
+ * The person at the server's own machine (the loopback auto-owner) already acts
+ * as the owner and can already mint a token through `auth.claim.reissue`, so
+ * demanding one bought nothing and was the whole first-run friction. A caller
+ * that came through another hop (any forwarding header) is the stranger the
+ * token exists to stop, and must still present it.
+ */
+describe('first-run claim from the server\'s own machine needs no token', () => {
+  let server: W3PublicServer;
+  const REMOTE = { 'x-forwarded-for': '203.0.113.9' };
+
+  beforeAll(async () => {
+    server = await startW3PublicServer('node_claim_onbox');
+  }, 120_000);
+
+  afterAll(async () => {
+    await server?.close();
+  });
+
+  async function remote(method: string, path: string, body?: unknown) {
+    const response = await fetch(new URL(path, server.baseUrl), {
+      method,
+      headers: { ...REMOTE, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: (await response.json()) as { error?: { code?: string } } };
+  }
+
+  it('tells each caller whether IT needs the token', async () => {
+    const local = successData<{ tokenRequired: boolean }>(await server.request('GET', '/v2/auth/claim'));
+    expect(local.tokenRequired).toBe(false);
+    const far = await remote('GET', '/v2/auth/claim');
+    expect(far.status).toBe(200);
+    expect((far.body as { data?: { tokenRequired?: boolean } }).data?.tokenRequired).toBe(true);
+  });
+
+  it('refuses a token-less claim from a forwarded caller, and burns nothing', async () => {
+    const far = await remote('POST', '/v2/auth/claim', { username: 'mallory', password: 'a-real-password-8+' });
+    expect(far.status).toBe(401);
+    expect(far.body.error?.code).toBe('unauthenticated');
+    expect(await server.rows('select 1 from public.node_claim_tokens where used_at is not null')).toHaveLength(0);
+    const status = successData<{ claimed: boolean }>(await server.request('GET', '/v2/auth/claim'));
+    expect(status.claimed).toBe(false);
+  });
+
+  it('claims with NO token from loopback — the owner row, signed in, the printed token burned', async () => {
+    const printed = (await readFile(join(server.dataDir, 'setup-token'), 'utf8')).trim();
+    successData(await server.request('GET', '/v2/auth/session'));
+    const [owner] = await server.rows<{ identity_id: string }>('select identity_id from public.accounts where is_owner');
+
+    const claimed = successData<{ token: string; account: { identityId: string; username: string; isOwner: boolean } }>(
+      await server.request('POST', '/v2/auth/claim', { username: 'amber', password: 'a-real-password-8+' }),
+    );
+    expect(claimed.token.startsWith('tm8s_')).toBe(true);
+    expect(claimed.account).toMatchObject({ identityId: owner!.identity_id, username: 'amber', isOwner: true });
+
+    // It reused and burned the printed token rather than minting a second one.
+    const tokens = await server.rows<{ used_at: string | null }>('select used_at from public.node_claim_tokens');
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]?.used_at).not.toBeNull();
+    // And the printed link is now dead from anywhere.
+    const replay = await remote('POST', '/v2/auth/claim', { token: printed, username: 'mallory', password: 'a-real-password-8+' });
+    expect(replay.status).toBe(403);
+  });
+
+  it('a claimed node answers tokenRequired: false and refuses a second token-less claim', async () => {
+    const status = successData<{ claimed: boolean; tokenRequired: boolean }>(await server.request('GET', '/v2/auth/claim'));
+    expect(status).toMatchObject({ claimed: true, tokenRequired: false });
+    const again = await server.request('POST', '/v2/auth/claim', { username: 'amber2', password: 'a-real-password-8+' });
+    expect(errorCode(again)).toBe('forbidden');
   });
 });

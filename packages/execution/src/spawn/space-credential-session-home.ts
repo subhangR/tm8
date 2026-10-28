@@ -74,14 +74,16 @@ async function writePrivateFileAtomic(path: string, content: string): Promise<vo
   const temp = `${path}.${randomUUID()}.tmp`;
   const handle = await open(temp, 'wx', PRIVATE_FILE_MODE);
   try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await rename(temp, path);
   } catch (error) {
+    // A failed write or rename must not strand a temp file holding the key:
+    // the scrub and the boot sweep only know the final names.
     await rm(temp, { force: true });
     throw error;
   }

@@ -210,15 +210,13 @@ const ROWS: Record<OperationName, Row> = {
     tags:['mcp','token','external','revoke'],
     notes:['clients using it stop working immediately, including a call already in flight']},
   /*
-   * NO CLI COMMAND: this is the data behind one block of the session debug view
-   * (§10.6), and reading it in a terminal would mean rendering a bearer chain
-   * of raw ids with no entity titles to resolve them against. `tm8 mcp audit`
-   * is the terminal's answer to "what did this session's connectors do".
+   * `tm8 mcp session provenance` prints the RPC's answer as JSON, bare ids and
+   * all: the session debug view resolves them to titles, and a terminal can
+   * resolve any one of them with `tm8 entity context <id>`.
    */
-  'mcp.sessions.provenance': {cmd:null,
+  'mcp.sessions.provenance': {cmd:['mcp','session','provenance'], syn:'tm8 mcp session provenance <session-id>',
     sum:'Read the provenance recorded for one session: the human root, the bearer chain, and whether that root is still admitted to every Space it crossed',
     authz:'entity',input:'none',tags:['mcp','connector','provenance','root','chain','session','debug'],
-    reason:'the session debug view resolves the chain\'s ids to entities; a terminal rendering would be a list of bare uuids',
     notes:['`recorded:false` is a real answer: the session has no provenance row — launched before the plan, or a chat still on Space defaults',
       '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
       '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
@@ -560,13 +558,14 @@ const ROWS: Record<OperationName, Row> = {
   // ── first-run node claim (docs/identity/FIRST-RUN-CLAIM-DESIGN.md) ───────
   'auth.claim': {
     cmd: ['auth', 'claim'],
-    syn: 'tm8 auth claim --token <tm8c_…> --username <username> --password <password> [--display-name <name>] [--email <email>]',
+    syn: 'tm8 auth claim --username <username> --password <password> [--token <tm8c_…>] [--display-name <name>] [--email <email>]',
     sum: 'Claim an unclaimed Server: set the first credential on its owner account and sign in',
     authz: 'server',
     input: 'bound',
     tags: ['claim', 'first-run', 'setup', 'bootstrap', 'owner', 'install', 'onboard'],
     notes: [
-      'the one-time tm8c_… token is printed at first boot and written to <dataDir>/setup-token — the token is the authorization, so this works from a machine that is not the Server',
+      'on the Server\'s own machine no token is needed: the loopback owner claims directly',
+      'from any other machine pass --token: the one-time tm8c_… token is printed at first boot and by `tm8 auth claim --show` on the Server',
       'it sets a credential on the EXISTING owner account rather than creating one, so everything the node already recorded stays attributed to you',
       'refused once any account on the node has a password: a claim token is inert on a claimed node',
       'the password travels in the request body — a real deployment needs TLS before using this',
@@ -2148,21 +2147,18 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
   /*
-   * NO CLI COMMAND, and the gap is named rather than hidden: `tm8 chat
-   * connectors` is a WRITE, so a terminal cannot currently look at a thread's
-   * connectors without changing them. This door was added for §10.4's composer
-   * sheet, which has to know "Space defaults" from "Custom" before the user
-   * touches a toggle. A CLI read belongs with the rest of the `chat connectors`
-   * command (one path cannot serve two operations in this table), and is a
-   * follow-up rather than something to fake here.
+   * The READ beside `tm8 chat connectors`, which only writes. Its own path
+   * (`chat connectors show`) because one path cannot serve two operations in
+   * this table; the longest registered prefix wins, so a chat id is never read
+   * as `show`.
    */
   'chat.getMcpSelections': {
-    cmd: null,
+    cmd: ['chat', 'connectors', 'show'],
+    syn: 'tm8 chat connectors show <chat-id>',
     sum: "Read a chat's stored MCP connector selection — null means it is on the Space defaults, resolved fresh each turn",
     authz: 'entity',
     input: 'none',
     tags: ['chat', 'mcp', 'connector', 'tools', 'selection', 'defaults'],
-    reason: 'the terminal form of this read belongs on `tm8 chat connectors`, which today only writes; this door was added for the chat composer sheet',
     notes: [
       '`null` is the ANSWER and not a missing value: the thread has no stored row, so it uses the Space defaults resolved at each turn',
       'a non-empty list, or `[]`, means a human chose it — since 354 a chat\'s own launch no longer writes its resolved defaults back',
@@ -5052,6 +5048,31 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 workspace color <ws> <color>'],
   }],
+  // `mcp import` is SUGAR over the read it diffs against and the import it
+  // performs: it owns no catalog row because nothing new happens on the wire.
+  // What is new is WHERE it runs — in the member's own process, over their own
+  // `~/.claude.json` / `~/.codex/config.toml`, which the Server cannot read
+  // and never will. `mcp.credentials.create` is named too because
+  // `--with-credentials` makes that call, and the command is as available as
+  // its weakest stage.
+  ['mcp import', {
+    path: ['mcp', 'import'],
+    syntax: 'tm8 mcp import --from claude|codex|mcp-json [--path <file>] [--dry-run] [--trust-stdio] [--with-credentials] [--mutation-id <id>]',
+    summary: 'Register the MCP servers already configured in your Claude Code or Codex config as tm8 connectors',
+    notes: [
+      'reads the config on THIS machine: ~/.claude.json (global and per-project), a project .mcp.json, or ~/.codex/config.toml; --path overrides',
+      'translates metadata only: a literal header or env token in the file becomes a declared slot, never definition content',
+      '--dry-run prints the diff against the Space\u2019s connectors (deduped by URL for http, by argv for stdio) and writes nothing',
+      '--trust-stdio is required before a connector that runs a local command is registered; without it those rows are listed and skipped',
+      '--with-credentials additionally seals each literal token as YOUR OWN private connector credential; without it the token is left behind and only reported',
+      'imported connectors arrive unapproved, and an OAuth provider is connected with `tm8 mcp oauth begin` rather than from the file',
+      '--with-credentials calls the human-only `mcp.credentials.create`: an agent session is refused (forbidden) and should import without it',
+    ],
+    examples: [
+      'tm8 mcp import --from claude --dry-run --path <file>',
+      'tm8 mcp import --from codex --trust-stdio --with-credentials --mutation-id <id>',
+    ],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -5128,6 +5149,9 @@ COMMAND_OPS.set('container screenshot', ['containers.computer']);
 COMMAND_OPS.set('container adb', ['containers.run']);
 COMMAND_OPS.set('container browser', ['containers.browser.endpoint', 'containers.computer']);
 COMMAND_ORDER.push('container screenshot', 'container adb');
+COMMAND_OPS.set('mcp import', ['mcp.servers.import', 'mcp.servers.list', 'mcp.credentials.create']);
+const mcpServerImportIndex = COMMAND_ORDER.indexOf('mcp server import');
+COMMAND_ORDER.splice(mcpServerImportIndex < 0 ? COMMAND_ORDER.length : mcpServerImportIndex + 1, 0, 'mcp import');
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');

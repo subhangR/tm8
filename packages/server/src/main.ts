@@ -1321,6 +1321,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // how an operator says where the node actually answers.
       url: config.publicOrigin ?? url,
       nodeMode: config.nodeMode ?? 'single',
+      loopbackOwner: (config.nodeMode ?? 'single') === 'single' && config.disableAutoOwner !== true,
       // The claim ceremony credentials the EXISTING owner row, so the row has
       // to exist before the token is advertised. `owner` is the same memoised
       // loopback bootstrap every other path uses.

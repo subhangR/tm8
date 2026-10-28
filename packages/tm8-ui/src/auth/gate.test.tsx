@@ -147,7 +147,8 @@ function installFakeAuthServer(): FakeAuthServer {
     if (method === 'GET' && path === '/v2/auth/claim') {
       const claimed = server.accounts.size > 0;
       return json(200, {
-        data: { claimed, mode: 'single', signupPath: claimed ? 'admin' : 'claim' },
+        // The loopback owner (the fake's auto-owner arm) needs no token.
+        data: { claimed, mode: 'single', signupPath: claimed ? 'admin' : 'claim', tokenRequired: !claimed && !server.autoOwner },
       });
     }
 
@@ -155,7 +156,8 @@ function installFakeAuthServer(): FakeAuthServer {
     // so a second claim with the same token is refused exactly as the real
     // `claim_node` refuses it.
     if (method === 'POST' && path === '/v2/auth/claim') {
-      if (!server.claimToken || String(body.token ?? '') !== server.claimToken) {
+      const onBox = body.token === undefined && server.autoOwner !== null;
+      if (!onBox && (!server.claimToken || String(body.token ?? '') !== server.claimToken)) {
         return refusal(401, 'unauthenticated', 'invalid or already-used claim token');
       }
       if (server.accounts.size > 0) {
@@ -315,7 +317,7 @@ async function createAccountThroughTheUI(name = NAME, password = PASSWORD) {
   // On an unclaimed node the first-run card performs `auth.claim`, and the
   // token is the authorization. Filled only when the field is on screen so
   // this helper still drives the plain signup card where that is what renders.
-  const tokenField = screen.queryByLabelText('SETUP TOKEN');
+  const tokenField = screen.queryByLabelText('SETUP CODE');
   if (tokenField) {
     fireEvent.change(tokenField, { target: { value: FAKE_CLAIM_TOKEN } });
   }
@@ -533,9 +535,10 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     // And the app never rendered on the way there — the loopback probe held the
     // blank until the claim answer was known, so no app frame flashed first.
     expect(screen.queryByTestId('the-app')).toBeNull();
-    // The setup token is reachable on that card — the escape the whole lane exists
-    // to keep open — so the owner can complete the claim from here.
-    expect(screen.getByLabelText('SETUP TOKEN')).toBeTruthy();
+    // And it asks for NO setup code: the node says this loopback caller is its
+    // owner already, so the card is just the account — completable from here.
+    expect(screen.queryByLabelText('SETUP CODE')).toBeNull();
+    expect(screen.getByRole('button', { name: /create account/i })).toBeTruthy();
   });
 
   it('resumes auto-owner the instant the node IS claimed — the win is only deferred, not lost', async () => {
@@ -672,7 +675,7 @@ describe('leg 2 — create an account, and the app renders', () => {
     render(<AuthGate>{APP}</AuthGate>);
     // The token first: without it the act is refused for a DIFFERENT reason
     // (no capability), and this test is about the password floor.
-    fireEvent.change(screen.getByLabelText('SETUP TOKEN'), { target: { value: FAKE_CLAIM_TOKEN } });
+    fireEvent.change(screen.getByLabelText('SETUP CODE'), { target: { value: FAKE_CLAIM_TOKEN } });
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'short' } });
     fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
@@ -1011,8 +1014,8 @@ describe('blocked storage is refused out loud, never failed silently', () => {
     // the card is the point of the test, not a workaround for it — a viewer
     // whose storage is blocked must still be told, and telling them requires
     // the card to arrive.
-    await screen.findByLabelText('SETUP TOKEN');
-    fireEvent.change(screen.getByLabelText('SETUP TOKEN'), { target: { value: FAKE_CLAIM_TOKEN } });
+    await screen.findByLabelText('SETUP CODE');
+    fireEvent.change(screen.getByLabelText('SETUP CODE'), { target: { value: FAKE_CLAIM_TOKEN } });
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: PASSWORD } });
     fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));

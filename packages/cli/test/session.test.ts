@@ -213,7 +213,7 @@ describe('session liveness', () => {
     expect(seen).toEqual([{ method: 'GET', pathname: bindPath('execution.liveness', { spaceId: SPACE }), body: undefined }]);
     expect(result.stdout).toContain(SESSION);
     expect(result.stdout).toContain('boot_1');
-    expect(result.stdout).toContain('capacity: 3/8 in use');
+    expect(result.stdout).toContain('capacity: 3/8 in use (agent sessions not completed, whole node)');
     expect(result.stderr).toBe('');
   });
 

@@ -10,12 +10,12 @@ import {
   encodeCursor,
   decodeCursor,
   CollabError,
-  ISO_TIMESTAMP_RE,
   type ActivityItem,
   type Page,
 } from '@tm8/contract';
 import type { Querier } from '../../db/types.js';
 import { loadActors, actorOf, iso, MICROS } from '../entity-read.js';
+import { cursorInstant, cursorUuid } from '../context.js';
 
 interface ActivityRow {
   id: string;
@@ -59,46 +59,6 @@ export interface ActivityQuery {
   cursor?: string;
 }
 
-/**
- * The keyset instant out of a decoded cursor, or a refusal.
- *
- * MODELLED ON `sortKeyOf` (handlers/collections.ts), WHICH REFUSES ON **TWO**
- * CONDITIONS, AND BOTH ARE REPRODUCED HERE ON PURPOSE:
- *
- *   1. absent or null — nothing to compare against;
- *   2. PRESENT BUT NOT EXACT TEXT — the condition a guard built only on
- *      `Date.parse` silently drops, and the one that matters most here.
- *
- * Measured, because the second is not obvious: `Date.parse` ADMITS `'2026'`,
- * `'2026-07'`, a space-separated `'… 14:59:01.891820Z'`, and an OFFSET form
- * `'…+05:30'` that the contract's own `IsoTimestamp` calls invalid. It also
- * admits the NUMBER `123`, because a bare `String(k[0])` turns it into
- * `'123'`. Every one of those would be handed to Postgres as a keyset value.
- *
- * `ISO_TIMESTAMP_RE` (contract schemas.ts) is REUSED rather than reinvented —
- * it is already the published shape of an `IsoTimestamp`, it requires the
- * terminal `Z` that `MICROS` always emits, and a fourth private spelling of
- * this check is exactly the duplication that let the cursor class hide.
- *
- * WHY REFUSING BEATS PASSING IT THROUGH: previously a client string reached
- * `$::timestamptz` verbatim, so ordinary bad input surfaced as SQLSTATE 22007
- * — an UNMAPPED error and a 5xx-class failure, with nothing telling the caller
- * its cursor was the problem. A cursor is client input; a bad one is a client
- * error (DEV-5), never a server fault.
- */
-function cursorInstant(raw: unknown): string {
-  if (raw === null || raw === undefined) {
-    throw new CollabError('invalid_cursor', 'invalid cursor: createdAt is missing');
-  }
-  if (typeof raw !== 'string' || !ISO_TIMESTAMP_RE.test(raw)) {
-    throw new CollabError(
-      'invalid_cursor',
-      'invalid cursor: createdAt must be an ISO-8601 UTC timestamp',
-    );
-  }
-  return raw;
-}
-
 export async function loadActivity(q: Querier, query: ActivityQuery): Promise<Page<ActivityItem>> {
   const params: unknown[] = [];
   const where: string[] = [];
@@ -116,7 +76,7 @@ export async function loadActivity(q: Querier, query: ActivityQuery): Promise<Pa
   if (query.cursor) {
     const { k } = decodeCursor(query.cursor);
     if (k.length !== 2) throw new CollabError('invalid_cursor', 'invalid cursor: expected [createdAt, id]');
-    params.push(cursorInstant(k[0]), String(k[1]));
+    params.push(cursorInstant(k[0]), cursorUuid(k[1]));
     where.push(`(a.created_at, a.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
   }
 
