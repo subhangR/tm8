@@ -55,11 +55,8 @@
 #s-foundation .pgx { padding: 2px var(--gutter) 0; }
 #s-foundation .pgx .progress { margin-bottom: 12px; }
 #s-foundation .ringrow { display: flex; align-items: center; gap: 10px; font-size: var(--fs-foot); color: var(--ink-2); }
-/* tree guides (owner ruling 2026-10-28): a hairline from the parent's chevron down its children */
+/* tree guides (owner ruling 2026-10-28) are kit classes: .tree .row.open / .kid / .kid.last / .thru / .more */
 #s-foundation .tree .row { gap: var(--s2); }
-#s-foundation .gd { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
-#s-foundation .gd.st { top: calc(50% + 11px); }
-#s-foundation .gd.en { bottom: 50%; }
 #s-foundation .tree .row .t.wrap { font-size: var(--fs-body); }
 #s-foundation .android-ripple { background: radial-gradient(circle at 30% 50%, var(--active) 0, var(--active) 38%, transparent 39%); }
 /* overlays drawn unmounted, as specimens */
@@ -72,7 +69,6 @@
 #s-foundation .refusal.tight { margin-top: 0; }
 #s-foundation .phone[data-size="360"] .keyboard .k { width: 29px; }
 #s-foundation .keyboard .k.ret { width: 88px; }
-#s-foundation .board.short { height: 236px; }
 #s-foundation .content > .term:only-child { height: 100%; }
 /* doc.css paragraph rules leak into phones (lane 03 finding): restore the kit's own */
 #s-foundation .phone p { max-width: none; }
@@ -326,7 +322,7 @@
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
-          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill run">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
@@ -363,7 +359,7 @@
     <tr><td>/dev/kit</td><td>Design-kit index (anatomy above)</td><td>Reached from Settings › About in <code>development</code>/<code>preview</code> build profiles; absent from store builds.</td></tr>
     <tr><td>/dev/kit/chrome · /rows · /status · /controls</td><td>Specimen pages, one per family</td><td><code>?theme=light|dark</code> · <code>?style=&lt;style ref&gt;</code></td></tr>
     <tr><td>/dev/kit/overlays</td><td>Sheet, dialog, menu, toast, banner, notice</td><td><code>?show=sheet|all</code> mounts the overlay in situ</td></tr>
-    <tr><td>/dev/kit/states · /composer · /run · /entity</td><td>States, composer (keyboard up), terminal, entity atoms + board</td><td><code>?keyboard=up</code></td></tr>
+    <tr><td>/dev/kit/states · /composer · /run · /entity</td><td>States, composer (keyboard up), terminal, entity atoms</td><td><code>?keyboard=up</code></td></tr>
     <tr><td>/dev/kit/type</td><td>Type preview</td><td><code>?size=Large|xxxL|AX1…AX5|1.3|2.0</code> overrides the system size for this page only</td></tr>
     <tr><td>/dev/kit/glyphs · /colour</td><td>The 33 kind glyphs; token swatches + live contrast lint</td><td>The lint runs on the painted style, so a space style can be checked on the phone.</td></tr>
   </tbody>
@@ -426,7 +422,7 @@
     <div class="cap"><b>Chrome · Android</b>Dark, 360dp. Left 22sp titles, ← as Up, a navigation bar whose active tab wears a brand pill. The extended FAB is the Chats root's create and shrinks to the 56dp FAB on scroll. <span class="route">/dev/kit/chrome</span></div>
   </div>
 </div>
-<div class="why">Create lives where each platform puts it: the brand icon in the iOS bar (no FAB on tab roots — Apple's bars already hold the verb), the FAB on Android Chats and Work. A round FAB on iOS appears only on a canvas with no bar slot (Board, drawing). Tab bars stay on tab roots only, as the overview drew them; with iOS 26 native tabs the system paints them in glass — the metrics above are the floor both share.</div>
+<div class="why">Create lives where each platform puts it: the brand icon in the iOS bar (no FAB on tab roots — Apple's bars already hold the verb), the FAB on Android Chats and Work. A round FAB on iOS appears only on a canvas with no bar slot (a drawing). Tab bars stay on tab roots only, as the overview drew them; with iOS 26 native tabs the system paints them in glass — the metrics above are the floor both share.</div>
 
 <h3>Rows &amp; trees</h3>
 <p>The row is the atom of every list in the app. Per the owner ruling of 2026-10-28, <b>every list is a tree whenever anything in it nests</b>: expanded to depth 2, a chevron on every parent, 20pt indent per depth, a hairline guide from the parent's chevron down its children, and a count summary on a collapsed parent. A child keeps its own full row.</p>
@@ -449,9 +445,9 @@
           <div class="list lines" style="position:relative;overflow:hidden"><div class="swipe-actions"><span class="act read"><svg class="ic"><use href="#i-check"/></svg>Read</span><span class="act pin"><svg class="ic"><use href="#i-pin"/></svg>Pin</span></div><a class="row tall unread swiped" style="background:var(--paper)"><span class="avatar c2">P</span><span class="main"><span class="t">Priya: can you look at the tablet overflow?</span><span class="s">#mobile · 2 replies</span></span><span class="trail"><span class="time">09:15</span></span></a></div>
           <div class="sl">Tree · open, leaf, collapsed<i>20pt / depth</i></div>
           <div class="list tree">
-            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
-            <a class="row tall" style="--depth:1"><i class="gd" style="left:25px"></i><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 01 — design system</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
-            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 05 — work</span><span class="s">3 subtasks · 1 working</span></span></a>
+            <a class="row tall open" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall kid" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 01 — design system</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row tall kid last" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Mobile design lane 05 — work</span><span class="s">3 subtasks · 1 working</span></span></a>
           </div>
         </main>
       </div>
@@ -467,17 +463,17 @@
         <main class="content">
           <div class="sl">Sessions · grouped by root<i>verdict per row</i></div>
           <div class="list tree">
-            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill live">live</span>Coordinator · 42 min</span></span></a>
-            <a class="row tall android-ripple" style="--depth:1"><i class="gd" style="left:25px"></i><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Mobile design lane 01</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></a>
-            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>push to origin</span></span></a>
+            <a class="row tall open" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill live">live</span>Coordinator · 42 min</span></span></a>
+            <a class="row tall kid android-ripple" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Mobile design lane 01</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row tall kid last" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>push to origin</span></span></a>
             <a class="row tall" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill live">live</span>3 children · 2 live</span></span></a>
           </div>
           <div class="sl">Tasks · depth 0 / 1 / 2<i>guide per level</i></div>
           <div class="list tree">
-            <a class="row tall" style="--depth:0"><i class="gd st" style="left:25px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
-            <a class="row tall" style="--depth:1"><i class="gd en" style="left:25px"></i><i class="gd st" style="left:45px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Lane 05 — work</span><span class="s"><span class="pill working">working</span>2 subtasks</span></span></a>
-            <a class="row tall" style="--depth:2"><i class="gd" style="left:45px"></i><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>4 of 5</span></span></a>
-            <a class="row tall" style="--depth:2"><i class="gd en" style="left:45px"></i><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Desktop-shell reflow overflow</span><span class="s"><span class="pill open">open</span>4 more · 1 working</span></span></a>
+            <a class="row tall open" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator</span></span></a>
+            <a class="row tall kid last open" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Lane 05 — work</span><span class="s"><span class="pill working">working</span>2 subtasks</span></span></a>
+            <a class="row tall kid" style="--depth:2"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>4 of 5</span></span></a>
+            <a class="row tall kid last" style="--depth:2"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t wrap">Desktop-shell reflow overflow</span><span class="s"><span class="pill open">open</span>4 more · 1 working</span></span></a>
           </div>
         </main>
       </div>
@@ -489,7 +485,7 @@
 <div class="why">Trees are drawn because the owner ruled it (2026-10-28: "the tree structure is not shown in the list — in the app it must be shown") and because the web drawer already does it — "an item with children has a ▸ and expands in place" (<code>MobileDrawer.tsx</code>). Tree vs flat is decided from data (does any row have a parent of its own kind?), never from a kind literal. The tap target for disclosure is the 20pt chevron <em>plus</em> the indent to its left, padded to 44×44; the rest of the row still pushes.</div>
 
 <h3>Status &amp; identity — pills, chips, badges, avatars</h3>
-<div class="callout ruling"><b>Ruling · one status-tone mapping for every lane (2026-10-28)</b>The kit drew <em>working</em> and <em>done</em> in the same green and the web carries three mappings. From now on one table, by meaning: <b>green = moving now</b> (working, live, running, checks passed) · <b>amber = waiting on someone</b> (waiting, stale, pending, queued) · <b>red = stopped by a problem</b> (blocked, failed, error, refused) · <b>blue = with a reviewer or in flight</b> (in review, review requested, checks running) · <b>grey = not started or ended without landing</b> (open, pulled, exited, cancelled, not running) · <b>purple = landed</b> (done, merged). Write <code>&lt;span class="pill merged"&gt;done&lt;/span&gt;</code> until the kit's <code>.pill.done</code> moves to the purple tone. Priority and marks are dot-less (below). Why: a finished task must not look like a running one at a glance, and "landed" is one idea whether it is a task or a PR.</div>
+<div class="callout ruling"><b>Ruling · one status-tone mapping for every lane (2026-10-28)</b>The kit drew <em>working</em> and <em>done</em> in the same green and the web carries three mappings. From now on one table, by meaning: <b>green = moving now</b> (working, live, running, checks passed) · <b>amber = waiting on someone</b> (waiting, stale, pending, queued) · <b>red = stopped by a problem</b> (blocked, failed, error, refused) · <b>blue = with a reviewer or in flight</b> (in review, review requested, checks running) · <b>grey = not started or ended without landing</b> (open, pulled, exited, cancelled, not running) · <b>purple = landed</b> (done, merged). The kit's <code>.pill.done</code> now paints purple (polish pass, 2026-10-28), so <code>pill done</code> and <code>pill merged</code> read the same. Priority and marks are dot-less (below). Why: a finished task must not look like a running one at a glance, and "landed" is one idea whether it is a task or a PR.</div>
 <div class="screen-strip">
   <div class="shot">
     <figure class="phone" data-os="ios" data-theme="light">
@@ -583,7 +579,7 @@
         <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg></span></div><div class="title">Controls</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
         <main class="content">
           <div class="sl">Tabs · segmented on iOS</div>
-          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span></div>
           <div class="sl">Filter chips<i>32dp</i></div>
           <div class="filters"><span class="f on"><svg class="ic"><use href="#i-check"/></svg>Mine</span><span class="f">Needs me</span><span class="f">Working</span></div>
           <div class="sl">Switches &amp; checks</div>
@@ -771,7 +767,7 @@ ok    01-foundation.html: 20 phones
   </div>
 </div>
 
-<h3>Entity atoms and board</h3>
+<h3>Entity atoms</h3>
 <div class="screen-strip">
   <div class="shot w360">
     <figure class="phone" data-os="android" data-theme="dark" data-size="360">
@@ -782,18 +778,21 @@ ok    01-foundation.html: 20 phones
           <div class="ent-head"><span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · v14 · 01a182a2</span><div class="title">TM8 Mobile app</div><div class="meta"><span class="pill working">working</span><span class="pill idle nodot">medium</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>Worker, Coordinator</div></div>
           <div class="ent-actions"><span class="btn primary"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="btn"><svg class="ic"><use href="#i-chat"/></svg>Chat about</span></div>
           <div class="livebar"><span class="dot"></span>2 sessions live on this task<span style="margin-left:auto;font-weight:500">View</span></div>
-          <div class="linked"><div class="fam">Children · 9</div><div class="chips"><span class="chip run"><svg class="ic"><use href="#i-task"/></svg>Lane 01 · working</span><span class="chip run"><svg class="ic"><use href="#i-task"/></svg>Lane 05 · working</span></div></div>
-          <div class="sl">Board · column + card<i>280dp column</i></div>
-          <div class="board short">
-            <div class="col"><div class="ch"><span>Working</span><span class="count">3</span></div><div class="card"><div class="t">TM8 Mobile app</div><div class="m"><span class="pill working">working</span>9 subtasks</div></div><div class="card"><div class="t">Bridge as an entity</div><div class="m"><span class="pill working">working</span>Coordinator</div></div></div>
-            <div class="col"><div class="ch"><span>In review</span><span class="count">2</span></div><div class="card"><div class="t">Readiness per used provider</div><div class="m"><span class="pill review">in review</span>#955</div></div></div>
+          <div class="section-h">Children · 9</div>
+          <div class="list tree">
+            <a class="row" style="--depth:0"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Lane 01 — design system</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row open" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Lane 05 — work</span><span class="s"><span class="pill working">working</span>2 subtasks</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>4 of 5</span></span></a>
+            <a class="row kid last" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Desktop-shell reflow overflow</span><span class="s"><span class="pill open">open</span>Subhang</span></span></a>
+            <a class="row more" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="t">7 more · 7 working</span></span></a>
           </div>
-          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+          <div class="section-h">Messages · 12</div>
+          <div class="list lines"><div class="row"><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s"><b>Coordinator</b> · 13:31</span><span class="t">Eight lanes spawned.</span></span></div></div>
         </main>
       </div>
       <div class="ph-home"></div>
     </figure>
-    <div class="cap"><b>Entity atoms · Android</b>Dark. Kind eyebrow with version and short id, title, status meta (priority dot-less), the kind's verbs, the live bar, linked families — Children first — and a board column whose card carries subtasks as a count. <span class="route">/dev/kit/entity</span></div>
+    <div class="cap"><b>Entity atoms · Android</b>Dark. Kind eyebrow with version and short id, title, status meta (priority dot-less), the kind's verbs, the live bar, then the Children tree (kit classes: an open parent, its kids, a last kid, a “▸ 7 more” row) and Messages; Linked comes last, as on every kind. <span class="route">/dev/kit/entity</span></div>
   </div>
 </div>
 
@@ -886,7 +885,7 @@ ok    01-foundation.html: 20 phones
     <tr><td class="code">Swipe row</td><td>Reveal actions (per row, also in trees); full swipe commits the first</td><td><code>impactLight</code> at the threshold</td><td><code>GESTURE_THRESHOLD_ACTIVATE</code>³⁴ · <code>CONTEXT_CLICK</code></td><td>Custom actions (VoiceOver rotor / TalkBack actions menu).</td></tr>
     <tr><td class="code">Edge swipe / back</td><td>Pop one screen; a sheet is dismissed first</td><td>none (system)</td><td>none (predictive back)</td><td>‹ button; Android Back. No horizontal drag starts within 24pt of an edge.</td></tr>
     <tr><td class="code">Pull to refresh</td><td>Every list → refetch from the node</td><td><code>impactLight</code> at trigger</td><td>none (spinner is the feedback)</td><td>"Refresh" custom action; lists also refresh on focus.</td></tr>
-    <tr><td class="code">Drag reorder</td><td>Pinned kinds, board cards between columns</td><td>lift <code>impactMedium</code> · slot <code>selection</code> · drop <code>impactLight</code></td><td>lift <code>DRAG_START</code>³⁴ · slot <code>SEGMENT_TICK</code>³⁴ · drop <code>GESTURE_END</code></td><td>"Move up / Move down / Move to column…" actions.</td></tr>
+    <tr><td class="code">Drag reorder</td><td>Pinned kinds</td><td>lift <code>impactMedium</code> · slot <code>selection</code> · drop <code>impactLight</code></td><td>lift <code>DRAG_START</code>³⁴ · slot <code>SEGMENT_TICK</code>³⁴ · drop <code>GESTURE_END</code></td><td>"Move up / Move down" actions.</td></tr>
     <tr><td class="code">Pinch zoom</td><td>Drawing, graph, image, terminal font</td><td><code>selection</code> on snap to fit/100%</td><td><code>SEGMENT_TICK</code>³⁴ · <code>CLOCK_TICK</code></td><td>Zoom buttons in the overflow menu.</td></tr>
     <tr><td class="code">Re-tap active tab</td><td>Pop to root, then scroll to top</td><td>none</td><td>none</td><td>Same on activate.</td></tr>
     <tr><td class="code">Long-press active tab</td><td>Show this tab's stack (≤ 12)</td><td><code>impactMedium</code></td><td><code>LONG_PRESS</code></td><td>"Show history" action on the tab.</td></tr>
@@ -955,7 +954,7 @@ ok    01-foundation.html: 20 phones
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
-          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill run">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
@@ -984,7 +983,7 @@ ok    01-foundation.html: 20 phones
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-menu"/></svg></span><span class="main"><span class="t">Chrome</span><span class="s">Top bars · tab bar · FAB</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-thread"/></svg></span><span class="main"><span class="t">Rows &amp; trees</span><span class="s"><span class="pill block">2 below AA</span>swipe labels</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-users"/></svg></span><span class="main"><span class="t">Status &amp; identity</span><span class="s"><span class="pill block">6 below AA</span>pill words on white</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
-          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill done">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span class="main"><span class="t">Controls</span><span class="s"><span class="pill run">AA</span>buttons · inputs · toggles</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-collection"/></svg></span><span class="main"><span class="t">Overlays</span><span class="s"><span class="pill block">1 below AA</span>toast action</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-wifi-off"/></svg></span><span class="main"><span class="t">States</span><span class="s">Loading · empty · offline · refusal</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
           <a class="row"><span class="kind-ic"><svg class="ic"><use href="#i-send"/></svg></span><span class="main"><span class="t">Composer &amp; terminal</span><span class="s">Single · multi · picks · tray · keys</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
@@ -1044,13 +1043,13 @@ ok    01-foundation.html: 20 phones
     <tr><td class="code">Composer</td><td>≥ 57 docked</td><td>Single → multi (6 lines), picks, tray; rides the keyboard inset; draft kept per stack entry.</td><td>Same.</td></tr>
     <tr><td class="code">Terminal · KeysBar · LiveBar</td><td>12/17 mono · 46 · 30</td><td>Near-black always; keys bar above the keyboard; live bar on anything running.</td><td>Same.</td></tr>
     <tr><td class="code">EntityHeader · Linked</td><td>—</td><td>Eyebrow (kind · version · short id), title, meta, verbs; parent chain; Children tree; Messages then Linked.</td><td>Same.</td></tr>
-    <tr><td class="code">Board · FAB</td><td>280 col · 56</td><td>Swipeable columns with page dots; card shows subtasks as a count; FAB per the create rule.</td><td>Round iOS (canvas) / r16.</td></tr>
+    <tr><td class="code">FAB</td><td>56</td><td>Per the create rule: Android tab roots; on iOS only a canvas with no bar slot.</td><td>Round iOS (canvas) / r16.</td></tr>
   </tbody>
 </table>
 
 <div class="callout ruling"><b>Decisions other lanes need</b>(0) Status tones as ruled in Status &amp; identity — done is purple with merged. (1) Priority pills take the registry tone (low/medium grey, high/urgent red) with no dot; brand is for marks ("default"), not status. (2) Create is the bar's brand icon on iOS and the FAB on Android; iOS FAB only on canvases. (3) Tree rows (caps 2 on Work, 4 in kind lists, then "▸ N more · summary"): chevron cell 20, guide at the parent chevron's centre, collapsed parents carry the count summary, tap chevron toggles, long-press expands all. (4) Haptics only on state changes and thresholds, from the table above. (5) A disabled control always shows its reason on screen. (6) The phone paints a space style's vars, never its css or fonts. (7) <code>/dev/kit/*</code> routes are internal-build only and double as screenshot fixtures.</div>
 
-<div class="callout warn"><b>Kit gaps (drawn inline here, or listed for promotion)</b>Proposed <code>-ink</code> status tones and the solid-fill rule; dark toast action colour (1.70:1); white labels on swipe actions/badges/check in dark; filled active tab glyphs; four avatar tints vs the web's six; no Android notification style; no M3 medium/large top app bar; Android search 48 vs M3 56; Android keyboard keys overflow at 360 (fixed in this section's CSS); <code>doc.css</code> <code>p</code> rules leak into phones (restored here, lane 03 finding); tree guide line; context-menu lift; disabled reason line; text buttons in bars; <code>.pill.done</code> must move to the purple tone. From lane 05: collapsed-row summary, layout-switch icons (tree · list · board · timeline), branch icon, board column/lift/drop styles, verb tile strip, 4-part story meter, wrapping filter chipset, transition-sheet radio, gate line, diff view, craft thumbnails, pending pill. From lane 03, also missing: like/dislike glyphs, radio, day separator, code block header + copy, receipt grid row, usage footnote, form card, reactions, jump pill, waveform, 3-action swipe width, effort slider.</div>
+<div class="callout warn"><b>Kit gaps (drawn inline here, or listed for promotion)</b>Landed in the shared kit in the polish pass (2026-10-28): <code>.pill.done</code> paints purple; keyboard rows shrink their keys to fit a 360 frame; <code>doc.css</code> stops at the phone's edge (lane 03 finding), so dark phones keep their own prose colour; the empty state's 40pt glyph no longer resizes the icon in its button; the tree guide line and the collapsed-row summary are kit classes (<code>.tree .row.open · .kid · .last · .thru · .more</code>); a <code>scale75</code> strip reserves exactly 75% of the frame. Still open: proposed <code>-ink</code> status tones and the solid-fill rule; dark toast action colour (1.70:1); white labels on swipe actions/badges/check in dark; filled active tab glyphs; four avatar tints vs the web's six; no Android notification style; no M3 medium/large top app bar; Android search 48 vs M3 56; context-menu lift; disabled reason line; text buttons in bars. From lane 05: layout-switch icons (tree · list · timeline), branch icon, verb tile strip, 4-part story meter, wrapping filter chipset, transition-sheet radio, gate line, diff view, craft thumbnails, pending pill. From lane 03, also missing: like/dislike glyphs, radio, day separator, code block header + copy, receipt grid row, usage footnote, form card, reactions, jump pill, waveform, 3-action swipe width, effort slider.</div>
 
 <div class="callout open"><b>Open questions for the owner</b>1. Adopt the seven proposed status-word tones (light pills get visibly deeper) — and apply them on the web too? 2. Android top bar: 56dp (what native-stack renders) or M3's 64dp? 3. iOS 26: use native tabs (system glass) or keep a flat tab bar that matches these drawings on every iOS version? 4. A published style that fails the phone's contrast floor: paint as published with a warning (proposed), or always substitute? 5. Add two avatar tints to match the web's six FNV tones? 6. Shake-to-report: opt-in in store builds (proposed) or internal only? 7. Atelier on the phone: platform serif for large and entity titles (proposed), or sans everywhere?</div>
 </section>

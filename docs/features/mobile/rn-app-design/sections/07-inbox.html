@@ -428,7 +428,7 @@
       <div class="ph-screen">
         <header class="topbar hairline"><div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div><div class="title">Work</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
         <main class="content">
-          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span></div>
           <div class="filters"><span class="f">All</span><span class="f on">Needs me · 3</span><span class="f">Mine</span><span class="f">Blocked</span></div>
           <div class="list tree lines">
             <a class="row" style="--depth:0;opacity:.6"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>context · 2 of 9 children need you</span></span></a>
@@ -784,10 +784,10 @@
   <tbody>
     <tr><td>#/s/&lt;space&gt;/e/&lt;id&gt;</td><td>/[server]/[space]/e/[id] → the kind's page</td><td>Kind is read before rendering; a session goes to <code>session/[id]</code>, a chat to <code>chat/[id]</code></td></tr>
     <tr><td>#/s/&lt;space&gt;/e/&lt;id&gt;@v&lt;n&gt;</td><td>/[server]/[space]/e/[id]?v=n</td><td>Snapshot, with “newer exists”</td></tr>
-    <tr><td>#/s/&lt;space&gt;/k/&lt;slug&gt;</td><td>/[server]/[space]/(tabs)/browse/[kind]</td><td>The kind list, opened in the Browse tab</td></tr>
+    <tr><td>#/s/&lt;space&gt;/k/&lt;slug&gt;</td><td>/[server]/[space]/k/[slug]</td><td>The kind list, pushed on the Browse tab (the overview's route)</td></tr>
     <tr><td>#/s/&lt;space&gt;/channel/&lt;id&gt;?msg=&lt;id&gt;</td><td>/[server]/[space]/channel/[id]?msg=</td><td>Scrolled to the message and highlighted</td></tr>
     <tr><td>#/s/&lt;space&gt;/inbox</td><td>/[server]/[space]/(tabs)/inbox</td><td></td></tr>
-    <tr><td>#/s/&lt;space&gt;/work · /board</td><td>/[server]/[space]/(tabs)/work</td><td>Board opens on its segment</td></tr>
+    <tr><td>#/s/&lt;space&gt;/work · /board</td><td>/[server]/[space]/(tabs)/work</td><td>Opens Work › Tasks; the Board is not in mobile v1 (owner ruling 2026-10-28)</td></tr>
     <tr><td>#/s/&lt;space&gt;/settings/…</td><td>/settings/… (lane 02)</td><td>Admin-only pages refuse with the reason</td></tr>
     <tr><td>tm8://open?url=&lt;web URL&gt;</td><td>Same as the URL it wraps</td><td>Fallback for an unclaimed host</td></tr>
     <tr><td>tm8://add-server?url=…</td><td>/add-server (lane 02)</td><td>From a QR or a desktop "open on phone"</td></tr>
@@ -880,7 +880,7 @@
         <div class="banner block"><svg class="ic"><use href="#i-server"/></svg>tm8.sh isn’t answering · last reached 14:02<span class="act">Load again</span></div>
         <div class="banner info"><svg class="ic"><use href="#i-info"/></svg>tm8.sh runs 0.41 · this app needs 0.44 for Inbox swipes<span class="act">Why</span></div>
         <div class="banner"><svg class="ic"><use href="#i-warning"/></svg>This app is too old for acme-node · update to keep writing<span class="act">Update</span></div>
-        <div class="banner"><svg class="ic"><use href="#i-clock"/></svg>tm8.sh is limiting requests · retrying in 20 s</div>
+        <div class="banner"><svg class="ic"><use href="#i-clock"/></svg>tm8.sh is limiting requests · trying again in 20 s</div>
         <div class="refusal"><div class="h">The node refused: not_space_member</div><p>tm8.sh says you are not a member of Playground. Nothing was changed. Ask an owner of Playground to invite you.</p></div>
       </main></div>
     </figure>

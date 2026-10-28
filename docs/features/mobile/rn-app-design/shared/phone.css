@@ -22,6 +22,14 @@
 .phone.flat { border-radius: 0; box-shadow: none; }          /* bare screen, for anatomy figures */
 .phone.landscape { --ph-w: 844px; --ph-h: 390px; }
 .phone * { box-sizing: border-box; }
+/* bare elements: doc.css stops at the phone's edge (its selectors end in :where(:not(.phone *))), so the kit
+   owns them. Zero specificity, so every kit and lane rule wins; spacing as the lanes drew it, colour from the theme. */
+:where(.phone) p { margin: 0 0 12px; }
+:where(.phone) ul, :where(.phone) ol { padding-left: 22px; }
+:where(.phone) li { margin: 4px 0; }
+:where(.phone) a { color: inherit; text-decoration: none; }
+:where(.phone) code { font-family: var(--mono); font-size: 13px; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+:where(.phone) pre code { background: transparent; padding: 0; font-size: inherit; color: inherit; }
 .phone figcaption { display: none; }                          /* captions render under the strip, see doc.css */
 
 /* status bar — drawn, not an image */
@@ -152,12 +160,12 @@
 .chip.lg { height: 32px; font-size: var(--fs-sub); padding: 0 12px 0 8px; border-radius: 9px; } .chip.lg .ic { width: 16px; height: 16px; }
 .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--r-pill); font-size: var(--fs-c1); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; vertical-align: middle; }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.run, .pill.done, .pill.working, .pill.live { color: var(--run); background: var(--run-soft); }
+.pill.run, .pill.working, .pill.live { color: var(--run); background: var(--run-soft); }
 .pill.wait, .pill.stale, .pill.waiting, .pill.pending { color: var(--wait); background: var(--wait-soft); }
 .pill.block, .pill.blocked, .pill.failed, .pill.error { color: var(--block); background: var(--block-soft); }
 .pill.info, .pill.review, .pill.in_review { color: var(--info); background: var(--info-soft); }
 .pill.idle, .pill.open, .pill.to_do, .pill.exited { color: var(--ink-3); background: var(--idle-soft); }
-.pill.merged { color: var(--merged); background: var(--merged-soft); }
+.pill.merged, .pill.done { color: var(--merged); background: var(--merged-soft); }   /* landed: done = merged (lane 01 ruling) */
 .pill.brand { color: var(--brand); background: var(--brand-soft); }
 .pill.live::before { animation: ph-pulse 1.4s ease-in-out infinite; }
 .pill.nodot::before { display: none; }
@@ -294,14 +302,14 @@
 .toast .act { margin-left: auto; color: var(--brand); font-weight: 600; } [data-theme="dark"] .toast .act { color: #D9B25E; } .toast .ic { width: 18px; height: 18px; }
 .banner { display: flex; align-items: center; gap: var(--s2); padding: 8px var(--gutter); font-size: var(--fs-foot); font-weight: 500; background: var(--wait-soft); color: var(--wait); }
 .banner.block { background: var(--block-soft); color: var(--block); } .banner.info { background: var(--info-soft); color: var(--info); } .banner.run { background: var(--run-soft); color: var(--run); } .banner.neutral { background: var(--surface); color: var(--ink-2); }
-.banner .ic { width: 16px; height: 16px; } .banner .act { margin-left: auto; font-weight: 600; text-decoration: underline; }
+.banner .ic { width: 16px; height: 16px; } .banner .act { margin-left: auto; font-weight: 600; text-decoration: underline; white-space: nowrap; }   /* the verb never breaks; the sentence wraps */
 .notice { position: absolute; left: var(--s2); right: var(--s2); top: var(--s2); z-index: 12; background: var(--card); border-radius: 18px; box-shadow: var(--sh-pop); padding: 10px 14px; display: flex; gap: 10px; align-items: center; } /* push notification, system-style */
 .notice .app { width: 36px; height: 36px; border-radius: 9px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-weight: 800; font-size: 13px; }
 .notice .nb { flex: 1; min-width: 0; } .notice .nb .t { font-size: var(--fs-sub); font-weight: 600; } .notice .nb .s { font-size: var(--fs-sub); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .notice .time { font-size: var(--fs-c1); color: var(--ink-3); }
 
 /* ---- states ------------------------------------------------------------- */
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--s2); padding: var(--s10) var(--s8); color: var(--ink-3); }
-.empty .ic { width: 40px; height: 40px; color: var(--ink-4); stroke-width: 1.25; margin-bottom: var(--s2); }
+.empty > .ic { width: 40px; height: 40px; color: var(--ink-4); stroke-width: 1.25; margin-bottom: var(--s2); }
 .empty .h { font-size: var(--fs-hl); font-weight: 600; color: var(--ink); }
 .empty p { margin: 0; font-size: var(--fs-sub); line-height: var(--lh-sub); }
 .empty .btn { margin-top: var(--s3); }
@@ -371,7 +379,7 @@
 .popover-list .row { min-height: 40px; padding: 6px 12px; }
 .keyboard { flex: 0 0 auto; height: 260px; background: #D1D4DA; position: relative; display: grid; grid-template-rows: repeat(4, 1fr); gap: 10px; padding: 10px 4px 50px; }
 [data-theme="dark"] .keyboard { background: #2B2B2E; }
-.keyboard .kr { display: flex; justify-content: center; gap: 6px; } .keyboard .k { width: 32px; height: 42px; border-radius: 5px; background: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.3); font-size: 20px; display: grid; place-items: center; color: #000; }
+.keyboard .kr { display: flex; justify-content: center; gap: 6px; min-width: 0; }   /* keys shrink to fit a 360 frame */ .keyboard .k { width: 32px; height: 42px; border-radius: 5px; background: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.3); font-size: 20px; display: grid; place-items: center; color: #000; }
 [data-theme="dark"] .keyboard .k { background: #6B6B70; color: #fff; }
 .keyboard .k.w { width: 42px; font-size: 14px; background: #ADB3BC; } [data-theme="dark"] .keyboard .k.w { background: #474749; }
 .keyboard .k.space { width: 186px; font-size: 14px; }
@@ -400,18 +408,22 @@
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: var(--s2) var(--gutter); }
 .chips.nowrap { flex-wrap: nowrap; overflow: hidden; }
 
-/* ---- board / kanban ---------------------------------------------------------- */
-.board { display: flex; gap: var(--s3); padding: var(--s2) var(--gutter); overflow: hidden; height: 100%; }
-.board .col { flex: 0 0 280px; display: flex; flex-direction: column; gap: var(--s2); background: var(--surface); border-radius: var(--r-md); padding: var(--s2); }
-.board .col .ch { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: var(--fs-foot); font-weight: 600; color: var(--ink-2); }
-.board .card { padding: 10px 12px; }
-.board .card .t { font-size: var(--fs-sub); font-weight: 500; line-height: var(--lh-sub); }
-.board .card .m { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--fs-c1); color: var(--ink-3); }
+/* ---- page dots (a pager's position, e.g. a craft's pages) --------------------- */
 .dots { display: flex; justify-content: center; gap: 6px; padding: 6px; } .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); } .dots i.on { background: var(--ink-2); }
 
 /* ---- tree -------------------------------------------------------------------- */
 .tree .row { padding-left: calc(var(--gutter) + var(--depth, 0) * 20px); }
 .tree .tw { width: 20px; height: 20px; display: grid; place-items: center; color: var(--ink-4); } .tree .tw .ic { width: 14px; height: 14px; }
+/* guide line (owner ruling 2026-10-28; lane 01 ruling 3): a hairline at the parent chevron's centre, down its children.
+   On rows with style="--depth:n": .open starts the line under an expanded parent's own chevron; .kid carries the
+   parent's line through a child; .kid.last stops it at the child's middle; .thru carries the grandparent's line through
+   a depth-2 row; .more is the "▸ N more · summary" row that closes a capped parent (2 on Work, 4 in a kind list). */
+.tree .row.open::after { content: ""; position: absolute; top: calc(50% + 10px); bottom: 0; left: calc(var(--gutter) + var(--depth, 0) * 20px + 10px); width: 1px; background: var(--line-2); }
+.tree .row.kid::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(var(--gutter) + (var(--depth, 1) - 1) * 20px + 10px); width: 1px; background: var(--line-2); }
+.tree .row.kid.last::before { bottom: 50%; }
+.tree .row.thru { background-image: linear-gradient(var(--line-2), var(--line-2)); background-repeat: no-repeat; background-size: 1px 100%; background-position: calc(var(--gutter) + (var(--depth, 2) - 2) * 20px + 10px) 0; }
+.tree .row.more { min-height: 32px; padding-top: 2px; padding-bottom: 2px; }
+.tree .row.more .t, .tree .row.more .s { color: var(--brand); font-weight: 500; font-size: var(--fs-sub); }
 
 /* ---- annotations (numbered callouts on screens) ----------------------------- */
 .an { position: absolute; z-index: 20; width: 22px; height: 22px; border-radius: 50%; background: #C8102E; color: #fff; font: 700 12px/22px var(--ui); text-align: center; box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,.3); pointer-events: none; }

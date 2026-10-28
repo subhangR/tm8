@@ -64,9 +64,11 @@ are short and commented. The rules:
   and their `-soft` fills. Type is `var(--fs-*)`/`var(--lh-*)`. Spacing `var(--s1..--s12)`,
   radii `var(--r-*)`. A hex color in your CSS is a defect unless it is a sample image/avatar tint.
 - **Status is color + word.** `<span class="pill working">working</span>` — never a bare dot.
-  Pill classes: `working|live|done|run` (green) · `waiting|stale|pending|wait` (amber) ·
-  `blocked|failed|error|block` (red) · `review|in_review|info` (blue) · `open|to_do|idle|exited`
-  (grey) · `merged` (purple) · `brand`.
+  One mapping by meaning (lane 01 ruling): `working|live|run` (green: moving now) ·
+  `waiting|stale|pending|wait` (amber: waiting on someone) · `blocked|failed|error|block` (red:
+  stopped by a problem) · `review|in_review|info` (blue: with a reviewer or in flight) ·
+  `open|to_do|idle|exited` (grey: not started, or ended without landing) · `done|merged` (purple:
+  landed) · `brand`. Priority and marks are dot-less (`nodot`); priority is never brand gold.
 - **Avatar shape is provenance.** Humans `<span class="avatar c1">S</span>` (round); agents
   `<span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span>`
   (rounded-square). Sizes `xs sm (default) lg xl`; `<i class="live"></i>` inside for a live dot.
@@ -223,7 +225,11 @@ only — the sample world below — no lorem ipsum, no "Item 1".
   chevron on rows with children, 20pt indent per depth with a hairline guide, and a count summary on a
   collapsed parent ("3 children · 2 live"). Tree is the default layout for Sessions, Tasks, Docs and
   Stories; collapse state is remembered per list. Entity pages show the parent chain and a Children
-  tree. Inbox rows stay flat but name the parent in the subtitle.
+  tree. Inbox rows stay flat but name the parent in the subtitle. The kit draws the guide:
+  `.tree .row.open` (an expanded parent), `.kid` / `.kid.last` (its children), `.thru` (a grandparent's
+  line through a depth-2 row), `.more` (the "▸ N more · summary" row).
+- **No Board in mobile v1 (owner ruling, 2026-10-28).** The Work tab is Tasks · Sessions · Stories;
+  kind lists switch tree · list · timeline; the web's board address opens Work › Tasks.
 - Honest refusals keep their words: "This server could not be reached", "Nobody could count this
   yet", "The node refused: <reason>".
 

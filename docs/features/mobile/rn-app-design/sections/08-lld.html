@@ -24,6 +24,7 @@
 #s-lld .phone .btnrow.pad { padding: 4px 16px 12px; }
 #s-lld .phone .refusal { margin-top: 0; }
 #s-lld .proj td.code { white-space: pre; }
+#s-lld .tcap { margin: -16px 0 22px; font-size: 13px; color: #6E6E6E; }
 </style>
 <header>
   <div class="lane-eyebrow">08 · Low-level design</div>
@@ -135,6 +136,7 @@
     <tr><td><b>Tests</b></td><td>vitest (shared packages) · jest-expo + React Native Testing Library · Maestro</td><td>Detox</td><td>Shared code stays on the repo's vitest. Maestro flows are YAML that a reviewer can read as the Back Contract's acceptance table (§16).</td></tr>
   </tbody>
 </table>
+<p class="tcap">Versions are pinned at scaffold time to the latest Expo SDK; re-verify every library against <code>bundledNativeModules.json</code>.</p>
 <div class="callout ruling"><b>Decision · terminal renderer</b>xterm.js in a WebView, not a native renderer, for v1 and v1.1. The terminal is the one surface where the repo has a hard law about bytes (L5, <code>packages/tm8-ui/LLD.md</code> §9.1): <code>ptyTransport</code>, <code>visibilityDriver</code>, <code>writeScheduler</code>, <code>runtime</code> and <code>terminalSize</code> are transplanted verbatim and never edited. The WebView runs exactly those files. RN keeps the parts a phone needs natively: the grant mint, the keys bar, the text input, lifecycle and the clipboard. A native renderer comes back only if the WebView misses the §13 memory or latency budget on the low-end Android device, and that would be a decision to re-transplant the byte stack, not a refactor.</div>
 
 <h3>2 · Where the app lives in this repo, and what it shares</h3>
@@ -216,13 +218,13 @@
       ├─ (chats,work,inbox,browse)/_layout.tsx   <i>one Stack per group; unstable_settings names each group's</i>
       │                                 <i>root, so a cold link sits on [tab root, screen]</i>
       ├─ (chats)/chats.tsx              <i>/tm8.sh/&lt;space&gt;/chats</i>
-      ├─ (work)/work.tsx                <i>?seg=tasks|sessions|stories|board</i>
+      ├─ (work)/work.tsx                <i>?seg=tasks|sessions|stories</i>
       ├─ (inbox)/inbox.tsx              <i>?scope=space|all</i>
       ├─ (browse)/browse.tsx
       └─ (chats,work,inbox,browse)/     <i>shared routes: pushed onto the current tab</i>
          ├─ e/[id]/index.tsx            <i>entity page; registry picks the body; chat, session, channel replace</i>
          ├─ e/[id]/messages.tsx         <i>?msg=</i>
-         ├─ k/[slug].tsx                <i>?layout=tree|list|board|timeline&amp;sort=</i>
+         ├─ k/[slug].tsx                <i>?layout=tree|list|timeline&amp;sort=</i>
          ├─ chat/[id].tsx               <i>?turn=&amp;form= (proposed, lane 03)</i>
          ├─ channel/[id].tsx            <i>?msg=</i>
          ├─ session/[id]/index.tsx      <i>?tab=live|transcript|context|stats|discussion</i>
@@ -277,10 +279,10 @@
   <thead><tr><th style="width:30%">NavView from the codec</th><th style="width:36%">App route</th><th>Note</th></tr></thead>
   <tbody>
     <tr><td class="code">home · feed</td><td><code>(chats)/chats</code></td><td>The app's home is Chats.</td></tr>
-    <tr><td class="code">workspace · board</td><td><code>(work)/work</code> (<code>?seg=board</code>)</td><td>Desktop-only params (<code>p</code>, <code>pin</code>, <code>t</code>) are dropped and the drop is said once.</td></tr>
+    <tr><td class="code">workspace · board</td><td><code>(work)/work</code> (Tasks: the board is not in mobile v1)</td><td>Desktop-only params (<code>p</code>, <code>pin</code>, <code>t</code>) are dropped and the drop is said once.</td></tr>
     <tr><td class="code">inbox</td><td><code>(inbox)/inbox</code></td><td></td></tr>
     <tr><td class="code">kind {slug}</td><td><code>(tab of kind)/k/[slug]</code></td><td>Tab from <code>KindConfig.tab</code>.</td></tr>
-    <tr><td class="code">entity {id, origin}</td><td><code>(tab of kind)/e/[id]</code>, then replaced to chat, session or channel by strategy</td><td>Unknown kind and unreachable server: the resolver keeps the link, shows “This server could not be reached. The link opens when it is back”, and offers Retry.</td></tr>
+    <tr><td class="code">entity {id, origin}</td><td><code>(tab of kind)/e/[id]</code>, then replaced to chat, session or channel by strategy</td><td>Unknown kind and unreachable server: the resolver keeps the link, shows “This server could not be reached. The link opens when it is back”, and offers Check again.</td></tr>
     <tr><td class="code">channel {id, msg}</td><td><code>(chats)/channel/[id]?msg=</code></td><td></td></tr>
     <tr><td class="code">settings {section}</td><td><code>/settings/space/[server]/[space]/[section]</code></td><td>Node-admin sections: refusal with “Open on the web”.</td></tr>
     <tr><td class="code">files · messages · graph · git</td><td><code>(browse)/k/files</code> · <code>(inbox)/inbox</code> · refusal · refusal</td><td>“This screen is on the web only”, with Open on the web. Unavailable is not invisible.</td></tr>
@@ -793,7 +795,7 @@ function visibleRows(roots, kidsOf, countOf, memory: ListMemory, autoDepth = 2):
     <tr><td class="code">ConflictBanner</td><td>full width, 40–56 pt, wait tint</td><td>After <code>version_conflict</code>: who changed what, what was not applied, one action. Clears on the next successful write or on leaving.</td><td>Same on both. Not a snackbar: it must stay while you read.</td></tr>
     <tr><td class="code">OfflineBanner</td><td>36 pt, <code>i-wifi-off</code></td><td>Per server: “Offline · tm8.sh as of 13:31 · 3 queued”; tap opens the Outbox</td><td>Same</td></tr>
     <tr><td class="code">PendingMark</td><td>22 pt pill; check with a clock</td><td>Marks unconfirmed optimistic state; tap opens the Outbox at that row</td><td>Same</td></tr>
-    <tr><td class="code">OutboxSheet</td><td>medium and large detents</td><td>By server: Waiting, Needs you, failed; Retry on vN; Discard with confirm</td><td>iOS formSheet; Android bottom sheet, 28 dp</td></tr>
+    <tr><td class="code">OutboxSheet</td><td>medium and large detents</td><td>By server: Waiting, Needs you, failed; “&lt;verb&gt; again on vN” (Move again on v12); Discard with confirm</td><td>iOS formSheet; Android bottom sheet, 28 dp</td></tr>
     <tr><td class="code">LinkResolver</td><td>full screen, transient</td><td>Up to 3 s with words (“Opening a task on tm8.sh…”), then a route, a refusal or add-server; always replaced</td><td>Android Back returns to the app the link came from</td></tr>
     <tr><td class="code">TreeRow</td><td>row + 20 pt per depth; 20 pt chevron cell; 1 pt guide</td><td>Disclosure toggles; a closed parent shows the count summary; each child is a full row</td><td>Same</td></tr>
     <tr><td class="code">TerminalView</td><td>fills the route; min 160 pt high (L4 floor)</td><td>WebView host; one live at a time; view only in v1</td><td>WKWebView · Android WebView, hardware layer</td></tr>
