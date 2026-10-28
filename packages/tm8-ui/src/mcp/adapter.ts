@@ -192,7 +192,10 @@ export function previewMcpConfig(json: string): McpImportRow[] {
     const literal = literalCredentialIn(args) ?? (typeof entry.url === 'string' ? (() => {
       try { return literalCredentialInPath(new URL(entry.url as string).pathname); } catch { return undefined; }
     })() : undefined);
-    if (literal) return { ...base, transport, target, droppedSecrets, error: `Remove the credential first: ${literal}.` };
+    // The row names where it points without echoing the token: the URL's
+    // origin, or the command alone.
+    const safeTarget = typeof entry.url === 'string' ? (() => { try { return new URL(entry.url as string).origin; } catch { return ''; } })() : String(entry.command ?? '');
+    if (literal) return { ...base, transport, target: safeTarget, droppedSecrets, error: `Remove the credential first: ${literal}.` };
     const kept = Object.fromEntries(Object.entries(entry).filter(([key]) => IMPORT_KEEP.includes(key)));
     try {
       const definition = McpServerDefinitionSchema.parse({ ...kept, name, transport,

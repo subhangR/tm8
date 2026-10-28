@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
-import { createMcpPort, definitionFor, importDefinitions, importPlan } from './adapter';
+import { createMcpPort, definitionFor, importDefinitions, importPlan, previewMcpConfig } from './adapter';
 import { McpUiError } from './errors';
 import type { Seam } from '../data/seam';
 import type { McpServerDefinition } from '@tm8/contract';
@@ -119,4 +119,18 @@ it('preserves the OAuth issuer trust binding during unrelated configuration upda
   const prior: McpServerDefinition = { ...definition, headerKeys: [], auth: { type: 'oauth2', issuer: 'https://identity.example', clientId: 'fixture-client', scopes: ['read'] } };
   const next = definitionFor({ title: 'calendar', description: '', transport: 'http', url: definition.url, auth: 'oauth', approved: false }, prior);
   expect(next.auth).toEqual(prior.auth);
+});
+describe('previewMcpConfig', () => {
+  it('turns an entry whose kept args or URL path carry a literal credential into a red row, and keeps the rest importable', () => {
+    const rows = previewMcpConfig(JSON.stringify({ mcpServers: {
+      argv: { command: 'npx', args: ['server', '--api-key', 'sk-fixture-abcdefghijklmnop'] },
+      path: { url: 'https://fixture.example/mcp/sk-fixture-abcdefghijklmnopqrstuv' },
+      clean: { url: 'https://fixture.example/mcp' },
+    } }));
+    expect(rows.find(r => r.key === 'argv')).toMatchObject({ error: expect.stringMatching(/^Remove the credential first/) });
+    expect(rows.find(r => r.key === 'argv')?.definition).toBeUndefined();
+    expect(rows.find(r => r.key === 'path')).toMatchObject({ error: expect.stringMatching(/^Remove the credential first/) });
+    expect(rows.find(r => r.key === 'clean')?.definition).toMatchObject({ transport: 'http', approved: false });
+    expect(JSON.stringify(rows)).not.toContain('sk-fixture');
+  });
 });
