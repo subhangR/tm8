@@ -1,0 +1,273 @@
+<section class="doc-section" id="s-overview" data-title="Overview & information architecture" data-lane="COORD">
+<style>
+#s-overview .ia { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+#s-overview .ia .box ul { margin: 6px 0 0; padding-left: 16px; font-size: 12.5px; color: #505050; }
+#s-overview .principles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 28px; counter-reset: pr; padding: 0; margin: 16px 0 24px; list-style: none; max-width: none; }
+#s-overview .principles li { position: relative; padding-left: 40px; margin: 0; }
+#s-overview .principles li::before { counter-increment: pr; content: counter(pr, decimal-leading-zero); position: absolute; left: 0; top: 2px; font-family: var(--mono); font-size: 12px; font-weight: 700; color: #9C6E14; }
+#s-overview .principles li b { display: block; color: #0D0D0D; }
+#s-overview .principles li span { color: #505050; font-size: 13.5px; }
+</style>
+<header>
+  <div class="lane-eyebrow">00 · Coordinator</div>
+  <h2>Overview &amp; information architecture</h2>
+  <p class="lede">tm8 already has a phone layout: the web app forks into a one-surface shell under 500px with a drawer, real-history back, and five first-class phone screens. It is honest and it works. It is also a website. This document designs the thing the phone shell could never be — a native app with its own stacks, sheets, gestures and notifications, that holds <em>several</em> servers at once and gives every kind in the graph a screen worth opening.</p>
+</header>
+
+<h3>What the current phone shell taught us</h3>
+<p>The web shell's rulings are measured, not tasteful, and the native design keeps every one that was about <em>meaning</em> and replaces every one that was about <em>browser limits</em>.</p>
+<table class="spec">
+  <thead><tr><th style="width:34%">Web phone shell (today)</th><th style="width:33%">Why it was ruled that way</th><th>Native app (this design)</th></tr></thead>
+  <tbody>
+    <tr><td>Tab bar retired; a drawer lists all 31 destinations.</td><td>A 5-tab bar reached 16% of destinations and spent 49px to say so.</td><td>Four tabs that are <b>jobs</b>, not kinds — Chats · Work · Inbox · Browse — and Browse <em>is</em> the drawer: every kind, pinned kinds, search. 100% reachable in two taps.</td></tr>
+    <tr><td>Back is real browser history; never intercepted.</td><td>The phone's back gesture is browser back; fighting it lies.</td><td>Native stacks per tab. Back is the platform's own gesture (iOS edge swipe, Android predictive back). Same contract: push on open, cap 12, cold link lands on the kind's list when you go back.</td></tr>
+    <tr><td>Opening an entity is always a full screen; no peek sheet.</td><td>With scroll restoration, Back returns you to the paragraph; an address beats a peek.</td><td>Kept. Tap = push. Long-press = preview sheet (native affordance the web ruling left open).</td></tr>
+    <tr><td>Sheets for temporary surfaces (pickers, account, launch).</td><td>Anchored popovers do not survive a 390px header.</td><td>Kept, as native bottom sheets with detents. Android back dismisses the sheet first.</td></tr>
+    <tr><td>Five phone screens; other kinds get a generic page.</td><td>Lanes were scoped to chat, doc, task, session, artifact.</td><td>A screen for every kind, driven by one registry — this document draws all 33.</td></tr>
+    <tr><td>One server per origin; switching is a URL base.</td><td>The browser is tied to the page's origin.</td><td>Many servers in one app, each with its own sign-in, its spaces, its unread counts; Inbox can read across all of them.</td></tr>
+    <tr><td>Honest refusals: "this has no phone layout".</td><td>Unavailable ≠ invisible.</td><td>Kept as a law. Nothing advertises what it cannot do; disabled-with-reason everywhere.</td></tr>
+  </tbody>
+</table>
+
+<h3>Ten principles</h3>
+<ol class="principles">
+  <li><b>Jobs, not kinds, in the tab bar.</b><span>Chats (talk to agents), Work (what is moving), Inbox (what needs you), Browse (everything else). Kinds live one level down.</span></li>
+  <li><b>Every entity has an address and a screen.</b><span>Any id from any server opens; the registry picks the body; a kind without a body gets the generic page, never a dead end.</span></li>
+  <li><b>Status is color + word.</b><span>Pills carry a dot and a word in the tm8 ramp. Liveness never lies: live, waiting, exited, stale are different words.</span></li>
+  <li><b>Agents are peers with provenance.</b><span>Humans round, agents rounded-square. Who did a thing is always on screen.</span></li>
+  <li><b>One scope at a time, shown at the top-left.</b><span>The space button names where you are; one tap shows every server and space you can reach.</span></li>
+  <li><b>Chat is the home of work.</b><span>A turn shows what the agent did to the graph (the receipt), not a wall of tool JSON. Streaming is a live row, not a spinner.</span></li>
+  <li><b>Native where it counts.</b><span>Platform type, haptics, sheets with detents, large titles on iOS, Material 3 bars on Android, predictive back, share sheet, Dynamic Type.</span></li>
+  <li><b>Offline is a state, not an error.</b><span>Everything read is cached per server; writes queue with a visible pending pill; a server that cannot be reached says so in the switcher.</span></li>
+  <li><b>Nothing invented client-side.</b><span>Counts the node did not return are absent, not zero. Costs the runtime did not report are absent, not $0.</span></li>
+  <li><b>Same words as the web.</b><span>Labels come from the kind registry (Tasks, Sessions, Teammates…). A link copied on the phone opens on the desktop and reads the same.</span></li>
+</ol>
+
+<h3>The four tab roots and an entity page</h3>
+<p>Drawn 1:1. Every phone in this document is a real 390×844 (or 360×780 Android) frame built from the shared kit; the switches in the top bar re-skin them all in light/dark and iOS/Android.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Chats</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-edit"/></svg></span></div>
+          <div class="big">Chats</div>
+        </header>
+        <main class="content">
+          <div class="filters"><span class="f on">All</span><span class="f">Live</span><span class="f">Mine</span><span class="f">Unread</span><span class="f">Pinned</span></div>
+          <div class="list lines">
+            <a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Design the mobile tab bar</span><span class="s"><span class="pill live">live</span>Worker is writing…</span></span><span class="trail"><span class="time">now</span></span></a>
+            <a class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Why does the PTY recheck fail closed?</span><span class="s">TM8 Helper<span class="dot"></span>made 1 doc, linked PR #1012</span></span><span class="trail"><span class="time">12:40</span></span></a>
+            <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill wait">waiting</span>Reviewer asked a question</span></span><span class="trail"><span class="time">11:02</span></span></a>
+            <a class="row tall"><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Plan the credentials security lane</span><span class="s">Coordinator<span class="dot"></span>4 tasks made · 2 sessions spawned</span></span><span class="trail"><span class="time">Mon</span></span></a>
+            <a class="row tall"><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Explain the Back Contract to me</span><span class="s">TM8 Helper<span class="dot"></span>about <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>The Back Contract</span></span></span><span class="trail"><span class="time">Sun</span></span></a>
+            <a class="row tall"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Audit the facade for dead endpoints</span><span class="s"><span class="pill exited">exited</span>Worker · 3 docs, 1 PR</span></span><span class="trail"><span class="time">Sat</span></span></a>
+            <a class="row tall"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Draft the operator guide intro</span><span class="s">Dreamer<span class="dot"></span>made <span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Operator guide</span></span></span><span class="trail"><span class="time">Fri</span></span></a>
+          </div>
+        </main>
+        <nav class="tabbar">
+          <a class="tab on"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Chats — the home tab</b>Conversations with teammates, newest activity first; a live row pulses while the agent writes. The space button (top-left) names the scope. <span class="route">/[server]/[space]/(tabs)/chats</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-filter"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="filters"><span class="f on">Mine</span><span class="f">Needs me</span><span class="f">Working</span><span class="f">Blocked</span><span class="f">Done</span></div>
+          <div class="section-h">Working · 3</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>2 live sessions</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator<span class="dot"></span>1 live session</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Desktop-shell reflow overflow (tablet-768)</span><span class="s"><span class="pill working">working</span>Subhang<span class="dot"></span>no session</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          </div>
+          <div class="section-h">In review · 2</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill review">in review</span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955</span>checks passed</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>Reviewer<span class="dot"></span>4 of 5 criteria</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          </div>
+          <div class="section-h">Blocked · 1</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span>waiting on Marco since Tue</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a>
+          </div>
+        </main>
+        <nav class="tabbar">
+          <a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Work — what is moving</b>Tasks grouped by status with the people and sessions on them; segments switch to Sessions, Stories and a swipeable Board. Dark theme. <span class="route">/[server]/[space]/(tabs)/work</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Inbox</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Atelier</span><span class="seg">All servers <span class="badge muted">7</span></span></div>
+          <div class="section-h">Needs you · 2</div>
+          <div class="list lines">
+            <a class="row tall unread"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t wrap">Reviewer asked: which tab bar — 3 options</span><span class="s"><span class="chip"><svg class="ic"><use href="#i-form"/></svg>Form</span>in Release notes for #955</span></span><span class="trail"><span class="time">11:02</span></span></a>
+            <a class="row tall unread"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t wrap">Worker is waiting on a permission: push to origin</span><span class="s"><span class="pill wait">waiting</span>Security lane A</span></span><span class="trail"><span class="time">10:48</span></span></a>
+          </div>
+          <div class="section-h">Mentions · 1</div>
+          <div class="list lines" style="position:relative;overflow:hidden">
+            <div class="swipe-actions"><span class="act read"><svg class="ic"><use href="#i-check"/></svg>Read</span><span class="act pin"><svg class="ic"><use href="#i-pin"/></svg>Pin</span></div>
+            <a class="row tall unread swiped" style="background:var(--paper)"><span class="avatar c2">P</span><span class="main"><span class="t wrap">Priya: @subhang can you look at the tablet overflow?</span><span class="s">#mobile · 2 replies</span></span><span class="trail"><span class="time">09:15</span></span></a>
+          </div>
+          <div class="section-h">Assignments · 1</div>
+          <div class="list lines">
+            <a class="row tall"><span class="avatar c1">S</span><span class="main"><span class="t wrap">Subhang assigned you: Desktop-shell reflow overflow</span><span class="s"><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Task</span>medium</span></span><span class="trail"><span class="time">Mon</span></span></a>
+          </div>
+          <div class="section-h">Delivery failures · 1</div>
+          <div class="list lines">
+            <a class="row tall"><span class="kind-ic" style="color:var(--block)"><svg class="ic"><use href="#i-error"/></svg></span><span class="main"><span class="t wrap">Message to swarm02 was not delivered</span><span class="s"><span class="pill failed">failed</span>no live session · retry</span></span><span class="trail"><span class="time">Mon</span></span></a>
+          </div>
+        </main>
+        <nav class="tabbar">
+          <a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a>
+          <a class="tab"><svg class="ic"><use href="#i-work"/></svg>Work</a>
+          <a class="tab on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox</a>
+          <a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a>
+        </nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Inbox — what needs you</b>Android, 360pt. Fixed group order, failures above replies; a read row fades and never vanishes. "All servers" reads across every signed-in node. <span class="route">/[server]/[space]/(tabs)/inbox</span></div>
+  </div>
+
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · v14 · 01a182a2</span>
+            <div class="title">TM8 Mobile app</div>
+            <div class="meta"><span class="pill working">working</span><span class="pill brand nodot">medium</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>Worker, Coordinator<span class="dot"></span>opened 13:12 by Subhang</div>
+          </div>
+          <div class="ent-actions"><span class="btn primary"><svg class="ic"><use href="#i-play"/></svg>Launch session</span><span class="btn"><svg class="ic"><use href="#i-chat"/></svg>Chat about</span><span class="btn"><svg class="ic"><use href="#i-refresh"/></svg>Move</span></div>
+          <div class="livebar"><span class="dot"></span>2 sessions live on this task<span style="margin-left:auto;font-weight:500">View</span></div>
+          <div class="section-h">Description</div>
+          <div class="prose" style="padding:0 16px"><p>Need a new React Native mobile app for tm8: a native experience with much better UI, clean, for both Android and iOS. Define all screens, layouts and routes; multiple servers can be added and each shows its own spaces…</p></div>
+          <div class="section-h">Acceptance criteria <span class="more">2 of 5</span></div>
+          <div class="list lines">
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t wrap" style="font-weight:400;color:var(--ink-3);text-decoration:line-through">Information architecture and route tree defined</span></span></div>
+            <div class="row"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t wrap" style="font-weight:400;color:var(--ink-3);text-decoration:line-through">Shared design kit published to all lanes</span></span></div>
+            <div class="row"><span class="check"></span><span class="main"><span class="t wrap" style="font-weight:400">Every entity kind has a drawn screen</span></span></div>
+          </div>
+          <div class="section-h">Messages <span class="more">View all 12</span></div>
+          <div class="list lines">
+            <div class="row tall"><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s" style="color:var(--ink-2)"><b>Coordinator</b> · 13:31</span><span class="t wrap" style="font-weight:400">Foundation written; eight lanes spawned. Merge expected this afternoon.</span></span></div>
+          </div>
+          <div class="section-h">Linked</div>
+          <div class="linked"><div class="fam">Produces</div><div class="chips"><span class="chip"><svg class="ic"><use href="#i-artifact"/></svg>TM8 Mobile — native app design</span></div><div class="fam">Sessions</div><div class="chips"><span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Coordinator · live</span><span class="chip run"><svg class="ic"><use href="#i-session"/></svg>Worker · live</span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:14px;top:62px"></span>
+    <span class="an" data-n="2" style="left:300px;top:62px"></span>
+    <span class="an" data-n="3" style="left:14px;top:118px"></span>
+    <span class="an" data-n="4" style="left:14px;top:228px"></span>
+    <span class="an" data-n="5" style="left:14px;top:280px"></span>
+    <span class="an" data-n="6" style="left:14px;top:468px"></span>
+    <span class="an" data-n="7" style="left:14px;top:656px"></span>
+    </div>
+    <div class="cap"><b>An entity page — task</b>Same anatomy for every kind: ① back names where you came from ② share/more (copy link, open on web, pin) ③ kind eyebrow + title + status meta ④ the kind's verbs ⑤ liveness banner when something runs here ⑥ body sections by kind ⑦ Messages then Linked, on every kind. <span class="route">/[server]/[space]/e/[id]</span></div>
+  </div>
+</div>
+
+<h3>Information architecture</h3>
+<p>Servers hold spaces; spaces hold the graph. The app's scope is one (server, space) pair at a time, shown in the space button; the Inbox alone may read across all servers because "what needs me" is a question about the person, not the space.</p>
+<div class="diagram">
+  <div class="label">Scope</div>
+  <div class="lane-row">
+    <div class="box dark"><b>Servers</b><small>tm8.sh · acme-node · local — each with its own sign-in, reachability and spaces</small></div><span class="arr">→</span>
+    <div class="box brand"><b>Space</b><small>Atelier — the active scope; members, kinds, credentials, links</small></div><span class="arr">→</span>
+    <div class="box"><b>Tabs</b><small>Chats · Work · Inbox · Browse</small></div><span class="arr">→</span>
+    <div class="box"><b>Lists</b><small>k/[slug] — any kind; list · board · tree · timeline</small></div><span class="arr">→</span>
+    <div class="box"><b>Entity</b><small>e/[id] — one body per kind; Messages + Linked on all</small></div>
+  </div>
+</div>
+<div class="ia">
+  <div class="box tile"><h5>Chats</h5><p>Conversations with teammates (chat), new chat, live turns, receipts.</p><ul><li>chat · message · form</li><li>channel · voice_channel</li></ul></div>
+  <div class="box tile"><h5>Work</h5><p>What is moving: tasks, sessions, stories, board.</p><ul><li>task · loop · story · collection · project · craft</li><li>work_session · pull_request · commit</li></ul></div>
+  <div class="box tile"><h5>Inbox</h5><p>Needs you · mentions · assignments · failures · replies; across servers.</p><ul><li>notifications → routes</li><li>forms awaiting an answer</li></ul></div>
+  <div class="box tile"><h5>Browse</h5><p>Search; pinned kinds; every kind grouped Work / Talk / Knowledge / Code / Runtime / People; settings.</p><ul><li>all 33 kinds</li><li>help · settings</li></ul></div>
+</div>
+
+<h3>Route tree</h3>
+<p>expo-router file routes. Server and space are path segments so that every screen is addressable and a cold deep link can be resolved without app state. The web's own hash address (<code>#/s/&lt;space&gt;/e/&lt;id&gt;</code>) maps 1:1.</p>
+<table class="route-table">
+  <thead><tr><th style="width:46%">Route</th><th>Screen</th><th style="width:12%">Lane</th></tr></thead>
+  <tbody>
+    <tr><td>/welcome · /add-server · /sign-in/[server]</td><td>First run, add a server (URL → reachability → sign-in method), sign in (password · passkey · pairing code · QR)</td><td>02 shell</td></tr>
+    <tr><td>/spaces</td><td>Servers &amp; spaces switcher (sheet): every server, its spaces, unread, reachability, add server</td><td>02 shell</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/chats</td><td>Chats root</td><td>03 chat</td></tr>
+    <tr><td>/[server]/[space]/chat/[id] · /chat/new</td><td>Transcript + composer; new chat (teammate, model, mode, workdir, credential)</td><td>03 chat</td></tr>
+    <tr><td>/[server]/[space]/channel/[id]?msg=</td><td>Channel feed; a message opens its thread</td><td>03 chat</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/messages</td><td>Every message on an anchor, threaded, with reply</td><td>03 chat</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/work</td><td>Work root: Tasks · Sessions · Stories · Board</td><td>05 work</td></tr>
+    <tr><td>/[server]/[space]/session/[id] · /session/[id]/terminal</td><td>Session page (live view, transcript, context, stats, discussion); full-screen terminal</td><td>04 sessions</td></tr>
+    <tr><td>/[server]/[space]/launch</td><td>Launch sheet: spawn a session on an entity</td><td>04 sessions</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/inbox</td><td>Inbox root; All-servers segment</td><td>07 inbox</td></tr>
+    <tr><td>/[server]/[space]/search</td><td>Global search (modal)</td><td>07 inbox</td></tr>
+    <tr><td>/[server]/[space]/(tabs)/browse</td><td>Browse root: search, pinned, all kinds, settings</td><td>02 shell</td></tr>
+    <tr><td>/[server]/[space]/k/[slug]</td><td>Kind list for any kind: list · board · tree · timeline, filters, sort, create</td><td>05 work</td></tr>
+    <tr><td>/[server]/[space]/e/[id]</td><td>Entity page; the registry picks the body; chat/session/channel redirect to their screens</td><td>per kind</td></tr>
+    <tr><td>/settings/… </td><td>Account, servers, appearance, notifications, space settings (credentials, members, links, kinds, MCP)</td><td>02 shell</td></tr>
+    <tr><td>tm8://&lt;host&gt;/s/&lt;space&gt;/e/&lt;id&gt; · https://&lt;host&gt;/#/s/&lt;space&gt;/e/&lt;id&gt;</td><td>Deep / universal links → the routes above; unknown server → add-server with the link kept</td><td>07 inbox</td></tr>
+  </tbody>
+</table>
+
+<h3>Who draws what</h3>
+<table class="spec">
+  <thead><tr><th style="width:18%">Lane</th><th>Section</th><th>Kinds owned</th></tr></thead>
+  <tbody>
+    <tr><td class="code">01 foundation</td><td>Design system &amp; component catalogue; gestures, motion, haptics, accessibility</td><td>—</td></tr>
+    <tr><td class="code">02 shell</td><td>Onboarding, servers &amp; spaces, tab shell, Browse, settings</td><td>server · space_link · credential (settings) · interaction_profile · style</td></tr>
+    <tr><td class="code">03 chat</td><td>Chats, transcript, composer, channels, messages, forms</td><td>chat · message · channel · voice_channel · form</td></tr>
+    <tr><td class="code">04 sessions</td><td>Sessions and everything that runs; terminal; launch</td><td>work_session · worktree · tool · mcp_server · container · loop (runs)</td></tr>
+    <tr><td class="code">05 work</td><td>Work tab, kind lists and layouts, tasks and their relatives</td><td>task · story · collection · project · craft · loop · pull_request · commit</td></tr>
+    <tr><td class="code">06 knowledge</td><td>Knowledge, code and people</td><td>doc · file · drawing · graph · artifact · memory · skill · spell · member · team_member</td></tr>
+    <tr><td class="code">07 inbox</td><td>Inbox, notifications, search, links &amp; chips, share, deep links, system states</td><td>(cross-cutting)</td></tr>
+    <tr><td class="code">08 lld</td><td>React Native low-level design: architecture, data, state, navigation, offline, push, testing, release</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<div class="callout ruling"><b>Decision · style</b>The app ships in tm8's current default style — neutral surfaces, system type, the gold accent — because that is what the product defaults to today (owner ruling 2026-10-14) and because the system face is what "native" means on each platform. The ATELIER paper-and-ink theme stays available as a space <code>style</code> the app can paint from. The status ramp is unchanged in both.</div>
+</section>
