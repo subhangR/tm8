@@ -7361,8 +7361,17 @@ export interface ExecutionLiveness {
   liveEntityIds: EntityId[];
   nodeBootId: string;
   checkedAt: string;
-  /** Node-wide admission truth used by execution.spawn's concurrency gate. */
-  capacity: { used: number; total: number };
+  /**
+   * Node-wide admission truth used by execution.spawn's concurrency gate.
+   *
+   * `ghosts` (378): how many of `used` are recorded against THIS node while it
+   * holds no process for them — dead rows the reaper will retire, which still
+   * count until it does. Lets a full cap say why. Present only when the read
+   * asks for it (`?ghosts=1`), so a client that does not know the field gets
+   * the same bytes as before; absent from a node that does not report it.
+   * Never a reason to read `used` differently.
+   */
+  capacity: { used: number; total: number; ghosts?: number };
   /**
    * The durable event high-water mark for this space — `space_event_seq
    * .last_seq`, read under the CALLER's claims, exactly as the WS `subscribe`

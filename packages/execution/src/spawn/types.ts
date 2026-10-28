@@ -70,6 +70,29 @@ export type WorkSessionEndedKind =
   | 'unknown';
 
 /**
+ * One lost-session reaper pass (`SpawnService.reapLostSessions`). `candidates`
+ * is how many of this node's live sessions had no process here on this look;
+ * `reaped` how many were recorded `failed / lost`; `errors` one per refusal.
+ * The job logs all three every tick, so a pass that saw ghosts and retired
+ * none is never silent again.
+ */
+export interface LostSessionReapReport {
+  candidates: number;
+  reaped: number;
+  errors: Array<{ message: string }>;
+}
+
+/**
+ * The endings a node may record for a session it holds no process for (378):
+ * what can be inferred about an absence, never an operator's or the agent's
+ * own ending.
+ */
+export type NodeObservedEndedKind = Extract<
+  WorkSessionEndedKind,
+  'lost' | 'server_restart' | 'unknown' | 'out_of_memory'
+>;
+
+/**
  * Permission posture handed to the agent. Named for old maestro's vocabulary
  * because the personas carry these exact strings in team_members.permission_mode
  * and an import must not have to translate them.
@@ -1270,16 +1293,38 @@ export interface GraphPort {
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**
-   * Work sessions THIS node still believes are alive (status not terminal).
+   * The ghost candidates IN EVERY SPACE (`public.node_live_work_sessions`,
+   * 378): this node's sessions that are live by the same definition the
+   * concurrency cap counts (`internal.work_session_is_live`). Read by boot
+   * reconciliation and the lost-session reaper only.
    *
-   * A read, used only by startup ghost reconciliation. Scoped by `node_id`
-   * because a non-terminal session belonging to ANOTHER node may be perfectly
-   * alive over there — only the node that owns a PTY can say whether it is gone.
+   * Node admin, NOT filtered by space membership: the node's background
+   * identity is not a member of every space, and the RLS-scoped read this
+   * replaced left other spaces' ghosts counted by the cap forever. Scoped by
+   * `node_id`, because a live session on ANOTHER node may be alive over there.
    */
-  listNodeActiveSessions(
+  listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
+  /**
+   * Record that a session this node holds no process for has ended
+   * (`public.node_record_work_session_lost`, 378): status 'failed' and the
+   * ending, in any space, never the outcome or the claims, and no ledger
+   * command (nobody gave one; the node observed an absence). Node admin.
+   * Resolves false when the row is no longer live on this node — its own
+   * exit won the race, and that ending stands.
+   */
+  recordNodeSessionLost(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      endedKind: NodeObservedEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<boolean>;
   /**
    * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
    * recorded live and has been idle past its space's auto-close window

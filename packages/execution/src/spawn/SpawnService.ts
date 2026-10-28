@@ -142,6 +142,8 @@ import type {
   SpaceCredentialPort,
   SpaceCredentialProvider,
   Tm8Manifest,
+  LostSessionReapReport,
+  NodeObservedEndedKind,
   TransitionInput,
   WorkSessionEndedKind,
   WorkSessionStatus,
@@ -461,6 +463,24 @@ async function isDirectory(path: string): Promise<boolean> {
  * base delay.
  */
 const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
+
+/** The `failed / lost` ending: the reaper's and the panel's "Mark lost". */
+function lostEnding(missingForMs?: number): {
+  reason: string;
+  endedKind: 'lost';
+  endedReason: string;
+} {
+  const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
+  return {
+    reason: `marked lost: the record said live, but this node holds no process for it${
+      minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
+    endedKind: 'lost',
+    endedReason:
+      minutes === null
+        ? 'Marked lost: its process could not be found. It can be resumed to try again.'
+        : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
+  };
+}
 
 /** Per-session bound on the usage read inside `recordShutdown`. See there. */
 const SHUTDOWN_USAGE_READ_MS = 2_000;
@@ -3710,9 +3730,10 @@ export class SpawnService {
    * running provably has no PTY. Rows belonging to other nodes are left alone —
    * they may be perfectly alive over there.
    *
-   * `terminate()` is reused rather than calling `transition` directly so the
-   * ledger records the retirement like any other terminate; its `kill()` is a
-   * no-op returning 'not_found', which is exactly right here.
+   * IN EVERY SPACE (378). Candidates and the write go through the node doors
+   * (`listNodeLiveSessions`, `recordNodeSessionLost` — see `retireGhost`), so
+   * a ghost in a space this node's identity is not a member of is retired like
+   * any other, by the same definition of live the concurrency cap counts.
    *
    * NEVER THROWS. Reconciliation is a cleanup, not a precondition: a node that
    * refuses to boot because it could not tidy stale rows is strictly worse than
@@ -3726,7 +3747,7 @@ export class SpawnService {
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, this.nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
@@ -3766,12 +3787,12 @@ export class SpawnService {
       // only at boot: a session with a LIVE PTY on this node is not a ghost.
       if (this.pty.hasSession(sessionId)) continue;
       try {
-        await this.terminate(auth, sessionId, {
-          // 'failed', not 'exited': this agent did not finish, it was killed
-          // with its host. See the `terminalStatus` docstring on terminate() —
-          // 'exited' here is indistinguishable from a clean finish to every
-          // client, because the contract projects neither exit_code nor error.
-          terminalStatus: 'failed',
+        // 'failed', not 'exited' (the node door always writes it): this agent
+        // did not finish, it was killed with its host. See the `terminalStatus`
+        // docstring on terminate() — 'exited' here is indistinguishable from a
+        // clean finish to every client, because the contract projects neither
+        // exit_code nor error.
+        const wrote = await this.retireGhost(auth, this.nodeId, sessionId, {
           reason:
             `retired at node startup: this node still recorded status '${status}' with no live ` +
             'PTY for it — the process almost certainly died with a prior instance of this node ' +
@@ -3804,13 +3825,13 @@ export class SpawnService {
                   'it can be resumed to pick up where it left off.',
               }),
         });
+        if (!wrote) continue;
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
-        // COLLECTED, not merely logged. This catch fires once per ghost, and on
-        // a node whose owner is not a member of the ghost's space it fires for
-        // EVERY one — `work_session_transition` goes through
-        // `require_space_member` with no node-admin bypass. Reported only to an
+        // COLLECTED, not merely logged. Before 378 this caught the member
+        // door's refusal for every ghost in a space the owner is not a member
+        // of, and nothing else said so. Reported only to an
         // optional logger, a total failure is indistinguishable from a clean
         // boot with nothing to do, and the caller's `retired: 0` says the same
         // thing either way.
@@ -3855,15 +3876,15 @@ export class SpawnService {
   async reapLostSessions(
     auth: GraphAuth,
     opts: { staleAfterMs: number; now?: number },
-  ): Promise<{ reaped: number; errors: Array<{ message: string }> }> {
-    if (!this.nodeId) return { reaped: 0, errors: [] };
+  ): Promise<LostSessionReapReport> {
+    if (!this.nodeId) return { candidates: 0, reaped: 0, errors: [] };
     const now = opts.now ?? Date.now();
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, this.nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+      return { candidates: 0, reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
     }
     const ghosts = new Set<string>();
     for (const { sessionId } of candidates) {
@@ -3881,40 +3902,56 @@ export class SpawnService {
         continue;
       }
       if (now - first < opts.staleAfterMs) continue;
+      // Re-asked at the write: a resume may have brought it back since the
+      // read, and a session with a live PTY here is not lost.
+      if (this.pty.hasSession(sessionId)) continue;
       try {
-        await this.markLost(auth, sessionId, now - first);
+        const wrote = await this.retireGhost(auth, this.nodeId, sessionId, lostEnding(now - first));
         this.ghostFirstSeen.delete(sessionId);
-        reaped += 1;
+        if (wrote) reaped += 1;
       } catch (error) {
         errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
       }
     }
-    return { reaped, errors };
+    return { candidates: ghosts.size, reaped, errors };
   }
 
   /**
-   * Record that a session's process is gone: `failed / lost`. The reaper's
-   * write, and the panel's "Mark lost" (Spec D1 §5.6) — which is refused while
-   * this node still holds a live PTY for the session, because then it is not
-   * lost.
+   * The panel's "Mark lost" (Spec D1 §5.6): record that a session's process
+   * is gone, `failed / lost`, through the member door under the person's own
+   * claims (the reaper uses the node door, `retireGhost`). Refused while this
+   * node still holds a live PTY for the session, because then it is not lost.
    */
-  async markLost(auth: GraphAuth, sessionId: string, missingForMs?: number): Promise<{ outcome: string; commandResult: unknown }> {
+  async markLost(auth: GraphAuth, sessionId: string): Promise<{ outcome: string; commandResult: unknown }> {
     if (this.pty.hasSession(sessionId)) {
       throw new SpawnError(`work session ${sessionId} has a live process on this node; it is not lost`, 'conflict', {
         sessionId,
         reason: 'process_live',
       });
     }
-    const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
-    return this.terminate(auth, sessionId, {
-      terminalStatus: 'failed',
-      reason: `marked lost: the record said live, but this node holds no process for it${
-        minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
-      endedKind: 'lost',
-      endedReason:
-        minutes === null
-          ? 'Marked lost: its process could not be found. It can be resumed to try again.'
-          : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
+    return this.terminate(auth, sessionId, { terminalStatus: 'failed', ...lostEnding() });
+  }
+
+  /**
+   * Write a ghost's ending through the node door (378). Not `terminate`: that
+   * is the member door (`work_session_transition`), which refuses the node's
+   * background identity outside its own spaces, and its only other work — the
+   * kill and the ledger command — has nothing to act on for a process that is
+   * already gone. Resolves false when the row was no longer live on this node,
+   * so the caller does not count it.
+   */
+  private retireGhost(
+    auth: GraphAuth,
+    nodeId: string,
+    sessionId: string,
+    ending: { reason: string; endedKind: NodeObservedEndedKind; endedReason: string },
+  ): Promise<boolean> {
+    return this.graph.recordNodeSessionLost(auth, {
+      nodeId,
+      sessionId,
+      endedKind: ending.endedKind,
+      endedReason: ending.endedReason,
+      error: ending.reason,
     });
   }
 

@@ -2571,6 +2571,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       ? {
           slotsFree: Math.max(0, executionCapacity.total - executionCapacity.used),
           slotsTotal: executionCapacity.total,
+          ...(executionCapacity.ghosts !== undefined ? { ghosts: executionCapacity.ghosts } : {}),
         }
       : undefined;
     return {

@@ -601,7 +601,9 @@ describe('W1 honest W2-only skeletons', () => {
       expect(parsed.data.liveChatCount).toBe(3);
       expect(parsed.data.workingChatCount).toBe(1);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
+      // 378: no `?ghosts=1`, so not a byte more than before, and no ghost read ran.
       expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
+      expect(query.mock.calls.some((c) => String(c[1]).includes('node_ghost_work_session_count'))).toBe(false);
       // Carried so a client can open a space at the tail of the log instead of
       // paging the whole retained log to discover the same number.
       expect(parsed.data.eventHwm).toBe(108477);
@@ -625,6 +627,23 @@ describe('W1 honest W2-only skeletons', () => {
     // the database's under the caller's claims, not a pre-filter here).
     const intersectArgs = query.mock.calls[1] as unknown[];
     expect(intersectArgs[2]).toEqual([SPACE, [SOURCE, 'ffffffff-ffff-4fff-8fff-ffffffffffff']]);
+
+    // 378, opted in: `?ghosts=1` adds the dead share of the cap, as a count.
+    bound.mockResolvedValueOnce([{ last_seq: '1' }]);
+    query
+      .mockResolvedValueOnce([{ id: SPACE }])
+      .mockResolvedValueOnce([{ id: SOURCE, recorded_live: true }])
+      .mockResolvedValueOnce([{ used: 64 }])
+      .mockResolvedValueOnce([{ ghosts: '19' }])
+      .mockResolvedValueOnce([{ live: '0', working: '0' }]);
+    const optedIn = (await handler({
+      ...context('execution.liveness', undefined),
+      params: { spaceId: SPACE },
+      query: new URLSearchParams('ghosts=1'),
+    })) as { data: unknown };
+    const ghostParsed = ExecutionLivenessSchema.safeParse(optedIn.data);
+    expect(ghostParsed.success).toBe(true);
+    if (ghostParsed.success) expect(ghostParsed.data.capacity).toEqual({ used: 64, total: 64, ghosts: 19 });
 
     // Unreadable space: not_found, and the PTY map is never consulted further.
     query.mockReset();

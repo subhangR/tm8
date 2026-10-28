@@ -25,6 +25,7 @@ import type {
   CredentialBindingLaunch,
   TransitionInput,
   WorkSessionResumeInfo,
+  NodeObservedEndedKind,
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
@@ -332,12 +333,22 @@ export class FakeGraph implements GraphPort {
     return { entityId: input.sessionId, patches: [input.sessionId] };
   }
 
-  /** Rows startup reconciliation should find. Set by the test. */
-  nodeActiveSessions: Array<{ sessionId: string; status: WorkSessionStatus }> = [];
-  /** Node ids `listNodeActiveSessions` was asked about. */
+  /** Rows reconciliation and the reaper should find. Set by the test. */
+  nodeLiveSessions: Array<{ sessionId: string; status: WorkSessionStatus }> = [];
+  /** Node ids `listNodeLiveSessions` was asked about. */
   readonly nodeSessionQueries: string[] = [];
   /** When set, the listing REJECTS — the unreadable-graph case at boot. */
-  listNodeActiveSessionsError: Error | null = null;
+  listNodeLiveSessionsError: Error | null = null;
+  /** Every `recordNodeSessionLost` write, as asked. */
+  readonly nodeLostWrites: Array<{
+    nodeId: string;
+    sessionId: string;
+    endedKind: NodeObservedEndedKind;
+    endedReason: string;
+    error: string;
+  }> = [];
+  /** Session ids whose node write should blow up. */
+  failNodeWriteFor = new Set<string>();
   /** Session ids whose `terminate` should blow up, to prove one bad row cannot
    *  stop the sweep. */
   failTerminateFor = new Set<string>();
@@ -347,14 +358,40 @@ export class FakeGraph implements GraphPort {
    *  still resolve so a failing write cannot hang the process exit. */
   failTransitionFor = new Set<string>();
 
-  async listNodeActiveSessions(
+  async listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
     this.authSeen.push(auth);
     this.nodeSessionQueries.push(nodeId);
-    if (this.listNodeActiveSessionsError) throw this.listNodeActiveSessionsError;
-    return this.nodeActiveSessions;
+    if (this.listNodeLiveSessionsError) throw this.listNodeLiveSessionsError;
+    return this.nodeLiveSessions;
+  }
+
+  /** Recorded as a `failed` transition too, so `statusesFor` reads both doors. */
+  async recordNodeSessionLost(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      endedKind: NodeObservedEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<boolean> {
+    this.authSeen.push(auth);
+    if (this.failNodeWriteFor.has(input.sessionId)) {
+      throw new Error(`injected node write failure for ${input.sessionId}`);
+    }
+    this.nodeLostWrites.push(input);
+    this.transitions.push({
+      sessionId: input.sessionId,
+      status: 'failed',
+      error: input.error,
+      endedKind: input.endedKind,
+      endedReason: input.endedReason,
+    });
+    return true;
   }
 
   statusesFor(sessionId: string): string[] {

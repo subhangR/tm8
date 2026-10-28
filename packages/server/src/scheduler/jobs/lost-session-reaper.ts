@@ -13,6 +13,8 @@
  * reaps: a session has to be seen without a process on two ticks at least
  * `staleAfterMs` apart.
  */
+import type { LostSessionReapReport } from '@tm8/execution';
+
 import type { JobContext, JobOutcome, ScheduledJob } from '../types.js';
 
 export const LOST_SESSION_REAPER_JOB_NAME = 'execution.lost-session-reaper';
@@ -21,21 +23,37 @@ export const LOST_SESSION_REAPER_JOB_NAME = 'execution.lost-session-reaper';
 export const DEFAULT_LOST_AFTER_MS = 10 * 60_000;
 
 export interface LostSessionReaperOptions {
-  reap(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
+  reap(staleAfterMs: number): Promise<LostSessionReapReport>;
   staleAfterMs?: number;
   intervalMs?: number;
+}
+
+/**
+ * The one line every tick logs. EVERY tick, not only a failing one: before 378
+ * the reaper could not see ghosts outside its identity's spaces, reported
+ * `skipped`, and said nothing for weeks while 19 dead rows held the cap. A line
+ * with `candidates` > 0 and `retired` 0 is that state, and it is now visible.
+ */
+export interface LostSessionReaperTickLine {
+  candidates: number;
+  retired: number;
+  refused: number;
+  /** The first five refusals, verbatim. */
+  problems: string[];
 }
 
 /** One tick, exported so tests and `scheduler.runNow` drive it without a timer. */
 export async function runLostSessionReaperTick(
   options: LostSessionReaperOptions,
-  log?: (message: string) => void,
+  log?: (message: string, line: LostSessionReaperTickLine) => void,
 ): Promise<JobOutcome> {
-  const { reaped, errors } = await options.reap(options.staleAfterMs ?? DEFAULT_LOST_AFTER_MS);
-  if (errors.length > 0) {
-    log?.(`${LOST_SESSION_REAPER_JOB_NAME}: ${errors.length} problem(s): ${
-      errors.slice(0, 5).map((e) => e.message).join('; ')}`);
-  }
+  const { candidates, reaped, errors } = await options.reap(options.staleAfterMs ?? DEFAULT_LOST_AFTER_MS);
+  log?.(`${LOST_SESSION_REAPER_JOB_NAME}: tick`, {
+    candidates,
+    retired: reaped,
+    refused: errors.length,
+    problems: errors.slice(0, 5).map((e) => e.message),
+  });
   if (reaped === 0 && errors.length === 0) {
     return { skipped: true, reason: 'no session has been without a process long enough' };
   }
@@ -56,7 +74,10 @@ export function createLostSessionReaperJob(options: LostSessionReaperOptions): S
     runOnStart: false,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      return runLostSessionReaperTick(options, (m) => { ctx.logger.warn(m); });
+      return runLostSessionReaperTick(options, (message, line) => {
+        if (line.refused > 0) ctx.logger.warn(message, line);
+        else ctx.logger.info(message, line);
+      });
     },
   };
 }

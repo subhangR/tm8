@@ -4449,6 +4449,7 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   capacity: z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
+    ghosts: z.number().int().nonnegative().optional(),
   }).strict(),
   // Nullable, never optional: "the mark cannot be established" is an ANSWER
   // this read has to be able to give, and an absent field is the shape a

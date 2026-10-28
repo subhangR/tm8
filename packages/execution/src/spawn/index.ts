@@ -196,6 +196,8 @@ export type {
   WorktreeAllocationRow,
   WorktreeAllocationState,
   GhostReconcileReport,
+  LostSessionReapReport,
+  NodeObservedEndedKind,
 } from './types.js';
 
 export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';

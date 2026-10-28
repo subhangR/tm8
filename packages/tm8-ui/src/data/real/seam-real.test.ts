@@ -115,7 +115,7 @@ describe('seam-real: openSpace', () => {
       { type: 'subscribe', spaceIds: ['sp-1'] },
       { type: 'resume', spaceId: 'sp-1', since: 0 },
     ]);
-    expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness');
+    expect(f.calls.map((c) => c.url)).toContain('/v2/spaces/sp-1/execution/liveness?ghosts=1');
     expect(seam.liveness.statusOf({ id: 'ws-1', status: 'running' })).toBe('live');
   });
 

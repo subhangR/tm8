@@ -72,6 +72,8 @@ import {
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
   type GhostReconcileReport,
+  type LostSessionReapReport,
+  type NodeObservedEndedKind,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
@@ -1534,33 +1536,39 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * Non-terminal work sessions recorded against `nodeId` — the ghost candidates
-   * startup reconciliation retires.
-   *
-   * A plain READ rather than an RPC: nothing is written here, and the catalog
-   * has no "sessions on a node" operation because this is node-local
-   * maintenance, not a contract surface. RLS still applies through the caller's
-   * claims, so it can only ever see rows the caller is entitled to.
-   *
-   * `deleted_at is null` is load-bearing: a soft-deleted session is already gone
-   * as far as the graph is concerned, and transitioning it would write a ledger
-   * row resurrecting something nobody asked about.
+   * The node doors (378) behind boot reconciliation and the lost-session
+   * reaper. SECURITY DEFINER RPCs gated on the node-admin claim, deliberately
+   * not catalog operations: this is node-local maintenance, and the node's
+   * background identity is not a member of every space it hosts.
    */
-  async listNodeActiveSessions(
+  async listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
-    const rows = await this.db.query<{ entity_id: string; status: string }>(
+    const rows = await this.db.query<{ session_id: string; status: string }>(
       this.claims(auth),
-      `select ws.entity_id, ws.status
-         from public.work_sessions ws
-         join public.entities e on e.id = ws.entity_id
-        where ws.node_id = $1
-          and ws.status in ('spawning', 'running', 'idle')
-          and e.deleted_at is null`,
+      'select session_id, status from public.node_live_work_sessions($1)',
       [nodeId],
     );
-    return rows.map((r) => ({ sessionId: r.entity_id, status: r.status as WorkSessionStatus }));
+    return rows.map((r) => ({ sessionId: r.session_id, status: r.status as WorkSessionStatus }));
+  }
+
+  async recordNodeSessionLost(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      endedKind: NodeObservedEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<boolean> {
+    const rows = await this.db.query<{ wrote: boolean }>(
+      this.claims(auth),
+      'select public.node_record_work_session_lost($1, $2, $3, $4, $5) as wrote',
+      [input.nodeId, input.sessionId, input.endedKind, input.endedReason, input.error],
+    );
+    return rows[0]?.wrote === true;
   }
 
   async listCompletedSessionsToClose(
@@ -1964,7 +1972,7 @@ export interface ExecutionRuntime {
    * Spec D1 §4.4 — the ghost reaper. Records `failed / lost` for this node's
    * sessions that have had no process for `staleAfterMs`. Never rejects.
    */
-  reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
+  reapLost(staleAfterMs: number): Promise<LostSessionReapReport>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
   /**
@@ -2076,7 +2084,10 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     spawnService,
     graph,
     register: (registry, options) =>
-      registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, options),
+      registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, {
+        ...options,
+        nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
+      }),
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER. `work_session_transition` goes through
       // `require_space_member` → `require_identity` with no node-admin bypass,
@@ -2143,8 +2154,8 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as for ghost reconciliation: the transition needs
-      // a real member, and the owner is whose node holds these rows.
+      // The loopback owner, as a node admin: the node doors (378) refuse anyone
+      // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
         return await spawnService.reapLostSessions(
@@ -2152,7 +2163,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { staleAfterMs },
         );
       } catch (error) {
-        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return { candidates: 0, reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2291,7 +2302,9 @@ export function registerExecutionHandlers(
     worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir, {
+    nodeId: `${deps.config.host}:${deps.config.port}`,
+  });
   return {
     pty: deps.pty,
     // See the docblock above this function — disconnected, never resolves.
@@ -2355,8 +2368,8 @@ export function registerExecutionHandlers(
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as for ghost reconciliation: the transition needs
-      // a real member, and the owner is whose node holds these rows.
+      // The loopback owner, as a node admin: the node doors (378) refuse anyone
+      // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
         return await spawnService.reapLostSessions(
@@ -2364,7 +2377,7 @@ export function registerExecutionHandlers(
           { staleAfterMs },
         );
       } catch (error) {
-        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return { candidates: 0, reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2924,6 +2937,8 @@ export type DispatchDelivery = NonNullable<
 
 export interface RegisterHandlersOptions {
   readonly dispatchDelivery?: DispatchDelivery;
+  /** This node's id, for the capacity read's `ghosts` count (378). */
+  readonly nodeId?: string;
 }
 
 /**
@@ -3295,6 +3310,19 @@ function registerHandlers(
       'select internal.live_work_session_count(null) as used',
     );
     const capacity = capacityRows?.[0];
+    // 378: the dead share of `used` — this node's live rows minus the PTYs it
+    // holds. A count only, across spaces, as the cap itself is. OPT-IN
+    // (`?ghosts=1`): `capacity` is `.strict()` in the contract, so a client
+    // that does not ask gets exactly the bytes it got before.
+    const ghostRows = options.nodeId && ctx.query.get('ghosts') === '1'
+      ? await db.query<{ ghosts: number | string }>(
+          claims,
+          'select public.node_ghost_work_session_count($1, $2::uuid[]) as ghosts',
+          [options.nodeId, live],
+        )
+      : [];
+    const ghostRow = ghostRows?.[0];
+    const ghosts = ghostRow === undefined ? undefined : Number(ghostRow.ghosts);
     // Live chats ride the same read as live sessions (status strip) — see
     // `live-counts.ts` for what "live" and "working" mean for a chat.
     const chatRows = await db.query<LiveChatCountRow>(claims, LIVE_CHAT_COUNTS_SQL, [spaceId]);
@@ -3315,7 +3343,11 @@ function registerHandlers(
         : {}),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
-      capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },
+      capacity: {
+        used: Number(capacity?.used ?? 0),
+        total: sessionCap,
+        ...(ghosts !== undefined && Number.isFinite(ghosts) ? { ghosts } : {}),
+      },
       eventHwm,
     };
     return json(result);
