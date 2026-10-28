@@ -2,6 +2,7 @@ import { isRefusedActionRow, type OperationName, type ToolRun, type ToolView } f
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
+import type { ToolVersionsPage } from './versions-model';
 
 /** All network requests use the operation catalog and the existing authenticated transport. */
 export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'>): ToolPort {
@@ -34,5 +35,6 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'>): T
       return { sessionId };
     },
     runGet: sessionId => call<ToolRun>('tools.runs.get', { params: { sessionId } }),
+    versions: (toolId, cursor) => call<ToolVersionsPage>('entities.versions', { params: { id: toolId }, query: { limit: 20, ...(cursor ? { cursor } : {}) } }),
   };
 }

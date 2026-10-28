@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { CollabError, ToolDefinitionSchema, type EntityDetail, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CollabError, ToolDefinitionSchema, type EntityDetail, type ToolDefinition, type ToolLastRun, type ToolRun, type ToolView } from '@tm8/contract';
 import { Markdown } from '../kit/Markdown';
 import { Pill } from '../kit/Pill';
 import type { ToolPermissions, ToolPort } from './port';
@@ -7,7 +7,11 @@ import { SourceEditor } from './SourceEditor';
 import { draftInput, inputFromDraft, InputsEditor } from './InputsEditor';
 import { ToolConfig } from './ToolConfig';
 import { RunDialog } from './RunDialog';
-import { runLabel } from './values';
+import { RunHistory, useToolRuns } from './RunHistory';
+import { OutputDrawer } from './OutputDrawer';
+import { LastRunChip } from './LastRunChip';
+import { Versions, useToolVersions, type VersionFocus } from './Versions';
+import { versionNote } from './versions-model';
 import './tools.css';
 import { useToolSessionOpen } from './context';
 
@@ -75,19 +79,20 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
   const contextOpen = useToolSessionOpen();
   const onOpenSession = explicitOpen ?? contextOpen;
   const [loaded, setLoaded] = useState<{ tool: ToolView; permissions: ToolPermissions } | null>(null);
-  const [history, setHistory] = useState<ToolRun[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState('');
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [running, setRunning] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const runs = useToolRuns(port, detail.id, detail.activityAt);
+  const versions = useToolVersions(port, detail.id, detail.version);
+  const [outputOf, setOutputOf] = useState<string | null>(null);
+  const [focus, setFocus] = useState<VersionFocus | null>(null);
+  const versionsRef = useRef<HTMLElement>(null);
   const refresh = useCallback(async () => {
     if (!port) return;
     const [tool, permissions] = await Promise.all([port.get(detail.id), port.permissions(detail.id)]);
     setLoaded({ tool, permissions }); setError('');
   }, [port, detail.id]);
-  useEffect(() => { let active = true; setLoaded(null); setError(''); setEditing(false); setRunning(false);
+  useEffect(() => { let active = true; setLoaded(null); setError(''); setEditing(false); setRunning(false); setOutputOf(null); setFocus(null);
     if (port) void Promise.all([port.get(detail.id), port.permissions(detail.id)]).then(([tool, permissions]) => { if (active) setLoaded({ tool, permissions }); }, failure => { if (active) setError(errorText(failure)); });
     return () => { active = false; };
   }, [port, detail.id]);
@@ -95,21 +100,23 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
     if (!loaded || editing || running || loaded.tool.version === detail.version) return;
     void refresh().catch(failure => setError(errorText(failure)));
   }, [detail.version, loaded?.tool.version, editing, running, refresh]);
-  const loadHistory = useCallback(async (next?: string) => {
-    if (!port) return; setLoadingMore(true); setHistoryError('');
-    try { const page = await port.history(detail.id, next); setHistory(previous => next ? [...previous, ...page.items] : page.items); setCursor(page.nextCursor); }
-    catch (failure) { setHistoryError(errorText(failure)); }
-    finally { setLoadingMore(false); }
-  }, [port, detail.id]);
-  useEffect(() => { let active = true; setHistory([]); setCursor(null); setHistoryError('');
-    if (port) void port.history(detail.id).then(page => { if (active) { setHistory(page.items); setCursor(page.nextCursor); } }, failure => { if (active) setHistoryError(errorText(failure)); });
-    return () => { active = false; };
-  }, [port, detail.id, detail.activityAt]);
+  /** A run's version opens in Versions; a folded or unstored one says so instead of diffing nothing. */
+  const openVersion = async (run: ToolRun) => {
+    const resolution = await versions.ensure(run.toolVersion);
+    setFocus({ version: run.toolVersion, sourceSha256: run.sourceSha256, resolution });
+    versionsRef.current?.scrollIntoView?.({ block: 'start' }); versionsRef.current?.focus();
+  };
   if (!port) return <p role="status">Tools are unavailable on this connection.</p>;
   if (!loaded) return <div className="pn-body tool-body">{error ? <p role="alert">{error} <button className="pn-btn" onClick={() => void refresh().catch(failure => setError(errorText(failure)))}>Retry</button></p> : <p role="status">Loading tool…</p>}</div>;
   const { tool, permissions } = loaded;
+  // The history's newest row is polled while it runs, so it outranks the summary's snapshot of the same run.
+  const newest = runs.items[0];
+  const lastRun: ToolLastRun | null = newest && (!tool.lastRun || newest.id >= tool.lastRun.sessionId)
+    ? { sessionId: newest.id, state: newest.state, exitCode: newest.exitCode, startedAt: newest.startedAt, exitedAt: newest.exitedAt }
+    : tool.lastRun ?? null;
   return <div className="pn-body tool-body" data-testid="tool-body">
     <header><h2>{tool.definition.name}</h2><p>{tool.definition.description}</p><div className="tool-actions"><Pill>{tool.definition.runtime === 'bash' ? 'Bash' : 'Python'}</Pill><span>Version {tool.version}</span>
+      <LastRunChip run={lastRun} onOpen={onOpenSession ?? setOutputOf} />
       <button type="button" className="pn-btn" disabled={!permissions.edit || editing} title={!permissions.edit ? 'You do not have permission to edit this tool.' : undefined} onClick={() => setEditing(true)}>Edit tool</button>
       <button type="button" className="pn-btn pn-btn--primary" disabled={!permissions.run || !onOpenSession || editing} title={editing ? 'Save or discard changes to run.' : !onOpenSession ? 'A terminal host is unavailable in this view.' : !permissions.run ? 'You do not have permission to run this tool.' : undefined} onClick={() => setRunning(true)}>Run</button>
     </div></header>
@@ -121,10 +128,10 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
       <ToolConfig tool={tool} permissions={permissions} port={port} refresh={refresh} />
       {tool.definition.help && <section aria-label="Help"><h3>Help</h3><Markdown source={tool.definition.help} /></section>}
     </>}
-    <section aria-label="Run history"><h3>Run history</h3>{historyError && <p role="alert">{historyError} <button className="pn-btn" onClick={() => void loadHistory()}>Retry history</button></p>}
-      {!history.length && !historyError && <p>No runs yet.</p>}<ol className="tool-runs">{history.map(run => <li key={run.id}><button type="button" className="pn-btn" disabled={!onOpenSession} onClick={() => onOpenSession?.(run.id)}>{run.startedAt ? new Date(run.startedAt).toLocaleString() : 'Run'} · v{run.toolVersion}</button><Pill tone={run.state === 'running' ? 'run' : run.state !== 'exited' || run.exitCode !== 0 ? 'block' : 'idle'}>{runLabel(run)}</Pill></li>)}</ol>
-      {cursor && <button type="button" className="pn-btn" disabled={loadingMore} onClick={() => void loadHistory(cursor)}>More runs</button>}
-    </section>
-    {running && onOpenSession && <RunDialog tool={tool} port={port} onClose={() => { setRunning(false); void loadHistory(); }} onOpenSession={onOpenSession} />}
+    <RunHistory runs={runs} onOpenSession={onOpenSession} onOutput={run => setOutputOf(run.id)} onVersion={run => void openVersion(run)}
+      versionNote={run => versionNote(versions.resolve(run.toolVersion))} />
+    <Versions ref={versionsRef} versions={versions} focus={focus} />
+    {outputOf && <OutputDrawer sessionId={outputOf} port={port} onClose={() => setOutputOf(null)} onOpenSession={onOpenSession} />}
+    {running && onOpenSession && <RunDialog tool={tool} port={port} onClose={() => { setRunning(false); void runs.reload(); }} onRunError={() => void runs.reload()} onOpenSession={onOpenSession} />}
   </div>;
 }

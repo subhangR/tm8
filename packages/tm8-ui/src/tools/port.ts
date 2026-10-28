@@ -1,4 +1,5 @@
 import type { ToolDefinition, ToolJsonValue, ToolRun, ToolRunInput, ToolView } from '@tm8/contract';
+import type { ToolVersionsPage } from './versions-model';
 
 export interface ToolPermissions {
   edit: boolean;
@@ -20,4 +21,6 @@ export interface ToolPort {
   sourceChange(tool: ToolView): Promise<ToolSourceChange | null>;
   run(input: ToolRunInput & { toolId: string; expectedVersion: number }): Promise<{ sessionId: string }>;
   runGet(sessionId: string): Promise<ToolRun>;
+  /** Stored snapshots (`entities.versions`), newest first; version numbers may have gaps. */
+  versions(toolId: string, cursor?: string | null): Promise<ToolVersionsPage>;
 }

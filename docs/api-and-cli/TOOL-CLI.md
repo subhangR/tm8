@@ -68,6 +68,8 @@ By default the server closes the PTY when the tool exits (`keepOpen=false`).
 shell open on the server; the CLI still returns when the tool itself finishes.
 These two options are mutually exclusive. Inspect a run with `tool run-show`
 and its output with `--output`. Close an open shell through `session terminate`.
+`tool runs` lists a tool's runs newest first; `--cursor` continues with older
+runs. Each run names its invoker, and a run fired by a loop also names that loop.
 
 ## Secrets
 

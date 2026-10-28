@@ -2048,8 +2048,12 @@ const ROWS: readonly KindConfig[] = [
     kind: 'tool', label: 'Tool', labelPlural: 'Tools', icon: '⌘', iconArt: KIND_ART.tool,
     slug: 'tools', strategy: 'collection', defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
-    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
-    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'toolLastRun', 'toolRuntime', 'activityAt'] },
+    // Tools v2: the last run's outcome in the status slot, then what it runs and asks for.
+    list: baseList({ quickCreate: false, tile: { badges: [
+      { source: 'toolLastRun' }, { source: 'toolRuntime' }, { source: 'toolInputs' }, { source: 'toolSecrets' },
+      { source: 'toolLastRunAt' }, { source: 'toolVersion' },
+    ] } }),
     panel: { archetype: 'scripted', blocks: [COLLECTIONS_BLOCK] },
   },
 
