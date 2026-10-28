@@ -185,6 +185,47 @@ describe('a Running session parent with an exited and a running child', () => {
   });
 });
 
+describe('the pinned rail with "Show sub-items" off', () => {
+  /* Task 01a18331: a launched session has no `parentId`, only `launchedBy`, so
+     a roots-only filter reading `parentId` kept every launched session and the
+     rail's session list came out flat — workers above and below their lead. */
+  const session = (id: string, title: string, launchedBy: string | null) =>
+    ({
+      ...sessionLive,
+      id,
+      title,
+      parentId: null,
+      state: { ...sessionLive.state, status: 'idle', outcome: 'open', ...(launchedBy ? { launchedBy } : {}) },
+    }) as EntitySummary;
+  const all = [
+    session('ses-kid-a', 'Lane 02', 'ses-lead'),
+    session('ses-lead', 'Lead', null),
+    session('ses-kid-b', 'Lane 03', 'ses-lead'),
+  ];
+  const rowsFor = (filter: QueryFilter): readonly EntitySummary[] => {
+    const f = filter as { launchedBy?: string[] };
+    return all.filter((row) => {
+      const launcher = (row.state as unknown as { launchedBy?: string }).launchedBy;
+      return !f.launchedBy || (launcher !== undefined && f.launchedBy.includes(launcher));
+    });
+  };
+
+  it('draws the launcher alone, not every launched session as a root', () => {
+    window.localStorage.setItem('tm8.list.prefs.v1.work_session', JSON.stringify({ groupBy: 'none', subItems: false }));
+    try {
+      const { container } = render(
+        <EntityListPanel kind="work_session" rowsFor={rowsFor} rowsForKind={() => rowsFor} ctx={ctx} toolbarInline />,
+      );
+      const drawn = [...container.querySelectorAll<HTMLElement>('[data-session-node]')].map((el) =>
+        el.getAttribute('data-session-node'),
+      );
+      expect(drawn).toEqual(['ses-lead']);
+    } finally {
+      window.localStorage.removeItem('tm8.list.prefs.v1.work_session');
+    }
+  });
+});
+
 describe('tileChildCount', () => {
   const doc = docLayoutSpec;
   it('takes the server count, never fewer than the loaded children', () => {

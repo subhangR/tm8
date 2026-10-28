@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { EntitySummary } from '@tm8/contract';
+import { treeParentOf } from '../../domain/launched-by';
 
 /**
  * LIST PREFERENCES THE PINNED-ONLY RAIL'S SETTINGS MENU OWNS (Subhang,
@@ -98,10 +99,18 @@ export function useListPrefs(kind: string): ListPrefs & {
   );
 }
 
-/** Rows whose parent is not in the set — the tree's roots, children dropped. */
+/**
+ * Rows whose tree parent is not in the set — the tree's roots, children dropped.
+ * The tree parent is `treeParentOf`'s, the one the tree nests by: a launched
+ * session has no `parentId`, so reading `parentId` alone kept every launched
+ * session as a root and "Show sub-items" off drew the session list flat.
+ */
 export function rootsOnly(rows: readonly EntitySummary[]): EntitySummary[] {
   const ids = new Set(rows.map((row) => row.id));
-  return rows.filter((row) => row.parentId === null || !ids.has(row.parentId));
+  return rows.filter((row) => {
+    const up = treeParentOf(row);
+    return up === null || !ids.has(up);
+  });
 }
 
 const STATUS_ORDER = ['open', 'pulled', 'working', 'in_review', 'blocked', 'done', 'cancelled'];
