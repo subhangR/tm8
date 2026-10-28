@@ -34,6 +34,7 @@ import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
+  jevKeyUsable,
   JEV_UNWIRED_REASON,
   modelApplyRefusal,
   modelLabel,
@@ -527,7 +528,10 @@ export function LaunchComposerPopup({
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
        omitted (its defaults load) with a reason; an edited group is its
        exact set. No group edited ⇒ no `selection`. */
-    const jevFields = jev.toSpawnFields();
+    /* THE PRESS SEALS JEV: an answer still in flight is dropped, never applied
+       under a launch already on its way (lane E). */
+    const jevFields = jev.seal();
+    setJevApplying(false);
     const promptExtra = notes.trim();
     const launchFields = {
       ...composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons),
@@ -615,9 +619,9 @@ export function LaunchComposerPopup({
     if (!read) return;
     let alive = true;
     read().then((view) => {
-      if (!alive || view.store === 'absent') return;
-      const key = view.keys.find((k) => k.provider === 'typesafe');
-      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+      const usable = jevKeyUsable(view);
+      if (!alive || usable === null) return;
+      setJevKey(usable ? 'yes' : 'none');
     }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
     return () => { alive = false; };
   }, []);
@@ -965,7 +969,7 @@ export function LaunchComposerPopup({
         onNotesChange={setNotes}
         notesPlaceholder={notesPlaceholderFor(subject.kind, continuing)}
         strip={strip}
-        stripRefusal={stripLock ?? stripNotice}
+        stripRefusal={stripLock ?? stripNotice ?? selection.updatedNote}
         stripLoading={stripLoading}
         onTick={tickRow}
         onAddRows={addRows}
