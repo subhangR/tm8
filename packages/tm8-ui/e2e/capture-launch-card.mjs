@@ -1,33 +1,44 @@
 /**
- * PIXEL VERIFICATION FOR THE LAUNCH CARD v2 (artifact 01a0dd42 rev 4).
+ * PIXEL VERIFICATION FOR THE LAUNCH CARD.
  *
- * The card's narrow-width contract is "shed a label, never clip a control,
- * and keep every menu inside the card". jsdom cannot evaluate a container
- * query or measure a box, so the vitest suite is silent on all three. This
- * script drives the SHIPPING popup in Chrome at the four widths the task
- * names and MEASURES the claim: every interactive control's box must sit
- * inside the card's box, and an open menu must too.
+ * The card's contract is "content-sized, shed a label, never clip a control".
+ * jsdom cannot evaluate a container query or measure a box, so the vitest
+ * suite is silent on all of it. This script drives the SHIPPING popup in
+ * Chromium and MEASURES the claim: the card's height, and every interactive
+ * control's box against the card's box. Menus may hang past the card (they
+ * are drawn over the scrim), so only controls on the card itself are held to
+ * its edge.
  *
- * Usage: node e2e/capture-launch-card.mjs [origin]
+ * Usage: node e2e/capture-launch-card.mjs [origin] [out-dir]
+ *   Reads /home/tm8/prod-data/tools/browser/launch.json when it exists (the
+ *   prod node's headless Chromium needs its libs and pkey shim).
  */
-import { mkdirSync } from 'node:fs';
-import { chromium } from '@playwright/test';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
 const origin = process.argv[2] ?? 'http://127.0.0.1:4612';
-const OUT = 'gate-evidence/launch-card-v2';
+const OUT = process.argv[3] ?? 'gate-evidence/launch-card';
 mkdirSync(OUT, { recursive: true });
 
+const KIT = '/home/tm8/prod-data/tools/browser/launch.json';
+const kit = existsSync(KIT) ? JSON.parse(readFileSync(KIT, 'utf8')) : null;
+const { chromium } = kit
+  ? createRequire(import.meta.url)(kit.playwright)
+  : await import('@playwright/test');
+
+const ONLY = process.env.SHOTS ? new RegExp(process.env.SHOTS) : null;
 const SHOTS = [
-  { name: '1440x900-default', w: 1440, h: 900, q: '?text=1' },
-  { name: '1440x900-attach-menu', w: 1440, h: 900, q: '?text=1&open=lcd-attach' },
-  { name: '1440x900-advanced-drawer', w: 1440, h: 900, q: '?text=1&drawer=1' },
-  { name: '1440x900-coordinate', w: 1440, h: 900, q: '?verb=coordinate&text=1' },
-  { name: '1024x768-default', w: 1024, h: 768, q: '?text=1' },
-  { name: '1024x768-model-menu', w: 1024, h: 768, q: '?text=1&open=nsx-model' },
-  { name: '800x700-default', w: 800, h: 700, q: '?text=1' },
-  { name: '800x700-effort-menu', w: 800, h: 700, q: '?text=1&open=nsx-effort' },
+  { name: '1440x900-light-empty', w: 1440, h: 900, q: '?attach=0' },
+  { name: '1440x900-dark-empty', w: 1440, h: 900, q: '?attach=0&theme=dark' },
+  { name: '1440x900-light-attached', w: 1440, h: 900, q: '?text=1' },
+  { name: '1440x900-dark-attached', w: 1440, h: 900, q: '?text=1&theme=dark' },
+  { name: '1440x900-light-launching', w: 1440, h: 900, q: '?text=1&launch=1' },
+  { name: '1440x900-dark-launching', w: 1440, h: 900, q: '?text=1&launch=1&theme=dark' },
+  { name: '1440x900-model-menu', w: 1440, h: 900, q: '?open=nsx-model' },
+  { name: '1440x900-advanced-drawer', w: 1440, h: 900, q: '?drawer=1' },
+  { name: '1024x768-attached', w: 1024, h: 768, q: '?text=1' },
+  { name: '800x700-attached', w: 800, h: 700, q: '?text=1' },
   { name: '390x844-phone', w: 390, h: 844, q: '?text=1' },
-  { name: '390x844-phone-workdir-menu', w: 390, h: 844, q: '?text=1&open=nsx-workdir' },
 ];
 
 /* Measured in the page: the card's box, and every control/menu box that
@@ -49,7 +60,8 @@ const measure = () => {
     return /auto|scroll|hidden|clip/.test(s.overflowX + s.overflowY);
   };
   const out = [];
-  for (const el of card.querySelectorAll('button, input, textarea, select, [role="menu"], [role="radio"], [role="menuitem"]')) {
+  for (const el of card.querySelectorAll('button, input, textarea, select, [role="radio"]')) {
+    if (el.closest('[role="menu"], [role="dialog"]:not(.nsx-popup)')) continue;   // menus hang over the scrim
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) continue;          // hidden by a container query — shed, not clipped
     let box = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
@@ -82,10 +94,12 @@ const measure = () => {
   };
 };
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = kit
+  ? await chromium.launch({ executablePath: kit.executablePath, env: { ...process.env, ...kit.env }, args: kit.args })
+  : await chromium.launch({ channel: 'chrome' });
 let bad = 0;
 
-for (const shot of SHOTS) {
+for (const shot of SHOTS.filter((s) => !ONLY || ONLY.test(s.name))) {
   const page = await browser.newPage({ viewport: { width: shot.w, height: shot.h } });
   await page.goto(`${origin}/e2e/launch-card-harness.html${shot.q}`);
   await page.waitForSelector('[data-testid="harness-ready"]', { state: 'attached' });

@@ -7,10 +7,12 @@
  * and nothing is written onto the task; the strip is ONE row of type groups
  * with files first, each group a view of the selection; Attach adds several
  * at once, each to its group; uploads land in Files, can fail and be retried,
- * and hold Launch; Launch and Dispatch both go through a preview; Dispatch
- * refuses what the node can't carry yet and reads an undelivered result as a
- * warning; a timed-out spawn is checked before any retry; Escape unwinds the
- * preview, a menu, the drawer, then the card; a closed card keeps a draft.
+ * and hold Launch; Launch and Dispatch commit on their first press, and the
+ * card collapses to one launching line (or hands off to the host through
+ * `onLaunchStarted`); Dispatch refuses what the node can't carry yet and reads
+ * an undelivered result as a warning; a timed-out spawn is checked before any
+ * retry; Escape unwinds a menu, the drawer, then the card; a closed card
+ * keeps a draft.
  *
  * jsdom has no layout, so none of this says anything about clipping or the
  * card's width — the screenshots on the PR do.
@@ -18,6 +20,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, waitFor, within } from '@testing-library/react';
 
+import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
 import { controlledUpload, file, renderPopup } from './launch-test-kit';
 
 beforeEach(() => { localStorage.clear(); });
@@ -146,15 +149,16 @@ describe('Attach', () => {
     expect(input.selection?.skillIds).toEqual(['ent-sk-review', 'sk-extra']);
   });
 
-  it('an unticked default counts as not in the launch, so picking it ticks it back', async () => {
+  it('an unticked default is SUGGESTED first in Attach, and one click ticks it back', async () => {
     const view = renderPopup();
     const menu = await view.openGroup('doc');
     fireEvent.click(within(within(menu).getByTestId('lcd3-row-ent-doc-spec')).getByRole('menuitemcheckbox'));
     fireEvent.click(view.getByTestId('lcd3-attach'));
     const attach = view.getByTestId('lcd3-attach-menu');
-    fireEvent.click(within(attach).getByTestId('lcd3-attach-row-ent-doc-spec'));
-    fireEvent.click(within(attach).getByTestId('lcd3-attach-add'));
-    expect(view.getByTestId('lcd3-group-doc').getAttribute('data-edited')).toBeNull();
+    const first = within(attach).getAllByRole('menuitemcheckbox')[0]!;
+    expect(first.getAttribute('data-testid')).toBe('lcd3-attach-suggested-ent-doc-spec');
+    fireEvent.click(first);
+    await waitFor(() => expect(view.getByTestId('lcd3-group-doc').getAttribute('data-edited')).toBeNull());
   });
 
   it('its type filter replaces the results while open, and keeps the picks across types', async () => {
@@ -260,7 +264,7 @@ describe('the verb switch', () => {
     expect(names.some((n) => n?.includes('forge'))).toBe(false);
   });
 
-  it('DISPATCH hides the Teammates type from Attach, and the preview says the dispatcher gets the whole roster', async () => {
+  it('DISPATCH hides the Teammates type from Attach: a dispatcher gets the whole roster', async () => {
     const view = renderPopup({ teammates: WITH_MODES });
     await view.ready();
     fireEvent.click(view.getByTestId('lcd-verb'));
@@ -268,10 +272,6 @@ describe('the verb switch', () => {
     fireEvent.click(view.getByTestId('lcd3-attach'));
     fireEvent.click(view.getByTestId('lcd3-attach-type'));
     expect(view.queryByTestId('lcd3-attach-type-teammate')).toBeNull();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
-    fireEvent.click(view.getByTestId('nsx-send'));
-    expect(view.getByTestId('lcd3-preview-roster').textContent).toContain('whole space’s roster');
   });
 
   it('RUN keeps the Teammates type in Attach', async () => {
@@ -308,46 +308,39 @@ describe('the verb switch', () => {
   });
 });
 
-describe('Launch goes through "What the agent gets"', () => {
-  it('lists the task, the notes, and where each strip item goes today', async () => {
+describe('Launch commits on the first press', () => {
+  it('one press sends the notes and the strip; nothing opens in between', async () => {
     const view = renderPopup();
     await view.ready();
     fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'be brief' } });
     fireEvent.click(view.getByTestId('nsx-send'));
-    const preview = view.getByTestId('lcd3-preview');
-    expect(preview.textContent).toContain('What the agent gets');
-    expect(preview.textContent).toContain('Wire the launch flow');
-    expect(preview.textContent).toContain('be brief');
-    expect(within(view.getByTestId('lcd3-preview-memories')).getByText(/tokens\.css/)).toBeTruthy();
-    expect(view.getByTestId('lcd3-preview-index').textContent).toContain('Launch spec');
-    expect(view.getByTestId('lcd3-preview-files').textContent).toContain('boot.log');
-    expect(view.onSpawn).not.toHaveBeenCalled();
+    await waitFor(() => expect(view.onSpawn).toHaveBeenCalledTimes(1));
+    expect(view.onSpawn.mock.calls[0]![0].promptExtra).toBe('be brief');
   });
 
-  it('Back returns to the card, and Escape closes the preview before anything else', async () => {
+  it('⌘↵ commits', async () => {
     const view = renderPopup();
-    fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-back'));
-    expect(view.queryByTestId('lcd3-preview')).toBeNull();
-    fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(view.queryByTestId('lcd3-preview')).toBeNull();
-    expect(view.onDismiss).not.toHaveBeenCalled();
-  });
-
-  it('⌘↵ opens the preview, and ⌘↵ in the preview commits', async () => {
-    const view = renderPopup();
-    fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
-    expect(view.getByTestId('lcd3-preview')).toBeTruthy();
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
     fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(view.onSpawn).toHaveBeenCalledTimes(1));
   });
 
-  it('a refusal keeps the card up with the reason inside the preview', async () => {
+  it('while the node answers, the card is ONE launching line naming what was pressed', async () => {
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    const line = await view.findByTestId('lcd3-launching');
+    expect(line.textContent).toContain('Launching Wire the launch flow');
+    expect(line.textContent).toContain('forge');
+    expect(line.getAttribute('role')).toBe('status');
+  });
+
+  it('a refusal returns to the card with the reason, and does not dismiss', async () => {
     const view = renderPopup({ onSpawn: vi.fn(() => Promise.reject(new Error('teammate is paused'))) });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
-    await waitFor(() => expect(view.getByTestId('lcd3-preview').textContent).toContain('teammate is paused'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('teammate is paused'));
+    expect(view.queryByTestId('lcd3-launching')).toBeNull();
     expect(view.onDismiss).not.toHaveBeenCalled();
   });
 
@@ -359,17 +352,76 @@ describe('Launch goes through "What the agent gets"', () => {
       .mockImplementation(() => Promise.resolve());
     const view = renderPopup({ onSpawn, clientMutationId: undefined, newClientMutationId: () => `m:${String(++n)}` });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
+    await waitFor(() => expect(view.getByRole('alert')).toBeTruthy());
+    fireEvent.click(view.getByTestId('nsx-send'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
     expect(onSpawn.mock.calls[1]![0].clientMutationId).toBe(onSpawn.mock.calls[0]![0].clientMutationId);
-    fireEvent.click(view.getByTestId('lcd3-preview-back'));
+    await waitFor(() => expect(view.getByRole('alert')).toBeTruthy());
     fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'changed' } });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(3));
     expect(onSpawn.mock.calls[2]![0].clientMutationId).not.toBe(onSpawn.mock.calls[0]![0].clientMutationId);
+  });
+});
+
+describe('the onLaunchStarted handoff', () => {
+  it('true: the host takes the launch — the seam sees the exact input, onSpawn still fires, the card dismisses at once', async () => {
+    let settle: (() => void) | null = null;
+    const onSpawn = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const onLaunchStarted = vi.fn(() => true);
+    const view = renderPopup({ onSpawn, onLaunchStarted });
+    await view.ready();
+    fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'be brief' } });
+    fireEvent.click(view.getByTestId('nsx-send'));
+    expect(onLaunchStarted).toHaveBeenCalledTimes(1);
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+    const input = onSpawn.mock.calls[0]![0] as { clientMutationId: string; title?: string };
+    expect(onLaunchStarted.mock.calls[0]![0]).toMatchObject({
+      clientMutationId: input.clientMutationId,
+      subjectId: 'task-9',
+      title: input.title,
+      verb: 'worker',
+      teammate: { id: 'tm-forge', name: 'forge' },
+      notes: 'be brief',
+      workdir: { kind: 'project', projectId: 'pj-a', mode: 'worktree', baseRef: null },
+    });
+    expect(view.queryByTestId('lcd3-launching')).toBeNull();
+    settle!();
+  });
+
+  it('true: a failure afterwards is the host’s to show — the card draws nothing and throws nothing', async () => {
+    const view = renderPopup({ onSpawn: vi.fn(() => Promise.reject(new Error('no'))), onLaunchStarted: () => true });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(view.props.onSpawn).toHaveBeenCalled());
+    expect(view.queryByRole('alert')).toBeNull();
+  });
+
+  it('false (or absent): the card keeps its launching line until onSpawn settles', async () => {
+    let settle: (() => void) | null = null;
+    const onSpawn = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const onLaunchStarted = vi.fn(() => false);
+    const view = renderPopup({ onSpawn, onLaunchStarted });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    expect(onLaunchStarted).toHaveBeenCalledTimes(1);
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    expect(await view.findByTestId('lcd3-launching')).toBeTruthy();
+    settle!();
+    await waitFor(() => expect(view.onDismiss).toHaveBeenCalledTimes(1));
+  });
+
+  it('true clears the draft on that dismiss', async () => {
+    const view = renderPopup({ onLaunchStarted: () => true });
+    await view.ready();
+    fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'draft words' } });
+    fireEvent.click(view.getByTestId('nsx-send'));
+    view.unmount();
+    const again = renderPopup();
+    expect((again.getByTestId('lcd3-notes') as HTMLTextAreaElement).value).toBe('');
   });
 });
 
@@ -381,10 +433,9 @@ describe('a spawn that timed out', () => {
     const onSpawn = vi.fn(timeout);
     const view = renderPopup({ onSpawn, sessionsSince });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
-    await waitFor(() => expect(view.getByTestId('lcd3-preview').textContent).toContain('It started'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('already working on the task'));
     expect(sessionsSince).toHaveBeenCalledWith('task-9', expect.any(String));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
+    fireEvent.click(view.getByTestId('nsx-send'));
     expect(onSpawn).toHaveBeenCalledTimes(1);
   });
 
@@ -392,17 +443,15 @@ describe('a spawn that timed out', () => {
     const onSpawn = vi.fn(timeout);
     const view = renderPopup({ onSpawn, sessionsSince: async () => [] });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
-    await waitFor(() => expect(view.getByTestId('lcd3-preview').textContent).toContain('Launch again to retry'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('Launch again to retry'));
+    fireEvent.click(view.getByTestId('nsx-send'));
     await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
   });
 
   it('with no way to check, it says so rather than calling a retry safe', async () => {
     const view = renderPopup({ onSpawn: vi.fn(timeout) });
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
-    await waitFor(() => expect(view.getByTestId('lcd3-preview').textContent).toContain('may have started'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('may have started'));
   });
 });
 
@@ -411,16 +460,11 @@ describe('Dispatch', () => {
     expect(renderPopup().queryByTestId('launch-dispatch')).toBeNull();
   });
 
-  it('goes through "What the dispatcher gets", sends only the notes, and closes on success', async () => {
+  it('commits on its first press, sends only the notes, and closes on success', async () => {
     const onDispatch = vi.fn(async () => ({ delivery: 'delivered', dispatcherSpawned: false }));
     const view = renderPopup({ onDispatch });
     fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'route to a UI person' } });
     fireEvent.click(view.getByTestId('launch-dispatch'));
-    const preview = view.getByTestId('lcd3-dispatch-preview');
-    expect(preview.textContent).toContain('What the dispatcher gets');
-    expect(preview.textContent).toContain('route to a UI person');
-    expect(preview.textContent).toMatch(/Teammate · project · model/);
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
     await waitFor(() => expect(view.onDismiss).toHaveBeenCalled());
     expect(onDispatch).toHaveBeenCalledWith('route to a UI person', expect.any(String));
   });
@@ -436,8 +480,7 @@ describe('Dispatch', () => {
   it('an undelivered request is a warning, not a success', async () => {
     const view = renderPopup({ onDispatch: vi.fn(async () => ({ delivery: 'undelivered', dispatcherSpawned: true })) });
     fireEvent.click(view.getByTestId('launch-dispatch'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
-    await waitFor(() => expect(view.getByTestId('lcd3-dispatch-preview').textContent).toContain('couldn’t deliver it to the dispatcher it just started'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('couldn’t deliver it to the dispatcher it just started'));
     expect(view.onDismiss).not.toHaveBeenCalled();
   });
 
@@ -452,7 +495,7 @@ describe('Dispatch', () => {
     expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.getAttribute('title')).toMatch(/can’t ask for a coordinator yet/);
     fireEvent.click(button);
-    expect(view.queryByTestId('lcd3-dispatch-preview')).toBeNull();
+    expect(view.props.onDispatch).not.toHaveBeenCalled();
   });
 
   it('a retried dispatch reuses its key', async () => {
@@ -461,9 +504,9 @@ describe('Dispatch', () => {
       .mockImplementation(async () => ({ delivery: 'delivered' }));
     const view = renderPopup({ onDispatch });
     fireEvent.click(view.getByTestId('launch-dispatch'));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
     await waitFor(() => expect(onDispatch).toHaveBeenCalledTimes(1));
-    fireEvent.click(view.getByTestId('lcd3-preview-confirm'));
+    await waitFor(() => expect(view.getByRole('alert')).toBeTruthy());
+    fireEvent.click(view.getByTestId('launch-dispatch'));
     await waitFor(() => expect(onDispatch).toHaveBeenCalledTimes(2));
     expect(onDispatch.mock.calls[1]![1]).toBe(onDispatch.mock.calls[0]![1]);
   });
@@ -509,5 +552,46 @@ describe('remembered picks, per teammate', () => {
     const second = renderPopup();
     await waitFor(() => expect(second.getByTestId('nsx-effort').getAttribute('aria-label')).toBe('Reasoning effort: Low'));
     expect((await second.spawn()).reasoningEffort).toBe('low');
+  });
+});
+
+describe('present-only: the card draws what this launch carries', () => {
+  const EMPTY = { items: [], total: 0, budget: null, floor: 1.5, minEntries: 1 };
+
+  it('nothing attached ⇒ just Attach: no group chips and no placeholder sentence', async () => {
+    const view = renderPopup({
+      selection: { load: async () => ({ ...LAUNCH_DEFAULTS, memories: EMPTY, skills: EMPTY, references: EMPTY }) },
+    });
+    await waitFor(() => expect(view.queryByTestId('lcd3-strip-empty')).toBeNull());
+    expect(view.getByTestId('lcd3-attach')).toBeTruthy();
+    expect(view.getByTestId('lcd3-strip').children).toHaveLength(0);
+    expect(view.getByTestId('launch-card').textContent).not.toMatch(/None\.|Empty\.|Nothing else|Nothing attached/);
+  });
+
+  it('a group whose every row is unticked leaves the card once its menu closes — and stays one click away in Attach', async () => {
+    const view = renderPopup();
+    const menu = await view.openGroup('memory');
+    fireEvent.click(within(menu).getByRole('menuitemcheckbox'));
+    expect(view.getByTestId('lcd3-group-memory')).toBeTruthy(); // its menu is still open
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('lcd3-group-memory')).toBeNull());
+    expect(view.getByTestId('lcd3-attach-suggested-count').textContent).toContain('1 suggested');
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    expect(view.queryByTestId('lcd3-attach-row-ent-mem-tokens')).toBeNull(); // listed once, under Suggested
+    fireEvent.click(view.getByTestId('lcd3-attach-suggested-ent-mem-tokens'));
+    await waitFor(() => expect(view.getByTestId('lcd3-group-memory')).toBeTruthy());
+    expect(view.queryByTestId('lcd3-attach-suggested-count')).toBeNull();
+  });
+
+  it('the in-full lane is not drawn while nothing is in full; + stays', () => {
+    const view = renderPopup();
+    expect(view.queryByTestId('lcd3-full-lane')).toBeNull();
+    expect(view.getByTestId('lcd3-add-full')).toBeTruthy();
+  });
+
+  it('connectors: the block is hidden at count 0 but the picker stays mounted', () => {
+    const view = renderPopup();
+    const slot = view.getByTestId('lcd3-connectors');
+    expect(slot.hidden).toBe(true);
   });
 });

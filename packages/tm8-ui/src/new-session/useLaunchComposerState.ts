@@ -93,8 +93,16 @@ export function useLaunchComposerState(args: {
    * no `accessMode` sent until the person changes it (owner, 01a0df30).
    */
   initialAccessMode?: LaunchAccessMode | null;
+  /**
+   * Whether the plugin facts are wanted yet. The Run card passes false until
+   * its ··· drawer first opens — the only place the Plugins row is drawn — so
+   * opening the card never reads them (lane E). Default true: the create
+   * screen draws the row from the start.
+   */
+  pluginsWanted?: boolean;
 }): LaunchComposerState {
   const { teammates, projects, launchMode, loadInstalledPlugins } = args;
+  const pluginsWanted = args.pluginsWanted ?? true;
   const taskKey = (args.taskIds ?? []).join(',');
 
   const [teammateId, setTeammateId] = useState<string | null>(null);
@@ -245,13 +253,13 @@ export function useLaunchComposerState(args: {
   const factsKey = teammateKey ? `${teammateKey}|${taskKey}` : null;
   useEffect(() => {
     const load = loadPluginsRef.current;
-    if (!harnessApplies || !teammateKey || !factsKey || !load) return;
+    if (!pluginsWanted || !harnessApplies || !teammateKey || !factsKey || !load) return;
     let live = true;
     load(teammateKey, taskKey ? taskKey.split(',') : [])
       .then((facts) => { if (live) setInstalled({ forId: factsKey, facts }); })
       .catch(() => { if (live) setInstalled({ forId: factsKey, facts: null }); });
     return () => { live = false; };
-  }, [harnessApplies, teammateKey, taskKey, factsKey, canLoadPlugins]);
+  }, [pluginsWanted, harnessApplies, teammateKey, taskKey, factsKey, canLoadPlugins]);
   const facts = installed && installed.forId === factsKey ? installed.facts : null;
   const installedPlugins = facts?.installed ?? null;
   const pluginSkills = facts?.pluginSkills ?? null;

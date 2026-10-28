@@ -8,6 +8,7 @@ import {
   STRIP_KIND,
   STRIP_KINDS,
   stripChipTitle,
+  stripKindOf,
   type StripGroup,
   type StripKind,
   type StripRow,
@@ -21,11 +22,18 @@ import './launch-card-v3.css';
  *
  *   TOP BAND   RUN / COORDINATE / DISPATCH — the KIND of session — then the
  *              v2 pickers.
- *   TITLE ROW  one line: [+] · the task (pinned) · entities sent IN FULL,
+ *   TITLE ROW  one line: the task (pinned) · entities sent IN FULL,
  *              scrolling sideways with "‹ N" / "+N more ›".
  *   NOTES      this launch only (`promptExtra`); never saved onto the task.
+ *              One line that grows with what is typed, then scrolls.
  *   STRIP      [📎 Attach] · type groups, files first · ✦ at the far right.
  *   BOTTOM     model · effort · access · Dispatch · Launch — in every mode.
+ *
+ * CONTENT-SIZED AND PRESENT-ONLY (owner, task 01a182d2): the card is as tall
+ * as what it holds, and it draws only what this launch carries — a type
+ * group with nothing ticked, an empty in-full lane, a connectors block with
+ * no connectors are not drawn at all. What was left out lives in the group
+ * menus and Attach, not on the card.
  *
  * The card is a LAYER over the task: its title and description are read here
  * and edited on the task, never on the card.
@@ -126,7 +134,12 @@ export interface DispatchControl {
 }
 
 export interface LaunchCardV3Props extends LaunchCardShellProps {
-  connectors?: ReactNode;
+  /**
+   * The connectors picker and how many connectors it offers. The block is
+   * drawn only when `count > 0`, but the node stays MOUNTED at 0: the picker
+   * reads its catalog and readiness while hidden and reports a later count.
+   */
+  connectors?: { node: ReactNode; count: number };
   verb: LaunchVerb;
   onVerbChange(next: LaunchVerb): void;
 
@@ -173,12 +186,13 @@ export interface LaunchCardV3Props extends LaunchCardShellProps {
 
   /* ---- bottom band ---- */
   dispatch: DispatchControl | null;
-  /** Launch: opens the "What the agent gets" preview. */
+  /** Launch: commits on the first press. */
   onLaunch(): void;
-  /** An open preview, drawn over the card. */
-  preview: ReactNode;
-  /** Escape: closes the preview; returns whether one was open. */
-  onClosePreview(): boolean;
+  /**
+   * The press in flight, as one line ("Launching <title> · <teammate> ·
+   * <model> · <effort>"): the card collapses to it. Null: nothing in flight.
+   */
+  launching?: string | null;
   /** The node fixes the access mode for this verb, and why. */
   accessLock: string | null;
 }
@@ -186,35 +200,60 @@ export interface LaunchCardV3Props extends LaunchCardShellProps {
 const NO_UPLOAD_REASON = 'This surface has no upload path, so files cannot be attached here.';
 
 export function LaunchCardV3(props: LaunchCardV3Props) {
-  const { verb, onVerbChange, preview, onClosePreview } = props;
+  const { verb, onVerbChange, launching = null, connectors } = props;
   return (
     <LaunchCardShell
       {...props}
       className="lcd--v3"
       onSubmit={props.onLaunch}
-      onEscapeFirst={onClosePreview}
       trapFocus
-      overlay={preview}
+      overlay={launching ? (
+        <div className="lcd3-launching" role="status" aria-live="polite" data-testid="lcd3-launching" title={launching}>
+          <span className="lcd3-spinner" aria-hidden="true" />
+          <span className="lcd3-launching__t">{launching}</span>
+        </div>
+      ) : null}
       verb={<VerbSwitch verb={verb} onChange={onVerbChange} />}
       center={(
         <div className="lcd-center lcd3-center">
           <TitleRow {...props} />
-          <textarea
-            className="lcd-instr lcd3-notes"
-            data-testid="lcd3-notes"
-            value={props.notes}
-            aria-label="Notes for this launch"
-            aria-describedby={props.refusal || props.notice ? 'lcd-refusal' : undefined}
-            disabled={props.busy}
-            autoFocus
-            placeholder={props.notesPlaceholder}
-            onChange={(event) => props.onNotesChange(event.target.value)}
-          />
-          {props.connectors && <div className="mcp-launch-slot">{props.connectors}</div>}
+          <Notes {...props} />
+          {connectors ? (
+            <div className="mcp-launch-slot" hidden={connectors.count <= 0} data-testid="lcd3-connectors">{connectors.node}</div>
+          ) : null}
           <Strip {...props} />
         </div>
       )}
       actions={<Actions {...props} />}
+    />
+  );
+}
+
+/** About six lines of notes, then the box scrolls. */
+const NOTES_MAX_PX = 156;
+
+/** The notes box: one line that grows with what is typed, up to NOTES_MAX_PX. */
+function Notes(props: LaunchCardV3Props) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${String(Math.min(el.scrollHeight, NOTES_MAX_PX))}px`;
+  }, [props.notes]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className="lcd-instr lcd3-notes"
+      data-testid="lcd3-notes"
+      value={props.notes}
+      aria-label="Notes for this launch"
+      aria-describedby={props.refusal || props.notice ? 'lcd-refusal' : undefined}
+      disabled={props.busy}
+      autoFocus
+      placeholder={props.notesPlaceholder}
+      onChange={(event) => props.onNotesChange(event.target.value)}
     />
   );
 }
@@ -511,7 +550,7 @@ function TitleRow(props: LaunchCardV3Props) {
             ‹ {counts.left}
           </button>
         ) : null}
-        <div
+        {inFull.items.length === 0 ? null : <div
           className="lcd3-lane"
           ref={lane}
           onScroll={counts.sync}
@@ -539,7 +578,7 @@ function TitleRow(props: LaunchCardV3Props) {
               </button>
             );
           })}
-        </div>
+        </div>}
         {counts.right > 0 ? (
           <button
             type="button"
@@ -571,22 +610,35 @@ function TitleRow(props: LaunchCardV3Props) {
 /* ============================================================== strip */
 
 function Strip(props: LaunchCardV3Props) {
-  const { strip, stripRefusal, stripLoading, candidates, onAddRows, onAttachOpen, onFiles, uploads, onDismissUpload, onRetryUpload, jev } = props;
+  const { strip, stripRefusal, stripLoading, candidates, onAddRows, onAttachOpen, onFiles, uploads, onDismissUpload, onRetryUpload, jev, onTick } = props;
   const { open, toggle, close, menuProps, stop } = useLaunchCardMenu();
   const lane = useRef<HTMLDivElement | null>(null);
-  const counts = useLaneCounts(lane, [strip, uploads]);
+  const counts = useLaneCounts(lane, [strip, uploads, open]);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const search = useTypedSearch();
   const [picked, setPicked] = useState<readonly string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const openGroup = open?.startsWith('group:') ? open.slice(6) as StripKind : null;
   const group = openGroup ? strip.find((g) => g.def.kind === openGroup) ?? null : null;
+  /* PRESENT-ONLY: a group with nothing ticked is not drawn — its left-out
+     rows are back in Attach. One whose menu is open stays until it closes,
+     so unticking its last row doesn't pull the menu out from under you. */
+  const shownGroups = strip.filter((g) => g.yours + g.jev > 0 || g.def.kind === openGroup);
+  /* SUGGESTED BUT UNTICKED — a default or a Jev pick the person left out —
+     stays ONE click from the launch: listed first in Attach, counted on its
+     chip (coordinator's guard on present-only). Teammates can't be sent yet,
+     so they aren't offered. */
+  const suggested = strip.flatMap((g) => g.rows).filter((r) => !r.ticked && !r.unsent);
+  const suggestedIds = new Set<string>(suggested.map((r) => r.id));
 
   const pool = candidates ?? [];
   /* Under DISPATCH a dispatcher gets the whole roster, so Attach offers no
      Teammates type at all (coordinator ruling, mock rev 18). */
   const allKinds = STRIP_KINDS.map((d) => d.kind).filter((k) => !(k === 'teammate' && props.verb === 'dispatcher'));
-  const shown = filterCandidates(pool, search, allKinds);
+  const needle = search.query.trim().toLowerCase();
+  const shownSuggested = suggested.filter((r) => (search.type === 'all' || stripKindOf(r.group, r.kind) === search.type)
+    && (!needle || r.title.toLowerCase().includes(needle)));
+  const shown = filterCandidates(pool, search, allKinds).filter((c) => !suggestedIds.has(c.row.id));
 
   const addPicked = () => {
     const rows = pool.filter((c) => picked.includes(c.row.id)).map((c) => c.row);
@@ -614,7 +666,9 @@ function Strip(props: LaunchCardV3Props) {
             toggle('attach');
           })}
         >
-          📎<span className="lcd-attbtn__label"> Attach</span> <Caret up />
+          📎<span className="lcd-attbtn__label"> Attach</span>
+          {suggested.length > 0 ? <span className="lcd3-suggestn" data-testid="lcd3-attach-suggested-count">· {suggested.length} suggested</span> : null}
+          <Caret up />
         </button>
         {open === 'attach' ? (
           <div {...menuProps('attach', 'lcd-menu--up lcd-menu--wide lcd3-menu')} role="menu" data-testid="lcd3-attach-menu">
@@ -641,6 +695,29 @@ function Strip(props: LaunchCardV3Props) {
                   </button>
                 ) : null}
                 {stripRefusal ? <div className="lcd-note lcd3-refused" role="status">{stripRefusal}</div> : null}
+                {shownSuggested.length > 0 ? (
+                  <div className="lcd3-list" data-testid="lcd3-attach-suggested">
+                    <div className="lcd-grp">Suggested <span>one click puts it back</span></div>
+                    {shownSuggested.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        role="menuitemcheckbox"
+                        aria-checked={false}
+                        aria-disabled={Boolean(stripRefusal) || undefined}
+                        className="lcd-mi"
+                        data-testid={`lcd3-attach-suggested-${r.id}`}
+                        title={r.jevWhy ? `Jev: ${r.jevWhy}` : undefined}
+                        onClick={stop(() => { if (!stripRefusal) onTick(r); })}
+                      >
+                        <span className="lcd3-box" aria-hidden="true" />
+                        <span className="lcd-kind" aria-hidden="true">{STRIP_KIND[stripKindOf(r.group, r.kind)].glyph}</span>
+                        <span className="lcd-mi__body lcd-mi__body--plain">{r.title}</span>
+                        <SourceTag row={r} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="lcd3-list">
                   {candidates === undefined ? (
                     <div className="lcd-note" role="status">
@@ -729,7 +806,7 @@ function Strip(props: LaunchCardV3Props) {
             <button type="button" className="lcd3-mini" data-testid={`lcd3-upload-remove-${u.key}`} aria-label={`Remove ${u.name}`} onClick={stop(() => onDismissUpload(u.key))}>×</button>
           </span>
         ))}
-        {strip.map((g) => (
+        {shownGroups.map((g) => (
           <button
             key={g.def.kind}
             type="button"
@@ -750,10 +827,8 @@ function Strip(props: LaunchCardV3Props) {
             <Caret up />
           </button>
         ))}
-        {strip.length === 0 && uploads.length === 0 ? (
-          <span className="lcd-empty" data-testid="lcd3-strip-empty">
-            {stripLoading ? 'Reading what this launch starts with…' : 'Nothing attached — Attach, drop files, or ✦'}
-          </span>
+        {stripLoading && shownGroups.length === 0 && uploads.length === 0 ? (
+          <span className="lcd-empty" data-testid="lcd3-strip-empty">Reading context…</span>
         ) : null}
       </div>
       {counts.right > 0 ? (
@@ -963,7 +1038,7 @@ function Actions(props: LaunchCardV3Props) {
         <div className="lcd-anchor">
           <button
             type="button"
-            className="lcd-btn lcd3-dispatch"
+            className="lcd-btn lcd3-dispatch lcd3-ghost"
             data-testid="launch-dispatch"
             data-live={(live && !dispatch.refusal) || undefined}
             aria-disabled={Boolean(dispatch.refusal) || busy || undefined}

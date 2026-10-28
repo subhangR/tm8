@@ -164,6 +164,12 @@ export interface LaunchCardShellProps {
   budget: ReactNode;
   /** A dot on ⋯: something in the drawer is not its default. */
   advancedEdited: boolean;
+  /**
+   * The ··· drawer opened. The host reads what only the drawer shows (the
+   * installed plugins) now rather than at open (lane E: an open never pays
+   * for a read nobody can see yet).
+   */
+  onAdvancedOpen?(): void;
   /** Jev's teammate and model suggestions, once it has answered. */
   jevTeammate?: JevMenuSuggestion | null;
   jevModel?: JevMenuSuggestion | null;
@@ -270,6 +276,15 @@ function useFitInside(menu: RefObject<HTMLElement | null>, card: RefObject<HTMLE
         m.style.left = `${(bounds.left + pad - anchor.left) * scale}px`;
       }
     }
+    /* A content-sized card (v3) is shorter than its menus, so a menu may hang
+       past the card over the scrim — but never past the VIEWPORT: one that
+       would is clamped to the room it has and scrolls inside. */
+    m.style.maxHeight = '';
+    rect = m.getBoundingClientRect();
+    const room = rect.top < pad
+      ? rect.bottom - pad
+      : rect.bottom > window.innerHeight - pad ? window.innerHeight - pad - rect.top : null;
+    if (room !== null && room > 0) m.style.maxHeight = `${room * scale}px`;
   }, [menu, card, key]);
 }
 
@@ -339,6 +354,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
     mode, onModeChange, profileLine, credentialProviderLabel, credential, onCredentialChange,
     githubCredential, onGithubCredentialChange, harnessApplies, harnessSurface, onHarnessChange,
     installedPlugins, installedPluginsNote, pluginSkillCounts, plugins, onPluginsChange, budget, advancedEdited,
+    onAdvancedOpen,
     jevTeammate = null, jevModel = null,
     verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, overlay,
   } = props;
@@ -347,6 +363,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
+  useEffect(() => { if (drawer) onAdvancedOpen?.(); }, [drawer, onAdvancedOpen]);
   const [teamQuery, setTeamQuery] = useState('');
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);

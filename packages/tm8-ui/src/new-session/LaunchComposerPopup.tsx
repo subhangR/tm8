@@ -1,12 +1,13 @@
 import { McpPicker } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
   CredentialsServiceKeysStatusView,
   EntityId,
   ExecutionDispatchResult,
+  ProjectId,
   ExecutionSpawnInput,
   SpawnSelectionGroup,
 } from '@tm8/contract';
@@ -51,9 +52,9 @@ import {
 } from '../launch-selection';
 import type { FileUploadTask } from '../files/upload';
 import { LaunchCardV3, VERBS, aKind, type JevButton, type LaunchCandidate, type LaunchVerb } from './LaunchCardV3';
-import { AgentPreview, DispatchPreview, type PreviewRow } from './LaunchPreview';
 import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type StripRow } from './launch-strip';
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
+import type { LaunchStarted } from './launch-started';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
 import { useOverlayHost } from '../kit/useOverlayHost';
@@ -67,8 +68,15 @@ import './new-session.css';
  * card v3 (mock 01a0df08, owner's decisions on task 01a0dee8) in a modal
  * layer. It replaced the v2 card outright (owner, form 01a0df25).
  *
- * The verb OPENS this; Launch or Dispatch commit it, each through a preview
- * of what goes. Two clicks at least, never one.
+ * The verb OPENS this; Launch (or ⌘↵) and Dispatch commit it on their FIRST
+ * press (owner, task 01a182d2: "remove second launch, and show it as loading
+ * page"). The card itself is the statement of what goes, so it draws only
+ * what this launch carries — no preview step repeating it with "None." rows.
+ *
+ * THE HANDOFF (`onLaunchStarted`): a host that draws its own progress takes
+ * the launch the moment it is pressed and the card dismisses at once; any
+ * other host keeps the card up, collapsed to one "Launching …" line, until
+ * the node answers.
  *
  * THE CARD IS A LAYER OVER THE TASK. The task's title and description are
  * read here (the subject chip's peek) and edited on the task — nothing is
@@ -87,9 +95,10 @@ import './new-session.css';
  * distinct dispatch), so a retry after a timeout replays the node's ledger
  * rather than starting a second session.
  *
- * DISMISSAL: Escape closes the preview, then a menu, then the drawer, then
- * the popup (the shell owns that order); the scrim and ✕ close it; a commit
- * closes it ONLY ON SUCCESS — a refusal keeps it up with the reason and a
+ * DISMISSAL: Escape closes a menu, then the drawer, then the popup (the
+ * shell owns that order); the scrim closes an open menu first, then the
+ * popup; ✕ closes it; a commit closes it ONLY ON SUCCESS (or at once when
+ * the host took the launch over) — a refusal keeps it up with the reason and a
  * shake (owner's ruling 2026-09-07).
  */
 
@@ -118,6 +127,8 @@ export interface LaunchComposerPopupProps {
   capacity?: LaunchCapacity;
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
+  /** Called synchronously when Launch is pressed, before the node answers. Return true to take over the progress display: the popup dismisses at once and the host owns everything after (progress, success, failure). Return false/undefined to keep the in-card "Launching…" state until onSpawn settles (today's behaviour, kept for hosts that do not implement it). */
+  onLaunchStarted?(launch: LaunchStarted): boolean | void;
   /** The subject's current description, for the read-only peek. */
   loadDescription?: () => Promise<string | null>;
   /** The viewer may edit the task: the peek offers "Edit on the task ↗" (closing onto it). */
@@ -224,6 +235,7 @@ export function LaunchComposerPopup({
   projects = [],
   capacity,
   onSpawn,
+  onLaunchStarted,
   loadDescription,
   canEditSubject = false,
   onDismiss,
@@ -270,6 +282,10 @@ export function LaunchComposerPopup({
   /* The spawn's `taskIds`, so a plugin tick's exact skill set keeps what the
      subject equips (F3). Memoized: the hook keys its read on it. */
   const subjectTaskIds = useMemo(() => [subject.id], [subject.id]);
+  /* PLUGIN FACTS ARE READ WHEN THE ··· DRAWER FIRST OPENS — the only place the
+     Plugins row is drawn — never at open (lane E). */
+  const [pluginsWanted, setPluginsWanted] = useState(false);
+  const wantPlugins = useCallback(() => setPluginsWanted(true), []);
   const { config, projectOptions, bind, more } = useLaunchComposerState({
     teammates: teammateRows,
     projects: projectRows,
@@ -277,6 +293,7 @@ export function LaunchComposerPopup({
     ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
     taskIds: subjectTaskIds,
     initialAccessMode: null,
+    pluginsWanted,
   });
 
   /* PER-TEAMMATE REMEMBERED PICKS: when the resolved teammate changes (the
@@ -438,7 +455,14 @@ export function LaunchComposerPopup({
     startUploads([failed.file]);
   };
 
-  const [pending, setPending] = useState(false);
+  /**
+   * THE PRESS, as one named state: idle (the card is editable), launching
+   * or dispatching (the card is the one-line in-flight row). A press leaves
+   * idle; a refusal, a timeout or an undelivered dispatch returns to idle;
+   * success dismisses.
+   */
+  const [phase, setPhase] = useState<'idle' | 'launching' | 'dispatching'>('idle');
+  const pending = phase !== 'idle';
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
   /** One shake per refusal — cleared by its own animationend. */
@@ -449,6 +473,10 @@ export function LaunchComposerPopup({
 
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
+  /* TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): McpPicker's
+     `onCount(n)` replaces this probe; until then "the picker drew something"
+     is the only count the card can read. */
+  const [mcpCount, setMcpCount] = useState(0);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
 
@@ -463,7 +491,7 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : (!mcpReady ? "Choose a connected account for each connector." : null) ?? selection.launchBlock
+      : (!mcpReady ? 'Connectors: choose a connected account for each connector you picked.' : null) ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -477,7 +505,7 @@ export function LaunchComposerPopup({
   }, [subject.id]);
 
   const fail = (error: unknown) => {
-    setPending(false);
+    setPhase('idle');
     setNodeRefusal(
       String((error as { message?: string })?.message ?? error)
         || 'the node refused this launch and gave no reason',
@@ -493,7 +521,7 @@ export function LaunchComposerPopup({
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
      in-flight retry, the card looks for the session before offering one. */
   const afterTimeout = () => {
-    setPending(false);
+    setPhase('idle');
     setShaking(true);
     if (!sessionsSince) {
       setTimedOut('unknown');
@@ -519,11 +547,35 @@ export function LaunchComposerPopup({
     );
   };
 
+  /** What the host is handed at the press: read off the very input sent. */
+  const launchStarted = (input: ExecutionSpawnInput): LaunchStarted => {
+    const mate = input.teamMemberId ? teammates.find((t) => t.id === input.teamMemberId) : undefined;
+    const projectId = input.projectId ?? null;
+    return {
+      clientMutationId: input.clientMutationId,
+      subjectId: subject.id as EntityId,
+      title: input.title ?? defaultTitle,
+      verb,
+      teammate: input.teamMemberId ? { id: input.teamMemberId as EntityId, name: mate?.label ?? input.teamMemberId } : null,
+      model: input.model ?? null,
+      effort: input.reasoningEffort ?? null,
+      accessMode: input.accessMode ?? null,
+      workdir: projectId === null || input.workdir?.mode === 'scratch'
+        ? { kind: 'scratch' }
+        : {
+          kind: 'project',
+          projectId: projectId as ProjectId,
+          mode: input.workdir?.mode === 'worktree' ? 'worktree' : 'project',
+          baseRef: input.workdir?.mode === 'worktree' ? input.workdir.baseRef ?? null : null,
+        },
+      notes: notes.trim(),
+    };
+  };
+
   const commit = () => {
-    if (!onSpawn || pending || refusal || timedOut === 'checking' || timedOut === 'found') return;
+    if (!onSpawn || pending || refusal || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
     setTimedOut(null);
     setNodeRefusal(null);
-    setPending(true);
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
        omitted (its defaults load) with a reason; an edited group is its
        exact set. No group edited ⇒ no `selection`. */
@@ -555,17 +607,31 @@ export function LaunchComposerPopup({
        key, so the node's ledger replays the session instead of starting a
        second one; any change to what is launched mints a fresh key. */
     const input = inputWith(spawnKey.current.keyFor(JSON.stringify(inputWith(''))));
+    const keepPicks = () => {
+      if (remember && launched.teamMemberId) {
+        writePicks(launched.teamMemberId, {
+          model: launched.model,
+          effort: launched.reasoningEffort,
+          accessMode: launched.accessMode,
+          ...(launched.target.kind === 'project' && launched.workdirMode ? { workdirMode: launched.workdirMode } : {}),
+        });
+      }
+    };
+    /* THE HANDOFF: asked synchronously, before the node is. A host that takes
+       it owns the progress and the failure, so the spawn's errors are not
+       drawn here — the card is gone by the time they arrive. */
+    if (onLaunchStarted?.(launchStarted(input)) === true) {
+      Promise.resolve()
+        .then(() => onSpawn(input))
+        .then(keepPicks, () => { /* the host's to show */ });
+      succeed();
+      return;
+    }
+    setPhase('launching');
     Promise.resolve()
       .then(() => onSpawn(input))
       .then(() => {
-        if (remember && launched.teamMemberId) {
-          writePicks(launched.teamMemberId, {
-            model: launched.model,
-            effort: launched.reasoningEffort,
-            accessMode: launched.accessMode,
-            ...(launched.target.kind === 'project' && launched.workdirMode ? { workdirMode: launched.workdirMode } : {}),
-          });
-        }
+        keepPicks();
         succeed();
       })
       .catch((error: unknown) => {
@@ -812,8 +878,7 @@ export function LaunchComposerPopup({
       .sort((a, b) => STRIP_KINDS.findIndex((d) => d.kind === a.kind) - STRIP_KINDS.findIndex((d) => d.kind === b.kind))
     : undefined;
 
-  /* ---- DISPATCH and THE PREVIEWS ---- */
-  const [preview, setPreview] = useState<null | { kind: 'launch' } | { kind: 'dispatch' }>(null);
+  /* ---- DISPATCH ---- */
   const note = notes.trim();
   const dispatchRefusal = verb !== 'worker'
     ? `Dispatch can’t ask for ${aKind(verb)} yet — the node’s dispatch takes no session kind, so its dispatcher would start a worker. Launch it yourself, or switch to RUN.`
@@ -823,7 +888,7 @@ export function LaunchComposerPopup({
   const dispatch = () => {
     if (!onDispatch || pending || dispatchRefusal) return;
     setNodeRefusal(null);
-    setPending(true);
+    setPhase('dispatching');
     Promise.resolve()
       .then(() => onDispatch(note || undefined, dispatchKey.current.keyFor(`${subject.id}\n${note}`)))
       .then((result) => {
@@ -831,7 +896,7 @@ export function LaunchComposerPopup({
         if (r?.delivery === 'undelivered') {
           /* Not a success: the request is stored on the task, but no
              dispatcher received it. Say so and keep the card up. */
-          setPending(false);
+          setPhase('idle');
           setNodeRefusal(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
           return;
         }
@@ -839,58 +904,19 @@ export function LaunchComposerPopup({
       })
       .catch(fail);
   };
-  /** ⌘↵ and Launch: open the preview; inside it, commit. */
-  const onLaunch = () => {
-    if (preview?.kind === 'launch') { commit(); return; }
-    if (preview?.kind === 'dispatch') { dispatch(); return; }
-    if (refusal || dispatcherRefusal) return;
-    setNodeRefusal(null);
-    setPreview({ kind: 'launch' });
-  };
-
   const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
-  const rowOf = (r: StripRow, noteText?: string): PreviewRow => ({
-    id: r.id, kind: stripKindOf(r.group, r.kind), title: r.title, ...(noteText ? { note: noteText } : {}),
-  });
-  const ticked = stripRows.filter((r) => r.ticked);
-  const runsAs = [
-    config.model ? modelWord(config.model) : 'the teammate’s model',
-    config.reasoningEffort ? effortLabel(config.reasoningEffort) : 'default effort',
-    accessLock ? 'Full access (forced for a dispatcher)' : config.accessMode ? accessModeLabel(config.accessMode) : 'the teammate’s default access',
-  ].join(' · ');
-  const previewNode = preview?.kind === 'launch' ? (
-    <AgentPreview
-      verb={verb}
-      subjectTitle={subject.title}
-      continuing={continuing}
-      runsAs={runsAs}
-      inFull={[]}
-      notes={notes}
-      memories={ticked.filter((r) => r.group === 'memories').map((r) => rowOf(r))}
-      skills={ticked.filter((r) => r.group === 'skills').map((r) => rowOf(r))}
-      references={ticked.filter((r) => r.group === 'references' && r.kind !== 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
-      files={ticked.filter((r) => r.group === 'references' && r.kind === 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
-      leftOut={stripRows.filter((r) => !r.ticked).map((r) => rowOf(r, r.jev === 'left-out' ? `✦ ${r.jevWhy ?? 'left out by Jev'}` : 'unticked'))}
-      contextIndex={contextIndex}
-      onBack={() => setPreview(null)}
-      onConfirm={commit}
-      busy={pending}
-      notice={nodeRefusal}
-    />
-  ) : preview?.kind === 'dispatch' ? (
-    <DispatchPreview
-      verb={verb}
-      subjectTitle={subject.title}
-      target={null}
-      targetUnknown
-      notes={notes}
-      inFullCount={inFull.length}
-      onBack={() => setPreview(null)}
-      onConfirm={dispatch}
-      busy={pending}
-      notice={nodeRefusal}
-    />
-  ) : null;
+  /* THE LAUNCHING LINE: the card collapses to what was pressed, not a greyed form. */
+  const teammateWord = teammates.find((t) => t.id === config.teamMemberId)?.label ?? null;
+  const launchingLine = phase === 'idle'
+    ? null
+    : phase === 'dispatching'
+      ? `Dispatching ${subject.title}`
+      : [
+        `Launching ${defaultTitle}`,
+        teammateWord,
+        config.model ? modelWord(config.model) : null,
+        config.reasoningEffort ? effortLabel(config.reasoningEffort) : null,
+      ].filter(Boolean).join(' · ');
 
   const restoredLine = restored
     ? describePicks(restored, { model: modelWord, access: accessModeLabel }) || null
@@ -910,13 +936,19 @@ export function LaunchComposerPopup({
 
   return createPortal(
     <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
-      {/* The scrim IS the outside: any click on it is a click away. */}
-      <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
+      {/* The scrim IS the outside: a click on it closes an open menu first
+          (the card's own click-away), then the card. */}
+      <div className="nsx-popup__scrim" onClick={(event) => {
+        const card = event.currentTarget.parentElement?.querySelector<HTMLElement>('[data-testid="launch-card"]');
+        if (card?.querySelector('[data-menu]')) card.click();
+        else onDismiss?.();
+      }} aria-hidden="true" />
       <LaunchCardV3
-        connectors={(
+        onAdvancedOpen={wantPlugins}
+        connectors={{ count: mcpCount, node: (
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
              and skills, never the launcher's personal Claude connectors. */
-          <McpPicker
+          <DrawnCount onCount={setMcpCount}><McpPicker
             teamMemberId={config.teamMemberId ?? undefined}
             targetId={subject.id}
             value={mcpSelections}
@@ -927,8 +959,8 @@ export function LaunchComposerPopup({
             notice={bind.harnessSurface === 'inherit'
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
-          />
-        )}
+          /></DrawnCount>
+        ) }}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -979,11 +1011,10 @@ export function LaunchComposerPopup({
           refusal: dispatchRefusal,
           /* No read of the space's dispatcher sessions exists yet: unknown. */
           dispatchers: null,
-          onDispatch: () => { setNodeRefusal(null); setPreview({ kind: 'dispatch' }); },
+          onDispatch: () => dispatch(),
         } : null}
-        onLaunch={onLaunch}
-        preview={previewNode}
-        onClosePreview={() => { if (!preview) return false; setPreview(null); return true; }}
+        onLaunch={commit}
+        launching={launchingLine}
         models={catalog.map((entry) => ({
           id: entry.model,
           label: entry.label,
@@ -998,10 +1029,10 @@ export function LaunchComposerPopup({
         onEffortChange={bind.onEffortChange}
         accessMode={bind.accessMode}
         onAccessModeChange={bind.onAccessModeChange}
-        onSubmit={onLaunch}
+        onSubmit={commit}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal}
+        notice={nodeRefusal}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}
@@ -1030,3 +1061,23 @@ export function LaunchComposerPopup({
   );
 }
 
+
+/**
+ * How many things a child drew: 0 while it renders nothing. A stand-in for
+ * the count lane F's `McpPicker onCount` will report; the child stays
+ * MOUNTED at 0, because it reads its catalog and readiness while hidden.
+ */
+function DrawnCount({ onCount, children }: { onCount(n: number): void; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => onCount(el.childElementCount);
+    read();
+    if (typeof MutationObserver === 'undefined') return;
+    const observer = new MutationObserver(read);
+    observer.observe(el, { childList: true });
+    return () => observer.disconnect();
+  }, [onCount]);
+  return <span ref={ref} style={{ display: 'contents' }}>{children}</span>;
+}
