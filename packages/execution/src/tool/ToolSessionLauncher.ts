@@ -26,6 +26,8 @@ export interface ToolLaunchRequest {
   cwd: string;
   keepOpen: boolean;
   token?: string;
+  /** Who started a run nobody started from a terminal (e.g. `loop: Nightly check`); printed in the header. */
+  origin?: string;
   /** Called before spawning so even an instant process exit has captured claims. */
   onReady?: () => void;
   recordExit: (exit: ToolExit) => Promise<void>;
@@ -75,18 +77,20 @@ exit(($s & 127) == 9 ? 137 : 124) if $timed;
 exit(($s & 127) ? 128 + ($s & 127) : $s >> 8);`;
 
 /** A server-generated wrapper; no input value is interpolated into shell code. */
-export function toolWrapper(request: Pick<ToolLaunchRequest, 'definition' | 'toolVersion' | 'cwd' | 'keepOpen'>,
+export function toolWrapper(request: Pick<ToolLaunchRequest, 'definition' | 'toolVersion' | 'cwd' | 'keepOpen' | 'origin'>,
   runDir: string, shell: string, secretKeys: readonly string[]): string {
   const script = join(runDir, request.definition.runtime === 'bash' ? 'tool.sh' : 'tool.py');
   const interpreter = request.definition.runtime === 'bash'
     ? `/bin/bash --noprofile --norc ${shellQuote(script)}` : `/usr/bin/python3 -I ${shellQuote(script)}`;
   const label = `${request.definition.name} v${request.toolVersion}`;
   const names = request.definition.inputs.map(input => `${input.name}${input.type === 'secret' ? '=[masked]' : ''}`).join(', ');
+  // A loop title is free text: keep control characters out of the terminal.
+  const origin = request.origin ? ` · ${request.origin.replace(/[\u0000-\u001f\u007f]/g, ' ')}` : '';
   // Unset before the follow-on shell's rc files execute. Use the server-resolved
   // shell, never an input's SHELL. Credentials mode stays off for the retained shell.
   const clean = [...new Set([...secretKeys, 'TM8_AGENT_TOKEN', 'TM8_SESSION_ID'])].map(key => `-u ${shellQuote(key)}`).join(' ');
   return `#!/bin/bash
-printf '%s\\n' ${shellQuote(`── ${label} · inputs: ${names} ──`)}
+printf '%s\\n' ${shellQuote(`── ${label}${origin} · inputs: ${names} ──`)} ${shellQuote(`── cwd: ${request.cwd} ──`)}
 start=$(/bin/date +%s)
 cd -- ${shellQuote(request.cwd)}
 if [ "$?" -eq 0 ]; then
