@@ -743,9 +743,10 @@ export interface EntityBadges {
    */
   liveSession?: TaskLiveSession;
   /**
-   * The pull requests this task `tracks`, projected onto the task's OWN
-   * summary. Newest-first by link recency, capped — see
-   * `LinkedPullRequestBadge`.
+   * The pull requests this task `tracks` — or, on a work_session or chat,
+   * the PRs it `tracks` or that are `authored_from` it (the same set its `prs`
+   * counter counts) — projected onto the row's OWN summary. Newest-first by
+   * link recency, capped — see `LinkedPullRequestBadge`.
    *
    * ABSENT MEANS NO CLAIM, never "no linked PRs". A node predating this field
    * omits it, and a reader must fall back to the graph rather than render an

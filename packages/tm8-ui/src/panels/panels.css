@@ -6329,6 +6329,15 @@
   gap: var(--pn-space-2);
   flex: 0 0 auto;
 }
+/* A session row's PR chips and its remaining counts share the counts line,
+   wrapping rather than widening the row (task 01a18209). */
+.cv2-root .lp__session-links {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--pn-space-2);
+}
 .cv2-root .lp__count {
   display: inline-flex;
   align-items: center;

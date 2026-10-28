@@ -934,7 +934,7 @@ export class PgEntityProjector implements EntityProjector {
     // leaving it out would be worse than absent: the chip would render on load
     // and then VANISH on the next live `entity.upsert`, which reads as the PR
     // being unlinked. Same loader as the facade assembler, so the two answers
-    // cannot drift. Skipped entirely when no task is in the batch.
+    // cannot drift. Skipped entirely when no task, session or chat is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
     // `badges.liveSession` (P0g): the same loader as the facade assembler, for
     // the pull-request reason above. Skipped entirely when no task is in the batch.
