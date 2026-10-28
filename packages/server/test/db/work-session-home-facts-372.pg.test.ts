@@ -1,5 +1,5 @@
 /**
- * 334 against a real Postgres: `public.work_session_home_facts`, the read the
+ * 372 against a real Postgres: `public.work_session_home_facts`, the read the
  * Codex home reclaim decides from.
  *
  * The reclaim treats an id missing from this answer as "no such session" and
@@ -33,20 +33,20 @@ interface HomeFact {
 
 type Q = (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 
-const ADMIN_ELSEWHERE = 'home-facts-334-node-admin';
+const ADMIN_ELSEWHERE = 'home-facts-372-node-admin';
 const UNKNOWN = '99999999-9999-4999-8999-999999999999';
 
 let database: W1ScratchDatabase;
 let fixture: Fixture;
 let unique = 0;
-const cmid = (label: string): string => `home-facts-334-${label}-${(unique += 1)}`;
+const cmid = (label: string): string => `home-facts-372-${label}-${(unique += 1)}`;
 
 async function seed(db: W1ScratchDatabase): Promise<Fixture> {
   return db.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
     const f = (
       await client.query<Fixture>(
-        `select 'home-facts-334-owner'::text "identityId", internal.new_id()::text "spaceId",
+        `select 'home-facts-372-owner'::text "identityId", internal.new_id()::text "spaceId",
                 internal.new_id()::text "memberId", internal.new_id()::text "teamMemberId"`,
       )
     ).rows[0]!;
@@ -82,7 +82,7 @@ async function asApp<T>(fn: (q: Q) => Promise<T>, identityId: string, nodeAdmin:
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-334',true),
+              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-372',true),
               set_config('tm8.work_session_id','',true)`,
       [identityId, nodeAdmin ? 'true' : 'false'],
     );
@@ -129,7 +129,7 @@ async function facts(ids: string[], identityId = ADMIN_ELSEWHERE, nodeAdmin = tr
 }
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('home-facts-334');
+  database = await createW1ScratchDatabase('home-facts-372');
   database.apply(migrationFiles());
   fixture = await seed(database);
 });
@@ -138,7 +138,7 @@ afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('334 — work_session_home_facts', () => {
+describe('372 — work_session_home_facts', () => {
   it('answers a node admin for a session in a space it is not a member of, where RLS would hide it', async () => {
     const running = await spawn();
     await transition(running, 'running');

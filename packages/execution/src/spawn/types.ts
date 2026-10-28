@@ -1292,7 +1292,7 @@ export interface GraphPort {
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
   /**
    * What the Codex home reclaim needs to know about these sessions
-   * (`public.work_session_home_facts`, 334). Node admin, and NOT filtered by
+   * (`public.work_session_home_facts`, 372). Node admin, and NOT filtered by
    * space membership: a session left out of the answer is treated as having
    * no row, and its home is removed. Optional: a port without it never
    * reclaims a home.

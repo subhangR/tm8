@@ -1,5 +1,5 @@
 -- =============================================================================
--- 334: the facts a node needs before it removes a session's Codex home.
+-- 372: the facts a node needs before it removes a session's Codex home.
 --
 -- Every Codex launch writes a per-session CODEX_HOME under the node's data
 -- root (`<dataDir>/manifests/mcp-homes/<session>/codex`), and nothing removed
