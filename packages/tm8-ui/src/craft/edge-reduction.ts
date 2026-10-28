@@ -1,7 +1,7 @@
 /**
  * EDGE REDUCTION — which of a craft graph's edges the canvas DRAWS. View-only:
- * the row keeps every edge; lists, the table and the inspector still read them
- * all. Pure and deterministic (input order breaks every tie).
+ * the row keeps every edge; the lists and the table still read them all (the
+ * inspector's in/out lists follow the drawn lines, merged labels included). Pure and deterministic (input order breaks every tie).
  *
  * Levels (`BlueprintEdgeDetail`):
  *   - 'all'       every edge is a line.

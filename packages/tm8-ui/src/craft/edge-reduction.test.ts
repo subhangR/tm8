@@ -162,6 +162,21 @@ describe('blueprintView edgeDetail', () => {
     expect(view.findings.length).toBeGreaterThan(0);
     expect(view.lines.map((l) => `${l.src}>${l.dst}`)).toContain('d>a');
   });
+
+  it('never folds a context link a warning names', () => {
+    const content = {
+      kind: 'graph', graphType: 'entity',
+      nodes: [{ id: 'a', spec: { kind: 'task', title: 'A' } }, { id: 'b', spec: { kind: 'task', title: 'B' } }],
+      edges: [
+        { src: 'a', dst: 'b', type: 'relates_to' },
+        { src: 'a', dst: 'a', type: 'relates_to' },
+      ],
+    };
+    const view = blueprintView(content, undefined, { edgeDetail: 'essential' });
+    expect(view.findings.some((f) => f.code === 'self_loop')).toBe(true);
+    expect(view.lines.map((l) => `${l.src}>${l.dst}`)).toEqual(['a>a']);
+    expect(view.hiddenEdges.folded).toBe(1);
+  });
 });
 
 describe('patch diff under reduction', () => {

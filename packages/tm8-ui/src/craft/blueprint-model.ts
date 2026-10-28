@@ -283,19 +283,20 @@ export function blueprintView(
     };
   });
   /* EDGE REDUCTION (view-only): which edges get a line of their own. An edge
-     a warning or error names is never dropped as implied — it must show. */
+     a warning or error names is never dropped as implied nor folded — it must show. */
   const drawnMeta = drawn.map((e) => {
     const drawnReversed = e.order === 'dst-first';
     const label = drawnReversed ? e.inverseLabel : e.label;
     return { e, drawnReversed, label };
   });
+  const flagged = (key: string) => (edgeFindings.get(key) ?? []).some((f) => f.severity !== 'info');
   const reduction = reduceEdges(drawnMeta.map(({ e, drawnReversed }) => ({
     key: e.key,
     from: drawnReversed ? e.cdst : e.csrc,
     to: drawnReversed ? e.csrc : e.cdst,
     ranked: e.order !== 'none',
-    reducible: e.role === 'dependency' && !(edgeFindings.get(e.key) ?? []).some((f) => f.severity !== 'info'),
-    fold: e.role === 'context',
+    reducible: e.role === 'dependency' && !flagged(e.key),
+    fold: e.role === 'context' && !flagged(e.key),
   })), edgeDetail);
   const metaByKey = new Map(drawnMeta.map((m) => [m.e.key, m]));
   const lineMeta = reduction.kept.map((key) => {
