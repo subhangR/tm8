@@ -55,6 +55,12 @@ async function transition(
   });
 }
 
+/**
+ * A SHELL session: born `spawning` like every session, and minted with no
+ * credential to record (273), so it may go `running` without the agent-only
+ * binding a fixture would otherwise have to fake. The machine is the same for
+ * every kind.
+ */
 async function newSession(c: Client): Promise<string> {
   const id = (await c.query<{ id: string }>(
     `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
@@ -62,8 +68,8 @@ async function newSession(c: Client): Promise<string> {
     [spaceId, memberId],
   )).rows[0]!.id;
   await c.query(
-    `insert into public.work_sessions(entity_id,title,node_id,workdir_mode,status)
-     values($1,'boot','node-1','scratch','spawning')`,
+    `insert into public.work_sessions(entity_id,title,node_id,workdir_mode,status,session_kind)
+     values($1,'boot','node-1','scratch','spawning','shell')`,
     [id],
   );
   return id;

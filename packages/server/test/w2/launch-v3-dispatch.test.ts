@@ -18,6 +18,7 @@ import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import type { ServerConfig } from '../../src/http/config.js';
 import type { RequestContext, RequestIdentity } from '../../src/http/types.js';
+import { admittedSpawn } from '../admitted-spawn.js';
 
 const IDS = {
   space: '11111111-1111-4111-8111-111111111111',
@@ -289,9 +290,9 @@ describe('in-flight retries share the attempt they retry (STATUS-1)', () => {
   it('a same-cmid spawn retried while the first is running starts one session', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const spawn = vi.spyOn(SpawnService.prototype, 'spawn').mockImplementation(async () => {
+    const spawn = vi.spyOn(SpawnService.prototype, 'admit').mockImplementation(async () => {
       await gate;
-      return { sessionId: IDS.newestDispatcher, commandResult: {}, createdTaskId: IDS.createdTask } as never;
+      return admittedSpawn({ sessionId: IDS.newestDispatcher, createdTaskId: IDS.createdTask });
     });
     try {
       const h = harness();

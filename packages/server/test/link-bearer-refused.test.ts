@@ -31,6 +31,7 @@ import { registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import type { RequestContext, RequestIdentity } from '../src/http/types.js';
 import { admitLinkInvoke, LINK_BEARER_OP_REFUSED, LINK_BEARER_SPAWN_REFUSED, LINK_BEARER_SPAWN_UNADMITTED } from '../src/identity/link-bearer.js';
+import { admittedSpawn } from './admitted-spawn.js';
 
 const SPACE = '019f9896-928d-79b6-ba1c-1cdcc1d30a6f';
 const TEAMMATE = '019f9896-928d-7c09-aac0-021c7d4652c6';
@@ -75,7 +76,8 @@ function fixture() {
     config: { host: '127.0.0.1', port: 4610, uiDir: undefined, maxBodyBytes: 1024, databaseUrl: undefined },
     owner,
   });
-  const spawn = vi.spyOn(runtime.spawnService, 'spawn').mockResolvedValue({ commandResult: {} } as never);
+  // `admit` is the launch boundary (379); `spawn()` runs through it too.
+  const spawn = vi.spyOn(runtime.spawnService, 'admit').mockImplementation(async () => admittedSpawn());
   const resume = vi.spyOn(runtime.spawnService, 'resume').mockResolvedValue({ commandResult: {} } as never);
   const startShell = vi.spyOn(runtime.spawnService, 'startShell').mockResolvedValue({ commandResult: {} } as never);
   /** Layer (iii): the raw handler, past the registry's default-deny. */

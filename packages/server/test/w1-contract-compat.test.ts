@@ -21,6 +21,7 @@ import { registerW2MessagesHandoffsHandlers } from '../src/facade/handlers/w2/me
 import { toCommandResult } from '../src/facade/handlers/entities.js';
 import { toWireError } from '../src/http/errors.js';
 import type { RequestContext } from '../src/http/types.js';
+import { admittedSpawn } from './admitted-spawn.js';
 
 const SPACE = '019f9896-928d-79b6-ba1c-1cdcc1d30a6f';
 const SOURCE = '019f9896-928d-7a24-848b-4c8fdd82b761';
@@ -554,7 +555,8 @@ describe('W1 honest W2-only skeletons', () => {
       },
       owner,
     });
-    const spawn = vi.spyOn(runtime.spawnService, 'spawn').mockResolvedValue({ commandResult: {} } as never);
+    // `admit` is the launch boundary (379); `spawn()` runs through it too.
+    const spawn = vi.spyOn(runtime.spawnService, 'admit').mockImplementation(async () => admittedSpawn());
     return { registry, owner, spawn, tx, db, q };
   }
 

@@ -2437,27 +2437,41 @@ export class SpawnService {
       // there would burn a slot against the concurrency cap forever, so mark it
       // failed — the same write moves its boot phase to `failed` and says why —
       // and do not let a cleanup failure mask the original error, which is the
-      // one that explains what happened.
-      await this.failSession(auth, sessionId, error, bootExit);
-      if (firstPromptDeliveryId) this.promptSettlement?.cancel(firstPromptDeliveryId);
+      // one that explains what happened. Every step is guarded on its own: one
+      // that throws must neither skip the rest nor turn this boot's outcome
+      // into a rejection nobody is awaiting.
+      const cleanup = async (step: string, run: () => unknown): Promise<void> => {
+        try {
+          await run();
+        } catch (cleanupError) {
+          this.logger?.error(
+            `SpawnService: boot cleanup step failed (${step})`,
+            cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
+            { sessionId },
+          );
+        }
+      };
+      await cleanup('failSession', () => this.failSession(auth, sessionId, error, bootExit));
+      if (firstPromptDeliveryId) {
+        const deliveryId = firstPromptDeliveryId;
+        await cleanup('cancelFirstPrompt', () => this.promptSettlement?.cancel(deliveryId));
+      }
       // A failure after the child exists must not leave an unowned process. The
       // notifying kill also abandons a queued first prompt if spawn itself
       // threw before the PTY was installed, closing the handoff residue.
-      this.pty.kill(sessionId);
+      await cleanup('kill', () => this.pty.kill(sessionId));
       // §4.8: the lease is released, and the WORKTREE IS PRESERVED. A failed
       // spawn is evidence about a process, not about a checkout — and a
       // checkout may already hold work. Removing it here would be the delete
       // §6.3 forbids, arrived at through the back door. A checkout that never
       // got made was already settled by `materializeWorktree`.
       if (worktree && leased) {
-        await this.graph
-          .releaseWorktreeLease(auth, worktree.worktreeId)
-          .catch(() => undefined);
+        await cleanup('releaseWorktreeLease', () => this.graph.releaseWorktreeLease(auth, worktree.worktreeId));
       }
       // The session is dead; its space key must not outlive it on disk.
-      await this.scrubSessionSecrets(sessionId);
+      await cleanup('scrubSessionSecrets', () => this.scrubSessionSecrets(sessionId));
       // R14: nor its agent token in auth_sessions.
-      if (agentTokenIssued) await this.revokeAgentToken(auth, sessionId);
+      if (agentTokenIssued) await cleanup('revokeAgentToken', () => this.revokeAgentToken(auth, sessionId));
       this.sessionAuth.delete(sessionId);
       this.logSpawnTimings(timer, sessionId, 'failed', error);
       return { ok: false, error };
