@@ -81,6 +81,7 @@ import {
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
+import { requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
@@ -1488,11 +1489,28 @@ export class W2EntitiesCommandsTrackingService {
           // entities.create envelope, exactly as a memory is (056 pattern).
           // Same-space containment of teamMemberId/subjectId is enforced in the
           // door, not here — a check on this side would be advisory only.
-          raw = await q.rpc('create_loop', [input.spaceId, input.title, envelope.actorId ?? null,
-            content.schedule ?? null, content.teamMemberId ?? null, content.subjectId ?? null,
-            content.prompt ?? '', JSON.stringify(content.config ?? {}),
-            content.enabled ?? true, content.nextRunAt ?? null,
-            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          // Loops design §3.1: the server computes nextRunAt; a client value is
+          // ignored (logged, not refused) for the UI that still sends one.
+          {
+            const schedule = typeof content.schedule === 'string' ? content.schedule : '';
+            const timezone = typeof content.timezone === 'string' ? content.timezone : 'UTC';
+            const enabled = content.enabled === undefined ? true : content.enabled === true;
+            requireValidSchedule(schedule, timezone);
+            const config = requireSpawnConfig(content.config);
+            if (content.nextRunAt !== undefined) {
+              console.warn(`[tm8:loops] entities.create ignored a client nextRunAt for a loop in space ${input.spaceId}`);
+            }
+            const write = scheduleWrite(null, { schedule, timezone, enabled });
+            const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
+            raw = await q.rpc('create_loop', [input.spaceId, input.title, envelope.actorId ?? null,
+              schedule, content.teamMemberId ?? null, content.subjectId ?? null,
+              content.prompt ?? '', JSON.stringify(config),
+              enabled, write.nextRunAt ?? null,
+              input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null,
+              content.action ?? null, content.toolId ?? null, JSON.stringify(content.toolInputs ?? {}),
+              timezone, content.concurrency ?? 'skip', content.maxRuntimeSeconds ?? null,
+              retry.attempts ?? 0, retry.delaySeconds ?? 300]);
+          }
           break;
         case 'graph': {
           // Craft P1 (135): SOFT validation by law (R2) — the schema asserts
@@ -1686,16 +1704,40 @@ export class W2EntitiesCommandsTrackingService {
             // `null` MERGES and the explicit `clear*` booleans are the only way
             // to null a column — so an unrelated patch cannot silently
             // unschedule a loop or drop its runner.
-            raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
-              input.title ?? null, content.schedule ?? null,
-              content.teamMemberId ?? null, content.teamMemberId === null,
-              content.subjectId ?? null, content.subjectId === null,
-              content.prompt ?? null,
-              content.config === undefined ? null : JSON.stringify(content.config),
-              content.enabled ?? null,
-              content.nextRunAt ?? null, content.nextRunAt === null,
-              null, null, false,
-              envelope.clientMutationId ?? null]);
+            // Loops design §3.1: nextRunAt is the server's, recomputed from now on
+            // a schedule/timezone change or an enable; a client value is ignored.
+            {
+              const current = (await q.query<{ schedule: string; timezone: string; enabled: boolean }>(
+                'select schedule, timezone, enabled from public.loops where entity_id = $1', [id]))[0];
+              if (!current) throw new CollabError('not_found', `loop ${id} not found`);
+              const after = {
+                schedule: typeof content.schedule === 'string' ? content.schedule : current.schedule,
+                timezone: typeof content.timezone === 'string' ? content.timezone : current.timezone,
+                enabled: typeof content.enabled === 'boolean' ? content.enabled : current.enabled,
+              };
+              requireValidSchedule(after.schedule, after.timezone);
+              const config = content.config === undefined ? undefined : requireSpawnConfig(content.config);
+              if (content.nextRunAt !== undefined) {
+                console.warn(`[tm8:loops] entities.patch ignored a client nextRunAt for loop ${id}`);
+              }
+              const write = scheduleWrite(current, after);
+              const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
+              raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
+                input.title ?? null, content.schedule ?? null,
+                content.teamMemberId ?? null, content.teamMemberId === null,
+                content.subjectId ?? null, content.subjectId === null,
+                content.prompt ?? null,
+                config === undefined ? null : JSON.stringify(config),
+                content.enabled ?? null,
+                write.nextRunAt ?? null, write.nextRunAt === null,
+                null, write.lastError ?? null, false,
+                envelope.clientMutationId ?? null,
+                content.action ?? null, content.toolId ?? null, content.toolId === null,
+                content.toolInputs === undefined ? null : JSON.stringify(content.toolInputs),
+                content.timezone ?? null, null, false, content.concurrency ?? null,
+                content.maxRuntimeSeconds ?? null, content.maxRuntimeSeconds === null,
+                retry.attempts ?? null, retry.delaySeconds ?? null, null]);
+            }
             break;
           case 'graph': {
             // Craft P1: `null` MERGES (a patch carries only what it changes —

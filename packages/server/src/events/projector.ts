@@ -331,7 +331,7 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
-  // Loops 378 columns; optional until every select carries them.
+  // Loops 378 columns. Optional: a row built by a select without the loops join has none.
   loop_action?: 'spawn' | 'dispatch' | 'tool' | null;
   loop_timezone?: string | null;
   loop_paused_until?: Date | string | null;
@@ -562,6 +562,10 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  lp.action as loop_action, lp.timezone as loop_timezone, lp.paused_until as loop_paused_until,
+  lp.tool_id as loop_tool_id, lp.tool_inputs as loop_tool_inputs, lp.concurrency as loop_concurrency,
+  lp.max_runtime_seconds as loop_max_runtime_seconds, lp.retry_attempts as loop_retry_attempts,
+  lp.retry_delay_seconds as loop_retry_delay_seconds,
   cht.title          as chat_title,
   cht.teammate_id    as chat_teammate_id,
   to_jsonb(cht)->'credential_selection' as chat_credential_selection,
