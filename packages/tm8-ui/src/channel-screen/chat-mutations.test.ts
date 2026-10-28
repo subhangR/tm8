@@ -155,6 +155,22 @@ describe('stored-first Chat mutation journal', () => {
     expect(chatPageWithJournal(h.store.getState().entries[chatStateKey(key)]!).items).toHaveLength(1);
   });
 
+  it('a late event echo does not clear the draft the viewer started after the result settled', async () => {
+    const h = setup(vi.fn().mockResolvedValue(result('01900000-0000-7000-8000-000000000307', 'first')));
+    await h.controller.submit({ anchorIds: [SESSION], body: 'first', parentMessageId: null });
+    const mutation = Object.values(h.store.getState().entries[chatStateKey(key)]!.mutations)[0]!;
+
+    h.store.getState().setDraft(key, 'second, half-written');
+    reconcileChatMutationEvent(h.store, chatStateKey(key), {
+      type: 'message.created',
+      anchorId: SESSION,
+      message: message('01900000-0000-7000-8000-000000000307', 'first'),
+      clientMutationId: mutation.clientMutationId,
+    } as never);
+
+    expect(h.store.getState().entries[chatStateKey(key)]!.drafts.newMessage).toBe('second, half-written');
+  });
+
   it('Send again submits the same content under a fresh identity and never mutates delivery state', async () => {
     const post = vi.fn()
       .mockResolvedValueOnce(result('01900000-0000-7000-8000-000000000307'))

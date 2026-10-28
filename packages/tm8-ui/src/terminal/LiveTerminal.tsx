@@ -408,9 +408,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     // their existing non-stealing mount behaviour.
     if (autoFocus && !readOnlyRef.current) term.focus();
 
+    /* Set by the cleanup. The font-load, replay and first-frame callbacks below
+       outlive the mount: xterm keeps `term.element` after dispose, and a
+       stale callback that reached `scheduleResize` parked its frame in the
+       shared `resizeRafRef` — blocking the NEXT session's first fit and
+       spending its one repaint nudge on this session's id. */
+    let disposed = false;
+
     const finishReplayHydration = () => {
       requestAnimationFrame(() => {
-        if (!term.element) return;
+        if (disposed || !term.element) return;
         try {
           term.scrollToBottom();
           term.refresh(0, term.rows - 1);
@@ -596,7 +603,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     scheduleResizeRef.current = scheduleResize;
 
     const forceFontReflow = () => {
-      if (!term.element) return;
+      if (disposed || !term.element) return;
       // Bump-then-restore forces xterm to re-measure its char cell after a
       // web font finishes loading — assigning the same value again is a
       // no-op to xterm's change detection.
@@ -628,7 +635,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     // box, and `sendResize`'s own readiness gate (`isXtermRendererReady`)
     // retries via `scheduleResize`'s backoff if the renderer genuinely isn't
     // up yet.
-    requestAnimationFrame(forceFontReflow);
+    const firstReflowRaf = requestAnimationFrame(forceFontReflow);
 
     let fontReflowTimers: number[] = [];
     if (document.fonts) {
@@ -731,18 +738,20 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       }
     };
 
+    /* STATED, never silent (R2): a refused paste that did nothing at all
+       reads as a broken terminal. The names are the user's own, so they can
+       see which of several files was the one nothing can read. */
+    const notifyRefused = (files: readonly File[]) => notifyUser(
+      `${files.map((file) => file.name || 'unnamed file').join(', ')} — not pasted; agents cannot read ${files.length === 1 ? 'this file type' : 'these file types'}.`,
+      'warn',
+    );
+
     const handlePaste = (event: ClipboardEvent) => {
       if (readOnlyRef.current) return;
       const result = dispatchClipboardData(event.clipboardData, {
         onText: (text) => term.paste(text),
         onFiles: (files) => void injectFiles(files),
-        /* STATED, never silent (R2): a refused paste that did nothing at all
-           reads as a broken terminal. The names are the user's own, so they
-           can see which of several files was the one nothing can read. */
-        onRefused: (files) => notifyUser(
-          `${files.map((file) => file.name || 'unnamed file').join(', ')} — not pasted; agents cannot read ${files.length === 1 ? 'this file type' : 'these file types'}.`,
-          'warn',
-        ),
+        onRefused: notifyRefused,
       });
       if (result.handled) {
         event.preventDefault();
@@ -757,13 +766,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       const result = dispatchClipboardData(event.dataTransfer, {
         onText: (text) => term.paste(text),
         onFiles: (files) => void injectFiles(files),
-        /* STATED, never silent (R2): a refused paste that did nothing at all
-           reads as a broken terminal. The names are the user's own, so they
-           can see which of several files was the one nothing can read. */
-        onRefused: (files) => notifyUser(
-          `${files.map((file) => file.name || 'unnamed file').join(', ')} — not pasted; agents cannot read ${files.length === 1 ? 'this file type' : 'these file types'}.`,
-          'warn',
-        ),
+        onRefused: notifyRefused,
       });
       if (result.handled) {
         event.preventDefault();
@@ -835,6 +838,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     scheduleResize();
 
     return () => {
+      disposed = true;
+      cancelAnimationFrame(firstReflowRaf);
       for (const timer of fontReflowTimers) window.clearTimeout(timer);
       resizeObserver.disconnect();
       detachTouchScroll();

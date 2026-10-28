@@ -147,6 +147,10 @@ export function NewSessionScreen({
   const [error, setError] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
   const inFlight = useRef(false);
+  /* The task a failed spawn left behind, for the retry the error offers. It
+     belongs to the prompt and title it was minted from: an edit makes the
+     next Enter a new launch, and a new task. */
+  const mintedRef = useRef<{ taskId: EntityId; draft: string; title: string; attempts: number } | null>(null);
 
   const [customTitle, setCustomTitle] = useState(initialTitle ?? '');
 
@@ -206,13 +210,23 @@ export function NewSessionScreen({
       /* PRE-FLIGHT ALREADY DONE: `canLaunch` gates `ready`, so a refusal
          cannot leave an orphan task behind — the task is only minted once the
          spawn is known to be permissible. */
-      const taskKind = getKind('task');
-      const created = await commands.createEntity(
-        newEntityInput(spaceId, taskKind.kind as never, title, null, {
-          description: promptBody(draft),
-        }),
-      );
-      taskId = createdIdOf(created) as EntityId | null;
+      const minted = mintedRef.current;
+      if (minted && minted.draft === draft && minted.title === title) {
+        /* A RETRY. The error promised "try the session again", and minting
+           here put a second task with the same prompt on the board per press. */
+        taskId = minted.taskId;
+        minted.attempts += 1;
+      } else {
+        mintedRef.current = null;
+        const taskKind = getKind('task');
+        const created = await commands.createEntity(
+          newEntityInput(spaceId, taskKind.kind as never, title, null, {
+            description: promptBody(draft),
+          }),
+        );
+        taskId = createdIdOf(created) as EntityId | null;
+        if (taskId !== null) mintedRef.current = { taskId, draft, title, attempts: 0 };
+      }
       if (taskId === null) {
         /* Created, but we do not know WHAT. Distinct from a failure: something
            exists on the node. Say so rather than inventing either outcome. */
@@ -233,12 +247,14 @@ export function NewSessionScreen({
       await new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); });
 
       const id = await spawn(buildSpawnInput({
-        clientMutationId: `ns-${taskId}`,
+        // A retry is a new request, not a replay of the one that failed.
+        clientMutationId: mintedRef.current?.attempts ? `ns-${taskId}-${mintedRef.current.attempts}` : `ns-${taskId}`,
         spaceId,
         config: { ...config, mcpSelections },
         taskIds: [taskId],
         title,
       }));
+      mintedRef.current = null;
 
       if (onSpawned) {
         setPhase('idle');
@@ -311,7 +327,11 @@ export function NewSessionScreen({
           }}
           onSubmit={() => { void start(); }}
           busy={transitioning}
-          refusal={error ?? refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
+          /* The failed attempt is a NOTICE, not a refusal: as a refusal it
+             withheld the very Enter its own text asks for, and nothing cleared
+             it, so the screen was stuck until remounted. */
+          refusal={refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
+          notice={error}
           derivedTitle={derived}
           title={customTitle}
           onTitleChange={(next) => {

@@ -425,6 +425,7 @@ describe('applyMessageCreated', () => {
     );
     expect(next).toHaveLength(1);
     expect(next).toEqual(rows);
+    expect(next).toBe(rows);
   });
 });
 

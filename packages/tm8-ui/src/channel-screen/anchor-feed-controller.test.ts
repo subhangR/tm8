@@ -305,6 +305,71 @@ describe('coalesced refresh, reconnect and resync — on every anchor, not just 
   });
 });
 
+describe('paging survives live refreshes', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('clears `loadingEarlier` when a refresh supersedes the older read, so paging still works', async () => {
+    const h = harness();
+    h.feed.mockResolvedValueOnce(page([item('b', '2026-08-18T00:02:00.000Z')], 'older-1'));
+    const { controller, entry } = build(h);
+    await controller.loadNewest();
+
+    const older = deferred<EntityFeedPage>();
+    h.feed.mockReturnValueOnce(older.promise)
+      .mockResolvedValueOnce(page([item('b', '2026-08-18T00:02:00.000Z')], 'older-1'));
+    const paging = controller.loadOlder();
+    expect(entry().loadingEarlier).toBe(true);
+    await controller.loadNewest();        // a live refresh lands mid-scroll
+    older.resolve(page([item('a', '2026-08-18T00:01:00.000Z')]));
+    await paging;
+
+    expect(entry().loadingEarlier).toBe(false);
+    h.feed.mockResolvedValueOnce(page([item('a', '2026-08-18T00:01:00.000Z')]));
+    await controller.loadOlder();
+    expect(entry().page?.items.map((i) => i.itemId)).toEqual(['a', 'b']);
+  });
+
+  it('a live refresh keeps the older pages the viewer scrolled back through', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.feed
+      .mockResolvedValueOnce(page([item('c', '2026-08-18T00:03:00.000Z'), item('d', '2026-08-18T00:04:00.000Z')], 'older-1'))
+      .mockResolvedValueOnce(page([item('a', '2026-08-18T00:01:00.000Z'), item('b', '2026-08-18T00:02:00.000Z')], 'older-2'))
+      .mockResolvedValueOnce(page([item('d', '2026-08-18T00:04:00.000Z'), item('e', '2026-08-18T00:05:00.000Z')], 'older-3'));
+    const { controller, entry } = build(h);
+    const detach = controller.attach();
+    await controller.loadNewest();
+    await controller.loadOlder();
+
+    h.event({ type: 'message.created', anchorId: ANCHOR } as unknown as DurableWorkspaceEvent);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(entry().page?.items.map((i) => i.itemId)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(entry().olderCursor).toBe('older-2');
+    detach();
+    vi.useRealTimers();
+  });
+
+  it('starts over when the newest page does not overlap what is on screen', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.feed
+      .mockResolvedValueOnce(page([item('a', '2026-08-18T00:01:00.000Z')], 'older-1'))
+      .mockResolvedValueOnce(page([item('y', '2026-08-18T01:00:00.000Z'), item('z', '2026-08-18T01:01:00.000Z')], 'older-9'));
+    const { controller, entry } = build(h);
+    const detach = controller.attach();
+    await controller.loadNewest();
+
+    h.event({ type: 'message.created', anchorId: ANCHOR } as unknown as DurableWorkspaceEvent);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(entry().page?.items.map((i) => i.itemId)).toEqual(['y', 'z']);
+    expect(entry().olderCursor).toBe('older-9');
+    detach();
+    vi.useRealTimers();
+  });
+});
+
 describe('the branch read, available on any anchor and never crossed with another', () => {
   beforeEach(() => vi.restoreAllMocks());
 
