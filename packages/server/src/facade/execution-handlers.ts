@@ -37,7 +37,9 @@ import {
   PromptSettlementWaiter,
   readSessionTranscript,
   knownAgentConfigDirs,
-  type CodexHomeSessionFacts,
+  type SessionHomeFacts,
+  type SessionHomeOwnerFacts,
+  type SessionHomeRetention,
   type CreateWorkSessionInput,
   type ShellSessionContext,
   type ShellSessionRequest,
@@ -1573,7 +1575,7 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
   }
 
-  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<CodexHomeSessionFacts[]> {
+  async listSessionHomeFacts(auth: GraphAuth, sessionIds: string[]): Promise<SessionHomeFacts[]> {
     if (sessionIds.length === 0) return [];
     const rows = await this.db.rpc<Array<{
       sessionId: string;
@@ -1595,6 +1597,15 @@ export class DbGraphPort implements GraphPort {
         exitedAt: exitedAt !== null && Number.isFinite(exitedAt) ? exitedAt : null,
       };
     });
+  }
+
+  async listSessionHomeOwners(auth: GraphAuth, ids: string[]): Promise<SessionHomeOwnerFacts[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.rpc<Array<{ id: string; kind: string; deleted: boolean }>>(
+      this.claims(auth), 'public.session_home_owner_facts', [ids],
+    );
+    if (!Array.isArray(rows)) throw new Error('session_home_owner_facts returned no rows array');
+    return rows.map((r) => ({ id: r.id, kind: r.kind, deleted: r.deleted === true }));
   }
 
   // --- worktree provisioning (design §4) --------------------------------------
@@ -1957,11 +1968,14 @@ export interface ExecutionRuntime {
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
   /**
-   * Remove the per-session Codex homes of sessions that can no longer be
-   * resumed, and with `retentionMs` set, of sessions that ended longer ago
-   * than that. Never rejects.
+   * Remove the per-session artifacts on this node that nothing can read
+   * again (Codex homes, space-key homes, manifest files), and with a
+   * retention set, the homes of sessions that ended longer ago than that.
+   * Never rejects.
    */
-  reclaimCodexHomes(retentionMs: number | null): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
+  reclaimSessionArtifacts(
+    retention: SessionHomeRetention,
+  ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
 /**
@@ -2115,14 +2129,14 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
-    reclaimCodexHomes: async (retentionMs: number | null) => {
-      // The loopback owner, as a node admin: the facts door refuses anyone
-      // else, which leaves every home in place.
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
       try {
         const o = await owner();
-        return await spawnService.reclaimCodexHomes(
-          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
-          { retentionMs },
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
         );
       } catch (error) {
         return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
@@ -2327,14 +2341,14 @@ export function registerExecutionHandlers(
         return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
       }
     },
-    reclaimCodexHomes: async (retentionMs: number | null) => {
-      // The loopback owner, as a node admin: the facts door refuses anyone
-      // else, which leaves every home in place.
+    reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
+      // The loopback owner, as a node admin: the facts doors refuse anyone
+      // else, which leaves everything in place.
       try {
         const o = await owner();
-        return await spawnService.reclaimCodexHomes(
-          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'codex-home-reclaim' },
-          { retentionMs },
+        return await spawnService.reclaimSessionArtifacts(
+          { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'session-artifact-reclaim' },
+          { retention },
         );
       } catch (error) {
         return { reclaimed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
