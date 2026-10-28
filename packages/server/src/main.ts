@@ -58,6 +58,7 @@ import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
+import { codexHomeRetentionMsFromEnv, createCodexHomeReclaimJob } from './scheduler/jobs/codex-home-reclaim.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
@@ -1217,6 +1218,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }));
       // Owner ruling Q3: completed sessions idle past the space's window close.
       scheduler.register(createCompletedAutoCloseJob({ close: () => runtime.closeIdleCompleted() }));
+      // Per-session Codex homes of sessions that can no longer be resumed
+      // (TM8_CODEX_HOME_RETENTION_DAYS opts in to removing older ones too).
+      scheduler.register(createCodexHomeReclaimJob({
+        reclaim: (retentionMs) => runtime.reclaimCodexHomes(retentionMs),
+        retentionMs: codexHomeRetentionMsFromEnv(),
+      }));
     }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing

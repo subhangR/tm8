@@ -96,6 +96,17 @@ export {
 export { SpawnError } from './types.js';
 export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 export {
+  codexHomeReclaimReason,
+  codexMcpHomesRoot,
+  codexMcpSessionDir,
+  reclaimCodexMcpHomes,
+  scrubCodexMcpHome,
+  sweepCodexMcpHomeSecrets,
+  type CodexHomeReclaimReason,
+  type CodexHomeReclaimReport,
+  type CodexHomeSessionFacts,
+} from './mcp-home.js';
+export {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,
   spaceSessionHomeDir,

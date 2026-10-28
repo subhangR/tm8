@@ -28,6 +28,7 @@ import type {
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
+import type { CodexHomeSessionFacts } from './mcp-home.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -1289,6 +1290,17 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
+  /**
+   * What the Codex home reclaim needs to know about these sessions
+   * (`public.work_session_home_facts`, 372). Node admin, and NOT filtered by
+   * space membership: a session left out of the answer is treated as having
+   * no row, and its home is removed. Optional: a port without it never
+   * reclaims a home.
+   */
+  listSessionHomeFacts?(
+    auth: GraphAuth,
+    sessionIds: string[],
+  ): Promise<CodexHomeSessionFacts[]>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //

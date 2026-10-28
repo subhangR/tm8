@@ -159,6 +159,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
   { name: 'TM8_LOST_SESSION_AFTER_MIN', group: 'Lane launch', summary: 'Minutes without a live process before an open session is marked lost.', default: '10', definedIn: 'packages/server/src/scheduler/jobs/lost-session-reaper.ts' },
+  { name: 'TM8_CODEX_HOME_RETENTION_DAYS', group: 'Lane launch', summary: 'Days an ended Codex session keeps its per-session home. After that the home is removed and the session can no longer be resumed (0 = keep while resumable).', default: '0', definedIn: 'packages/server/src/scheduler/jobs/codex-home-reclaim.ts' },
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },

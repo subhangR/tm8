@@ -2194,6 +2194,7 @@ button.tch-entity-chip:hover {
   gap: var(--pn-space-1);
   align-items: center;
   min-width: 0;
+  max-width: 100%;
   padding: 2px var(--pn-space-1);
   border: 0;
   border-radius: var(--pn-r-sm);
@@ -2216,9 +2217,33 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 }
 
 .tch-ledger-tree__title {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A row's status: the dot alone, the word in its tooltip and accessible name
+   (task 01a15340). `flex: none` so a long title truncates and the dot never
+   squeezes, wraps or slides off the row. */
+.tch-ledger-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-idle);
+}
+
+.tch-ledger-dot[data-tone='run'] { background: var(--pn-run); }
+.tch-ledger-dot[data-tone='wait'] { background: var(--pn-wait); }
+.tch-ledger-dot[data-tone='block'] { background: var(--pn-block); }
+.tch-ledger-dot[data-tone='info'] { background: var(--pn-info); }
+.tch-ledger-dot[data-tone='brand'] { background: var(--pn-brand-2); }
+.tch-ledger-dot[data-pulse] { animation: pnPulse 1.6s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-ledger-dot[data-pulse] { animation: none; }
 }
 
 /* A title still standing in for a name we do not have reads quieter — the
@@ -2335,6 +2360,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-lpanel__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 
 .tch-lpanel__title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
