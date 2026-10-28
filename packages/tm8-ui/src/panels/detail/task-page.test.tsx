@@ -138,6 +138,29 @@ describe('the two-column page', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('puts the Details row at the bottom of the page, after the messages', () => {
+    mount(TASK, { discussion: true });
+    const details = screen.getByTestId('subtree-details');
+    const main = screen.getByTestId('subtree-main');
+    expect(within(main).getByTestId('host-discussion')).toBeTruthy();
+    expect(main.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(details.parentElement!.lastElementChild).toBe(details);
+  });
+
+  it('draws one upload button: ＋ Attach under the description, no ＋ Insert a file beside it', () => {
+    mount(TASK, {
+      attachments: {
+        startUpload: () => {
+          throw new Error('unused');
+        },
+      },
+    });
+    const description = screen.getByTestId('task-description-editor');
+    expect(within(description).getByTestId('attachment-strip')).toBeTruthy();
+    expect(within(description).queryByText(/Insert a file/)).toBeNull();
+    expect(within(description).queryByTestId('doc-insert-input')).toBeNull();
+  });
+
   it('is a page layout only: a pinned panel keeps the stacked body', () => {
     mount(TASK, { embedded: false });
     expect(screen.getByTestId('subtree-body').getAttribute('data-layout')).toBeNull();

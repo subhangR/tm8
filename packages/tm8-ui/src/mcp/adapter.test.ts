@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
 import { createMcpPort, definitionFor, importDefinitions } from './adapter';
-import { McpUiError } from './errors';
 import type { Seam } from '../data/seam';
 import type { McpServerDefinition } from '@tm8/contract';
 const definition: McpServerDefinition = { name: 'calendar', transport: 'http', url: 'https://fixture.example/mcp', auth: { type: 'api_key', headerName: 'X-API-Key', prefix: 'none' }, envKeys: [], headerKeys: ['X-API-Key'], approved: true, enabled: true };
@@ -12,6 +11,7 @@ function harness() {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined; calls.push({ url, body });
     const data = url.includes('/resolve') ? { ready: false, selections: [{ server, ready: false, reason: 'credential_required' }] }
       : url.endsWith('/credentials') && init?.method === 'GET' ? [{ id: 'account', serverId: 'server', label: 'Work account', authType: 'api_key', visibility: 'private', ownerId: 'owner', sharedMemberIds: [], usable: true, manageable: false, revoked: false, reason: 'ready' }]
+      : url.includes('/oauth/begin') ? { authorizationUrl: 'https://fixture.example/authorize?state=one', expiresAt: '2026-10-21T00:00:00.000Z' }
       : init?.method === 'GET' ? { items: [server], nextCursor: null, allowed: { register: true, attach: true } } : {};
     return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
   });
@@ -45,15 +45,24 @@ describe('MCP real operation adapter', () => {
     const result = definitionFor({ title: 'calendar', description: '', transport: 'http', url: definition.url, auth: 'oauth' });
     expect(result.auth).toEqual({ type: 'oauth2', scopes: [] });
   });
-  it('explains when a provider allowlists MCP clients instead of hiding the rejection', async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({ error: {
-      code: 'upstream_unavailable', message: 'OAuth client registration rejected by provider', retryable: false,
-    } }), { status: 502, headers: { 'content-type': 'application/json' } }));
-    const seam = { query: vi.fn(), connections: vi.fn(), commands: {} } as unknown as Seam;
-    const port = createMcpPort(createHttpClient({ fetch }), seam, 'space');
-    const error = await port.startOAuth('server', 'Figma').catch(value => value);
-    expect(error).toBeInstanceOf(McpUiError);
-    expect(error.message).toContain('only allow approved MCP clients');
+  // §10.2: `startOAuth` is TRANSPORT. It used to match two exact server strings
+  // here to word the DCR refusal, and both had already changed shape (#1296
+  // appends the cause to every message). The wording moved to
+  // `errors.ts#connectFailure`, where `connect.test.tsx` asserts it; what is
+  // left to pin here is that the scope and the §10.2 `returnTo` reach the wire,
+  // because the pending row is the only thing that survives the redirect.
+  it('sends the connection scope and the same-tab returnTo to oauth.begin', async () => {
+    const { port, calls } = harness();
+    await port.startOAuth('server', 'Work', 'space', '/#/s/space/settings/connectors');
+    const begin = calls.find(call => call.url.includes('/oauth/begin'));
+    expect(begin?.body).toMatchObject({ serverId: 'server', label: 'Work', scope: 'space', returnTo: '/#/s/space/settings/connectors' });
+  });
+
+  it('omits scope and returnTo rather than sending empty ones', async () => {
+    const { port, calls } = harness();
+    await port.startOAuth('server', 'Work');
+    const begin = calls.find(call => call.url.includes('/oauth/begin'));
+    expect(Object.keys(begin!.body!).sort()).toEqual(['clientMutationId', 'label', 'serverId']);
   });
   it('rejects imported secrets and untrusted local commands', () => {
     expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture', env: { TOKEN: 'secret' } } } }), true)).toThrow();

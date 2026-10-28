@@ -549,17 +549,15 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
   // the catalog, so a catalog edit that moves a model to another vendor has to
   // change this table on purpose.
   it.each([
-    ['kimi-k2-thinking', 'claude-code', 'kimi'],
-    ['kimi-k2-thinking-turbo', 'claude-code', 'kimi'],
-    ['kimi-k2-turbo-preview', 'claude-code', 'kimi'],
-    ['kimi-k2-0905-preview', 'claude-code', 'kimi'],
+    ['kimi-k3', 'claude-code', 'kimi'],
+    ['kimi-k2.6', 'claude-code', 'kimi'],
+    // AN OPENAI-NAMED MODEL SERVED BY GROQ: routed by who serves it, not by
+    // the vendor its id is named after. `openai` is itself a catalog provider,
+    // which is what makes this the sharp case — it used to be carried by
+    // `moonshotai/kimi-k2-instruct-0905`, retired by Groq on 2026-04-15.
     ['openai/gpt-oss-120b', 'codex', 'groq'],
     ['openai/gpt-oss-20b', 'codex', 'groq'],
-    // A Kimi model SERVED BY GROQ: routed by who serves it, not by its name.
-    ['moonshotai/kimi-k2-instruct-0905', 'codex', 'groq'],
     ['llama-3.3-70b-versatile', 'codex', 'groq'],
-    ['qwen/qwen3-32b', 'codex', 'groq'],
-    ['deepseek-r1-distill-llama-70b', 'codex', 'groq'],
   ] as const)('%s on %s runs on the %s key', (model, agentTool, backend) => {
     expect(apiKeyBackendForModel(agentTool, model)).toBe(backend);
   });
@@ -594,10 +592,10 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
     expect(apiKeyBackendForModel('claude-code', 'opus')).toBeNull();
     expect(apiKeyBackendForModel('claude-code', null)).toBeNull();
     expect(apiKeyBackendForModel('claude-code', 'some-future-model')).toBeNull();
-    expect(apiKeyBackendForModel(null, 'kimi-k2-thinking')).toBeNull();
+    expect(apiKeyBackendForModel(null, 'kimi-k3')).toBeNull();
     // A Kimi model asked for on codex is not the Kimi-on-claude route.
-    expect(apiKeyBackendForModel('codex', 'kimi-k2-thinking')).toBeNull();
-    expect(apiKeyBackendForModel('claude-code', 'qwen/qwen3-32b')).toBeNull();
+    expect(apiKeyBackendForModel('codex', 'kimi-k3')).toBeNull();
+    expect(apiKeyBackendForModel('claude-code', 'openai/gpt-oss-120b')).toBeNull();
   });
 });
 

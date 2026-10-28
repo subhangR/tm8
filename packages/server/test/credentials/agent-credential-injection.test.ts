@@ -210,8 +210,8 @@ describe('DbAgentCredentialHome', () => {
     ['claude-sonnet-5', 'anthropic'],
     ['opus', 'anthropic'],
     [null, 'anthropic'],
-    ['kimi-k2-thinking', 'kimi'],
-    ['kimi-k2-turbo-preview', 'kimi'],
+    ['kimi-k3', 'kimi'],
+    ['kimi-k2.6', 'kimi'],
   ] as const)(
     'with Kimi AND Anthropic connected, claude-code model %s runs on %s',
     async (model, expected) => {
@@ -229,9 +229,12 @@ describe('DbAgentCredentialHome', () => {
 
   it.each([
     ['gpt-6-astra', 'openai'],
-    ['qwen/qwen3-32b', 'groq'],
-    // Named Kimi, served by Groq: the serving vendor decides.
-    ['moonshotai/kimi-k2-instruct-0905', 'groq'],
+    ['llama-3.3-70b-versatile', 'groq'],
+    // THE SHARP CASE, with BOTH keys connected: an `openai/`-named model that
+    // still goes to Groq, because the serving vendor decides and `openai` is
+    // itself a catalog provider. The row that used to make this point,
+    // `moonshotai/kimi-k2-instruct-0905`, was retired by Groq on 2026-04-15.
+    ['openai/gpt-oss-120b', 'groq'],
   ] as const)(
     'with Groq AND OpenAI connected, codex model %s runs on %s',
     async (model, expected) => {
@@ -252,7 +255,7 @@ describe('DbAgentCredentialHome', () => {
     // a refusal naming the Kimi key.
     const home = await resolver([{ provider: 'anthropic' }]).resolve(CLAIMS, {
       agentTool: 'claude-code',
-      model: 'kimi-k2-thinking',
+      model: 'kimi-k3',
     });
     expect(home).toBeNull();
   });
@@ -304,7 +307,7 @@ describe('DbAgentCredentialHome', () => {
   it('returns a KEYLESS home, not null, when an active API key cannot be read', async () => {
     const home = await resolver([{ provider: 'kimi' }]).resolve(CLAIMS, {
       agentTool: 'claude-code',
-      model: 'kimi-k2-thinking',
+      model: 'kimi-k3',
     });
 
     // Not null. The member connected; the answer must say so.
@@ -332,7 +335,7 @@ describe('DbAgentCredentialHome', () => {
   it('does not fall through to the native provider when the Kimi key is unreadable', async () => {
     const home = await resolver([{ provider: 'kimi' }, { provider: 'anthropic' }]).resolve(
       CLAIMS,
-      { agentTool: 'claude-code', model: 'kimi-k2-thinking' },
+      { agentTool: 'claude-code', model: 'kimi-k3' },
     );
 
     expect(home?.provider).toBe('kimi');

@@ -174,9 +174,17 @@ export function TaskDescription({
           attach={attach}
           onAttached={onAttached}
           skillOptions={skillOptions}
+          insertButton={!attachmentSlot}
         />
       ) : (
-        <DocSource save={save} label="Description" attach={attach} onAttached={onAttached} skillOptions={skillOptions} />
+        <DocSource
+          save={save}
+          label="Description"
+          attach={attach}
+          onAttached={onAttached}
+          skillOptions={skillOptions}
+          insertButton={!attachmentSlot}
+        />
       )}
       <RefusalHost save={save} />
       {attachmentSlot ?? null}

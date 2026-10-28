@@ -1477,6 +1477,13 @@ export interface MessageView extends EntitySummary {
    * everywhere else.
    */
   turnInFlight?: boolean;
+  /**
+   * The work session or chat this message was authored FROM (the recorder-owned
+   * `authored_from` edge), when there is one. Absent on first-party messages.
+   * Rides every message read so a paged transcript needs no second read for
+   * it — the chat surface used to pull a whole `entities.feed` page for this.
+   */
+  sourceWorkSessionId?: EntityId;
 }
 
 // ---------------------------------------------------------------------------
