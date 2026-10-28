@@ -77,6 +77,48 @@ describe('knownAgentConfigDirs', () => {
     expect(dirs.some((dir) => dir.includes('id_nested'))).toBe(false);
   });
 
+  describe('a Codex session\'s isolated CODEX_HOME', () => {
+    const SESSION = '44444444-4444-4444-8444-444444444444';
+    const sessionHome = (dataDir: string): string =>
+      join(dataDir, 'manifests', 'mcp-homes', SESSION, 'codex');
+
+    it('leads the candidates, ahead of identity homes and the node home', async () => {
+      const dataDir = await credentialRoot();
+      await expect(knownAgentConfigDirs({
+        agentTool: 'codex',
+        dataDir,
+        home: '/node-home',
+        sessionId: SESSION,
+      })).resolves.toEqual([
+        sessionHome(dataDir),
+        join(dataDir, 'credentials', 'id_alice', 'openai'),
+        join(dataDir, 'credentials', 'id_bob', 'openai'),
+        join('/node-home', '.codex'),
+      ]);
+    });
+
+    it('is still a candidate on a node with no credentials directory', async () => {
+      const dataDir = await mkdtemp(join(tmpdir(), 'tm8-agent-config-dirs-'));
+      temporaryRoots.push(dataDir);
+      await expect(knownAgentConfigDirs({
+        agentTool: 'codex',
+        dataDir,
+        home: '/node-home',
+        sessionId: SESSION,
+      })).resolves.toEqual([sessionHome(dataDir), join('/node-home', '.codex')]);
+    });
+
+    it('is never derived for another tool, a non-uuid id, or without a data dir', async () => {
+      const dataDir = await credentialRoot();
+      const claude = await knownAgentConfigDirs({ agentTool: 'claude-code', dataDir, home: '/node-home', sessionId: SESSION });
+      expect(claude.some((dir) => dir.includes('mcp-homes'))).toBe(false);
+      const traversal = await knownAgentConfigDirs({ agentTool: 'codex', dataDir, home: '/node-home', sessionId: '../../etc' });
+      expect(traversal.some((dir) => dir.includes('mcp-homes'))).toBe(false);
+      await expect(knownAgentConfigDirs({ agentTool: 'codex', home: '/node-home', sessionId: SESSION }))
+        .resolves.toEqual([join('/node-home', '.codex')]);
+    });
+  });
+
   it('preserves the historical Claude node fallback for an unknown tool', async () => {
     await expect(knownAgentConfigDirs({ agentTool: 'echo-agent', home: '/node-home' }))
       .resolves.toEqual([join('/node-home', '.claude')]);

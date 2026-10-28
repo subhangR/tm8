@@ -83,6 +83,17 @@ export default defineConfig({
       ],
     }),
   ],
+  /**
+   * The dev dependency scan reads the app's own pages, not `e2e/`. By default
+   * Vite scans every HTML file in the package, so one stale harness import (a
+   * component deleted from `src/` but not from its harness) aborted
+   * optimization for the WHOLE package: `./install.sh` printed an esbuild
+   * "No matching export" error and the dev UI's pages failed to load. Harness
+   * deps are still found on demand when a harness page is opened.
+   */
+  optimizeDeps: {
+    entries: ['index.html', '*-dev.html', 'mobile-audit.html'],
+  },
   server: {
     port: 4612,
     strictPort: true,

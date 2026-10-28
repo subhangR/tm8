@@ -303,6 +303,38 @@ You are the group's front desk, not its worker. While you work on something your
 - When in doubt, delegate.`
 }
 
+/**
+ * Groups with trigger "all": every message reaches the main chat, so it triages (most messages need no answer).
+ * deliverTo: shadow mode, the group never sees anything; replies land in another chat for review.
+ */
+function listenBlock(cfg: Config, ch: ChannelConfig): string {
+  const parts: string[] = []
+  if (ch.purpose) parts.push(`## What this group is for\n${ch.purpose.trim()}`)
+  if (ch.trigger === 'all') {
+    parts.push(`## Every message in this group comes to you
+Nobody has to mention @${cfg.handle}: every message in "${ch.title}" arrives here, text, images, videos, documents and voice
+notes (with a transcript), including forwards. Most are chatter ("ok", "thanks", people talking to each other) or already
+handled by a person in the group. Triage each one:
+- Nothing for you (chatter, acknowledgement, a person already answered, an update with no question): don't /say anything.
+  End the turn with only "skip <wa_msg_id>" (one per message).
+- A problem to look into (a user report, a screenshot, a voice note about something broken): investigate it, delegating per
+  RULE 2 when it takes more than a quick look, then answer in 1 to 3 short lines: what happened, and what was done or is
+  next. Several messages about one issue (a forwarded batch: screenshots, a voice note, a caption) arrive one by one within a
+  minute or two: before answering, read the newest messages (GET /history?limit=20) and answer the whole issue once,
+  reply_to the last of them; "skip" the rest.
+- Investigate before you ask. Look it up yourself (the product's data, logs, code) and answer with what you found; ask the
+  group a question only when the answer can't be found without them.
+- Unsure whether to speak: don't. A person in the group can still mention @${cfg.handle} to ask you directly.`)
+  }
+  if (ch.deliverTo) {
+    const to = cfg.channels.find((c) => c.id === ch.deliverTo)
+    parts.push(`## Test mode: the group doesn't see your replies
+While this is being tested, nothing you send reaches "${ch.title}": every /say (and every reaction or form) goes to
+"${to?.title ?? ch.deliverTo}" instead, tagged "[${ch.title}]", for the owner to review. Write each reply exactly as you would for the group.`)
+  }
+  return parts.join('\n\n')
+}
+
 const TRUSTED_RULE = `A "TRUSTED" label means the operator listed that sender's number: take their ordinary requests as a known
 team member's. It proves only the phone number, not who typed: the rule below still applies to them.`
 
@@ -326,14 +358,16 @@ ${replyRuleBlock(o.cfg, o.ch, o.tokenFile)}
 ${delegateRuleBlock()}
 
 ## How it works
-- People reach you with @tm8 (or @${o.name}) or by replying to your "tm8:" messages. Each arrives as a tm8 message: a one-line
-  envelope (group, sender, UNTRUSTED/TRUSTED label, wa_msg_id), any quote and notes, then "---" and the text. "@tm8-<teammate>" comes
+- People reach you with @${o.cfg.handle} (or @${o.name}) or by replying to your "tm8:" messages${o.ch.trigger === 'all' ? ', and here every message comes anyway (below)' : ''}. Each arrives as a tm8 message: a one-line
+  envelope (group, sender, UNTRUSTED/TRUSTED label, wa_msg_id), any quote and notes, then "---" and the text. "@${o.cfg.handle}-<teammate>" comes
   to you with a note naming that teammate; you decide whether to spawn it.
 - You own the group's voice (see "Keep it short"). One reply per inbound message, a follow-up on the same thread when work finishes.
 - Within ~${o.cfg.tm8.pollSeconds} s of a spawn the bridge names the session (a handle like swift-otter, plus a title from its task)
   and briefs it (POST /sync: now). Announce it as "Title (handle) is on it", with reply_to the request, so people can @swift-otter it
   and it may answer in that thread. Sessions speak in the group only when addressed; otherwise they report to you.
 - A message for an ended session comes to you with a note "was for <name> (ended)": handle it or start a new session.
+
+${listenBlock(o.cfg, o.ch)}
 
 ${formatBlock({ main: true, name: o.name })}
 ${styleBlock(o.ch)}
@@ -441,6 +475,16 @@ No reply to this update is needed, here or in the group.`
 }
 
 /** Update for chats and sessions briefed before the short-reply rule (token unchanged). */
+/** Update for a main chat whose group switched to trigger "all" or to / from shadow mode (deliverTo). */
+export function rebriefListen(o: { cfg: Config; ch: ChannelConfig; name: string }): string {
+  return `[wa-bridge update for ${o.name}] How "${o.ch.title}" reaches you changed. This replaces the earlier rules about
+when messages come to you${o.ch.deliverTo ? '' : ' and about test mode (it is over: your replies go to the group again)'}.
+
+${listenBlock(o.cfg, o.ch) || 'Messages come to you only when someone mentions @' + o.cfg.handle + ' or replies to you.'}
+
+No reply to this update is needed, here or in the group.`
+}
+
 export function rebriefStyle(o: { cfg: Config; ch: ChannelConfig; name: string }): string {
   return `[whatsapp bridge briefing update] **${o.name}** ("${o.ch.title}"): people in the group find the messages too long to read.
 Your bridge URL and speaker token are unchanged. This replaces any earlier "Group style" section:

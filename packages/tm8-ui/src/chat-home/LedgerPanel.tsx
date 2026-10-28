@@ -41,7 +41,7 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityId } from '@tm8/contract';
-import { Pill, useMenuAnchor } from '../kit';
+import { useMenuAnchor } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import type { ChatEntityResolver } from './EntityChip';
 import { truncateEntityId } from './entity-refs';
@@ -50,7 +50,7 @@ import { fleetRowsOf, groupFleetRows, type FleetRow } from './fleet/fleet-rows';
 import { useFleetEntities, type FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import { foldChatLedger, kindWord } from './ledger';
-import { LedgerTree, type LedgerNodeStatus } from './ledger-tree';
+import { LedgerDot, LedgerTree, type LedgerNodeStatus } from './ledger-tree';
 import type { ChatTurn } from './types';
 
 const MENU_WIDTH = 220;
@@ -338,13 +338,12 @@ function SessionRows({
               {row.title}
             </span>
             {row.word ? (
-              <Pill
+              <LedgerDot
                 tone={row.tone}
-                {...(row.dot === 'pulse' ? { dot: 'pulse' as const } : row.dot === 'solid' ? { dot: 'solid' as const } : {})}
-                {...(row.statusDetail ? { title: row.statusDetail } : {})}
-              >
-                {row.word}
-              </Pill>
+                dot={row.dot === 'pulse' ? 'pulse' : row.dot === 'solid' ? 'solid' : undefined}
+                word={row.word}
+                detail={row.statusDetail}
+              />
             ) : null}
           </button>
         </li>

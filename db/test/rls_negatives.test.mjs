@@ -28,6 +28,7 @@ import {
   json,
   literal,
   ok,
+  postMessageSql,
   rootClaims,
   scalar,
   uuid,
@@ -53,11 +54,14 @@ const claimsC = claimsFor(identityC, memberC);
 
 // A message and a read mark in space A, so the personal-scope policies have
 // something real to hide.
-const messageA = json(
-  `select public.post_message(${uuid(w.channelA)}, 'private to space A')`,
-  { claims: w.claimsA },
-).entity.id;
-ok(`select public.mark_read(${uuid(w.channelA)})`, { claims: w.claimsA });
+const messageA = json(postMessageSql(w.channelA, 'private to space A'), { claims: w.claimsA })
+  .messageIds[0];
+ok(`select public.mark_read(${uuid(w.channelA)}, ${literal(cmid('rls-read'))})`, { claims: w.claimsA });
+
+/** An entity's current version, read as A (optimistic-concurrency writes need it). */
+function versionOf(entityId) {
+  return Number(scalar(`select version from public.entities where id = ${uuid(entityId)}`, { claims: w.claimsA }));
+}
 
 // -----------------------------------------------------------------------------
 // 1. Cross-tenant: B shares no space with A and must see none of it.
@@ -100,21 +104,20 @@ test('detail tables inherit the envelope: a non-member sees no task, channel, pe
   invisible('entity_versions_select: identity B reading space A\'s version history', `select count(*) from public.entity_versions where entity_id = ${uuid(w.taskA)}`, asB);
 });
 
-test('spaces_select: a private space is invisible to non-members; a public one is discoverable', () => {
+test('spaces_select: a space is invisible to non-members, private or public', () => {
   invisible(
     'spaces_select: identity B reading PRIVATE space A',
     `select count(*) from public.spaces where id = ${uuid(w.spaceA)}`,
     { claims: w.claimsB },
   );
-  // Public spaces are deliberately discoverable by any authenticated identity —
-  // that is the policy doing the honest thing rather than an RPC working around it.
-  visible(
-    'spaces_select: identity A discovering PUBLIC space B without being a member',
+  // 233 (owner decision 32): nobody reads a public space without joining it, so
+  // spaces_select is membership only and an unjoined PUBLIC space is hidden too.
+  invisible(
+    'spaces_select: identity A reading PUBLIC space B without being a member',
     `select count(*) from public.spaces where id = ${uuid(w.spaceB)}`,
-    1,
     { claims: w.claimsA },
   );
-  // Discoverable is not joined: A is not a member, so the CONTENTS stay hidden.
+  // ...and so are its contents.
   invisible(
     'entities_select: identity A reading entities of the public space B it has not joined',
     `select count(*) from public.entities where space_id = ${uuid(w.spaceB)}`,
@@ -142,17 +145,24 @@ test('user_profiles_select: profiles are visible only to people you share a spac
   );
 });
 
-test('projects_select: a project is visible only through a linked space, or to a node admin', () => {
+test('projects_select: a project is visible only to a node admin, not through a linked space', () => {
   invisible(
     'projects_select: identity B — not a node admin, not in any space the project is linked to',
     `select count(*) from public.projects where id = ${uuid(w.projectId)}`,
     { claims: w.claimsB },
   );
+  // 234 dropped projects_select's member arm: a folder is a node (gate) admin
+  // concern, so a plain member of a space that links it does not see it either.
+  invisible(
+    'projects_select: identity C, a member of space A, which links the project',
+    `select count(*) from public.projects where id = ${uuid(w.projectId)}`,
+    { claims: claimsC },
+  );
   visible(
-    'projects_select: identity C sees it because space A (which C is in) links it',
+    'projects_select: identity A as node admin',
     `select count(*) from public.projects where id = ${uuid(w.projectId)}`,
     1,
-    { claims: claimsC },
+    { claims: w.adminA },
   );
   invisible(
     'space_projects_select: identity B reading space A\'s project links',
@@ -272,10 +282,19 @@ test('require_space_member: a non-member cannot write into a space by any RPC on
   const asB = { claims: w.claimsB, expect: '42501' };
   denied('create_task/require_space_member: identity B into space A', `select public.create_task(${uuid(w.spaceA)}, 'intruder task')`, asB);
   denied('create_document/require_space_member: identity B into space A', `select public.create_document(${uuid(w.spaceA)}, 'intruder doc')`, asB);
-  denied('post_message/require_space_member: identity B into space A\'s channel', `select public.post_message(${uuid(w.channelA)}, 'intruder')`, asB);
+  // The batch resolves its anchors through RLS first, so a non-member is told the
+  // anchor does not exist (P0002) rather than that it may not write to it.
+  denied('w2_post_message_batch: identity B into space A\'s channel', postMessageSql(w.channelA, 'intruder'), {
+    ...asB,
+    expect: 'P0002',
+  });
   denied('set_work_state/require_space_member: identity B on space A\'s task', `select public.set_work_state(${uuid(w.taskA)}, 'working')`, asB);
   denied('complete_task/require_space_member: identity B on space A\'s task', `select public.complete_task(${uuid(w.taskA)}, 1)`, asB);
-  denied('mark_read/require_space_member: identity B on space A\'s channel', `select public.mark_read(${uuid(w.channelA)})`, asB);
+  // Like the batch above, mark_read reads its anchor through RLS: not found (P0002).
+  denied('mark_read: identity B on space A\'s channel', `select public.mark_read(${uuid(w.channelA)}, ${literal(cmid('rls-read'))})`, {
+    ...asB,
+    expect: 'P0002',
+  });
   denied('create_team_member/require_space_member: identity B into space A', `select public.create_team_member(${uuid(w.spaceA)}, 'intruder-bot')`, asB);
   denied(
     'execution_spawn/require_space_member: identity B spawning into space A',
@@ -301,8 +320,8 @@ test('require_space_admin: a plain member cannot administer the space it belongs
   denied('update_space/require_space_admin: identity C (plain member)', `select public.update_space(${uuid(w.spaceA)}, 'Renamed by C')`, asC);
   denied('create_invite/require_space_admin: identity C (plain member)', `select public.create_invite(${uuid(w.spaceA)})`, asC);
   denied(
-    'link_project/require_space_admin: identity C (plain member)',
-    `select public.link_project(${uuid(w.spaceA)}, ${uuid(w.projectId)})`,
+    'link_project_w2/require_space_admin: identity C (plain member)',
+    `select public.link_project_w2(${uuid(w.spaceA)}, ${uuid(w.projectId)})`,
     asC,
   );
   denied('create_task_axis/require_space_admin: identity C (plain member)', `select public.create_task_axis(${uuid(w.spaceA)}, 'sneaky')`, asC);
@@ -340,7 +359,7 @@ test('require_node_admin: the project registry is node-level, and a space owner 
 test('can_act_as: an identity cannot author as another actor, even inside its own space', () => {
   denied(
     'resolve_actor/can_act_as: identity C posting AS member A in space A',
-    `select public.post_message(${uuid(w.channelA)}, 'forged', ${uuid(w.memberA)})`,
+    postMessageSql(w.channelA, 'forged', { actor: w.memberA }),
     { claims: claimsC, expect: '42501' },
   );
   denied(
@@ -361,7 +380,7 @@ test('can_act_as: the tm8.actor_id CLAIM is not authority — a forged one is re
   // nothing. Identity C, asserting it is member A:
   denied(
     'resolve_actor/can_act_as: identity C with a FORGED tm8.actor_id = member A',
-    `select public.post_message(${uuid(w.channelA)}, 'forged via claim')`,
+    postMessageSql(w.channelA, 'forged via claim'),
     { claims: claimsFor(identityC, w.memberA), expect: '42501' },
   );
   denied(
@@ -376,37 +395,39 @@ test('can_act_as: the tm8.actor_id CLAIM is not authority — a forged one is re
   );
 });
 
-test('can_act_as: a persona may only be driven by the member who owns it', () => {
-  denied(
-    'execution_spawn/can_act_as: identity C spawning A\'s persona (C is a member of the space)',
+test('can_act_as: a teammate is shared inside its space, and nobody outside it may drive it', () => {
+  // 073/075: a teammate is a shared launch persona — every active member of its
+  // space may launch and author as it, not only the member who created it. So C
+  // (a plain member of A) may, and identity B (outside space A) may not.
+  const spawned = json(
     `select public.execution_spawn(${uuid(w.spaceA)}, ${uuid(w.personaA)}, '{}'::uuid[], null,
-       'project', null, null, null, null, null, 'nope', null, true, 32)`,
-    { claims: claimsC, expect: '42501' },
+       'project', null, null, null, null, null, 'shared persona', null, true, 32)`,
+    { claims: claimsC },
   );
+  assert.equal(spawned.entity.kind, 'work_session', 'a space member may launch the space\'s teammate');
   denied(
-    'resolve_actor/can_act_as: identity C posting AS A\'s persona',
-    `select public.post_message(${uuid(w.channelA)}, 'speaking as another agent', ${uuid(w.personaA)})`,
-    { claims: claimsC, expect: '42501' },
+    'resolve_actor/can_act_as: identity B, outside space A, posting AS A\'s persona in its own space',
+    postMessageSql(w.channelB, 'speaking as another space\'s agent', { actor: w.personaA }),
+    { claims: w.claimsB, expect: '42501' },
   );
-  // The positive that gives the negatives meaning: A may author as its OWN persona.
   const asPersona = json(
-    `select public.post_message(${uuid(w.channelA)}, 'agent speaking', ${uuid(w.personaA)},
-       null, '[]'::jsonb, '[]'::jsonb, ${literal(cmid('rls-persona'))})`,
-    { claims: w.claimsA },
-  );
+    postMessageSql(w.channelA, 'agent speaking', { actor: w.personaA, clientMutationId: cmid('rls-persona') }),
+    { claims: claimsC },
+  ).messageIds[0];
   assert.equal(
-    scalar(`select author_id from public.messages where entity_id = ${uuid(asPersona.entity.id)}`, {
+    scalar(`select author_id from public.messages where entity_id = ${uuid(asPersona)}`, {
       claims: w.claimsA,
     }),
     w.personaA,
-    'A must be able to author as the persona it owns',
+    'a member of the space must be able to author as its shared teammate',
   );
 });
 
 test('message authorship: only the author may edit, and a space admin may redact but never rewrite', () => {
   denied(
-    'edit_message: identity C editing A\'s message',
-    `select public.edit_message(${uuid(messageA)}, 'rewritten by C')`,
+    'w2_edit_message: identity C editing A\'s message',
+    `select public.w2_edit_message(${uuid(messageA)}, 'rewritten by C', '{}'::uuid[],
+       ${versionOf(messageA)}, null, ${literal(cmid('rls-edit'))})`,
     { claims: claimsC, expect: '42501' },
   );
   assert.equal(
@@ -417,10 +438,12 @@ test('message authorship: only the author may edit, and a space admin may redact
 
   // C's own message: C may redact it, and A (space owner) may too — but neither
   // gets to rewrite somebody else's words.
-  const cMessage = json(`select public.post_message(${uuid(w.channelA)}, 'C was here')`, {
-    claims: claimsC,
-  }).entity.id;
-  ok(`select public.redact_message(${uuid(cMessage)})`, { claims: w.claimsA });
+  const cMessage = json(postMessageSql(w.channelA, 'C was here'), { claims: claimsC }).messageIds[0];
+  ok(
+    `select public.w2_tombstone_message(${uuid(cMessage)}, ${versionOf(cMessage)}, null,
+       ${literal(cmid('rls-tombstone'))})`,
+    { claims: w.claimsA },
+  );
   assert.equal(
     scalar(`select body from public.messages where entity_id = ${uuid(cMessage)}`, { claims: w.claimsA }),
     '[redacted]',

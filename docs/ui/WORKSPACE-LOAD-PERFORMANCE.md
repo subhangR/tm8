@@ -20,7 +20,7 @@ Measured against the live dev node (`postgres://tm8@127.0.0.1:5442/tm8_dev`):
 152 entities. Postgres scans that in microseconds. The hot tables are also
 **already well indexed** — `entities_space_kind_activity_idx`,
 `edges_type_src_lookup_idx`, `activity_space_created_idx`,
-`workspace_events_space_seq_idx` and 20+ others exist and cover the boot
+`workspace_events_space_id_seq_key` and 20+ others exist and cover the boot
 queries' sort and predicate shapes.
 
 Every endpoint on the boot path, timed against the running node on :4610:

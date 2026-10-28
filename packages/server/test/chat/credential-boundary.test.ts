@@ -20,7 +20,7 @@ const input: ChatLaunchConfigInput = {
 };
 const owner = { chatId: CHAT, generation: 1, ownerLeaseId: 'lease-a', claimFence: 'claim-a' };
 
-async function rig() {
+async function rig(platform: NodeJS.Platform = 'linux') {
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-chat-prepare-'));
   dirs.push(dataDir);
   const state: { grant?: SpaceCredentialGrant; member?: AgentCredentialHome; revoked: boolean; denied: boolean } = {
@@ -35,7 +35,7 @@ async function rig() {
   } as unknown as SpaceCredentialPort;
   const member = vi.fn(async () => state.member ?? null);
   const port = createChatCredentialPreparation({
-    db: {} as Db, dataDir, spaceCredentials: space, memberCredentials: { resolve: member },
+    db: {} as Db, dataDir, platform, spaceCredentials: space, memberCredentials: { resolve: member },
     parentEnv: { ANTHROPIC_API_KEY: 'node-anthropic', OPENAI_API_KEY: 'node-openai',
       ANTHROPIC_AUTH_TOKEN: 'wrong-vendor-token', TM8_DATABASE_URL: 'sentinel-db-secret' },
   });
@@ -45,7 +45,7 @@ async function rig() {
 describe('generation-owned chat credentials', () => {
   it('derives native/inference/policy providers from admitted model/harness routes', () => {
     expect(chatCredentialRoute(input)).toMatchObject({ nativeProvider: 'anthropic', inferenceProvider: 'anthropic' });
-    expect(chatCredentialRoute({ model: 'kimi-k2-thinking', agentTool: 'claude-code' }))
+    expect(chatCredentialRoute({ model: 'kimi-k3', agentTool: 'claude-code' }))
       .toMatchObject({ nativeProvider: 'anthropic', inferenceProvider: 'kimi', policyProvider: 'anthropic' });
     expect(chatCredentialRoute({ model: 'gpt-6.1-sol', agentTool: 'codex' }))
       .toMatchObject({ nativeProvider: 'openai', inferenceProvider: 'openai', harness: 'codex' });
@@ -119,7 +119,7 @@ describe('generation-owned chat credentials', () => {
   it('isolates a Kimi member key and refuses an unsupported node source before preparation', async () => {
     const { port, state, dataDir } = await rig();
     state.member = { provider: 'kimi', homeDir: dataDir, configDir: join(dataDir, 'kimi'), apiKey: KEY };
-    const target = { ...input, model: 'kimi-k2-thinking', provider: 'moonshot' };
+    const target = { ...input, model: 'kimi-k3', provider: 'moonshot' };
     await expect(port.prepare({ ...target, credentialSelection: { source: 'node' } }, owner)).rejects.toThrow();
     expect(await readdir(dataDir)).toEqual([]);
     const prepared = await port.prepare(target, owner);
@@ -165,7 +165,12 @@ describe('generation-owned chat credentials', () => {
       label: 'key', displayLogin: null, secret: KEY };
     read.mockImplementationOnce(async () => ({ ok: true, grant: state.grant! }));
     read.mockImplementation(async () => { throw new Error(KEY); });
-    await expect(port.prepare(input, owner)).rejects.toThrow('cannot be prepared in an isolated runtime');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(port.prepare(input, owner)).rejects.toThrow('cannot be prepared in an isolated runtime');
+      expect(warn).toHaveBeenCalled();
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
+    } finally { warn.mockRestore(); }
     expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
   });
 
@@ -181,6 +186,69 @@ describe('generation-owned chat credentials', () => {
     await first.release();
     expect(await stat(secondMaterial.modelConfigDir)).toBeDefined();
     await second.release();
+  });
+
+  it('runs a macOS member Claude home whose login lives in the Keychain on that home', async () => {
+    // 7778 regression: every chat on a member's Claude login failed its first turn
+    // because the member home has no .credentials.json on macOS to copy.
+    const { port, state, dataDir } = await rig('darwin');
+    const configDir = join(dataDir, 'member-login');
+    await mkdir(configDir);
+    state.member = { provider: 'anthropic', configDir, homeDir: dataDir };
+    const prepared = await port.prepare({ ...input, credentialSelection: { source: 'member' } }, owner);
+    const material = await prepared.materialize();
+    expect(material.modelConfigDir).toBe(configDir);
+    // Claude Code finds the Keychain entry by hashing CLAUDE_CONFIG_DIR.
+    expect(material.env.CLAUDE_CONFIG_DIR).toBe(configDir);
+    expect(material.env.ANTHROPIC_API_KEY).toBeUndefined();
+    await prepared.release();
+    expect(await readdir(configDir)).toEqual([]);
+  });
+
+  it('logs the cause and names it to the user when a member login file is missing off macOS', async () => {
+    const { port, state, dataDir } = await rig('linux');
+    const configDir = join(dataDir, 'member-login');
+    await mkdir(configDir);
+    state.member = { provider: 'anthropic', configDir, homeDir: dataDir };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(port.prepare({ ...input, credentialSelection: { source: 'member' } }, owner))
+        .rejects.toMatchObject({ failure: { code: 'credential_unavailable', stage: 'prepare',
+          safeMessage: expect.stringContaining('anthropic login could not be read (ENOENT)') } });
+      const logged = warn.mock.calls.map(call => call.join(' ')).join('\n');
+      expect(logged).toContain(CHAT);
+      expect(logged).toContain('"source":"member"');
+      expect(logged).toContain('"stage":"snapshot","cause":"ENOENT"');
+      const failed = await port.prepare({ ...input, credentialSelection: { source: 'member' } }, owner)
+        .catch((error: unknown) => error);
+      expect(failed).toMatchObject({ cause: { code: 'ENOENT' } });
+    } finally { warn.mockRestore(); }
+    expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
+  });
+
+  it('keeps refusing on macOS when the member home itself is missing, symlinked or holds an unsafe login', async () => {
+    const { port, state, dataDir } = await rig('darwin');
+    const member = { ...input, credentialSelection: { source: 'member' as const } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: join(dataDir, 'reclaimed') };
+      await expect(port.prepare(member, owner)).rejects.toThrow('could not be read (ENOENT)');
+      const real = join(dataDir, 'real-login');
+      await mkdir(real);
+      await symlink(real, join(dataDir, 'linked-login'));
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: join(dataDir, 'linked-login') };
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      const secretPath = join(dataDir, 'secret.json');
+      await writeFile(secretPath, JSON.stringify({ accessToken: KEY }));
+      await symlink(secretPath, join(real, '.credentials.json'));
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: real };
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      await rm(join(real, '.credentials.json'));
+      await writeFile(join(real, '.credentials.json'), `not json ${KEY}`);
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
+    } finally { warn.mockRestore(); }
+    expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
   });
 
   it('refuses symlinked authentication files and unsupported/missing snapshots without leaking contents', async () => {

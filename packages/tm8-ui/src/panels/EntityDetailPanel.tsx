@@ -61,6 +61,7 @@ import {
   StalePinBanner,
   TombstoneBody,
 } from './detail/PanelStates';
+import { useDetailFreshness } from './detail/freshness';
 import { ConnectionsTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
 import { HeaderSection } from './detail/HeaderSection';
@@ -675,6 +676,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     onTabChange,
     onClose,
   } = props;
+  /* THIS PANEL IS AN OPEN VIEW OF ONE ID, which is the whole qualification the
+     content re-read needs. Mounted ⇒ the content behind `detail.id` is kept
+     fresh across other people's edits; unmounted ⇒ nothing is asked for.
+     One call here serves every archetype below — the doc reader, the drawing
+     canvas, the artifact viewer — because all of them render through it.
+     Above the early returns, with the other unconditional hooks. */
+  useDetailFreshness(detail?.id);
 
   const [uncontrolledTab, setUncontrolledTab] = useState<PanelTab>('content');
   /*

@@ -70,7 +70,9 @@ if [ "$(uname -s)" != Darwin ] && ! locale -a 2>/dev/null | grep -qiE '^en_US\.u
 if ! psql "$PG/postgres" -Atc "select 1 from pg_database where datname='$DB'" | grep -q 1; then
   psql "$PG/postgres" -qc "create database $DB"; warn "created $DB"
 fi
-(cd "$BUILD" && TM8_DATABASE_URL="$PG/$DB" node db/migrate.mjs up 2>&1 | tail -2 >&2)
+# migrate.mjs refuses 5442 without --i-mean-prod; this rig's default IS 5442 (the laptop's own cluster).
+MIGRATE_FLAGS=""; [[ "$PG_PORT" == 5442 ]] && MIGRATE_FLAGS="--i-mean-prod"
+(cd "$BUILD" && TM8_DATABASE_URL="$PG/$DB" node db/migrate.mjs up $MIGRATE_FLAGS 2>&1 | tail -2 >&2)
 
 # 2. (re)start under env -i
 P=$(listen_pid "$PORT"); if [ -n "$P" ]; then kill "$P"; for i in $(seq 1 30); do [ -z "$(listen_pid "$PORT")" ] && break; sleep 0.5; done; warn "restarted $PORT for ARM=$ARM"; fi

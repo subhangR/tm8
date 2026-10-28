@@ -21,6 +21,7 @@ import QRCode from 'qrcode'
 import qrcodeTerminal from 'qrcode-terminal'
 import type { Bridge, Inbound, WaKey, WaPort } from './core.js'
 import { TooLargeError, mediaPlaceholder, type InboundMedia } from './media.js'
+import { withBridgeMark } from './text.js'
 import type { OutboxPoll } from './store.js'
 
 // libsignal dumps whole sessions (including private keys) via console.info/log; keep them out of stdout.
@@ -121,7 +122,7 @@ export class WaConnection implements WaPort {
 
   async sendText(jid: string, text: string, quoted?: { key: WaKey; message: unknown }) {
     const sock = this.guard(jid)
-    const sent = await sock.sendMessage(jid, { text }, this.quoteOpt(quoted))
+    const sent = await sock.sendMessage(jid, { text: withBridgeMark(text) }, this.quoteOpt(quoted))
     if (!sent?.key.id) throw new Error('send returned no message id')
     return { id: sent.key.id, key: sent.key as WaKey, message: toJsonSafe(sent.message) }
   }
@@ -134,8 +135,8 @@ export class WaConnection implements WaPort {
     const sock = this.guard(jid)
     const content =
       m.kind === 'image'
-        ? { image: m.data, mimetype: m.mime, caption: m.caption || undefined }
-        : { document: m.data, mimetype: m.mime, fileName: m.fileName, caption: m.caption || undefined }
+        ? { image: m.data, mimetype: m.mime, caption: withBridgeMark(m.caption) }
+        : { document: m.data, mimetype: m.mime, fileName: m.fileName, caption: withBridgeMark(m.caption) }
     const sent = await sock.sendMessage(jid, content, this.quoteOpt(quoted))
     if (!sent?.key.id) throw new Error('send returned no message id')
     return { id: sent.key.id, key: sent.key as WaKey, message: toJsonSafe(sent.message) }
@@ -143,7 +144,7 @@ export class WaConnection implements WaPort {
 
   async sendPoll(jid: string, poll: OutboxPoll) {
     const sock = this.guard(jid)
-    const sent = await sock.sendMessage(jid, { poll: { name: poll.name, values: poll.values, selectableCount: poll.selectableCount } })
+    const sent = await sock.sendMessage(jid, { poll: { name: withBridgeMark(poll.name), values: poll.values, selectableCount: poll.selectableCount } })
     if (!sent?.key.id) throw new Error('send returned no message id')
     // toJsonSafe keeps messageContextInfo.messageSecret (the vote key) as base64, so it survives in the outbox.
     return { id: sent.key.id, key: sent.key as WaKey, message: toJsonSafe(sent.message) }
@@ -290,7 +291,8 @@ export class WaConnection implements WaPort {
           // Linking timed out before pairing finished. Only in --link mode do we start over with fresh keys.
           this.bridge.waState = 'linking'
           this.bridge.log(`[wa] closed (${code}) before linking finished, issuing a new code`)
-          fs.rmSync(this.o.authDir, { recursive: true, force: true })
+          // auth/ is a mounted volume: empty it, don't remove the directory itself (rmdir of a mount point fails).
+          for (const f of fs.readdirSync(this.o.authDir)) fs.rmSync(path.join(this.o.authDir, f), { recursive: true, force: true })
           setTimeout(() => void this.start(), 1000)
           return
         }
