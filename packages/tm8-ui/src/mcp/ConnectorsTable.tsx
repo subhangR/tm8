@@ -36,6 +36,7 @@ import { ConnectorForm } from './ConnectorForm';
 import { ImportMcpJson } from './ImportMcpJson';
 import { accessLabel, limitedAccessCount, matchesFilter, matchesSearch, rowStatusOf, statusLabel, typeLabel, FILTERING, NO_FILTER, STATUS_ROWS, type ConnectorFilter } from './connector-rows';
 import { useMcpCatalog } from './context';
+import { takeConnectedToast } from './oauth-callback';
 import { McpUiError } from './errors';
 import type { McpImportRow } from './adapter';
 import type { McpCatalog, McpPort, McpServer } from './port';
@@ -358,7 +359,10 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
 export function ConnectorsSection() {
   const { catalog, port, error, loading, refresh } = useMcpCatalog();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  // §10.2's popup-blocked fallback finishes in a FULL PAGE NAVIGATION, so the
+  // "connected as …" line cannot be handed over in React state. The callback
+  // page parks the one authored sentence and this reads it once, on the way in.
+  const [message, setMessage] = useState<string | null>(() => takeConnectedToast());
   const [failure, setFailure] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('yours');
   const [sheet, setSheet] = useState<Sheet>(null);
