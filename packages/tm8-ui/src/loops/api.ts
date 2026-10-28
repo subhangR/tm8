@@ -190,9 +190,10 @@ export function fieldPathOf(error: unknown): { path: string; message: string } |
   if (typeof error !== 'object' || error === null) return null;
   const { code, message, details } = error as { code?: unknown; message?: unknown; details?: Record<string, unknown> };
   if (code !== 'invalid_input' || typeof message !== 'string') return null;
-  const raw = details?.path ?? details?.field;
+  const issues = Array.isArray(details?.issues) ? details.issues as { path?: unknown; message?: unknown }[] : [];
+  const raw = details?.path ?? details?.field ?? issues[0]?.path;
   let path: string | null = Array.isArray(raw) ? raw.map(String).join('.') : typeof raw === 'string' ? raw : null;
-  let text = message;
+  let text = typeof issues[0]?.message === 'string' && details?.path === undefined ? issues[0].message : message;
   if (path === null) {
     const match = /^((?:body\.)?(?:definition\.)?[A-Za-z][\w.]*): (.+)$/s.exec(message);
     if (!match) return null;

@@ -1227,18 +1227,18 @@ export function EntityView(props: EntityViewProps) {
           onArchive={(id) => rowLifecycle.archive('archive', id)}
         />
       ) : null}
-      {oneSurface || config.list.surface !== 'loops' ? null : (
-        <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
+      {oneSurface ? null : (
+      <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
+        {/* A kind whose list is its own table (`list.surface`): the loops
+            table reads `loops.list`, whose rows carry what a summary cannot. */}
+        {config.list.surface === 'loops' ? (
           <LoopsList
             spaceId={data.spaceId}
             client={data.seam.commands.loops ?? null}
             sources={data.seam.commands.loopForm ?? data.seam}
             onOpen={selectFromList}
           />
-        </section>
-      )}
-      {oneSurface || config.list.surface === 'loops' ? null : (
-      <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
+        ) : (
         <EntityListPanel
           kind={kind}
           rowsForKind={data.rowsFor}
@@ -1319,6 +1319,7 @@ export function EntityView(props: EntityViewProps) {
           onAction={listActions.onAction}
           wiredActions={listActions.wiredActions}
         />
+        )}
       </section>
       )}
 

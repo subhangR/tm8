@@ -71,6 +71,27 @@ export function absTime(value: string | number | Date | null | undefined): strin
 }
 
 /**
+ * The full date and time in a NAMED zone — a loop's next runs are read on its
+ * own wall clock (loops, design 01a182d4 §3.1), not the viewer's. Falls back
+ * to `absTime` for an unknown zone.
+ */
+export function zonedTime(value: string | number | Date | null | undefined, timeZone: string): string {
+  const t = parseInstant(value);
+  if (t === null) return '';
+  return dateFormat({ weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone, timeZoneName: 'short' }, t)
+    || absTime(t);
+}
+
+/** The viewer's IANA zone, or UTC when the runtime cannot say. */
+export function browserTimeZone(): string {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
  * 'HH:MM' local — the channel rail's per-row clock. `seconds` adds ':SS' for
  * the debug surfaces, which read a transcript rather than a conversation.
  */

@@ -1,3 +1,5 @@
+export { browserTimeZone } from '../kit/time';
+
 /*
  * THE FORM'S SCHEDULE PRESETS — words ⇄ an expression, nothing more.
  *
@@ -93,15 +95,6 @@ export function parseTime(value: string, previous: Pick<SchedulePreset, 'hour' |
   const match = /^(\d{1,2}):(\d{2})$/.exec(value);
   if (!match) return { hour: previous.hour, minute: previous.minute };
   return { hour: Math.min(23, Number(match[1])), minute: Math.min(59, Number(match[2])) };
-}
-
-/** The viewer's IANA zone, or UTC when the runtime cannot say. */
-export function browserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
 }
 
 /**

@@ -50,10 +50,10 @@ describe('the loops list', () => {
     const ada = screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d001');
     await waitFor(() => expect(ada.textContent).toContain('Ada'));
     expect(ada.textContent).toContain('Every day at 09:00 Europe/London');
-    expect(ada.textContent).toMatch(/in 3 hours/);
+    expect(ada.textContent).toMatch(/in 3h/);
     expect(ada.querySelector('time')?.getAttribute('title')).toBeTruthy();
     expect(ada.textContent).toContain('Failed');
-    expect(ada.textContent).toMatch(/2 hours ago/);
+    expect(ada.textContent).toMatch(/2h ago/);
     const triage = screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d002');
     expect(triage.textContent).toContain('Dispatcher');
     expect(triage.textContent).toContain('Disabled');
