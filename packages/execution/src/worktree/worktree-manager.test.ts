@@ -117,6 +117,30 @@ describe('G2.1 — injection: hostile refs never reach git as anything but inert
   });
 });
 
+describe('resolveRepositoryBase — validation and base resolution in one pass', () => {
+  it('answers what validateRepository then resolveBaseRef answer', async () => {
+    const both = await manager.resolveRepositoryBase(repoRoot);
+    const { repoRoot: real } = await manager.validateRepository(repoRoot);
+    expect(both).toEqual({ repoRoot: real, ...(await manager.resolveBaseRef(real)) });
+    expect((await manager.resolveRepositoryBase(repoRoot, 'main')).ref).toBe('main');
+  });
+
+  it('a directory that is not a repository is not_a_git_repository, never base_ref_not_found', async () => {
+    const plain = await mkdtemp(join(tmpdir(), 'tm8-not-a-repo-'));
+    try {
+      await expect(manager.resolveRepositoryBase(plain)).rejects.toMatchObject({ reason: 'not_a_git_repository' });
+      await expect(manager.resolveRepositoryBase(plain, 'no-such-branch')).rejects.toMatchObject({
+        reason: 'not_a_git_repository',
+      });
+    } finally {
+      await rm(plain, { recursive: true, force: true });
+    }
+    await expect(manager.resolveRepositoryBase(repoRoot, 'no-such-branch')).rejects.toMatchObject({
+      reason: 'base_ref_not_found',
+    });
+  });
+});
+
 describe('G2.2 — containment is segment-wise, on real paths', () => {
   it('sibling-prefix path fails (the startsWith trap)', () => {
     expect(isContainedIn('/data/worktrees-evil/x', '/data/worktrees')).toBe(false);

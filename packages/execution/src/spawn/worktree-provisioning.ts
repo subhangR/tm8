@@ -206,17 +206,18 @@ export async function reserveWorktree(params: ProvisionWorktreeParams): Promise<
 
   // Step 1 (§4.2) — repository validation. A working directory that is not a
   // Git repository is `invalid_input`, never a downgrade to project mode.
+  // Step 2 (§4.3) — base ref resolution. The symbolic ref is provenance; the
+  // resolved OID is what gets stored and checked out, so a ref that moves
+  // between here and step 5 cannot change what the session actually gets.
+  // One manager call does both, concurrently, with step 1's refusal first.
   let repoRoot: string;
   let baseRef: string;
   let baseCommitOid: string;
   try {
-    ({ repoRoot } = await manager.validateRepository(params.projectWorkingDir));
-    // Step 2 (§4.3) — base ref resolution. The symbolic ref is provenance; the
-    // resolved OID is what gets stored and checked out, so a ref that moves
-    // between here and step 5 cannot change what the session actually gets.
-    const resolved = await manager.resolveBaseRef(repoRoot, params.requestedBaseRef ?? undefined);
-    baseRef = resolved.ref;
-    baseCommitOid = resolved.oid;
+    ({ repoRoot, ref: baseRef, oid: baseCommitOid } = await manager.resolveRepositoryBase(
+      params.projectWorkingDir,
+      params.requestedBaseRef ?? undefined,
+    ));
   } catch (error) {
     throw asSpawnError(error, 'worktree repository validation failed');
   }
