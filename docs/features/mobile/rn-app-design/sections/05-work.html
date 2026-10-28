@@ -1,0 +1,1034 @@
+<section class="doc-section" id="s-work" data-title="Work: tasks, lists and layouts, stories, projects, crafts, loops, pull requests" data-lane="05 work">
+<style>
+#s-work .filters.scrolls { -webkit-mask-image: linear-gradient(to right, var(--ink) 80%, transparent); mask-image: linear-gradient(to right, var(--ink) 80%, transparent); }
+#s-work .section-h.c { padding-top: var(--s2); }
+#s-work .row.cmp { padding-top: 6px; padding-bottom: 6px; }
+#s-work .tree .row { gap: var(--s2); }
+#s-work .tree .row.kid { padding-top: 4px; padding-bottom: 4px; }
+#s-work .tree .row.kid::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(var(--gutter) + (var(--depth) - 1) * 20px + 10px); width: 1px; background: var(--line-2); }
+#s-work .tree .row.kid.last::before { bottom: 50%; }
+#s-work .tree .row.kid::after { content: ""; position: absolute; top: 50%; left: calc(var(--gutter) + (var(--depth) - 1) * 20px + 10px); width: 7px; height: 1px; background: var(--line-2); }
+#s-work .tree .row.more { min-height: 30px; padding-top: 2px; padding-bottom: 2px; }
+#s-work .tree .row.more .s { color: var(--brand); font-weight: 500; }
+#s-work .cnt { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-3); }
+#s-work .cnt .ic { width: 13px; height: 13px; }
+#s-work .board.pager { height: auto; padding: var(--s1) 0 0 var(--gutter); }
+#s-work .board.pager .col { flex: 0 0 342px; }
+#s-work .phone[data-os="android"] .board.pager .col { flex-basis: 324px; }
+#s-work .board .col .ch .count { font-size: var(--fs-c1); }
+#s-work .board .col.drop { box-shadow: inset 0 0 0 2px var(--brand); background: var(--brand-soft); }
+#s-work .slot { height: 80px; border: 2px dashed var(--brand); border-radius: var(--r-md); display: grid; place-items: center; color: var(--brand); font-size: var(--fs-foot); font-weight: 600; }
+#s-work .colempty { text-align: center; font-size: var(--fs-foot); color: var(--ink-3); padding: var(--s4) var(--s2); }
+#s-work .board .card.lift { position: absolute; z-index: 5; transform: rotate(-3deg); box-shadow: var(--sh-pop); border-color: var(--brand); }
+#s-work .verbs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s2); padding: 0 var(--gutter) var(--s3); }
+#s-work .verbs.n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#s-work .verbs .vb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 58px; border-radius: var(--r-md); background: var(--surface); color: var(--ink); font-size: var(--fs-c1); font-weight: 600; white-space: nowrap; }
+#s-work .verbs .vb .ic { width: 22px; height: 22px; }
+#s-work .verbs .vb.pri { background: var(--brand); color: var(--brand-ink); }
+#s-work .verbs .vb.off { color: var(--ink-4); }
+#s-work .phone[data-os="android"] .verbs .vb { border-radius: var(--r-lg); }
+#s-work .ent-head .meta .dot::before { content: "·"; color: var(--ink-4); }
+#s-work .crumb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-foot); color: var(--brand); }
+#s-work .crumb .ic { width: 14px; height: 14px; }
+#s-work .crit { align-items: flex-start; }
+#s-work .crit .check { margin-top: 1px; }
+#s-work .crit .t { white-space: normal; font-weight: 400; font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-work .crit.done .t { color: var(--ink-3); text-decoration: line-through; }
+#s-work .crit .s { font-size: var(--fs-c1); line-height: var(--lh-c1); }
+#s-work .clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
+#s-work .meter4 { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--active); margin-top: 4px; }
+#s-work .meter4 i { display: block; height: 100%; }
+#s-work .meter4 .d { background: var(--run); } #s-work .meter4 .w { background: var(--info); } #s-work .meter4 .b { background: var(--block); }
+#s-work .fig { font-size: var(--fs-c1); line-height: var(--lh-c1); color: var(--ink-3); margin-top: 2px; }
+#s-work .ptr { display: flex; align-items: center; justify-content: center; gap: var(--s2); height: 44px; font-size: var(--fs-foot); color: var(--ink-3); }
+#s-work .lctl { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--gutter); }
+#s-work .lctl .search { flex: 1 1 auto; margin: 0; min-width: 0; }
+#s-work .lsw { display: flex; padding: 2px; border-radius: 9px; background: var(--surface); flex: 0 0 auto; }
+#s-work .lsw span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; color: var(--ink-3); }
+#s-work .lsw span.on { background: var(--card); color: var(--ink); box-shadow: var(--sh-sm); }
+#s-work .lsw .ic { width: 18px; height: 18px; }
+#s-work .phone[data-os="android"] .lsw, #s-work .phone[data-os="android"] .lsw span { border-radius: var(--r-pill); }
+#s-work .countline { padding: 0 var(--gutter) var(--s1); font-size: var(--fs-foot); color: var(--ink-3); }
+#s-work .chipset { display: flex; flex-wrap: wrap; gap: var(--s2); padding: 0 var(--gutter) var(--s1); }
+#s-work .chipset .c { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); font-size: var(--fs-sub); font-weight: 500; color: var(--ink-2); }
+#s-work .chipset .c.on { background: var(--brand-soft); border-color: transparent; color: var(--ink); }
+#s-work .chipset .c .ic { width: 16px; height: 16px; }
+#s-work .band-l { padding: 10px var(--gutter) 6px; font-size: var(--fs-c2); line-height: var(--lh-c2); font-weight: 700; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--ink-3); }
+#s-work .opt { display: flex; align-items: center; gap: var(--s3); padding: 7px var(--gutter); }
+#s-work .opt .rd { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line-2); flex: 0 0 auto; }
+#s-work .opt.on .rd { border: 7px solid var(--brand); }
+#s-work .opt .ol { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; }
+#s-work .opt .ol small { font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-work .opt.off .pill { opacity: .5; } #s-work .opt.off .rd { border-style: dashed; }
+#s-work .opt .nope { color: var(--block); }
+#s-work .sw-row { display: flex; align-items: center; gap: var(--s3); margin: 0 var(--gutter) 0 50px; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-foot); color: var(--ink-2); }
+#s-work .sw-row .switch { transform: scale(.8); margin: -3px -5px; }
+#s-work .refusal.no { margin: 0 var(--gutter) var(--s3); padding: var(--s3); border: 1px solid var(--block); background: var(--block-soft); }
+#s-work .refusal.no .h { color: var(--block); display: flex; gap: 6px; align-items: center; }
+#s-work .refusal .h .ic { width: 16px; height: 16px; }
+#s-work .gate { display: flex; gap: 8px; align-items: flex-start; margin: 0 var(--gutter) var(--s2); padding: 8px 12px; border-radius: var(--r-sm); font-size: var(--fs-foot); line-height: var(--lh-foot); background: var(--run-soft); color: var(--run); }
+#s-work .gate.no { background: var(--wait-soft); color: var(--wait); }
+#s-work .gate .ic { width: 16px; height: 16px; margin-top: 1px; }
+#s-work .vlab { font-size: var(--fs-c1); color: var(--ink-3); align-self: center; }
+#s-work .msg .t { font-weight: 400; font-size: var(--fs-sub); line-height: var(--lh-sub); }
+#s-work .msg .s b { color: var(--ink-2); }
+#s-work .tag { display: inline-block; font-size: var(--fs-c2); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--info); background: var(--info-soft); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
+#s-work .pages { display: flex; gap: var(--s2); padding: var(--s1) var(--gutter) var(--s3); }
+#s-work .pg { flex: 0 0 62px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-c2); line-height: var(--lh-c2); color: var(--ink-3); }
+#s-work .pg .th { width: 62px; height: 80px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--card); position: relative; overflow: hidden; display: grid; place-items: center; color: var(--ink-3); }
+#s-work .pg .th .ic { width: 22px; height: 22px; }
+#s-work .pg .th i { position: absolute; left: 8px; right: 8px; height: 3px; border-radius: 2px; background: var(--line-2); }
+#s-work .pg.on .th { box-shadow: 0 0 0 2px var(--brand); border-color: transparent; }
+#s-work .pg.on { color: var(--ink); font-weight: 600; }
+#s-work .pg.lifted .th { transform: translateY(-6px) rotate(-4deg); box-shadow: var(--sh-pop); }
+#s-work .pg .th.add { border-style: dashed; color: var(--brand); }
+#s-work .pg .nm { max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s-work .pagecard { margin: 0 var(--gutter); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); overflow: hidden; }
+#s-work .pagecard .pch { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-foot); font-weight: 600; color: var(--ink-2); }
+#s-work .pagecard .pch .ic { width: 16px; height: 16px; }
+#s-work .pagecard .prose { padding: 10px 12px; font-size: var(--fs-sub); line-height: 21px; }
+#s-work .diff { font-family: var(--mono); font-size: var(--fs-c2); line-height: var(--lh-c1); margin: 0 var(--gutter); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+#s-work .diff > div { white-space: pre; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; color: var(--ink-2); }
+#s-work .diff .n { display: inline-block; width: 32px; padding-right: 6px; text-align: right; color: var(--ink-4); }
+#s-work .diff .a { background: var(--run-soft); } #s-work .diff .h { background: var(--info-soft); color: var(--info); }
+#s-work .bar2 { display: inline-flex; gap: 1px; } #s-work .bar2 i { width: 5px; height: 8px; border-radius: 1px; background: var(--line-2); } #s-work .bar2 i.a { background: var(--run); } #s-work .bar2 i.r { background: var(--block); }
+#s-work .kvc { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 var(--gutter); padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-foot); line-height: var(--lh-foot); }
+#s-work .kvc dt { color: var(--ink-3); } #s-work .kvc dd { margin: 0; color: var(--ink); min-width: 0; }
+#s-work .note { padding: var(--s2) var(--gutter); font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); }
+#s-work .ck { width: 20px; display: grid; place-items: center; }
+#s-work .ck .ic { width: 18px; height: 18px; } #s-work .ck.ok { color: var(--run); } #s-work .ck.q { color: var(--ink-4); }
+#s-work .ck .spinner { width: 16px; height: 16px; }
+#s-work .merge-why { margin: 6px var(--gutter) 0; font-size: var(--fs-foot); line-height: var(--lh-foot); color: var(--ink-3); display: flex; gap: 6px; }
+#s-work .phone p { color: inherit; max-width: none; }
+#s-work .phone .empty p { color: var(--ink-3); }
+#s-work .phone .refusal.no p { color: var(--ink-2); }
+#s-work .merge-why .ic { width: 14px; height: 14px; margin-top: 2px; flex: 0 0 auto; }
+</style>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="s-work-i-tree" viewBox="0 0 24 24"><path d="M4 5h9M8 5v14M8 12h4M8 19h4M15 12h5M15 19h5"/></symbol>
+  <symbol id="s-work-i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="s-work-i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></symbol>
+  <symbol id="s-work-i-timeline" viewBox="0 0 24 24"><path d="M6 3v18M10 7h10M10 12h7M10 17h9"/><circle cx="6" cy="7" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="6" cy="17" r="1.2"/></symbol>
+  <symbol id="s-work-i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-12 3-12 8"/></symbol>
+</svg>
+<header>
+  <div class="lane-eyebrow">05 · Work</div>
+  <h2>Work: tasks, lists and layouts, stories, projects, crafts, loops, pull requests</h2>
+  <p class="lede">The Work tab is where a person sees what is moving and moves it: tasks grouped by status as a tree of subtasks, stories with the node's own rolled-up progress, and a board you page through with a thumb and drag across with a long-press. Under it sits one generic kind list, <code>k/[slug]</code>, that serves every kind as a tree, list, board or timeline, and a page for each kind this lane owns. New against the web phone shell: hierarchy in every list (owner ruling 2026-10-28), a pager board, move and assign sheets that state the node's guards before you tap, and queued moves that survive a dead connection without pretending they landed.</p>
+</header>
+
+<h3>The Work tab: Tasks, Stories, Board</h3>
+<p>Four segments; lane 04 draws Sessions. Tasks and Board read <b>roots</b> (<code>parentId: null</code>) and nest subtasks under them; a root is grouped by <em>its own</em> status, and each child keeps its own pill. Group counts are the server's <code>CollectionGroup.total</code>. When a node does not send one, the header says "3 shown" and gives no total.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-sort"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg on">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg">Board</span></div>
+          <div class="filters scrolls"><span class="f">Mine</span><span class="f">Needs me</span><span class="f">Working</span><span class="f">Blocked</span><span class="f">Done</span></div>
+          <div class="section-h c">Working · 2<span class="more">Recent activity</span></div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>2 live</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 05 — work: tasks, lists &amp; layouts</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid last more" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="s">8 more subtasks · 8 working</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Bridge as an entity</span><span class="s"><span class="pill working">working</span>Coordinator<span class="dot"></span>1 live</span></span></a>
+          </div>
+          <div class="section-h c">In review · 2</div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill review">in review</span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955</span>merged</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>2 subtasks · 2 done</span></span></a>
+          </div>
+          <div class="section-h c">Blocked · 1</div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span>waiting on Marco since Tue</span></span></a>
+          </div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Work › Tasks — a status-grouped tree</b>The leading face is who has the task (registry §6: "a task's live fact is who has it"), with a live dot while a session runs. Subtasks open to depth 2; a parent shows two children and folds the rest into "7 more". Quiet list tiles is collapsed (by the viewer, kept in list memory), so it shows its count summary. Chips are toggles; with none on, the list shows everything not done. <span class="route">/[server]/[space]/(tabs)/work?seg=tasks</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-sort"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Tasks</span><span class="seg">Sessions</span><span class="seg on">Stories</span><span class="seg">Board</span></div>
+          <div class="ptr"><span class="spinner"></span>Updating stories…</div>
+          <div class="section-h c">In progress · 1</div>
+          <div class="list tree">
+            <a class="row" style="--depth:0;align-items:flex-start"><span class="tw" style="margin-top:8px"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Story kind improvements</span><span class="s"><span class="pill info">in progress</span>7 of 12 tasks done</span><span class="meter4"><i class="d" style="width:58%"></i><i class="w" style="width:25%"></i><i class="b" style="width:8%"></i></span><span class="fig">58% · 21/36 pts · 3 working · 1 blocked · 1 to do</span></span><span class="trail"><span class="time">2h</span></span></a>
+            <a class="row kid" style="--depth:1;align-items:flex-start"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Story page on the phone</span><span class="s"><span class="pill info">in progress</span>1 of 4 tasks done</span><span class="meter4"><i class="d" style="width:25%"></i><i class="w" style="width:50%"></i></span></span></a>
+            <a class="row kid last" style="--depth:1;align-items:flex-start"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Points-weighted progress (307)</span><span class="s"><span class="pill done">done</span>every task in it is done</span><span class="meter4"><i class="d" style="width:100%"></i></span></span></a>
+          </div>
+          <div class="section-h c">Done · 1</div>
+          <div class="list tree">
+            <a class="row" style="--depth:0;align-items:flex-start"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Credentials security lane</span><span class="s"><span class="pill done">done</span>every task in it is done</span><span class="meter4"><i class="d" style="width:100%"></i></span><span class="fig">100%</span></span><span class="trail"><span class="time">Mon</span></span></a>
+          </div>
+          <div class="note">A story's status is set by hand; the bar is the node's rollup of what is in it (<span class="mono">story_summary.weighted</span>), never tallied here.</div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Work › Stories — child stories nested, pulled to refresh</b>Each row carries the server's rollup: a four-part meter (done · working · blocked · to do, with the words underneath) and points. Child stories sit under their parent with their own bars. Dark theme, mid pull-to-refresh. <span class="route">/[server]/[space]/(tabs)/work?seg=stories</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title hidden">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Work</div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg on">Board</span></div>
+          <div class="filters"><span class="f on">Columns: category<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="f">Mine</span><span class="f">Needs me</span></div>
+          <div class="board pager">
+            <div class="col">
+              <div class="ch"><span>In Progress</span><span class="count">5</span></div>
+              <div class="card"><div class="t">TM8 Mobile app</div><div class="m"><span class="pill working">working</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span><span class="cnt"><svg class="ic"><use href="#i-check"/></svg>2/5</span><span class="cnt"><svg class="ic"><use href="#s-work-i-tree"/></svg>9 subtasks</span></div></div>
+              <div class="card"><div class="t">Bridge as an entity</div><div class="m"><span class="pill working">working</span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="cnt">1 live</span></div></div>
+              <div class="card"><div class="t">Readiness per used provider</div><div class="m"><span class="pill review">in review</span><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="chip"><svg class="ic"><use href="#i-pr"/></svg>#955 merged</span></div></div>
+              <div class="card"><div class="t">Quiet list tiles + one-row header</div><div class="m"><span class="pill review">in review</span><span class="avatar xs agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="cnt"><svg class="ic"><use href="#i-check"/></svg>4/5</span><span class="cnt"><svg class="ic"><use href="#s-work-i-tree"/></svg>2 subtasks</span></div></div>
+              <div class="card"><div class="t">Repoint family: 1-arg resume gate</div><div class="m"><span class="pill blocked">blocked</span><span class="avatar xs c3">M</span><span class="cnt">on Marco since Tue</span><span class="cnt"><svg class="ic"><use href="#s-work-i-tree"/></svg>2</span></div></div>
+            </div>
+            <div class="col"><div class="ch"><span>Done</span><span class="count">3</span></div><div class="card"><div class="t">PTY recheck fails closed</div></div></div>
+          </div>
+          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Work › Board — one column per page</b>The columns are the four categories (To Do · In Progress · Done · Cancelled), as on board-v2, so the card's pill carries the exact status. "Columns: category" switches to workflow columns only when one workflow governs tasks and every state can be queried exactly. Swipe to page; the dots say where you are. A card shows its title, pill, owners, criteria ticked and PR chip; subtasks appear only as a count. <span class="route">/[server]/[space]/(tabs)/work?seg=board&amp;col=in_progress</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar">
+          <div class="lead"><span class="spacebtn"><span class="mark">A</span><svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+          <div class="title">Work</div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="segmented"><span class="seg">Tasks</span><span class="seg">Sessions</span><span class="seg">Stories</span><span class="seg on">Board</span></div>
+          <div class="filters"><span class="f">Columns: category<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="f on"><svg class="ic"><use href="#i-check"/></svg>Mine</span></div>
+          <div class="board pager" style="height:430px">
+            <div class="col drop">
+              <div class="ch"><span>In Progress</span><span class="count">0</span></div>
+              <div class="slot">Release to start · working</div>
+              <div class="colempty">Nothing in progress for you.<br>A card dropped here starts.</div>
+            </div>
+            <div class="col"><div class="ch"><span>Done</span></div></div>
+            <div class="card lift" style="left:30px;top:150px;width:286px"><div class="t">Desktop-shell reflow overflow (tablet-768)</div><div class="m"><span class="pill open">open</span><span class="avatar xs c1">S</span><span class="cnt">MEDIUM</span></div></div>
+          </div>
+          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+        </main>
+        <nav class="tabbar"><a class="tab"><svg class="ic"><use href="#i-chats"/></svg>Chats</a><a class="tab on"><svg class="ic"><use href="#i-work"/></svg>Work</a><a class="tab"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></a><a class="tab"><svg class="ic"><use href="#i-browse"/></svg>Browse</a></nav>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Board on Android — long-press drag into an empty column</b>Long-press (350 ms, <code>LONG_PRESS</code>) lifts the card. Holding it at the screen edge pages the board (<code>CLOCK_TICK</code> per page). The target column outlines and shows what the drop will do: In Progress means its workflow default, <code>working</code>. Release sends <code>task transition … working</code> (<code>CONFIRM</code>). A snackbar then offers "Claim it", because a drop never claims for you. A refusal snaps the card back and shows the node's sentence (<code>REJECT</code>). This column is empty under Mine, so it doubles as the empty-column state. <span class="route">/[server]/[space]/(tabs)/work?seg=board&amp;on=assignee:mine</span></div>
+  </div>
+</div>
+<div class="why">Tasks and Board show roots because the Work tab answers "what is moving", and a subtask moves inside its parent. The full hierarchy is one tap away in <code>k/tasks</code>. Grouping by the root's status keeps the tree whole: a done child under a working parent stays where it belongs and shows its own <span style="white-space:nowrap">"done"</span>. Timeline is not a Work segment. Recency is the sort, and on a 390pt screen a fifth segment would cost legible labels on the other four.</div>
+<div class="why">Category columns, not seven status columns, are the default because that is the web board-v2 rule: "a state the reads cannot isolate exactly downgrades the whole board to category columns", and tasks keyed on per-type workflows have more than one workflow. On a phone it also means four pages to swipe, not seven. Dropping a card on Done routes through <code>complete</code>, so the criteria gate is asked as it is on every other surface.</div>
+
+<h3>Any kind's list: k/[slug]</h3>
+<p>One screen for all 33 kinds, built from the kind's registry row: the plural label, the layouts it allows (<code>hiddenModes</code>), its sorts, its category tabs and its filters. The layout switcher offers <b>tree · list · board · timeline</b>. Tree is the default whenever any row has a parent of its own kind, and is decided from the data, not from kind names. A kind that hides a layout shows that icon disabled (commits: list and timeline only). The header count is <code>Page.total</code> when the node sends it; without one there is no number, never a 0.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div>
+          <div class="title hidden">Tasks</div>
+          <div class="trail"><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+          <div class="big">Tasks</div>
+        </header>
+        <main class="content fade-bottom">
+          <div class="lctl"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tasks</div><div class="lsw"><span class="on"><svg class="ic"><use href="#s-work-i-tree"/></svg></span><span><svg class="ic"><use href="#s-work-i-list"/></svg></span><span><svg class="ic"><use href="#s-work-i-board"/></svg></span><span><svg class="ic"><use href="#s-work-i-timeline"/></svg></span></div></div>
+          <div class="filters scrolls"><span class="f on">Not done<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="f">Mine</span><span class="f">Needs me</span><span class="f"><svg class="ic"><use href="#i-sort"/></svg>Recent</span></div>
+          <div class="countline">16 tasks not done</div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill working">working</span>Worker, Coordinator<span class="dot"></span>now</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 01 — design system &amp; component catalogue</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 02 — app shell, servers &amp; spaces</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 03 — chat: transcript, composer</span><span class="s"><span class="pill working">working</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid last more" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="s">6 more subtasks · 6 working</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Repoint family: 1-arg resume gate</span><span class="s"><span class="pill blocked">blocked</span>waiting on Marco since Tue</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">expire_pending identity guard</span><span class="s"><span class="pill done">done</span>Worker · Tue</span></span></a>
+            <a class="row kid last" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Tombstone history for repointed sessions</span><span class="s"><span class="pill open">open</span>Unassigned</span></span></a>
+            <a class="row kid last" style="--depth:2"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Backfill history rows (367)</span><span class="s"><span class="pill open">open</span>Unassigned · 3 pts</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Quiet list tiles + one-row header</span><span class="s"><span class="pill review">in review</span>2 subtasks · 2 done</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>k/tasks — tree, expanded to depth 2</b>A 20pt indent per level and a hairline guide from the parent's chevron. The disclosure cell sits before the face. A collapsed parent (Quiet list tiles) summarises its children. A kind list shows four children inline and folds the rest. Search runs within the list, and tree, list, board and timeline are one switch. Pushed from Browse, so Back says Browse. <span class="route">/[server]/[space]/k/tasks?layout=tree</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div>
+          <div class="title">Tasks<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="lctl"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tasks</div><div class="lsw"><span><svg class="ic"><use href="#s-work-i-tree"/></svg></span><span class="on"><svg class="ic"><use href="#s-work-i-list"/></svg></span><span><svg class="ic"><use href="#s-work-i-board"/></svg></span></div></div>
+          <div class="filters"><span class="f on">Not done<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="f">Mine</span></div>
+          <div class="scrim"></div>
+          <div class="sheet" style="height:89%">
+            <div class="handle"></div>
+            <div class="sheet-h"><span class="h">Sort &amp; filter</span><span class="btn ghost sm">Reset</span></div>
+            <div class="sheet-b">
+              <div class="band-l">Sort</div>
+              <div class="chipset"><span class="c on"><svg class="ic"><use href="#i-check"/></svg>Recent activity</span><span class="c">Recently modified</span><span class="c">Newest</span><span class="c">Manual order</span><span class="c">Start date</span><span class="c">Due date</span><span class="c">Priority</span><span class="c">Progress</span></div>
+              <div class="band-l">Status</div>
+              <div class="chipset"><span class="c">All</span><span class="c on"><svg class="ic"><use href="#i-check"/></svg>Not done</span><span class="c">To Do</span><span class="c">In Progress</span><span class="c">Done</span><span class="c">Cancelled</span></div>
+              <div class="band-l">Only show</div>
+              <div class="chipset"><span class="c">Assigned to me</span><span class="c">Needs me</span><span class="c">In review for me</span><span class="c">Ready to pull</span><span class="c">Type: bug<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="c">Archived<svg class="ic"><use href="#i-chevron-down"/></svg></span></div>
+            </div>
+            <div class="sheet-f"><span class="btn brand block">Done</span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Sort &amp; filter (Android) over k/tasks in list layout</b>Every option comes from the task row of the registry: eight sorts (the date, priority and progress sorts appear only because tasks have them), the category radio with "Not done" as the task default, the viewer chips, and the space's <code>type</code> axis (<code>filters.axes</code>). The list updates live behind the sheet. Back closes the sheet before it pops the screen. <span class="route">/[server]/[space]/k/tasks?layout=list&amp;sheet=filter</span></div>
+  </div>
+</div>
+<div class="diagram">
+  <div class="label">The list memory rule (mobile-lists/list-memory.ts, kept)</div>
+  <div class="lane-row">
+    <div class="box"><b>k/tasks</b><small>scrolled 1,240pt · "Repoint family" tapped · Quiet list tiles collapsed · search "gate"</small></div><span class="arr">→</span>
+    <div class="box"><b>writePlace(space, kind)</b><small>scrollTop · openedId · query · expanded[]</small></div><span class="arr">→</span>
+    <div class="box"><b>e/01a17e4c</b><small>slides in from the right (openedFromList)</small></div><span class="arr">→</span>
+    <div class="box brand"><b>Back</b><small>same scroll, same search, same folds; the opened row flashes once and takes focus</small></div>
+  </div>
+</div>
+<div class="why">The web keeps the place in module scope because its list unmounts. Native stacks keep the list mounted, so scroll restores for free there. The rule still matters for cold starts and tab switches, so the app persists <code>ListPlace</code> per (server, space, kind) for the session, and now includes the expanded set, as the owner ruling asks. A relaunch starts at the top, as the web does, because the list will be re-read anyway.</div>
+<div class="screen-strip scale75">
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title hidden">Stories</div><div class="trail"><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div><div class="big">Stories</div></header>
+        <main class="content">
+          <div class="lctl"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search stories</div><div class="lsw"><span class="on"><svg class="ic"><use href="#s-work-i-tree"/></svg></span><span><svg class="ic"><use href="#s-work-i-list"/></svg></span><span><svg class="ic"><use href="#s-work-i-timeline"/></svg></span></div></div>
+          <div class="list">
+            <div class="row tall"><span class="kind-ic skeleton"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton sk-line w40" style="margin-top:6px"></span><span class="skeleton" style="height:6px;margin-top:8px"></span></span></div>
+            <div class="row tall"><span class="kind-ic skeleton"></span><span class="main"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40" style="margin-top:6px"></span><span class="skeleton" style="height:6px;margin-top:8px"></span></span></div>
+            <div class="row tall" style="padding-left:56px"><span class="kind-ic skeleton"></span><span class="main"><span class="skeleton sk-line w60"></span><span class="skeleton" style="height:6px;margin-top:8px"></span></span></div>
+            <div class="row tall"><span class="kind-ic skeleton"></span><span class="main"><span class="skeleton sk-line w40"></span><span class="skeleton sk-line w60" style="margin-top:6px"></span><span class="skeleton" style="height:6px;margin-top:8px"></span></span></div>
+            <div class="row tall"><span class="kind-ic skeleton"></span><span class="main"><span class="skeleton sk-line w80"></span><span class="skeleton sk-line w40" style="margin-top:6px"></span><span class="skeleton" style="height:6px;margin-top:8px"></span></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Loading</b>Skeletons in the row's own shape, indent included, on the first read only. A cached list paints at once and refreshes in place. <span class="route">/[server]/[space]/k/stories</span></div>
+  </div>
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="android" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Tasks<span class="sub">Playground · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-search"/></svg></span></div></header>
+        <main class="content">
+          <div class="empty" style="padding-top:140px"><svg class="ic"><use href="#i-task"/></svg><div class="h">No tasks yet</div><p>Create one to give the team something to pick up.</p><span class="btn brand"><svg class="ic"><use href="#i-plus"/></svg>New task</span></div>
+          <span class="fab"><svg class="ic"><use href="#i-plus"/></svg></span>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Empty, with the create verb</b>Playground has no tasks. The sentence is the web phone list's own. The verb and the FAB open the same New task sheet. <span class="route">/[server]/playground/k/tasks</span></div>
+  </div>
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title hidden">Tasks</div><div class="trail"><span class="iconbtn brand"><svg class="ic"><use href="#i-plus"/></svg></span></div><div class="big">Tasks</div></header>
+        <main class="content">
+          <div class="lctl"><div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tasks</div><div class="lsw"><span class="on"><svg class="ic"><use href="#s-work-i-tree"/></svg></span><span><svg class="ic"><use href="#s-work-i-list"/></svg></span><span><svg class="ic"><use href="#s-work-i-board"/></svg></span><span><svg class="ic"><use href="#s-work-i-timeline"/></svg></span></div></div>
+          <div class="filters"><span class="f on">Cancelled<svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="f on">Mine</span><span class="f">Needs me</span></div>
+          <div class="empty" style="padding-top:110px"><svg class="ic"><use href="#i-filter"/></svg><div class="h">No tasks match</div><p>Nothing here for Cancelled · Assigned to me.</p><span class="btn outline">Clear filters</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Zero results for a filter</b>This is a different sentence from "empty": the filters are named, and the verb clears them. When filters exclude each other, the web's "Nothing can match" is used and nothing is sent. <span class="route">/[server]/[space]/k/tasks?cat=cancelled&amp;on=assignee:mine</span></div>
+  </div>
+</div>
+
+<h3>The task page</h3>
+<p>The overview's entity anatomy, filled in for the task. The order follows the routine a teammate runs (<code>tm8 help routine</code>): claim, keep the status true, tick as you go, link your work, finish. The page reads: header, verbs, liveness, description, acceptance criteria, blockers, children, git, sessions, then Messages and Linked, as on every kind.</p>
+<div class="anatomy">
+  <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a182a2 · v14 · root</span>
+            <div class="title">TM8 Mobile app</div>
+            <div class="meta"><span class="pill working">working</span><span class="pill idle nodot">MEDIUM</span><span class="stack"><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>Worker, Coordinator<span class="dot"></span>8 pts<span class="dot"></span>gate none<span class="dot"></span>opened 13:12 by Subhang</div>
+          </div>
+          <div class="verbs"><span class="vb pri"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="vb"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-arrow-right"/></svg>Move</span><span class="vb"><svg class="ic"><use href="#i-user"/></svg>Assign</span><span class="vb"><svg class="ic"><use href="#i-edit"/></svg>Edit</span></div>
+          <div class="livebar"><span class="dot"></span>2 sessions live on this task<span style="margin-left:auto;font-weight:500">View</span></div>
+          <div class="section-h c">Description</div>
+          <div class="prose" style="padding:0 16px"><p class="clamp3">Need a new React Native mobile app for tm8: a native experience with much better UI, clean, for both Android and iOS. Define all screens, layouts and routes; multiple servers can be added and each shows its own spaces.</p></div>
+          <div class="section-h c">Acceptance criteria<span class="more">2 of 5</span></div>
+          <div class="list lines">
+            <div class="row crit done"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Information architecture and route tree defined</span><span class="s">Coordinator · 13:20</span></span></div>
+            <div class="row crit done"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Shared design kit published to all lanes</span><span class="s">Coordinator · 13:31</span></span></div>
+            <div class="row crit"><span class="check"></span><span class="main"><span class="t">Every entity kind has a drawn screen</span></span></div>
+            <div class="row crit"><span class="check"></span><span class="main"><span class="t">Low-level design: data, offline, push</span></span></div>
+            <div class="row crit"><span class="check"></span><span class="main"><span class="t">Owner review of the stitched document</span></span></div>
+            <div class="row"><span class="check" style="border-style:dashed;color:var(--brand)"><svg class="ic"><use href="#i-plus"/></svg></span><span class="main"><span class="t" style="color:var(--brand);font-weight:500">Add criterion</span></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <span class="an" data-n="1" style="left:6px;top:58px"></span>
+    <span class="an" data-n="2" style="left:300px;top:58px"></span>
+    <span class="an" data-n="3" style="left:356px;top:126px"></span>
+    <span class="an" data-n="4" style="left:2px;top:236px"></span>
+    <span class="an" data-n="5" style="left:2px;top:296px"></span>
+    <span class="an" data-n="6" style="left:356px;top:368px"></span>
+    <span class="an" data-n="7" style="left:356px;top:470px"></span>
+    <span class="an" data-n="8" style="left:356px;top:722px"></span>
+  </div>
+  <ol class="legend">
+    <li><b>Back names where you came from</b> (Work). The left-edge swipe does the same. A cold link lands here with Work underneath it.</li>
+    <li><b>Share and ⋯</b>: copy link, open on web, pin, copy id, link PR/commit, archive. Every one is disabled with its reason when <code>capabilities</code> says no.</li>
+    <li><b>Kind eyebrow with short id, version and place</b> ("root", or the parent chain for a subtask, see the states below), then the title, then status · priority (UPPER-CASE, as the tile badge spells it) · who has it · estimate · completion gate · opened by and when. Tap the pill to Move, the faces to Assign.</li>
+    <li><b>The verbs.</b> Launch opens lane 04's launch sheet. Chat opens lane 03's new chat with this task attached. Move opens the transition sheet. Assign opens the people sheet. Edit switches the page to edit in place: there is no edit dialog (owner ruling, form 01a1164f).</li>
+    <li><b>Liveness</b> appears only while sessions run here. View lists them (lane 04).</li>
+    <li><b>Description</b> is markdown, clamped to three lines. Tap to expand.</li>
+    <li><b>Acceptance criteria.</b> Tap a circle to tick: <code>impactLight</code>, and <code>notificationSuccess</code> when the last one lands. "Who · when" comes from <code>doneBy/doneAt</code> and is absent when the node does not send them. Ticks are version-guarded (<code>task tick --expect-version</code>).</li>
+    <li><b>Add criterion</b> is an inline field that writes the same version-guarded patch. Blockers, Children, Git and Sessions follow, then Messages and Linked (next two phones).</li>
+  </ol>
+</div>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div>
+          <div class="title">Repoint family: 1-arg resume gate<span class="sub">Task · blocked</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="section-h c">Blockers</div>
+          <div class="list lines">
+            <div class="row cmp"><span class="avatar c3">M</span><span class="main"><span class="t">Waiting on Marco</span><span class="s">since Tue 10:12 · approval requested</span></span><span class="trail"><span class="btn xs outline">Message</span></span></div>
+            <div class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t" style="color:var(--ink-3);text-decoration:line-through">PTY recheck fails closed</span><span class="s">depends on<span class="pill done">done</span></span></span></div>
+          </div>
+          <div class="section-h c">Children · 3<span class="more">+ Add</span></div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">expire_pending identity guard</span><span class="s"><span class="pill done">done</span>Worker · Tue</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Tombstone history for repointed sessions</span><span class="s"><span class="pill open">open</span>Unassigned</span></span></a>
+            <a class="row kid last" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Backfill history rows (367)</span><span class="s"><span class="pill open">open</span>Unassigned · 3 pts</span></span></a>
+          </div>
+          <div class="section-h c">Messages<span class="more">View all 6</span></div>
+          <div class="list lines">
+            <div class="row cmp msg"><span class="avatar sm c1">S</span><span class="main"><span class="s"><b>Subhang</b> · 09:02</span><span class="t wrap">@marco can you confirm the 1-arg signature today?</span></span></div>
+            <div class="row cmp msg"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s"><b>Worker</b> · Tue 10:12</span><span class="t wrap">Blocked: waiting on Marco to confirm no caller passes a second argument.</span></span></div>
+          </div>
+          <div class="section-h c">Linked</div>
+          <div class="linked">
+            <div class="fam">Work</div><div class="chips"><span class="vlab">relates to</span><span class="chip"><svg class="ic"><use href="#i-task"/></svg>Bridge as an entity</span></div>
+            <div class="fam">Files &amp; docs</div><div class="chips"><span class="vlab">attached</span><span class="chip"><svg class="ic"><use href="#i-doc"/></svg>Operator guide</span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Lower half, a blocked task — dark</b>Blockers come first: the status and when it changed, who it waits on (an <code>approval_requested_from</code> edge, so "waiting on Marco since Tue" is a fact, not a guess), and <code>depends_on</code> with resolved items struck. Children is a tree. Messages shows the latest few, and View all opens lane 03's thread. Linked groups by edge family (edge-families.ts) and leaves out what has its own section (depends_on, tracks). Provenance stays folded. <span class="route">/[server]/[space]/e/01a17e4c</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline">
+          <div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div>
+          <div class="title">Task<span class="sub">Atelier · tm8.sh</span></div>
+          <div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share-android"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div>
+        </header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a0e75e · v22 · root</span>
+            <div class="title">Readiness per used provider</div>
+            <div class="meta"><span class="pill review">in review</span><span class="pill block nodot">HIGH</span><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span>Worker<span class="dot"></span>5 pts<span class="dot"></span>gate pr_merged</div>
+          </div>
+          <div class="verbs"><span class="vb pri"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="vb"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-arrow-right"/></svg>Move</span><span class="vb"><svg class="ic"><use href="#i-user"/></svg>Assign</span><span class="vb"><svg class="ic"><use href="#i-edit"/></svg>Edit</span></div>
+          <div class="section-h c">Git</div>
+          <div class="gate"><svg class="ic"><use href="#i-success"/></svg><span>Completion gate pr_merged: satisfied — every tracked pull request is merged and none is CI-red.</span></div>
+          <div class="list lines">
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-pr"/></svg></span><span class="main"><span class="t">#955 R1/S7b: readiness per used provider</span><span class="s"><span class="pill merged">merged</span>checks passed</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-commit"/></svg></span><span class="main"><span class="t"><span class="mono">fcc49604</span> R1/S7b: readiness per used…</span><span class="s">← session Readiness per used provider</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t mono" style="font-size:14px">tm8/01a0e75e…</span><span class="s"><span class="pill merged">merged</span>worktree</span></span></a>
+          </div>
+          <div class="section-h c">Sessions · 2</div>
+          <div class="list lines">
+            <a class="row cmp"><span class="avatar agent c1"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Release notes for #955</span><span class="s"><span class="pill wait">waiting</span>Reviewer asked a form</span></span></a>
+            <a class="row cmp"><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill exited">exited</span>Worker · Tue 11:20</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Android: git and sessions</b>The git section works like <code>views/taskGitSection.tsx</code>. The gate verdict comes before anyone taps Complete. Tracked PRs show lifecycle and CI (a null fact draws nothing). Commits name the session that made them (<code>authored_from</code>), and the worktree shows its state (active · merged · abandoned). Sessions lists live and exited sessions, each with its liveness word. <span class="route">/[server]/[space]/e/01a0e75e</span></div>
+  </div>
+</div>
+<div class="why">Git is its own section, and Linked leaves out the Code family, so <code>tracks</code> is not drawn twice ("one fact, one place", as with <code>remembers</code> and <code>triggered_by</code> in the registry). Blockers comes above Children because blocked is the state the routine says to clear first. The PR's CI word comes from the observer's <code>ciStatus</code>. An older node sends none, so none is drawn, and it is never read as passing.</div>
+
+<h3>Move, assign, create</h3>
+<p>Three sheets. Each states the node's rule <em>before</em> the tap, in the node's own words (domain/workflows.ts: "the client narrows only for usability: the same rule, stated BEFORE the click"). The database stays the gate.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Inbox</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Move<span class="sub" style="display:block;font-weight:400;font-size:var(--fs-foot);color:var(--ink-3)">Desktop-shell reflow overflow (tablet-768)</span></span><span class="iconbtn filled"><svg class="ic"><use href="#i-close"/></svg></span></div>
+          <div class="sheet-b">
+            <div class="band-l">To do</div>
+            <div class="opt"><span class="rd"></span><span class="ol"><span><span class="pill open">open</span></span><small>Current status</small></span></div>
+            <div class="opt off"><span class="rd"></span><span class="ol"><span><span class="pill info">pulled</span></span><small class="nope">type bug does not allow pulled</small></span></div>
+            <div class="band-l">In progress</div>
+            <div class="opt on"><span class="rd"></span><span class="ol"><span><span class="pill working">working</span></span><small>Started.</small></span></div>
+            <div class="sw-row"><span style="flex:1"><b>Claim it</b> — record me as working on it</span><span class="switch on"></span></div>
+            <div class="opt"><span class="rd"></span><span class="ol"><span><span class="pill review">in review</span></span><small>Waiting on someone's review</small></span></div>
+            <div class="opt"><span class="rd"></span><span class="ol"><span><span class="pill blocked">blocked</span></span><small>Say what you wait on — opens a message after the move</small></span></div>
+            <div class="band-l">Done</div>
+            <div class="opt off"><span class="rd"></span><span class="ol"><span><span class="pill done">complete</span></span><small class="nope">all acceptance criteria must be complete first — 2 open</small></span></div>
+            <div class="band-l">Cancelled</div>
+            <div class="opt"><span class="rd"></span><span class="ol"><span><span class="pill exited">cancelled</span></span><small>Ends every claim on the task</small></span></div>
+          </div>
+          <div class="sheet-f"><span class="btn brand block">Move to working and claim</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>The transition sheet</b>Opened from Inbox ("Subhang assigned you…"). The options follow the node's vocabulary, grouped by category. Pulled shows the workflow refusal in the words of <code>workflowRefusalText</code>. Complete is the only door to done and states the criteria gate as the server words it. "Claim it" is <code>--claim</code>: on by default only when you are an assignee, and it is never implied. Open and Cancelled say they end claims. <span class="route">/[server]/[space]/e/[id]/move (sheet)</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"></div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:90%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Assign · TM8 Mobile app</span></div>
+          <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search people and teammates</div>
+          <div class="sheet-b">
+            <div class="band-l">People</div>
+            <div class="row"><span class="avatar sm c1">S</span><span class="main"><span class="t">Subhang (you)</span></span><span class="trail"><span class="btn xs outline">Assign &amp; claim</span></span></div>
+            <div class="row"><span class="avatar sm c2">P</span><span class="main"><span class="t">Priya</span></span></div>
+            <div class="row"><span class="avatar sm c3">M</span><span class="main"><span class="t">Marco</span></span></div>
+            <div class="row"><span class="avatar sm c4">L</span><span class="main"><span class="t">Lena</span></span></div>
+            <div class="band-l">Teammates</div>
+            <div class="row"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Worker</span></span><span class="trail"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span></span></div>
+            <div class="row"><span class="avatar sm agent c4"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Coordinator</span></span><span class="trail"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span></span></div>
+            <div class="row"><span class="avatar sm agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Reviewer</span></span><span class="trail"><span class="check"></span></span></div>
+            <div class="row"><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Opus 5.5 1M Teammate</span></span><span class="trail"><span class="check"></span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Assign (Android, dark)</b>Members are round, teammates rounded-square (provenance). Each tap writes or removes one <code>assigned_to</code> edge and applies at once. The node validates the pairing. Picking yourself offers "Assign &amp; claim". The list scrolls to Dreamer, Graph Architect, Dispatcher, TM8 Helper and Fable 5.1 1M Teammate. <span class="route">/[server]/[space]/e/[id]/assign (sheet)</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar large"><div class="lead"><span class="spacebtn"><span class="mark">A</span>Atelier</span></div><div class="title hidden">Work</div><div class="trail"></div><div class="big">Work</div></header>
+        <main class="content"></main>
+        <div class="scrim"></div>
+        <div class="sheet tall" style="padding-bottom:0">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="btn ghost sm">Cancel</span><span class="h">New task</span><span class="btn ghost sm" style="font-weight:700">Create</span></div>
+          <div class="sheet-b" style="padding:0 16px;display:flex;flex-direction:column;gap:10px">
+            <div class="field"><label>Title</label><div class="input focus">Board drag haptics on Android<span style="display:inline-block;width:2px;height:20px;background:var(--brand);margin-left:1px"></span></div></div>
+            <div class="kvc" style="margin:0"><dt>Parent</dt><dd><span class="chip"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app</span></dd><dt>Criteria</dt><dd>Drop on a column fires CONFIRM · <span class="brandc">+ Add</span></dd><dt>Estimate</dt><dd>3 pts <span class="muted">· − +</span></dd><dt>Assignees</dt><dd><span class="avatar xs agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span> Opus 5.5 1M Teammate</dd><dt>type</dt><dd>feature <svg class="ic sm"><use href="#i-chevron-down"/></svg></dd></div>
+          </div>
+          <div class="keyboard">
+            <div class="kr"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+            <div class="kr"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+            <div class="kr"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+            <div class="kr"><span class="k w">123</span><span class="k space">space</span><span class="k w">done</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>New task, keyboard up</b>The title is the one required field (<code>createInstant: 'title'</code>). Parent defaults to where you came from, so a subtask is born in its place. Criteria, estimate, assignees and the space's axes sit above the keyboard. Create is <code>entity create task … --parent --criterion --estimate</code>. <span class="route">/[server]/[space]/new/task?parent=01a182a2 (sheet)</span></div>
+  </div>
+</div>
+<div class="why">The web's ruling that the transition list is "a vocabulary in reading order, not a state machine" is kept: every status is shown, and the only options disabled are the ones the node would refuse, with the reason. The claim is a separate switch, never a side effect, because the CLI keeps them separate: <code>transition</code> "changes only the status: the caller is recorded as working_on the task only with --claim". Move is not version-guarded on the node, so a stale page can still move. Tick, complete and edits are guarded, and a conflict is drawn below.</div>
+
+<h3>Stories and collections</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Story<span class="sub">Atelier · tm8.sh</span></div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-story"/></svg>Story · 01a10f2c · root</span>
+            <div class="title">Story kind improvements</div>
+            <div class="meta"><span class="pill info">in progress</span><span class="stack"><span class="avatar xs c1">S</span><span class="avatar xs agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="avatar xs agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span></span>Subhang, Worker, Graph Architect<span class="dot"></span>2h</div>
+            <p class="clamp3" style="font-size:var(--fs-sub);line-height:var(--lh-sub);color:var(--ink-2);-webkit-line-clamp:2">Make the story a place you stay on: the graph first, progress weighted by points, child stories that roll up, messages under it.</p>
+          </div>
+          <div class="segmented" style="margin-top:0"><span class="seg">To do</span><span class="seg on">In progress</span><span class="seg">Done</span></div>
+          <div style="padding:0 16px 4px"><div class="meter4"><i class="d" style="width:58%"></i><i class="w" style="width:25%"></i><i class="b" style="width:8%"></i></div><div class="fig" style="font-size:var(--fs-foot);line-height:var(--lh-foot)">58% · 21/36 pts · 7 of 12 tasks done<br>5 tasks across 3 roots are still open.</div></div>
+          <div class="section-h c">Roots · 4<span class="more">+ Add root</span></div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Story graph and playground</span><span class="s"><span class="pill working">working</span>Graph Architect</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Node pick popover</span><span class="s"><span class="pill working">working</span>Graph Architect</span></span></a>
+            <a class="row kid last" style="--depth:1"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Hop filter on the route (PR 1004)</span><span class="s"><span class="pill done">done</span>Worker</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Story tree on every list (#16)</span><span class="s"><span class="pill blocked">blocked</span>waiting on lane 05</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Story status set by hand (288)</span><span class="s"><span class="pill done">done</span>3 subtasks · 3 done</span></span></a>
+          </div>
+          <div class="section-h c">Child stories · 2</div>
+          <div class="list lines">
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-story"/></svg></span><span class="main"><span class="t">Story page on the phone</span><span class="s"><span class="pill info">in progress</span>1 of 4 tasks done</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Story page</b>The status is set by hand (story status is manual, migration 288). The segmented control writes it, and the sentence under the bar says why it is not done yet, in StatusCard's words. Roots are a tree. "+ Add root" is <code>collection add &lt;story&gt; &lt;root&gt;</code>, and only roots go in. Child stories roll up. Messages and Linked follow. <span class="route">/[server]/[space]/e/01a10f2c</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="light" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Browse</span></span></div><div class="title">Collection</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-collection"/></svg>Collection · 01a17f9a</span>
+            <div class="title">Mobile design inputs</div>
+            <div class="meta">6 items<span class="dot"></span>curated by Subhang<span class="dot"></span>13:05</div>
+          </div>
+          <div class="verbs n4"><span class="vb pri"><svg class="ic"><use href="#i-plus"/></svg>Add</span><span class="vb"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="vb"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-edit"/></svg>Edit</span></div>
+          <div class="section-h c">Items · 6</div>
+          <div class="list lines">
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">Mobile shell contract</span><span class="s">Doc · Subhang</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">One surface at a time</span><span class="s">Doc · Dreamer</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-doc"/></svg></span><span class="main"><span class="t">The Back Contract</span><span class="s">Doc · Subhang</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-artifact"/></svg></span><span class="main"><span class="t">Left navigator prototype</span><span class="s">Artifact · r1</span></span></a>
+            <div style="position:relative;overflow:hidden"><div class="swipe-actions" style="width:110px"><span class="act del"><svg class="ic"><use href="#i-minus"/></svg>Remove</span></div><a class="row cmp swiped" style="background:var(--paper);transform:translateX(-110px)"><span class="kind-ic"><svg class="ic"><use href="#i-drawing"/></svg></span><span class="main"><span class="t">Tab bar sketch</span><span class="s">Drawing · Worker</span></span></a></div>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-form"/></svg></span><span class="main"><span class="t">Which tab bar? (3 options)</span><span class="s">Form · Reviewer</span></span></a>
+          </div>
+          <div class="toast">Remove from the collection? The drawing is kept.<span class="act">Remove</span></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Collection (Android)</b>Items are <code>contains</code> edges, with no hierarchy between them, so the list is flat. Swipe left to remove: a snackbar says the entity is kept, and Remove writes <code>collections.removeItem</code>. Add opens the same entity picker the story uses. The item count is the edge count the tile shows. <span class="route">/[server]/[space]/e/01a17f9a</span></div>
+  </div>
+</div>
+
+<h3>Projects, crafts and loops</h3>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Browse</span></span></div><div class="title">Project</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-project"/></svg>Project · v7</span>
+            <div class="title">tm8</div>
+            <div class="meta"><span class="chip"><svg class="ic"><use href="#i-globe"/></svg>github.com/subhangR/tm8</span><span class="chip"><svg class="ic"><use href="#s-work-i-branch"/></svg>main · origin HEAD</span></div>
+          </div>
+          <div class="verbs n4"><span class="vb pri"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="vb"><svg class="ic"><use href="#i-file"/></svg>Files</span><span class="vb"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-external"/></svg>GitHub</span></div>
+          <div class="section-h c">Sessions launched here</div>
+          <div class="list tree">
+            <a class="row cmp" style="--depth:0"><span class="tw"><svg class="ic"><use href="#i-chevron-down"/></svg></span><span class="avatar agent c4"><svg class="ic"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">TM8 Mobile app</span><span class="s"><span class="pill live">live</span>Coordinator · 42 min</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 05 — work</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid" style="--depth:1"><span class="tw"></span><span class="avatar sm agent c2"><svg class="ic sm"><use href="#i-bot"/></svg><i class="live"></i></span><span class="main"><span class="t">Mobile design lane 03 — chat</span><span class="s"><span class="pill live">live</span>Opus 5.5 1M Teammate</span></span></a>
+            <a class="row kid last more" style="--depth:1"><span class="tw"><svg class="ic"><use href="#i-chevron-right"/></svg></span><span class="main"><span class="s">7 more · 7 live</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="avatar agent c3"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Security lane A</span><span class="s"><span class="pill waiting">waiting</span>permission: push to origin</span></span></a>
+            <a class="row cmp" style="--depth:0"><span class="tw"></span><span class="avatar agent c2"><svg class="ic"><use href="#i-bot"/></svg></span><span class="main"><span class="t">Facade audit</span><span class="s"><span class="pill exited">exited</span>swarm01 · done</span></span></a>
+          </div>
+          <div class="section-h c">Worktrees</div>
+          <div class="list lines">
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t mono" style="font-size:14px">tm8/01a182a9…</span><span class="s"><span class="pill working">active</span>TM8 Mobile app</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-worktree"/></svg></span><span class="main"><span class="t mono" style="font-size:14px">tm8/01a0e75e…</span><span class="s"><span class="pill merged">merged</span>Readiness per used provider</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Project</b>Repo and default branch come from <code>projects.branches.list</code>, with its source shown ("origin HEAD", not a guess). Files is the door to lane 06's file browser. Sessions launched here form a tree: the root session with its launched children, each with its own liveness word. The working folder shows only for node admins. Edit and Delete are absent, with the registry's reason in ⋯ ("materialized from the node registry"). <span class="route">/[server]/[space]/e/[project-id]</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Craft</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-share"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-craft"/></svg>Craft · 01a17c20</span>
+            <div class="title">Mobile craft</div>
+            <div class="meta">4 pages<span class="dot"></span>by Subhang<span class="dot"></span>12:10</div>
+          </div>
+          <div class="verbs n4"><span class="vb pri"><svg class="ic"><use href="#i-play"/></svg>Launch all</span><span class="vb"><svg class="ic"><use href="#i-plus"/></svg>Add page</span><span class="vb"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-edit"/></svg>Edit</span></div>
+          <div class="pages">
+            <div class="pg"><div class="th"><svg class="ic"><use href="#i-graph"/></svg></div><span class="nm">Session graph</span></div>
+            <div class="pg on"><div class="th"><i style="top:12px"></i><i style="top:20px;right:20px"></i><i style="top:30px"></i><i style="top:38px"></i><i style="top:46px;right:26px"></i><i style="top:58px"></i><i style="top:66px;right:16px"></i></div><span class="nm">Shell contract</span></div>
+            <div class="pg lifted"><div class="th"><svg class="ic"><use href="#i-artifact"/></svg></div><span class="nm">Navigator</span></div>
+            <div class="pg"><div class="th"><svg class="ic"><use href="#i-drawing"/></svg></div><span class="nm">Tab bar sketch</span></div>
+            <div class="pg"><div class="th add"><svg class="ic"><use href="#i-plus"/></svg></div><span class="nm">Page</span></div>
+          </div>
+          <div class="pagecard">
+            <div class="pch"><svg class="ic"><use href="#i-doc"/></svg>Page 2 of 4 · Mobile shell contract<span style="margin-left:auto;color:var(--brand)">Open</span></div>
+            <div class="prose"><p>The phone shell is one surface at a time. Opening an entity always pushes a full screen; Back is real history and is never intercepted.</p><p>Sheets carry temporary surfaces only: pickers, account, launch. A sheet is dismissed before the screen behind it pops.</p></div>
+          </div>
+          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+          <div class="section-h c">Messages<span class="more">View all 2</span></div>
+          <div class="list"><div class="row cmp msg"><span class="avatar sm agent c3"><svg class="ic sm"><use href="#i-bot"/></svg></span><span class="main"><span class="s"><b>Worker</b> · 12:10</span><span class="t wrap">Added the tab bar sketch as page 4.</span></span></div></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Craft — ordered pages as a pager</b>Each page is the entity itself (graph, doc, artifact, drawing or another craft), held as an ordered <code>contains</code> edge. Swipe the body to page, or tap a thumbnail. Long-press a thumbnail to reorder: it lifts, and the drop writes <code>collection add --position</code>. "Launch all" (launch as one) runs one session anchored on the craft, with every page as context. <span class="route">/[server]/[space]/e/01a17c20?page=2</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div><div class="title">Loop</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-loop"/></svg>Loop · 01a0e7d2</span>
+            <div class="title">Nightly graph refresh</div>
+            <div class="meta"><span class="pill run">enabled</span>daily at 02:00</div>
+          </div>
+          <dl class="kvc"><dt>Schedule</dt><dd>Daily 02:00 · <span class="mono">0 2 * * *</span></dd><dt>Next run</dt><dd>Thu 02:00</dd><dt>Runs as</dt><dd>— (routed through the Dispatcher)</dd><dt>Spawns</dt><dd>a task per firing, prompt "Run graphify-refresh and report the counts"</dd></dl>
+          <div class="btnrow" style="padding:12px 16px 4px"><span class="btn outline"><svg class="ic"><use href="#i-pause"/></svg>Disable</span><span class="btn brand"><svg class="ic"><use href="#i-play"/></svg>Run now</span></div>
+          <div class="note">Run now marks the loop due; execution begins on the next scheduler tick.</div>
+          <div class="section-h c">Runs · 14</div>
+          <div class="list lines">
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Nightly graph refresh — Oct 28</span><span class="s"><span class="pill done">done</span>02:00–02:06</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Nightly graph refresh — Oct 27</span><span class="s"><span class="pill done">done</span>02:00–02:05</span></span></a>
+            <a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Nightly graph refresh — Oct 26</span><span class="s"><span class="pill failed">failed</span>session exited 1</span></span></a>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Loop (Android, dark)</b>Pause and resume use the node's own words, Disable and Enable ("Disabled. Its stored deadline is preserved."). Run now is disabled-with-reason on a disabled loop. A null runner is named as a choice, not a gap. A <code>lastError</code> is shown beside "enabled", because enabled alone is not health. The run history is the <code>triggered_by</code> tasks: each firing derives one. <span class="route">/[server]/[space]/e/01a0e7d2</span></div>
+  </div>
+</div>
+
+<h3>Pull requests and commits</h3>
+<p>What the forge observer stores is what the phone shows. Per-check rows (<code>pr_check_facts</code>) and review threads are stored on the node but are "not a client surface" today. Where this lane draws them, they are tagged <span class="tag" style="margin:0">proposed</span> and need a read door.</p>
+<div class="screen-strip">
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Task</span></span></div><div class="title">Pull request</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-external"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-pr"/></svg>subhangR/tm8 · #1113</span>
+            <div class="title">fix(deps): patch vulnerable dependencies</div>
+            <div class="meta"><span class="pill run">open</span><span class="chip"><svg class="ic"><use href="#s-work-i-branch"/></svg>tm8/01a17d55… → main</span></div>
+          </div>
+          <div style="padding:0 16px"><span class="btn block disabled">Merge…</span></div>
+          <div class="merge-why"><svg class="ic"><use href="#i-clock"/></svg><span>Checks are still running (observed ci_status=pending). Merge opens when they pass.</span></div>
+          <dl class="kvc" style="margin-top:12px"><dt>CI</dt><dd><span class="pill pending">running</span></dd><dt>Mergeable</dt><dd>clean</dd><dt>Head</dt><dd class="mono">3f9c2a1b</dd><dt>Polled</dt><dd>13:38 · facts changed 13:31</dd><dt>Review</dt><dd class="muted">not observed by this node</dd></dl>
+          <div class="section-h c">Checks<span class="tag">proposed</span></div>
+          <div class="list lines">
+            <div class="row cmp"><span class="ck ok"><svg class="ic"><use href="#i-success"/></svg></span><span class="main"><span class="t">typecheck</span></span><span class="trail">1m 12s</span></div>
+            <div class="row cmp"><span class="ck ok"><svg class="ic"><use href="#i-success"/></svg></span><span class="main"><span class="t">unit (bun test)</span></span><span class="trail">3m 40s</span></div>
+            <div class="row cmp"><span class="ck"><span class="spinner"></span></span><span class="main"><span class="t">e2e (playwright)</span></span><span class="trail">running 6m</span></div>
+            <div class="row cmp"><span class="ck q"><svg class="ic"><use href="#i-clock"/></svg></span><span class="main"><span class="t">audit</span></span><span class="trail">queued</span></div>
+          </div>
+          <div class="section-h c">Tracked by</div>
+          <div class="list"><a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Patch vulnerable dependencies</span><span class="s"><span class="pill done">done</span>Worker</span></span><span class="trail"><svg class="ic"><use href="#i-chevron-right"/></svg></span></a></div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>PR #1113 — checks running</b>Merge… is disabled with its reason. Today the node refuses a merge only for not open, conflicts, failing checks or no GitHub credential. Holding the button while checks are <em>pending</em> is a client hold (see the open questions). Head is the observed <code>head_sha</code>, the commit this PR would merge. GitHub opens from the top bar. <span class="route">/[server]/[space]/e/[pr-id]</span></div>
+  </div>
+
+  <div class="shot w360">
+    <figure class="phone" data-os="android" data-theme="dark" data-size="360">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div><div class="title">Pull request</div><div class="trail"></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-pr"/></svg>subhangR/tm8 · #1208</span>
+            <div class="title">fix(mcp): expose spaceLinks.list</div>
+            <div class="meta"><span class="pill run">open</span>checks passed · clean</div>
+          </div>
+        </main>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:46%">
+          <div class="handle"></div>
+          <div class="sheet-h"><span class="h">Merge pull request</span><span class="mono muted">subhangR/tm8#1208</span></div>
+          <div class="sheet-b" style="padding:0 16px">
+            <p style="margin:0 0 12px;font-size:var(--fs-body);line-height:var(--lh-body)">Merge subhangR/tm8#1208 at the head this node last observed as your GitHub account?</p>
+            <p style="margin:0;font-size:var(--fs-foot);line-height:var(--lh-foot);color:var(--ink-3)">The chip changes to merged when the observer reports it (git.pr_state_changed), not from this screen.</p>
+          </div>
+          <div class="sheet-f btnrow"><span class="btn outline">Cancel</span><span class="btn brand">Confirm merge</span></div>
+        </div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Merge… is two steps (Android)</b>The confirm names the PR, the head and whose credential, in MergePullRequestFlow's words. A refusal shows above a disabled Confirm ("Merge refused — no GitHub credential stored for this account — connect one under Settings → Agent credentials"). Success shows the forge's sha and says the chip still reads open. Nothing repaints it locally. <span class="route">/[server]/[space]/e/[pr-id]/merge (sheet)</span></div>
+  </div>
+
+  <div class="shot">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Task</span></span></div><div class="title">Commit</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-copy"/></svg></span><span class="iconbtn"><svg class="ic"><use href="#i-external"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-commit"/></svg>subhangR/tm8 · <span class="mono">fcc49604</span></span>
+            <div class="title" style="font-size:var(--fs-t3);line-height:var(--lh-t3)">R1/S7b: readiness per used provider — make the R2 seeding gate reachable (#955)</div>
+            <div class="meta"><span class="avatar xs c1">S</span>subhangR<span class="dot"></span>Tue 11:12<span class="dot"></span>made in session Readiness per used provider</div>
+          </div>
+          <div class="section-h c">Tracked by</div>
+          <div class="list"><a class="row cmp"><span class="kind-ic"><svg class="ic"><use href="#i-task"/></svg></span><span class="main"><span class="t">Readiness per used provider</span><span class="s"><span class="pill review">in review</span>Worker</span></span></a></div>
+          <div class="section-h c">Files changed · 13<span class="more" style="color:var(--ink-3)">+937 −6 <span class="tag">proposed</span></span></div>
+          <div class="list lines">
+            <div class="row cmp"><span class="main"><span class="t mono" style="font-size:13px">…/370_space_credential_readiness_….sql</span></span><span class="trail"><span class="bar2"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i></span>+377</span></div>
+            <div class="row cmp"><span class="main"><span class="t mono" style="font-size:13px">…/space-credential-readiness.pg.test.ts</span></span><span class="trail"><span class="bar2"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="r"></i></span>+221 −1</span></div>
+            <div class="row cmp sel"><span class="main"><span class="t mono" style="font-size:13px">packages/cli/src/commands/space.ts</span></span><span class="trail"><span class="bar2"><i class="a"></i><i class="a"></i><i></i><i></i><i></i></span>+14</span></div>
+          </div>
+          <div class="diff">
+            <div class="h"><span class="n"></span>@@ -538,6 +539,18 @@ renderCredentialReadiness</div>
+            <div><span class="n">539</span>  ];</div>
+            <div class="a"><span class="n">542</span>+ // S7b: the release-2 seeding gate</div>
+            <div class="a"><span class="n">543</span>+ const seeding = sub(dto, 'seeding');</div>
+            <div class="a"><span class="n">544</span>+ const used = (sub(seeding,</div>
+            <div class="a"><span class="n">545</span>+   'usedProviders') as string[]) ?? [];</div>
+            <div class="a"><span class="n">546</span>+ const seedingLines = seeding === …</div>
+          </div>
+          <div class="note">10 more files · tap a file for its diff, swipe sideways for long lines.</div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    <div class="cap"><b>Commit fcc49604 — a real one from this repo</b>The sha, message, git author, time and the session that made it (<code>authored_from</code>, never inferred from names). The task it is tracked by. Files changed opens a compact diff per file. This is <span class="tag" style="margin:0">proposed</span>: the node serves diffs for a session's worktree (<code>execution.gitDiff</code>) but has no read of one commit yet. <span class="route">/[server]/[space]/e/[commit-id]?file=packages/cli/src/commands/space.ts</span></div>
+  </div>
+</div>
+
+<h3>Moves that wait, refusals, conflicts</h3>
+<p>The states every write on these pages can land in. They are drawn on tasks, but they apply to every patch in the lane: story status, loop enable, collection add, craft reorder.</p>
+<div class="screen-strip scale75">
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="banner"><svg class="ic"><use href="#i-wifi-off"/></svg>This server could not be reached · 1 change waiting to send</div>
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a17a03 · root</span>
+            <div class="title">Quiet list tiles + one-row header</div>
+            <div class="meta"><span class="pill review">in review</span><span class="pill pending">pending</span>was working · moved by you 13:39</div>
+          </div>
+          <div class="verbs"><span class="vb pri"><svg class="ic"><use href="#i-play"/></svg>Launch</span><span class="vb off"><svg class="ic"><use href="#i-chat"/></svg>Chat</span><span class="vb"><svg class="ic"><use href="#i-arrow-right"/></svg>Move</span><span class="vb"><svg class="ic"><use href="#i-user"/></svg>Assign</span><span class="vb"><svg class="ic"><use href="#i-edit"/></svg>Edit</span></div>
+          <div class="section-h c">Acceptance criteria<span class="more">4 of 5</span></div>
+          <div class="list lines">
+            <div class="row crit done"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Tiles drop the second row when it has nothing to say</span><span class="s">Reviewer · 12:02</span></span></div>
+            <div class="row crit"><span class="check"></span><span class="main"><span class="t">Header fits one row at 390pt</span></span></div>
+          </div>
+        </main>
+        <div class="toast"><svg class="ic"><use href="#i-clock"/></svg>Queued: move to in review<span class="act">Undo</span></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Offline: the move is queued</b>The pill shows the asked-for status <em>and</em> "pending". Lists show the same pair. When the node accepts, the pending pill goes and a <code>selection</code> tick plays. If the node lands it elsewhere, the server's answer wins. Undo removes the queued write. <span class="route">/[server]/[space]/e/01a17a03</span></div>
+  </div>
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="ios" data-theme="dark">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-chevron-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a17a03 · root</span>
+            <div class="title">Quiet list tiles + one-row header</div>
+            <div class="meta"><span class="pill review">in review</span><span class="avatar xs agent c1"><svg class="ic sm"><use href="#i-bot"/></svg></span>Reviewer</div>
+          </div>
+          <div class="refusal no"><div class="h"><svg class="ic"><use href="#i-error"/></svg>Complete was refused</div><p>The node refused: all acceptance criteria must be complete first. 1 of 5 is open.</p></div>
+          <div class="section-h c">Acceptance criteria<span class="more">4 of 5</span></div>
+          <div class="list lines">
+            <div class="row crit sel"><span class="check"></span><span class="main"><span class="t">Header fits one row at 390pt</span></span><span class="trail"><span class="btn xs brand">Tick</span></span></div>
+            <div class="row crit done"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Tiles drop the second row when it has nothing to say</span><span class="s">Reviewer · 12:02</span></span></div>
+            <div class="row crit done"><span class="check on"><svg class="ic"><use href="#i-check"/></svg></span><span class="main"><span class="t">Counts line hides zero and absent</span><span class="s">Worker · Mon</span></span></div>
+          </div>
+        </main>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Refused, in the node's words</b>Complete was tried from the board's Done column. The sentence is the database's (<code>acceptance_criteria_incomplete</code>, migration 151), and the open criterion is moved up beside a Tick. Haptic: <code>notificationError</code> / <code>REJECT</code>. <span class="route">/[server]/[space]/e/01a17a03</span></div>
+  </div>
+  <div class="shot">
+    <div class="phone-wrap">
+    <figure class="phone" data-os="android" data-theme="light">
+      <div class="ph-status"><span class="time"></span><span class="sys"><i class="wifi"></i><i class="sig"></i><i class="bat"></i></span></div>
+      <div class="ph-screen">
+        <header class="topbar hairline"><div class="lead"><span class="back"><svg class="ic"><use href="#i-arrow-left"/></svg><span>Work</span></span></div><div class="title">Task</div><div class="trail"><span class="iconbtn"><svg class="ic"><use href="#i-more-v"/></svg></span></div></header>
+        <main class="content">
+          <div class="ent-head">
+            <span class="crumb"><svg class="ic"><use href="#i-task"/></svg>TM8 Mobile app<svg class="ic"><use href="#i-chevron-right"/></svg></span>
+            <span class="eyebrow"><svg class="ic"><use href="#i-task"/></svg>Task · 01a182c6 · v2</span>
+            <div class="title">Mobile design lane 05 — work</div>
+            <div class="meta"><span class="pill working">working</span><span class="avatar xs agent c2"><svg class="ic sm"><use href="#i-bot"/></svg></span>Opus 5.5 1M Teammate</div>
+          </div>
+        </main>
+        <div class="scrim"></div>
+        <div class="dialog"><div class="d-b"><div class="h">This task changed since you read it — refresh</div><p>You ticked "Only the section file is committed" on v2. The node has v3: Coordinator added a criterion at 13:38.</p></div><div class="d-a"><span>Keep reading</span><span class="bold">Refresh</span></div></div>
+      </div>
+      <div class="ph-home"></div>
+    </figure>
+    </div>
+    <div class="cap"><b>Version conflict, with the parent chain</b>The tick carried <code>--expect-version 2</code>. The node answered <code>version_conflict</code> with the current row, and the dialog names who changed what. Refresh re-reads and re-applies the tick only if the criterion still exists. Nothing is overwritten silently. Above the eyebrow is the subtask's parent chain. <span class="route">/[server]/[space]/e/01a182c6</span></div>
+  </div>
+</div>
+
+<h3>Routes</h3>
+<table class="route-table">
+  <thead><tr><th style="width:44%">Route</th><th>Screen</th><th style="width:26%">Params · notes</th></tr></thead>
+  <tbody>
+    <tr><td>/[server]/[space]/(tabs)/work</td><td>Work root: Tasks · Sessions (lane 04) · Stories · Board</td><td><code>seg</code>, <code>on=</code> chips, <code>col=</code> board page</td></tr>
+    <tr><td>/[server]/[space]/k/[slug]</td><td>Kind list for any kind (slug from the registry: tasks, stories, collections, projects, crafts, loops, pulls, commits…)</td><td><code>layout=tree|list|board|timeline</code>, <code>cat</code>, <code>on</code>, <code>sort</code>, <code>q</code>; place restored from list memory</td></tr>
+    <tr><td>/[server]/[space]/k/[slug]?sheet=filter</td><td>Sort &amp; filter sheet</td><td>state is route state, as on the web (<code>q.pick</code>)</td></tr>
+    <tr><td>/[server]/[space]/e/[id]</td><td>Task · story · collection · project · craft · loop · pull request · commit pages</td><td><code>?page=</code> (craft), <code>?file=</code> (commit). Web <code>#/s/&lt;space&gt;/e/&lt;id&gt;</code> maps 1:1</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/move <span class="tag">new</span></td><td>Transition sheet</td><td>proposed route; sheet presentation</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/assign <span class="tag">new</span></td><td>Assign sheet</td><td>proposed route; sheet</td></tr>
+    <tr><td>/[server]/[space]/e/[id]/merge <span class="tag">new</span></td><td>Merge confirm (pull request)</td><td>proposed route; sheet</td></tr>
+    <tr><td>/[server]/[space]/new/[kind] <span class="tag">new</span></td><td>New task / story / collection / craft / loop sheet</td><td><code>?parent=</code>, <code>?into=</code> (story or collection to add the new root to)</td></tr>
+    <tr><td>→ /[server]/[space]/launch · /chat/new · /e/[id]/messages</td><td>Launch (lane 04), Chat about (lane 03), all messages (lane 03)</td><td>pushed with <code>?about=[id]</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Components</h3>
+<table class="spec">
+  <thead><tr><th style="width:18%">Component</th><th style="width:16%">Size</th><th>Behaviour</th><th style="width:22%">Platform</th></tr></thead>
+  <tbody>
+    <tr><td class="code">TreeRow</td><td>56pt root / 48pt child; 20pt indent per depth</td><td>Disclosure cell (20pt) before the face or glyph. A 1px guide from the parent's chevron. A collapsed parent shows a count summary in its subtitle. Expanded to depth 2 by default. A parent shows 2 children on the Work tab and 4 in a kind list, then "▸ N more · status summary". The title never drops below one line.</td><td>Same on both; Android row min 48dp</td></tr>
+    <tr><td class="code">StatusGroupHeader</td><td>34pt</td><td>"Working · 2". The number is <code>CollectionGroup.total</code>; with no total it reads "2 shown", never a guess.</td><td>iOS uppercase footnote; Android titleSmall</td></tr>
+    <tr><td class="code">LayoutSwitch</td><td>4 × 32pt</td><td>tree · list · board · timeline. Layouts in <code>hiddenModes</code> are disabled with the reason on long-press. Timeline is the list grouped under day headers by the active time sort.</td><td>iOS segmented; Android pill-shaped</td></tr>
+    <tr><td class="code">BoardPager</td><td>column = width − 48pt</td><td>One column per page, snapping. The next column peeks 20pt with no text visible. Page dots below. Column counts come from the server's totals.</td><td>Android column 312dp at 360</td></tr>
+    <tr><td class="code">BoardCard</td><td>≥ 70pt</td><td>Title (2 lines), pill, owners, ✓ n/m, PR chip, subtask count. Long-press lifts it at 3° tilt with an elevated shadow.</td><td>Android: M3 elevated card</td></tr>
+    <tr><td class="code">VerbStrip</td><td>58pt tiles, 4–5 across</td><td>Primary verb filled with the brand colour. A verb the node would refuse stays in place, disabled with its reason.</td><td>Android radius 16dp</td></tr>
+    <tr><td class="code">CriterionRow</td><td>≥ 44pt</td><td>Tap circle to tick (version-guarded), long-press to edit text or untick. "Who · when" when the node sends <code>doneBy/doneAt</code>.</td><td>—</td></tr>
+    <tr><td class="code">TransitionSheet</td><td>large detent</td><td>Every status, grouped by category. Disabled-with-reason for workflow and gate refusals. "Claim it" switch. One primary button that names the move.</td><td>iOS detents; Android modal sheet, back dismisses first</td></tr>
+    <tr><td class="code">PendingPill</td><td>22pt</td><td>Shown beside the asked-for status while a write is queued. Settles to the server's answer.</td><td>—</td></tr>
+    <tr><td class="code">StoryMeter</td><td>6pt</td><td>done · working · blocked · to do segments, from the server's rollup, with the words underneath.</td><td>—</td></tr>
+    <tr><td class="code">PagePager (craft)</td><td>62 × 80pt thumbs</td><td>Thumbnail strip as a scrubber over a swipeable page body. Long-press a thumbnail to reorder.</td><td>—</td></tr>
+    <tr><td class="code">DiffView</td><td>11pt mono, 16pt lines</td><td>Hunk header, line numbers, additions and removals tinted. Long lines scroll sideways, never wrap.</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>Gestures and haptics</h3>
+<table class="spec">
+  <thead><tr><th style="width:24%">Gesture</th><th>Where · what it does</th><th style="width:28%">Haptic (iOS · Android)</th></tr></thead>
+  <tbody>
+    <tr><td>Tap row / card / chip</td><td>Push the entity; the list records <code>openedId</code></td><td>— · —</td></tr>
+    <tr><td>Tap chevron</td><td>Expand or collapse one parent; remembered per list</td><td><code>selection</code> · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Long-press chevron</td><td>Expand or collapse everything under it</td><td><code>impactLight</code> · <code>LONG_PRESS</code></td></tr>
+    <tr><td>Long-press row (list)</td><td>Preview sheet with Move, Assign, Copy link, Pin</td><td><code>impactMedium</code> · <code>LONG_PRESS</code></td></tr>
+    <tr><td>Long-press card (board), drag</td><td>Lift. Hold at the edge to page. The target column outlines with what the drop does.</td><td><code>impactMedium</code> on lift, <code>selection</code> per page · <code>LONG_PRESS</code>, <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Release on column</td><td>Transition (or complete, for Done). A refusal snaps the card back and shows the reason.</td><td><code>notificationSuccess</code> / <code>notificationError</code> · <code>CONFIRM</code> / <code>REJECT</code></td></tr>
+    <tr><td>Horizontal swipe (board, craft)</td><td>Page columns or pages</td><td><code>selection</code> at each snap · <code>CLOCK_TICK</code></td></tr>
+    <tr><td>Swipe row left</td><td>Collection: Remove. Task list: Move… and Assign…</td><td><code>impactLight</code> at threshold · <code>GESTURE_THRESHOLD_ACTIVATE</code></td></tr>
+    <tr><td>Tap criterion circle</td><td>Tick or untick</td><td><code>impactLight</code>, last one <code>notificationSuccess</code> · <code>CONFIRM</code></td></tr>
+    <tr><td>Pull down</td><td>Refresh every list and page</td><td><code>impactLight</code> at trigger · <code>GESTURE_START</code></td></tr>
+    <tr><td>Long-press craft thumbnail, drag</td><td>Reorder pages</td><td><code>impactMedium</code>, <code>selection</code> per slot · <code>LONG_PRESS</code>, <code>SEGMENT_TICK</code></td></tr>
+    <tr><td>Edge swipe / predictive back</td><td>Pop. A sheet is dismissed first.</td><td>system · system</td></tr>
+  </tbody>
+</table>
+
+<h3>Rulings kept and overturned</h3>
+<table class="spec">
+  <thead><tr><th style="width:34%">Web ruling</th><th>Here</th></tr></thead>
+  <tbody>
+    <tr><td>Phone list is flat; the drawer alone nests</td><td><b>Overturned</b> by the owner (2026-10-28). Every list is a tree when anything nests, expanded to depth 2.</td></tr>
+    <tr><td>Phone tasks open on "Not done" (list-query.ts)</td><td>Kept, on k/tasks and the Work tab.</td></tr>
+    <tr><td>One control per axis (registry phase 7)</td><td>Kept. The Work tab uses status chips and no category control. k/tasks uses the category radio and no status chips.</td></tr>
+    <tr><td>No edit dialog for tasks (form 01a1164f)</td><td>Kept. Edit is in place.</td></tr>
+    <tr><td>Counts absent ≠ zero; page counts hedge with "+"</td><td>Kept. Group totals are used when the node sends them.</td></tr>
+    <tr><td>Merge is two steps; the chip is never repainted locally</td><td>Kept. A client hold while checks are pending is added (open question).</td></tr>
+    <tr><td>Opening an entity is a full screen, never a peek (Back Contract)</td><td>Kept for taps. Long-press adds a preview, which the overview allows.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout open"><b>Open questions for the owner</b>
+1. <b>Pending checks.</b> Should <code>tracking.pr.merge</code> refuse <code>ci_status=pending</code> (a new reason such as <code>ci_pending</code>)? Until it does, the phone's hold is client-only, and the web allows the merge.<br>
+2. <b>Read doors.</b> Per-check rows (<code>pr_check_facts</code>), review threads, and a single-commit diff are stored or reachable, but none is a client surface. Which of them should get a read door so the "proposed" tags can go?<br>
+3. <b>Tones.</b> The kit paints <code>working</code> and <code>done</code> the same green. The web desktop pill paints in_review amber and done grey, and the web phone row paints working blue. The meters here follow the story page (working blue). One ruling for all lanes would settle it.<br>
+4. <b>Child caps.</b> Children shown inline before "▸ N more": 2 on the Work tab and 4 in a kind list are proposed. Confirm or set one number.<br>
+5. <b>Pause words.</b> Loops say Disable/Enable, not pause/resume. Kept as the node's words. Confirm.
+</div>
+</section>
