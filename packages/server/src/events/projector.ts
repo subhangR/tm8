@@ -55,7 +55,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
+import { bootPhaseFacts, chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -279,6 +279,9 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
+  /** 379. Optional so pre-379 row fixtures stay source-compatible. */
+  ws_boot_phase?: string | null;
+  ws_boot_phase_at?: Date | string | null;
   ws_outcome?: string | null;
   ws_outcome_at?: Date | string | null;
   ws_outcome_by?: string | null;
@@ -492,6 +495,8 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.boot_phase      as ws_boot_phase,
+  ws.boot_phase_at   as ws_boot_phase_at,
   ws.outcome         as ws_outcome,
   ws.outcome_at      as ws_outcome_at,
   ws.outcome_by      as ws_outcome_by,
@@ -1465,6 +1470,8 @@ export class PgEntityProjector implements EntityProjector {
             : { sharingSetAt: iso(r.ws_sharing_set_at) }),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
+          // 379 — the boot facts, the same helper as entity-read.
+          ...bootPhaseFacts(r),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
           // explicit null branch renders no claim; the mode key is spread
           // in only when the column holds a CHECK value, because absence

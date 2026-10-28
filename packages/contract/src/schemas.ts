@@ -179,7 +179,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -371,6 +371,9 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 379. */
+export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
+  z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
 /**
@@ -692,6 +695,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
+    // 379: the last phase the launch's boot reached, and when. Absent on a
+    // node (or a row) that records no boot. Named here for the reason above.
+    bootPhase: WorkSessionBootPhaseSchema.optional(),
+    bootPhaseAt: z.string().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -4578,6 +4585,7 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unlinkedMemories: z.array(z.string()),
     unlinkedSkillCount: z.number().int().nonnegative(),
   }).strict().nullable(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
 }).strict();
 
 /**
@@ -5095,6 +5103,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   endedReason: NullableString,
   outcome: NullableString,
   receiptMessageId: NullableString,
+  bootPhase: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
   launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,

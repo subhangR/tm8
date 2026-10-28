@@ -76,6 +76,7 @@ import {
   type GhostReconcileReport,
   type WorktreeReconcileReport,
   SpawnPhaseTimer,
+  spawnLaunchFacts,
 } from '@tm8/execution';
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
@@ -90,6 +91,8 @@ import type {
   ExecutionDispatchers,
   ExecutionDispatchResult,
   ExecutionSpawnResult,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
   CommandResult,
   ExecutionLiveness,
   ExecutionResumeInput,
@@ -1313,6 +1316,7 @@ export class DbGraphPort implements GraphPort {
       null, // p_client_mutation_id — an exit is not a client mutation
       input.endedKind ?? null, // p_ended_kind (171)
       input.endedReason ?? null, // p_ended_reason (171) — plain English
+      input.bootPhase ?? null, // p_boot_phase (379) — a booting launch's progress
     ]);
   }
 
@@ -2480,6 +2484,31 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
  * problem, and re-reading afterwards means the client sees the session as it
  * finally IS (status `running`) rather than mid-flight (`spawning`).
  */
+/**
+ * The spawn receipt's posture rows (`ExecutionSpawnLaunch`), rebuilt from a
+ * recorded manifest by the same `spawnLaunchFacts` the boot reports them with.
+ * `execution.spawn` answers at admission (379), before the credentials are
+ * resolved, so this is where a caller that waited for `running` reads them.
+ * Nothing for a manifest without a launch block, or one written before the
+ * access-mode source was recorded: a guessed `default` would misreport it.
+ */
+function launchReceiptOf(
+  manifest: Record<string, unknown> | null,
+  parentSessionId: string | null,
+): { launch?: ExecutionSpawnLaunch } {
+  const launch = manifest?.['launch'];
+  if (typeof launch !== 'object' || launch === null) return {};
+  const accessModeSource = (launch as { accessModeSource?: unknown }).accessModeSource;
+  if (typeof accessModeSource !== 'string') return {};
+  return {
+    launch: spawnLaunchFacts(
+      launch as Tm8Manifest['launch'],
+      accessModeSource as SpawnAccessModeSource,
+      parentSessionId,
+    ),
+  };
+}
+
 /** How a process closed after its work completed is recorded (Spec D1 §4.1). */
 const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: string } = {
   endedKind: 'exited_clean',
@@ -3549,9 +3578,14 @@ function registerHandlers(
       system_prompt: string | null;
       task_prompt: string | null;
       created_at: Date | string;
+      launched_by: string | null;
     }>(
       claims,
-      `select sm.manifest, sm.env_var_names, sm.system_prompt, sm.task_prompt, sm.created_at
+      // `launched_by` (330) is the parent the spawn resolved — what the
+      // receipt's `parent` row reports, read the way entity-read reads it.
+      `select sm.manifest, sm.env_var_names, sm.system_prompt, sm.task_prompt, sm.created_at,
+              (select lb.dst_id::text from public.edges lb
+                where lb.src_id = sm.work_session_id and lb.type = 'launched_by' limit 1) as launched_by
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -3601,6 +3635,7 @@ function registerHandlers(
       recordedAt:
         row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       launchContext: manifest ? await projectLaunchContext(db, claims, manifest) : null,
+      ...launchReceiptOf(manifest, row.launched_by),
     };
     return json(result);
   });
@@ -3875,39 +3910,45 @@ function registerHandlers(
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
-    const result = await rethrowing(() => spawnService.spawn({ ...claims, mcpSource: {
+    // ANSWERED AT ADMISSION: the row exists (`spawning`, boot phase
+    // `admitted`) and the boot runs on in this process, recording each phase
+    // on the row, which is how the caller follows it from here (379). A boot
+    // that fails says so on the row, not in this response.
+    const { admission, boot } = await rethrowing(() => spawnService.admit({ ...claims, mcpSource: {
       authSessionId: ctx.identity.sessionId,
       sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
     } }, request));
-    for (const [phase, ms] of Object.entries(result.timings?.phases ?? {})) timer.record(phase, ms);
+    for (const [phase, ms] of Object.entries(admission.timings.phases)) timer.record(phase, ms);
+    const { sessionId } = admission;
 
     // 327: a session records the chat or session that launched it (its
     // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
     // "created here" is one edge for every kind. Never at the spawn's expense.
+    // A fact about the launch, so it is true from admission.
     const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
     if (spawnOrigin && parentSessionId === spawnOrigin) {
       try {
         await timer.time('handler.recordAuthoredFrom', () =>
-          db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin])));
+          db.tx(claims, (q) => q.rpc('record_authored_from', [sessionId, spawnOrigin])));
       } catch (error) {
-        console.warn(`[tm8:spawn] authored_from not recorded for ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tm8:spawn] authored_from not recorded for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // The Ask Jev run this launch came from (§6: per-launch cost). Only after
-    // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
-    // run that is absent, in another space or someone else's is logged, not
-    // turned into a failed launch.
+    // The Ask Jev run this launch came from (§6: per-launch cost). Linked once
+    // the launch is admitted — the cost is the launch's whether or not its boot
+    // succeeds — and never at its expense: a run that is absent, in another
+    // space or someone else's is logged, not turned into a failed launch.
     if (input.jevRunId) {
       const runId = input.jevRunId;
       try {
         const linked = await timer.time('handler.linkJevRun', () =>
-          db.tx(claims, (q) => linkSession(q, runId, result.sessionId, input.spaceId)));
+          db.tx(claims, (q) => linkSession(q, runId, sessionId, input.spaceId)));
         if (!linked) {
-          console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: no such run of this caller in space ${input.spaceId}`);
+          console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: no such run of this caller in space ${input.spaceId}`);
         }
       } catch (error) {
-        console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
@@ -3916,38 +3957,46 @@ function registerHandlers(
     // The session gets no parentId: a chat is not a session's parent.
 
     // A dispatcher launched on tasks was told to route them in its first
-    // turn; the durable request is stored on each task now that the session
-    // exists (store only — the turn already delivered it). Best-effort, like
-    // provenance above: the session is live, and its turn carries the request.
-    for (const routedTaskId of result.routedTaskIds ?? []) {
-      try {
-        await timer.time('handler.storeRoutingRequests', () => sendDispatchRequest({
-          db,
-          claims,
-          taskId: routedTaskId,
-          subjectId: routedTaskId,
-          dispatcherSessionId: result.sessionId,
-          note: null,
-          requesterActorId: envelope.actorId ?? null,
-          requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
-          requestId: ctx.requestId,
-          clientMutationId: `${envelope.clientMutationId ?? result.sessionId}:route:${routedTaskId}`,
-        }));
-      } catch (error) {
-        console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    // turn; the durable request is stored on each task once the boot has
+    // delivered that turn (store only — the turn carries the request), so a
+    // dispatcher whose boot failed is never named on a task. This continuation
+    // cannot reject — `boot` never does, and each store is caught — so it needs
+    // no handler of its own; the boot's own failures are on the row already.
+    const routedTaskIds = admission.routedTaskIds ?? [];
+    if (routedTaskIds.length > 0) {
+      void boot.then(async (outcome) => {
+        if (!outcome.ok) return;
+        for (const routedTaskId of routedTaskIds) {
+          try {
+            await sendDispatchRequest({
+              db,
+              claims,
+              taskId: routedTaskId,
+              subjectId: routedTaskId,
+              dispatcherSessionId: sessionId,
+              note: null,
+              requesterActorId: envelope.actorId ?? null,
+              requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+              requestId: ctx.requestId,
+              clientMutationId: `${envelope.clientMutationId ?? sessionId}:route:${routedTaskId}`,
+            });
+          } catch (error) {
+            console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      });
     }
 
-    // 201: a spawn creates a work_session.
+    // 201: a spawn creates a work_session. The entity is read as it stands at
+    // admission — `spawning`, its boot phase — not as it will be once running.
     const commandResult = await timer.time('handler.assembleCommandResult', () =>
-      assembleCommandResult(db, claims, result.commandResult, owner.identityId));
+      assembleCommandResult(db, claims, admission.commandResult, owner.identityId));
     const spawnResult: ExecutionSpawnResult = {
       ...(commandResult as CommandResult),
-      ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
-      // The resolved posture — access mode and where it came from, the
-      // credential each provider ran on, the parent — so the caller's receipt
-      // shows what the child inherited without a second read.
-      ...(result.launchFacts ? { launch: result.launchFacts } : {}),
+      ...(admission.createdTaskId ? { createdTaskId: admission.createdTaskId } : {}),
+      // `launch` — the resolved posture receipt — exists only once the boot has
+      // resolved the credentials, so an admitted answer carries none; a caller
+      // reads it from the session's launch record once it is running.
       timings: timer.snapshot(),
     };
     return json(spawnResult, { status: 201 });

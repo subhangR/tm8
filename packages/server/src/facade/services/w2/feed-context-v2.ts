@@ -71,7 +71,7 @@ import {
 
 import type { Querier } from '../../../db/types.js';
 import { resolveAuthoredHeaderView, resolveHeaderViews } from '../../../headers/resolve.js';
-import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
+import { ENTITY_COLUMNS, ENTITY_FROM, MICROS, bootPhaseFacts, iso, isoOrNull, storySummaryOf, titleOf, type EntityRow } from '../../entity-read.js';
 import { loadStoryChildren, loadStoryPage } from '../../story-page.js';
 
 /**
@@ -1441,12 +1441,16 @@ function assemble(
       break;
     case 'work_session': {
       const ended = root.ws_exited_at !== null && root.ws_exited_at !== undefined;
+      const { bootPhase } = bootPhaseFacts(root);
       Object.assign(kindFields, {
         teammate: loaded.teammate ?? null,
         agentTool: root.ws_agent_tool ?? null,
         model: root.ws_model ?? null,
         checkoutBranch: root.ws_checkout_branch ?? null,
         startedAt: isoOrNull(root.ws_started_at),
+        // 379: the boot, only while it is still the news — a session that
+        // went live says nothing more than `startedAt` already does.
+        ...(bootPhase !== undefined && bootPhase !== 'live' ? { bootPhase } : {}),
         // 299 (Spec D1): whether the WORK is finished, and its receipt.
         ...(root.ws_outcome === undefined ? {} : {
           outcome: root.ws_outcome ?? 'open',

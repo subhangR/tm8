@@ -3009,7 +3009,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--about <entity-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--about <entity-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--no-wait] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -3027,6 +3027,8 @@ const ROWS: Record<OperationName, Row> = {
       '`--credential-source anthropic=space` launches on the space default; `anthropic=space:<id>` pins one space credential; omit it and a child inherits its spawner’s exact credential',
       'worktree provisions an isolated checkout per session (base ref via --base-ref); merged/abandoned lanes are reconciled server-side',
       '`--launch-project` accepts the project entity id (`tm8 entity query --kind project`) or its folder/resource id; worktree mode requires it',
+      'the server answers as soon as the launch is admitted (row written, slot counted, worktree reserved) and boots the session after; by default this command waits until it is running, printing each boot phase on stderr (admitted, lane, briefing, agent, live), and exits 6 with the reason if the boot fails — retry with a NEW --mutation-id, since the same one replays the failed launch',
+      '`--no-wait` returns at admission with the session id and status `spawning`; follow the boot with `tm8 entity context <session-id>` (its bootPhase) or the space change feed',
     ],
   },
   'execution.terminal.start': {

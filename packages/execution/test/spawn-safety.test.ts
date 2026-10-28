@@ -21,6 +21,11 @@ const REQUEST = {
   interactionProfileId: '44444444-4444-4444-8444-444444444444',
 };
 
+/** Status writes only: the boot's progress reports (379) are not what these tests count. */
+function statusWrites(spy: { mock: { calls: unknown[][] } }): number {
+  return spy.mock.calls.filter(([, input]) => (input as { bootPhase?: string }).bootPhase === undefined).length;
+}
+
 describe('SpawnService spawn acknowledgement safety', () => {
   let dataDir: string;
   let projectDir: string;
@@ -229,11 +234,18 @@ describe('SpawnService spawn acknowledgement safety', () => {
     vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(() => {
       throw new Error('injected spawn failure');
     });
-    const transition = vi.spyOn(graph, 'transition')
-      .mockRejectedValueOnce(new Error('injected graph outage'))
-      .mockImplementation(async (_auth, input) => {
-        graph.transitions.push(input);
-      });
+    // The outage hits the STATUS write; the boot's progress reports (379)
+    // pass through to the fake as they would to the database.
+    const report = graph.transition.bind(graph);
+    let outage = true;
+    const transition = vi.spyOn(graph, 'transition').mockImplementation(async (auth, input) => {
+      if (input.bootPhase !== undefined) return report(auth, input);
+      if (outage) {
+        outage = false;
+        throw new Error('injected graph outage');
+      }
+      graph.transitions.push(input);
+    });
 
     await expect(service.spawn(AUTH, REQUEST)).rejects.toThrow('injected spawn failure');
 
@@ -241,7 +253,7 @@ describe('SpawnService spawn acknowledgement safety', () => {
     await vi.waitFor(() => {
       expect(graph.transitions.map((item) => item.status)).toEqual(['failed']);
     });
-    expect(transition).toHaveBeenCalledTimes(2);
+    expect(statusWrites(transition)).toBe(2);
   });
 
   it('stops retrying a terminal-state write that never succeeds', async () => {
@@ -258,14 +270,17 @@ describe('SpawnService spawn acknowledgement safety', () => {
     vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(() => {
       throw new Error('injected spawn failure');
     });
-    const transition = vi.spyOn(graph, 'transition')
-      .mockRejectedValue(new Error('injected permanent refusal'));
+    const report = graph.transition.bind(graph);
+    const transition = vi.spyOn(graph, 'transition').mockImplementation(async (auth, input) => {
+      if (input.bootPhase !== undefined) return report(auth, input);
+      throw new Error('injected permanent refusal');
+    });
 
     await expect(service.spawn(AUTH, REQUEST)).rejects.toThrow('injected spawn failure');
 
     // One write on the failure path, then the bounded retries.
-    await vi.waitFor(() => expect(transition).toHaveBeenCalledTimes(21), { timeout: 5_000 });
+    await vi.waitFor(() => expect(statusWrites(transition)).toBe(21), { timeout: 5_000 });
     await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(transition).toHaveBeenCalledTimes(21);
+    expect(statusWrites(transition)).toBe(21);
   });
 });

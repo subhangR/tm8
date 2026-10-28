@@ -31,6 +31,7 @@ import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
  */
 import { SKILL_REFERENCE_SQL, skillReferenceOf, readSkillDetail } from '../skills/reference.js';
 import type {
+  WorkSessionBootPhase,
   WorkSessionEndedKind,
   WorkSessionOutcome,
   WorkSessionOutcomeSource,
@@ -144,6 +145,7 @@ export const ENTITY_COLUMNS = `
   ws.outcome as ws_outcome, ws.outcome_at as ws_outcome_at, ws.outcome_by as ws_outcome_by,
   ws.receipt_message_id as ws_receipt_message_id, ws.outcome_source as ws_outcome_source,
   ws.outcome_note as ws_outcome_note,
+  ws.boot_phase as ws_boot_phase, ws.boot_phase_at as ws_boot_phase_at,
   -- 301 (Spec D1 R1): tasks handed to this session that it has not claimed.
   case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
      from public.session_handoffs sh
@@ -597,6 +599,9 @@ export interface EntityRow {
   ws_receipt_message_id?: string | null;
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
+  /** Boot facts (379); optional for the same fixture-compatibility reason. */
+  ws_boot_phase?: string | null;
+  ws_boot_phase_at?: Date | string | null;
   ws_offered_task_ids?: string[] | null;
   ws_launched_by?: string | null;
   ws_pin_revision: number | null;
@@ -835,6 +840,30 @@ const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
   'exited_clean', 'stopped_by_operator', 'server_restart', 'out_of_memory', 'crashed',
   'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
 ]);
+
+/** `work_sessions.boot_phase`'s CHECK verbatim — 379. */
+const BOOT_PHASES: ReadonlySet<string> = new Set<WorkSessionBootPhase>([
+  'admitted', 'lane', 'briefing', 'agent', 'live', 'failed',
+]);
+
+/**
+ * The boot half of a session's state (379), from a projected row: the last
+ * phase its launch reached and when. Projected only when the row records a
+ * phase the contract knows — a row from before 379 says nothing, and a value
+ * outside the CHECK (which cannot be written) would fail the `.strict()` state
+ * rather than render, so it is dropped instead. Shared by every read model that
+ * serves the session state, so an event-borne summary and a read summary of the
+ * same row cannot disagree.
+ */
+export function bootPhaseFacts(row: {
+  ws_boot_phase?: string | null;
+  ws_boot_phase_at?: Date | string | null;
+}): { bootPhase?: WorkSessionBootPhase; bootPhaseAt?: string } {
+  const phase = row.ws_boot_phase;
+  if (phase === null || phase === undefined || !BOOT_PHASES.has(phase)) return {};
+  const at = row.ws_boot_phase_at === null || row.ws_boot_phase_at === undefined ? null : iso(row.ws_boot_phase_at);
+  return { bootPhase: phase as WorkSessionBootPhase, ...(at ? { bootPhaseAt: at } : {}) };
+}
 
 /** True when a `working_on` claim has ended (299: `props.endedAt` is set). */
 export function isEndedClaim(props: Record<string, unknown> | null | undefined): boolean {
@@ -2017,6 +2046,8 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           : { sharingSetAt: isoOrNull(row.ws_sharing_set_at) }),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
+        // 379: how far the launch's boot has got.
+        ...bootPhaseFacts(row),
         // OMITTED, never defaulted, when the column has no value: the DTO
         // makes absence mean `agent`, so a node whose rows predate 082 keeps
         // the pre-082 behaviour instead of being told they are all agents by

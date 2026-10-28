@@ -204,16 +204,16 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 /**
  * Operations whose SERVER-SIDE work legitimately outlives the default deadline.
  *
- * `execution.spawn` does not answer when the process starts — it answers when
- * the agent's first turn has verifiably reached its composer, because a spawn
- * that returns before that is exactly the "session came up empty" failure the
- * settlement loop exists to prevent. That wait is bounded by
- * `SpawnService.firstPromptSettlementMs` (~150s worst case for a cold agent
- * boot). Holding it to the same 15s as a graph read made `tm8 session spawn`
- * report a TIMEOUT for a spawn that was proceeding normally and did in fact
- * produce a working session — the caller is told the launch failed while the
- * agent is booting fine, and there is nothing in the error to tell the two
- * apart. Measured live 2026-08-24 spawning onto a scratch-workdir entity.
+ * `execution.resume` answers when the agent's first turn has verifiably
+ * reached its composer, a wait bounded by `SpawnService.firstPromptSettlementMs`
+ * (~150s worst case for a cold agent boot). Holding it to the same 15s as a
+ * graph read made the CLI report a TIMEOUT for a launch that was proceeding
+ * normally and did produce a working session. Measured live 2026-08-24.
+ *
+ * `execution.spawn` answers at ADMISSION on a current server (379) and boots
+ * the session afterwards — `tm8 session spawn` then follows the row — so its
+ * floor is only for a server that predates admission, which still answers
+ * after the first turn settles, exactly like resume.
  *
  * `loops.runNow` (`tm8 loop run-now`) fires a teammate loop through the same
  * spawn and answers only once that session has settled, so it takes the same

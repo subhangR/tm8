@@ -48,7 +48,7 @@ import { mcpSelectionFlag } from './mcp.js';
 import { readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { InterruptedError } from '../errors.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_CONFLICT, EXIT_OK, EXIT_USAGE, EXIT_WAIT_TIMEOUT, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import {
@@ -554,8 +554,9 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   body.selectionReasons = { memories: 'cli', skills: 'cli', references: 'cli' };
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
-  const data = await withErrorReceipt(cmd, errorInput(cmd, 'session.spawn', { mutationId }), () =>
+  const admitted = await withErrorReceipt(cmd, errorInput(cmd, 'session.spawn', { mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body }));
+  const data = cmd.options.bool('no-wait') ? admitted : await awaitSpawnedSession(cmd, admitted);
   const workdirPath =
     cmd.out.receipts === 'receipt' ? await spawnedWorktreePath(cmd, data) : undefined;
   cmd.out.mutation('session.spawn', data, renderSpawned, () =>
@@ -564,6 +565,81 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
       ...(workdirPath === undefined ? {} : { workdirPath }),
     }));
   return EXIT_OK;
+}
+
+/** How long `session spawn` follows a boot: the old HTTP floor, the longest a launch was ever given. */
+const SPAWN_WAIT_MS = 180_000;
+const SPAWN_POLL_MS = 400;
+
+/**
+ * Follow an admitted launch until its session is running (379).
+ *
+ * `execution.spawn` answers at ADMISSION — the row exists, `spawning`, boot
+ * phase `admitted` — and the server boots the session afterwards, recording
+ * each phase on the row. This reads the session until it is `running`,
+ * printing every phase the first time it is seen, and then answers with what
+ * the old synchronous spawn answered: the session as it now is, and the
+ * posture receipt (`launch`), which exists only once the boot has resolved the
+ * credentials and is read back from the session's launch record.
+ *
+ * A failed boot exits 6 (conflict) with the row's own reason: retrying with
+ * the SAME mutation id would replay the failed launch, so the retry must be
+ * deliberate. A boot still running at the deadline exits 13; the session keeps
+ * booting on the server and its row says where it is. A server that predates
+ * admission answers once the session runs, so there is nothing to wait for.
+ */
+async function awaitSpawnedSession(cmd: CommandContext, admitted: unknown): Promise<unknown> {
+  const result = isRecord(admitted) ? admitted : {};
+  let entity = isRecord(result.entity) ? result.entity : undefined;
+  const sessionId = typeof entity?.id === 'string' ? entity.id : undefined;
+  if (entity === undefined || sessionId === undefined) return admitted;
+  const deadline = Date.now() + SPAWN_WAIT_MS;
+  let shown: string | undefined;
+  for (;;) {
+    const state = isRecord(entity.state) ? entity.state : {};
+    const status = typeof state.status === 'string' ? state.status : undefined;
+    const phase = typeof state.bootPhase === 'string' ? state.bootPhase : undefined;
+    if (phase !== undefined && phase !== shown) {
+      cmd.out.note(`session ${sessionId}: ${phase}`);
+      shown = phase;
+    }
+    if (status === 'running' || status === 'idle') break;
+    if (status === 'failed' || status === 'exited' || phase === 'failed') {
+      const reason = typeof state.endedReason === 'string' ? state.endedReason : `its boot ended ${status ?? 'failed'}`;
+      throw new CliError(`session ${sessionId} did not start: ${reason}`, EXIT_CONFLICT, {
+        hint: `the reason is on the session (tm8 entity context ${sessionId}); retry with a new --mutation-id`,
+      });
+    }
+    if (Date.now() >= deadline) {
+      throw new CliError(
+        `session ${sessionId} is still starting (${phase ?? status ?? 'unknown'}) after ${String(SPAWN_WAIT_MS / 1000)}s`,
+        EXIT_WAIT_TIMEOUT,
+        { hint: `it keeps booting on the server; follow it with tm8 entity context ${sessionId}` },
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, SPAWN_POLL_MS));
+    const read = await clientFor(cmd.ctx).invoke<unknown>('entities.get', { params: { id: sessionId } });
+    if (isRecord(read)) entity = read;
+  }
+  if (entity === result.entity && result.launch !== undefined) return admitted;
+  const launch = result.launch ?? (await bootedLaunchReceipt(cmd, sessionId));
+  return { ...result, entity, ...(launch === undefined ? {} : { launch }) };
+}
+
+/** The posture receipt of a booted session, from its launch record. Best effort: absent is honest. */
+async function bootedLaunchReceipt(cmd: CommandContext, sessionId: string): Promise<unknown> {
+  try {
+    const record = await clientFor(cmd.ctx).invoke<SessionLaunchRecord>('execution.launch', {
+      params: { workSessionId: sessionId },
+    });
+    return record.launch;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

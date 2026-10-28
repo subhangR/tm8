@@ -1,13 +1,13 @@
-// A spawn refused by `execution_spawn` AFTER its worktree was provisioned.
+// A spawn refused by `execution_spawn` AFTER its worktree was reserved.
 //
-// The saga creates the checkout and its entity before the work_session row
-// exists (the row must persist the real path). If the row write then refuses,
-// the allocation was left `preparing` with its entity committed — which the
-// reconciler reads as "step 7 never published" and PUBLISHES as ready: a lane
-// no session owns, kept forever. The refusal must hand it over as
-// `cleanup_pending` so the reconciler removes it instead.
+// The admission reserves the checkout before the work_session row exists (the
+// row must persist the real path), and the checkout itself is the boot's — so
+// a refused row leaves a `preparing` reservation with nothing on disk. Left
+// alone, the reconciler would sweep it a minute later; the refusal settles it
+// `failed` (safe to retry) at once, and no checkout is ever made for it.
 
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,7 +68,7 @@ describe('SpawnService — a worktree spawn the row write refuses', () => {
     await rm(worktreeRoot, { recursive: true, force: true });
   });
 
-  it('marks the fresh checkout cleanup_pending and rethrows the refusal', async () => {
+  it('settles the reservation failed, makes no checkout, and rethrows the refusal', async () => {
     const refusal = new Error('project not found');
     graph.failNextCreate = refusal;
 
@@ -76,7 +76,9 @@ describe('SpawnService — a worktree spawn the row write refuses', () => {
 
     const allocations = [...graph.worktreeAllocations.values()];
     expect(allocations).toHaveLength(1);
-    expect(allocations[0]).toMatchObject({ state: 'cleanup_pending', failureCode: 'spawn_refused' });
+    expect(allocations[0]).toMatchObject({ state: 'failed', failureCode: 'spawn_refused' });
+    expect(graph.worktreeCalls.map((c) => c.call)).toEqual(['reserve', 'state:failed']);
+    expect(existsSync(allocations[0]?.path ?? '')).toBe(false);
     expect(graph.created).toEqual([]);
   });
 

@@ -434,6 +434,14 @@ export type CoreEntityState =
       sharingSetAt?: string | null;
       startedAt: string | null; exitedAt: string | null;
       /**
+       * THE BOOT, AS THE NODE RECORDS IT (task 01a182bb) — the last phase a
+       * launch reached (`work_sessions.boot_phase`) and when it got there.
+       * OPTIONAL: absent on a node that records no boot, and the launching
+       * page then derives its phases from `status` alone.
+       */
+      bootPhase?: WorkSessionBootPhase;
+      bootPhaseAt?: string;
+      /**
        * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
        * tell a private credential login terminal from ordinary work (083), and
        * a vanilla shell from an agent (101).
@@ -5110,6 +5118,12 @@ export type Unsubscribe = () => void;
 
 /** Single writer: the execution block's transition function (R29). */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
+/**
+ * The phases a launch's boot passes through, in order, or its failure —
+ * `work_sessions.boot_phase`. Each step names the fact REACHED: `lane` is
+ * "checkout ready", `briefing` "prompt composed", `agent` "process started".
+ */
+export type WorkSessionBootPhase = 'admitted' | 'lane' | 'briefing' | 'agent' | 'live' | 'failed';
 
 /**
  * Worktree SEMANTIC lifecycle, forward-only: active → merged|abandoned → deleted.
@@ -7605,6 +7619,14 @@ export interface SessionLaunchRecord {
    * manifest. Unlike `manifest`, this is filtered for the viewer.
    */
   launchContext: SessionLaunchContext | null;
+  /**
+   * The spawn receipt's posture rows — the resolved access mode and where it
+   * came from, the credential each provider ran on, the parent — rebuilt from
+   * the recorded manifest, exactly as `execution.spawn` reported them when it
+   * answered only once the session ran (379). Absent when no manifest was
+   * recorded, and on a manifest that predates the access-mode source.
+   */
+  launch?: ExecutionSpawnLaunch;
 }
 
 /** What an entity was in the launch. */
@@ -8453,6 +8475,8 @@ export interface EntityContextV2View {
   /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
   outcome?: string | null;
   receiptMessageId?: string | null;
+  /** 379: the last phase the launch's boot reached (`WorkSessionBootPhase`), while it boots or when it failed. */
+  bootPhase?: string | null;
   tasks?: EntityContextRef[];
   /**
    * 330 (chat and work_session): the sessions this one launched — their

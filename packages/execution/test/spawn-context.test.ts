@@ -71,6 +71,8 @@ describe('SpawnService persona context', () => {
     expect(manifest?.skills?.map((s) => s.name)).toEqual(['deploy-runbook', 'figma-connector']);
     expect(Object.keys(manifest?.launch ?? {}).sort()).toEqual([
       'accessMode',
+      // 379: recorded so the spawn receipt can be rebuilt once the boot ran.
+      'accessModeSource',
       'command',
       'commandNetwork',
       'credentialSource',

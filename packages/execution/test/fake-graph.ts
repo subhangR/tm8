@@ -317,11 +317,28 @@ export class FakeGraph implements GraphPort {
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
     this.authSeen.push(auth);
+    // A boot's progress report (379) moves no status, so it is kept apart from
+    // the status transitions every other test asserts on.
+    if (input.bootPhase !== undefined) {
+      await this.bootPhaseGates.get(input.bootPhase);
+      if (this.refuseBootPhase === input.bootPhase) {
+        throw Object.assign(new Error(`illegal work_session transition exited -> spawning`), { code: '23514' });
+      }
+      this.bootPhaseReports.push({ sessionId: input.sessionId, bootPhase: input.bootPhase });
+      return;
+    }
     if (this.failTransitionFor.has(input.sessionId)) {
       throw new Error(`injected transition failure for ${input.sessionId}`);
     }
     this.transitions.push(input);
   }
+
+  /** Every boot progress report (379), in order. */
+  readonly bootPhaseReports: Array<{ sessionId: string; bootPhase: string }> = [];
+  /** A report of this phase is refused as the row would refuse it once the session stopped (23514). */
+  refuseBootPhase: string | null = null;
+  /** A report of a phase waits for its gate, so a test can hold a boot mid-flight. */
+  readonly bootPhaseGates = new Map<string, Promise<void>>();
 
   async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
     this.authSeen.push(auth);
