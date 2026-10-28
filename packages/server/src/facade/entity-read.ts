@@ -264,7 +264,7 @@ export const ENTITY_COLUMNS = `
   (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
-  cm.url as commit_url, cm.author as commit_author,
+  cm.url as commit_url, cm.author as commit_author, cm.fetched_at as commit_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -731,6 +731,7 @@ export interface EntityRow {
   commit_committed_at?: Date | string | null;
   commit_url?: string | null;
   commit_author?: string | null;
+  commit_fetched_at?: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -2215,6 +2216,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         committedAt: isoOrNull(row.commit_committed_at ?? null),
         ...(row.commit_url ? { url: row.commit_url } : {}),
         ...(row.commit_author ? { author: row.commit_author } : {}),
+        // Same as the projector twin: never fetched means stale.
+        fetchedAt: isoOrNull(row.commit_fetched_at ?? null),
+        stale: (row.commit_fetched_at ?? null) === null,
       } as EntityState;
     case 'space_link':
     case 'server':
