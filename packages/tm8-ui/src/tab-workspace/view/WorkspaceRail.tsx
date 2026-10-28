@@ -36,7 +36,7 @@
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { homeRootKinds, KindIcon, type KindConfig } from '../../domain';
+import { homeRailGroups, homeRootKinds, KindIcon, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { browserSources, type BrowserSource } from '../adapters/browserSources';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
@@ -92,6 +92,16 @@ export function WorkspaceRail() {
     };
     return rest.map((config, i) => ({ config, i })).sort((a, b) => rank(a.config.kind) - rank(b.config.kind) || a.i - b.i).map((x) => x.config);
   }, [pinned, lifted, customKinds]);
+  /* THE MORE KINDS CARD IS GROUPED (Subhang, 2026-10-28): the same list, cut
+     by the Home rail's own groups (`homeRailGroups()`), so the headings never
+     drift from Home's. A group whose every kind is pinned is not drawn. */
+  const groups = useMemo(
+    () =>
+      homeRailGroups()
+        .map((group) => ({ id: group.id, label: group.label, kinds: kinds.filter((config) => group.kinds.some((g) => g.kind === config.kind)) }))
+        .filter((group) => group.kinds.length > 0),
+    [kinds],
+  );
 
   const openKindNow = useOpenKind();
   /* Pinned-only: a kind pressed while the panel is collapsed brings it back
@@ -208,7 +218,7 @@ export function WorkspaceRail() {
             >
               {(close) => (
                 <RailMoreKinds
-                  kinds={kinds}
+                  groups={groups}
                   currentKind={browserKind}
                   currentSource={currentSource}
                   onOpenKind={(kind) => {
@@ -277,20 +287,21 @@ export function WorkspaceRail() {
 }
 
 /**
- * THE MORE KINDS CARD: every kind the rail does not pin, then the sources. A
+ * THE MORE KINDS CARD: every kind the rail does not pin, under its Home rail
+ * group heading, then the sources. A
  * row opens it (and closes the card); a kind's pin button pins it, which moves
  * it onto the rail and out of this list while the card stays open, so several
  * can be pinned in a row. Focus stays in the card, on the next pin button.
  */
 function RailMoreKinds({
-  kinds,
+  groups,
   currentKind,
   currentSource,
   onOpenKind,
   onOpenSource,
   onTogglePin,
 }: {
-  kinds: readonly KindConfig[];
+  groups: readonly { id: string; label: string; kinds: readonly KindConfig[] }[];
   currentKind: string | null | undefined;
   currentSource: string | null | undefined;
   onOpenKind(kind: string): void;
@@ -307,31 +318,39 @@ function RailMoreKinds({
     }, 0);
   };
   const sources: readonly BrowserSource[] = browserSources();
+  const flat = groups.flatMap((group) => group.kinds);
   return (
     <div ref={list} className="tws-rail-more-list" tabIndex={-1} data-testid="tws-rail-kinds">
-      {kinds.length === 0 ? <div className="tws-rail-more-empty">Every kind is pinned.</div> : null}
-      {kinds.map((config, index) => (
-        <div key={config.kind} className="tws-rail-more-row">
-          <button
-            type="button"
-            className="tws-menu-row tws-rail-more-open"
-            data-kind={config.kind}
-            aria-current={config.kind === currentKind ? 'true' : undefined}
-            onClick={() => onOpenKind(config.kind)}
-          >
-            <KindIcon kind={config.kind} size={16} />
-            <span className="tws-rail-more-label">{config.labelPlural}</span>
-          </button>
-          <button
-            type="button"
-            className="tws-icon-btn tws-rail-more-pin"
-            aria-label={`Pin ${config.labelPlural}`}
-            title={`Pin ${config.labelPlural} to the rail`}
-            data-pin={config.kind}
-            onClick={() => pin(config, index)}
-          >
-            <VectorIcon paths={RAIL_PIN_ART} size={16} strokeWidth={1.4} />
-          </button>
+      {groups.length === 0 ? <div className="tws-rail-more-empty">Every kind is pinned.</div> : null}
+      {groups.map((group) => (
+        <div key={group.id} role="group" aria-labelledby={`tws-rail-more-${group.id}`} data-group={group.id}>
+          <div id={`tws-rail-more-${group.id}`} className="tws-rail-more-heading">
+            {group.label}
+          </div>
+          {group.kinds.map((config) => (
+            <div key={config.kind} className="tws-rail-more-row">
+              <button
+                type="button"
+                className="tws-menu-row tws-rail-more-open"
+                data-kind={config.kind}
+                aria-current={config.kind === currentKind ? 'true' : undefined}
+                onClick={() => onOpenKind(config.kind)}
+              >
+                <KindIcon kind={config.kind} size={16} />
+                <span className="tws-rail-more-label">{config.labelPlural}</span>
+              </button>
+              <button
+                type="button"
+                className="tws-icon-btn tws-rail-more-pin"
+                aria-label={`Pin ${config.labelPlural}`}
+                title={`Pin ${config.labelPlural} to the rail`}
+                data-pin={config.kind}
+                onClick={() => pin(config, flat.indexOf(config))}
+              >
+                <VectorIcon paths={RAIL_PIN_ART} size={16} strokeWidth={1.4} />
+              </button>
+            </div>
+          ))}
         </div>
       ))}
       {sources.length > 0 ? (
