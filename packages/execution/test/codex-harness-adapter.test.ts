@@ -332,6 +332,33 @@ describe('Codex pinned-v2 conformance', () => {
     });
     await expect(adapter.open(data)).rejects.toThrow('Codex did not answer thread/start within 0.3s');
   });
+  // Regression: the open/submit effort gates stopped at `xhigh`, so every Codex
+  // chat run at `max` — and GPT-6 Astra at `ultra` — failed at open with
+  // "Codex reasoning effort is unsupported" while the picker went on offering
+  // the stop. Codex 0.161.0 accepts both (its model catalog lists them, and it
+  // does not validate `effort` at all), so the refusal was ours alone.
+  it.each(['max', 'ultra'] as const)('opens and submits at %s effort', async (effort) => {
+    const data = input(material());
+    const runtimeConfig = config('codex', {
+      target: { ...data.config.target, reasoningEffort: effort },
+    });
+    const session = await open({ ...data, config: runtimeConfig });
+    new Recorder(session);
+    expect(await session.submit(command(runtimeConfig))).toMatchObject({ delivery: 'sent' });
+  });
+
+  it('still refuses an effort outside the Codex vocabulary', async () => {
+    const data = input(material());
+    await expect(
+      open({
+        ...data,
+        config: config('codex', {
+          target: { ...data.config.target, reasoningEffort: 'bogus' as never },
+        }),
+      }),
+    ).rejects.toMatchObject({ failure: { code: 'unsupported_capability' } });
+  });
+
   it('observes idle exit, closes idempotently, releases only after exit and refuses unpinned protocol', async () => {
     let released = 0;
     const data = input(material({ TM8_FAKE_CODEX_IDLE_EXIT: '1' }), () => {

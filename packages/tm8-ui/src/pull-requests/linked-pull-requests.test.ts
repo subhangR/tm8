@@ -4,7 +4,9 @@ import {
   badgePullRequestFactsOf,
   chipsForPullRequest,
   indexLinkedPullRequests,
+  mergeLinkedPullRequests,
   pullRequestFactsOf,
+  type LinkedPullRequestFacts,
 } from './linked-pull-requests';
 
 const ACTOR = {
@@ -660,5 +662,27 @@ describe('badges.pullRequests carries the facts without any edge', () => {
     });
     const index = indexLinkedPullRequests([workingTask], []);
     expect(index.get('ws-badge-1')?.[0]).toMatchObject({ id: 'pr-1', lifecycle: 'merged', ciStatus: 'failing' });
+  });
+});
+
+describe('mergeLinkedPullRequests', () => {
+  const facts = (id: string, attribution: LinkedPullRequestFacts['attribution'], number = 1): LinkedPullRequestFacts => ({
+    id, title: id, repository: 'acme/tm8', number, lifecycle: 'open', url: null,
+    ciStatus: null, mergeState: null, headRef: null, attribution,
+  });
+
+  it('keeps each PR once, badge order first, graph-only PRs after', () => {
+    const merged = mergeLinkedPullRequests(
+      [facts('pr-2', 'tracked'), facts('pr-1', 'tracked')],
+      [facts('pr-1', 'inherited'), facts('pr-3', 'inherited')],
+    );
+    expect(merged.map((f) => f.id)).toEqual(['pr-2', 'pr-1', 'pr-3']);
+    // A weaker claim never lowers a stronger one.
+    expect(merged[1]?.attribution).toBe('tracked');
+  });
+
+  it('lets the graph raise a badge PR to authored, keeping the badge facts', () => {
+    const merged = mergeLinkedPullRequests([facts('pr-1', 'tracked', 7)], [facts('pr-1', 'authored', 99)]);
+    expect(merged).toEqual([{ ...facts('pr-1', 'authored', 7) }]);
   });
 });

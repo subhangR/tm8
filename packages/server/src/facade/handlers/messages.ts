@@ -16,6 +16,7 @@ import {
   MessagePartSchema,
   decodeCursor,
   encodeCursor,
+  type EntityId,
   type MessagePart,
   type MessageView,
   type Page,
@@ -162,6 +163,17 @@ export async function toMessageViews(
   );
   const inFlight = new Set(inFlightRows.map((r) => r.agent_message_id));
 
+  // `authored_from` is writer-gated to `message_recorder`: read, never input.
+  // Same query as `entities.feed:provenance`, so a transcript page carries its
+  // own provenance instead of needing a feed read beside it.
+  const authoredRows = await q.query<{ src_id: string; dst_id: string }>(
+    `select g.src_id, g.dst_id
+       from public.edges g
+      where g.type = 'authored_from' and g.src_id = any($1::uuid[])`,
+    [rows.map((r) => r.id)],
+  );
+  const authoredFrom = new Map(authoredRows.map((r) => [r.src_id, r.dst_id]));
+
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
     const part = MessagePartSchema.parse({
@@ -205,6 +217,7 @@ export async function toMessageViews(
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
       ...(messageParts ? { parts: messageParts } : {}),
       ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
+      ...(authoredFrom.has(row.id) ? { sourceWorkSessionId: authoredFrom.get(row.id) as EntityId } : {}),
     });
   }
   return views;

@@ -637,7 +637,7 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
   // goes to a vendor that does not serve its model.
   // -------------------------------------------------------------------------
 
-  const KIMI_MODEL = 'kimi-k2-thinking';
+  const KIMI_MODEL = 'kimi-k3';
 
   function kimiHome(apiKey?: string): AgentCredentialHome {
     return {

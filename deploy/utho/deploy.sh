@@ -380,7 +380,10 @@ if [[ "$HAS_MIGRATIONS" == 1 ]]; then
   say "stopping $UNITS (the old build must not run against a changing schema)"
   systemctl stop $UNITS || rdie "systemctl stop failed"
   say "migrating $DB_NAME"
-  if ! runuser -u tm8 -- bash -lc "cd '$DIR' && TM8_DATABASE_URL='$MIGRATE_URL' node db/migrate.mjs up"; then
+  # migrate.mjs refuses port 5442 (prod) unless told --i-mean-prod; this deploy
+  # migrates whichever database the env file names, so it says so only for 5442.
+  MIGRATE_FLAGS=""; [[ "$PG_PORT" == 5442 ]] && MIGRATE_FLAGS="--i-mean-prod"
+  if ! runuser -u tm8 -- bash -lc "cd '$DIR' && TM8_DATABASE_URL='$MIGRATE_URL' node db/migrate.mjs up $MIGRATE_FLAGS"; then
     printf '\n      \033[31mmigration FAILED and the services are STOPPED.\033[0m\n'
     say "the pre-migration dump is at $(cat /var/backups/tm8/LAST_BACKUP 2>/dev/null || echo '(none)')"
     say "restarting the old code against the partially-migrated schema is NOT safe."

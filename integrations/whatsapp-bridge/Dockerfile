@@ -29,8 +29,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY src ./src
-# The image runs as tm8 (uid 110) so files in the mounted volumes stay owned by tm8 on the host.
-USER 110:114
+# The image runs as the host's tm8 user so files in the mounted volumes stay owned by tm8 on the host. deploy.sh passes
+# the host's tm8 uid:gid (WA_BRIDGE_USER overrides); 110:114 is the original host's.
+ARG APP_USER=110:114
+USER ${APP_USER}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "fetch(process.env.HEALTH_URL||'http://127.0.0.1:8787/health').then(r=>r.json()).then(j=>process.exit(j.wa.connected?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "--import", "tsx", "src/main.ts"]

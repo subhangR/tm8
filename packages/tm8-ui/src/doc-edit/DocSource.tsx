@@ -47,6 +47,7 @@ export function DocSource({
   attach,
   onAttached,
   skillOptions,
+  insertButton = true,
 }: {
   save: DocSaveHandle;
   /** Absent ⇒ every block's editor entry is disabled-with-reason. */
@@ -54,6 +55,8 @@ export function DocSource({
   label?: string;
   /** Absent ⇒ the insert control is not drawn. See `DocAttach`. */
   attach?: DocAttach;
+  /** False ⇒ no ＋ Insert a file button (see `InsertBar`); drop and paste still insert. */
+  insertButton?: boolean;
   /** An upload landed, so the host can refetch the anchor's attachment list. */
   onAttached?: () => void;
   /** Skills `/` can reference (R1). Absent ⇒ `/` types plain text. */
@@ -145,6 +148,7 @@ export function DocSource({
         error={attachments.error ?? attachments.refusal}
         begin={attachments.addFiles}
         readOnly={readOnly}
+        button={insertButton}
       />
       <BlockStrip blocks={blocks} onOpenBlock={onOpenBlock} />
     </div>
@@ -161,14 +165,36 @@ export function InsertBar({
   error,
   begin,
   readOnly,
+  button = true,
 }: {
   canInsert: boolean;
   busy: readonly string[];
   error: string | null;
   begin(files: readonly File[]): void;
   readOnly: boolean;
+  /**
+   * False when the host already draws ＋ Attach right under this text (the
+   * task page, task 01a164e5: two upload buttons a hand apart read as two
+   * different things). The bar then only reports an upload in flight or a
+   * failed one; drop and paste into the text still insert at the caret.
+   */
+  button?: boolean;
 }) {
   const input = useRef<HTMLInputElement | null>(null);
+
+  if (!button) {
+    if (busy.length === 0 && !error) return null;
+    return (
+      <div className="de-insert" data-testid="doc-insert">
+        {busy.length > 0 ? <span className="de-insert__hint">{`uploading ${busy.join(', ')}…`}</span> : null}
+        {error ? (
+          <span className="de-insert__why" role="alert">
+            {error}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
 
   /* L6 applies to the ABSENT-uploader case only. A read-only draft already
      says why it cannot be written to, at the save controls and in the source

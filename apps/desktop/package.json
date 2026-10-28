@@ -11,7 +11,7 @@
     "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
-    "electron": "41.5.0"
+    "electron": "41.10.7"
   },
   "build": {
     "appId": "dev.tm8.desktop",
