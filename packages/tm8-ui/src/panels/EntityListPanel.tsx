@@ -105,7 +105,7 @@ import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { SESSION_TABS, actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, tileChildCount, treeParentOf } from '../domain';
+import { SESSION_TABS, actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, sessionTabOf, tileChildCount, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -3934,7 +3934,7 @@ function Band({
             props={props}
             config={config}
             attentionIds={attentionIds}
-            tabFilter={treeTabFilterOf(config, tabId)}
+            sessionTab={sessionTabIdOf(config, tabId)}
           />
         </>
       )}
@@ -4106,7 +4106,7 @@ function TreeRows({
   props,
   config,
   attentionIds,
-  tabFilter = null,
+  sessionTab = null,
 }: {
   rows: readonly EntitySummary[];
   props: EntityListPanelProps;
@@ -4114,11 +4114,10 @@ function TreeRows({
   /** Rows to mark amber where they stand. Absent ⇒ nothing is flagged. */
   attentionIds?: ReadonlySet<string>;
   /**
-   * The open tab's filter, for the reads that fill the tree — set only where
-   * the tabs are process-based (`treeTabFilterOf`). Null ⇒ children and
-   * context parents ride along whatever their status (task 01a14b92).
+   * The open session tab (`sessionTabIdOf`), or null. Set ⇒ an open row's
+   * children that belong to another tab fold behind one line (`ChildFold`).
    */
-  tabFilter?: QueryFilter | null;
+  sessionTab?: string | null;
 }) {
   /**
    * EXPANDED, NOT COLLAPSED — the inversion is the whole point (user ruling
@@ -4165,9 +4164,7 @@ function TreeRows({
   /* THE CHILDREN OF THE OPEN ROWS (task 01a14b92). A status tab and a page
      filter the ROOTS; an open row's children ride along whatever their status,
      read per open row so a child on another tab or page is not lost. A chat's
-     launched sessions are already loaded above. The session tabs are the
-     exception (`tabFilter`, task 01a1821d): they ask whether a process is
-     alive, so an exited child under Running read as running. */
+     launched sessions are already loaded above. */
   const hierarchical = Boolean(config.list.tree) && showSubItems;
   /* THE PARENTS OF THE ROWS THAT MATCHED (Subhang, 2026-10-18: "for tasks
      whose parent is completed, the parent also should be shown in the in
@@ -4187,7 +4184,7 @@ function TreeRows({
         return up && !have.has(up) ? [up] : [];
       }))].sort().slice(0, CONTEXT_PARENTS_PER_READ);
       if (missing.length === 0) break;
-      const parents = keepOnly(readOwn({ idIn: missing, ...tabFilter } as QueryFilter), 'id', missing);
+      const parents = keepOnly(readOwn({ idIn: missing } as QueryFilter), 'id', missing);
       contextLists.push(parents);
       for (const parent of parents) have.add(parent.id);
       frontier = parents;
@@ -4217,7 +4214,7 @@ function TreeRows({
            children would refill the tab with the rows it filtered out. */
         if (asked.has(row.id) || contextIds.has(row.id) || !isOpen(row.id)) continue;
         asked.add(row.id);
-        const read = childrenReadOf(row, config, props, tabFilter);
+        const read = childrenReadOf(row, config, props);
         if (!read) continue;
         const children = keepOnly(read.rowsFor(read.filter), 'treeParent', [row.id]);
         childLists.push(children);
@@ -4250,9 +4247,25 @@ function TreeRows({
    * for it. `isExpanded` (not the raw set) is what is passed, so a row revealed
    * by the selection routes as the open row it is drawn as.
    */
+  /* An open row's other-tab children behind a SHUT fold (`ChildFold`): not
+     drawn, so a pulse aimed at one lands on its parent, as under a shut row. */
+  const foldOpenOf = (node: TileTreeNode, folded: readonly TileTreeNode[]) =>
+    isOpen(`${node.row.id}${FOLD_KEY_SUFFIX}`)
+    || folded.some((child) => revealed.has(child.row.id) || child.row.id === props.selectedId);
+  const foldedAway = new Set<string>();
+  if (sessionTab) {
+    const walk = (node: TileTreeNode) => {
+      const folded = otherTabChildren(node, sessionTab, config);
+      if (folded.length > 0 && !foldOpenOf(node, folded)) for (const child of folded) foldedAway.add(child.row.id);
+      node.children.forEach(walk);
+    };
+    roots.forEach(walk);
+  }
+  const foldedKey = [...foldedAway].sort().join(',');
   const pulse = useMemo(
-    () => resolvePulses(shownRows, isOpen, props.messagePulses, config),
-    [shownRows, isOpen, props.messagePulses, config],
+    () => resolvePulses(shownRows, isOpen, props.messagePulses, config, (id) => foldedAway.has(id)),
+    // `foldedKey` stands in for `foldedAway`, by value.
+    [shownRows, isOpen, props.messagePulses, config, foldedKey],
   );
 
   const renderNode = (node: TileTreeNode): React.ReactNode => {
@@ -4260,19 +4273,14 @@ function TreeRows({
     const isContext = contextIds.has(node.row.id);
     /* The TRUE count, not the loaded one (task 01a14b92) — the subscript says
        how many there are, and opening the row reads them. */
-    const totalCount = !hierarchical
+    const childCount = !hierarchical
       ? 0
       : isContext
         /* A context parent holds only the rows that matched; its count says
            what opening it shows. */
         ? node.children.length
         : tileChildCount(node.row, node.children.length, nestsLaunched(node.row.kind, config));
-    /* Under a session tab an OPEN row's read was narrowed to the tab, so its
-       subscript counts what it shows; a shut row has read nothing yet and
-       keeps the total (task 01a1821d). */
-    const childCount =
-      tabFilter && !isContext && !isCollapsed && node.row.kind === config.kind ? node.children.length : totalCount;
-    const hasChildren = totalCount > 0;
+    const hasChildren = childCount > 0;
     /* rowLead="icon": the tree item itself takes the keys — Right opens,
        Left shuts or moves to the parent, Enter opens the row. The innermost
        item handles a key and stops it, so an ancestor never acts twice. */
@@ -4341,7 +4349,25 @@ function TreeRows({
                 : `calc(var(--pn-dur-fast) * ${wire.order})`,
             } as React.CSSProperties) : undefined}
           >
-            {node.children.map(renderNode)}
+            {(() => {
+              const folded = otherTabChildren(node, sessionTab, config);
+              if (folded.length === 0) return node.children.map(renderNode);
+              /* A selected row is never hidden behind its own fold. */
+              const foldOpen = foldOpenOf(node, folded);
+              return (
+                <>
+                  {node.children.filter((child) => !folded.includes(child)).map(renderNode)}
+                  <ChildFold
+                    count={folded.length}
+                    label={sessionTab === 'running' ? 'ended' : 'on other tabs'}
+                    open={foldOpen}
+                    parentTitle={node.row.title}
+                    onToggle={() => toggleOpen(`${node.row.id}${FOLD_KEY_SUFFIX}`)}
+                  />
+                  {foldOpen ? folded.map(renderNode) : null}
+                </>
+              );
+            })()}
           </div>
         ) : null}
       </div>
@@ -4400,6 +4426,69 @@ function ParentCrumb({
       ↑ parent
     </button>
   );
+}
+
+/**
+ * THE OTHER-TAB CHILDREN FOLD (task 01a1821d). A session tab asks whether a
+ * process is alive, so a Running parent — typically a coordinator that is
+ * finished but still open — drawing its exited workers in line read as if
+ * they were running. They stay in the tree (ruling 01a14b92: children ride
+ * along whatever their status) but behind one shut line, `▸ 2 ended`, that
+ * opens to show them with their own status. Session tabs only; a task tree
+ * draws every child in line as before.
+ */
+function ChildFold({
+  count,
+  label,
+  open,
+  parentTitle,
+  onToggle,
+}: {
+  count: number;
+  label: string;
+  open: boolean;
+  parentTitle: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="lp__fold"
+      data-testid="child-fold"
+      aria-expanded={open}
+      aria-label={`${open ? 'Hide' : 'Show'} ${count} ${label} under ${parentTitle}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <span className={open ? 'lp__fold-caret lp__fold-caret--open' : 'lp__fold-caret'} aria-hidden>
+        <TileChevron />
+      </span>
+      {count} {label}
+    </button>
+  );
+}
+
+/** The fold's own entry in the remembered disclosure set. */
+const FOLD_KEY_SUFFIX = '#other-tab';
+
+/** The open session tab's id, where the list's tabs are the session tabs. */
+function sessionTabIdOf(config: KindConfig, tabId: string | null): string | null {
+  return tabId && config.list.categories === SESSION_TABS ? tabId : null;
+}
+
+const NO_NODES: readonly TileTreeNode[] = [];
+
+/** An open row's children of the list's kind that belong to another session tab. */
+function otherTabChildren(node: TileTreeNode, sessionTab: string | null, config: KindConfig): readonly TileTreeNode[] {
+  if (!sessionTab) return NO_NODES;
+  const out = node.children.filter((child) => {
+    if (child.row.kind !== config.kind) return false;
+    const tab = sessionTabOf(child.row.state);
+    return tab !== null && tab !== sessionTab;
+  });
+  return out.length === 0 ? NO_NODES : out;
 }
 
 /**
@@ -4480,30 +4569,13 @@ function childrenReadOf(
   row: EntitySummary,
   config: KindConfig,
   props: EntityListPanelProps,
-  tabFilter: QueryFilter | null = null,
 ): { rowsFor: (filter: QueryFilter) => readonly EntitySummary[]; filter: QueryFilter } | null {
   if (row.kind !== config.kind && !LAUNCHED_KINDS.has(row.kind)) return null;
   if (getKind(row.kind).list.launches) return null;
   const rowsFor = props.rowsForKind?.(row.kind) ?? (row.kind === props.kind ? props.rowsFor : null);
   if (!rowsFor) return null;
-  const own = LAUNCHED_KINDS.has(row.kind) ? { launchedBy: [row.id] } : { parentIn: [row.id] };
-  /* The tab's filter speaks for the list's own kind only. */
-  const filter = (row.kind === config.kind && tabFilter ? { ...own, ...tabFilter } : own) as QueryFilter;
+  const filter = (LAUNCHED_KINDS.has(row.kind) ? { launchedBy: [row.id] } : { parentIn: [row.id] }) as QueryFilter;
   return { rowsFor, filter };
-}
-
-/**
- * THE TAB FILTER A TREE'S OWN READS CARRY (task 01a1821d). Ruling 01a14b92
- * lets an open row's children ride along whatever their status — right for a
- * task, whose tab is a stage of work. A session tab is a process question
- * (Running: is it alive?), so an exited child drawn under a Running parent
- * answered it wrong. Under the session tabs the children and context parents
- * are read through the tab; an ended child stays on its own tab as a root
- * with `↑ parent`. Every other kind keeps the ruling: null.
- */
-function treeTabFilterOf(config: KindConfig, tabId: string | null): QueryFilter | null {
-  if (!tabId || config.list.categories !== SESSION_TABS) return null;
-  return SESSION_TABS.find((tab) => tab.id === tabId)?.filter ?? null;
 }
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
@@ -4712,6 +4784,8 @@ function resolvePulses(
   isExpanded: (id: string) => boolean,
   pulses: readonly MessagePulse[] | undefined,
   config: KindConfig,
+  /** Rows folded away behind a shut `ChildFold`: hidden, whatever their ancestors. */
+  foldedAway: (id: string) => boolean = () => false,
 ): ResolvedPulses {
   if (config.list.tree?.messagePulse !== true) return NO_PULSES;
   if (pulses === undefined || pulses.length === 0) return NO_PULSES;
@@ -4730,7 +4804,7 @@ function resolvePulses(
   const index = {
     parentOf,
     isVisible: (id: string) => {
-      if (!present.has(id)) return false;
+      if (!present.has(id) || foldedAway(id)) return false;
       // A ROW IS VISIBLE WHEN EVERY ANCESTOR IS OPEN — its own disclosure state
       // is about its CHILDREN, not itself, so it is deliberately not consulted
       // here. (Under the old default-open set this read `collapsed.has(id)`
@@ -4739,7 +4813,7 @@ function resolvePulses(
       const guard = new Set<string>();
       let cursor = parentOf(id);
       while (typeof cursor === 'string' && !guard.has(cursor)) {
-        if (!isExpanded(cursor)) return false;
+        if (!isExpanded(cursor) || foldedAway(cursor)) return false;
         guard.add(cursor);
         cursor = parentOf(cursor);
       }
