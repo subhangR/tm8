@@ -20,7 +20,13 @@ function Harness() {
   const [selected, setSelected] = React.useState<string | null>(null);
   return (
     <div className="cv2-root" style={{ width: '100%', height: '100%', display: 'flex' }}>
-      <BlueprintCanvas view={view} ariaLabel="Dense craft" selectedKey={selected} onSelect={setSelected} />
+      <BlueprintCanvas
+        view={view}
+        ariaLabel="Dense craft"
+        selectedKey={selected}
+        onSelect={setSelected}
+        onEdgeDetail={(next) => { location.search = `?detail=${next}`; }}
+      />
     </div>
   );
 }
