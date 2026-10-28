@@ -121,8 +121,9 @@ async function readAuthFile(configDir: string, name: string): Promise<string> {
  * which may quote credential material read from disk or a provider.
  */
 export function redactedCause(error: unknown): Error {
+  const raw = (error as { code?: unknown } | null)?.code;
   const code = error instanceof CollabError ? error.code
-    : (error as NodeJS.ErrnoException | null)?.code ?? (error instanceof Error ? error.name : typeof error);
+    : typeof raw === 'string' ? raw : error instanceof Error ? error.name : typeof error;
   return Object.assign(new Error(code), { name: error instanceof Error ? error.name : 'NonError', code });
 }
 
@@ -190,14 +191,18 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
             provider === 'openai' ? '.codex' : '.claude');
           const name = provider === 'openai' ? 'auth.json' : '.credentials.json';
           stage = 'snapshot';
-          const material = await readAuthFile(sourceConfig, name).catch((error: unknown) => {
+          const material = await readAuthFile(sourceConfig, name).catch(async (error: unknown) => {
             // On macOS Claude Code keeps its login in the Keychain, keyed by the config
             // directory, so there is no file to copy and an isolated copy has no login.
             // This holds for the node's ~/.claude and for a member home alike. Run on
             // the source directory instead; copying the OAuth token would also let the
-            // copy's refresh rotate it and sign out the source.
-            if (provider === 'anthropic' && platform === 'darwin'
-              && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            // copy's refresh rotate it and sign out the source. Only the file may be
+            // missing: a missing or symlinked directory, or a space key home, refuses.
+            if (provider === 'anthropic' && platform === 'darwin' && !home?.space
+              && (error as NodeJS.ErrnoException).code === 'ENOENT'
+              && await lstat(sourceConfig).then(info => info.isDirectory() && !info.isSymbolicLink(), () => false)) {
+              return null;
+            }
             throw error;
           });
           if (material === null) sharedConfigDir = sourceConfig;

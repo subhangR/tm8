@@ -226,6 +226,31 @@ describe('generation-owned chat credentials', () => {
     expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
   });
 
+  it('keeps refusing on macOS when the member home itself is missing, symlinked or holds an unsafe login', async () => {
+    const { port, state, dataDir } = await rig('darwin');
+    const member = { ...input, credentialSelection: { source: 'member' as const } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: join(dataDir, 'reclaimed') };
+      await expect(port.prepare(member, owner)).rejects.toThrow('could not be read (ENOENT)');
+      const real = join(dataDir, 'real-login');
+      await mkdir(real);
+      await symlink(real, join(dataDir, 'linked-login'));
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: join(dataDir, 'linked-login') };
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      const secretPath = join(dataDir, 'secret.json');
+      await writeFile(secretPath, JSON.stringify({ accessToken: KEY }));
+      await symlink(secretPath, join(real, '.credentials.json'));
+      state.member = { provider: 'anthropic', homeDir: dataDir, configDir: real };
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      await rm(join(real, '.credentials.json'));
+      await writeFile(join(real, '.credentials.json'), `not json ${KEY}`);
+      await expect(port.prepare(member, owner)).rejects.toThrow('cannot be prepared');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
+    } finally { warn.mockRestore(); }
+    expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
+  });
+
   it('refuses symlinked authentication files and unsupported/missing snapshots without leaking contents', async () => {
     const { port, state, dataDir } = await rig();
     const configDir = join(dataDir, 'member-login');
