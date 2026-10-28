@@ -1,4 +1,5 @@
 import type { ActorSummary, ToolDefinition } from '@tm8/contract';
+import { snapshotVersionOf } from './version-field';
 
 /**
  * A tool's STORED versions, as `entities.versions` returns them: newest first,
@@ -76,12 +77,12 @@ export type VersionResolution =
 
 /** Resolve a version named from outside the list (a run's pin) against loaded, newest-first pages. */
 export function resolveVersion(version: number, items: readonly ToolVersionItem[], complete: boolean): VersionResolution {
-  const exact = items.find(item => item.version === version);
+  const exact = items.find(item => snapshotVersionOf(item) === version);
   if (exact) return { kind: 'stored', item: exact };
-  const above = items.filter(item => item.version > version);
+  const above = items.filter(item => snapshotVersionOf(item) > version);
   if (!above.length) return complete || items.length ? { kind: 'unstored' } : { kind: 'unknown' };
-  const covered = complete || items.some(item => item.version < version);
-  return covered ? { kind: 'folded', into: Math.min(...above.map(item => item.version)) } : { kind: 'unknown' };
+  const covered = complete || items.some(item => snapshotVersionOf(item) < version);
+  return covered ? { kind: 'folded', into: Math.min(...above.map(snapshotVersionOf)) } : { kind: 'unknown' };
 }
 export function versionHint(version: number, resolution: VersionResolution): string | null {
   if (resolution.kind === 'folded') return `v${version} was folded into v${resolution.into}; its source is not stored.`;

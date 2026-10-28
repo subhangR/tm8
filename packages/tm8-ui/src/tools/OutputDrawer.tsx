@@ -6,6 +6,7 @@ import { useDismissable } from '../panels/useDismissable';
 import type { ToolPort } from './port';
 import { ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
 import { runDuration, runInvoker, runLabel, runTone } from './values';
+import { runVersionOf } from './version-field';
 
 const inputText = (value: unknown) => value && typeof value === 'object' && 'secret' in value
   ? (value as { secret: string }).secret === 'passed' ? 'secret passed for this run' : 'saved secret'
@@ -45,7 +46,7 @@ export function OutputDrawer({ sessionId, port, onClose, onOpenSession }: { sess
         <dt>Started</dt><dd>{run.startedAt ? <Timestamp at={run.startedAt} /> : '—'}</dd>
         <dt>Duration</dt><dd>{runDuration(run)}</dd>
         <dt>Invoker</dt><dd>{invoker!.label}</dd>
-        <dt>Version</dt><dd>v{run.toolVersion}</dd>
+        <dt>Version</dt><dd>v{runVersionOf(run)}</dd>
         <dt>Source sha256</dt><dd><code className="tool-sha">{run.sourceSha256}</code></dd>
         <dt>Keep open</dt><dd>{run.keepOpen ? 'Yes' : 'No'}</dd>
       </dl>

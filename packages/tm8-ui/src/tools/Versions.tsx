@@ -4,6 +4,7 @@ import { Timestamp } from '../kit/Timestamp';
 import type { ToolPort } from './port';
 import { ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
 import { shortSha } from './values';
+import { snapshotVersionOf } from './version-field';
 import { unifiedSourceDiff } from './source-diff';
 import {
   changedFields, resolveVersion, scalarChanges, snapshotDefinition, snapshotSource, versionHint,
@@ -22,7 +23,7 @@ export function useToolVersions(port: ToolPort | undefined, toolId: string, refr
   const current = useRef(state);
   current.current = state;
   const generation = useRef(0);
-  const merge = (items: ToolVersionItem[], page: ToolVersionItem[]) => [...items, ...page.filter(item => !items.some(seen => seen.version === item.version))];
+  const merge = (items: ToolVersionItem[], page: ToolVersionItem[]) => [...items, ...page.filter(item => !items.some(seen => snapshotVersionOf(seen) === snapshotVersionOf(item)))];
   const page = useCallback(async (fromStart: boolean): Promise<Loaded | null> => {
     if (!port) return null;
     const base = fromStart ? { items: [], cursor: null, loaded: false } : current.current;
@@ -68,16 +69,16 @@ export const Versions = forwardRef<HTMLElement, { versions: ToolVersions; focus:
   const applied = useRef<VersionFocus | null>(null);
   useEffect(() => {
     if (!focus || applied.current === focus || focus.resolution.kind !== 'stored') return;
-    const at = items.findIndex(item => item.version === focus.version);
+    const at = items.findIndex(item => snapshotVersionOf(item) === focus.version);
     if (at < 0) return;
     applied.current = focus;
-    setChosen({ to: focus.version, from: items[at + 1]?.version ?? focus.version });
+    setChosen({ to: focus.version, from: items[at + 1] ? snapshotVersionOf(items[at + 1]!) : focus.version });
   }, [focus, items]);
   // Default: latest against the stored version before it. A choice no longer listed falls back.
-  const listed = (version: number | undefined) => items.some(item => item.version === version);
-  const to = chosen && listed(chosen.to) ? chosen.to : items[0]?.version;
-  const from = chosen && listed(chosen.from) ? chosen.from : items[1]?.version ?? items[0]?.version;
-  const toItem = items.find(item => item.version === to), fromItem = items.find(item => item.version === from);
+  const listed = (version: number | undefined) => items.some(item => snapshotVersionOf(item) === version);
+  const to = chosen && listed(chosen.to) ? chosen.to : items[0] && snapshotVersionOf(items[0]);
+  const from = chosen && listed(chosen.from) ? chosen.from : items[1] ? snapshotVersionOf(items[1]) : items[0] && snapshotVersionOf(items[0]);
+  const toItem = items.find(item => snapshotVersionOf(item) === to), fromItem = items.find(item => snapshotVersionOf(item) === from);
   const diff = useMemo(() => {
     if (!toItem || !fromItem) return null;
     const before = snapshotSource(fromItem), after = snapshotSource(toItem);
@@ -87,7 +88,7 @@ export const Versions = forwardRef<HTMLElement, { versions: ToolVersions; focus:
     return text ? { kind: 'diff' as const, text } : { kind: 'newline' as const };
   }, [fromItem, toItem]);
   const others = fromItem && toItem && fromItem !== toItem ? [...new Set([...scalarChanges(fromItem, toItem), ...changedFields(fromItem, toItem).filter(field => !['source', 'name', 'runtime', 'tm8 access', 'timeout'].includes(field))])] : [];
-  const option = (item: ToolVersionItem) => <option key={item.version} value={item.version}>v{item.version}</option>;
+  const option = (item: ToolVersionItem) => <option key={snapshotVersionOf(item)} value={snapshotVersionOf(item)}>v{snapshotVersionOf(item)}</option>;
   const focusHint = focus ? versionHint(focus.version, focus.resolution) : null;
   return <section ref={ref} aria-label="Versions" tabIndex={-1}><h3>Versions</h3>
     <p className="tool-note">Each row is a stored snapshot. Quick edits by one author within five minutes fold into one snapshot, so version numbers can skip.</p>
@@ -104,12 +105,13 @@ export const Versions = forwardRef<HTMLElement, { versions: ToolVersions; focus:
       <tbody>{items.map((item, index) => {
         const previous = items[index + 1];
         const fields = previous ? changedFields(previous, item) : cursor === null ? ['created'] : null;
-        return <tr key={item.version} aria-current={item.version === to ? 'true' : undefined}>
-          <td>v{item.version}</td>
+        const version = snapshotVersionOf(item);
+        return <tr key={version} aria-current={version === to ? 'true' : undefined}>
+          <td>v{version}</td>
           <td>{item.changedBy?.displayName ?? 'Unknown'}</td>
           <td><Timestamp at={item.changedAt} /></td>
           <td>{fields === null ? <span title="The version before this one is not loaded yet.">…</span> : fields.length ? fields.join(', ') : 'no definition change'}</td>
-          <td>{previous && <button type="button" className="pn-btn" aria-label={`Compare v${item.version} with v${previous.version}`} onClick={() => setChosen({ from: previous.version, to: item.version })}>Compare</button>}</td>
+          <td>{previous && <button type="button" className="pn-btn" aria-label={`Compare v${version} with v${snapshotVersionOf(previous)}`} onClick={() => setChosen({ from: snapshotVersionOf(previous), to: version })}>Compare</button>}</td>
         </tr>;
       })}</tbody>
     </table></div>}

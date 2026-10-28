@@ -6,6 +6,7 @@ import { absTime, useNow } from '../kit/time';
 import type { ToolPort } from './port';
 import { ToolErrorAlert, toolErrorOf, type ToolErrorView } from './errors';
 import { runDuration, runInvoker, runLabel, runTone, shortSha } from './values';
+import { runVersionOf } from './version-field';
 
 /** A run's outcome lands when its process exits; nothing tells the tool page, so a running row asks. */
 export const RUN_POLL_MS = 3000;
@@ -62,7 +63,7 @@ export function RunHistory({ runs, onOpenSession, onOutput, onVersion, versionNo
     {items.length > 0 && <div className="tool-table-scroll"><table className="tool-inputs tool-runs-table">
       <thead><tr><th>Started</th><th>Duration</th><th>Result</th><th>Invoker</th><th>Version</th><th>Keep open</th><th><span className="tool-sr">Actions</span></th></tr></thead>
       <tbody>{items.map(run => {
-        const invoker = runInvoker(run), note = versionNote?.(run) ?? null;
+        const invoker = runInvoker(run), note = versionNote?.(run) ?? null, version = runVersionOf(run);
         const named = run.startedAt ? `the run started ${absTime(run.startedAt)}` : `run ${run.id}`;
         return <tr key={run.id} data-run-id={run.id}>
           <td>{run.startedAt ? <Timestamp at={run.startedAt} /> : '—'}</td>
@@ -70,7 +71,7 @@ export function RunHistory({ runs, onOpenSession, onOutput, onVersion, versionNo
           <td><Pill tone={runTone(run)}>{runLabel(run)}</Pill></td>
           <td data-invoker={invoker.kind}>{invoker.label}</td>
           <td className="tool-run-version">
-            {onVersion ? <button type="button" className="tool-link" title={`Show version ${run.toolVersion} in Versions`} onClick={() => onVersion(run)}>v{run.toolVersion}</button> : `v${run.toolVersion}`}
+            {onVersion ? <button type="button" className="tool-link" title={`Show version ${version} in Versions`} onClick={() => onVersion(run)}>v{version}</button> : `v${version}`}
             {' '}<code title={`source sha256 ${run.sourceSha256}`}>{shortSha(run.sourceSha256)}</code>
             {note && <small className="tool-run-version__note">{note}</small>}
           </td>

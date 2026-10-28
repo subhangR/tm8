@@ -12,6 +12,7 @@ import { OutputDrawer } from './OutputDrawer';
 import { LastRunChip } from './LastRunChip';
 import { Versions, useToolVersions, type VersionFocus } from './Versions';
 import { versionNote } from './versions-model';
+import { runVersionOf, toolVersionOf } from './version-field';
 import './tools.css';
 import { useToolSessionOpen } from './context';
 
@@ -102,8 +103,9 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
   }, [detail.version, loaded?.tool.version, editing, running, refresh]);
   /** A run's version opens in Versions; a folded or unstored one says so instead of diffing nothing. */
   const openVersion = async (run: ToolRun) => {
-    const resolution = await versions.ensure(run.toolVersion);
-    setFocus({ version: run.toolVersion, sourceSha256: run.sourceSha256, resolution });
+    const version = runVersionOf(run);
+    const resolution = await versions.ensure(version);
+    setFocus({ version, sourceSha256: run.sourceSha256, resolution });
     versionsRef.current?.scrollIntoView?.({ block: 'start' }); versionsRef.current?.focus();
   };
   if (!port) return <p role="status">Tools are unavailable on this connection.</p>;
@@ -115,7 +117,7 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
     ? { sessionId: newest.id, state: newest.state, exitCode: newest.exitCode, startedAt: newest.startedAt, exitedAt: newest.exitedAt }
     : tool.lastRun ?? null;
   return <div className="pn-body tool-body" data-testid="tool-body">
-    <header><h2>{tool.definition.name}</h2><p>{tool.definition.description}</p><div className="tool-actions"><Pill>{tool.definition.runtime === 'bash' ? 'Bash' : 'Python'}</Pill><span>Version {tool.version}</span>
+    <header><h2>{tool.definition.name}</h2><p>{tool.definition.description}</p><div className="tool-actions"><Pill>{tool.definition.runtime === 'bash' ? 'Bash' : 'Python'}</Pill><span>Version {toolVersionOf(tool)}</span>
       <LastRunChip run={lastRun} onOpen={onOpenSession ?? setOutputOf} />
       <button type="button" className="pn-btn" disabled={!permissions.edit || editing} title={!permissions.edit ? 'You do not have permission to edit this tool.' : undefined} onClick={() => setEditing(true)}>Edit tool</button>
       <button type="button" className="pn-btn pn-btn--primary" disabled={!permissions.run || !onOpenSession || editing} title={editing ? 'Save or discard changes to run.' : !onOpenSession ? 'A terminal host is unavailable in this view.' : !permissions.run ? 'You do not have permission to run this tool.' : undefined} onClick={() => setRunning(true)}>Run</button>
@@ -129,7 +131,7 @@ export function ToolBody({ detail, port, onOpenSession: explicitOpen }: { detail
       {tool.definition.help && <section aria-label="Help"><h3>Help</h3><Markdown source={tool.definition.help} /></section>}
     </>}
     <RunHistory runs={runs} onOpenSession={onOpenSession} onOutput={run => setOutputOf(run.id)} onVersion={run => void openVersion(run)}
-      versionNote={run => versionNote(versions.resolve(run.toolVersion))} />
+      versionNote={run => versionNote(versions.resolve(runVersionOf(run)))} />
     <Versions ref={versionsRef} versions={versions} focus={focus} />
     {outputOf && <OutputDrawer sessionId={outputOf} port={port} onClose={() => setOutputOf(null)} onOpenSession={onOpenSession} />}
     {running && onOpenSession && <RunDialog tool={tool} port={port} onClose={() => { setRunning(false); void runs.reload(); }} onRunError={() => void runs.reload()} onOpenSession={onOpenSession} />}
