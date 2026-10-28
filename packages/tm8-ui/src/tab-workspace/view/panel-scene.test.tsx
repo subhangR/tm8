@@ -70,11 +70,11 @@ describe('the panel head', () => {
     expect(head().getAttribute('data-scene')).toBeNull();
   });
 
-  it('⛰ opens the menu: None, then Painted and Photos; a pick paints the head', () => {
+  it('⛰ opens the menu: None, then Painted, Festive and Photos; a pick paints the head', () => {
     render(<PanelTop searchable />);
     fireEvent.click(screen.getByTestId('tws-paneltop-scene'));
     const menu = screen.getByTestId('tws-scenemenu');
-    expect([...menu.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))).toEqual(['Painted', 'Photos']);
+    expect([...menu.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))).toEqual(['Painted', 'Festive', 'Photos']);
     expect(screen.getByTestId('tws-scenemenu-none').getAttribute('aria-checked')).toBe('true');
 
     fireEvent.click(screen.getByTestId('tws-scenemenu-forest'));

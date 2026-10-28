@@ -255,9 +255,48 @@
   from { opacity: 0.75; transform: translateX(-6px); }
   to { opacity: 1; transform: translateX(6px); }
 }
+.tws-scene .tws-scene__flake {
+  animation: tws-snowfall 10s linear infinite;
+}
+@keyframes tws-snowfall {
+  0% { transform: translate(0, var(--fall-from)); }
+  50% { transform: translate(3px, calc((var(--fall-from) + var(--fall-to)) / 2)); }
+  100% { transform: translate(-1px, var(--fall-to)); }
+}
+.tws-scene .tws-scene__burst {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tws-scene-burst 4.8s ease-out infinite;
+}
+@keyframes tws-scene-burst {
+  0% { opacity: 0; transform: scale(0.35); }
+  14% { opacity: 1; }
+  62% { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.08); }
+}
+.tws-scene .tws-scene__flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: tws-scene-flicker 1.6s ease-in-out infinite alternate;
+}
+@keyframes tws-scene-flicker {
+  from { transform: scale(0.92, 0.86); opacity: 0.9; }
+  to { transform: scale(1.04, 1.1); opacity: 1; }
+}
+.tws-scene .tws-scene__bat {
+  animation: tws-scene-bat 2.6s ease-in-out infinite alternate;
+}
+@keyframes tws-scene-bat {
+  from { transform: translate(-1px, -1.5px); }
+  to { transform: translate(1px, 1.5px); }
+}
 @media (prefers-reduced-motion: reduce) {
   .tws-scene .tws-scene__twinkle,
   .tws-scene .tws-scene__veil,
+  .tws-scene .tws-scene__flake,
+  .tws-scene .tws-scene__burst,
+  .tws-scene .tws-scene__flame,
+  .tws-scene .tws-scene__bat,
   .cv2-root .tws-browser .tws-panelhead__scene,
   .cv2-root .tws-browser .tws-scenemenu {
     animation: none;
@@ -339,6 +378,73 @@
   --sc-l4: hsl(16 36% 48%);
 }
 
+/* Snow: a quiet white valley under falling snow by day; blue snowlight by night. */
+.tws-scene[data-scene='snow'] {
+  --sc-sky-top: hsl(212 32% 88%);
+  --sc-sky-low: hsl(210 30% 95%);
+  --sc-halo: hsl(45 80% 94%);
+  --sc-light: hsl(45 60% 92%);
+  --sc-l1: hsl(212 28% 86%);
+  --sc-l2: hsl(205 20% 60%);
+  --sc-l3: hsl(210 40% 97%);
+  --sc-l4: hsl(212 34% 92%);
+  --sc-flake: hsl(212 30% 72%);
+}
+
+/* Christmas: a lit tree under its star, snow falling on the pines. */
+.tws-scene[data-scene='christmas'] {
+  --sc-sky-top: hsl(222 50% 11%);
+  --sc-sky-low: hsl(200 38% 20%);
+  --sc-star: hsl(210 60% 95%);
+  --sc-halo: hsl(44 100% 70%);
+  --sc-star-gold: hsl(44 96% 66%);
+  --sc-tree: hsl(152 38% 17%);
+  --sc-l1: hsl(170 30% 13%);
+  --sc-l3: hsl(210 30% 84%);
+  --sc-l4: hsl(212 26% 74%);
+  --sc-bulb-a: hsl(0 80% 64%);
+  --sc-bulb-b: hsl(44 98% 66%);
+  --sc-bulb-c: hsl(140 60% 58%);
+  --sc-bulb-d: hsl(205 85% 68%);
+  --sc-flake: hsl(0 0% 100%);
+}
+
+/* Halloween: a harvest moon, bats, and lanterns grinning on the hill. */
+.tws-scene[data-scene='halloween'] {
+  --sc-sky-top: hsl(268 36% 12%);
+  --sc-sky-low: hsl(18 58% 30%);
+  --sc-star: hsl(40 60% 92%);
+  --sc-halo: hsl(32 100% 62%);
+  --sc-light: hsl(38 85% 78%);
+  --sc-crater: hsl(34 55% 68%);
+  --sc-ink: hsl(268 30% 7%);
+  --sc-l1: hsl(272 26% 13%);
+  --sc-l2: hsl(270 30% 8%);
+  --sc-pumpkin: hsl(26 90% 52%);
+  --sc-pumpkin-rib: hsl(20 80% 38%);
+  --sc-stem: hsl(90 30% 30%);
+  --sc-glow: hsl(46 100% 66%);
+}
+
+/* Diwali: fireworks over a garland of lights, a row of diyas burning. */
+.tws-scene[data-scene='diwali'] {
+  --sc-sky-top: hsl(252 46% 11%);
+  --sc-sky-low: hsl(318 36% 21%);
+  --sc-star: hsl(40 70% 92%);
+  --sc-fw-a: hsl(44 100% 68%);
+  --sc-fw-b: hsl(330 85% 72%);
+  --sc-fw-c: hsl(178 70% 62%);
+  --sc-string: hsl(40 40% 50% / 0.6);
+  --sc-bulb-a: hsl(44 100% 66%);
+  --sc-bulb-b: hsl(24 100% 62%);
+  --sc-bulb-c: hsl(340 85% 70%);
+  --sc-flame: hsl(42 100% 64%);
+  --sc-clay: hsl(18 58% 44%);
+  --sc-clay-rim: hsl(36 80% 60%);
+  --sc-l1: hsl(300 26% 14%);
+  --sc-l2: hsl(290 30% 9%);
+}
+
 /* By night (the dark theme). */
 [data-theme='dark'] .tws-scene,
 .cv2-root[data-theme='dark'] .tws-scene {
@@ -385,10 +491,36 @@
   --sc-l3: hsl(270 20% 15%);
   --sc-l4: hsl(272 24% 10%);
 }
+[data-theme='dark'] .tws-scene[data-scene='snow'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='snow'] {
+  --sc-sky-top: hsl(222 38% 13%);
+  --sc-sky-low: hsl(214 32% 24%);
+  --sc-l1: hsl(214 24% 32%);
+  --sc-l2: hsl(206 26% 18%);
+  --sc-l3: hsl(212 26% 40%);
+  --sc-l4: hsl(214 26% 33%);
+  --sc-flake: hsl(0 0% 100%);
+}
 /* Space and Aurora are night already, and their own halo is not a moon's. */
 [data-theme='dark'] .tws-scene[data-scene='space'],
 .cv2-root[data-theme='dark'] .tws-scene[data-scene='space'],
 [data-theme='dark'] .tws-scene[data-scene='aurora'],
 .cv2-root[data-theme='dark'] .tws-scene[data-scene='aurora'] {
   --sc-star: hsl(220 60% 96%);
+}
+/* The festive scenes are night already: their halos, moon and stars stay theirs. */
+[data-theme='dark'] .tws-scene[data-scene='christmas'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='christmas'] {
+  --sc-halo: hsl(44 100% 70%);
+  --sc-star: hsl(210 60% 95%);
+}
+[data-theme='dark'] .tws-scene[data-scene='halloween'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='halloween'] {
+  --sc-halo: hsl(32 100% 62%);
+  --sc-light: hsl(38 85% 78%);
+  --sc-star: hsl(40 60% 92%);
+}
+[data-theme='dark'] .tws-scene[data-scene='diwali'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='diwali'] {
+  --sc-star: hsl(40 70% 92%);
 }

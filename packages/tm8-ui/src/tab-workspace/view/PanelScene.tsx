@@ -344,6 +344,320 @@ function Dunes({ id }: { id: string }) {
   );
 }
 
+/* ---- Snow and the festive scenes (Subhang 2026-10-28: "snow themes, one
+   for Christmas, one for Halloween… Diwali") ---------------------------------- */
+
+interface Flake {
+  x: number;
+  y: number;
+  r: number;
+  dur: number;
+  delay: number;
+}
+
+/**
+ * Falling snow. Each flake is drawn where it rests under reduced motion, and
+ * otherwise falls from above the band to below it on its own clock.
+ */
+function Snowfall({ seed, count }: { seed: number; count: number }) {
+  const flakes = useMemo<Flake[]>(() => {
+    const rand = seeded(seed);
+    return Array.from({ length: count }, () => ({
+      x: r1(rand() * W),
+      y: r1(rand() * H),
+      r: r1(0.5 + rand() ** 2 * 1.2),
+      dur: r1(7 + rand() * 7),
+      delay: r1(-rand() * 14),
+    }));
+  }, [seed, count]);
+  return (
+    <g style={paint('flake')}>
+      {flakes.map((f, i) => (
+        <circle
+          key={i}
+          className="tws-scene__flake"
+          cx={f.x}
+          cy={f.y}
+          r={f.r}
+          opacity={0.55 + f.r * 0.25}
+          style={
+            {
+              '--fall-from': `${r1(-f.y - 6)}px`,
+              '--fall-to': `${r1(H + 6 - f.y)}px`,
+              animationDuration: `${f.dur}s`,
+              animationDelay: `${f.delay}s`,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </g>
+  );
+}
+
+function Snow({ id }: { id: string }) {
+  const trees = useMemo(() => treelinePath(61, 70, 10, 22, 8), []);
+  return (
+    <>
+      <SkyAndLight id={id} cy={42} r={7} haloR={50} />
+      <Stars seed={63} count={40} maxY={56} />
+      <path d={smoothPath([[0, 60], [90, 52], [190, 60], [FOCAL_X, 57], [350, 50], [430, 58], [480, 54]])} style={paint('l1')} />
+      <path d={trees} style={paint('l2')} />
+      <path d={smoothPath([[0, 78], [110, 70], [220, 78], [330, 68], [480, 76]])} style={paint('l3')} />
+      <path d={smoothPath([[0, 98], [140, 90], [280, 98], [400, 90], [480, 96]])} style={paint('l4')} />
+      <Snowfall seed={67} count={70} />
+    </>
+  );
+}
+
+/** A big three-tier pine: [path, tiers] so the lights can follow its edges. */
+function bigPine(x: number, base: number, h: number) {
+  const tiers = [
+    { top: base - h, bottom: base - h * 0.58, hw: h * 0.17 },
+    { top: base - h * 0.8, bottom: base - h * 0.28, hw: h * 0.26 },
+    { top: base - h * 0.55, bottom: base, hw: h * 0.36 },
+  ];
+  const d = tiers
+    .map((t) => `M${r1(x - t.hw)} ${r1(t.bottom)}L${x} ${r1(t.top)}L${r1(x + t.hw)} ${r1(t.bottom)}Z`)
+    .join('');
+  const halfWidthAt = (y: number) =>
+    Math.max(0, ...tiers.filter((t) => y >= t.top && y <= t.bottom).map((t) => (t.hw * (y - t.top)) / (t.bottom - t.top)));
+  return { d, halfWidthAt };
+}
+
+function starPath(cx: number, cy: number, outer: number, inner: number): string {
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? outer : inner;
+    return `${r1(cx + r * Math.cos(a))} ${r1(cy + r * Math.sin(a))}`;
+  });
+  return `M${pts.join('L')}Z`;
+}
+
+function Christmas({ id }: { id: string }) {
+  const base = 80;
+  const h = 54;
+  const tree = useMemo(() => bigPine(FOCAL_X, base, h), []);
+  const lights = useMemo(() => {
+    const out: { x: number; y: number; c: string; delay: number }[] = [];
+    const colours = ['bulb-a', 'bulb-b', 'bulb-c', 'bulb-d'];
+    const rand = seeded(71);
+    [0.82, 0.7, 0.58, 0.46, 0.34, 0.22, 0.1].forEach((f, row) => {
+      const y = base - h * f;
+      const hw = tree.halfWidthAt(y) * 0.82;
+      const n = Math.max(1, Math.round((hw * 2) / 5));
+      for (let i = 0; i < n; i++) {
+        const x = FOCAL_X - hw + (n === 1 ? hw : (i * 2 * hw) / (n - 1));
+        out.push({ x: r1(x), y: r1(y + (i % 2) * 1.2), c: colours[(i + row) % colours.length]!, delay: r1(rand() * 5) });
+      }
+    });
+    return out;
+  }, [tree]);
+  const pines = useMemo(() => treelinePath(73, 74, 12, 26, 10), []);
+  return (
+    <>
+      <defs>
+        <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={stop('sky-top')} />
+          <stop offset="1" style={stop('sky-low')} />
+        </linearGradient>
+        <radialGradient id={`${id}-halo`}>
+          <stop offset="0" style={stop('halo', 0.85)} />
+          <stop offset="1" style={stop('halo', 0)} />
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill={`url(#${id}-sky)`} />
+      <Stars seed={75} count={70} maxY={70} layer={false} />
+      <path d={pines} style={paint('l1')} />
+      <circle cx={FOCAL_X} cy={base - h - 2} r={20} fill={`url(#${id}-halo)`} />
+      <path d={tree.d} style={paint('tree')} />
+      <g>
+        {lights.map((l, i) => (
+          <circle
+            key={i}
+            cx={l.x}
+            cy={l.y}
+            r={0.95}
+            className="tws-scene__twinkle"
+            style={{ fill: `var(--sc-${l.c})`, animationDelay: `${l.delay}s` }}
+          />
+        ))}
+      </g>
+      <path d={starPath(FOCAL_X, base - h - 2, 4.4, 1.8)} style={paint('star-gold')} />
+      <path d={smoothPath([[0, 82], [120, 74], [FOCAL_X, 79], [380, 72], [480, 80]])} style={paint('l3')} />
+      <path d={smoothPath([[0, 100], [160, 93], [300, 100], [480, 94]])} style={paint('l4')} />
+      <Snowfall seed={77} count={60} />
+    </>
+  );
+}
+
+/** A bat on a 12-unit span, centred on its body. */
+const BAT =
+  'M-6 0Q-4.5-3-2.2-1.2L-1-2.4L0-1.4L1-2.4L2.2-1.2Q4.5-3 6 0Q4.4-1 3.3 0.9Q1.6-0.3 0 1.8Q-1.6-0.3-3.3 0.9Q-4.4-1-6 0Z';
+
+function Pumpkin({ x, y, s = 1, glow }: { x: number; y: number; s?: number; glow: string }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <circle r={10} fill={`url(#${glow})`} />
+      <ellipse rx={4.8} ry={3.7} style={paint('pumpkin')} />
+      <path d="M-1.6-3.5Q-0.8-1-1.6 3.5M1.6-3.5Q0.8-1 1.6 3.5" fill="none" style={{ stroke: 'var(--sc-pumpkin-rib)' }} strokeWidth={0.5} />
+      <path d="M0-3.6L0.4-5.4L1.2-5.1" fill="none" style={{ stroke: 'var(--sc-stem)' }} strokeWidth={0.8} strokeLinecap="round" />
+      <path d="M-2.6-1L-1.6-1.9L-0.9-0.8ZM2.6-1L1.6-1.9L0.9-0.8ZM-2.4 0.9Q0 2.6 2.4 0.9Q0 1.7-2.4 0.9Z" style={paint('glow')} />
+    </g>
+  );
+}
+
+function Halloween({ id }: { id: string }) {
+  const hills = useMemo(
+    () => [
+      ridgePath(81, 64, 5, [[FOCAL_X + 60, 8, 40], [FOCAL_X - 60, 6, 36], [60, 10, 60]]),
+      ridgePath(83, 84, 4, [[400, 10, 60], [120, 8, 70]]),
+    ],
+    [],
+  );
+  const bats = [
+    { x: FOCAL_X - 30, y: 18, s: 0.9, d: 0 },
+    { x: FOCAL_X + 26, y: 12, s: 0.7, d: 0.8 },
+    { x: FOCAL_X + 6, y: 26, s: 0.55, d: 1.6 },
+    { x: FOCAL_X - 120, y: 10, s: 0.5, d: 0.4 },
+    { x: FOCAL_X + 130, y: 16, s: 0.6, d: 1.2 },
+  ];
+  return (
+    <>
+      <defs>
+        <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={stop('sky-top')} />
+          <stop offset="0.75" style={stop('sky-low')} />
+        </linearGradient>
+        <radialGradient id={`${id}-halo`}>
+          <stop offset="0" style={stop('halo', 0.7)} />
+          <stop offset="1" style={stop('halo', 0)} />
+        </radialGradient>
+        <radialGradient id={`${id}-lantern`}>
+          <stop offset="0" style={stop('glow', 0.5)} />
+          <stop offset="1" style={stop('glow', 0)} />
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill={`url(#${id}-sky)`} />
+      <Stars seed={85} count={40} maxY={50} layer={false} />
+      <circle cx={FOCAL_X} cy={36} r={40} fill={`url(#${id}-halo)`} />
+      <circle cx={FOCAL_X} cy={36} r={14} style={paint('light')} />
+      <circle cx={FOCAL_X - 4} cy={32} r={2.4} style={{ fill: 'var(--sc-crater)' }} />
+      <circle cx={FOCAL_X + 5} cy={40} r={1.6} style={{ fill: 'var(--sc-crater)' }} />
+      <g style={paint('ink')}>
+        {bats.map((b, i) => (
+          <g key={i} transform={`translate(${b.x} ${b.y}) scale(${b.s})`}>
+            <path d={BAT} className="tws-scene__bat" style={{ animationDelay: `${b.d}s` }} />
+          </g>
+        ))}
+      </g>
+      <path d={hills[0]!} style={paint('l1')} />
+      {/* A bare tree on the right hill. */}
+      <g fill="none" style={{ stroke: 'var(--sc-ink)' }} strokeLinecap="round">
+        <path d="M392 64L390 44" strokeWidth={2.2} />
+        <path d="M390 50L380 40L374 41M384 44L382 35M390 46L400 36L408 35M398 38L399 30M391 44L392 34" strokeWidth={1} />
+      </g>
+      <Pumpkin x={FOCAL_X - 52} y={57} s={0.9} glow={`${id}-lantern`} />
+      <Pumpkin x={FOCAL_X + 44} y={55} glow={`${id}-lantern`} />
+      <Pumpkin x={FOCAL_X + 56} y={58} s={0.7} glow={`${id}-lantern`} />
+      <path d={hills[1]!} style={paint('l2')} />
+    </>
+  );
+}
+
+function Burst({ cx, cy, r, colour, rays, delay }: { cx: number; cy: number; r: number; colour: string; rays: number; delay: number }) {
+  const lines = Array.from({ length: rays }, (_, i) => {
+    const a = (i * 2 * Math.PI) / rays + (i % 2) * 0.12;
+    const len = i % 2 ? r * 0.82 : r;
+    return {
+      x1: r1(cx + Math.cos(a) * r * 0.28),
+      y1: r1(cy + Math.sin(a) * r * 0.28),
+      x2: r1(cx + Math.cos(a) * len),
+      y2: r1(cy + Math.sin(a) * len),
+    };
+  });
+  return (
+    <g className="tws-scene__burst" style={{ animationDelay: `${delay}s`, stroke: `var(--sc-${colour})`, fill: `var(--sc-${colour})` }}>
+      {lines.map((l, i) => (
+        <g key={i}>
+          <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} strokeWidth={0.7} strokeLinecap="round" opacity={0.85} />
+          <circle cx={l.x2} cy={l.y2} r={0.8} stroke="none" />
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function Diya({ x, y, delay, glow }: { x: number; y: number; delay: number; glow: string }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <circle cy={-3} r={8} fill={`url(#${glow})`} />
+      <path d="M-4.2 0Q-3.6 3 0 3.2Q3.6 3 4.2 0Z" style={paint('clay')} />
+      <path d="M-4.2 0L4.2 0" style={{ stroke: 'var(--sc-clay-rim)' }} strokeWidth={0.7} />
+      <path d="M0-5.4Q1.5-2.6 0.2-0.4Q-1.4-2.4 0-5.4Z" className="tws-scene__flame" style={{ ...paint('flame'), animationDelay: `${delay}s` }} />
+    </g>
+  );
+}
+
+function Diwali({ id }: { id: string }) {
+  const garland = useMemo(() => {
+    const swag = 160;
+    const yAt = (x: number) => 1 + 7 * Math.sin((Math.PI * (((x % swag) + swag) % swag)) / swag);
+    const pts = Array.from({ length: 97 }, (_, i) => {
+      const x = -4 + i * 5;
+      return `${r1(x)} ${r1(yAt(x))}`;
+    });
+    const bulbs = Array.from({ length: 41 }, (_, i) => {
+      const x = 2 + i * 12;
+      return { x, y: r1(yAt(x) + 1.6), c: ['bulb-a', 'bulb-b', 'bulb-c'][i % 3]!, d: r1((i * 0.37) % 4) };
+    });
+    return { d: `M${pts.join('L')}`, bulbs };
+  }, []);
+  return (
+    <>
+      <defs>
+        <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={stop('sky-top')} />
+          <stop offset="1" style={stop('sky-low')} />
+        </linearGradient>
+        <radialGradient id={`${id}-glow`}>
+          <stop offset="0" style={stop('flame', 0.45)} />
+          <stop offset="1" style={stop('flame', 0)} />
+        </radialGradient>
+        <radialGradient id={`${id}-diya`}>
+          <stop offset="0" style={stop('flame', 0.55)} />
+          <stop offset="1" style={stop('flame', 0)} />
+        </radialGradient>
+      </defs>
+      <rect width={W} height={H} fill={`url(#${id}-sky)`} />
+      <Stars seed={91} count={45} maxY={60} layer={false} />
+      <ellipse cx={FOCAL_X} cy={70} rx={140} ry={26} fill={`url(#${id}-glow)`} />
+      {/* The big one in the title row's gap; small ones above the title and
+          the icons; more out at the edges for a wide panel. */}
+      <Burst cx={FOCAL_X} cy={31} r={16} colour="fw-a" rays={16} delay={0} />
+      <Burst cx={FOCAL_X - 52} cy={14} r={7} colour="fw-b" rays={10} delay={1.6} />
+      <Burst cx={FOCAL_X + 62} cy={13} r={7} colour="fw-c" rays={10} delay={3.1} />
+      <Burst cx={FOCAL_X - 200} cy={28} r={12} colour="fw-c" rays={12} delay={2.3} />
+      <Burst cx={FOCAL_X + 180} cy={24} r={11} colour="fw-b" rays={12} delay={0.9} />
+      <path d={garland.d} fill="none" style={{ stroke: 'var(--sc-string)' }} strokeWidth={0.5} />
+      {garland.bulbs.map((b, i) => (
+        <circle
+          key={i}
+          cx={b.x}
+          cy={b.y}
+          r={1.3}
+          className="tws-scene__twinkle"
+          style={{ fill: `var(--sc-${b.c})`, animationDelay: `${b.d}s` }}
+        />
+      ))}
+      <path d={smoothPath([[0, 70], [120, 66], [FOCAL_X, 70], [380, 64], [480, 68]])} style={paint('l1')} />
+      {[-66, -44, -22, 0, 22, 44, 66].map((dx, i) => (
+        <Diya key={dx} x={FOCAL_X + dx} y={58 + Math.abs(dx) * 0.04} delay={(i * 0.31) % 1.8} glow={`${id}-diya`} />
+      ))}
+      <path d={smoothPath([[0, 96], [160, 90], [320, 96], [480, 90]])} style={paint('l2')} />
+    </>
+  );
+}
+
 const SCENE_ART: Readonly<Record<PaintedSceneId, (props: { id: string }) => ReactNode>> = {
   space: Space,
   mountains: Mountains,
@@ -351,6 +665,10 @@ const SCENE_ART: Readonly<Record<PaintedSceneId, (props: { id: string }) => Reac
   ocean: Ocean,
   aurora: Aurora,
   dunes: Dunes,
+  snow: Snow,
+  christmas: Christmas,
+  halloween: Halloween,
+  diwali: Diwali,
 };
 
 /** One painted scene as an SVG that fills its box, cropped from the centre. */
@@ -401,11 +719,13 @@ export const SCENE_ICON_ART = ['M2.5 3.5h11v9h-11z', 'M2.5 11.25l3.25-3.5 2.5 2.
 
 const MENU_GROUPS = [
   { set: 'painted', heading: 'Painted' },
+  { set: 'festive', heading: 'Festive' },
   { set: 'photo', heading: 'Photos' },
 ] as const;
 
 /**
- * The scene menu: None, then the painted scenes and the photos, each as a
+ * The scene menu: None, then the painted scenes, the festive ones and the
+ * photos, each as a
  * small swatch of itself. Resting on a swatch previews it behind the panel;
  * leaving puts the choice back.
  */

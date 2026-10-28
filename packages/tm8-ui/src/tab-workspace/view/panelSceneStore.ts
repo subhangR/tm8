@@ -1,8 +1,9 @@
 /**
  * THE PANEL'S SCENE (task 01a18396): an optional landscape behind the top of
  * the left panel — the "Space: <name>" row and the new-item tile — faded into
- * the panel's own surface below them. Two sets: PAINTED scenes, drawn as
- * vector layers (`PanelScene.tsx`), and PHOTOS, bundled under
+ * the panel's own surface below them. PAINTED scenes and FESTIVE ones
+ * (Christmas, Halloween, Diwali), drawn as vector layers (`PanelScene.tsx`),
+ * and PHOTOS, bundled under
  * `public/scenes/` (credits beside them). Or none: the panel as it was.
  *
  * ON BY DEFAULT (Subhang 2026-10-28: "still the same" — a scene nobody has
@@ -14,7 +15,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
-export const PAINTED_SCENES = ['space', 'mountains', 'forest', 'ocean', 'aurora', 'dunes'] as const;
+export const PAINTED_SCENES = ['space', 'mountains', 'forest', 'ocean', 'aurora', 'dunes', 'snow', 'christmas', 'halloween', 'diwali'] as const;
 export type PaintedSceneId = (typeof PAINTED_SCENES)[number];
 
 /**
@@ -28,7 +29,7 @@ export type SceneTone = 'night' | 'day' | 'theme';
 export interface PanelScene {
   id: string;
   label: string;
-  set: 'painted' | 'photo';
+  set: 'painted' | 'festive' | 'photo';
   tone: SceneTone;
   /** Painted: which drawing. */
   art?: PaintedSceneId;
@@ -44,6 +45,10 @@ export const PANEL_SCENE_CATALOG: readonly PanelScene[] = [
   { id: 'ocean', label: 'Ocean', set: 'painted', tone: 'theme', art: 'ocean' },
   { id: 'aurora', label: 'Aurora', set: 'painted', tone: 'night', art: 'aurora' },
   { id: 'dunes', label: 'Dunes', set: 'painted', tone: 'theme', art: 'dunes' },
+  { id: 'snow', label: 'Snow', set: 'painted', tone: 'theme', art: 'snow' },
+  { id: 'christmas', label: 'Christmas', set: 'festive', tone: 'night', art: 'christmas' },
+  { id: 'halloween', label: 'Halloween', set: 'festive', tone: 'night', art: 'halloween' },
+  { id: 'diwali', label: 'Diwali', set: 'festive', tone: 'night', art: 'diwali' },
   { id: 'photo-space', label: 'Milky Way', set: 'photo', tone: 'night', src: '/scenes/space.jpg', position: 'center 60%' },
   { id: 'photo-mountains', label: 'Mountains', set: 'photo', tone: 'day', src: '/scenes/mountains.jpg', position: 'center 40%' },
   { id: 'photo-forest', label: 'Forest', set: 'photo', tone: 'day', src: '/scenes/forest.jpg', position: 'center 35%' },
