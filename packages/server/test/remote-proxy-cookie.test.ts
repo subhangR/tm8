@@ -1,4 +1,4 @@
-import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
+import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CollabError } from '@tm8/contract';
 
@@ -167,6 +167,76 @@ describe('remote server relay — response scope', () => {
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('content-security-policy')).toContain('sandbox');
+  });
+});
+
+/**
+ * Relay lifecycle: `handleHttp` must settle and both sockets must close when
+ * either end goes away. Before, a client that left kept the upstream request
+ * open and the promise pending, and an upstream that died mid-body left the
+ * client waiting on bytes that would never come.
+ */
+describe('remote server relay — lifecycle', () => {
+  const caller: RelayCaller = {
+    identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' },
+    forwardAuthorization: true,
+  };
+  const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function listen(server: Server): Promise<number> {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (typeof address === 'string' || address === null) throw new Error('no port');
+    return address.port;
+  }
+
+  async function relayTo(upstreamPort: number): Promise<{ port: number; settled: () => boolean; close: () => void }> {
+    const proxy = createRemoteServerProxy(async () => `http://127.0.0.1:${upstreamPort}`);
+    let settled = false;
+    const relay = createServer((req, res) => {
+      proxy.handleHttp(req, res, caller).then(() => { settled = true; }, () => { settled = true; });
+    });
+    const port = await listen(relay);
+    return { port, settled: () => settled, close: () => { relay.closeAllConnections(); relay.close(); } };
+  }
+
+  it('a client that leaves closes the upstream request and settles the relay', async () => {
+    let upstreamClosed = false;
+    const upstream = createServer((req) => { req.socket.once('close', () => { upstreamClosed = true; }); });
+    const relay = await relayTo(await listen(upstream));
+    const client = request(`http://127.0.0.1:${relay.port}/v2/server-connections/prod/proxy/v2/slow`);
+    client.on('error', () => {});
+    client.end();
+    await tick(150);
+    client.destroy();
+    await tick(300);
+    expect(upstreamClosed).toBe(true);
+    expect(relay.settled()).toBe(true);
+    relay.close();
+    upstream.closeAllConnections();
+    upstream.close();
+  });
+
+  it('an upstream that dies mid-body cuts the client off and settles the relay', async () => {
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { 'content-length': '100' });
+      res.write('abc');
+      setTimeout(() => res.socket?.destroy(), 100);
+    });
+    const relay = await relayTo(await listen(upstream));
+    let clientDone = false;
+    const client = request(`http://127.0.0.1:${relay.port}/v2/server-connections/prod/proxy/v2/body`, (reply) => {
+      reply.resume();
+      reply.once('close', () => { clientDone = true; });
+    });
+    client.on('error', () => { clientDone = true; });
+    client.end();
+    await tick(400);
+    expect(clientDone).toBe(true);
+    expect(relay.settled()).toBe(true);
+    relay.close();
+    upstream.closeAllConnections();
+    upstream.close();
   });
 });
 
