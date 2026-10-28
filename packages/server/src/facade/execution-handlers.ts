@@ -78,6 +78,7 @@ import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTI
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { firingKeyFor } from '../loops/firing.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -3086,7 +3087,7 @@ export function createLoopExecutorPort(deps: {
       requestId: `loop-executor:${loop.entityId}`,
     }),
     liveSessionIds: () => pty.liveSessionIds(),
-    async fire(loop, claims, firedAt) {
+    async fire(loop, claims, firedAt, runId) {
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(
@@ -3120,7 +3121,7 @@ export function createLoopExecutorPort(deps: {
        * not what stops a pile-up here; the overlap guard is, and that is
        * precisely what it is for.
        */
-      const firingKey = `${loop.entityId}:${firedAt.toISOString()}`;
+      const firingKey = firingKeyFor(loop, firedAt, runId);
 
       // STABLE on purpose, and the contrast with `firingKey` is the point: this
       // edge asserts "this task belongs to this loop", which is one fact no
@@ -3214,6 +3215,43 @@ export function createLoopExecutorPort(deps: {
       }
 
       return { taskId, sessionId };
+    },
+    /**
+     * PR2 (§3.3): stop a run's session the way `execution.terminate` does —
+     * `stop_work_session` while the outcome is open (claims released, outcome
+     * 'stopped'), then `SpawnService.terminate` with 171's ending facts — so a
+     * loop-stopped session is indistinguishable in the graph from an
+     * operator-stopped one, and the max-runtime sweep and `loops.runs.stop`
+     * share one path. A completed session that is merely still open closes as
+     * `exited_clean`, exactly as the HTTP op records it.
+     */
+    async stopSession(claims, sessionId, request) {
+      const rows = await db.query<{ outcome: string | null }>(
+        claims,
+        'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
+        [sessionId],
+      );
+      if (rows.length === 0) {
+        throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+      }
+      const outcome = rows[0]!.outcome;
+      let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
+      if (outcome === 'completed') {
+        ending = CLOSED_AFTER_COMPLETION;
+      } else {
+        if (outcome !== 'stopped') {
+          await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
+        }
+        ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
+      }
+      await rethrowing(() =>
+        spawnService.terminate(claims, sessionId, {
+          force: false,
+          clientMutationId: request.clientMutationId,
+          reason: request.reason,
+          ...ending,
+        }),
+      );
     },
   };
 }
