@@ -688,6 +688,21 @@ export interface GateData {
    * required means the typechecker says so at the mount site.
    */
   refetchDetail: (id: string) => void;
+  /**
+   * CONTENT FRESHNESS, the two halves of it. `staleDetails` maps an id to the
+   * version the node has announced while this client still holds an older
+   * read; `freshenDetail` re-reads one such id, coalesced per id.
+   *
+   * Published as data rather than performed here because only a MOUNTED view
+   * knows it is open, and re-reading every marked entity would spend the
+   * node's capacity on panels nobody has on screen. `useDetailFreshness` is
+   * the consumer, and `EntityDetailPanel` is where it is called — one place,
+   * so every content-bearing kind converges without its body knowing this
+   * exists. Optional so the dev harnesses and fixtures can mount a panel
+   * without wiring a node.
+   */
+  staleDetails?: Readonly<Record<string, number>>;
+  freshenDetail?: (id: string) => void;
   /** Live edge projection for a hydrated entity; unlike detail.connections it advances with events. */
   connectionsOf: (id: string) => import('@tm8/contract').Connections | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
@@ -1081,6 +1096,18 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   const messagesByAnchor = useSyncExternalStore(
     domain.store.subscribe,
     () => domain.store.getState().messagesByAnchor,
+  );
+  /**
+   * Content the store knows is behind (`DomainState.staleDetails`). Subscribed
+   * here and published on `GateData` so the panel that is MOUNTED on an id —
+   * the only honest answer to "is this view open?" — can notice its own
+   * staleness. The map's identity changes only when a mark is added or
+   * answered, so a steady event burst over entities nobody is looking at
+   * re-renders nothing below this.
+   */
+  const staleDetails = useSyncExternalStore(
+    domain.store.subscribe,
+    () => domain.store.getState().staleDetails,
   );
   /**
    * The ids some rendered projection still references — the set
@@ -2336,6 +2363,39 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [seam, domain],
   );
 
+  /**
+   * RE-READ BECAUSE THE STORE SAYS THIS CONTENT IS BEHIND — the event-driven
+   * twin of `refetchDetail`, which answers a local action instead.
+   *
+   * COALESCED, where `refetchDetail` deliberately is not. The two differ in
+   * what a second caller MEANS. Two uploads 200ms apart are two facts and the
+   * second must not be answered by a read that predates its own edge; but two
+   * views of one stale doc are the SAME fact asked twice, and a second request
+   * for it is pure duplicate load on the node. So an id with a read in flight
+   * joins that read rather than starting another, and the split-view, the aux
+   * panel and the canvas all showing one doc cost one round trip between them.
+   *
+   * NEVER CALLED FROM RENDER. Its callers are effects keyed on the ANNOUNCED
+   * VERSION (`useDetailFreshness`), so the request is caused by an event that
+   * already landed, exactly like `refetchDetail`'s. That is also what bounds
+   * it: a read that lands clears the mark, and a read that FAILS leaves the
+   * mark unchanged — so the effect does not re-fire and a node that cannot
+   * serve this entity is asked once per version, not once per frame. The
+   * panel keeps rendering the content it has, which is the honest outcome.
+   */
+  const freshenInFlight = useRef(new Map<string, Promise<void>>());
+  const freshenDetail = useCallback(
+    (id: string) => {
+      const inFlightReads = freshenInFlight.current;
+      if (inFlightReads.has(id)) return;
+      const read = refetchDetail(id).finally(() => {
+        if (inFlightReads.get(id) === read) inFlightReads.delete(id);
+      });
+      inFlightReads.set(id, read);
+    },
+    [refetchDetail],
+  );
+
   const spawn = useCallback(
     async (input: ExecutionSpawnInput) => {
       const result = await seam.commands.spawn(input);
@@ -3303,6 +3363,8 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       detailOf,
       capabilitiesOf,
       refetchDetail: (id: string) => void refetchDetail(id),
+      staleDetails,
+      freshenDetail,
       connectionsOf,
       activity,
       messagePulses,
@@ -3322,7 +3384,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, refreshMenu, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, refreshMenu, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, staleDetails, freshenDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

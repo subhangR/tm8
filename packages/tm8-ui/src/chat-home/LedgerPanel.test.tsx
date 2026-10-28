@@ -132,6 +132,25 @@ describe('a chosen scope belongs to the thread that offered it', () => {
   });
 });
 
+describe('a session row says its status with a dot, not a word (task 01a15340)', () => {
+  it('draws the verdict as a dot whose word is the tooltip and accessible name', async () => {
+    resetFleetEntityCache();
+    const readEntity = vi.fn().mockResolvedValue(sessionDetail('running'));
+    const livenessOf = vi.fn().mockReturnValue('live');
+    const view = render(
+      <LedgerPanel turns={THREAD()} onOpenEntity={vi.fn()} readEntity={readEntity} livenessOf={livenessOf} />,
+    );
+    await waitFor(() => expect(view.getByTestId('ledger-panel-summary').textContent).toBe('1 live'));
+    fireEvent.click(view.getByTestId('ledger-panel-toggle'));
+    const row = view.getByTestId('ledger-panel-session');
+    const dot = within(row).getByTestId('ledger-dot');
+    const word = dot.getAttribute('aria-label') ?? '';
+    expect(word.length).toBeGreaterThan(0);
+    expect(dot.getAttribute('title')).toContain(word);
+    expect(row.textContent).not.toContain(word);
+  });
+});
+
 describe('scope switching is a filter, not a refetch (ruling 6)', () => {
   it('changes what the body shows without any read being issued', async () => {
     resetFleetEntityCache();

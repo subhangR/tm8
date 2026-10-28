@@ -24,8 +24,10 @@
  *   - THE STATE (codex rollouts under `sessions/`, claude transcripts under
  *     `projects/`) stays: resume reads the conversation back from this exact
  *     directory (`native-session.ts`, `claude --resume`), so removing it would
- *     make every space-key session unresumable. Whole-directory retention is
- *     session retention's question, as it is for member homes.
+ *     make every space-key session unresumable. The whole directory goes only
+ *     when nothing can read it again: the node's reclaim job removes it once
+ *     the session is deleted or has no row (and, opted in, once it ended past
+ *     the retention window). See `session-artifact-reclaim.ts`.
  *
  * Location: `<dataDir>/credentials/sessions/<workSessionId>/<provider>/`, every
  * level repaired to 0700 exactly as `agent-credential-home.ts` does. Never

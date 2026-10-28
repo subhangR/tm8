@@ -6,6 +6,7 @@ import {
   selectConnectionsStale,
   selectDeliveryOf,
   selectDetail,
+  selectDetailStaleVersion,
   selectEdgesOf,
   selectEntity,
   selectHandoffsOf,
@@ -316,6 +317,22 @@ describe('invalidation lifecycle', () => {
 
     store.getState().clearConnectionsStale('t1');
     expect(selectConnectionsStale('t1')(store.getState())).toBe(false);
+  });
+
+  it('a summary-only upsert marks the cached content stale until a read answers it', () => {
+    /* The whole live-freshness loop through the real store: a detail is
+       hydrated, the stream announces a newer version carrying no content, and
+       the mark names the version a consumer must re-read to. */
+    const seam = fakeSeam();
+    const { store } = createDomainStore(seam, { batchWindowMs: 0 });
+    store.getState().ingestDetail(detail('t1', { version: 1 }));
+    expect(selectDetailStaleVersion('t1')(store.getState())).toBeUndefined();
+
+    seam.emit(event('entity.upsert', { entity: summary('t1', { version: 2 }) }));
+    expect(selectDetailStaleVersion('t1')(store.getState())).toBe(2);
+
+    store.getState().ingestDetail(detail('t1', { version: 2 }));
+    expect(selectDetailStaleVersion('t1')(store.getState())).toBeUndefined();
   });
 });
 

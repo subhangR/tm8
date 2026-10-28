@@ -379,7 +379,27 @@ export type CoreEntityState =
        * link it (107), at LOWER confidence than authored_from/in_worktree.
        */
       headRef?: string | null }
-  | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
+  /*
+   * A commit mirror. `url`/`fetchedAt`/`stale` are here for the same reason the
+   * pull request arm above carries them, and they were missing: the panel's
+   * link-summary row reads `state.url` and `state.stale` for BOTH kinds, so a
+   * commit could never render its `open ↗` link — although `public.commits.url`
+   * held one — and could never show that it was unsynced. The reported bug's
+   * own symptom was unobservable on the entity it was about.
+   *
+   * `stale` is required and not optional, matching the pull request arm: "we
+   * have never fetched this" is a fact the projection always knows, and an
+   * absent boolean would read as false, which is the one wrong answer.
+   *
+   * `author` is ADDITIVE ONLY and changes nothing on screen today — the panel's
+   * DETAILS block renders from `content`, which already carries every column of
+   * `public.commits`, so the author has always been visible there. It is
+   * mirrored onto `state` for typed consumers, consistent with `message`, `sha`
+   * and `committedAt`, which are duplicated from content for the same reason.
+   */
+  | { kind: 'commit'; repository: string; sha: string; message: string;
+      committedAt?: string | null; author?: string | null;
+      url?: string; fetchedAt?: string | null; stale: boolean }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell'; description?: string; equipped: boolean }
   | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
@@ -664,7 +684,23 @@ export type CoreEntityState =
        * cannot see or that was deleted). ABSENT means the answering door did
        * not compute it — a client must not read absence as "no subject".
        */
-      about?: { id: EntityId; kind: EntityKind; title: string } | null }
+      about?: { id: EntityId; kind: EntityKind; title: string } | null;
+      /**
+       * Whether THE VIEWER may change this chat's model (`chat.setModel`, 276),
+       * answered by the server under the viewer's claims from the two conjuncts
+       * `set_chat_model` refuses on: the viewer's identity configured the chat,
+       * and the session is not pinned to another space. Per viewer, like
+       * `capabilities`: two members reading one chat get different answers.
+       *
+       * ABSENT means the answering door did not compute it (a server older
+       * than the field). A client must read absence as UNKNOWN and must not
+       * lock on it — absent is not "someone else's chat".
+       *
+       * It does not say WHICH models: the catalog and `agentTool` decide that
+       * per model. Nor does it cover `spaceLinks.invoke`, which refuses
+       * `chat.setModel` for every caller that arrives over a link.
+       */
+      canSetModel?: boolean }
   /**
    * Containers (§4.2). Hot and small — this arrives on EVERY list row, so it
    * carries the surface KINDS that are live and not their detail; the panel
@@ -707,9 +743,10 @@ export interface EntityBadges {
    */
   liveSession?: TaskLiveSession;
   /**
-   * The pull requests this task `tracks`, projected onto the task's OWN
-   * summary. Newest-first by link recency, capped — see
-   * `LinkedPullRequestBadge`.
+   * The pull requests this task `tracks` — or, on a work_session or chat,
+   * the PRs it `tracks` or that are `authored_from` it (the same set its `prs`
+   * counter counts) — projected onto the row's OWN summary. Newest-first by
+   * link recency, capped — see `LinkedPullRequestBadge`.
    *
    * ABSENT MEANS NO CLAIM, never "no linked PRs". A node predating this field
    * omits it, and a reader must fall back to the graph rather than render an
@@ -1477,6 +1514,13 @@ export interface MessageView extends EntitySummary {
    * everywhere else.
    */
   turnInFlight?: boolean;
+  /**
+   * The work session or chat this message was authored FROM (the recorder-owned
+   * `authored_from` edge), when there is one. Absent on first-party messages.
+   * Rides every message read so a paged transcript needs no second read for
+   * it — the chat surface used to pull a whole `entities.feed` page for this.
+   */
+  sourceWorkSessionId?: EntityId;
 }
 
 // ---------------------------------------------------------------------------
@@ -3427,6 +3471,47 @@ export interface CredentialsSpaceReadinessView {
     activeSpaceOwnedCredentials: number;
     reason: CredentialReadinessPollReason | null;
   };
+  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 370). */
+  seeding: CredentialSeedingView;
+}
+
+/**
+ * R1/S7b (task 01a0e75e, doc 01a0e248 §8.3/S9): the R2 seeding gate, per
+ * provider the space USES — never the caller's answer. Used providers are
+ * derived from agent sessions in the last 30 days (their manifests'
+ * `effectiveCredentialSources`; a session with a manifest but no map infers
+ * anthropic from claude-code/claude and openai from codex); github is also used for polling when the space
+ * has a github.com project. `launch` needs an ACTIVE space default the policy
+ * lets run; `poll` needs an ACTIVE space-owned public github credential. A
+ * space with no agent session in the window is `idle` and never red.
+ */
+export type CredentialSeedingNeed = 'launch' | 'poll';
+export type CredentialSeedingLaunchReason = 'policy_excludes_space' | 'stale' | 'no_default' | 'no_credential';
+export type CredentialSeedingState = 'green' | 'red' | 'idle';
+
+export interface CredentialSeedingProvider {
+  ready: boolean;
+  needs: CredentialSeedingNeed[];
+  launchReason: CredentialSeedingLaunchReason | null;
+  pollReason: CredentialReadinessPollReason | null;
+  /** The first failing need's reason; null when ready. */
+  reason: CredentialSeedingLaunchReason | CredentialReadinessPollReason | null;
+}
+
+export interface CredentialSeedingView {
+  /** The window as Postgres prints an interval, e.g. `30 days`. */
+  window: string;
+  agentSessions: number;
+  /** Agent sessions in the window with no effective-source record: counted, not guessed at. */
+  sessionsWithoutRecord: number;
+  githubProjects: number;
+  usedProviders: SpaceCredentialProviderName[];
+  /** One entry per USED provider only. */
+  providers: Partial<Record<SpaceCredentialProviderName, CredentialSeedingProvider>>;
+  missing: SpaceCredentialProviderName[];
+  state: CredentialSeedingState;
+  /** The R2 gate flag: `state !== 'red'`. */
+  readyForCut: boolean;
 }
 
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */

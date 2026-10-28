@@ -11,7 +11,8 @@ export type Mention = { kind: 'tm8'; teammate?: string } | { kind: 'handle'; han
 // `@word` at the start or after whitespace/punctuation, so e-mail addresses don't count.
 const MENTION_RE = /(^|[\s([{,;:!?"'“‘])@([A-Za-z0-9][A-Za-z0-9-]*)/g
 
-export function parseMentions(text: string): Mention[] {
+/** `handle`: the bridge's own mention (config.handle), so bridges sharing a chat each answer only theirs. */
+export function parseMentions(text: string, handle = 'tm8'): Mention[] {
   const out: Mention[] = []
   const seen = new Set<string>()
   for (const m of text.matchAll(MENTION_RE)) {
@@ -19,11 +20,26 @@ export function parseMentions(text: string): Mention[] {
     // Bare numbers are WhatsApp's rendering of real @mentions of people; those come via mentionedJid.
     if (!word || /^\d+$/.test(word) || seen.has(word)) continue
     seen.add(word)
-    if (word === 'tm8') out.push({ kind: 'tm8' })
-    else if (word.startsWith('tm8-')) out.push({ kind: 'tm8', teammate: word.slice(4) })
+    if (word === handle) out.push({ kind: 'tm8' })
+    else if (word.startsWith(`${handle}-`)) out.push({ kind: 'tm8', teammate: word.slice(handle.length + 1) })
     else out.push({ kind: 'handle', handle: word })
   }
   return out
+}
+
+/**
+ * Third loop guard, across bridges: every bridge appends this invisible marker to what it sends. Bridges that share a
+ * number (another server, another tm8 setup) see each other's sends as the owner's own messages; the marker tells them
+ * apart, so one bridge never routes another's reply. People can't type it.
+ */
+export const BRIDGE_MARK = '⁣⁤⁣'
+
+export function withBridgeMark(text: string): string {
+  return text.endsWith(BRIDGE_MARK) ? text : text + BRIDGE_MARK
+}
+
+export function hasBridgeMark(text: string | null | undefined): boolean {
+  return !!text && text.includes(BRIDGE_MARK)
 }
 
 export type Command =

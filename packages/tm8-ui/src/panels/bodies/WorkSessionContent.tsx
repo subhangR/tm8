@@ -6,6 +6,7 @@ import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
 import { useMessagesDoor, useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
+import { useDismissable } from '../useDismissable';
 import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
 import './work-session-content-phone.css';
 
@@ -69,6 +70,18 @@ const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
   context: 'The launch context is a long record of every selection that went into this session. It has no phone arrangement yet; open the session on a desktop to read it.',
   graph: 'The graph is refused on phones outright, at the route as well as here — so this is the same refusal you would meet by following a graph link, not a second opinion about it.',
 };
+
+/**
+ * IN THE WORKSPACE ACTION STRIP THREE VIEWS STAND (task 01a181e2, option B).
+ * Terminal, Transcript and Changes are the everyday moves; Git, Debug, Graph
+ * and Context open from one "More views" tab, which wears the open view's
+ * mark while one of them is shown. Only the strip: the panel bar and the
+ * phone row keep their own arrangements.
+ */
+const STRIP_PINNED: readonly ContentSurface[] = ['terminal', 'transcript', 'changes'];
+
+/** Four panes: the views kept behind the tab. */
+const MORE_VIEWS_ART = ['M3 3h4v4H3z', 'M9 3h4v4H9z', 'M3 9h4v4H3z', 'M9 9h4v4H9z'] as const;
 
 const PHONE_REFUSED_LIST = (Object.keys(PHONE_REFUSED) as ContentSurface[])
   .map((s) => SURFACE_LABEL[s])
@@ -318,21 +331,26 @@ export function WorkSessionContent({
     [onSurfaceChange, preferenceKey],
   );
 
+  // In the action strip the rest of the views sit behind "More views".
+  const inStrip = switchSlot !== null && !oneSurface && switchSlot.closest('.tws-astrip') !== null;
+  const tabSurfaces = inStrip ? surfaces.filter((s) => STRIP_PINNED.includes(s)) : surfaces;
+  const moreSurfaces = inStrip ? surfaces.filter((s) => !STRIP_PINNED.includes(s)) : [];
+
   // Roving tabindex over the surface list — the arrow keys walk whatever chips
-  // are offered rather than a hardcoded pair.
+  // are shown rather than a hardcoded pair.
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = event.currentTarget.dataset.surface as ContentSurface;
-    const index = surfaces.indexOf(current);
+    const index = tabSurfaces.indexOf(current);
     if (index === -1) return;
     let next: ContentSurface | null = null;
     if (event.key === 'ArrowLeft') {
-      next = surfaces[(index - 1 + surfaces.length) % surfaces.length] ?? null;
+      next = tabSurfaces[(index - 1 + tabSurfaces.length) % tabSurfaces.length] ?? null;
     } else if (event.key === 'ArrowRight') {
-      next = surfaces[(index + 1) % surfaces.length] ?? null;
+      next = tabSurfaces[(index + 1) % tabSurfaces.length] ?? null;
     } else if (event.key === 'Home') {
-      next = surfaces[0] ?? null;
+      next = tabSurfaces[0] ?? null;
     } else if (event.key === 'End') {
-      next = surfaces[surfaces.length - 1] ?? null;
+      next = tabSurfaces[tabSurfaces.length - 1] ?? null;
     }
     if (!next) return;
     event.preventDefault();
@@ -387,7 +405,7 @@ export function WorkSessionContent({
    * and its tooltip, so the mark is shorthand for a word that is still there
    * rather than a replacement for one.
    */
-  const tabs = surfaces.map((s) => (
+  const tabs = tabSurfaces.map((s) => (
     <button
       key={s}
       ref={(node) => {
@@ -415,6 +433,18 @@ export function WorkSessionContent({
       {ridesPanelBar ? <VectorIcon paths={SURFACE_ART[s]} size={14} /> : SURFACE_LABEL[s]}
     </button>
   ));
+  if (moreSurfaces.length > 0) {
+    tabs.push(
+      <MoreViews
+        key="more"
+        surfaces={moreSurfaces}
+        current={surface}
+        tabId={tabId}
+        panelId={panelId}
+        onSelect={(s) => select(s)}
+      />,
+    );
+  }
 
   /*
    * THE PHONE'S ROW IS A ROW CONTAINING A TABLIST, not a tablist doing duty as
@@ -816,4 +846,94 @@ function writePreference(key: string, surface: ContentSurface): void {
   } catch {
     // Private/restricted storage must not make a local presentation toggle fail.
   }
+}
+
+/**
+ * The strip's "More views" tab: a tab in the switch that opens a menu of the
+ * views that do not stand in the strip. While one of them is shown it is the
+ * selected tab, wearing that view's mark and name, so the strip always says
+ * which view is open.
+ */
+function MoreViews({
+  surfaces,
+  current,
+  tabId,
+  panelId,
+  onSelect,
+}: {
+  surfaces: readonly ContentSurface[];
+  current: ContentSurface;
+  tabId: (s: ContentSurface) => string;
+  panelId: (s: ContentSurface) => string;
+  onSelect: (s: ContentSurface) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const shown = surfaces.includes(current) ? current : null;
+  useDismissable(open, root, () => {
+    setOpen(false);
+    if (root.current?.contains(document.activeElement)) trigger.current?.focus();
+  });
+  useEffect(() => {
+    if (open) root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"], [role="menuitemradio"]')?.focus();
+  }, [open]);
+  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    event.preventDefault();
+    items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+  };
+  const label = shown ? `${SURFACE_LABEL[shown]} (more views)` : 'More views';
+  return (
+    <div className="pn-surface-more" ref={root} role="none">
+      <button
+        ref={trigger}
+        id={shown ? tabId(shown) : undefined}
+        type="button"
+        role="tab"
+        className="pn-surface-switch__tab pn-surface-switch__tab--mark pn-surface-more__trigger"
+        data-testid="work-session-more-views"
+        aria-selected={shown !== null}
+        aria-controls={shown ? panelId(shown) : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        tabIndex={shown ? 0 : -1}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <VectorIcon paths={shown ? SURFACE_ART[shown] : MORE_VIEWS_ART} size={14} />
+      </button>
+      {open ? (
+        <div
+          className="tws-astrip-menu pn-overflow__menu pn-surface-more__menu"
+          role="menu"
+          aria-label="More views"
+          data-testid="work-session-more-views-menu"
+          onKeyDown={onMenuKey}
+        >
+          {surfaces.map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="menuitemradio"
+              aria-checked={s === current}
+              className="pn-overflow__item pn-surface-more__item"
+              data-surface={s}
+              onClick={() => {
+                setOpen(false);
+                onSelect(s);
+                trigger.current?.focus();
+              }}
+            >
+              <VectorIcon paths={SURFACE_ART[s]} size={14} />
+              {SURFACE_LABEL[s]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }

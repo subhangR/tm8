@@ -10,6 +10,7 @@
  * rendered as "nothing is touched".
  */
 import { execFile } from 'node:child_process';
+import { GIT_NO_HOOKS_ARGS, gitChildEnv } from '@tm8/execution';
 
 const GIT_TIMEOUT_MS = 15_000;
 /** Bounded output: a diff name list beyond this is a pathological lane. */
@@ -19,8 +20,10 @@ function git(cwd: string, args: string[], signal?: AbortSignal): Promise<string 
   return new Promise((resolve) => {
     execFile(
       'git',
-      ['-C', cwd, ...args],
-      { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, signal, windowsHide: true },
+      // `cwd` is an agent's worktree, and `status` alone launches a configured
+      // fsmonitor: no hooks, and only the allow-listed env (git-invoker.ts).
+      [...GIT_NO_HOOKS_ARGS, '-C', cwd, ...args],
+      { timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_BUFFER, signal, windowsHide: true, env: gitChildEnv() },
       (err, stdout) => resolve(err ? null : stdout),
     );
   });

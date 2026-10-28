@@ -58,7 +58,9 @@ import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
+import { createSessionArtifactReclaimJob, sessionHomeRetentionFromEnv } from './scheduler/jobs/session-artifact-reclaim.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
+import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
@@ -1182,6 +1184,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // 374: a login terminal's work session has no node_id, so the boot
+    // reconciliation and the reaper below never see it. One whose login lease
+    // ran out is ended here (`failed / lost`); runs at boot, then every 5 min.
+    scheduler.register(
+      createCredentialSessionEndingSweepJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-session-ending-sweep' };
+        },
+      }),
+    );
     // §5.6 (346): MCP call audit rows past the node's retention window.
     scheduler.register(
       createMcpAuditRetentionJob({
@@ -1204,6 +1218,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }));
       // Owner ruling Q3: completed sessions idle past the space's window close.
       scheduler.register(createCompletedAutoCloseJob({ close: () => runtime.closeIdleCompleted() }));
+      // Per-session Codex homes, space-key homes and manifest files that
+      // nothing can read again (TM8_SESSION_HOME_RETENTION_DAYS opts in to
+      // removing the homes of older ended sessions too).
+      scheduler.register(createSessionArtifactReclaimJob({
+        reclaim: (retention) => runtime.reclaimSessionArtifacts(retention),
+        retention: sessionHomeRetentionFromEnv(),
+      }));
     }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing

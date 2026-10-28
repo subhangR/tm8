@@ -11,7 +11,8 @@
  *   [You]       — the viewer's avatar; a click opens one card: the existing
  *                 `StatusStrip`, stacked, above the account menu.
  */
-import { cloneElement, isValidElement, useCallback, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { AttentionList, useAttentionOptional } from '../../attention';
@@ -40,10 +41,18 @@ interface RailPopoverButtonProps {
   popoverLabel: string;
   /** Styles one popover apart (`data-pop`), e.g. the account card's own padding. */
   variant?: string;
+  /** `end` (default): bottom-aligned with the button, for the bottom three; `start`: top-aligned. */
+  align?: 'start' | 'end';
+  /**
+   * Draw the card in the rail's own `<nav>`, not beside the button. A button
+   * inside the scrolling top group needs it: that group's edge-fade mask clips
+   * every descendant, a fixed one too.
+   */
+  inRail?: boolean;
   children(close: () => void): ReactNode;
 }
 
-function RailPopoverButton({
+export function RailPopoverButton({
   label,
   tip,
   icon,
@@ -53,18 +62,25 @@ function RailPopoverButton({
   testId,
   popoverLabel,
   variant,
+  align = 'end',
+  inRail = false,
   children,
 }: RailPopoverButtonProps) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  const [rail, setRail] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (inRail) setRail(button.current?.closest<HTMLElement>('.tws-rail') ?? null);
+  }, [inRail]);
   const pop = useRef<HTMLDivElement>(null);
   const close = useCallback(() => {
     setOpen(false);
     button.current?.focus();
   }, []);
   useDismissable(open, [button, pop], () => setOpen(false));
-  /* To the right of the rail, bottom-aligned with the button, clamped to the
-     viewport (a short window pushes it down, never past the top edge). */
+  /* To the right of the rail, aligned with the button (bottom edges by
+     default), clamped to the viewport (a short window pushes it down, never
+     past the top edge). */
   const style = useAnchoredPopover(
     open,
     () => {
@@ -74,8 +90,9 @@ function RailPopoverButton({
       return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rail?.right ?? rect.right };
     },
     pop,
-    { side: 'right', align: 'end', gap: POP_OFFSET_PX },
+    { side: 'right', align, gap: POP_OFFSET_PX },
   );
+  const portal = (card: ReactNode) => (rail ? createPortal(card, rail) : card);
   return (
     <div className="tws-tip-anchor tws-rail-pop-anchor">
       <button
@@ -95,19 +112,21 @@ function RailPopoverButton({
         </span>
         {expanded ? <span className="tws-rail-label">{rowLabel ?? label}</span> : null}
       </button>
-      {open ? (
-        <div
-          ref={pop}
-          className="tws-rail-pop"
-          role="dialog"
-          aria-label={popoverLabel}
-          data-pop={variant}
-          style={style}
-          data-testid={`${testId}-popover`}
-        >
-          {children(close)}
-        </div>
-      ) : null}
+      {open
+        ? portal(
+            <div
+              ref={pop}
+              className="tws-rail-pop"
+              role="dialog"
+              aria-label={popoverLabel}
+              data-pop={variant}
+              style={style}
+              data-testid={`${testId}-popover`}
+            >
+              {children(close)}
+            </div>,
+          )
+        : null}
     </div>
   );
 }

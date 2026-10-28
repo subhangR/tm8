@@ -15,6 +15,7 @@ import './join/join.css';
 import { installActiveStyle } from './theme/style-store';
 import { App } from './App';
 import { registerServiceWorker } from './pwa/register';
+import { installStaleBuildRecovery } from './pwa/stale-build';
 
 /*
  * THE TOKEN SHEET GOES IN BEFORE THE FIRST RENDER, not in an effect.
@@ -33,6 +34,10 @@ import { registerServiceWorker } from './pwa/register';
  * last. The specificity argument itself is in `styleSheetText`.
  */
 installActiveStyle();
+
+// Before the first render: a tab that outlives a deploy reloads once instead of
+// showing dead lazy surfaces. See src/pwa/stale-build.ts.
+installStaleBuildRecovery();
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -16,6 +16,9 @@ else
   NAME=${WA_BRIDGE_CONTAINER:-wa-bridge}
 fi
 IMAGE=${WA_BRIDGE_IMAGE:-wa-bridge:latest}
+# The container runs as the host's tm8 user (uid:gid), so state files stay tm8's. Override with WA_BRIDGE_USER.
+APP_USER=${WA_BRIDGE_USER:-$(id -u tm8 2>/dev/null):$(id -g tm8 2>/dev/null)}
+[[ "$APP_USER" =~ ^[0-9]+:[0-9]+$ ]] || { echo "no tm8 user on this host: set WA_BRIDGE_USER=<uid>:<gid>" >&2; exit 1; }
 cd "$ROOT"
 
 [ -f config.json ] || { echo "$ROOT/config.json missing (copy config.example.json)" >&2; exit 1; }
@@ -23,7 +26,7 @@ cd "$ROOT"
 mkdir -p data tokens "$REPO/secrets" && chmod 700 "$REPO/secrets" tokens
 PORT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('config.json','utf8')).http?.port ?? 8787)")
 
-docker build -t "$IMAGE" "$REPO"
+docker build --build-arg APP_USER="$APP_USER" -t "$IMAGE" "$REPO"
 
 # Only one process may hold a WhatsApp connection: stop the old container before starting the new one.
 if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
@@ -38,7 +41,7 @@ if [ "$ROOT" != "$REPO" ] && [ -d "$REPO/data/models" ]; then MODELS=(-v "$REPO/
 docker run -d --name "$NAME" \
   --restart unless-stopped \
   --network host \
-  --user 110:114 \
+  --user "$APP_USER" \
   -v "$ROOT/auth:/app/auth" \
   -v "$ROOT/data:/app/data" \
   "${MODELS[@]}" \

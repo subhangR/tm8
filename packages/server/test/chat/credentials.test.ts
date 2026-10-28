@@ -161,7 +161,7 @@ describe('chat model credentials', () => {
   });
 
   it('routes Kimi through the member key and refuses missing or unreadable keys', async () => {
-    const kimi = { ...input, model: 'kimi-k2-thinking', provider: 'moonshot' };
+    const kimi = { ...input, model: 'kimi-k3', provider: 'moonshot' };
     const { resolve } = await rig({ member: { ...home, provider: 'kimi', configDir: '/data/kimi', apiKey: 'kimi-key' } });
     const env = await resolve(kimi);
     expect(env.CLAUDE_CONFIG_DIR).toBe('/data/kimi');

@@ -189,6 +189,18 @@ export const ENTITY_COLUMNS = `
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
   chq.turn_state as chat_turn_state, chq.turn_count as chat_turn_count,
   chq.last_turn_at as chat_last_turn_at, cht.context as chat_context,
+  -- canSetModel is the SAME rule set_chat_model enforces (276:119-125),
+  -- evaluated under the viewer's claims: the viewer's IDENTITY (not actor)
+  -- configured the chat, and the session is not pinned to another space.
+  -- The pin is inline, spelled as 276 spells it, so the read and the door
+  -- cannot drift apart; internal.session_space_id() stays off this hot path,
+  -- as 227 asks. No identity cannot set it either (require_identity refuses),
+  -- hence false rather than null. Null off a chat row: there is no chat.
+  case when cht.entity_id is not null then
+    coalesce(cht.configured_by_identity_id = internal.identity_id(), false)
+    and (nullif(current_setting('tm8.session_space_id', true), '')::uuid is null
+         or cht.space_id = nullif(current_setting('tm8.session_space_id', true), '')::uuid)
+  end as chat_can_set_model,
   gr.title as graph_title, gr.graph_type as graph_type,
   gr.nodes as graph_nodes, gr.edges as graph_edges,
   gr.layout as graph_layout, gr.source as graph_source,
@@ -264,7 +276,7 @@ export const ENTITY_COLUMNS = `
   (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
-  cm.url as commit_url, cm.author as commit_author,
+  cm.url as commit_url, cm.author as commit_author, cm.fetched_at as commit_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -634,6 +646,8 @@ export interface EntityRow {
   chat_turn_count: number | null;
   chat_last_turn_at: Date | string | null;
   chat_context: unknown;
+  /** Per viewer (276's two conjuncts under the caller's claims); null off a chat row. */
+  chat_can_set_model?: boolean | null;
   graph_title: string | null;
   graph_type: string | null;
   graph_nodes: unknown[] | null;
@@ -731,6 +745,7 @@ export interface EntityRow {
   commit_committed_at?: Date | string | null;
   commit_url?: string | null;
   commit_author?: string | null;
+  commit_fetched_at?: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -2146,6 +2161,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         lastTurnAt: isoOrNull(row.chat_last_turn_at),
         context: chatContextOf(row.chat_context),
         ...(ctx.chatSubjects ? { about: ctx.chatSubjects.get(row.id) ?? null } : {}),
+        // Only a computed answer is sent: absent tells the client "unknown",
+        // and a client must not lock the model on unknown.
+        ...(typeof row.chat_can_set_model === 'boolean' ? { canSetModel: row.chat_can_set_model } : {}),
       };
     case 'container': {
       // Hot and small — this rides EVERY list row, so it carries the surface
@@ -2215,6 +2233,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         committedAt: isoOrNull(row.commit_committed_at ?? null),
         ...(row.commit_url ? { url: row.commit_url } : {}),
         ...(row.commit_author ? { author: row.commit_author } : {}),
+        // Same as the projector twin: never fetched means stale.
+        fetchedAt: isoOrNull(row.commit_fetched_at ?? null),
+        stale: (row.commit_fetched_at ?? null) === null,
       } as EntityState;
     case 'space_link':
     case 'server':
