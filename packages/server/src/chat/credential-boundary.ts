@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CollabError } from '@tm8/contract';
-import { applyAgentCredentialEnv, type AgentCredentialHome } from '@tm8/execution';
+import { applyAgentCredentialEnv, harnessFailure, type AgentCredentialHome } from '@tm8/execution';
 import {
   createChatCredentialResolver, type ChatCredentialBinding,
   type ChatCredentialResolverOptions, type ResolvedChatCredential,
@@ -116,6 +116,16 @@ async function readAuthFile(configDir: string, name: string): Promise<string> {
   } finally { await file.close(); }
 }
 
+/**
+ * A cause safe to log and store: the error's class and code, never its message,
+ * which may quote credential material read from disk or a provider.
+ */
+export function redactedCause(error: unknown): Error {
+  const code = error instanceof CollabError ? error.code
+    : (error as NodeJS.ErrnoException | null)?.code ?? (error instanceof Error ? error.name : typeof error);
+  return Object.assign(new Error(code), { name: error instanceof Error ? error.name : 'NonError', code });
+}
+
 export interface PreparedChatCredential {
   readonly leaseId: string;
   readonly owner: ChatCredentialOwner;
@@ -146,7 +156,10 @@ function pinnedInput(input: ChatLaunchConfigInput, selected: ResolvedChatCredent
 export function createChatCredentialPreparation(options: ChatCredentialResolverOptions & {
   /** Trusted override for node OAuth snapshot tests/deployments, never client input. */
   nodeCredentialHome?: string;
+  /** Trusted test override for the Keychain fallback; defaults to process.platform. */
+  platform?: NodeJS.Platform;
 }): ChatCredentialPreparationPort {
+  const platform = options.platform ?? process.platform;
   const resolve = createChatCredentialResolver(options);
   const live = new WeakSet<PreparedChatCredential>();
   return {
@@ -157,6 +170,7 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
       const directory = await ChatLaunchDirectory.create(options.dataDir, owner);
       let released = false;
       let sharedConfigDir: string | null = null;
+      let stage: 'write' | 'snapshot' | 'revalidate' = 'write';
       try {
         // Reuse vendor filenames only, never history/settings/plugins from an account home.
         const provider = selected.binding.route.nativeProvider;
@@ -175,12 +189,15 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
           const sourceConfig = home?.configDir ?? join(options.nodeCredentialHome ?? homedir(),
             provider === 'openai' ? '.codex' : '.claude');
           const name = provider === 'openai' ? 'auth.json' : '.credentials.json';
+          stage = 'snapshot';
           const material = await readAuthFile(sourceConfig, name).catch((error: unknown) => {
-            // LOCAL TEST BRANCH: on macOS Claude Code keeps its login in the Keychain,
-            // so there is no file to copy. Run on the native ~/.claude instead of an
-            // isolated copy (main's behaviour); copying the OAuth token would let the
-            // copy's refresh rotate it and sign out the user's own `claude`.
-            if (provider === 'anthropic' && !home && process.platform === 'darwin') return null;
+            // On macOS Claude Code keeps its login in the Keychain, keyed by the config
+            // directory, so there is no file to copy and an isolated copy has no login.
+            // This holds for the node's ~/.claude and for a member home alike. Run on
+            // the source directory instead; copying the OAuth token would also let the
+            // copy's refresh rotate it and sign out the source.
+            if (provider === 'anthropic' && platform === 'darwin'
+              && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
           });
           if (material === null) sharedConfigDir = sourceConfig;
@@ -192,11 +209,13 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
         const configDir = sharedConfigDir ?? directory.path;
         const isolated: AgentCredentialHome = {
           ...(home ?? { provider, homeDir: configDir, configDir }),
-          homeDir: sharedConfigDir ? homedir() : directory.path, configDir,
+          homeDir: sharedConfigDir ? home?.homeDir ?? homedir() : directory.path, configDir,
         };
         const env = { ...selected.env };
         applyAgentCredentialEnv(env, isolated);
-        if (sharedConfigDir) delete env['CLAUDE_CONFIG_DIR'];
+        // A member home's Keychain entry is found through CLAUDE_CONFIG_DIR; only
+        // the node's own ~/.claude is found without it.
+        if (sharedConfigDir && !home) delete env['CLAUDE_CONFIG_DIR'];
         // Relocation suppresses ambient keys; this key was explicitly selected
         // through the policy-gated node rung and belongs to this snapshot.
         if (selected.binding.source === 'node' && key) {
@@ -229,12 +248,22 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
             await directory.release(releaseOwner); released = true; live.delete(prepared);
           },
         };
+        stage = 'revalidate';
         await revalidate(); // source may have been revoked while the files were copied
         live.add(prepared);
         return prepared;
-      } catch {
+      } catch (error) {
         await directory.release();
-        throw new CollabError('forbidden', 'Selected chat credential cannot be prepared in an isolated runtime');
+        const cause = redactedCause(error);
+        const { route, source, credentialId } = selected.binding;
+        // eslint-disable-next-line no-console
+        console.warn('[chat] credential preparation failed', JSON.stringify({ chatId: input.chatId,
+          provider: route.nativeProvider, source, credentialId, home: Boolean(selected.credentialHome),
+          stage, cause: cause.message }));
+        throw Object.assign(harnessFailure('credential_unavailable', 'prepare', stage === 'revalidate'
+          ? 'Selected chat credential cannot be prepared in an isolated runtime: it is no longer authorized for this chat.'
+          : `Selected chat credential cannot be prepared in an isolated runtime: its ${route.nativeProvider} login could not be read (${cause.message}). Reconnect it in Settings or pick another credential.`),
+        { cause });
       }
     },
     async revalidate(prepared) {
