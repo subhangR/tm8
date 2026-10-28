@@ -33,6 +33,11 @@ let stdout: string[] = [];
 let stderr: string[] = [];
 
 beforeAll(async () => {
+  // run() imports the command registry lazily on its first dispatch. Load it
+  // here so the first test does not pay that cold import against its own 5s
+  // budget: alone, the D6 case that happened to run first took ~5.03s and
+  // failed on module load, not on anything it asserts.
+  await import('../src/commands/registry.js');
   server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
@@ -52,7 +57,7 @@ beforeAll(async () => {
   const addr = server.address();
   if (typeof addr === 'string' || addr === null) throw new Error('no address');
   baseUrl = `http://127.0.0.1:${addr.port}`;
-});
+}, 60_000);
 
 afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
@@ -100,6 +105,24 @@ describe('rejected vocabulary fails with a discovery hint (conformance D6)', () 
       expect(recorded).toHaveLength(0);
     });
   }
+
+  // A retired word is retired only as a COMMAND. Once argv resolves to a real
+  // command, the same word is payload and must reach the wire untouched.
+  for (const argv of [
+    ['message', 'send', '--to', 'ent_1', 'progress'],
+    ['message', 'send', '--to', 'ent_1', 'prompt'],
+  ]) {
+    it(`\`tm8 ${argv.join(' ')}\` is the real command, not retired vocabulary`, async () => {
+      await run(argv);
+      expect(stderr.join('')).not.toMatch(/no longer exists/);
+      expect(recorded.length).toBeGreaterThan(0);
+    });
+  }
+
+  it('`tm8 help report` is a help lookup, not the retired `report` verb', async () => {
+    await run(['help', 'report']);
+    expect(stderr.join('')).not.toMatch(/no longer exists/);
+  });
 
   it('the retired --json flag fails rather than silently aliasing to --format json', async () => {
     expect(await run(['--json', 'worker', 'init'])).toBe(2);
