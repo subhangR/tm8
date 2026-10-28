@@ -16,6 +16,7 @@ import {
   noteFreshDocEmpty,
   printDoc,
   RichDocView,
+  useAutoTitle,
   useDocSave,
   type DocAttach,
   type DocCommands,
@@ -118,8 +119,9 @@ export interface ReaderSurfaceProps {
 export function ReaderSurface(props: ReaderSurfaceProps) {
   const { detail, onOpenEntity } = props;
   /* A doc New doc just created opens in the editor with the caret in its
-     title (New doc UX, 2026-10-06); every other doc opens to read. Read once,
-     at mount — the effect below spends the arrival. */
+     text (task 01a15e22: the title writes itself from the first line, see
+     `useAutoTitle`); every other doc opens to read. Read once, at mount —
+     the effect below spends the arrival. */
   const [arrival] = useState(() => isFreshArrival(detail.id));
   const [editing, setEditing] = useState(arrival);
   const editRoot = useRef<HTMLDivElement | null>(null);
@@ -154,6 +156,24 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
   useEffect(() => {
     if (arrival) noteFreshArrived(detail.id);
   }, [arrival, detail.id]);
+
+  /* The caret goes to the text, not the title: the title follows the first
+     line until the person names the doc themselves. The rich editor mounts
+     its node a frame late, so a miss is retried once. */
+  useEffect(() => {
+    if (!arrival) return;
+    const focusBody = () => editRoot.current?.querySelector<HTMLElement>(BODY_FIELD)?.focus();
+    if (editRoot.current?.querySelector(BODY_FIELD)) {
+      focusBody();
+      return;
+    }
+    const frame = requestAnimationFrame(focusBody);
+    return () => cancelAnimationFrame(frame);
+  }, [arrival]);
+
+  /* Only a doc made in this window names itself: an older "Untitled" one was
+     left that way by someone, and opening it to edit must not rename it. */
+  useAutoTitle(save, editing && isFreshDoc(detail.id));
 
   /* A fresh doc that is still untitled and empty when its tab closes is
      deleted by the workspace sweep; this keeps the sweep's answer current. */
@@ -249,7 +269,6 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           ? createPortal(
               <DocTitleField
                 save={save}
-                autoFocus={arrival}
                 onEnter={() => editRoot.current?.querySelector<HTMLElement>(BODY_FIELD)?.focus()}
               />,
               props.titleSlot,
@@ -262,7 +281,6 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           attach={props.attach}
           onAttached={props.onAttached}
           skillOptions={props.skillOptions}
-          focusTitle={arrival}
           titleElsewhere={titleElsewhere}
           {...exit}
         />
@@ -277,16 +295,20 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
         commands={commands}
         editRefusal={editRefusal}
         onEnterEdit={commands ? () => setEditing(true) : undefined}
+        compact={oneSurface}
       />
-      <DownloadDocControl detail={detail} onDownload={downloadPdf} />
+      <DownloadDocControl detail={detail} onDownload={downloadPdf} compact={oneSurface} />
     </>
   );
+  /* THE PHONE'S BAR IS TWO GLYPHS AT THE TOP RIGHT (owner ruling 2026-10-19):
+     the labelled row, with the read-only sentence under Edit, was the second
+     band of chrome above the text. The sentence still opens on a tap. */
   return (
-    <div className="rs-root" data-testid="reader-surface" data-stance="read">
+    <div className="rs-root" data-testid="reader-surface" data-stance="read" data-arrangement={oneSurface ? 'phone' : 'desktop'}>
       {props.toolbarSlot ? (
         createPortal(<div className="rs-bar rs-bar--slotted">{barControls}</div>, props.toolbarSlot)
       ) : props.toolbarSlot === undefined ? (
-        <div className="rs-bar">{barControls}</div>
+        <div className={oneSurface ? 'rs-bar rs-bar--phone' : 'rs-bar'}>{barControls}</div>
       ) : null}
       <div className="rs-body" ref={bodyRef}>
         <ReaderBody

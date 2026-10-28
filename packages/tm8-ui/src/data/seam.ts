@@ -241,6 +241,7 @@ import type {
   ProjectFileBlame,
   ProjectFileHistory,
   ProjectCreateInput,
+  ProjectUpdateInput,
   ProjectDirectoryListing,
   ProjectCloneInput,
   ProjectCloneJob,
@@ -285,7 +286,7 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult,
+  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult, InterruptChatResult,
   SetChatModelResult,
   StartChatInput,
   StartChatResult,
@@ -488,6 +489,12 @@ export interface SessionCompleteResult extends CommandResult {
 export interface MessageListOpts extends PageOpts {
   /** Read the branch under this root instead of the anchor's thread roots. */
   rootMessageId?: EntityId;
+  /**
+   * `newest` pages from the latest message backwards (the cursor walks OLDER),
+   * which is how a long transcript opens without reading its whole history.
+   * Default `oldest`, as the server's.
+   */
+  order?: 'oldest' | 'newest';
 }
 
 /**
@@ -614,6 +621,12 @@ export interface AttentionV2Ops {
 
 export interface Seam {
   mcp?: (spaceId: string) => import("../mcp/port").McpPort;
+  /**
+   * §10.7 / D9: the member's own MCP tokens for external clients. NO space id
+   * — a token carries a Space ARRAY and is minted outside any one Space.
+   * Optional: fixtures have none, and the section then states its absence.
+   */
+  mcpTokens?: () => import("../settings-mcp-tokens/port").McpTokensPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;
@@ -801,6 +814,15 @@ export interface Seam {
    * repository as a job (`spaces.projects.clone` + `cloneJobs.get`). Optional
    * for the same reason `projectSetup` is: a fixture seam has no node disk.
    */
+  /**
+   * Changing a project's FOLDER after it exists: its path or its trust
+   * (`projects.update`). The node lets only a node admin make this call, and
+   * only a node admin is ever shown the path; for anyone else the node refuses
+   * and the panel says who can. Optional because a fixture seam has no node.
+   */
+  projectAdmin?: {
+    update(projectId: ProjectId, input: ProjectUpdateInput): Promise<ProjectResource>;
+  };
   spaceProjects?: {
     directories(spaceId: SpaceId, path?: string): Promise<ProjectDirectoryListing>;
     add(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<SpaceProject>;
@@ -1160,6 +1182,8 @@ export interface Seam {
      */
     setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult>;
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
+    /** `chat.interrupt` — stop the chat's running turn (the composer's ■ / Esc). */
+    interruptChat(chatId: EntityId): Promise<InterruptChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

@@ -466,8 +466,26 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
 });
 
 /** A via_link agent under `L` (authKind 'agent', viaLinkId set): a real child of the link session. */
-async function childOf(L: Linked, spaceSessions?: 'off'): Promise<DbClaims> {
-  return claimsForToken((await mintChild(L.mintClaims)).token, spaceSessions);
+async function childOf(L: Linked): Promise<DbClaims> {
+  return claimsForToken((await mintChild(L.mintClaims)).token);
+}
+
+/**
+ * The same child with NO Space pin. PREDICATE-ONLY CONTROL (B32): unreachable
+ * via a real session since B20 (226's CHECK + the always-pinned kinds).
+ *
+ * This used to be `childOf(L, 'off')`: resolve the real token under
+ * `TM8_SPACE_SESSIONS=off`, which dropped `sessionSpaceId`. B20 (Q15) pins
+ * agent, agent_runtime and link rows in every mode, so no mode produces an
+ * unpinned agent any more and 226's `auth_sessions_pinned_kinds_have_space`
+ * makes the row itself impossible. 206's `target_space_id` predicate still has
+ * to be covered on its own, so the claims are built directly instead of being
+ * manufactured out of a node setting — which also stops this cell from
+ * depending on what `off` happens to mean.
+ */
+async function unpinnedChildOf(L: Linked): Promise<DbClaims> {
+  const pinned = await childOf(L);
+  return { ...pinned, sessionSpaceId: undefined };
 }
 
 describe('W7p 206 — a link-bound caller gets the target default only, while its own row allows it', () => {
@@ -526,10 +544,11 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
     expect(await outcome(() => read206(child))).toBe('42501');
   });
 
-  it('wrong launch space: unpinned claims (TM8_SPACE_SESSIONS=off) launching into A, where H is a member, are refused', async () => {
+  it('wrong launch space: unpinned claims launching into A, where H is a member, are refused', async () => {
     const L = await linked();
-    const unpinned = await childOf(L, 'off');
+    const unpinned = await unpinnedChildOf(L);
     expect(unpinned.sessionSpaceId).toBeUndefined();
+    expect(unpinned.authKind).toBe('agent');
     expect(unpinned.viaLinkId).toBe(L.link.id);
     // A has its own default, so only the target predicate stands between
     // this caller and A's key.
@@ -891,6 +910,103 @@ async function sessionWs(id: string): Promise<string> {
   const [row] = await database.query<{ ws: string }>(`select work_session_id::text as ws from public.auth_sessions where id = $1`, [id]);
   return row!.ws;
 }
+
+// ---------------------------------------------------------------------------
+// 366 (task 01a0fb54; placeholder 990 on PR #1006): the four credential definers 250's header left open to
+// kind `link` — policy readers, resume re-point, pending sweep. A link session
+// is held to its own link's scope (L4-compatible); every other kind unchanged.
+// ---------------------------------------------------------------------------
+describe('366 — the remaining credential definers hold a link session to its link', () => {
+  let L: Linked;
+  const started: string[] = [];
+  beforeAll(async () => { L = await linked(); });
+  // The live-session cap (8, node-wide) is shared with the W7b block's real
+  // spawns below: end what this block started so it does not fill the cap.
+  afterAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+      await client.query(`update public.work_sessions set status = 'exited' where entity_id = any($1::uuid[])`, [started]);
+    });
+  });
+
+  const spacePolicy = (claims: DbClaims, space: string) => db.rpc(claims, 'read_space_credential_policy', [space]);
+  const nodePolicy = (claims: DbClaims) => db.rpc(claims, 'read_node_credential_policy', []);
+  const expire = (claims: DbClaims) => db.rpc(claims, 'expire_pending_space_credentials', []);
+  const repoint = (claims: DbClaims, ws: string) => db.rpc(claims, 'repoint_session_space_credentials', [ws]);
+  const repointFor = (claims: DbClaims, ws: string) =>
+    db.rpc(claims, 'repoint_session_space_credentials', [ws, ['anthropic']]);
+  const withoutLink = (claims: DbClaims): DbClaims => ({ ...claims, viaLinkId: undefined });
+
+  async function recordGithub(ws: string): Promise<void> {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(
+        `insert into public.session_space_credentials(work_session_id, provider, space_credential_id, space_id, launcher_account_id)
+         values ($1, 'github', $2, $3, $4)`, [ws, fixture.ghDefaultB, fixture.spaceB, fixture.accountH]);
+    });
+  }
+
+  it('read_space_credential_policy: the link reads its target; its home space and a link without its claim are 42501', async () => {
+    expect(await outcome(() => spacePolicy(L.linkClaims, fixture.spaceB))).toBe('ok');
+    expect(await outcome(() => spacePolicy(L.linkClaims, fixture.spaceA))).toBe('42501');
+    expect(await outcome(() => spacePolicy(withoutLink(L.linkClaims), fixture.spaceB))).toBe('42501');
+    // Controls: H reads its home space; a via_link agent child (pinned to B)
+    // is not held by the link guard.
+    expect(await outcome(async () => spacePolicy(await humanClaims('H'), fixture.spaceA))).toBe('ok');
+    expect(await outcome(() => spacePolicy(L.mintClaims, fixture.spaceB))).toBe('ok');
+  });
+
+  it('read_node_credential_policy: the link with its claim reads; without it 42501', async () => {
+    expect(await outcome(() => nodePolicy(L.linkClaims))).toBe('ok');
+    expect(await outcome(() => nodePolicy(withoutLink(L.linkClaims)))).toBe('42501');
+    expect(await outcome(async () => nodePolicy(await humanClaims('H', 'cli')))).toBe('ok');
+  });
+
+  it('expire_pending_space_credentials: the link session and a via_link child are 42501; human and plain agent run it', async () => {
+    expect(await outcome(() => expire(L.linkClaims))).toBe('42501');
+    expect(await outcome(() => expire(L.mintClaims))).toBe('42501');
+    const h = await humanClaims('H');
+    expect(await outcome(() => expire(h))).toBe('ok');
+    expect(await outcome(() => expire({ ...h, authKind: 'agent' }))).toBe('ok');
+  });
+
+  /** 367 (01a0fb56): a re-point runs only in the resume window — exited, then execution_resume. */
+  async function resumeWindow(ws: string, claims: DbClaims): Promise<void> {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+      await client.query(`update public.work_sessions set status = 'exited' where entity_id = $1`, [ws]);
+    });
+    await db.rpc(claims, 'execution_resume', [ws, 100_000]);
+  }
+
+  it('repoint (both overloads): a session the link did not start is 42501, and nothing is touched', async () => {
+    const ws = await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
+    started.push(ws);
+    await recordGithub(ws);
+    expect(await outcome(() => repoint(L.linkClaims, ws))).toBe('42501');
+    expect(await outcome(() => repointFor(L.linkClaims, ws))).toBe('42501');
+    expect(await outcome(() => repoint(withoutLink(L.linkClaims), ws))).toBe('42501');
+    // The (uuid, text[]) overload's provider delete never ran.
+    const [row] = await database.query<{ n: number }>(
+      `select count(*)::int as n from public.session_space_credentials where work_session_id = $1`, [ws]);
+    expect(row!.n).toBe(1);
+    // Control: H, in the resume window H opened, re-points the same session.
+    const h = await humanClaims('H');
+    await resumeWindow(ws, h);
+    expect(await outcome(() => repoint(h, ws))).toBe('ok');
+  });
+
+  it('repoint: a session the link started passes the guard (L4 resume)', async () => {
+    const child = await mintChild(L.mintClaims);
+    started.push(child.workSessionId);
+    // Past the link guard, each overload's resume-window check answers (367:
+    // the 1-arg form carries the window too), never the guard's 42501.
+    expect(await outcome(() => repoint(L.linkClaims, child.workSessionId))).toBe('55000');
+    expect(await outcome(() => repointFor(L.linkClaims, child.workSessionId))).toBe('55000');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // W7b (277, lane L4; owner form response 01a0fbb4, decisions D1/D4/D8): an

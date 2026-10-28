@@ -204,3 +204,55 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
     expect((sent[0]!.content as { body: string }).body).toContain('edited on a phone');
   });
 });
+
+/**
+ * THE READ STANCE ON A PHONE READS FULL SCREEN (owner ruling 2026-10-19): the
+ * phone header names the doc, so the body does not open by repeating it, the
+ * outline is one folded line, and Edit / Download are two glyphs. The desktop
+ * keeps all three as they were.
+ */
+describe('the read stance on a phone', () => {
+  const BODY = '# Layout spec\n\n## Floors\n\nfloors are law.\n\n## Responsive\n\nbend, do not break.';
+
+  it('drops a leading H1 that repeats the title, folds the outline and draws two glyphs', () => {
+    const { commands } = commandsSpy();
+    phone(<ReaderSurface detail={docDetail(BODY)} blocks={[]} historyUnavailableReason="" commands={commands} />);
+
+    const md = screen.getByTestId('reader-markdown');
+    expect(md.querySelector('h1')).toBeNull();
+    expect(md.textContent).toContain('floors are law.');
+
+    const fold = screen.getByTestId('reader-outline-fold') as HTMLDetailsElement;
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector('summary')?.textContent).toBe('Contents · 2');
+    expect(within(fold).getAllByTestId('reader-toc-chip').map((c) => c.textContent)).toEqual(['Floors', 'Responsive']);
+
+    const edit = screen.getByTestId('doc-edit-entry');
+    expect(edit.getAttribute('aria-label')).toBe('Edit');
+    expect(edit.textContent).toBe('');
+    expect(screen.getByTestId('doc-download-pdf').getAttribute('aria-label')).toBe('Download PDF');
+    expect(screen.queryByText('Download PDF')).toBeNull();
+  });
+
+  it('keeps an opening heading that is not the title', () => {
+    phone(<ReaderSurface detail={docDetail('# Background\n\ntext')} blocks={[]} historyUnavailableReason="" />);
+    expect(screen.getByTestId('reader-markdown').querySelector('h1')?.textContent).toBe('Background');
+  });
+
+  it('a refused Edit is still there, as a glyph whose reason opens on tap', () => {
+    phone(<ReaderSurface detail={docDetail(BODY)} blocks={[]} historyUnavailableReason="" commands={null} />);
+    const refused = screen.getByRole('button', { name: 'Edit' });
+    expect(refused.getAttribute('aria-disabled')).toBe('true');
+    expect(refused.textContent).toContain('Editing is not wired here');
+  });
+
+  it('the desktop keeps the title, the open outline and the labelled controls', () => {
+    const { commands } = commandsSpy();
+    render(<ReaderSurface detail={docDetail(BODY)} blocks={[]} historyUnavailableReason="" commands={commands} />);
+    expect(screen.getByTestId('reader-markdown').querySelector('h1')?.textContent).toBe('Layout spec');
+    expect(screen.queryByTestId('reader-outline-fold')).toBeNull();
+    expect(screen.getByTestId('reader-outline')).toBeTruthy();
+    expect(screen.getByTestId('doc-edit-entry').textContent).toBe('Edit');
+    expect(screen.getByTestId('doc-download-pdf').textContent).toBe('Download PDF');
+  });
+});

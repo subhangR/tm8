@@ -405,6 +405,10 @@ describe('a message flying across the session tiles', () => {
 
   /** Narrowness: a pulse with budget left still flies on a fresh mount. */
   it('still flies a retained pulse that has time to land', () => {
+    // A frozen clock, like the airborne tests above: against a real one the
+    // 300ms age kept growing through a loaded render and crossed the launch
+    // window in the full suite.
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const view = render(panel([aged('m1', leaf.id, aunt.id, 300)]));
     expandTree(view.container);
     expect(flightsIn(view.container)).toHaveLength(1);

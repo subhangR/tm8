@@ -171,7 +171,9 @@ paths "$FIX" packages/pty-protocol/src/x.ts; expect "pty-protocol -> ui (workspa
 paths "$FIX" packages/tm8-ui/src/x.tsx;      expect "tm8-ui -> ui only" '["typecheck","ui"]'
 paths "$FIX" tools/conformance/src/x.ts;     expect "conformance -> server, cli" '["typecheck","server","cli","small"]'
 paths "$FIX" deploy/nginx/site.conf;         expect "deploy -> server" '["typecheck","server"]'
-paths "$FIX" db/migrate.mjs;                 expect "db -> server, cli" '["typecheck","server","cli"]'
+paths "$FIX" integrations/whatsapp-bridge/src/core.ts; expect "integrations -> typecheck only" '["typecheck"]'
+paths "$FIX" db/migrate.mjs;                 expect "db -> migrations (db suites), server, cli" '["typecheck","server","cli","migrations"]'
+paths "$FIX" db/test/triggers.test.mjs;      expect "db/test -> migrations (the job that runs the db suites)" '["typecheck","server","cli","migrations"]'
 paths "$FIX" db/migrations/300_x.sql;        expect "db/migrations -> migrations, server, cli, conformance" '["typecheck","server","cli","small","migrations"]'
 paths "$FIX" db/migrations/015_w1_foundations.sql
 expect "db/migrations/015_w1_foundations.sql -> includes small (migration-inventory.ts hashes it)" "contains:small migrations"
@@ -273,7 +275,7 @@ paths "$FIX" packages/tm8-ui/src/mobile/CONTRACT.md; expect "packages/tm8-ui/src
 paths "$FIX" packages/server/README.md;           expect "packages/*/*.md seeds its package" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/contract/README.md;         expect "contract *.md -> ALL (was typecheck only; a contract path)" ALL
 paths "$FIX" docs/a.md packages/server/src/x.ts;  expect "docs + server -> server closure" '["typecheck","server","cli","small"]'
-paths "$FIX" db/README.md;                        expect "db/README.md is db, not docs" '["typecheck","server","cli"]'
+paths "$FIX" db/README.md;                        expect "db/README.md is db, not docs" '["typecheck","server","cli","migrations"]'
 paths "$FIX" tools/conformance/README.md;         expect "tools/*/*.md is not a docs path" '["typecheck","server","cli","small"]'
 
 # ---- rule 5: workspace == graph == map --------------------------------------------------

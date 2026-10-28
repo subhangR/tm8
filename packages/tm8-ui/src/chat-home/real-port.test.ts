@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { createChatHomePortFromSeam } from './real-port';
+import { CHAT_TRANSCRIPT_PAGE, createChatHomePortFromSeam } from './real-port';
 
 const CHAT = '019f0000-0000-7000-8000-000000000201' as EntityId;
 const ABOUT = '019f0000-0000-7000-8000-000000000202' as EntityId;
@@ -213,13 +213,16 @@ describe('real chat-home seam adapter', () => {
       content: { kind: 'message', body },
       ...extra,
     });
+    // NEWEST FIRST on the wire (`order: 'newest'`); the port hands turns back
+    // oldest first.
     const messages = vi.fn(async () => ({
       items: [
-        message('019f0000-0000-7000-8000-000000000204', 'The settled answer.'),
         // The claimed turn: its body is the server's placeholder, and the wire
         // marker says so — the preview must not repeat it.
         message('019f0000-0000-7000-8000-000000000205', 'Agent turn in progress.', { turnInFlight: true }),
+        message('019f0000-0000-7000-8000-000000000204', 'The settled answer.'),
       ],
+      nextCursor: null,
     }));
     (seam as { messages?: unknown }).messages = messages;
     const entity = vi.fn();
@@ -230,7 +233,7 @@ describe('real chat-home seam adapter', () => {
     const detail = await port.readThread(CHAT);
     // ONE anchor read, with NO rootMessageId scope: a chat is flat, so there is
     // no thread root to fetch separately and none to filter replies by.
-    expect(messages).toHaveBeenCalledWith(CHAT, { limit: 100 });
+    expect(messages).toHaveBeenCalledWith(CHAT, { limit: CHAT_TRANSCRIPT_PAGE, order: 'newest' });
     expect(entity).not.toHaveBeenCalled();
     expect(detail.summary.preview).toBe('The settled answer.');
     expect(detail.turns.at(-1)?.turnInFlight).toBe(true);
@@ -265,9 +268,9 @@ describe('real chat-home seam adapter', () => {
     });
     (seam as { messages?: unknown }).messages = vi.fn(async () => ({
       items: [
-        message('019f0000-0000-7000-8000-000000000206', 'Look at this', { attachments: [attachment] }),
         // No `attachments` key at all — the older-node shape.
         message('019f0000-0000-7000-8000-000000000207', 'On it.'),
+        message('019f0000-0000-7000-8000-000000000206', 'Look at this', { attachments: [attachment] }),
       ],
     }));
     const port = createChatHomePortFromSeam(seam);
@@ -300,20 +303,41 @@ describe('real chat-home seam adapter', () => {
     });
   });
 
-  it('folds the two server state axes into the one word a row draws', async () => {
-    // `runtimeState` is the headless child, `turnState` is the queue. A chat
-    // whose node restarted with work waiting is 'stopped' AND 'queued', and the
-    // row must read as busy rather than as continuable.
+  it('reads the row state from the queue alone', async () => {
+    // `runtimeState` is the child, `turnState` is the queue. Since the harness
+    // runtime closes its child after EVERY turn, 'stopped' is what any chat
+    // that has answered says — it is not a Stop, and must not read as one.
     const busy = chatSummary({
       state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'queued' },
     });
-    const stopped = chatSummary({
+    const settled = chatSummary({
       state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'idle' },
     });
     expect((await createChatHomePortFromSeam(seamStub([busy]).seam).listThreads('s'))[0]?.state)
       .toBe('streaming');
-    expect((await createChatHomePortFromSeam(seamStub([stopped]).seam).listThreads('s'))[0]?.state)
-      .toBe('stopped-continuable');
+    expect((await createChatHomePortFromSeam(seamStub([settled]).seam).listThreads('s'))[0]?.state)
+      .toBe('idle');
+  });
+
+  it("reads another participant's running turn as streaming on a settled-before chat", async () => {
+    // The multi-sender case: the chat's child is 'stopped' from its previous
+    // turn and someone else's message is now running. Opening it must show the
+    // turn as live (with ■), not as stopped.
+    const running = chatSummary({
+      state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'running' },
+    });
+    expect((await createChatHomePortFromSeam(seamStub([running]).seam).listThreads('s'))[0]?.state)
+      .toBe('streaming');
+  });
+
+  it('sends Stop to chat.interrupt', async () => {
+    const stub = seamStub([chatSummary()]);
+    const interruptChat = vi.fn(async (chatId: string) => ({ chatId, disposition: 'requested' as const }));
+    (stub.seam.commands as unknown as { interruptChat: typeof interruptChat }).interruptChat = interruptChat;
+    const port = createChatHomePortFromSeam(stub.seam);
+    expect(port.interrupt).toBeTypeOf('function');
+    await port.interrupt!(CHAT as never);
+    expect(interruptChat).toHaveBeenCalledWith(CHAT);
   });
 
   /**
@@ -427,63 +451,67 @@ describe('real chat-home seam adapter', () => {
     const HUMAN = '019f0000-0000-7000-8000-000000000403' as EntityId;
     const SESSION = '019f0000-0000-7000-8000-000000000404' as EntityId;
     const { seam, feed } = seamStub();
-    const message = (id: string, body: string) => ({
+    const message = (id: string, body: string, sourceWorkSessionId?: string) => ({
       id,
       kind: 'message',
       createdAt: '2026-09-03T08:00:00.000Z',
       createdBy: null,
       state: { kind: 'message', author: null },
       content: { kind: 'message', body },
+      ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
     });
     (seam as { messages?: unknown }).messages = vi.fn(async () => ({
-      items: [message(HUMAN, 'Ping.'), message(OWN, 'Pong.'), message(FROM_SESSION, 'Lane done.')],
-    }));
-    feed.mockResolvedValue({
+      // Newest first on the wire.
       items: [
-        // A human turn: no `authored_from` edge at all.
-        { itemKind: 'message', message: { id: HUMAN }, sourceWorkSessionId: null },
+        message(FROM_SESSION, 'Lane done.', SESSION),
         // THE CHAT'S OWN AGENT TURN. `createAgentMessage` posts it with
         // `p_source_chat_id = the chat`, so it DOES carry provenance — pointing
         // here. Testing for mere presence would draw every agent reply as a
         // third party, which is why the port compares against the chat id.
-        { itemKind: 'message', message: { id: OWN }, sourceWorkSessionId: CHAT },
-        { itemKind: 'message', message: { id: FROM_SESSION }, sourceWorkSessionId: SESSION },
-        // Activity rows ride the same feed and are not turns.
-        { itemKind: 'activity', activity: { id: 'act-1' }, sourceWorkSessionId: SESSION },
+        message(OWN, 'Pong.', CHAT),
+        // A human turn: no `authored_from` edge at all.
+        message(HUMAN, 'Ping.'),
       ],
-    } as never);
+    }));
     const port = createChatHomePortFromSeam(seam);
     await port.listThreads('space-1');
 
     const detail = await port.readThread(CHAT);
-    expect(feed).toHaveBeenCalledWith(CHAT, { limit: 100 });
     expect(detail.turns.map((turn) => turn.sourceEntityId)).toEqual([
       undefined, undefined, SESSION,
     ]);
+    // Provenance rides the message read; the 1 MB feed read beside it is gone.
+    expect(feed).not.toHaveBeenCalled();
   });
 
-  it('renders the transcript unchanged when the node cannot serve the feed', async () => {
-    const { seam, feed } = seamStub();
-    (seam as { messages?: unknown }).messages = vi.fn(async () => ({
-      items: [{
-        id: MSG,
-        kind: 'message',
-        createdAt: '2026-09-03T08:00:00.000Z',
-        createdBy: null,
-        state: { kind: 'message', author: null },
-        content: { kind: 'message', body: 'Ping.' },
-      }],
-    }));
-    feed.mockRejectedValue(new Error('feed scope not applicable'));
+  /**
+   * PAGINATION. A long WhatsApp-bridged chat opened oldest-first at limit 100:
+   * past 100 messages the newest were never shown, and every open carried the
+   * whole history. The port reads the NEWEST page and hands out the cursor
+   * that walks older.
+   */
+  it('opens at the newest page and reads older pages through the cursor, oldest first', async () => {
+    const { seam } = seamStub();
+    const id = (n: number) => `019f0000-0000-7000-8000-${String(n).padStart(12, '0')}` as EntityId;
+    const message = (n: number) => ({
+      id: id(n), kind: 'message', createdAt: `2026-09-03T08:${String(n).padStart(2, '0')}:00.000Z`, createdBy: null,
+      state: { kind: 'message', author: null }, content: { kind: 'message', body: `m${n}` },
+    });
+    const messages = vi.fn(async (_chat: EntityId, opts: { cursor?: string }) => (opts.cursor === 'before-3'
+      ? { items: [message(2), message(1)], nextCursor: null }
+      : { items: [message(5), message(4), message(3)], nextCursor: 'before-3' }));
+    (seam as { messages?: unknown }).messages = messages;
     const port = createChatHomePortFromSeam(seam);
     await port.listThreads('space-1');
 
-    // A provenance read is an enhancement to a conversation, never a gate on
-    // reading it: every bubble is first-party, which is what this surface
-    // assumed before provenance existed.
     const detail = await port.readThread(CHAT);
-    expect(detail.turns).toHaveLength(1);
-    expect(detail.turns[0]?.sourceEntityId).toBeUndefined();
+    expect(detail.turns.map((turn) => turn.body)).toEqual(['m3', 'm4', 'm5']);
+    expect(detail.olderCursor).toBe('before-3');
+
+    const older = await port.readOlderTurns!(CHAT, 'before-3');
+    expect(messages).toHaveBeenLastCalledWith(CHAT, { limit: CHAT_TRANSCRIPT_PAGE, order: 'newest', cursor: 'before-3' });
+    expect(older.turns.map((turn) => turn.body)).toEqual(['m1', 'm2']);
+    expect(older.olderCursor).toBeNull();
   });
 
   it('B1: the project chip offers and submits projects.id, never the project ENTITY id', async () => {

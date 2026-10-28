@@ -226,6 +226,10 @@ function readiness(missing: Array<'anthropic' | 'openai' | 'github'>): Credentia
       providers: { anthropic: entry('anthropic'), openai: entry('openai'), github: entry('github') },
     },
     canPoll: { ready: false, missing: ['github'], credentialId: null, activeSpaceOwnedCredentials: 0, reason: 'no_space_owned_credential' },
+    seeding: {
+      window: '30 days', agentSessions: 0, sessionsWithoutRecord: 0, githubProjects: 0,
+      usedProviders: [], providers: {}, missing: [], state: 'idle', readyForCut: true,
+    },
   };
 }
 

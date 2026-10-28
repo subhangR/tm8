@@ -1,12 +1,17 @@
 import { McpPicker } from '../mcp/McpPicker';
-import type { McpSelection } from '../mcp/port';
+import {
+  CODEX_CONNECTORS_REASON,
+  ChatConnectorsSheet,
+  ConnectorsChip,
+  useChatConnectors,
+} from './composer/ChatConnectors';
 import { EntityAttentionChip } from '../attention';
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { CollabError } from '@tm8/contract';
 import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
 import { CHATS_ROOT, KindIcon, homeQuickBirthKinds, type HomeRoot } from '../domain';
-import { rememberChatStart } from '../chat-defaults/lastUsed';
+import { composerPicksScope, lastComposerPicks, rememberChatStart, rememberComposerPick, type ComposerPick } from '../chat-defaults/lastUsed';
 import { RibbonMark, Timestamp } from '../kit';
 import { ListRootHeader, rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
@@ -29,10 +34,11 @@ import {
   mergeChatTurnFrame,
   optimisticTurnId,
   projectTurnParts,
+  prependOlderTurns,
   reconcileDetails,
   settleOptimisticTurn,
 } from './turn-model';
-import { clockFromRead, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
+import { clockFromRead, inFlightAgentTurn, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
 import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
@@ -51,6 +57,7 @@ import {
   CrewPanel,
   ModeOptionRows,
   ModelEffortPicker,
+  ProjectChip,
   TeamChip,
   TeamPicker,
   ThreadSettingsFields,
@@ -69,12 +76,14 @@ import {
   nearestEffort,
   projectBindingFromChoice,
   rungFromPermissionMode,
+  SCRATCH_PROJECT_ID,
   teammateRoster,
   type CrewSpec,
   type ModeOptionsByMode,
   type PermissionRung,
 } from './composer';
 import { EntityTray } from './EntityTray';
+import { useNewChatJev, type ChatJevPort } from './new-chat-jev';
 import { LedgerHostProvider } from './ledger-host';
 import { StageExit } from './StageExit';
 import { CreatedHereStrip } from './created-here/CreatedHereStrip';
@@ -123,6 +132,8 @@ import './chat-home.css';
 export const NO_TEAMMATE_REFUSAL = 'No agent teammate in this space yet — add one to start a chat.';
 /** The send refusal while the connectors are not ready (loading, or an account to choose). */
 const MCP_REFUSAL = 'Choose a connected account for each connector.';
+/** How close to the top of the transcript a scroll reads the next older page. */
+const OLDER_TURNS_TRIGGER_PX = 240;
 
 /** Per-thread composer drafts kept by the host (`composerDrafts`). */
 export interface ComposerDraftStore {
@@ -399,6 +410,11 @@ export interface ChatHomeScreenProps {
    * author identity.
    */
   viewerId?: string | undefined;
+  /**
+   * ✦ Ask Jev in the NEW-chat composer (doc 01a154f2, Phase 1). Absent ⇒ no
+   * button. Jev only recommends; an Apply sets the composer's own picks.
+   */
+  jev?: ChatJevPort | undefined;
 }
 
 /*
@@ -468,6 +484,7 @@ export function ChatHomeScreen({
   slots,
   viewerName,
   viewerId,
+  jev: jevPort,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -535,7 +552,6 @@ export function ChatHomeScreen({
      the drafts, it shows beside the draft that survived and nowhere else, and
      — D26 — survives navigation and sends in other threads: nothing the
      viewer typed, or was told, vanishes because they moved. */
-  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
   const [submitFailures, setSubmitFailures] = useState<Readonly<Record<string, string>>>({});
   const submitError = submitFailures[draftKey] ?? null;
@@ -609,11 +625,22 @@ export function ChatHomeScreen({
   const [newCredential, setNewCredential] = useState<ChatCredentialSelection>({ source: 'auto' });
   const [credentialOverrides, setCredentialOverrides] = useState<Readonly<Record<string, ChatCredentialSelection>>>({});
   const [credentialsSaving, setCredentialsSaving] = useState(false);
+  /* THE LAST EXPLICIT PICKS, per Space and viewer: a new chat starts on the
+     mode, model and effort the viewer last chose in any chat, after a host's
+     seed and before the built-in defaults. A host that pins its mode (Craft)
+     neither reads nor writes them — that is not the viewer choosing. */
+  const picksScope = composerPicksScope(spaceId, viewerId);
+  const [remembered] = useState(() => (pinnedMode ? null : lastComposerPicks(picksScope)));
+  const rememberPick = useCallback((pick: ComposerPick) => {
+    if (!pinnedMode) rememberComposerPick(picksScope, pick);
+  }, [pinnedMode, picksScope]);
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
       ? newChatSeed.model
-      : (models[0]?.model ?? ''));
-  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? 'ask');
+      : remembered?.model && models.some((model) => model.model === remembered.model)
+        ? remembered.model
+        : (models[0]?.model ?? ''));
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? remembered?.mode ?? 'ask');
   /* The seed is a STARTING value: the roster read below lands after mount, so
      the seeded teammate is kept in a ref and applied when it does. */
   const newChatSeedRef = useRef(newChatSeed);
@@ -622,18 +649,43 @@ export function ChatHomeScreen({
      binding (write-once on the server) and the permission ceiling. `null`
      permission means "not chosen" — the rail derives the default from the
      teammate's own `permission_mode` and says so. */
-  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
+  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>(() => remembered?.effortByMode ?? {});
+  /* A Space switch without a remount lands the new chat on THAT Space's picks. */
+  const picksScopeRef = useRef(picksScope);
+  useEffect(() => {
+    if (picksScopeRef.current === picksScope) return;
+    picksScopeRef.current = picksScope;
+    if (pinnedMode) return;
+    const next = lastComposerPicks(picksScope);
+    setChatMode(next.mode ?? 'ask');
+    if (next.model) setModelId(next.model);
+    setEffortByMode(next.effortByMode);
+  }, [picksScope, pinnedMode]);
   const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
   /* THE PHONE CARD HOLDS ONLY THE FIELD AND THE FOOT (chat v2 mockup): staged
      files, skill pills and a Coordinator's team move into the ＋ sheet. */
   const { oneSurface: phoneCard } = useMobileSurface();
   const [projectChoice, setProjectChoice] = useState(newChatSeed?.projectId ?? '');
+  /* The last project picked in this Space is the next chat's (chat 6c47ed84:
+     "the last used project is the selected project"), applied once the
+     Space's projects are read and only while it is still one of them. A host
+     seed already chose. */
+  const projectRememberedRef = useRef(newChatSeed?.projectId !== undefined || pinnedMode !== undefined);
+  const chooseProject = useCallback((next: string) => {
+    projectRememberedRef.current = true;
+    setProjectChoice(next);
+    rememberPick({ project: next && next !== SCRATCH_PROJECT_ID ? next : null });
+  }, [rememberPick]);
   const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
   const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
   const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
+  /* The agent message of the turn the viewer stopped, when known. A Stop ends
+     ONE turn: the queue behind it — often another participant's message —
+     still runs, and its frames must draw as live, not as stopped. */
+  const stoppedMessageRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
   /** Rolling cache of the active thread's recent frames, replayed over every
    *  snapshot read so a frame published after the read began is never lost
@@ -724,6 +776,7 @@ export function ChatHomeScreen({
        the same folder, silently bound to it without the viewer choosing it
        in this space. Back to the default (scratch) on every switch. */
     setProjectChoice('');
+    projectRememberedRef.current = false;
   }, [spaceId]);
 
   useEffect(() => {
@@ -1189,6 +1242,17 @@ export function ChatHomeScreen({
              would fetch it until the thread is reopened. */
           refreshDetail(frame.chatId);
         }
+        if (
+          frame.type === 'chat.turn.delta'
+          && frame.chatId === stoppedRootRef.current
+          && stoppedMessageRef.current !== null
+          && frame.messageId !== stoppedMessageRef.current
+        ) {
+          // A different turn started after the stopped one: the chat is live again.
+          stoppedRootRef.current = null;
+          stoppedMessageRef.current = null;
+          setPhase((current) => (isBusyPhase(current) ? current : 'streaming'));
+        }
         const stopped = frame.chatId === stoppedRootRef.current;
         setDetail((current) => {
           if (!current) return current;
@@ -1378,8 +1442,10 @@ export function ChatHomeScreen({
      rebuilds `models` on every render. */
   const modelIdsKey = models.map((model) => model.model).join('\n');
   useEffect(() => {
-    const first = models[0]?.model;
-    if (first !== undefined && !models.some((model) => model.model === modelId)) setModelId(first);
+    if (models.some((model) => model.model === modelId)) return;
+    const last = pinnedMode ? null : lastComposerPicks(picksScope).model;
+    const next = last && models.some((model) => model.model === last) ? last : models[0]?.model;
+    if (next !== undefined) setModelId(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the id list
   }, [modelIdsKey, modelId]);
   const busy = isBusyPhase(phase);
@@ -1405,6 +1471,17 @@ export function ChatHomeScreen({
       : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
+  /*
+   * §10.4 / G4 — THE THREAD'S CONNECTORS, new or long since started.
+   *
+   * One hook for both cases, keyed on the thread: a new chat's picks are local
+   * until `chat.start` carries them, and an opened thread's are read from and
+   * written to the server. The old code had only the first half, and the `+`
+   * menu only offered connectors `newThread &&` — which is why a running
+   * conversation could not be given a tool it turned out to need.
+   */
+  const connectors = useChatConnectors(selectedRootId);
+  const mcpSelections = connectors.value;
 
   /* LANE 2: the in-flight message's parts, for the live row's words. The
      turn itself is lane 1's `turnInProgress` above; this only looks it up. */
@@ -1428,7 +1505,20 @@ export function ChatHomeScreen({
         : !selectedModel
           ? 'No model is available from the launch catalog.'
           : null;
-  const refusal = startUnavailable ?? selectionUnavailable ?? (newThread && !mcpReady ? MCP_REFUSAL : null);
+  /*
+   * The MCP gate now holds for EVERY thread, not just a new one.
+   *
+   * It used to be `newThread && !mcpReady` because an existing thread's
+   * selection could not be changed, so there was nothing a viewer could be
+   * holding wrong. Now they can change it mid-conversation, and an explicit
+   * pick with no usable account is exactly what `bind` refuses out loud at the
+   * next turn (B9) — so saying it here, where the account can still be chosen,
+   * is the earlier and kinder place. S22 is what makes this safe to widen:
+   * `selectionProblem` reads only an EXPLICIT value, so a thread on Space
+   * defaults has nothing to report and is never blocked by a default it did
+   * not choose.
+   */
+  const refusal = startUnavailable ?? selectionUnavailable ?? (!mcpReady ? MCP_REFUSAL : null);
 
   /**
    * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
@@ -1474,6 +1564,17 @@ export function ChatHomeScreen({
     (selectedRootId === null ? undefined : modelOverrides[selectedRootId])
     ?? activeConfig?.model
     ?? modelId;
+  /*
+   * G13 — a CODEX lane gets no tm8 connectors yet.
+   *
+   * Read off the catalog entry for the model this thread actually runs, not
+   * off the model id's spelling: `agentTool` is the catalog's own field and a
+   * provider can add a model tomorrow whose name says nothing about which
+   * harness runs it. A model the catalog does not list yet is NOT treated as
+   * Codex — an unknown tool is unknown, and silently refusing connectors would
+   * be the wrong way round for a Claude lane whose entry had not loaded.
+   */
+  const codexChat = models.find((model) => model.model === shownModelId)?.agentTool === 'codex';
   const shownCredential = (selectedRootId ? credentialOverrides[selectedRootId] : undefined)
     ?? activeConfig?.credentialSelection ?? newCredential;
   useEffect(() => {
@@ -1535,13 +1636,16 @@ export function ChatHomeScreen({
   const chooseMode = useCallback((next: string) => {
     /* An unstarted chat is still a PENDING PICK — `chat.start` carries this one
        as the thread's DEFAULT mode, which is a different write. */
-    if (!pinned) { setChatMode(next as ChatMode); return; }
+    /* Either way it is the next new chat's starting mode too. */
+    rememberPick({ mode: next as ChatMode });
+    setChatMode(next as ChatMode);
+    if (!pinned) return;
     const chatId = selectedRootId;
     if (chatId === null) return;
     /* No optimistic-then-corrected step, because there is no round trip to be
        wrong about: nothing is sent until the next turn is. */
     setModeOverrides((current) => ({ ...current, [chatId]: next as ChatMode }));
-  }, [pinned, selectedRootId]);
+  }, [pinned, selectedRootId, rememberPick]);
   /* THE ⚙ OFFERS ROLES, NOT MODES. Re-picking the role already shown is a
      no-op, so a thread in `plan` is not silently rewritten to `ask`. */
   const chooseRole = useCallback((next: ComposerRole) => {
@@ -1560,7 +1664,9 @@ export function ChatHomeScreen({
   const chooseModel = useCallback((next: string) => {
     /* An unstarted chat is still a PENDING PICK — it has no row to write to, and
        `chat.start` carries the choice. */
-    if (!pinned) { setModelId(next); return; }
+    rememberPick({ model: next });
+    setModelId(next);
+    if (!pinned) return;
     const chatId = selectedRootId;
     const setModel = port.setModel;
     if (chatId === null || setModel === undefined || configWriteRef.current) return;
@@ -1614,7 +1720,7 @@ export function ChatHomeScreen({
         fileSubmitFailure(chatId, describeError(error));
       },
     ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
-  }, [pinned, selectedRootId, port, fileSubmitFailure, models, activeConfig?.reasoningEffort, effortByMode, shownMode]);
+  }, [pinned, selectedRootId, port, fileSubmitFailure, models, activeConfig?.reasoningEffort, effortByMode, shownMode, rememberPick]);
   /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
      decides, the effect below applies its preselect. */
   const roster = useMemo(
@@ -1663,7 +1769,9 @@ export function ChatHomeScreen({
     return nearestEffort(wanted, shownModel?.efforts ?? []);
   }, [activeConfig?.reasoningEffort, effortByMode, shownMode, shownModel]);
   const chooseEffort = useCallback((next: LaunchModelEffort) => {
-    if (!pinned) { setEffortByMode(current => ({ ...current, [shownMode]: next })); return; }
+    rememberPick({ mode: shownMode, effort: next });
+    setEffortByMode(current => ({ ...current, [shownMode]: next }));
+    if (!pinned) return;
     const chatId = selectedRootId;
     if (!chatId || !port.setModel || configWriteRef.current) return;
     configWriteRef.current = true;
@@ -1674,7 +1782,7 @@ export function ChatHomeScreen({
         [chatId]: { ...current[chatId], ...result, reasoningEffort: result.reasoningEffort ?? next } })),
       error => fileSubmitFailure(chatId, describeError(error)),
     ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
-  }, [pinned, selectedRootId, port, shownModelId, shownMode, fileSubmitFailure]);
+  }, [pinned, selectedRootId, port, shownModelId, shownMode, fileSubmitFailure, rememberPick]);
   /* THE CEILING. Default = the teammate's own `permission_mode`, said out loud. */
   const shownTeammate = teammates.find((teammate) => teammate.id === shownTeammateId);
   const derivedPermission = rungFromPermissionMode(shownTeammate?.permissionMode);
@@ -1693,11 +1801,43 @@ export function ChatHomeScreen({
     let cancelled = false;
     if (!port.listProjects) { setProjects(null); return; }
     port.listProjects(spaceId).then(
-      (next) => { if (!cancelled) setProjects(next); },
+      (next) => {
+        if (cancelled) return;
+        setProjects(next);
+        if (projectRememberedRef.current) return;
+        projectRememberedRef.current = true;
+        const last = lastComposerPicks(picksScope).project;
+        if (last && next.some((project) => project.id === last)) setProjectChoice(last);
+      },
       () => { if (!cancelled) setProjects(null); },
     );
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- picksScope follows spaceId
   }, [port, spaceId]);
+
+  /* ✦ ASK JEV, before the first message only. Apply writes the same pending
+     picks the chips do, so `chat.start` carries them and they stick. */
+  const [jevRound, setJevRound] = useState(0);
+  const chatJev = useNewChatJev({
+    port: jevPort,
+    spaceId,
+    aboutId,
+    draft,
+    teammateId,
+    setTeammate: (id) => setTeammateId(id as EntityId),
+    models,
+    modelId,
+    effort,
+    setModel: (next, nextEffort, mode) => {
+      setModelId(next);
+      if (nextEffort) setEffortByMode((current) => ({ ...current, [mode]: nextEffort }));
+    },
+    mode: chatMode,
+    setMode: setChatMode,
+    modeLocked: pinnedMode !== undefined,
+    resetKey: `${spaceId}:${String(jevRound)}`,
+  });
+  const jevShown = newThread && phase === 'idle';
 
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
@@ -1920,6 +2060,70 @@ export function ChatHomeScreen({
     visible: centre == null,
   });
 
+  /*
+   * OLDER TURNS ON THE WAY UP, the way a messaging app pages a conversation.
+   * The port opens a chat at its newest page; reaching the top of the
+   * transcript (or pressing the button there) reads the page before it.
+   *
+   * THE READER STAYS ON THE TURN THEY WERE READING. Turns going in ABOVE the
+   * viewport would push it down by their height; the distance from the bottom
+   * is recorded before the page lands and restored in the same layout pass, so
+   * the line under the reader's eye does not move. Single-flight per chat; a
+   * page that lands after a thread switch is dropped.
+   */
+  const transcriptElementRef = useRef<HTMLDivElement | null>(null);
+  const followRef = follow.ref;
+  const transcriptRef = useCallback((element: HTMLDivElement | null) => {
+    transcriptElementRef.current = element;
+    followRef(element);
+  }, [followRef]);
+  const olderAnchorRef = useRef<number | null>(null);
+  const loadingOlderRef = useRef<EntityId | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState<string | null>(null);
+  const loadOlder = useCallback(() => {
+    const held = detailRef.current;
+    const cursor = held?.olderCursor;
+    if (!held || !cursor || !port.readOlderTurns || loadingOlderRef.current !== null) return;
+    const rootId = held.summary.rootId;
+    loadingOlderRef.current = rootId;
+    setLoadingOlder(true);
+    setOlderError(null);
+    void port.readOlderTurns(rootId, cursor)
+      .then((older) => {
+        if (activeRootRef.current !== rootId) return;
+        const element = transcriptElementRef.current;
+        olderAnchorRef.current = element ? element.scrollHeight - element.scrollTop : null;
+        setDetail((current) => (current && current.summary.rootId === rootId && current.olderCursor === cursor
+          ? prependOlderTurns(current, older)
+          : current));
+      })
+      .catch((error: unknown) => {
+        if (activeRootRef.current === rootId) setOlderError(describeError(error));
+      })
+      .finally(() => {
+        if (loadingOlderRef.current === rootId) loadingOlderRef.current = null;
+        setLoadingOlder(false);
+      });
+  }, [port]);
+  useLayoutEffect(() => {
+    const fromBottom = olderAnchorRef.current;
+    const element = transcriptElementRef.current;
+    if (fromBottom === null || !element) return;
+    olderAnchorRef.current = null;
+    element.scrollTop = element.scrollHeight - fromBottom;
+  }, [detail]);
+  useEffect(() => {
+    loadingOlderRef.current = null;
+    setLoadingOlder(false);
+    setOlderError(null);
+  }, [selectedRootId]);
+  const followOnScroll = follow.onScroll;
+  const onTranscriptScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    followOnScroll(event);
+    if (event.currentTarget.scrollTop <= OLDER_TURNS_TRIGGER_PX) loadOlder();
+  }, [followOnScroll, loadOlder]);
+
   /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
      thread travels to its bottom berth when the first send lands, instead of
      teleporting. FLIP — the centred position is remembered while the composer
@@ -2016,7 +2220,10 @@ export function ChatHomeScreen({
     const team = roleOfMode(shownMode) === 'coordinator'
       ? teamPayload(shownTeam, teammates, models, shownModelId || null)
       : null;
-    const body = brief ? `${draftBody}\n${brief}` : draftBody;
+    /* Jev's applied skills and context ride the opening message (Phase 1's
+       stopgap: `chat.start` has no skill or context ids yet). */
+    const opening = newThread ? chatJev.composeBody(draftBody) : draftBody;
+    const body = brief ? `${opening}\n${brief}` : opening;
     const staged = attachmentsRef.current;
     // An upload still in flight is not a reason to drop it: Send waits rather
     // than posting a message whose file the writer is watching arrive.
@@ -2163,7 +2370,7 @@ export function ChatHomeScreen({
         /* The chat's title defaults to the opening body; with a crew brief
            appended that would name the chat after the brief. Name it after
            the human's own words instead. */
-        ...(brief ? { title: draftBody.slice(0, 240) } : {}),
+        ...(brief || opening !== draftBody ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
         reasoningEffort: effort,
@@ -2184,6 +2391,8 @@ export function ChatHomeScreen({
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
       acked = true;
+      /* Jev's picks went out with this chat; the next new chat starts clean. */
+      setJevRound((round) => round + 1);
       /* The new chat's team moves from the pending key to the chat's own. */
       writeTeam(created.chatId, shownTeam);
       /* The next new chat's last-used mode, teammate and model (§3.4, §5).
@@ -2265,18 +2474,27 @@ export function ChatHomeScreen({
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
     modeOverrides, shownMode, shownTeam, shownModelId,
     mcpSelections,
-    newCredential, credentialsSaving, effort,
+    newCredential, credentialsSaving, effort, chatJev.composeBody,
   ]);
 
   const interrupt = useCallback(async () => {
     if (!selectedRootId || !port.interrupt) return;
     const rootId = selectedRootId;
     stoppedRootRef.current = rootId;
+    const clock = turnClockRef.current;
+    stoppedMessageRef.current = (clock && clock.chatId === rootId ? clock.messageId : null)
+      ?? inFlightAgentTurn(detailRef.current)?.messageId ?? null;
     // A Stop that takes seconds is itself a wait — the row says so.
     setTurnClock((current) => (current && current.chatId === rootId ? { ...current, stopping: true } : current));
     try {
       await port.interrupt(rootId);
       const stoppedDetail = await port.readThread(rootId);
+      // No frame had named the stopped turn yet: the read does — it is the
+      // newest agent message, the one the Stop just ended.
+      if (stoppedRootRef.current === rootId && stoppedMessageRef.current === null) {
+        stoppedMessageRef.current = [...stoppedDetail.turns].reverse()
+          .find((turn) => turn.role === 'assistant')?.messageId ?? null;
+      }
       // Live-turn bookkeeping belongs to whichever thread is active NOW — an
       // interrupt that resolves after switching away must not touch it.
       if (activeRootRef.current === rootId) {
@@ -2710,7 +2928,7 @@ export function ChatHomeScreen({
           </section>
         ) : null}
         <div
-          ref={follow.ref}
+          ref={transcriptRef}
           className="tch-transcript"
           data-turn-phase={turnInProgress?.phase}
           aria-live="polite"
@@ -2722,7 +2940,7 @@ export function ChatHomeScreen({
           /* THE READER'S INTENT, recorded on every scroll. Scrolling up to read
              back opts out of following a streaming answer; coming back within
              the tolerance opts straight back in. */
-          onScroll={follow.onScroll}
+          onScroll={onTranscriptScroll}
         >
           {loadError ? (
             <div className="tch-load-error" role="alert">
@@ -2746,6 +2964,14 @@ export function ChatHomeScreen({
                   fullscreen way to be big. It is a STAGE now — one drawing in
                   region B, reached from the tray, addressed by `?stage=graph`. */}
               <LedgerHostProvider key={detail.summary.rootId} resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
+              {detail.olderCursor && port.readOlderTurns ? (
+                <div className="tch-older" data-testid="tch-older">
+                  <button type="button" className="tch-older__button" onClick={loadOlder} disabled={loadingOlder}>
+                    {loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}
+                  </button>
+                  {olderError ? <span className="tch-load-error" role="alert">{olderError}</span> : null}
+                </div>
+              ) : null}
               {detail.turns.map((turn) => (
                 <ChatTurn
                   key={turn.messageId}
@@ -2903,8 +3129,20 @@ export function ChatHomeScreen({
                 ) : null}
               </>
             ) : null}
-            {/* Compact: the picker keeps its readiness work here but draws in ＋. */}
-            {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} headless={compactComposer} />}
+            {/* READINESS ONLY, for every thread. The rows are drawn in ＋ and in
+                the chip (§10.4); this instance is `headless` so it reports the
+                send gate's verdict and renders nothing — mounting it for an
+                existing thread is what extends the gate to a selection that
+                can now be changed mid-conversation. */}
+            <McpPicker
+              teamMemberId={teammateId ?? undefined}
+              targetId={aboutId ?? undefined}
+              value={mcpSelections}
+              onChange={connectors.change}
+              onReady={setMcpReady}
+              disabled={busy}
+              headless
+            />
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {/* No "Turn stopped · continuable" line above the composer (Subhang,
                 2026-10-18): the composer's own phase label already says it, and
@@ -2920,6 +3158,7 @@ export function ChatHomeScreen({
                   ? <p className="tch-refusal" id="tch-compose-refusal" data-testid="tch-compose-refusal">{refusal}</p>
                   : null}
                 <AttachmentChips attachments={attachments} testId="tch-attachments" list={!phoneCard} />
+                {jevShown ? chatJev.strip : null}
               </>}
               field={<>
                 <textarea
@@ -3000,21 +3239,36 @@ export function ChatHomeScreen({
                         extraLabel: `Coordinator team · ${teamSize(shownTeam)}`,
                       }
                     : {})}
-                  {...(compactComposer && newThread
-                    ? {
+                  // §10.4: the ＋ sheet's Connectors section, for a NEW thread
+                  // and an existing one alike (G4) — the `newThread &&` that
+                  // used to be here IS the defect. G13 keeps the row on a Codex
+                  // lane and refuses it, naming the reason.
+                  {...(codexChat
+                    ? { connectorsReason: CODEX_CONNECTORS_REASON }
+                    : {
                         connectors: (
-                          <McpPicker
-                            teamMemberId={teammateId ?? undefined}
-                            targetId={aboutId ?? undefined}
-                            value={mcpSelections}
-                            onChange={setMcpSelections}
+                          <ChatConnectorsSheet
+                            state={connectors}
+                            {...(aboutId ? { targetId: aboutId } : {})}
+                            {...(teammateId ? { teamMemberId: teammateId } : {})}
+                            streaming={thinking}
                             disabled={busy}
-                            retryClassName="tch-addmenu__row"
                           />
                         ),
-                      }
-                    : {})}
+                      })}
                 />
+                {/* The chip, beside the turn pills: `🔌 N` of what is on and
+                    ready. Hidden while a thread is on defaults with none on,
+                    so a Space without connectors adds no furniture here. */}
+                {codexChat ? null : (
+                  <ConnectorsChip
+                    state={connectors}
+                    {...(aboutId ? { targetId: aboutId } : {})}
+                    {...(teammateId ? { teamMemberId: teammateId } : {})}
+                    streaming={thinking}
+                    disabled={busy}
+                  />
+                )}
                 {enabledSkills.length && !phoneCard ? (
                   <span className="tch-turnpills" data-testid="tch-turnpills">
                     {enabledSkills.map((id) => (
@@ -3046,7 +3300,7 @@ export function ChatHomeScreen({
                       onTeammateChange={(id) => setTeammateId(id as EntityId)}
                       projects={projects}
                       projectChoice={projectChoice}
-                      onProjectChange={setProjectChoice}
+                      onProjectChange={chooseProject}
                       permission={permission}
                       onPermissionChange={setPermissionChoice}
                       permissionSource={permissionSource}
@@ -3072,6 +3326,18 @@ export function ChatHomeScreen({
                       : modeLocked ? 'this chat is still starting' : null
                   }
                 />
+                {/* WHERE THE CHAT RUNS, on the row — not only in ⚙ (task 01a159fa).
+                    The phone card keeps its clean ＋ · ⚙ · model · send foot;
+                    its project stays in ⚙. */}
+                {!phoneCard ? (
+                  <ProjectChip
+                    projects={projects}
+                    projectChoice={projectChoice}
+                    onProjectChange={chooseProject}
+                    locked={pinned}
+                    lockedProjectLabel={lockedProjectLabel}
+                  />
+                ) : null}
                 {shownRole === 'coordinator' && !compactComposer && !phoneCard ? (
                   <TeamChip
                     team={shownTeam}
@@ -3085,6 +3351,7 @@ export function ChatHomeScreen({
                 </span>
                 <span className="ri-foot-gap" aria-hidden />
                 {phaseLabel(phase) ? <span className="tch-phase" role="status">{phaseLabel(phase)}</span> : null}
+                {jevShown && chatJev.entry ? <span className="tch-jev" data-testid="tch-jev">{chatJev.entry}</span> : null}
                 <ModelEffortPicker
                   label="Chat model"
                   testId="tch-model"

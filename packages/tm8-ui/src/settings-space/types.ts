@@ -30,6 +30,7 @@ export type SettingsSectionId =
   | 'chat-defaults'
   | 'connectors'
   | 'credentials'
+  | 'mcp-tokens'
   | 'space-credentials'
   | 'node-credentials'
   | 'filesystem-access'
@@ -102,6 +103,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      than a blank pane. */
   { id: 'connectors', label: 'Connectors', heading: 'Connectors', externallyOwned: true },
   { id: 'credentials', label: 'Agent logins', heading: 'Agent credentials', externallyOwned: true },
+  /* §10.7 / D9 — the tokens an EXTERNAL MCP client (Claude Desktop, Cursor)
+     presents on this node's `/mcp` endpoint to act as the viewer. Directly
+     after their own logins because it answers the mirror question: those are
+     what tm8 signs in to for you, this is what signs in to tm8 as you. Built
+     in `settings-mcp-tokens/` and injected through `sections`. */
+  { id: 'mcp-tokens', label: 'MCP tokens', heading: 'MCP tokens', externallyOwned: true },
   /* SC-5 — the credentials the SPACE owns (D1–D11), then the node's own keys
      and their fallback policy (D9). Directly after the viewer's own logins
      because a launch reads the three in that order (D4: yours, space, node).

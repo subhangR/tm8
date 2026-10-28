@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cd50377655dfb62a17167c1983cb44d13a7c54a535e1207fee1afc8bf416da29",
+  "catalogDigest": "sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66",
   "catalog": {
-    "total": 372,
-    "v1": 370,
+    "total": 382,
+    "v1": 380,
     "reserved": 2,
-    "http": 370,
+    "http": 380,
     "ws": 1,
-    "registerableV1Http": 368,
+    "registerableV1Http": 378,
     "methods": {
-      "GET": 123,
-      "POST": 181,
+      "GET": 128,
+      "POST": 186,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 129,
-      "command": 241,
+      "read": 134,
+      "command": 246,
       "stream": 2
     },
-    "uniqueNames": 372,
-    "uniqueBindings": 371
+    "uniqueNames": 382,
+    "uniqueBindings": 381
   },
   "reservedOperations": [
     "search.query",
@@ -404,9 +404,58 @@
         "source": "server-router"
       },
       {
+        "operation": "mcp.audit.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/mcp/audit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "mcp.proxy.request",
         "method": "POST",
         "path": "/v2/mcp/sessions/:sessionId/servers/:serverId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.catalog.list",
+        "method": "GET",
+        "path": "/v2/mcp/catalog",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.request",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/servers/request",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.create",
+        "method": "POST",
+        "path": "/v2/mcp/tokens",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.list",
+        "method": "GET",
+        "path": "/v2/mcp/tokens",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.revoke",
+        "method": "POST",
+        "path": "/v2/mcp/tokens/:tokenId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.sessions.provenance",
+        "method": "GET",
+        "path": "/v2/mcp/sessions/:sessionId/provenance",
         "status": "registered",
         "source": "server-router"
       },
@@ -1247,6 +1296,27 @@
         "operation": "chat.setModel",
         "method": "POST",
         "path": "/v2/chats/:id/model",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.interrupt",
+        "method": "POST",
+        "path": "/v2/chats/:id/interrupt",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.setMcpSelections",
+        "method": "POST",
+        "path": "/v2/chats/:id/mcp-selections",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.getMcpSelections",
+        "method": "GET",
+        "path": "/v2/chats/:id/mcp-selections",
         "status": "registered",
         "source": "server-router"
       },
@@ -3008,7 +3078,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 340
+    "unimplementedV1Http": 350
   },
   "schemas": {
     "additive": {
@@ -3661,6 +3731,23 @@
         "publicComposite": null
       },
       {
+        "operation": "mcp.audit.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.audit.list",
+        "intentTags": [
+          "mcp",
+          "audit",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "mcp.proxy.request",
         "noun": "mcp",
         "exposure": "public",
@@ -3669,6 +3756,108 @@
           "mcp",
           "proxy",
           "request"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.catalog.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.catalog.list",
+        "intentTags": [
+          "mcp",
+          "catalog",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.request",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.request",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "request"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.create",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.create",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.list",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.revoke",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.revoke",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.sessions.provenance",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.sessions.provenance",
+        "intentTags": [
+          "mcp",
+          "sessions",
+          "provenance"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -5682,6 +5871,58 @@
           "chat",
           "set",
           "model"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.interrupt",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.interrupt",
+        "intentTags": [
+          "chat",
+          "interrupt"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.setMcpSelections",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.setMcpSelections",
+        "intentTags": [
+          "chat",
+          "set",
+          "mcp",
+          "selections"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.getMcpSelections",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.getMcpSelections",
+        "intentTags": [
+          "chat",
+          "get",
+          "mcp",
+          "selections"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -546,6 +546,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // `postTurn`. Sorts between revokeInvite and setEntityHeader.
       'setChatCredentials',
       'setChatModel',
+      // Chat turn management: `chat.interrupt` — the composer's ■ / Esc. The
+      // port had a Stop button and no write behind it.
+      'interruptChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.

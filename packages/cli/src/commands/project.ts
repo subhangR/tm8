@@ -435,6 +435,9 @@ async function projectSpaceList(cmd: CommandContext): Promise<ExitCode> {
  * folder on the node instead, granting it to the Space in the same step. A
  * Space admin who is not a node admin may do so only inside an explicitly
  * configured TM8_PROJECT_ROOTS.
+ *
+ * `project add --name <name>` alone registers the default folder `~/<name>`,
+ * which the server creates (and refuses if it already exists).
  */
 async function projectAdd(cmd: CommandContext): Promise<ExitCode> {
   const workingDirRaw = cmd.options.value('working-dir');
@@ -448,6 +451,11 @@ async function projectAdd(cmd: CommandContext): Promise<ExitCode> {
     }
     body.workingDir = workingDirOf(workingDirRaw);
     if (cmd.options.bool('ensure-working-dir')) body.ensureWorkingDir = true;
+    const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
+    if (trust !== undefined) body.trust = trust;
+    body.name = cmd.options.require('name');
+  } else if (cmd.args[0] === undefined && cmd.options.value('name') !== undefined) {
+    /* Neither a folder nor a path: the server creates the default ~/<name>. */
     const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
     if (trust !== undefined) body.trust = trust;
     body.name = cmd.options.require('name');

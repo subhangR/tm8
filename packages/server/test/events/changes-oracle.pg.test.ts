@@ -20,7 +20,10 @@ import { byteLength, parseChangesQuery, PgChangeFeed } from '../../src/events/ch
 import { PgDurableEventLog } from '../../src/events/poll.js';
 import { ChangesFixture } from './changes-fixture.js';
 
-vi.setConfig({ testTimeout: 600_000, hookTimeout: 900_000 });
+// The space-wide case took 504s of a 600s budget ALONE on a loaded 8-core host
+// (2026-10-21, load ~18) and timed out inside the full suite. The work is the
+// oracle's, not a hang, so the budget is per-test headroom, not a target.
+vi.setConfig({ testTimeout: 1_500_000, hookTimeout: 900_000 });
 
 /** mulberry32 — a seeded PRNG, so a failing case is reproducible by its seed. */
 function rng(seed: number): () => number {

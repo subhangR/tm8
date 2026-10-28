@@ -379,7 +379,27 @@ export type CoreEntityState =
        * link it (107), at LOWER confidence than authored_from/in_worktree.
        */
       headRef?: string | null }
-  | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
+  /*
+   * A commit mirror. `url`/`fetchedAt`/`stale` are here for the same reason the
+   * pull request arm above carries them, and they were missing: the panel's
+   * link-summary row reads `state.url` and `state.stale` for BOTH kinds, so a
+   * commit could never render its `open ↗` link — although `public.commits.url`
+   * held one — and could never show that it was unsynced. The reported bug's
+   * own symptom was unobservable on the entity it was about.
+   *
+   * `stale` is required and not optional, matching the pull request arm: "we
+   * have never fetched this" is a fact the projection always knows, and an
+   * absent boolean would read as false, which is the one wrong answer.
+   *
+   * `author` is ADDITIVE ONLY and changes nothing on screen today — the panel's
+   * DETAILS block renders from `content`, which already carries every column of
+   * `public.commits`, so the author has always been visible there. It is
+   * mirrored onto `state` for typed consumers, consistent with `message`, `sha`
+   * and `committedAt`, which are duplicated from content for the same reason.
+   */
+  | { kind: 'commit'; repository: string; sha: string; message: string;
+      committedAt?: string | null; author?: string | null;
+      url?: string; fetchedAt?: string | null; stale: boolean }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell'; description?: string; equipped: boolean }
   | ({ kind: 'skill'; description?: string; equipped: boolean; changedOnDisk: boolean } & SkillReference)
@@ -1477,6 +1497,13 @@ export interface MessageView extends EntitySummary {
    * everywhere else.
    */
   turnInFlight?: boolean;
+  /**
+   * The work session or chat this message was authored FROM (the recorder-owned
+   * `authored_from` edge), when there is one. Absent on first-party messages.
+   * Rides every message read so a paged transcript needs no second read for
+   * it — the chat surface used to pull a whole `entities.feed` page for this.
+   */
+  sourceWorkSessionId?: EntityId;
 }
 
 // ---------------------------------------------------------------------------
@@ -1605,6 +1632,14 @@ export interface SetChatCredentialsResult extends SetChatCredentialsInput {
   configRevision?: number;
   credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
   appliesAt?: 'next_claim';
+}
+
+/** Stop the chat's running turn. Queued turns behind it still run. */
+export type InterruptChatInput = Record<string, never>;
+export interface InterruptChatResult {
+  chatId: EntityId;
+  /** `requested`: the running turn will end and its done frame says how. `not_running`: nothing to stop. */
+  disposition: 'requested' | 'not_running';
 }
 
 export interface StartChatInput {
@@ -3419,6 +3454,47 @@ export interface CredentialsSpaceReadinessView {
     activeSpaceOwnedCredentials: number;
     reason: CredentialReadinessPollReason | null;
   };
+  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 370). */
+  seeding: CredentialSeedingView;
+}
+
+/**
+ * R1/S7b (task 01a0e75e, doc 01a0e248 §8.3/S9): the R2 seeding gate, per
+ * provider the space USES — never the caller's answer. Used providers are
+ * derived from agent sessions in the last 30 days (their manifests'
+ * `effectiveCredentialSources`; a session with a manifest but no map infers
+ * anthropic from claude-code/claude and openai from codex); github is also used for polling when the space
+ * has a github.com project. `launch` needs an ACTIVE space default the policy
+ * lets run; `poll` needs an ACTIVE space-owned public github credential. A
+ * space with no agent session in the window is `idle` and never red.
+ */
+export type CredentialSeedingNeed = 'launch' | 'poll';
+export type CredentialSeedingLaunchReason = 'policy_excludes_space' | 'stale' | 'no_default' | 'no_credential';
+export type CredentialSeedingState = 'green' | 'red' | 'idle';
+
+export interface CredentialSeedingProvider {
+  ready: boolean;
+  needs: CredentialSeedingNeed[];
+  launchReason: CredentialSeedingLaunchReason | null;
+  pollReason: CredentialReadinessPollReason | null;
+  /** The first failing need's reason; null when ready. */
+  reason: CredentialSeedingLaunchReason | CredentialReadinessPollReason | null;
+}
+
+export interface CredentialSeedingView {
+  /** The window as Postgres prints an interval, e.g. `30 days`. */
+  window: string;
+  agentSessions: number;
+  /** Agent sessions in the window with no effective-source record: counted, not guessed at. */
+  sessionsWithoutRecord: number;
+  githubProjects: number;
+  usedProviders: SpaceCredentialProviderName[];
+  /** One entry per USED provider only. */
+  providers: Partial<Record<SpaceCredentialProviderName, CredentialSeedingProvider>>;
+  missing: SpaceCredentialProviderName[];
+  state: CredentialSeedingState;
+  /** The R2 gate flag: `state !== 'red'`. */
+  readyForCut: boolean;
 }
 
 /** `credentials.space.policy.set` — space admin. The provider rides the path. */
@@ -5972,14 +6048,20 @@ export interface SpaceProject {
  *     step (migration 326). For a space admin who is not a node admin the path
  *     must lie inside an explicitly configured `TM8_PROJECT_ROOTS`.
  */
+/**
+ * `spaces.projects.create`. Three shapes: `folderId` names the project on a
+ * folder already granted to the Space; `workingDir` registers that folder (a
+ * leading `~/` is the node's home); NEITHER registers the home default
+ * `~/<projectDirName(name)>`, creating it when missing (`project-home.ts`).
+ */
 export interface SpaceProjectCreateInput extends CommandContext {
   folderId?: ProjectId;
   workingDir?: string;
   /** With `workingDir`: create it when it is one missing child of an allowed directory. */
   ensureWorkingDir?: boolean;
-  /** With `workingDir`. Only a node admin may register a folder `trusted`. */
+  /** Without `folderId`. Only a node admin may register a folder `trusted`. */
   trust?: ProjectTrustLevel;
-  /** Defaults to the folder's name; required with `workingDir`. */
+  /** Defaults to the folder's name; required without `folderId`. */
   name?: string;
 }
 

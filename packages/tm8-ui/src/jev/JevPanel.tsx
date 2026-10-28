@@ -1,4 +1,4 @@
-import { forwardRef, useId, useState } from 'react';
+import { forwardRef, useId, useState, type ReactNode } from 'react';
 import type { RankedEntity, RankedEntityHeader } from '@tm8/contract';
 
 import { Timestamp } from '../kit';
@@ -313,7 +313,11 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
   modelLabel: string;
   onClose?(): void;
   id?: string;
-}>(function JevPanel({ jev, modelLabel, onClose, id }, headingRef) {
+  /** What the note under the heading says. Default: the launch's words. */
+  note?: string;
+  /** A surface's own recommendation rows (the new chat's mode), above Model. */
+  extra?: ReactNode;
+}>(function JevPanel({ jev, modelLabel, onClose, id, note, extra }, headingRef) {
   /* The last refusal an action returned — Undo teammate with nobody to go
      back to, Apply all's skipped groups — said here instead of swallowed. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -356,7 +360,7 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
           <button type="button" className="jev-link" data-testid="jev-panel-close" onClick={onClose}>Close</button>
         ) : null}
       </div>
-      <p className="jev-panel__note">Nothing changes until you apply it. What you apply goes out with Launch.</p>
+      <p className="jev-panel__note">{note ?? 'Nothing changes until you apply it. What you apply goes out with Launch.'}</p>
       {notice ? <p className="jev-status" role="status" data-testid="jev-panel-notice">{notice}</p> : null}
       {jev.state === 'stale' ? (
         <p className="jev-status" role="status" data-testid="jev-panel-stale">
@@ -364,6 +368,8 @@ export const JevPanel = forwardRef<HTMLHeadingElement, {
           <button type="button" className="jev-link" data-testid="jev-panel-ask-again" onClick={() => jev.ask()}>Ask again</button>
         </p>
       ) : null}
+
+      {extra}
 
       <Section
         target="model"

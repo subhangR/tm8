@@ -52,7 +52,17 @@ it('SQL rejects secret maps, reserved/colliding names, unknown auth and transpor
  }
  await create('collision');await expect(create('COLLISION')).rejects.toBeTruthy();
 });
-it('equips defaults require approval and have no account fallback; [] disables',async()=>{
+it('SQL admits a preregistered client secret only as a TM8_MCP_CLIENT_SECRET_ variable name beside a client id (336)',async()=>{
+ const oauth=(auth:Record<string,unknown>)=>({auth:{type:'oauth2',...auth}});
+ await expect(create('secret-env-'+randomUUID().slice(0,8),oauth({clientId:'issued',clientSecretEnv:'TM8_MCP_CLIENT_SECRET_SLACK'}))).resolves.toBeTruthy();
+ for(const auth of [
+  {clientId:'issued',clientSecretEnv:'TM8_DATABASE_URL'},
+  {clientId:'issued',clientSecretEnv:'TM8_MCP_CLIENT_SECRET_lower'},
+  {clientSecretEnv:'TM8_MCP_CLIENT_SECRET_SLACK'},
+  {clientId:'issued',clientSecret:'fixture-secret'},
+ ]) await expect(create('secret-env-reject-'+randomUUID().slice(0,8),oauth(auth))).rejects.toBeTruthy();
+});
+it('equips defaults require approval; an account-less space resolves nothing; [] disables',async()=>{
  const c=await create('default');const denied=await create('unapproved',{approved:false});
  const task=await as(ownerIdentity,q=>q.rpc<{entity:{id:string}}>('create_task',[spaceId,'MCP task']));
  await as(memberIdentity,q=>q.rpc('write_edge',[task.entity.id,c.entity.id,'equips','{}',null,randomUUID()]));
@@ -61,8 +71,13 @@ it('equips defaults require approval and have no account fallback; [] disables',
  expect(result.selections.map(s=>s.server.id)).toEqual([c.entity.id]);expect(result.ready).toBe(true);
  expect((await as(memberIdentity,q=>resolveMcpSelections(q,{spaceId,targetIds:[task.entity.id],mcpSelections:[]}))).selections).toEqual([]);
  const auth=await create('auth',{auth:{type:'api_key',headerName:'Authorization'},headerKeys:['Authorization']});
+ // 341 resolves an account for a connector with no pin (§3, G15), but there is
+ // no connection in this fixture to resolve, so the answer is unchanged. The
+ // fixture's members have no `accounts` row at all, which must NOT refuse
+ // resolution — it only means there is no personal tier to search.
  const readiness=await as(memberIdentity,q=>resolveMcpSelections(q,{spaceId,mcpSelections:[{serverId:auth.entity.id}]}));
  expect(readiness.selections[0]?.reason).toBe('credential_required');
+ expect(readiness.selections[0]?.credentialId).toBeUndefined();
 });
 it('caches health only for the testing member and current definition version',async()=>{
  const c=await create('health');const result={ready:true,reason:'ready',tools:[],checkedAt:new Date().toISOString()};

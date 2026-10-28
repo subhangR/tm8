@@ -102,6 +102,11 @@
   align-items: stretch;
 }
 
+.project-onboard__folder-row input {
+  flex: 1;
+  font-family: var(--pn-mono);
+}
+
 .project-onboard__folder-row code {
   flex: 1;
   min-width: 0;
@@ -177,6 +182,15 @@
   margin: 0;
   color: var(--pn-ink-4);
   font: 9.5px/1.45 var(--pn-mono);
+}
+
+.project-onboard .project-onboard__help {
+  color: var(--pn-ink-3);
+  font: 11px/1.45 var(--pn-ui);
+}
+
+.project-onboard small code {
+  color: var(--pn-ink-2);
 }
 
 .project-onboard__error {

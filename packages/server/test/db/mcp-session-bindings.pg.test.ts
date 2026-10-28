@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { McpCredentialStore } from '../../src/mcp/credential-store.js';
 import { McpProxy } from '../../src/mcp/proxy.js';
-import { loadMcpServer } from '../../src/mcp/definitions.js';
+import { loadMcpServer, resolveMcpSelections } from '../../src/mcp/definitions.js';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
@@ -56,16 +56,172 @@ afterAll(async()=>{await db?.end();await scratch?.destroy();});
 it('binds launcher authority independently of runtime identity, denies sibling tokens and unselected servers',async()=>{
  const r=await runtime(otherIdentity);
  const picks=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server,credentialId:credential}]});
- expect(picks).toEqual([{serverId:server,credentialId:credential}]);
+ expect(picks).toEqual([{serverId:server,credentialId:credential,serverKey:'bindingfixture'}]);
  expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({identityId:otherIdentity,launcherIdentityId:identity,credentialId:credential});
  await expect(bindings.authorize({...r.claims,authSessionId:randomUUID()},r.sessionId,server)).rejects.toBeTruthy();
  await expect(bindings.authorize(r.claims,r.sessionId,randomUUID())).rejects.toBeTruthy();
  await expect(bindings.authorize({...r.claims,identityId:identity},r.sessionId,server)).rejects.toBeTruthy();
 });
-it('task readers cannot bind another human private account and authentication has no fallback',async()=>{
+it('task readers cannot bind another human private account, nor reach one through an unpinned selection',async()=>{
  const r=await runtime(otherIdentity);
  await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server,credentialId:credential}]})).rejects.toBeTruthy();
- await expect(bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]})).rejects.toBeTruthy();
+ // The §3 resolution 341 adds searches the ROOT's own rows and the Space's
+ // PUBLIC ones. The fixture credential is another human's PRIVATE row, so an
+ // unpinned selection under that other human must still find nothing: the
+ // fallback must never widen who can reach a private account.
+ await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]})).rejects.toBeTruthy();
+});
+it('resolves the root member own connection for an unpinned selection (§3, G15)',async()=>{
+ const r=await runtime(otherIdentity);
+ // Was `credential_required` and a failed launch before 341: the launcher owns
+ // the connection, so an unpinned selection now resolves to exactly that row.
+ const picks=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]});
+ expect(picks).toEqual([{serverId:server,credentialId:credential,serverKey:'bindingfixture'}]);
+ // And the binding holds that exact row, so the live session re-checks it
+ // rather than re-picking.
+ expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({credentialId:credential});
+});
+it('a refused credential leaves a usable transaction, so the launch says why (finding 3)',async()=>{
+ // `Querier.rpc` is a bare client.query with no savepoint, so a raised
+ // read_mcp_credential aborts the whole bind transaction. While readiness was
+ // decided by catching that throw in TypeScript, the resolver's NEXT statement
+ // (loadMcpServer for the following selection) died with 25P02 and the launch
+ // reported an opaque 'internal database error' instead of naming the problem.
+ // Deciding openability in plpgsql instead keeps the refusal inside an implicit
+ // savepoint. Two selections, the first unopenable, is the minimal reproduction.
+ const second=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'bindingsecond'}),null,randomUUID()]);
+ const r=await runtime(otherIdentity);
+ await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,
+  mcpSelections:[{serverId:server,credentialId:credential},{serverId:second.entity.id}]}))
+  .rejects.toThrow(/MCP launch unavailable/);
+});
+it('a delegated launch with no live launcher binding drops defaults instead of refusing (finding 4)',async()=>{
+ // An auth-none connector with defaultOn makes the resolved default set
+ // non-empty for EVERY launch in the space. Before this, that turned a rare
+ // refusal into one that killed every delegated launch: asking for NO
+ // connectors must never refuse the spawn itself.
+ const open=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,
+  JSON.stringify({name:'bindingdefault',transport:'http',url:'https://example.test/open',envKeys:[],headerKeys:[],auth:{type:'none'},approved:true,defaultOn:true}),null,randomUUID()]);
+ // Sanity: it really is in the default set for a normal launcher.
+ const normal=await runtime();
+ expect(await bindings.bind(auth,{sessionId:normal.sessionId,spaceId:space,teamMemberId:teammate,agentToken:normal.token}))
+  .toEqual([{serverId:open.entity.id,serverKey:'bindingdefault'}]);
+ // An agent caller with no verified mcpSource is `sourceUnavailable`.
+ const r=await runtime(otherIdentity);
+ expect(await bindings.bind(r.claims,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token})).toEqual([]);
+ // The binding exists and grants nothing, so authorize refuses the connector.
+ await expect(bindings.authorize(r.claims,r.sessionId,open.entity.id)).rejects.toBeTruthy();
+ // An EXPLICIT selection is still refused: only defaults are dropped.
+ const explicit=await runtime(otherIdentity);
+ await expect(bindings.bind(explicit.claims,{sessionId:explicit.sessionId,spaceId:space,teamMemberId:teammate,agentToken:explicit.token,
+  mcpSelections:[{serverId:open.entity.id}]})).rejects.toThrow(/live launcher binding/);
+ // And an explicit [] is not an ask, so it is allowed.
+ const none=await runtime(otherIdentity);
+ expect(await bindings.bind(none.claims,{sessionId:none.sessionId,spaceId:space,teamMemberId:teammate,agentToken:none.token,mcpSelections:[]})).toEqual([]);
+ // A `defaultOn` connector is space-wide by design, so it belongs to EVERY
+ // launch's default set in this space. Retire it, or it silently joins the
+ // expected sets of the sibling tests below.
+ await db.rpc(auth,'delete_entity',[open.entity.id,null,randomUUID()]);
+});
+it('the loop-executor claim shape is lent no connection, for all three sources (B17/B19)',async()=>{
+ /*
+  * THE SHAPE, verbatim from `createLoopExecutorPort`: the node's loopback
+  * owner, `requestId: 'loop-executor'`, and NO `authKind` at all. It is neither
+  * a human bearer (browser/cli) nor an agent bearer with a live launcher
+  * binding, so §6.1 gives it no root — and `identity` here is the Space OWNER,
+  * who owns the fixture credential. That is the whole danger: 341's tier 1 is
+  * "the root's own connection", resolved under the claims in force, so before
+  * B19 any member's schedule resolved the NODE OWNER's own PRIVATE account.
+  */
+ const loopExecutor:DbClaims={identityId:identity,nodeAdmin:true,requestId:'loop-executor'};
+ const make=(name:string,extra:Record<string,unknown>={})=>db.rpc<{entity:{id:string}}>(auth,
+  'create_mcp_server_entity',[space,JSON.stringify({...definition,name,...extra}),null,randomUUID()]);
+ // Three connectors, one per source, plus the auth-none control.
+ const byDefaultOn=await make('loopdefaulton',{defaultOn:true});
+ const byEquips=await make('loopequips');
+ const explicit=await make('loopexplicit');
+ const openOne=await make('loopopen',{auth:{type:'none'},headerKeys:[],defaultOn:true});
+ try {
+  const task=await db.rpc<{entity:{id:string}}>(auth,'create_task',[space,'Loop provenance fixture']);
+  await db.rpc(auth,'write_edge',[task.entity.id,byEquips.entity.id,'equips','{}',null,randomUUID()]);
+  // Each of the three needs an account the OWNER owns, or "no account" and "no
+  // provenance" would be indistinguishable. Labels are unique per Space.
+  for(const made of [byDefaultOn,byEquips,explicit]) {
+   await db.rpc(auth,'create_mcp_credential',[randomUUID(),space,made.entity.id,`Loop fixture ${made.entity.id}`,
+    Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
+  }
+  const defaults={spaceId:space,teamMemberId:teammate,targetIds:[task.entity.id]};
+  // CONTROL. A human bearer in this Space gets all four: the two auth
+  // connectors resolve the owner's accounts through §3, so what follows is
+  // about provenance and not about the connectors being unusable.
+  const human=await runtime();
+  const asHuman=await bindings.bind(auth,{...defaults,sessionId:human.sessionId,agentToken:human.token});
+  expect(asHuman.map(s=>s.serverId).sort()).toEqual([byDefaultOn.entity.id,byEquips.entity.id,openOne.entity.id].sort());
+  expect(asHuman.filter(s=>s.credentialId).map(s=>s.serverId).sort())
+   .toEqual([byDefaultOn.entity.id,byEquips.entity.id].sort());
+
+  // 1 + 2. The `defaultOn` default and the `equips` default are SKIPPED, not
+  // refused: a schedule firing must still launch. Only the auth-none connector
+  // survives, which is also assertion 4.
+  const fired=await runtime();
+  expect(await bindings.bind(loopExecutor,{...defaults,sessionId:fired.sessionId,agentToken:fired.token}))
+   .toEqual([{serverId:openOne.entity.id,serverKey:'loopopen'}]);
+  // The binding holds exactly that, so no later call can reach the others.
+  expect(await bindings.authorize(fired.claims,fired.sessionId,openOne.entity.id)).toMatchObject({serverId:openOne.entity.id});
+  for(const made of [byDefaultOn,byEquips,explicit]) {
+   await expect(bindings.authorize(fired.claims,fired.sessionId,made.entity.id)).rejects.toBeTruthy();
+  }
+  // And the skip says WHY, where §7.3's launch record and the UI read it.
+  const reported=await db.tx(loopExecutor,q=>resolveMcpSelections(q,{spaceId:space,teamMemberId:teammate,targetIds:[task.entity.id]},{noHumanRoot:true}));
+  expect(reported.skipped?.map(skip=>[skip.name,skip.reason]).sort()).toEqual(
+   [['loopdefaulton','no_human_provenance'],['loopequips','no_human_provenance']]);
+
+  // 3. An EXPLICIT selection naming an auth connector is refused OUT LOUD
+  // (B9's rule: a default is skipped, a named pick is an error), and the
+  // sentence names the real cause rather than "not connected".
+  const named=await runtime();
+  await expect(bindings.bind(loopExecutor,{...defaults,sessionId:named.sessionId,agentToken:named.token,
+   mcpSelections:[{serverId:explicit.entity.id}]})).rejects.toThrow(/MCP delegated launch requires a human root/);
+  // A PIN is refused too: the pin is this caller's own assertion, and the point
+  // is that this caller cannot vouch for a human at all.
+  const credentials=await db.rpc<Array<{id:string}>>(auth,'list_mcp_credentials',[explicit.entity.id,null]);
+  expect(credentials).toHaveLength(1);
+  await expect(bindings.bind(loopExecutor,{...defaults,sessionId:named.sessionId,agentToken:named.token,
+   mcpSelections:[{serverId:explicit.entity.id,credentialId:credentials[0]!.id}]}))
+   .rejects.toThrow(/MCP delegated launch requires a human root/);
+  // 4. An explicitly named auth-NONE connector still binds: the rule withholds
+  // connections, not connectors.
+  expect(await bindings.bind(loopExecutor,{...defaults,sessionId:named.sessionId,agentToken:named.token,
+   mcpSelections:[{serverId:openOne.entity.id}]})).toEqual([{serverId:openOne.entity.id,serverKey:'loopopen'}]);
+
+  // A BINDING WRITTEN BEFORE #1316 must not keep working. Reproduce one
+  // exactly: 343 records a root, and a row from before it has none, so the only
+  // thing left to judge it by is the launcher kind it stored — which for the
+  // rootless shapes is ''. Clearing the root columns as well as the kind is what
+  // makes this a pre-343 row rather than a 343 row with a damaged kind.
+  const legacy=await runtime();
+  await bindings.bind(auth,{...defaults,sessionId:legacy.sessionId,agentToken:legacy.token,
+   mcpSelections:[{serverId:byDefaultOn.entity.id}]});
+  await bindings.authorize(legacy.claims,legacy.sessionId,byDefaultOn.entity.id);
+  await scratch.query(`update internal.mcp_session_bindings
+    set launcher_auth_kind='', root_member_id=null, root_identity_id=null, chain=null, chain_space_ids=null
+    where session_id=$1`,[legacy.sessionId]);
+  await expect(bindings.authorize(legacy.claims,legacy.sessionId,byDefaultOn.entity.id))
+   .rejects.toThrow(/MCP connector access has changed/);
+  // And the mirror: a 343 row whose RECORDED ROOT is intact is judged by that
+  // root, not by a launcher kind — so clearing only the kind changes nothing.
+  // Without this cell the line above would pass for the wrong reason.
+  const kept=await runtime();
+  await bindings.bind(auth,{...defaults,sessionId:kept.sessionId,agentToken:kept.token,
+   mcpSelections:[{serverId:byDefaultOn.entity.id}]});
+  await scratch.query("update internal.mcp_session_bindings set launcher_auth_kind='' where session_id=$1",[kept.sessionId]);
+  expect(await bindings.authorize(kept.claims,kept.sessionId,byDefaultOn.entity.id))
+   .toMatchObject({serverId:byDefaultOn.entity.id,rootIdentityId:identity});
+ } finally {
+  // `defaultOn` is space-wide, so these would silently join every sibling
+  // test's expected default set.
+  for(const made of [byDefaultOn,openOne]) await db.rpc(auth,'delete_entity',[made.entity.id,null,randomUUID()]);
+ }
 });
 it('explicit [] persists across resume and cannot grant a connector',async()=>{
  const r=await runtime();
@@ -186,9 +342,9 @@ it('omitted selections resolve attached defaults, [] disables, and a nonempty li
  await db.rpc(auth,'write_edge',[task.entity.id,a.entity.id,'equips','{}',null,randomUUID()]);
  const r=await runtime();
  const input={sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,targetIds:[task.entity.id],agentToken:r.token};
- expect(await bindings.bind(auth,input)).toEqual([{serverId:a.entity.id}]);
+ expect(await bindings.bind(auth,input)).toEqual([{serverId:a.entity.id,serverKey:'defaultone'}]);
  expect(await bindings.bind(auth,{...input,mcpSelections:[]})).toEqual([]);
- expect(await bindings.bind(auth,{...input,mcpSelections:[{serverId:b.entity.id}]})).toEqual([{serverId:b.entity.id}]);
+ expect(await bindings.bind(auth,{...input,mcpSelections:[{serverId:b.entity.id}]})).toEqual([{serverId:b.entity.id,serverKey:'explicitreplacement'}]);
  await expect(bindings.authorize(r.claims,r.sessionId,a.entity.id)).rejects.toBeTruthy();
 });
 
@@ -200,7 +356,7 @@ it('chat about-task defaults honor omission and a new sender cannot inherit the 
  await db.rpc(auth,'start_chat',[chatId,space,teammate,'claude-sonnet-4-5','anthropic','claude-code','ask','scratch',null,randomUUID(),'/tmp/mcp-chat-fixture','MCP chat','Hello',[],task.entity.id,randomUUID()]);
  const minted=await issueAgentRuntimeSession(db,auth,{chatId,teamMemberId:teammate});
  const input={sessionId:chatId,spaceId:space,teamMemberId:teammate,agentToken:minted.token,resume:true};
- expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id}]);
+ expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id,serverKey:'chatdefault'}]);
  const selected=randomUUID();
  await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Chat private fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[{serverId:server,credentialId:selected}]});
@@ -218,4 +374,33 @@ it('a session started through a space link launches with no MCP servers; naming 
  await expect(bindings.bind(linkAuth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]}))
   .rejects.toThrow(/space link/);
  await expect(bindings.authorize({...linkAuth,authSessionId:r.authSessionId},r.sessionId,server)).rejects.toThrow();
+});
+
+/**
+ * §4.2. `bind` answers the launcher with the tool prefix the model will read,
+ * and it is DERIVED, not stored: the durable binding keeps the bare
+ * `{serverId, credentialId}` pair that `read_mcp_launch_selections` and
+ * `authorize` parse with the strict `McpSelectionsSchema`. That is what lets a
+ * rename change the prefix at the next launch instead of leaving a dead name
+ * behind in a resumed session — and it is why adding the key to the stored JSON
+ * would break resume outright.
+ */
+it('answers the readable server key but stores only the selection pair (§4.2)', async () => {
+  const renamed = await db.rpc<{ entity: { id: string; version: number } }>(auth, 'create_mcp_server_entity',
+    [space, JSON.stringify({ ...definition, name: 'Key-Fixture', auth: { type: 'none' }, headerKeys: [] }), null, randomUUID()]);
+  const r = await runtime();
+  const input = { sessionId: r.sessionId, spaceId: space, teamMemberId: teammate, agentToken: r.token };
+  expect(await bindings.bind(auth, { ...input, mcpSelections: [{ serverId: renamed.entity.id }] }))
+    .toEqual([{ serverId: renamed.entity.id, serverKey: 'key_fixture' }]);
+
+  // The stored binding is the bare pair; the strict schema would reject a key.
+  const stored = await db.rpc<unknown>(auth, 'read_mcp_launch_selections', [r.sessionId]);
+  expect(stored).toEqual([{ serverId: renamed.entity.id }]);
+
+  // Rename the connector: the next launch names it by its NEW key, and resume
+  // (which re-reads the stored pair) does too.
+  await db.rpc(auth, 'update_mcp_server_entity', [renamed.entity.id, renamed.entity.version,
+    JSON.stringify({ ...definition, name: 'Gmail', auth: { type: 'none' }, headerKeys: [] }), null, randomUUID()]);
+  expect(await bindings.bind(auth, { ...input, resume: true }))
+    .toEqual([{ serverId: renamed.entity.id, serverKey: 'gmail' }]);
 });

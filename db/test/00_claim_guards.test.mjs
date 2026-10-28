@@ -161,7 +161,8 @@ test('F2 — the credential tables themselves are unreadable to tm8_app, claims 
     'auth_sessions', // token hashes
     'command_ledger',
     'notification_outbox',
-    'space_event_seq',
+    // space_event_seq is NOT here: 035 gave it a member-scoped SELECT policy and
+    // grant so the facade can read its own space's high-water mark.
     'undo_tokens',
   ]) {
     denied(

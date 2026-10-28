@@ -271,19 +271,58 @@ describe('the title, written in the editor', () => {
 });
 
 describe('a doc New doc just made', () => {
-  it('opens in the editor with the caret in the title — once', () => {
+  it('opens in the editor with the caret in the text — once', () => {
     const { commands } = scriptedCommands();
     markFreshDoc(DOC_ID);
     const view = mount(commands, docDetail('', 1, 'Untitled'));
 
     expect(screen.getByTestId('reader-surface').getAttribute('data-stance')).toBe('edit');
+    expect(document.activeElement).toBe(bodyField());
     const title = screen.getByTestId('doc-title') as HTMLInputElement;
-    expect(document.activeElement).toBe(title);
     expect(title.value).toBe('');
     expect(title.placeholder).toBe('Untitled');
 
     view.unmount();
     mount(commands, docDetail('', 1, 'Untitled'));
     expect(screen.getByTestId('reader-surface').getAttribute('data-stance')).toBe('read');
+  });
+});
+
+describe('the title writes itself', () => {
+  it('follows the first line of a new doc, in the same patch as the text', async () => {
+    const { commands, sent } = scriptedCommands();
+    markFreshDoc(DOC_ID);
+    mount(commands, docDetail('', 1, 'Untitled'));
+
+    typeBody('# Launch plan\n\nShip it on Friday.');
+    expect((screen.getByTestId('doc-title') as HTMLInputElement).value).toBe('Launch plan');
+    await pause();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.title).toBe('Launch plan');
+  });
+
+  it('lets go once the person names the doc', async () => {
+    const { commands, sent } = scriptedCommands();
+    markFreshDoc(DOC_ID);
+    mount(commands, docDetail('', 1, 'Untitled'));
+
+    typeBody('first idea');
+    fireEvent.change(screen.getByTestId('doc-title'), { target: { value: 'My name for it' } });
+    typeBody('a different first line');
+    await pause();
+
+    expect(sent[0]!.title).toBe('My name for it');
+  });
+
+  it('never renames an older doc someone left untitled', async () => {
+    const { commands, sent } = scriptedCommands();
+    mount(commands, docDetail('', 1, 'Untitled'));
+    enterEdit();
+
+    typeBody('some text');
+    await pause();
+
+    expect(sent[0]!.title).toBeUndefined();
   });
 });

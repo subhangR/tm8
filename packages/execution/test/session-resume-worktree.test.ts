@@ -129,9 +129,12 @@ describe('resume preserves the worktree it was given (D1) and releases it on exi
   afterEach(async () => {
     vi.restoreAllMocks();
     pty.shutdownAll();
+    // shutdownAll does not wait for the shim to exit, and a dying shim can still
+    // be writing into its dir: on a loaded runner the rmdir then races it and
+    // fails ENOTEMPTY. rm retries exactly that error.
     await Promise.all(
       [dataDir, projectDir, worktreeDir, binDir].map((d) =>
-        rm(d, { recursive: true, force: true }),
+        rm(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
       ),
     );
   });

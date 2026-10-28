@@ -22,8 +22,10 @@ import './phone-page.css';
 /** The kinds with a real phone screen in v1 (ruling 7). Everything else is generic. */
 export const PHONE_SCREEN_KINDS: ReadonlySet<string> = new Set(['chat', 'doc', 'task', 'work_session', 'artifact']);
 
-/** Pages whose Messages section sits below the body (ruling 8); others list them under Linked. */
-export const MESSAGES_ON_PAGE: ReadonlySet<string> = new Set(['task', 'doc', 'work_session']);
+/** Pages whose Messages section sits below the body (ruling 8); others list them under Linked.
+    A doc left this set on 2026-10-19 (owner ruling): it reads full screen, and its
+    discussion is the Messages row on its action button. */
+export const MESSAGES_ON_PAGE: ReadonlySet<string> = new Set(['task', 'work_session']);
 
 export function hasPhoneScreen(kind: string): boolean {
   return PHONE_SCREEN_KINDS.has(kind);

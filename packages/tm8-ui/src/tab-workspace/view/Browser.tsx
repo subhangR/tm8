@@ -21,9 +21,12 @@ import { useLaunchPort } from '../../views/useLaunchPort';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useSessionStart } from '../../views/useSessionStart';
+import { useDismissable } from '../../panels/useDismissable';
 import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { requestLinkFocus } from '../../panels/list/linkFocus';
+import { projectRecordPort } from '../../projects/project-record';
+import { useProjectRowNote } from '../../projects/ProjectRowNote';
 import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { useStore } from 'zustand';
@@ -195,47 +198,147 @@ export function PanelTop({ searchable = false }: { searchable?: boolean }) {
   );
 }
 
-/** The two kinds every list column can start, whatever it is listing. */
-const QUICK_NEW_KINDS = ['chat', 'task'] as const satisfies readonly KindId[];
+/**
+ * The tile's cells, left to right (Subhang 2026-10-20: "chat | task | terminal
+ * | doc | drawing, only icons"). `terminal` is not a kind: it asks which
+ * project and starts a shell; every other cell opens that kind's draft.
+ */
+const QUICK_NEW_CELLS = ['chat', 'task', 'terminal', 'doc', 'drawing'] as const satisfies readonly (KindId | 'terminal')[];
+
+/** A project the tile's Terminal can open in (`data.launch.projects`). */
+export interface TerminalProjectOption {
+  id: string;
+  name: string;
+  trusted: boolean;
+  /** `trusted · <working dir>` for a trusted project. */
+  detail: string;
+  reason?: string;
+}
+
+export interface QuickNewTerminal {
+  /** Absent ⇒ no seam or space: Terminal is drawn refused, never live. */
+  start?: (projectId: string | null) => void;
+  projects: readonly TerminalProjectOption[];
+}
 
 /**
- * NEW CHAT · NEW TASK (pinned-only rail, Subhang 2026-10-17): one row at the
- * head of every list, side by side. Each opens the same draft the list's own
- * ＋ opens for that kind; a kind the registry refuses dims with its reason.
- * One black-and-white paper tile split in two (Subhang 2026-10-18, option B,
- * joined), each half wearing its kind's mark.
+ * NEW CHAT · TASK · TERMINAL · DOC · DRAWING (pinned-only rail, Subhang
+ * 2026-10-17; icons only, five cells, 2026-10-20): one row at the head of
+ * every list. Each kind cell opens the same draft the list's own ＋ opens for
+ * that kind — a new chat picks its project on the composer's own chip.
+ * Terminal ASKS which project first (Subhang: "only terminal asks for the
+ * project"; Bhargav: terminals start in the project's folder) and starts the
+ * shell there, or in a scratch directory. One black-and-white paper tile, each
+ * cell wearing its kind's mark, named by its tooltip and aria-label.
  */
-function QuickNew() {
+export function QuickNew({ terminal }: { terminal: QuickNewTerminal }) {
   const { dispatch } = useWorkspace();
+  const [asking, setAsking] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setAsking(false), []);
+  useDismissable(asking, boxRef, close);
+  const start = terminal.start;
+  const terminalRefusal = start ? null : 'Terminals cannot be started here — no node is connected';
   return (
-    <div className="tws-quicknew" role="group" aria-label="New" data-testid="tws-quicknew">
-      {QUICK_NEW_KINDS.map((kind) => {
-        const adapter = getKindAdapter(kind);
-        const disabledReason = adapter.creatable === true ? null : adapter.creatable.disabledReason;
-        const label = `New ${adapter.noun.toLowerCase()}`;
-        return (
+    <div className="tws-quicknew-box" ref={boxRef}>
+      <div className="tws-quicknew" role="group" aria-label="New" data-testid="tws-quicknew">
+        {QUICK_NEW_CELLS.map((cell) => {
+          if (cell === 'terminal') {
+            return (
+              <button
+                key={cell}
+                type="button"
+                className="tws-quicknew__btn"
+                aria-label="New terminal"
+                aria-haspopup="menu"
+                aria-expanded={asking}
+                aria-disabled={terminalRefusal !== null || undefined}
+                title={terminalRefusal ?? 'New terminal — pick the project folder it opens in'}
+                data-kind="terminal"
+                data-testid="tws-quicknew-terminal"
+                onClick={() => {
+                  if (terminalRefusal !== null) return;
+                  setAsking((was) => !was);
+                }}
+              >
+                <span className="tws-quicknew__glyph" aria-hidden>
+                  <VectorIcon paths={KIND_ART.work_session} size={16} strokeWidth={1.5} />
+                </span>
+              </button>
+            );
+          }
+          const adapter = getKindAdapter(cell);
+          const disabledReason = adapter.creatable === true ? null : adapter.creatable.disabledReason;
+          const label = `New ${adapter.noun.toLowerCase()}`;
+          return (
+            <button
+              key={cell}
+              type="button"
+              className="tws-quicknew__btn"
+              aria-label={label}
+              aria-disabled={disabledReason !== null || undefined}
+              title={disabledReason ?? label}
+              data-kind={cell}
+              data-testid={`tws-quicknew-${cell}`}
+              onClick={() => {
+                if (disabledReason !== null) return;
+                dispatch({ command: 'workspace.drafts.open', args: { kind: cell }, source: 'click' });
+              }}
+            >
+              <span className="tws-quicknew__glyph" aria-hidden>
+                <VectorIcon paths={KIND_ART[cell]} size={16} strokeWidth={1.5} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {asking && start ? (
+        <div className="tws-quicknew-menu" role="menu" aria-label="Open a terminal in" data-testid="tws-quicknew-terminal-menu">
+          <p className="tws-quicknew-menu__heading">Open a terminal in</p>
+          {terminal.projects.map((project) => {
+            const refused = project.trusted ? null : project.reason ?? 'untrusted — trust it in Node settings';
+            return (
+              <button
+                key={project.id}
+                type="button"
+                role="menuitem"
+                className="tws-quicknew-menu__opt"
+                aria-disabled={refused !== null || undefined}
+                title={refused ?? project.detail}
+                data-testid={`tws-quicknew-terminal-${project.id}`}
+                onClick={() => {
+                  if (refused !== null) return;
+                  close();
+                  start(project.id);
+                }}
+              >
+                <span className="tws-quicknew-menu__name">{project.name}</span>
+                <span className="tws-quicknew-menu__hint">{refused ?? workingDirOf(project.detail)}</span>
+              </button>
+            );
+          })}
           <button
-            key={kind}
             type="button"
-            className="tws-quicknew__btn"
-            aria-disabled={disabledReason !== null || undefined}
-            title={disabledReason ?? label}
-            data-kind={kind}
-            data-testid={`tws-quicknew-${kind}`}
+            role="menuitem"
+            className="tws-quicknew-menu__opt"
+            data-testid="tws-quicknew-terminal-scratch"
             onClick={() => {
-              if (disabledReason !== null) return;
-              dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' });
+              close();
+              start(null);
             }}
           >
-            <span className="tws-quicknew__glyph" aria-hidden>
-              <VectorIcon paths={KIND_ART[kind]} size={14} strokeWidth={1.5} />
-            </span>
-            <span className="tws-quicknew__label">{label}</span>
+            <span className="tws-quicknew-menu__name">Scratch</span>
+            <span className="tws-quicknew-menu__hint">a private empty directory</span>
           </button>
-        );
-      })}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+/** `trusted · ~/code/x` → `~/code/x`: the menu's hint is the folder itself. */
+function workingDirOf(detail: string): string {
+  return detail.replace(/^trusted · /, '');
 }
 
 function EntityBrowser() {
@@ -388,15 +491,17 @@ function EntityBrowser() {
       if (state.tier) return <ListState text={`No ${state.tier.toLowerCase()} ${nounPlural}`} />;
       return (
         <ListState
-          text={`No ${nounPlural} yet`}
+          text={EMPTY_TEXT[kind] ?? `No ${nounPlural} yet`}
           {...(disabledReason === null ? { action: { label: `New ${noun}`, run: createDraft } } : {})}
         />
       );
     },
-    [retry, clearSearch, createDraft, disabledReason, noun, nounPlural],
+    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural],
   );
 
   const verbs = useRowVerbs(kind);
+  /* A project row's second line is its folder and trust (task 01a15a00). */
+  const rowNoteOf = useProjectRowNote(kind === 'project' ? projectRecordPort(data.seam, data.spaceId) : null);
 
   const source = needsMeListSource(attentionApi, kind, data, {
     rowsFor: data.rowsFor(kind),
@@ -415,7 +520,7 @@ function EntityBrowser() {
       {pinnedRail ? (
         <PanelTop searchable />
       ) : null}
-      {pinnedRail ? <QuickNew /> : null}
+      {pinnedRail ? <QuickNew terminal={verbs.terminal} /> : null}
       <div
         className="tws-browser-list"
         ref={listRef}
@@ -506,6 +611,7 @@ function EntityBrowser() {
           onFiltersChange={onFiltersChange}
           bodyRef={scroll.ref}
           renderEmpty={renderEmpty}
+          {...(rowNoteOf ? { rowNoteOf } : {})}
         />
       </div>
     </section>
@@ -582,7 +688,14 @@ function useRowVerbs(kind: string) {
     [sessionStart.onAction, sessionStart.wiredActions, chatAbout.onAction, chatAbout.wiredActions],
   );
   const rowLifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
-  return { launch, primaries, listActions, rowLifecycle };
+  const terminal = useMemo<QuickNewTerminal>(
+    () => ({
+      ...(sessionStart.onAction ? { start: (projectId: string | null) => sessionStart.startTerminal(projectId) } : {}),
+      projects: data.launch.projects.filter((project) => !project.scratch),
+    }),
+    [sessionStart, data.launch.projects],
+  );
+  return { launch, primaries, listActions, rowLifecycle, terminal };
 }
 
 /**
@@ -703,6 +816,12 @@ function useTierRowEdges(hostRef: RefObject<HTMLDivElement | null>) {
 }
 
 /** The list's empty and no-match states (design log §11): one line and a text action. */
+/** A kind whose empty list needs to say what the thing IS before asking for one. */
+const EMPTY_TEXT: Partial<Record<string, string>> = {
+  project:
+    'No projects yet. A project is a folder on the node: its chats, sessions, worktrees and terminals start there.',
+};
+
 function ListState({ text, action }: { text: string; action?: { label: string; run: () => void } }) {
   return (
     <div className="tws-browser-state" role="status">

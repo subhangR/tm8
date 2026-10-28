@@ -9,6 +9,7 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
+import { projectRecordPort } from '../projects/project-record';
 import { useAttentionOptional } from '../attention';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -494,6 +495,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     detail={detail ?? null}
                     serverBaseUrl={props.serverBaseUrl}
                     loading={!detail}
+                    projectRecords={projectRecordPort(data.seam, data.spaceId)}
                     host={host}
                     reasons={reasons}
                     ctx={{ ...ctx, entityId: id }}

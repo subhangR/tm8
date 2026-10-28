@@ -152,7 +152,7 @@ describe('private generation launch composition', () => {
     const kimi = createChatPreparedLaunchResolver({ ...options, memberCredentials: { resolve: async () => ({
       provider: 'kimi', homeDir: dataDir, configDir: join(dataDir, 'kimi'), apiKey: KEY,
     }) } });
-    const next = await kimi({ ...input, model: 'kimi-k2-thinking', agentTool: 'claude-code', provider: 'moonshot' }, owner, fence);
+    const next = await kimi({ ...input, model: 'kimi-k3', agentTool: 'claude-code', provider: 'moonshot' }, owner, fence);
     const kimiMaterial = await next.launch.materialize();
     expect(kimiMaterial.env.ANTHROPIC_BASE_URL).toBe('https://api.moonshot.ai/anthropic');
     expect(kimiMaterial.env.ANTHROPIC_AUTH_TOKEN).toBe(KEY);
