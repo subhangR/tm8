@@ -6,13 +6,16 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PTY_WS_PROTOCOL, PTY_GRANT_PROTOCOL_PREFIX, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { PTY_WS_PROTOCOL, PTY_GRANT_PROTOCOL_PREFIX, TOOL_STARTERS, toolStarterDefinition, toolStarterNamed, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
 import { parseInvocation } from '../src/args.js';
 import { run } from '../src/run.js';
-import { parseToolArgs, renderToolHelp, type ToolHelp } from '../src/commands/tool-args.js';
+import { parseToolArgs, parseToolValue, renderToolHelp, type ToolHelp } from '../src/commands/tool-args.js';
+import { duration, type ToolListItem } from '../src/commands/tool-views.js';
 import { toolRunExitCode } from '../src/commands/tool-terminal.js';
 import * as secretReader from '../src/commands/tool-secret.js';
 import { nounHelp } from '../src/discovery/help.js';
+// The first run() of the file pays the CLI's module warm-up, several seconds on a loaded runner.
+vi.setConfig({ testTimeout: 20000 });
 
 const TOOL = '11111111-1111-7111-8111-111111111111';
 const SESSION = '22222222-2222-7222-8222-222222222222';
@@ -41,16 +44,29 @@ let stdout = '', stderr = '', fast = false, completed = false, exitCode = 37, ke
 let namePage = 0;
 let noReplay = false, statusDelay = 0, noTerminalEnd = false;
 const AUTHOR = { id: CREDENTIAL, kind: 'team_member' as const, displayName: 'Author', isAgent: false };
-// Stored snapshots, newest first, as entities.versions returns them; v2 and v3 were folded into v4.
-const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<string, unknown> = {}) => ({
+// Stored snapshots, newest first, as entities.versions returns them. Since migration 381 a definition
+// write pins execution_version = version; a configuration, secret or metadata write keeps the older pin.
+const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<string, unknown> = {}, executionVersion = version) => ({
   entityId: TOOL, version, changedBy: AUTHOR, changedAt: `2026-10-28T1${version}:00:00.000Z`,
   snapshot: { entity: { id: TOOL, kind: 'tool', version }, content: { title: 'demo', definition: { ...definition, ...patch },
-    execution_version: version, config_revision: Object.keys(config).length, config, secretBindings: [] } },
+    execution_version: executionVersion, config_revision: Object.keys(config).length, config, secretBindings: [] } },
 });
 let history: ReturnType<typeof stored>[] = [], versionPageCap = 200;
+// Starter installs: the Space's tools (served two per page), and refusals by tool name.
+let spaceTools: ToolView[] | undefined, headerRefused = false;
+let createRefusals: Record<string, { status: number; code: string; message: string }> = {};
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+const toolNamed = (name: string, id: string, source = toolStarterNamed(name)!.source): ToolView =>
+  ({ ...tool, id, version: 3, sourceSha256: sha256(source), definition: { ...definition, name, source } });
+const createdId = (name: string): string => `5555555${TOOL_STARTERS.findIndex(starter => starter.name === name) + 1}-5555-7555-8555-555555555555`;
+const refuse = (res: import('node:http').ServerResponse, status: number, code: string, message: string): void => {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ error: { code, message, retryable: false, requestId: 'test' } }));
+};
 const storedRun = (): ToolRun => ({ id: SESSION, spaceId: SPACE, toolId: TOOL, toolVersion: tool.version,
   sourceSha256: tool.sourceSha256, inputs: {}, state: completed ? 'exited' : 'running', keepOpen,
-  exitCode: completed ? exitCode : null, startedAt: null, exitedAt: null, outputTail: 'stored output\n', parentSessionId: null });
+  exitCode: completed ? exitCode : null, startedAt: completed ? '2026-10-28T18:36:37.000Z' : null, exitedAt: completed ? '2026-10-28T18:36:41.400Z' : null,
+  outputTail: 'stored output\n', parentSessionId: null, invoker: AUTHOR });
 
 class TerminalSocket extends EventTarget {
   static instances: TerminalSocket[] = [];
@@ -89,8 +105,15 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/tools')) {
         // Name lookup must paginate and match exactly rather than pick a substring.
         if (url.searchParams.has('words') && namePage++ === 0) data = { items: [{ ...tool, definition: { ...tool.definition, name: 'demo-other' } }], nextCursor: 'next' };
-        else data = { items: [tool], nextCursor: null };
-        if (req.method === 'POST') data = tool;
+        else if (spaceTools) {
+          const start = Number(url.searchParams.get('cursor') ?? 0);
+          data = { items: spaceTools.slice(start, start + 2), nextCursor: start + 2 < spaceTools.length ? String(start + 2) : null };
+        } else data = { items: [tool], nextCursor: null };
+        if (req.method === 'POST') {
+          const refusal = createRefusals[body.definition?.name];
+          if (refusal) { refuse(res, refusal.status, refusal.code, refusal.message); return; }
+          data = spaceTools ? { ...tool, id: createdId(body.definition.name), version: 1, definition: body.definition } : tool;
+        }
       } else if (url.pathname.endsWith('/help')) data = { ...help(), ...(helpVersionMismatch ? { version: tool.version + 1 } : {}) };
       else if (url.pathname.endsWith('/run')) {
         if (conflict) {
@@ -111,6 +134,10 @@ beforeAll(async () => {
       }
       else if (url.pathname.includes('/tool-runs/')) data = storedRun();
       else if (url.pathname.endsWith('/secrets/bind')) data = { inputName: 'auth', keyHint: '••••' };
+      else if (url.pathname.endsWith('/header')) {
+        if (headerRefused) { refuse(res, 403, 'forbidden', 'Header writes are not allowed here'); return; }
+        data = { entityId: url.pathname.split('/')[3], version: 1 };
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -123,14 +150,17 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
 beforeEach(() => {
   tool = { id: TOOL, spaceId: SPACE, version: 23, sourceSha256: 'a'.repeat(64), definition,
-    executionVersion: 1, configRevision: 0, config: {}, secretBindings: [], sourceChangedSinceViewerLastRun: null };
+    executionVersion: 6, configRevision: 0, config: {}, secretBindings: [], sourceChangedSinceViewerLastRun: null };
   requests = []; stdout = ''; stderr = ''; fast = false; completed = false; exitCode = 37; keepOpen = false; conflict = false; helpVersionMismatch = false; namePage = 0;
   TerminalSocket.instances = [];
   noReplay = false; statusDelay = 0; noTerminalEnd = false; versionPageCap = 200;
+  spaceTools = undefined; headerRefused = false; createRefusals = {};
   history = [
+    // v6: an inputs edit after migration 381 (pin 6). v5: a configuration write before it (pin 2).
+    // v4: a source edit before it whose v2 and v3 folded into it (pin 2). v1: created.
     stored(6, { source: 'echo one\necho two\n', help: 'New help', inputs: definition.inputs.slice(0, 2) }, { limit: 4 }),
-    stored(5, { source: 'echo one\necho two\n' }, { limit: 4 }),
-    stored(4, { source: 'echo one\necho two\n' }),
+    stored(5, { source: 'echo one\necho two\n' }, { limit: 4 }, 2),
+    stored(4, { source: 'echo one\necho two\n' }, {}, 2),
     stored(1, { source: 'echo one\n' }),
   ];
   vi.stubEnv('TM8_BASE_URL', baseUrl); vi.stubEnv('TM8_SPACE_ID', SPACE); vi.stubEnv('TM8_CREDENTIALS_MODE', 'off');
@@ -158,6 +188,16 @@ describe('dynamic arguments', () => {
   });
   it.each([['--state', 'other'], ['-l', '0'], ['-l', '1.1'], ['--ratio', 'NaN'], ['--payload', 'bad'], ['--location', ''], ['--draft=false'], ['-l'], ['-d', '--no-draft'], ['--unknown', 'oops']])('rejects invalid tool arguments %j', (...argv) => {
     expect(() => parseToolArgs(definition.inputs, argv)).toThrow();
+  });
+  it('names the declared range or number rule when a value is out of bounds, never the value itself', () => {
+    expect(() => parseToolArgs(definition.inputs, ['-l', '500'])).toThrow('limit must be between 1 and 100');
+    expect(() => parseToolArgs(definition.inputs, ['-l', '500'])).not.toThrow('500');
+    expect(() => parseToolArgs(definition.inputs, ['-l', '1.5'])).toThrow('limit expects an integer');
+    expect(() => parseToolArgs(definition.inputs, ['--ratio', 'abc'])).toThrow('ratio expects a number');
+    expect(() => parseToolValue({ name: 'since', type: 'int', min: 0 }, '-1')).toThrow('since must be at least 0');
+    expect(() => parseToolValue({ name: 'share', type: 'number', max: 1 }, '2')).toThrow('share must be at most 1');
+    expect(() => parseToolValue({ name: 'count', type: 'int' }, '1e400')).toThrow('count expects an integer');
+    expect(() => parseToolArgs(definition.inputs, ['--state', 'other'])).toThrow('Invalid enum value for state; choose open|closed');
   });
   it('requires an input unless configured or defaulted, including false and null defaults', () => {
     expect(() => parseToolArgs([{ name: 'repo', type: 'string', required: true }], [])).toThrow('Missing required inputs: repo');
@@ -215,6 +255,44 @@ describe('catalog commands and version pin', () => {
     expect(await run(['tool', 'config', 'set', TOOL, 'auth', 'private-value'])).toBe(2);
     expect(stdout + stderr).not.toContain('private-value');
   });
+  it('renders tool list and runs as tables for a human, while --format json stays the DTO', async () => {
+    const URL_CHECK = '77777777-7777-7777-8777-777777777777', OTHER = '66666666-6666-7666-8666-666666666666';
+    const listed = (name: string, id: string, lastRun?: ToolListItem['lastRun']): ToolListItem =>
+      ({ ...tool, id, version: 3, executionVersion: 2, definition: { ...definition, name, tm8Access: name === 'space-digest' ? 'read' : 'none' }, ...(lastRun === undefined ? {} : { lastRun }) });
+    spaceTools = [listed('demo', TOOL, { sessionId: SESSION, state: 'exited', exitCode: 1, startedAt: '2026-10-28T18:36:37.415Z', exitedAt: '2026-10-28T18:36:38.340Z' }),
+      listed('space-digest', URL_CHECK, null), listed('gh-pr-status', OTHER)];
+    expect(await run(['tool', 'list', '--limit', '2'])).toBe(0);
+    expect(stdout.split('\n')).toEqual([
+      'name          runtime  version  access  last-run',
+      'demo          bash     v2       none    exited 1 2026-10-28T18:36:37.415Z',
+      'space-digest  bash     v2       read    never',
+      'more: tm8 tool list --cursor 2', '']);
+    expect(stdout).not.toContain('echo hello');
+    stdout = '';
+    expect(await run(['tool', 'list', '--cursor', '2'])).toBe(0);
+    expect(stdout).toBe('name          runtime  version  access  last-run\ngh-pr-status  bash     v2       none\n');
+    stdout = '';
+    // The mock answers the first --words listing with a further page.
+    expect(await run(['tool', 'list', '--words', 'gh'])).toBe(0);
+    // The entity version (23) is the concurrency token; the table prints the execution version runs pin.
+    expect(stdout).toBe('name        runtime  version  access  last-run\ndemo-other  bash     v6       none\nmore: tm8 tool list --words "gh" --cursor next\n');
+    stdout = '';
+    expect(await run(['tool', 'list', '--format', 'json', '--limit', '2'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ items: spaceTools.slice(0, 2), nextCursor: '2' });
+    stdout = ''; spaceTools = [];
+    expect(await run(['tool', 'list'])).toBe(0);
+    expect(stdout).toBe('no tools in this Space; create one with tm8 tool create, or tm8 tool starters install\n');
+    stdout = '';
+    expect(await run(['tool', 'list', '--words', 'zzz'])).toBe(0);
+    expect(stdout).toBe('no tools match "zzz" in this Space\n');
+    stdout = ''; completed = true; exitCode = 37;
+    expect(await run(['tool', 'runs', TOOL])).toBe(0);
+    expect(stdout).toBe(`id${' '.repeat(34)}  version  status  exit  duration  invoker  started\n${SESSION}  v23      exited  37    4s        Author   2026-10-28T18:36:37.000Z\n`);
+    stdout = '';
+    expect(await run(['tool', 'runs', TOOL, '--format', 'json'])).toBe(0);
+    expect(JSON.parse(stdout).items[0]).toMatchObject({ id: SESSION, state: 'exited', exitCode: 37, invoker: AUTHOR });
+    expect([duration(null, '2026-10-28T18:36:41.400Z'), duration('2026-10-28T18:00:00Z', '2026-10-28T18:02:05Z'), duration('2026-10-28T18:00:00Z', '2026-10-28T19:02:00Z')]).toEqual(['', '2m 05s', '1h 02m']);
+  });
   it('wires show, source, list, help, runs, and run-show output to their operations', async () => {
     expect(await run(['tool', 'show', TOOL, '--source'])).toBe(0); expect(stdout).toContain('echo hello');
     expect(await run(['tool', 'list', '--words', 'demo', '--limit', '2'])).toBe(0);
@@ -222,35 +300,62 @@ describe('catalog commands and version pin', () => {
     expect(await run(['tool', 'help', TOOL])).toBe(0); expect(requests.at(-1)!.path).toContain('/help');
     expect(await run(['tool', 'runs', TOOL, '--limit', '3'])).toBe(0); expect(requests.at(-1)!.path).toContain('/runs');
     expect(await run(['tool', 'run-show', SESSION, '--output'])).toBe(0); expect(stdout).toContain('stored output');
-    expect(nounHelp('tool')!.commands).toHaveLength(14);
+    expect(nounHelp('tool')!.commands).toHaveLength(16);
   });
 });
 
 describe('version history', () => {
-  it('lists stored versions with the fields each changed, comparing a page\'s oldest row past the page', async () => {
-    expect(await run(['tool', 'versions', 'demo', '--limit', '2', '--format', 'json'])).toBe(0);
+  const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
+  type Row = { version: number; executionVersion: number; definition: boolean; changed: string[] | null; previousVersion: number | null };
+  const shape = (rows: Row[]) => rows.map(row => [row.version, row.executionVersion, row.definition, row.changed, row.previousVersion]);
+  it('lists definition versions by default from the whole history, classifying pre-381 rows by their executable fields', async () => {
+    versionPageCap = 2;
+    expect(await run(['tool', 'versions', 'demo', '--format', 'json'])).toBe(0);
     const page = JSON.parse(stdout);
-    expect(page).toMatchObject({ toolId: TOOL, name: 'demo', currentVersion: 23, nextCursor: '5' });
-    expect(page.items.map((row: { version: number; changed: string[]; previousVersion: number }) => [row.version, row.changed, row.previousVersion]))
-      .toEqual([[6, ['inputs', 'help'], 5], [5, ['config'], 4]]);
-    expect(page.items[0]).toMatchObject({ changedBy: AUTHOR, changedAt: '2026-10-28T16:00:00.000Z', executionVersion: 6, configRevision: 1,
-      sourceSha256: createHash('sha256').update('echo one\necho two\n').digest('hex') });
+    expect(page).toMatchObject({ toolId: TOOL, name: 'demo', currentVersion: 23, currentExecutionVersion: 6, all: false, nextCursor: null, hidden: 1, truncated: 0 });
+    // v5 is a configuration write (pin 2, nothing executable changed); v4's pin also reads 2 but its source differs from v1.
+    expect(shape(page.items)).toEqual([[6, 6, true, ['inputs', 'help', 'config'], 4], [4, 2, true, ['source'], 1], [1, 1, true, null, null]]);
+    expect(page.items[0]).toMatchObject({ changedBy: AUTHOR, changedAt: '2026-10-28T16:00:00.000Z', configRevision: 1, sourceSha256: sha('echo one\necho two\n') });
+    expect(requests.filter(req => req.path.endsWith('/versions')).map(req => [req.query.get('limit'), req.query.get('cursor')])).toEqual([['200', null], ['200', '5']]);
+    stdout = '';
+    expect(await run(['tool', 'versions', TOOL])).toBe(0);
+    expect(stdout).toContain('demo: 3 definition versions, newest first (current v6)');
+    expect(stdout).toMatch(/v6 +2026-10-28T16:00:00.000Z +Author +inputs, help, config +sha256 [0-9a-f]{12}/);
+    expect(stdout).toMatch(/v4 .* source +sha256 /); expect(stdout).toMatch(/v1 .* created +sha256 /);
+    expect(stdout).not.toContain('v5'); expect(stdout).not.toContain('note:');
+    expect(stdout).toContain('hidden: 1 configuration or metadata write; --all lists every stored write');
+    stdout = '';
+    expect(await run(['tool', 'versions', TOOL, '--limit', '2'])).toBe(0);
+    expect(stdout).toContain('more: 1 older definition version; drop --limit to list all'); expect(stdout).not.toMatch(/^v1 /m);
+    requests = [];
+    expect(await run(['tool', 'versions', TOOL, '--cursor', '5'])).toBe(2);
+    expect(await run(['tool', 'versions', TOOL, '--limit', '0'])).toBe(2);
+    expect(requests.some(req => req.path.endsWith('/versions'))).toBe(false);
+  });
+  it('pages every stored write with --all, comparing a page\'s oldest row past the page and naming the pinned definition', async () => {
+    expect(await run(['tool', 'versions', 'demo', '--all', '--limit', '2', '--format', 'json'])).toBe(0);
+    const page = JSON.parse(stdout);
+    expect(page).toMatchObject({ all: true, nextCursor: '5', hidden: 0, truncated: 0 });
+    expect(shape(page.items)).toEqual([[6, 6, true, ['inputs', 'help'], 5], [5, 2, false, ['config'], 4]]);
     const reads = requests.filter(req => req.path.endsWith(`/entities/${TOOL}/versions`));
     expect(reads.map(req => [req.query.get('limit'), req.query.get('cursor')])).toEqual([['2', null], ['1', '5']]);
-  });
-  it('renders the history for a human, naming the first stored version and the folded gap', async () => {
-    expect(await run(['tool', 'versions', TOOL])).toBe(0);
-    expect(stdout).toContain('demo: 4 stored versions, newest first (current v23)');
-    expect(stdout).toMatch(/v6 +2026-10-28T16:00:00.000Z +Author +inputs, help +sha256 [0-9a-f]{12}/);
-    expect(stdout).toMatch(/v4 .* source /); expect(stdout).toMatch(/v1 .* created /);
-    expect(stdout).toContain('note: not every version number has a stored snapshot');
-    expect(stdout).not.toContain('more:');
     stdout = '';
-    expect(await run(['tool', 'versions', TOOL, '--limit', '1'])).toBe(0);
-    expect(stdout).toContain(`more: tm8 tool versions demo --cursor 6`);
+    expect(await run(['tool', 'versions', TOOL, '--all'])).toBe(0);
+    expect(stdout).toContain('demo: 4 stored writes, newest first (current v6)');
+    expect(stdout).toMatch(/v5 +2026-10-28T15:00:00.000Z +Author +config +definition v2/);
+    expect(stdout).toMatch(/v4 .* source +sha256 /);
+    expect(stdout).toContain('note: versions written before migration 381 (2026-10-28) may have been folded');
+    expect(stdout).not.toContain('hidden:'); expect(stdout).not.toContain('more:');
+    stdout = '';
+    expect(await run(['tool', 'versions', TOOL, '--all', '--limit', '1'])).toBe(0);
+    expect(stdout).toContain('more: tm8 tool versions demo --all --cursor 6');
   });
-  it('diffs the two newest stored versions by default and says when the source did not change', async () => {
+  it('diffs the two newest definition versions by default and says when the source did not change', async () => {
     expect(await run(['tool', 'diff', 'demo'])).toBe(0);
+    expect(stdout).toBe('no source change between demo v4 and v6; changed: inputs, help, config\n');
+    stdout = '';
+    // An explicit end may be any stored write, a configuration write included.
+    expect(await run(['tool', 'diff', 'demo', '--from', '5'])).toBe(0);
     expect(stdout).toBe('no source change between demo v5 and v6; changed: inputs, help\n');
   });
   it('prints a unified source diff between named versions, with json carrying both ends', async () => {
@@ -259,29 +364,125 @@ describe('version history', () => {
     stdout = '';
     expect(await run(['tool', 'diff', 'demo', '--from', '1', '--format', 'json'])).toBe(0);
     const result = JSON.parse(stdout);
-    expect(result).toMatchObject({ toolId: TOOL, name: 'demo', from: { version: 1, changedBy: AUTHOR }, to: { version: 6 },
-      changed: ['source', 'inputs', 'help', 'config'], diff: '--- demo@v1\n+++ demo@v6\n@@ -1 +1,2 @@\n echo one\n+echo two\n' });
-    expect(result.from.sourceSha256).toBe(createHash('sha256').update('echo one\n').digest('hex'));
+    expect(result).toMatchObject({ toolId: TOOL, name: 'demo', from: { version: 1, executionVersion: 1, definition: true, changedBy: AUTHOR },
+      to: { version: 6, executionVersion: 6, definition: true }, changed: ['source', 'inputs', 'help', 'config'],
+      diff: '--- demo@v1\n+++ demo@v6\n@@ -1 +1,2 @@\n echo one\n+echo two\n' });
+    expect(result.from.sourceSha256).toBe(sha('echo one\n'));
+    stdout = '';
+    expect(await run(['tool', 'diff', 'demo', '--from', '4', '--to', '5', '--format', 'json'])).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ from: { version: 4, executionVersion: 2, definition: true }, to: { version: 5, executionVersion: 2, definition: false }, changed: ['config'], diff: '' });
   });
-  it('walks history pages until both versions are found, and stops once a missing one is passed', async () => {
+  it('walks history pages until both named versions are found, and stops once a missing one is passed', async () => {
     versionPageCap = 2;
-    expect(await run(['tool', 'diff', 'demo', '--from', '4'])).toBe(0);
+    expect(await run(['tool', 'diff', 'demo', '--from', '4', '--to', '6'])).toBe(0);
     expect(requests.filter(req => req.path.endsWith('/versions')).map(req => req.query.get('cursor'))).toEqual([null, '5']);
     requests = [];
+    expect(await run(['tool', 'diff', 'demo', '--from', '5', '--to', '6'])).toBe(0);
+    expect(requests.filter(req => req.path.endsWith('/versions'))).toHaveLength(1);
+    requests = [];
     expect(await run(['tool', 'diff', 'demo', '--from', '3'])).toBe(5);
-    expect(stderr).toContain('demo v3 has no stored snapshot (nearest stored: v4, v1); not every version number has a stored snapshot');
+    expect(stderr).toContain('demo v3 has no stored snapshot (nearest stored: v4, v1); versions written before migration 381 (2026-10-28) may have been folded');
     expect(requests.filter(req => req.path.endsWith('/versions'))).toHaveLength(2);
     expect(await run(['tool', 'diff', 'demo', '--to', '9'])).toBe(5);
     expect(stderr).toContain('demo v9 has no stored snapshot (nearest stored: v6)');
+    expect(await run(['tool', 'diff', 'demo', '--from', '3', '--to', '6'])).toBe(5);
   });
-  it('refuses a single stored version and malformed version numbers', async () => {
+  it('refuses a single stored definition version and malformed version numbers', async () => {
     history = history.slice(-1);
     expect(await run(['tool', 'diff', 'demo'])).toBe(5);
-    expect(stderr).toContain('demo has no stored version older than v1 to compare with');
+    expect(stderr).toContain('demo has no stored definition version older than v1 to compare with');
+    // A configuration write on top of the only definition version is not a second definition version.
+    history = [stored(2, { source: 'echo one\n' }, { limit: 1 }, 1), stored(1, { source: 'echo one\n' })];
+    expect(await run(['tool', 'diff', 'demo'])).toBe(5);
+    expect(stderr).toContain('demo has no stored definition version older than v1 to compare with');
     requests = [];
     for (const bad of ['0', 'latest', '-1', '1.5']) expect(await run(['tool', 'diff', 'demo', '--from', bad])).toBe(2);
     expect(requests).toHaveLength(0);
     expect(await run(['tool', 'versions', 'demo', 'extra'])).toBe(2);
+  });
+});
+
+describe('starters', () => {
+  const OTHER = '66666666-6666-7666-8666-666666666666', URL_CHECK = '77777777-7777-7777-8777-777777777777';
+  it('lists every starter in full and marks names that exist, comparing their source', async () => {
+    spaceTools = [toolNamed('demo', TOOL, 'echo hello'), toolNamed('url-check', URL_CHECK), toolNamed('gh-pr-status', OTHER, 'echo edited')];
+    expect(await run(['tool', 'starters', 'list', '--format', 'json'])).toBe(0);
+    const { items } = JSON.parse(stdout);
+    expect(items.map((item: { name: string }) => item.name)).toEqual(['gh-pr-status', 'slack-notify', 'space-digest', 'url-check']);
+    expect(items[3]).toMatchObject({ ...toolStarterNamed('url-check'), existing: { toolId: URL_CHECK, version: 3, matchesStarter: true } });
+    expect(items[0].existing).toEqual({ toolId: OTHER, version: 3, matchesStarter: false });
+    expect(items[1].existing).toBeNull();
+    // The Space listing pages, so a name past the first page still counts.
+    expect(requests.filter(req => req.path.endsWith('/tools')).map(req => req.query.get('cursor'))).toEqual([null, '2']);
+    stdout = '';
+    expect(await run(['tool', 'starters', 'list'])).toBe(0);
+    expect(stdout).toContain('4 starter tools; install with: tm8 tool starters install [--only <name>...]');
+    expect(stdout).toMatch(/gh-pr-status +bash +exists v3 \(other source\) +List a GitHub/);
+    expect(stdout).toMatch(/url-check +bash +exists v3 +Check that/); expect(stdout).toMatch(/space-digest +python +not installed/);
+  });
+  it('installs the missing starters with their headers and per-starter mutation ids, skipping existing names', async () => {
+    spaceTools = [toolNamed('url-check', URL_CHECK)];
+    expect(await run(['tool', 'starters', 'install', '--mutation-id', 'install-1', '--format', 'json'])).toBe(0);
+    const creates = requests.filter(req => req.method === 'POST' && req.path.endsWith('/tools'));
+    expect(creates.map(req => req.body.definition)).toEqual(['gh-pr-status', 'slack-notify', 'space-digest'].map(name => toolStarterDefinition(toolStarterNamed(name)!)));
+    expect(creates.map(req => req.body.clientMutationId)).toEqual(['install-1:gh-pr-status', 'install-1:slack-notify', 'install-1:space-digest']);
+    const headers = requests.filter(req => req.path.endsWith('/header'));
+    expect(headers.map(req => [req.path.split('/')[3], req.body.clientMutationId, req.body.whenToUse, req.body.summary])).toEqual(
+      ['gh-pr-status', 'slack-notify', 'space-digest'].map(name => [createdId(name), `install-1:${name}:header`, toolStarterNamed(name)!.whenToUse, toolStarterNamed(name)!.summary]));
+    expect(JSON.parse(stdout).items).toEqual([
+      { name: 'gh-pr-status', status: 'created', toolId: createdId('gh-pr-status'), version: 1, header: 'set' },
+      { name: 'slack-notify', status: 'created', toolId: createdId('slack-notify'), version: 1, header: 'set' },
+      { name: 'space-digest', status: 'created', toolId: createdId('space-digest'), version: 1, header: 'set' },
+      { name: 'url-check', status: 'skipped', reason: 'exists', toolId: URL_CHECK },
+    ]);
+  });
+  it('narrows with repeatable or comma-separated --only, and refuses an unknown name before any call', async () => {
+    spaceTools = [];
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--only', 'space-digest,url-check'])).toBe(0);
+    expect(requests.filter(req => req.method === 'POST').map(req => req.body.definition.name)).toEqual(['space-digest', 'url-check']);
+    expect(stdout).toMatch(/created +space-digest +5555555/); expect(stdout).toContain('2 created, 0 skipped, 0 failed');
+    requests = [];
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check,nope'])).toBe(2);
+    expect(stderr).toContain('Unknown starter nope; choose from gh-pr-status, slack-notify, space-digest, url-check');
+    expect(await run(['tool', 'starters', 'install', '--only', ','])).toBe(2);
+    expect(requests).toHaveLength(0);
+  });
+  it('reports a name taken since the listing as skipped, and a refused create as failed without stopping the rest', async () => {
+    spaceTools = [];
+    createRefusals = {
+      'gh-pr-status': { status: 409, code: 'invariant_violation', message: 'a live tool already has this name' },
+      'slack-notify': { status: 403, code: 'forbidden', message: 'Tool creation is not allowed' },
+    };
+    expect(await run(['tool', 'starters', 'install'])).toBe(4);
+    expect(stdout).toMatch(/skipped +gh-pr-status +already exists\n/);
+    expect(stdout).toMatch(/failed +slack-notify +forbidden: Tool creation is not allowed/);
+    expect(stdout).toMatch(/created +space-digest/); expect(stdout).toMatch(/created +url-check/);
+    expect(stdout).toContain('2 created, 1 skipped, 1 failed');
+  });
+  it('keeps a created starter when its header cannot be set, and warns', async () => {
+    spaceTools = []; headerRefused = true;
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--format', 'json'])).toBe(0);
+    expect(JSON.parse(stdout).items).toEqual([{ name: 'url-check', status: 'created', toolId: createdId('url-check'), version: 1, header: 'failed' }]);
+    expect(stderr).toContain('url-check was created but its selection header was not set: forbidden: Header writes are not allowed here');
+  });
+  it('creates from a starter, letting the name, options and spec fields override it', async () => {
+    expect(await run(['tool', 'create', '--from-starter', 'url-check'])).toBe(0);
+    expect(requests.find(req => req.method === 'POST')!.body.definition).toEqual(toolStarterDefinition(toolStarterNamed('url-check')!));
+    expect(requests.find(req => req.path.endsWith('/header'))!.body).toMatchObject({ whenToUse: toolStarterNamed('url-check')!.whenToUse, summary: toolStarterNamed('url-check')!.summary });
+    requests = [];
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-starter-'));
+    writeFileSync(join(dir, 'spec.json'), JSON.stringify({ timeoutSeconds: 30 })); writeFileSync(join(dir, 'tool.sh'), 'echo mine\n');
+    expect(await run(['tool', 'create', 'my-check', '--from-starter', 'url-check', '--source', `@${join(dir, 'tool.sh')}`,
+      '--spec', `@${join(dir, 'spec.json')}`, '--description', 'Mine', '--summary', 'Custom summary'])).toBe(0);
+    const starter = toolStarterNamed('url-check')!;
+    expect(requests.find(req => req.method === 'POST')!.body.definition).toEqual({ ...toolStarterDefinition(starter),
+      name: 'my-check', description: 'Mine', source: 'echo mine\n', timeoutSeconds: 30 });
+    expect(requests.find(req => req.path.endsWith('/header'))!.body).toMatchObject({ whenToUse: starter.whenToUse, summary: 'Custom summary' });
+    requests = [];
+    expect(await run(['tool', 'create', '--from-starter', 'nope'])).toBe(2);
+    expect(await run(['tool', 'create', 'a', 'b', '--from-starter', 'url-check'])).toBe(2);
+    expect(await run(['tool', 'create', '--runtime', 'bash', '--source', `@${join(dir, 'tool.sh')}`])).toBe(2);
+    expect(requests).toHaveLength(0);
   });
 });
 
@@ -391,7 +592,7 @@ describe('attached execution', () => {
     expect(await run(['tool', 'run', '--keep-open', TOOL])).toBe(37);
     expect(keepOpen).toBe(true); expect(TerminalSocket.instances[0]!.closed).toBe(true);
     expect(requests.some(req => req.path.includes('terminate'))).toBe(false);
-    expect(stderr).toContain(`shell left open; close with: tm8 session terminate ${SESSION}`);
+    expect(stderr).toContain(`shell left open; close with: tm8 session terminate ${SESSION} --yes`);
   });
   it('detaches with a session id and uses JSON only when detached', async () => {
     expect(await run(['tool', 'run', '--detach', '--format', 'json', TOOL])).toBe(0);
