@@ -34,6 +34,7 @@ export function MaestroSessionTile({
   word,
   lineTwo,
   crumb,
+  context = false,
   lane,
   badges,
   childCount,
@@ -107,6 +108,12 @@ export function MaestroSessionTile({
   /** §5.3.1 case 7: "↳ under Coordinator X (Completed)". */
   crumb?: string | null;
   /**
+   * A CONTEXT row (task 01a182c8): a launcher on another page or tab, drawn
+   * only to hold the sessions under it that matched. Its title steps back a
+   * shade, as a context task's does (`[data-context]` in panels.css).
+   */
+  context?: boolean;
+  /**
    * The ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`, from the
    * session's summary lane facts. Renders beside the PR chips; absent when
    * the session has no branch fact — honest absence draws nothing.
@@ -170,6 +177,7 @@ export function MaestroSessionTile({
       data-testid="list-tile"
       data-session-node={id}
       data-children={childCount > 0 ? childCount : undefined}
+      data-context={context ? 'true' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
       /* WHICH DISCLOSURE THE ROW IS IN, on the DOM rather than in state alone.
          The phone keeps only the opener while a row is closed (mobile-screens

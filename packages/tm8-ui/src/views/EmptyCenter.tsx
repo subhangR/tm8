@@ -185,7 +185,7 @@ export function SessionRosterRow({ session, onOpen }: { session: ImportantSessio
       type="button"
       className="shell-empty__row"
       onClick={() => onOpen?.(row.id)}
-      aria-label={[row.name, presentation.word, meta].filter(Boolean).join(', ')}
+      aria-label={[row.name, presentation.word, row.launchedBy, meta].filter(Boolean).join(', ')}
     >
       {/* Solid, never pulsing: this dot presents a liveness
           verdict, never terminal byte activity (D31). */}
@@ -206,6 +206,9 @@ export function SessionRosterRow({ session, onOpen }: { session: ImportantSessio
       <span className={`shell-empty__word shell-empty__word--${presentation.tone}`}>
         {presentation.word}
       </span>
+      {row.launchedBy ? (
+        <span className="shell-empty__launcher" data-testid="roster-launched-by">{row.launchedBy}</span>
+      ) : null}
       {meta && <span className="shell-empty__meta">{meta}</span>}
       {/* Preserve the two-source truth only where it adds
           information: a running record whose liveness is

@@ -105,7 +105,7 @@ import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { SESSION_TABS, actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, sessionTabOf, tileChildCount, treeParentOf } from '../domain';
+import { SESSION_TABS, actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, launcherKindsOf, sessionTabOf, tileChildCount, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -4147,13 +4147,7 @@ function TreeRows({
     () => (launched.length === 0 ? listRows : [...listRows, ...launched.filter((row) => !listRows.some((r) => r.id === row.id))]),
     [listRows, launched],
   );
-  const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
   const leadMode = props.rowLead === 'icon';
-  const disclosure = useTreeDisclosure(
-    `list:${config.kind}`,
-    revealed,
-    leadMode ? { latchReveal: true } : undefined,
-  );
 
   /* The pinned-only rail's list settings (`list-prefs.ts`): sub-items hidden ⇒
      the roots alone, flat; Group by ⇒ the roots under one heading per group.
@@ -4173,22 +4167,41 @@ function TreeRows({
      tab or page brings that parent — and its ancestors — in as CONTEXT: drawn
      in place with its own status, open, holding only the rows that matched.
      Otherwise most subtasks would sit orphaned at the top level of To do and
-     In progress. */
+     In progress.
+
+     A LAUNCHER IS A PARENT HERE TOO (task 01a182c8; Subhang, 2026-10-28: the
+     sessions a coordinator launched showed "as independent rows, not nested
+     under the coordinator"). A session's tree parent is its launcher
+     (`treeParentOf`), and one on a later page, on another tab or filtered out
+     comes in as context the same way — read by id from every kind that can
+     launch one (a session, a chat), and drawn as its own kind. */
   const contextLists: (readonly EntitySummary[])[] = [];
   if (hierarchical) {
-    const readOwn = props.rowsForKind?.(config.kind) ?? props.rowsFor;
+    const readers = contextReadersOf(config, props);
     const have = new Set(rows.map((row) => row.id));
     let frontier: readonly EntitySummary[] = rows;
     for (let level = 0; level < MAX_FETCHED_DEPTH && frontier.length > 0; level += 1) {
       const missing = [...new Set(frontier.flatMap((row) => {
-        const up = sameKindParentOf(row, config);
+        const up = contextParentOf(row, config);
         return up && !have.has(up) ? [up] : [];
       }))].sort().slice(0, CONTEXT_PARENTS_PER_READ);
       if (missing.length === 0) break;
-      const parents = keepOnly(readOwn({ idIn: missing } as QueryFilter), 'id', missing);
-      contextLists.push(parents);
-      for (const parent of parents) have.add(parent.id);
-      frontier = parents;
+      const found: EntitySummary[] = [];
+      for (const read of readers) {
+        /* A session parent on ANOTHER session tab stays out: its child sits
+           at the top level and names it ("↳ under X (Completed)", §5.3.1
+           case 7). Only a launcher this tab would hold comes in as context. */
+        const parents = keepOnly(read({ idIn: missing } as QueryFilter), 'id', missing).filter(
+          (parent) => !otherSessionTab(parent, sessionTab, config),
+        );
+        contextLists.push(parents);
+        for (const parent of parents) {
+          if (have.has(parent.id)) continue;
+          have.add(parent.id);
+          found.push(parent);
+        }
+      }
+      frontier = found;
     }
   }
   const contextRows = useMergedRows(rows, contextLists, placeContextParents);
@@ -4197,6 +4210,18 @@ function TreeRows({
     const own = new Set(rows.map((row) => row.id));
     return new Set(contextRows.filter((row) => !own.has(row.id)).map((row) => row.id));
   }, [contextRows, rows]);
+  /* The selection's ancestors read as open, by the parent the tree nests by
+     — so a selected worker is on screen inside its coordinator, context
+     parents included. */
+  const revealed = useMemo(
+    () => ancestorPath(contextRows.map((row) => ({ id: row.id, parentId: treeParentOf(row) })), props.selectedId),
+    [contextRows, props.selectedId],
+  );
+  const disclosure = useTreeDisclosure(
+    `list:${config.kind}`,
+    revealed,
+    leadMode ? { latchReveal: true } : undefined,
+  );
   /* A context parent starts SHUT like every other row (Subhang, 2026-10-18:
      "the task list should show COLLAPSED by default") — its subscript says how
      many matched rows opening it shows. Opening or shutting it is a gesture
@@ -4481,6 +4506,13 @@ function sessionTabIdOf(config: KindConfig, tabId: string | null): string | null
 
 const NO_NODES: readonly TileTreeNode[] = [];
 
+/** A row of the list's kind that belongs to a session tab other than the open one. */
+function otherSessionTab(row: EntitySummary, sessionTab: string | null, config: KindConfig): boolean {
+  if (!sessionTab || row.kind !== config.kind) return false;
+  const tab = sessionTabOf(row.state);
+  return tab !== null && tab !== sessionTab;
+}
+
 /** An open row's children of the list's kind that belong to another session tab. */
 function otherTabChildren(node: TileTreeNode, sessionTab: string | null, config: KindConfig): readonly TileTreeNode[] {
   if (!sessionTab) return NO_NODES;
@@ -4609,12 +4641,32 @@ function keepOnly(
 /** One read's bound, as `launchedRowsFilter`'s — the contract caps `idIn` at 200. */
 const CONTEXT_PARENTS_PER_READ = 100;
 
-/** A row's `parent_id` parent when the list nests by it (not a launcher). */
-function sameKindParentOf(row: EntitySummary, config: KindConfig): string | null {
-  /* The session anatomy says it its own way (`↳ under <parent>`, D1 §5.3). */
-  if (config.list.tile.anatomy === 'session-tree') return null;
-  if (row.kind !== config.kind || !row.parentId) return null;
-  return treeParentOf(row) === row.parentId ? row.parentId : null;
+/**
+ * The row a list brings in as CONTEXT when it is not loaded: the tree parent
+ * of a row of the list's own kind — a session's launcher, any other row's
+ * parent (`treeParentOf`). A chat's launched sessions (`list.launches`)
+ * already hang under the chat that loaded them.
+ */
+function contextParentOf(row: EntitySummary, config: KindConfig): string | null {
+  return row.kind === config.kind ? treeParentOf(row) : null;
+}
+
+/**
+ * The reads that answer a context parent by id: the list's own kind, then
+ * every other kind that can launch it (`launcherKindsOf` — a chat, for the
+ * sessions list). A task list has the one read it always had.
+ */
+function contextReadersOf(
+  config: KindConfig,
+  props: EntityListPanelProps,
+): ((filter: QueryFilter) => readonly EntitySummary[])[] {
+  const own = props.rowsForKind?.(config.kind) ?? props.rowsFor;
+  const others = launcherKindsOf(config.kind).flatMap((kind) => {
+    if (kind === config.kind) return [];
+    const read = props.rowsForKind?.(kind);
+    return read ? [read] : [];
+  });
+  return [own, ...others];
 }
 
 type RowMerge = (base: readonly EntitySummary[], extra: readonly EntitySummary[]) => readonly EntitySummary[];
@@ -4631,13 +4683,17 @@ const placeContextParents: RowMerge = (base, extra) => {
   const byId = new Map(extra.map((row) => [row.id, row]));
   const placed = new Set<string>();
   const out: EntitySummary[] = [];
+  const contextParentOfRow = (row: EntitySummary) => {
+    const up = treeParentOf(row);
+    return up ? byId.get(up) : undefined;
+  };
   for (const row of base) {
     const chain: EntitySummary[] = [];
-    let up = row.parentId ? byId.get(row.parentId) : undefined;
+    let up = contextParentOfRow(row);
     while (up && !placed.has(up.id)) {
       chain.unshift(up);
       placed.add(up.id);
-      up = up.parentId ? byId.get(up.parentId) : undefined;
+      up = contextParentOfRow(up);
     }
     out.push(...chain, row);
   }
@@ -4693,7 +4749,7 @@ function selectRow(props: EntityListPanelProps, row: EntitySummary): void {
   else props.onSelect?.(row.id, row.kind);
 }
 
-function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): TileTreeNode[] {
+export function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): TileTreeNode[] {
   if (!hierarchical) return rows.map((row) => ({ row, children: [], depth: 0 }));
 
   const present = new Set(rows.map((row) => row.id));
@@ -5284,6 +5340,7 @@ export function Tile({
         word={sessionWord}
         lineTwo={lineTwo}
         crumb={crumb}
+        context={context}
         /* The quiet row's three slots, same three the other two anatomies get
            (§6; coordinator ruling 2026-10-17). The signal is built from the
            WORD's own derivation rather than from the verdict again — see

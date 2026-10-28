@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
-import { EmptyCenter } from './EmptyCenter';
+import { EmptyCenter, SessionRosterRow } from './EmptyCenter';
 
 function row(id: string, recordedStatus: SessionRow['recordedStatus']): SessionRow {
   return { id, name: id, provider: 'codex', recordedStatus };
@@ -189,5 +189,20 @@ describe('EmptyCenter — Spec D1 outcome groups', () => {
     expect(groupOf('crashed-1')).toBe('empty-session-group-attention');
     expect(groupOf('live-1')).toBe('empty-session-group-running');
     expect(within(view.getByTestId('empty-session-group-attention')).getByText('crashed')).toBeTruthy();
+  });
+});
+
+describe('SessionRosterRow launched-by crumb (task 01a182c8)', () => {
+  it('a launched row names its launcher, in the row and its label; an unlaunched row draws none', () => {
+    const launched = { ...row('w-1', 'running'), launchedBy: '↳ launched by Coordinator' };
+    const view = render(
+      <>
+        <SessionRosterRow session={{ row: launched, verdict: 'live', attention: false }} />
+        <SessionRosterRow session={{ row: row('solo', 'running'), verdict: 'live', attention: false }} />
+      </>,
+    );
+    const crumbs = view.getAllByTestId('roster-launched-by');
+    expect(crumbs.map((el) => el.textContent)).toEqual(['↳ launched by Coordinator']);
+    expect(crumbs[0]!.closest('button')!.getAttribute('aria-label')).toContain('↳ launched by Coordinator');
   });
 });

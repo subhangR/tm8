@@ -6,7 +6,7 @@
  * session as a Work tab.
  */
 import { useMemo } from 'react';
-import { allKinds } from '../../domain';
+import { allKinds, launchedByCrumb, launcherTitlesOf } from '../../domain';
 import { toSessionRow } from '../../terminal';
 import { SessionRosterRow, activeSessionsOf } from '../../views/EmptyCenter';
 import { useWorkspace } from './context';
@@ -19,8 +19,16 @@ export function ActiveSessions() {
   const { data } = gate;
   const sessions = useMemo(() => {
     if (!ROSTER_KIND) return [];
-    const rows = data.rowsFor(ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
-    return activeSessionsOf(rows, data.livenessOf).slice(0, MAX_ROWS);
+    const summaries = data.rowsFor(ROSTER_KIND)(undefined);
+    const shown = activeSessionsOf(summaries.map((summary) => toSessionRow(summary)), data.livenessOf).slice(0, MAX_ROWS);
+    /* A flat roster: each launched row names its launcher (task 01a182c8),
+       read for the shown rows only. */
+    const byId = new Map(summaries.map((summary) => [summary.id, summary]));
+    const titles = launcherTitlesOf(shown.flatMap((session) => byId.get(session.row.id) ?? []), ROSTER_KIND, data.rowsFor, summaries);
+    return shown.map((session) => ({
+      ...session,
+      row: { ...session.row, launchedBy: launchedByCrumb(session.row.sessionState, titles) },
+    }));
   }, [data]);
   if (!ROSTER_KIND || sessions.length === 0) return null;
   const kind = ROSTER_KIND;

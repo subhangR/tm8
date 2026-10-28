@@ -51,6 +51,12 @@ export interface SessionRow {
   /** Coordinator → worker nesting; the roster draws one guide level. */
   parentSessionId?: string | null;
   /**
+   * `↳ launched by <title>` (task 01a182c8). A flat roster cannot nest a
+   * worker under its coordinator, so the row names it. The HOST fills it —
+   * only it can read the launcher's title (`launcherTitlesOf`); absent ⇒ none.
+   */
+  launchedBy?: string | null;
+  /**
    * Spec D1: the summary's whole state arm, so a roster can read the OUTCOME
    * (completed / stopped / open) beside the process — `domain/session-outcome`.
    */
