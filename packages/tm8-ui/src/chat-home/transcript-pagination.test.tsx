@@ -88,9 +88,12 @@ describe('paged chat transcript', () => {
       release = () => resolve({ turns: [1, 2, 3].map(turn), olderCursor: null });
     }));
     const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
-    const button = await waitFor(() => view.getByRole('button', { name: 'Load earlier messages' }));
+    // By test id, not role: a role query walks the whole screen's a11y tree.
+    const button = await waitFor(() => view.getByTestId('tch-older').querySelector('button')!);
+    expect(button.textContent).toBe('Load earlier messages');
     fireEvent.click(button);
-    fireEvent.click(view.getByRole('button', { name: 'Loading earlier messages…' }));
+    await waitFor(() => expect(button.textContent).toBe('Loading earlier messages…'));
+    fireEvent.click(button);
     expect(readOlderTurns).toHaveBeenCalledTimes(1);
     await act(async () => { release(); });
     await waitFor(() => view.getByText('page message 1'));
