@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
-import type { EntityId, EntitySummary, LaunchCredentialSource, ProjectId, SpaceId, ToolInput, ToolView, WorkSessionWorkdirMode } from '@tm8/contract';
+import type { EntityId, EntitySummary, LaunchCredentialSource, ProjectId, SpaceId, ToolInput, ToolJsonValue, ToolView, WorkSessionWorkdirMode } from '@tm8/contract';
 import { ComposerSelect, type ComposerSelectOption } from '../chat-home/ComposerSelect';
 import { classifyFailure } from '../authoring/commands';
 import { RefusalCard } from '../authoring/RefusalCard';
@@ -15,6 +15,7 @@ import {
   type LoopConcurrency,
   type LoopCreateDefinition,
   type LoopDefinition,
+  type LoopDefinitionPatch,
   type LoopSessionMode,
   type LoopSpawnConfig,
   type LoopsClient,
@@ -175,9 +176,9 @@ function configOf(draft: Draft): LoopSpawnConfig {
 }
 
 /** Local checks: only what a human could not mean (empty name, no runner). The server decides the rest. */
-function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErrors; inputs: Record<string, unknown> } {
+function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErrors; inputs: Record<string, ToolJsonValue> } {
   const errors: FieldErrors = {};
-  const inputs: Record<string, unknown> = {};
+  const inputs: Record<string, ToolJsonValue> = {};
   if (draft.title.trim() === '') errors.title = 'Give the loop a name.';
   if (expressionOf(draft.preset) === '') errors.schedule = 'Enter a cron expression.';
   if (draft.action === 'spawn' && !draft.teamMemberId) errors.teamMemberId = 'Pick the teammate who runs it.';
@@ -211,7 +212,7 @@ function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErro
   return { errors, inputs };
 }
 
-function definitionOf(draft: Draft, inputs: Record<string, unknown>): LoopDefinition {
+function definitionOf(draft: Draft, inputs: Record<string, ToolJsonValue>): LoopDefinition {
   return {
     title: draft.title.trim(),
     schedule: expressionOf(draft.preset),
@@ -233,8 +234,8 @@ function definitionOf(draft: Draft, inputs: Record<string, unknown>): LoopDefini
 }
 
 /** Only what changed, so an edit never rewrites a field the human did not touch. */
-function changedFields(before: LoopDefinition, after: LoopDefinition): Partial<LoopDefinition> {
-  const out: Partial<LoopDefinition> = {};
+function changedFields(before: LoopDefinition, after: LoopDefinition): LoopDefinitionPatch {
+  const out: LoopDefinitionPatch = {};
   for (const key of Object.keys(after) as (keyof LoopDefinition)[]) {
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) (out as Record<string, unknown>)[key] = after[key];
   }

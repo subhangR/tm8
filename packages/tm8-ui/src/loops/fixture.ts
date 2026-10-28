@@ -1,6 +1,6 @@
 import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
 import { CollabError } from '@tm8/contract';
-import type { LoopDefinition, LoopRun, LoopSchedulePreview, LoopsClient, LoopView } from './api';
+import type { LoopDefinition, LoopDefinitionPatch, LoopRun, LoopSchedulePreview, LoopsClient, LoopView } from './api';
 
 /*
  * THE FIXTURE SEAM'S LOOPS CLIENT — an in-memory store with the server's
@@ -12,13 +12,14 @@ import type { LoopDefinition, LoopRun, LoopSchedulePreview, LoopsClient, LoopVie
 
 const FIXTURE_ACTOR: ActorSummary = { id: 'fixture-member', kind: 'member', displayName: 'Fixture member', isAgent: false };
 
-export function fixtureLoopView(id: EntityId, spaceId: SpaceId, definition: Partial<LoopDefinition> = {}, overrides: Partial<LoopView> = {}): LoopView {
+export function fixtureLoopView(id: EntityId, spaceId: SpaceId, definition: LoopDefinitionPatch = {}, overrides: Partial<LoopView> = {}): LoopView {
   const now = new Date(0).toISOString();
   const full: LoopDefinition = {
     title: 'Fixture loop', schedule: 'every 1d', timezone: 'UTC', action: 'dispatch',
     teamMemberId: null, subjectId: null, toolId: null, toolInputs: {}, prompt: '',
-    config: {}, concurrency: 'skip', maxRuntimeSeconds: null, retry: { attempts: 0, delaySeconds: 60 },
+    config: {}, concurrency: 'skip', maxRuntimeSeconds: null,
     ...definition,
+    retry: { attempts: 0, delaySeconds: 300, ...definition.retry },
   };
   return {
     id, spaceId, version: 1, definition: full,
@@ -63,7 +64,7 @@ export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsC
       return view;
     },
     update: (ref, definition) => write(ref, loop => {
-      const merged = { ...loop.definition, ...definition };
+      const merged: LoopDefinition = { ...loop.definition, ...definition, retry: { ...loop.definition.retry, ...definition.retry } };
       return { ...loop, definition: merged, schedule: preview(merged.schedule, merged.timezone) };
     }),
     get: async loopId => find(loopId),
