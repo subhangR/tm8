@@ -59,4 +59,21 @@ describe('catalog-backed HTTP client', () => {
     expect(JSON.stringify(caught)).not.toContain(token);
     expect(String(caught)).not.toContain(token);
   });
+
+  it('bounds the body read by the same timeout as the headers', async () => {
+    const client = new HttpCatalogClient({
+      baseUrl: 'http://127.0.0.1:4610',
+      token: 'secret',
+      timeoutMs: 50,
+      // Headers arrive at once; the body never does until the signal aborts.
+      fetchImpl: async (_url, init) => new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new Error('aborted')));
+        },
+      }), { status: 200 }),
+    });
+    await expect(client.invoke('entities.get', { params: { id: 'slow' } })).rejects.toMatchObject({
+      code: 'upstream_unavailable', retryable: true,
+    });
+  });
 });

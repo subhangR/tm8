@@ -29,6 +29,18 @@ export type ChannelConfig = {
    * (`[style: …]`) and in the briefings. Default: DEFAULT_STYLE.
    */
   style?: string
+  /**
+   * What routes a message to the main chat. "mention" (default): @<handle>, @<name> or a reply to one of ours. "all": every
+   * message from an allowed sender, addressed or not; the main chat decides what needs an answer. No automatic reactions.
+   */
+  trigger?: 'mention' | 'all'
+  /**
+   * Shadow mode: nothing is ever sent to this chat (no text, media, polls or reactions). Everything agents say for it goes
+   * to the channel with this id instead (the self chat while testing), prefixed "[<title>]". Remove it to go live.
+   */
+  deliverTo?: string
+  /** What this group is for and how the team works it, for the main chat's briefing (≤800 characters). */
+  purpose?: string
 }
 
 export type ChannelTm8Override = { spaceId?: string; tokenFile?: string; defaultTeammate?: string; defaultModel?: string }
@@ -38,6 +50,11 @@ export type ChannelTm8 = { spaceId: string; tokenFile: string; defaultTeammate: 
 export type Config = {
   pairingPhone?: string
   ownerJids: string[]
+  /**
+   * The mention that reaches this bridge's main chats: `@<handle>`, `@<handle>-<teammate>` (default "tm8"). Bridges that share
+   * a number (other servers, other tm8 setups) need different handles where they share a chat, e.g. the self chat.
+   */
+  handle: string
   /**
    * Senders labelled TRUSTED (instead of UNTRUSTED) in every channel's envelopes: `"owner"` (= ownerJids) or WA JIDs
    * (`<digits>@s.whatsapp.net`, `<digits>@lid`). Only a label for agents: it grants no command or permission.
@@ -85,11 +102,14 @@ export type TranscriptionConfig = {
   language: string
   /** Longer audio is not transcribed. */
   maxDurationSec: number
+  /** A run may take this many times the audio length (+30 s) before it is killed. Raise it on a small or busy box. */
+  timeoutFactor: number
   /** How long routing waits for a transcript before posting without it (the transcript then follows as its own message). */
   waitSeconds: number
 }
 
 export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'> = {
+  handle: 'tm8',
   http: { host: '127.0.0.1', port: 8787, publicUrl: 'http://127.0.0.1:8787' },
   tm8: {
     baseUrl: 'http://127.0.0.1:17777',
@@ -113,6 +133,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
     threads: 4,
     language: 'auto',
     maxDurationSec: 600,
+    timeoutFactor: 2,
     waitSeconds: 20,
   },
   forms: { submitDelaySeconds: 20 },
@@ -121,6 +142,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
 const ID_RE = /^[a-z][a-z0-9-]{0,30}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SENDER_JID_RE = /^\d+@(s\.whatsapp\.net|lid)$/
+const HANDLE_RE = /^[a-z][a-z0-9]{1,20}$/i
 
 /** A trustedSenders list: an array of `"owner"` or user JIDs. Never `"everyone"` or a group: trust names people. */
 function checkTrustedSenders(v: unknown, where: string): string[] {
@@ -202,13 +224,15 @@ export function parseConfig(raw: any, root: string): Config {
   const t = cfg.transcription
   if (!['local', 'none', 'openai'].includes(t.provider)) throw new Error('transcription.provider must be "local", "none" or "openai"')
   if (!/^[\w.-]+$/.test(t.model)) throw new Error('transcription.model must be a file name under transcription.modelsDir')
-  for (const k of ['threads', 'maxDurationSec', 'waitSeconds'] as const) {
+  for (const k of ['threads', 'maxDurationSec', 'waitSeconds', 'timeoutFactor'] as const) {
     if (!Number.isFinite(t[k]) || t[k] < 0) throw new Error(`transcription.${k} must be a non-negative number`)
   }
   if (cfg.approverName !== undefined && cfg.approverName !== null && (typeof cfg.approverName !== 'string' || !/^[^\n`$]{1,60}$/.test(cfg.approverName.trim()) || !cfg.approverName.trim())) {
     throw new Error('approverName must be a short name (1-60 characters, one line)')
   }
   if (cfg.apiDocId !== undefined && cfg.apiDocId !== null && !UUID_RE.test(cfg.apiDocId)) throw new Error('apiDocId must be a tm8 doc id')
+  if (typeof cfg.handle !== 'string' || !HANDLE_RE.test(cfg.handle)) throw new Error(`handle must match ${HANDLE_RE}`)
+  cfg.handle = cfg.handle.toLowerCase()
   const seen = new Set<string>()
   for (const ch of cfg.channels) {
     if (!ID_RE.test(ch.id)) throw new Error(`channel id ${JSON.stringify(ch.id)} must match ${ID_RE}`)
@@ -221,6 +245,15 @@ export function parseConfig(raw: any, root: string): Config {
     if (ch.trustedSenders !== undefined) ch.trustedSenders = checkTrustedSenders(ch.trustedSenders, `channel ${ch.id}: trustedSenders`)
     checkChannelTm8(ch, root)
     checkStyle(ch)
+    if (ch.purpose !== undefined && (typeof ch.purpose !== 'string' || !ch.purpose.trim() || ch.purpose.length > 800)) throw new Error(`channel ${ch.id}: purpose must be a non-empty string of at most 800 characters`)
+    if (ch.trigger !== undefined && ch.trigger !== 'mention' && ch.trigger !== 'all') throw new Error(`channel ${ch.id}: trigger must be "mention" or "all"`)
+  }
+  for (const ch of cfg.channels) {
+    if (ch.deliverTo === undefined || ch.deliverTo === null) { delete ch.deliverTo; continue }
+    const to = cfg.channels.find((c) => c.id === ch.deliverTo)
+    if (!to) throw new Error(`channel ${ch.id}: deliverTo ${JSON.stringify(ch.deliverTo)} is not a configured channel`)
+    if (to === ch) throw new Error(`channel ${ch.id}: deliverTo can't be the channel itself`)
+    if (to.deliverTo) throw new Error(`channel ${ch.id}: deliverTo ${to.id} is itself redirected; point at the final chat`)
   }
   return cfg
 }
@@ -228,6 +261,11 @@ export function parseConfig(raw: any, root: string): Config {
 export function loadConfig(root: string): Config {
   const file = process.env.WA_BRIDGE_CONFIG ?? path.join(root, 'config.json')
   return parseConfig(JSON.parse(fs.readFileSync(file, 'utf8')), root)
+}
+
+/** Does the bridge react on its own (👀, ✅, ⚠️, ❌) in this channel? Not in shadow mode, not when every message routes. */
+export function autoReacts(ch: ChannelConfig): boolean {
+  return !ch.deliverTo && (ch.trigger ?? 'mention') === 'mention'
 }
 
 /** JIDs allowed to trigger agents in a channel, with `owner` expanded. */

@@ -82,9 +82,18 @@ export class HttpCatalogClient implements CatalogTransport {
       }
     }
 
+    // One deadline for the headers AND the body: clearing it once the headers
+    // arrived left a stalled body to hang the tool call with no bound at all.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const unavailable = (error: unknown): CatalogHttpError => new CatalogHttpError({
+      code: 'upstream_unavailable',
+      message: `${binding.method} ${url.pathname} failed: ${error instanceof Error ? error.message : String(error)}`,
+      status: 503,
+      retryable: true,
+    });
     let response: Response;
+    let text: string;
     try {
       response = await this.fetchImpl(url, {
         method: binding.method,
@@ -96,19 +105,13 @@ export class HttpCatalogClient implements CatalogTransport {
         signal: controller.signal,
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       });
+      text = await response.text();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new CatalogHttpError({
-        code: 'upstream_unavailable',
-        message: `${binding.method} ${url.pathname} failed: ${message}`,
-        status: 503,
-        retryable: true,
-      });
+      throw unavailable(error);
     } finally {
       clearTimeout(timer);
     }
 
-    const text = await response.text();
     let payload: unknown;
     try {
       payload = text === '' ? undefined : JSON.parse(text);

@@ -2,7 +2,8 @@
 /**
  * THE TOKEN READING IN THE ACTION STRIP (task 01a14b00): a session's context
  * number, portalled into the strip's stats slot, and a chat's, published by its
- * screen, both draw stacked — one figure per line — and open their details.
+ * screen, both draw the context size alone (task 01a181e2) and open their
+ * details; the ⋯ menu carries the whole reading.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
@@ -67,23 +68,25 @@ function lines(root: HTMLElement): string[] {
 }
 
 describe('the action strip’s token reading', () => {
-  it('draws a session’s reading inside the toolbar, one figure per line', () => {
+  it('draws a session’s context size inside the toolbar, the whole reading in ⋯', () => {
     const view = render(<Strip id="session-1" kind="work_session" session />);
     const slot = view.getByTestId('tws-astrip-stats');
     expect(view.getByTestId('tws-action-strip').contains(slot)).toBe(true);
     // Its own section between the kind's icons and the shared ones.
     expect(slot.parentElement?.classList.contains('tws-astrip-section--stats')).toBe(true);
     expect(slot.hidden).toBe(false);
-    expect(lines(slot)).toEqual(['48k', '24%', 'c80%', expect.any(String)]);
+    expect(lines(slot)).toEqual(['48k']);
     fireEvent.click(slot.querySelector('button')!);
     expect(view.getByRole('group', { name: 'Context details' })).toBeTruthy();
+    fireEvent.click(view.getByTestId('tws-more'));
+    expect(view.getByTestId('tws-menu-stats').textContent).toMatch(/^48k · 24% · cache 80% · /);
   });
 
   it('draws a chat tab’s reading as its screen publishes it, and drops it when withdrawn', () => {
     const view = render(<Strip id="chat-1" kind="chat" />);
     expect(view.queryByTestId('tws-astrip-chat-stats')).toBeNull();
     act(() => publishChatContext('chat-1', { context: reading, stale: null }));
-    expect(lines(view.getByTestId('tws-astrip-chat-stats'))).toEqual(['48k', '24%', 'c80%', expect.any(String)]);
+    expect(lines(view.getByTestId('tws-astrip-chat-stats'))).toEqual(['48k']);
     act(() => publishChatContext('chat-1', { context: reading, stale: 'runtime stopped' }));
     expect(view.getByTestId('chat-context-strip').textContent?.startsWith('~')).toBe(true);
     act(() => publishChatContext('chat-1', null));

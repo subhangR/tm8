@@ -156,6 +156,17 @@ describe('loadLinkedPullRequestBadges', () => {
     expect(q.calls).toBe(0);
   });
 
+  it('loads sessions and chats too — a session row draws each PR it holds (task 01a18209)', async () => {
+    const q = stubQuerier([prRow({ task_id: 'ses-1' }), prRow({ task_id: 'chat-1', entity_id: 'pr-2', number: 43 })]);
+    const out = await loadLinkedPullRequestBadges(q, [
+      { id: 'ses-1', kind: 'work_session' },
+      { id: 'chat-1', kind: 'chat' },
+    ]);
+    expect(q.calls).toBe(1);
+    expect(out.get('ses-1')?.items.map((i) => i.entityId)).toEqual(['pr-1']);
+    expect(out.get('chat-1')?.items.map((i) => i.number)).toEqual([43]);
+  });
+
   it('projects the row into a badge, keeping absence absent', async () => {
     const q = stubQuerier([prRow()]);
     const badges = (await loadLinkedPullRequestBadges(q, [{ id: 'task-1', kind: 'task' }])).get('task-1');

@@ -89,6 +89,7 @@ describe('audio helpers', () => {
     assert.equal(transcribeTimeoutMs(12, 600), 54_000)
     assert.equal(transcribeTimeoutMs(null, 600), 1_230_000)
     assert.equal(transcribeTimeoutMs(0, 60), 150_000)
+    assert.equal(transcribeTimeoutMs(10, 600, 20), 230_000)
   })
 
   test('Baileys audioMessage parse: voice note vs audio file, and the quoted message media a reply carries', async () => {

@@ -121,6 +121,34 @@ describe('direct repository tools', () => {
     expect(await readFile(join(root, 'one.txt'), 'utf8')).toBe('alpha\ngamma\n');
   });
 
+  it('writes newText verbatim, never expanding $& or $$ replacement patterns', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-'));
+    await writeFile(join(root, 'one.txt'), 'const a = X;\n', 'utf8');
+    const router = new Tm8ToolRouter(transport, { mode: 'build', projectRoot: root });
+    const newText = "'$$' + '$&' + '$`'";
+    const edit = await router.call('repo_edit', { path: 'one.txt', oldText: 'X', newText });
+    expect(edit.isError).toBeUndefined();
+    expect(await readFile(join(root, 'one.txt'), 'utf8')).toBe(`const a = ${newText};\n`);
+    const multi = await router.call('repo_multi_edit', { edits: [{ path: 'one.txt', oldText: "'$$'", newText: '"$1"' }] });
+    expect(multi.isError).toBeUndefined();
+    expect(await readFile(join(root, 'one.txt'), 'utf8')).toBe(`const a = "$1" + '$&' + '$\`';\n`);
+  });
+
+  it('leaves node_modules out of grep and glob unless the pattern names it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-'));
+    await mkdir(join(root, 'node_modules', 'dep'), { recursive: true });
+    await mkdir(join(root, 'src'), { recursive: true });
+    await writeFile(join(root, 'node_modules', 'dep', 'index.js'), 'needle\n', 'utf8');
+    await writeFile(join(root, 'src', 'main.ts'), 'needle\n', 'utf8');
+    const router = new Tm8ToolRouter(transport, { mode: 'ask', projectRoot: root });
+    const grep = await router.call('repo_grep', { query: 'needle' });
+    expect((grep.structuredContent.matches as Array<{ path: string }>).map((m) => m.path)).toEqual(['src/main.ts']);
+    const glob = await router.call('repo_glob', { pattern: '**/*.js' });
+    expect(glob.structuredContent).toMatchObject({ paths: [] });
+    const named = await router.call('repo_glob', { pattern: 'node_modules/**/*.js' });
+    expect(named.structuredContent).toMatchObject({ paths: ['node_modules/dep/index.js'] });
+  });
+
   it('preflights multi-edit before writing any target', async () => {
     const root = await mkdtemp(join(tmpdir(), 'tm8-mcp-'));
     await writeFile(join(root, 'one.txt'), 'one', 'utf8');
@@ -325,6 +353,15 @@ describe('direct repository tools', () => {
     await expect(router.call('artifact_create', {
       ...base, files: [{ path: 'index.html', content: 'x', contentBase64: 'eA==' }],
     })).resolves.toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } });
+  });
+
+  it('decodes HTML entities once, and survives an out-of-range numeric reference', async () => {
+    const html = '<p>&amp;lt;b&amp;gt; &#x41;&#66; &#99999999; &apos;q&apos;</p>';
+    const fetchImpl = (async () => new Response(html, { status: 200, headers: { 'content-type': 'text/html' } })) as typeof fetch;
+    const router = new Tm8ToolRouter(transport, { mode: 'ask', fetchImpl });
+    const fetched = await router.call('web_fetch', { url: 'https://93.184.216.34/page' });
+    expect(fetched.isError).toBeUndefined();
+    expect(fetched.structuredContent).toMatchObject({ text: "&lt;b&gt; AB &#99999999; 'q'" });
   });
 
   it('blocks reserved IPv4/IPv6 destinations and revalidates redirects', async () => {

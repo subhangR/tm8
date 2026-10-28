@@ -6,7 +6,7 @@ import {
   useChatConnectors,
 } from './composer/ChatConnectors';
 import { EntityAttentionChip } from '../attention';
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { CollabError } from '@tm8/contract';
 import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
@@ -34,6 +34,7 @@ import {
   mergeChatTurnFrame,
   optimisticTurnId,
   projectTurnParts,
+  prependOlderTurns,
   reconcileDetails,
   settleOptimisticTurn,
 } from './turn-model';
@@ -131,6 +132,8 @@ import './chat-home.css';
 export const NO_TEAMMATE_REFUSAL = 'No agent teammate in this space yet — add one to start a chat.';
 /** The send refusal while the connectors are not ready (loading, or an account to choose). */
 const MCP_REFUSAL = 'Choose a connected account for each connector.';
+/** How close to the top of the transcript a scroll reads the next older page. */
+const OLDER_TURNS_TRIGGER_PX = 240;
 
 /** Per-thread composer drafts kept by the host (`composerDrafts`). */
 export interface ComposerDraftStore {
@@ -1548,11 +1551,19 @@ export function ChatHomeScreen({
    * the transcript, so switching costs the conversation nothing and `chat.start`
    * was pinning it only because nothing could move it afterwards.
    *
-   * Three things can still lock the chip, and each says which:
+   * Four things can still lock the chip, and each says which:
    *  - a node with no `chat.setModel` route, which is learned from the 404 its
    *    first use comes back with, NOT from `port.setModel` being absent: the
    *    real port always defines it, so that arm only ever catches a fixture,
    *  - a chat still being born, which has no id to address yet,
+   *  - a viewer who did not start the chat. Only the configurer may switch
+   *    (276), and everyone else is refused with the same P0002 a missing chat
+   *    gets, so a refusal cannot say why. The chat read says it instead, per
+   *    viewer (`canSetModel`), and the chip locks before anything is sent.
+   *    ONLY `false` locks. Absent is a node older than the field, and reading
+   *    absence as "someone else's chat" would be the hole the latch's sqlstate
+   *    test closed, in a new place: a member locked out of their own chat, on
+   *    every such node. There the latch is still what catches a missing route,
    *  - nothing else. A running turn does NOT lock it: the switch applies to the
    *    next turn claimed, so there is no reason to make the viewer wait for an
    *    answer to choose who writes the one after it.
@@ -1605,7 +1616,9 @@ export function ChatHomeScreen({
       ? 'this node cannot change a chat\u2019s model'
       : selectedRootId === null
         ? 'this chat is still starting'
-        : configSaving ? 'Saving chat settings' : null;
+        : activeConfig?.canSetModel === false
+          ? 'only the person who started this chat can change its model'
+          : configSaving ? 'Saving chat settings' : null;
   /**
    * THE MODE IS NOT WRITE-ONCE EITHER, and it never needed a relaunch to change.
    *
@@ -2056,6 +2069,70 @@ export function ChatHomeScreen({
     itemCount: detail?.turns.length ?? 0,
     visible: centre == null,
   });
+
+  /*
+   * OLDER TURNS ON THE WAY UP, the way a messaging app pages a conversation.
+   * The port opens a chat at its newest page; reaching the top of the
+   * transcript (or pressing the button there) reads the page before it.
+   *
+   * THE READER STAYS ON THE TURN THEY WERE READING. Turns going in ABOVE the
+   * viewport would push it down by their height; the distance from the bottom
+   * is recorded before the page lands and restored in the same layout pass, so
+   * the line under the reader's eye does not move. Single-flight per chat; a
+   * page that lands after a thread switch is dropped.
+   */
+  const transcriptElementRef = useRef<HTMLDivElement | null>(null);
+  const followRef = follow.ref;
+  const transcriptRef = useCallback((element: HTMLDivElement | null) => {
+    transcriptElementRef.current = element;
+    followRef(element);
+  }, [followRef]);
+  const olderAnchorRef = useRef<number | null>(null);
+  const loadingOlderRef = useRef<EntityId | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState<string | null>(null);
+  const loadOlder = useCallback(() => {
+    const held = detailRef.current;
+    const cursor = held?.olderCursor;
+    if (!held || !cursor || !port.readOlderTurns || loadingOlderRef.current !== null) return;
+    const rootId = held.summary.rootId;
+    loadingOlderRef.current = rootId;
+    setLoadingOlder(true);
+    setOlderError(null);
+    void port.readOlderTurns(rootId, cursor)
+      .then((older) => {
+        if (activeRootRef.current !== rootId) return;
+        const element = transcriptElementRef.current;
+        olderAnchorRef.current = element ? element.scrollHeight - element.scrollTop : null;
+        setDetail((current) => (current && current.summary.rootId === rootId && current.olderCursor === cursor
+          ? prependOlderTurns(current, older)
+          : current));
+      })
+      .catch((error: unknown) => {
+        if (activeRootRef.current === rootId) setOlderError(describeError(error));
+      })
+      .finally(() => {
+        if (loadingOlderRef.current === rootId) loadingOlderRef.current = null;
+        setLoadingOlder(false);
+      });
+  }, [port]);
+  useLayoutEffect(() => {
+    const fromBottom = olderAnchorRef.current;
+    const element = transcriptElementRef.current;
+    if (fromBottom === null || !element) return;
+    olderAnchorRef.current = null;
+    element.scrollTop = element.scrollHeight - fromBottom;
+  }, [detail]);
+  useEffect(() => {
+    loadingOlderRef.current = null;
+    setLoadingOlder(false);
+    setOlderError(null);
+  }, [selectedRootId]);
+  const followOnScroll = follow.onScroll;
+  const onTranscriptScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    followOnScroll(event);
+    if (event.currentTarget.scrollTop <= OLDER_TURNS_TRIGGER_PX) loadOlder();
+  }, [followOnScroll, loadOlder]);
 
   /* THE DOCK-DOWN (Cockpit ruling 2026-08-18): the centred composer of a new
      thread travels to its bottom berth when the first send lands, instead of
@@ -2861,7 +2938,7 @@ export function ChatHomeScreen({
           </section>
         ) : null}
         <div
-          ref={follow.ref}
+          ref={transcriptRef}
           className="tch-transcript"
           data-turn-phase={turnInProgress?.phase}
           aria-live="polite"
@@ -2873,7 +2950,7 @@ export function ChatHomeScreen({
           /* THE READER'S INTENT, recorded on every scroll. Scrolling up to read
              back opts out of following a streaming answer; coming back within
              the tolerance opts straight back in. */
-          onScroll={follow.onScroll}
+          onScroll={onTranscriptScroll}
         >
           {loadError ? (
             <div className="tch-load-error" role="alert">
@@ -2897,6 +2974,14 @@ export function ChatHomeScreen({
                   fullscreen way to be big. It is a STAGE now — one drawing in
                   region B, reached from the tray, addressed by `?stage=graph`. */}
               <LedgerHostProvider key={detail.summary.rootId} resolveEntity={resolveEntity} readEntity={readEntity} livenessOf={livenessOf} models={models}>
+              {detail.olderCursor && port.readOlderTurns ? (
+                <div className="tch-older" data-testid="tch-older">
+                  <button type="button" className="tch-older__button" onClick={loadOlder} disabled={loadingOlder}>
+                    {loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}
+                  </button>
+                  {olderError ? <span className="tch-load-error" role="alert">{olderError}</span> : null}
+                </div>
+              ) : null}
               {detail.turns.map((turn) => (
                 <ChatTurn
                   key={turn.messageId}
@@ -3060,7 +3145,7 @@ export function ChatHomeScreen({
                 existing thread is what extends the gate to a selection that
                 can now be changed mid-conversation. */}
             <McpPicker
-              teamMemberId={teammateId ?? undefined}
+              teamMemberId={shownTeammateId || undefined}
               targetId={aboutId ?? undefined}
               value={mcpSelections}
               onChange={connectors.change}
@@ -3175,7 +3260,7 @@ export function ChatHomeScreen({
                           <ChatConnectorsSheet
                             state={connectors}
                             {...(aboutId ? { targetId: aboutId } : {})}
-                            {...(teammateId ? { teamMemberId: teammateId } : {})}
+                            {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
                             streaming={thinking}
                             disabled={busy}
                           />
@@ -3189,7 +3274,7 @@ export function ChatHomeScreen({
                   <ConnectorsChip
                     state={connectors}
                     {...(aboutId ? { targetId: aboutId } : {})}
-                    {...(teammateId ? { teamMemberId: teammateId } : {})}
+                    {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
                     streaming={thinking}
                     disabled={busy}
                   />
@@ -3218,6 +3303,7 @@ export function ChatHomeScreen({
                   role={shownRole}
                   mode={shownMode}
                   onRoleChange={chooseRole}
+                  runsAs={teammateOptions.find((option) => option.id === shownTeammateId)?.label ?? null}
                   thread={<>
                     <ThreadSettingsFields
                       teammates={teammateOptions}

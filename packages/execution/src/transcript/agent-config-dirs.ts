@@ -7,12 +7,21 @@ import {
   AGENT_CREDENTIAL_NODE_CONFIG_DIR,
   agentCredentialProviderFor,
 } from '../spawn/agent-credentials.js';
+import { codexSessionHome } from '../spawn/mcp-home.js';
 
 /** Finite provider homes this node can have written to; never a recursive scan. */
 export async function knownAgentConfigDirs(opts: {
   agentTool: string | null;
   dataDir?: string;
   home?: string;
+  /**
+   * The session being looked up. A Codex child runs with CODEX_HOME set to
+   * its own isolated home under the data dir (`isolateCodexMcpHome`), so that
+   * home is where its rollouts are; it leads the list because it is the most
+   * specific. It only widens where the marker scan looks — ownership is still
+   * proven per rollout.
+   */
+  sessionId?: string;
 }): Promise<string[]> {
   const provider = agentCredentialProviderFor(opts.agentTool);
   // Preserve the historical Claude fallback for an unknown/null tool, but get
@@ -20,14 +29,19 @@ export async function knownAgentConfigDirs(opts: {
   // no provider switch here for the next provider to drift out of.
   const nodeConfigDir = AGENT_CREDENTIAL_NODE_CONFIG_DIR[provider ?? 'anthropic'];
   const nodeDir = join(opts.home ?? homedir(), nodeConfigDir);
-  if (!provider || !opts.dataDir) return [nodeDir];
+  const sessionHome = opts.agentTool === 'codex' && opts.dataDir && opts.sessionId
+    ? codexSessionHome(opts.dataDir, opts.sessionId)
+    : null;
+  const sessionDirs = sessionHome ? [sessionHome] : [];
+  if (!provider || !opts.dataDir) return [...sessionDirs, nodeDir];
   let identities: import('node:fs').Dirent[];
   try {
     identities = await readdir(join(opts.dataDir, 'credentials'), { withFileTypes: true });
   } catch {
-    return [nodeDir];
+    return [...sessionDirs, nodeDir];
   }
   return [...new Set([
+    ...sessionDirs,
     ...identities
       .filter((entry) => entry.isDirectory() && entry.name.startsWith('id_'))
       .map((entry) => {

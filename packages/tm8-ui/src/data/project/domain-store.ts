@@ -765,3 +765,10 @@ export const selectIsPending = (clientMutationId: string) => (s: DomainStoreStat
   s.pendingMutations[clientMutationId] === true;
 export const selectConnectionsStale = (id: EntityId) => (s: DomainStoreState): boolean =>
   s.staleConnections[id] === true;
+/**
+ * The version an open view of `id` should re-read to, or undefined when the
+ * cached content is current. A NUMBER rather than a boolean so a consumer can
+ * key one re-read per announced version — see `DomainState.staleDetails`.
+ */
+export const selectDetailStaleVersion = (id: EntityId) => (s: DomainStoreState): number | undefined =>
+  s.staleDetails[id];

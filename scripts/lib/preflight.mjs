@@ -169,7 +169,7 @@ export async function preflight(env, opts = {}) {
           false,
           "database has no schema",
           `${redact(env.TM8_DATABASE_URL)} is reachable but unmigrated (0 of ${db.onDisk} migrations). ` +
-            "The server does NOT migrate at boot. Run `node db/migrate.mjs up`, or ./install.sh",
+            "The server does NOT migrate at boot. Run `TM8_DATABASE_URL=<url> node db/migrate.mjs up` (add --i-mean-prod for port 5442), or ./install.sh",
         ),
       );
     } else if (db.applied !== db.onDisk) {
@@ -178,7 +178,7 @@ export async function preflight(env, opts = {}) {
           "warn",
           false,
           "schema is behind",
-          `${db.applied} of ${db.onDisk} migrations applied. Run \`node db/migrate.mjs up\`.`,
+          `${db.applied} of ${db.onDisk} migrations applied. Run \`TM8_DATABASE_URL=<url> node db/migrate.mjs up\` (add --i-mean-prod for port 5442).`,
         ),
       );
     } else {

@@ -18,9 +18,11 @@ fi
 if [ "$MODE" = --link ] && [ -f "$ROOT/auth/creds.json" ] && grep -q '"registered": *true' "$ROOT/auth/creds.json"; then
   echo "$ROOT/auth already holds a linked device; move it aside first (OPERATIONS.md › Re-link)" >&2; exit 1
 fi
+APP_USER=${WA_BRIDGE_USER:-$(id -u tm8 2>/dev/null):$(id -g tm8 2>/dev/null)}
+[[ "$APP_USER" =~ ^[0-9]+:[0-9]+$ ]] || { echo "no tm8 user on this host: set WA_BRIDGE_USER=<uid>:<gid>" >&2; exit 1; }
 mkdir -p "$ROOT/auth" "$ROOT/data" && chmod 700 "$ROOT/auth"
 docker rm -f "$SVC-link" >/dev/null 2>&1 || true
-docker run -d --name "$SVC-link" --network host --user 110:114 \
+docker run -d --name "$SVC-link" --network host --user "$APP_USER" \
   -v "$ROOT/auth:/app/auth" -v "$ROOT/data:/app/data" -v "$ROOT/config.json:/app/config.json:ro" \
   -v "$REPO/secrets:/app/secrets:ro" -v /opt/tm8/prod:/opt/tm8/prod:ro \
   wa-bridge:latest node --import tsx src/main.ts "$MODE" >/dev/null
