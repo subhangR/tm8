@@ -175,7 +175,7 @@ export function SessionLaunching({ model }: { model: LaunchPageModel }) {
                 </button>
                 <button
                   type="button"
-                  className="pn-btn pn-btn--quiet"
+                  className="pn-btn"
                   data-testid="session-launching-dismiss"
                   onClick={() => actions.dismiss(launchId)}
                 >

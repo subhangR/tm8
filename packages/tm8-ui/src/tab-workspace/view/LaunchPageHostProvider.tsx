@@ -12,12 +12,14 @@
  *     - Edit and retry re-opens the FULL launch popup on the launch's subject —
  *       every control a launch has, nothing trimmed — with the launch's notes
  *       written to the subject's draft, so nothing typed is lost;
- *     - the retry's launch TAKES OVER the failed one's tab (`replaces`), so a
- *       retried launch never leaves the failed page behind beside it;
+ *     - the retry's launch TAKES OVER the failed launch's tab (`replaces`), so
+ *       a launch the node never admitted leaves no failed page behind beside
+ *       its retry. A session that failed while BOOTING keeps its own tab: it
+ *       is a real session, with its own record of what went wrong;
  *     - Dismiss and resume are the hand-off's own (`views/useLaunchHandoff`).
  */
-import { useMemo, useState, type ReactNode } from 'react';
-import type { EntityId } from '@tm8/contract';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { launchRecord, LaunchPageHostContext, type LaunchPageHost, type LaunchRecord } from '../../launch-handoff';
 import { LaunchComposerPopup } from '../../new-session';
 import { readDraft, writeDraft } from '../../new-session/launch-draft';
@@ -25,8 +27,17 @@ import { useLaunchPort, type LaunchPort } from '../../views/useLaunchPort';
 import { useWorkspace } from './context';
 
 export function LaunchPageHostProvider({ children }: { children: ReactNode }) {
-  const { gate } = useWorkspace();
-  const port = useLaunchPort(gate.data);
+  const { gate, runtime } = useWorkspace();
+  /* Work's own landing for a retry the popup does not hand over: the session
+     opens as its tab, as every Work surface opens one. */
+  const onSpawn = useCallback(
+    async (input: ExecutionSpawnInput) => {
+      const sessionId = await gate.data.spawn(input);
+      runtime.dispatch({ command: 'workspace.tabs.open', args: { kind: 'work_session', entityId: sessionId }, source: 'system' });
+    },
+    [gate.data, runtime],
+  );
+  const port = useLaunchPort(gate.data, { onSpawn });
   const { handoff } = port;
   const [retrying, setRetrying] = useState<LaunchRecord | null>(null);
 

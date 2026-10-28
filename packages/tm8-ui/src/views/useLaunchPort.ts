@@ -27,10 +27,11 @@
  * is even mounted on this screen — so each caller supplies its own.
  *
  * WHAT IT COMPOSES: the launch hand-off (task 01a182d2, `useLaunchHandoff`).
- * Every port's spawn verb runs through it, so a press the popup hands over
- * lands at once on the launching page whichever screen it came from, and the
- * host's own `onSpawn` is what runs for a launch the popup did not hand over.
- * A host with no `onSpawn` of its own launches through the hand-off alone.
+ * A host's spawn verb runs through it, so a press the popup hands over lands at
+ * once on the launching page whichever screen it came from, and the host's own
+ * `onSpawn` is what runs for a launch the popup did not hand over. A host with
+ * no `onSpawn` keeps Launch refused with its reason (R5 #9): the hand-off
+ * lands a launch, it does not invent a launch surface.
  */
 import { useCallback, useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
@@ -45,7 +46,8 @@ import { useLaunchHandoff, type LaunchHandoff } from './useLaunchHandoff';
 export interface LaunchPortOptions {
   /**
    * The host's own spawn verb — what runs for a launch the popup did NOT hand
-   * over (no seam, the phone, the legacy desktop). Absent ⇒ a bare spawn.
+   * over (no seam, the phone, the legacy desktop). Absent ⇒ Launch renders
+   * disabled-with-reason (R5 #9), hand-off or not.
    */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   /** Opens the five-section sheet. Absent ⇒ the escape says it is not here. */
@@ -241,8 +243,8 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     spawnSession: data.spawn,
     sessionsSince,
   });
-  const spawn = useCallback(
-    (input: ExecutionSpawnInput) => handoff.spawn(input, onSpawn),
+  const spawn = useMemo(
+    () => (onSpawn ? (input: ExecutionSpawnInput) => handoff.spawn(input, onSpawn) : undefined),
     [handoff, onSpawn],
   );
 
@@ -259,8 +261,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       ...(capacity ? { capacity } : {}),
       ...(jev ? { jev } : {}),
       ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
-      onSpawn: spawn,
-      onLaunchStarted: handoff.onLaunchStarted,
+      ...(spawn ? { onSpawn: spawn, onLaunchStarted: handoff.onLaunchStarted } : {}),
       handoff,
       ...(onFullOptions ? { onFullOptions } : {}),
       ...(upload ? { upload } : {}),

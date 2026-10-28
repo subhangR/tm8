@@ -80,6 +80,18 @@ const LANE_DETAIL: Record<LaunchWorkdirMode, string> = {
   scratch: 'Scratch directory ready',
 };
 
+/**
+ * What a FAILED row says instead of its fact: the row names the step that did
+ * not happen, never the success it would have been.
+ */
+const FAILED_DETAIL: Record<BootStep, string> = {
+  admitted: 'The node did not take the launch',
+  lane: 'The checkout could not be prepared',
+  briefing: 'The prompt could not be composed',
+  agent: 'The agent process did not start',
+  live: 'The session did not come up',
+};
+
 function labelled(id: BootStep, workdir: LaunchWorkdirMode): Omit<PhaseRow, 'mark'> {
   switch (id) {
     case 'admitted':
@@ -114,7 +126,8 @@ export function launchPhases(inputs: PhaseInputs): PhaseRow[] {
   const failed = inputs.failed || inputs.status === 'failed' || inputs.bootPhase === 'failed';
   return BOOT_PHASES.map((id, index) => {
     const mark: PhaseMark = index < done ? 'done' : index === done ? (failed ? 'failed' : 'active') : 'pending';
-    return { ...labelled(id, inputs.workdir), mark };
+    const row = labelled(id, inputs.workdir);
+    return { ...row, ...(mark === 'failed' ? { detail: FAILED_DETAIL[id] } : {}), mark };
   });
 }
 
