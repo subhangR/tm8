@@ -92,7 +92,7 @@ Read the log with `mcp.audit.list` / `tm8 mcp audit [--session <id>] [--chat <id
 - A connector process or provider receives the credential it is configured with. tm8 controls who may call a connector and records every call, but it cannot constrain what a trusted stdio executable or a remote provider does with a valid token.
 - Audit rows record that a call happened and its sizes, not its arguments, so they cannot answer *what* an email said.
 - Connection tests (`mcp.servers.test`) do not yet write audit rows (follow-up in progress).
-- External MCP tokens on `/mcp` (`tm8 mcp tokens`), the Settings → Connectors page and the composer connector toggles are documented with their own changes, not here; refresh-failure inbox items are a later phase of the plan.
+- External MCP tokens on `/mcp` (`tm8 mcp tokens`), the Settings → Connectors page and the composer connector toggles are documented with their own changes, not here. Refresh failures are below.
 
 ## Directory providers
 

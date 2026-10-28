@@ -1,5 +1,5 @@
 -- =============================================================================
--- 376: refresh failures, the revoke-all kill switch, and the pending sweep.
+-- 377: refresh failures, the revoke-all kill switch, and the pending sweep.
 -- Plan §7.2, §9.3(3)(4), gap G11; decisions B8, B39, B41.
 --
 -- * report_mcp_credential_failure: the proxy's one door for "this connection

@@ -487,7 +487,7 @@ describe('refresh', () => {
     const { call } = proxyFor(drive, result.secret);
     google.expireAccess(); google.revokeRefresh();
     const before = google.calls('/token').length;
-    // §7.2 (376): Google's invalid_grant is a dead grant, reported as needing a reconnect.
+    // §7.2 (377): Google's invalid_grant is a dead grant, reported as needing a reconnect.
     await expect(call('search_files')).rejects.toThrow('MCP OAuth account requires reconnect');
     expect(google.calls('/token')).toHaveLength(before + 1);
     expect(google.calls('/drive/v3/files')).toHaveLength(1);

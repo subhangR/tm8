@@ -1,5 +1,5 @@
 /**
- * Migration 376 — §7.2 refresh failures and §9.3(4) revoke-all, against a real
+ * Migration 377 — §7.2 refresh failures and §9.3(4) revoke-all, against a real
  * database and a loopback provider (nothing leaves the host):
  *
  * - a refresh refused with invalid_grant marks the connection needs_reconnect

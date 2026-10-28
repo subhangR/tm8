@@ -1214,7 +1214,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
-    // §5.4 (342, 376): pending MCP sign-ins past their 10-minute expiry.
+    // §5.4 (342, 377): pending MCP sign-ins past their 10-minute expiry.
     scheduler.register(
       createMcpOAuthPendingSweepJob({
         db,

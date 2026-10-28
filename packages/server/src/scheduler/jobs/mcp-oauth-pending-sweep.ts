@@ -1,5 +1,5 @@
 /**
- * Expired pending MCP sign-ins (plan §5.4, migrations 342 and 376).
+ * Expired pending MCP sign-ins (plan §5.4, migrations 342 and 377).
  *
  * 342 sweeps expired `internal.mcp_oauth_pending` rows inside every begin, so on
  * a busy node they never pile up. On a quiet one nobody begins a connect, and an

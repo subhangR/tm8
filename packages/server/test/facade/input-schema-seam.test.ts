@@ -294,6 +294,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
 const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'mcp.credentials.create',
   'mcp.credentials.revoke',
+  'mcp.credentials.revokeAll',
   'mcp.credentials.rotate',
   'mcp.credentials.share',
   'mcp.credentials.unshare',
@@ -426,6 +427,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'mcp.credentials.create': contract.McpCredentialCreateInputSchema,
       'mcp.credentials.rotate': contract.McpCredentialRotateInputSchema,
       'mcp.credentials.revoke': contract.McpCredentialCommandInputSchema,
+      'mcp.credentials.revokeAll': contract.McpCredentialRevokeAllInputSchema,
       'mcp.credentials.share': contract.McpCredentialShareInputSchema,
       'mcp.credentials.unshare': contract.McpCredentialCommandInputSchema,
       'mcp.oauth.begin': contract.McpOAuthBeginInputSchema,
