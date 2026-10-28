@@ -14,6 +14,7 @@
 //   G4.7  foreign git worktree in the node's area     → quarantined, UNTOUCHED
 //   G4.8  never infers merged/abandoned, under any input
 //   G4.9  never throws — an unreadable graph is a report, not a boot failure
+//   G4.11 preparing under a boot in flight            → left alone, whatever its age
 
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -88,7 +89,11 @@ function graphWith(rows: WorktreeAllocationRow[]) {
   return { graph, calls };
 }
 
-function run(rows: WorktreeAllocationRow[], hasLivePty: (id: string) => boolean = () => false) {
+function run(
+  rows: WorktreeAllocationRow[],
+  hasLivePty: (id: string) => boolean = () => false,
+  isBootInFlight?: (worktreeId: string) => boolean,
+) {
   const { graph, calls } = graphWith(rows);
   return reconcileNodeWorktrees({
     auth: AUTH,
@@ -96,6 +101,7 @@ function run(rows: WorktreeAllocationRow[], hasLivePty: (id: string) => boolean 
     manager,
     nodeId: NODE_ID,
     hasLivePty,
+    ...(isBootInFlight ? { isBootInFlight } : {}),
     repoRootFor: async () => repoRoot,
   }).then((report) => ({ report, calls }));
 }
@@ -154,6 +160,25 @@ describe('§6.2 — the repair table', () => {
     expect(report.repaired[0]?.action).toContain('possible live spawn');
     await expect(stat(path)).resolves.toBeTruthy();
     await manager.remove({ repoRoot, path, force: true });
+  });
+
+  it('G4.11 a preparing row under a boot in flight is LEFT ALONE, whatever its age', async () => {
+    // An admitted spawn writes its session row before `git worktree add` runs,
+    // so a slow checkout keeps its allocation in `preparing` past any grace
+    // window. The fixture is an hour old: only the hook can be what spares it.
+    const booting = uuidN(21);
+    const crashed = uuidN(22);
+    const { report, calls } = await run(
+      [
+        allocation({ worktreeId: booting, path: join(worktreeRoot, PROJECT_ID, booting) }),
+        allocation({ worktreeId: crashed, path: join(worktreeRoot, PROJECT_ID, crashed) }),
+      ],
+      () => false,
+      (worktreeId) => worktreeId === booting,
+    );
+
+    expect(calls).toEqual([{ call: 'state', worktreeId: crashed, state: 'failed' }]);
+    expect(report.repaired.find((r) => r.worktreeId === booting)?.action).toContain('boot in flight');
   });
 
   it('G4.2 preparing with a real checkout but no entity → the checkout is removed', async () => {

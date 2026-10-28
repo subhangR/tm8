@@ -131,9 +131,12 @@ export {
 } from './credential-resolution.js';
 export {
   branchNameFor,
+  materializeWorktree,
   provisionWorktree,
+  reserveWorktree,
   type ProvisionedWorktree,
   type ProvisionWorktreeParams,
+  type ReservedWorktree,
 } from './worktree-provisioning.js';
 export {
   reconcileNodeWorktrees,
