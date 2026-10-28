@@ -43,7 +43,10 @@ import { useListCursor } from './listCursor';
 import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { getRailStore } from '../runtime/railStore';
+import { nextScene, sceneById, setPanelScene, usePanelScene } from './panelSceneStore';
+import { PanelSceneBackdrop, SCENE_ICON_ART, SceneMenu } from './PanelScene';
 import './browser.css';
+import './panel-scene.css';
 
 const BROWSER_ID = 'main';
 /** Below this browser width + New is icon-only (design log §4). */
@@ -148,52 +151,109 @@ const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.
  * The space switcher is the panel's title (the tm8 mark heads the rail). ⌕
  * opens the app's own search — the palette `/` opens — never a box inline in
  * the column; ▯ collapses the panel, leaving the rail.
+ *
+ * THE HEAD (task 01a18396): the row and whatever the caller puts `below` it
+ * (the new-item tile) share one box, so a chosen scene — painted or a photo —
+ * lies behind both and fades out under them. ⛰, shown on hover, picks it.
  */
-export function PanelTop({ searchable = false }: { searchable?: boolean }) {
+export function PanelTop({ searchable = false, below }: { searchable?: boolean; below?: ReactNode }) {
   /* The shell frame, not the workspace: the framed modes (Settings, …) draw
      this same row with no Work runtime mounted. */
   const { spaceId, gate } = useShellFrame();
   const collapse = () => getRailStore(spaceId).getState().setCollapsed(true);
+  /* The scene behind the head (task 01a18396); a swatch being rested on wins. */
+  const sceneId = usePanelScene();
+  const [picking, setPicking] = useState(false);
+  /* `undefined`: nothing previewed; `null`: None previewed. */
+  const [preview, setPreview] = useState<string | null | undefined>(undefined);
+  const pickRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closePicker = useCallback(() => {
+    setPicking(false);
+    setPreview(undefined);
+  }, []);
+  useDismissable(picking, [pickRef, menuRef], closePicker);
+  const shown = sceneById(picking && preview !== undefined ? preview : sceneId);
   return (
-    <div className="tws-paneltop" data-testid="tws-paneltop">
-      <div
-        className="tws-paneltop__space"
-        data-testid="tws-paneltop-space"
-        /* ONE TARGET: the "Space:" word opens the same menu its name does. */
-        onClick={(event) => {
-          if ((event.target as HTMLElement).closest('.shell-switcher')) return;
-          event.currentTarget.querySelector<HTMLButtonElement>('.shell-switcher__trigger')?.click();
-        }}
-      >
-        <span className="tws-paneltop__label">Space:</span>
-        {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
-          ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
-          : gate.switcherSlot}
-      </div>
-      <span className="tws-paneltop__spacer" />
-      {searchable ? (
+    <div
+      className="tws-panelhead"
+      data-scene={shown?.id}
+      data-scene-tone={shown && shown.tone !== 'theme' ? shown.tone : undefined}
+      /* A click on the painting itself — not on a control, the title or the
+         tile — moves to the next scene (Subhang 2026-10-28). */
+      onClick={(event) => {
+        if (!shown || picking) return;
+        if ((event.target as HTMLElement).closest('button, a, input, [role="menu"], .tws-paneltop__space, .tws-quicknew, .tws-quicknew-menu')) return;
+        setPanelScene(nextScene(shown.id).id);
+      }}
+    >
+      {shown ? <PanelSceneBackdrop scene={shown} /> : null}
+      <div className="tws-paneltop" data-testid="tws-paneltop">
+        <div
+          className="tws-paneltop__space"
+          data-testid="tws-paneltop-space"
+          /* ONE TARGET: the "Space:" word opens the same menu its name does. */
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('.shell-switcher')) return;
+            event.currentTarget.querySelector<HTMLButtonElement>('.shell-switcher__trigger')?.click();
+          }}
+        >
+          <span className="tws-paneltop__label">Space:</span>
+          {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
+            ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
+            : gate.switcherSlot}
+        </div>
+        <span className="tws-paneltop__spacer" />
+        <button
+          type="button"
+          ref={pickRef}
+          className="tws-icon-btn tws-scenepick"
+          aria-label="Panel scene"
+          title="Scene"
+          aria-haspopup="menu"
+          aria-expanded={picking}
+          data-testid="tws-paneltop-scene"
+          onClick={() => (picking ? closePicker() : setPicking(true))}
+        >
+          <VectorIcon paths={SCENE_ICON_ART} size={16} />
+        </button>
+        {searchable ? (
+          <button
+            type="button"
+            className="tws-icon-btn"
+            aria-label="Search"
+            title="Search  /"
+            aria-keyshortcuts="/"
+            data-testid="tws-paneltop-search"
+            onClick={() => gate.openPalette()}
+          >
+            <VectorIcon paths={SEARCH_ART} size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="tws-icon-btn"
-          aria-label="Search"
-          title="Search  /"
-          aria-keyshortcuts="/"
-          data-testid="tws-paneltop-search"
-          onClick={() => gate.openPalette()}
+          aria-label="Collapse panel"
+          title="Collapse panel"
+          data-testid="tws-paneltop-collapse"
+          onClick={collapse}
         >
-          <VectorIcon paths={SEARCH_ART} size={16} />
+          <VectorIcon paths={SIDEBAR_ART} size={16} />
         </button>
+      </div>
+      {below}
+      {picking ? (
+        <SceneMenu
+          value={sceneId}
+          menuRef={menuRef}
+          onPreview={setPreview}
+          onChoose={(choice) => {
+            setPanelScene(choice);
+            closePicker();
+            pickRef.current?.focus();
+          }}
+        />
       ) : null}
-      <button
-        type="button"
-        className="tws-icon-btn"
-        aria-label="Collapse panel"
-        title="Collapse panel"
-        data-testid="tws-paneltop-collapse"
-        onClick={collapse}
-      >
-        <VectorIcon paths={SIDEBAR_ART} size={16} />
-      </button>
     </div>
   );
 }
@@ -517,10 +577,7 @@ function EntityBrowser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
-      {pinnedRail ? (
-        <PanelTop searchable />
-      ) : null}
-      {pinnedRail ? <QuickNew terminal={verbs.terminal} /> : null}
+      {pinnedRail ? <PanelTop searchable below={<QuickNew terminal={verbs.terminal} />} /> : null}
       <div
         className="tws-browser-list"
         ref={listRef}
