@@ -20,60 +20,18 @@
  * `invalid_input`, `forbidden` (credential unavailable / mint refused),
  * `limit_exceeded`, `version_conflict`, `upstream_unavailable` 'Tool launch failed'.
  */
-import { CollabError, type LoopAction, type ToolJsonValue } from '@tm8/contract';
-import type { Db, DbClaims } from '../db/types.js';
+import { CollabError } from '@tm8/contract';
+import type { DbClaims } from '../db/types.js';
 import type { DueLoop } from '../scheduler/jobs/loops.js';
 import type { ToolRuntime } from '../tools/runtime.js';
-
-/** The §2.1 runner columns a firing branches on. PR2's claim read puts them on `DueLoop`. */
-export interface LoopRunner {
-  readonly action: LoopAction;
-  readonly toolId: string | null;
-  readonly toolInputs: Record<string, ToolJsonValue>;
-}
-
-/** A due loop as the port receives it: the runner columns once the claim read carries them. */
-export type FiringLoop = DueLoop & Partial<LoopRunner>;
-
-const LOOP_ACTIONS: ReadonlySet<string> = new Set<LoopAction>(['spawn', 'dispatch', 'tool']);
-
-/**
- * Which action this firing takes, and what the tool branch needs.
- *
- * INTERIM FALLBACK, to be DELETED when `DueLoop` carries `action`, `toolId`
- * and `toolInputs` (Loops PR2, migration 382's claim read): a row from today's
- * `loops_due_for_executor` names no action, so it is read from `public.loops`
- * under the firing's own claims. Without this a tool loop fired by the
- * pre-claim job would be mistaken for a spawn or dispatch loop and would derive
- * a task and poke the dispatcher — the wrong action, silently. Once the claim
- * read carries the columns the row read is a second source of truth that can
- * disagree with the claimed snapshot (§3.3: an edit mid-firing affects only
- * later runs), which is why it must go rather than stay as a fallback.
- */
-export async function resolveLoopRunner(db: Db, claims: DbClaims, loop: FiringLoop): Promise<LoopRunner> {
-  if (typeof loop.action === 'string') {
-    return { action: loop.action, toolId: loop.toolId ?? null, toolInputs: loop.toolInputs ?? {} };
-  }
-  const [row] = await db.query<{ action: string | null; toolId: string | null; toolInputs: Record<string, ToolJsonValue> | null }>(
-    claims,
-    `select l.action, l.tool_id::text "toolId", l.tool_inputs "toolInputs"
-       from public.loops l where l.entity_id = $1`,
-    [loop.entityId],
-  );
-  // A row written before 378 carries the pre-action meaning: no runner = dispatcher.
-  const action = row?.action ?? (loop.teamMemberId === null ? 'dispatch' : 'spawn');
-  if (!LOOP_ACTIONS.has(action)) {
-    throw new CollabError('invariant_violation', `loop ${loop.entityId} has an unknown action "${action}"`);
-  }
-  return { action: action as LoopAction, toolId: row?.toolId ?? null, toolInputs: row?.toolInputs ?? {} };
-}
 
 export interface ToolFiringDeps {
   /** PR-C's seam; absent on a node with no execution block. */
   readonly tools?: Pick<ToolRuntime, 'runScheduled'> | undefined;
 }
 
-export type ToolFiringLoop = Pick<DueLoop, 'entityId' | 'title' | 'teamMemberId'> & Pick<LoopRunner, 'toolId' | 'toolInputs'>;
+/** The due-loop columns a tool firing reads (§2.1: the claim read carries them). */
+export type ToolFiringLoop = Pick<DueLoop, 'entityId' | 'title' | 'teamMemberId' | 'toolId' | 'toolInputs'>;
 
 /**
  * Exactly one call: `runScheduled(claims, { toolId, inputs, firingKey,

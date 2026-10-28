@@ -78,7 +78,7 @@ import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTI
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
-import { fireTool, resolveLoopRunner } from '../loops/fire-tool.js';
+import { fireTool } from '../loops/fire-tool.js';
 import { firingKeyFor } from '../loops/firing.js';
 import { spawnRequestForLoop } from '../loops/spawn-config.js';
 import type { ToolRuntime } from '../tools/runtime.js';
@@ -3127,14 +3127,8 @@ export function createLoopExecutorPort(deps: {
        * minted on. The runtime's refusals propagate unchanged, so the job
        * records their text as the run's launch error and `last_error`.
        */
-      const runner = await resolveLoopRunner(db, claims, loop);
-      if (runner.action === 'tool') {
-        return fireTool(
-          { tools: deps.tools },
-          { ...loop, toolId: runner.toolId, toolInputs: runner.toolInputs },
-          claims,
-          firingKey,
-        );
+      if (loop.action === 'tool') {
+        return fireTool({ tools: deps.tools }, loop, claims, firingKey);
       }
 
       // The loop is its OWN launchable subject when it names none (§4.4), so
@@ -3152,7 +3146,7 @@ export function createLoopExecutorPort(deps: {
       await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-task:${loop.entityId}:${taskId}`);
 
       let sessionId: string;
-      if (runner.action === 'spawn') {
+      if (loop.action === 'spawn') {
         if (!loop.teamMemberId) {
           // 378's door refuses this shape; reaching it means a row was written
           // around the door. Loud, and recorded on the loop as `last_error`.

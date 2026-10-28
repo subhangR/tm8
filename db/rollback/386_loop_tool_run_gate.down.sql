@@ -1,27 +1,13 @@
 -- =============================================================================
--- 383 — A LOOP-TRIGGERED TOOL RUN EXECUTES THE LOOP'S OWN TOOL (Loops PR3,
---       task 01a182d5-e482; design of record 01a182d4 §3.4 "Provenance edge").
--- Predecessor: 379_scheduled_tool_runs.sql (378 is the Loops lane's; 380–382
--- are reserved by the coordinator for Tools PR-E/PR-F and Loops PR2 and may
--- land in either order — none of them touches this function).
+-- ROLLBACK for 386_loop_tool_run_gate.sql — NOT a migration (db/migrate.mjs
+-- never reads this directory). Run by hand, as the migration owner, only to
+-- undo 386:
 --
--- 379 made `start_tool_session(..., p_triggered_by_loop_id)` write the run's
--- provenance-marked `triggered_by` edge inside the run's own transaction and
--- gated it on no-bearer claims, a live same-space loop, a pinned version and
--- keep-open off. Its header says what it could not check: "The Loops lane's
--- migration that adds `loops.tool_id` redefines this function to also require
--- `loops.tool_id = p_tool_id`; that column does not exist yet." 378 added the
--- column in a sibling lane and so could not reference 379's function either.
--- This file closes that gap: the ONE change is the `tool_id` check in 379's
--- gate block, so the marked edge — the authority the run's tm8 bearer is minted
--- on — can never bind a run of tool X to a loop configured for tool Y.
--- 23514 (invariant_violation): the executor passed a tool the loop does not
--- name, which the write-time doors make impossible for a stored loop.
+--   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/386_loop_tool_run_gate.down.sql
+--   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '386_loop_tool_run_gate.sql'"
 --
--- Body: 379's verbatim (itself 318's plus the three 379 blocks) plus the one
--- 383 block. `create or replace` with the identical signature keeps 379's
--- grants. Rollback: db/rollback/383_loop_tool_run_gate.down.sql restores 379's
--- body verbatim.
+-- Destroys no data: restores 379's start_tool_session body verbatim (the gate
+-- without the loops.tool_id check). Grants are kept by create or replace.
 -- =============================================================================
 
 set role tm8_graph_owner;
@@ -38,16 +24,12 @@ begin
  if e.space_id<>p_space_id or not internal.entity_readable(e.id) then raise exception 'tool unavailable' using errcode='42501'; end if;
  -- 379: a loop-triggered run is the in-process loop executor's, for a live
  -- loop in this space, pinned to the version it validated, never kept open.
- -- 383 adds: for a loop whose tool_id names this tool (the column 379 could not see).
  if p_triggered_by_loop_id is not null then
    if coalesce(internal.claim_text('tm8.auth_kind'),'')<>'' or internal.claim_text('tm8.via_link') is not null
    or internal.claim_text('tm8.work_session_id') is not null then
      raise exception 'a loop-triggered tool run is started only by the loop executor' using errcode='42501'; end if;
    loop_entity:=internal.live_entity(p_triggered_by_loop_id,'loop');
    if loop_entity.space_id<>p_space_id then raise exception 'loop belongs to another space' using errcode='22023'; end if;
-   -- 383: the loop's configured tool is the tool this run executes (design 01a182d4 §3.4).
-   if (select l.tool_id from public.loops l where l.entity_id=p_triggered_by_loop_id) is distinct from p_tool_id then
-     raise exception 'loop tool_id does not name this tool' using errcode='23514'; end if;
    if p_tool_version is null then
      raise exception 'a loop-triggered tool run pins the tool version it validated' using errcode='22023'; end if;
    if coalesce(p_keep_open,false) then
@@ -135,10 +117,5 @@ begin
    ||jsonb_build_object('toolId',e.id))||jsonb_build_object('__tm8_replayed',false);
 end $$;
 
-comment on function public.start_tool_session(uuid,uuid,integer,jsonb,boolean,text,text,integer,uuid,text,uuid) is
- '318 + 379 + 383: start a tool run; with p_triggered_by_loop_id, a loop firing: no-bearer claims, live same-space loop whose '
- 'tool_id is p_tool_id, pinned version, keep-open off; writes the provenance-marked triggered_by edge in the same transaction.';
-
-revoke all on function public.start_tool_session(uuid,uuid,integer,jsonb,boolean,text,text,integer,uuid,text,uuid) from public;
-grant execute on function public.start_tool_session(uuid,uuid,integer,jsonb,boolean,text,text,integer,uuid,text,uuid) to tm8_app;
+comment on function public.start_tool_session(uuid,uuid,integer,jsonb,boolean,text,text,integer,uuid,text,uuid) is null;
 reset role;

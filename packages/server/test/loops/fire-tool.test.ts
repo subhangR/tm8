@@ -25,25 +25,26 @@ const TOOL = '00000000-0000-4000-8000-0000000000d1';
 const AT = new Date('2026-10-28T20:00:00.000Z');
 const CLAIMS: DbClaims = { identityId: 'loop-armer', nodeAdmin: false, requestId: `loop-executor:${LOOP}` };
 
-type ToolLoop = DueLoop & { action: 'spawn' | 'dispatch' | 'tool'; toolId: string | null; toolInputs: Record<string, unknown> };
-function toolLoop(over: Partial<ToolLoop> = {}): ToolLoop {
+/** A claimed due row (PR2's `loops_claimable`), as the job hands it to the port. */
+function toolLoop(over: Partial<DueLoop> = {}): DueLoop {
   return {
-    entityId: LOOP, spaceId: SPACE, title: 'Nightly check', schedule: 'every 1d',
-    teamMemberId: PERSONA, subjectId: null, prompt: '', config: null, version: 1, actAsIdentity: 'loop-armer',
-    action: 'tool', toolId: TOOL, toolInputs: { target: 'db-1' },
+    entityId: LOOP, spaceId: SPACE, title: 'Nightly check', schedule: 'every 1d', timezone: 'UTC',
+    action: 'tool', teamMemberId: PERSONA, subjectId: null, toolId: TOOL, toolInputs: { target: 'db-1' },
+    prompt: '', config: null, version: 1, concurrency: 'skip', maxRuntimeSeconds: null,
+    retryAttempts: 0, retryDelaySeconds: 300, retryAttempt: 0, pausedUntil: null, nextRunAt: null,
+    actAsIdentity: 'loop-armer',
     ...over,
   };
 }
 
 interface Recorded { rpcs: Array<{ fn: string; args: readonly unknown[] }>; queries: string[] }
 
-/** A Db that records every write and answers only the reads the port may make. */
-function fakeDb(loopRow?: { action: string | null; toolId: string | null; toolInputs: Record<string, unknown> | null }): { db: Db; rec: Recorded } {
+/** A Db that records every write; the port makes no read of its own on either branch. */
+function fakeDb(): { db: Db; rec: Recorded } {
   const rec: Recorded = { rpcs: [], queries: [] };
   const db = {
     query: async (_c: DbClaims, sql: string) => {
       rec.queries.push(sql);
-      if (sql.includes('from public.loops')) return loopRow ? [loopRow] : [];
       throw new Error(`unexpected query: ${sql}`);
     },
     rpc: async (_c: DbClaims, fn: string, args: readonly unknown[] = []) => {
@@ -108,7 +109,7 @@ describe('a tool firing', () => {
     // The loop side writes NOTHING: no derived task, no triggered_by, no spawn.
     expect(rec.rpcs).toEqual([]);
     expect(spawn).not.toHaveBeenCalled();
-    // And reads nothing when the due row already carries the runner columns.
+    // And reads nothing: the claimed row carries the runner columns (PR2).
     expect(rec.queries).toEqual([]);
   });
 
@@ -205,40 +206,6 @@ describe('one firingKey on both paths (PR-C\'s binding rule)', () => {
     await p.fire(toolLoop({ action: 'spawn', toolId: null, toolInputs: {} }), CLAIMS, AT);
     const toolKey = runtime.calls[0]!.request.firingKey;
     expect((spawn.mock.calls[0]![1] as { clientMutationId: string }).clientMutationId).toBe(`loop-fire:${toolKey}`);
-  });
-});
-
-describe('the interim runner read (deleted once DueLoop carries action/toolId/toolInputs)', () => {
-  it('a due row without an action is read from public.loops under the firing claims, and a tool loop fires as a tool', async () => {
-    const { db, rec } = fakeDb({ action: 'tool', toolId: TOOL, toolInputs: { target: 'db-1' } });
-    const runtime = fakeRuntime();
-    const { port: p, spawn } = port({ db, tools: runtime.tools });
-    const legacyRow: DueLoop = {
-      entityId: LOOP, spaceId: SPACE, title: 'Nightly check', schedule: 'every 1d',
-      teamMemberId: PERSONA, subjectId: null, prompt: '', config: null, version: 1, actAsIdentity: 'loop-armer',
-    };
-    const fired = await p.fire(legacyRow, CLAIMS, AT);
-    expect(fired).toEqual({ taskId: null, sessionId: 'session-1' });
-    expect(rec.queries).toHaveLength(1);
-    expect(rec.queries[0]).toContain('from public.loops');
-    expect(runtime.calls[0]!.request).toMatchObject({ toolId: TOOL, inputs: { target: 'db-1' } });
-    expect(spawn).not.toHaveBeenCalled();
-    expect(rec.rpcs).toEqual([]);
-  });
-
-  it('a pre-378 row with no action keeps its old meaning: runner → spawn, no runner → dispatch (no tool call)', async () => {
-    const { db } = fakeDb({ action: null, toolId: null, toolInputs: null });
-    const runtime = fakeRuntime();
-    const spawn = vi.fn(async () => ({ sessionId: 'session-spawned' }));
-    const { port: p } = port({ db, tools: runtime.tools, spawn });
-    const row: DueLoop = {
-      entityId: LOOP, spaceId: SPACE, title: 'Legacy', schedule: 'every 1d',
-      teamMemberId: PERSONA, subjectId: null, prompt: 'do it', config: { model: 'm' }, version: 1, actAsIdentity: 'loop-armer',
-    };
-    const fired = await p.fire(row, CLAIMS, AT);
-    expect(fired).toEqual({ taskId: 'task-1', sessionId: 'session-spawned' });
-    expect(runtime.calls).toEqual([]);
-    expect(spawn).toHaveBeenCalledTimes(1);
   });
 });
 
