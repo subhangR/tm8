@@ -48,3 +48,5 @@ end $$;
 
 revoke all on function public.list_recoverable_chats(text,text) from public;
 grant execute on function public.list_recoverable_chats(text,text) to tm8_app;
+
+reset role;
