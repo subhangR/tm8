@@ -25,6 +25,15 @@ import { fileURLToPath } from 'node:url';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 
 const ECHO_AGENT = fileURLToPath(new URL('../harness/echo-agent.mjs', import.meta.url));
+// THE INTERPRETER RUNNING THIS SUITE, not whatever `node` a bare PATH lookup
+// finds — because there is no PATH to look in. `spawn` is given `env: {}` (the
+// caller supplies the COMPLETE child environment; PtyHostService never merges
+// `process.env`), so the shell falls back to its compiled-in default PATH:
+// `/bin:/usr/bin:/usr/ucb:/usr/local/bin`. A node installed anywhere else —
+// nvm, `~/.local/bin`, Homebrew on Apple Silicon (`/opt/homebrew/bin`) — is
+// simply not on it, the echo agent never starts, and all five tests below fail
+// as `timeout waiting for condition` with nothing naming the cause.
+const NODE = JSON.stringify(process.execPath);
 const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -52,7 +61,7 @@ describe('prompt delivery fidelity', () => {
     const sessionId = 'fidelity';
     host.spawn({
       sessionId,
-      command: `node ${JSON.stringify(ECHO_AGENT)}`,
+      command: `${NODE} ${JSON.stringify(ECHO_AGENT)}`,
       cwd: '/tmp',
       env: {},
     });

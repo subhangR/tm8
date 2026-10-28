@@ -8,6 +8,7 @@ import {
   type SpaceCredentialPort,
 } from '@tm8/execution';
 import { createChatPreparedLaunchResolver, type ChatPreparedLaunchInput } from '../../src/chat/harness-composition.js';
+import { describeError } from '../../src/chat/fenced-turn.js';
 import type { Db } from '../../src/db/types.js';
 import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
 import { composeChatBootstrap, composeChatHarnessFoundation } from '../../src/chat/compose.js';
@@ -152,7 +153,7 @@ describe('private generation launch composition', () => {
     const kimi = createChatPreparedLaunchResolver({ ...options, memberCredentials: { resolve: async () => ({
       provider: 'kimi', homeDir: dataDir, configDir: join(dataDir, 'kimi'), apiKey: KEY,
     }) } });
-    const next = await kimi({ ...input, model: 'kimi-k2-thinking', agentTool: 'claude-code', provider: 'moonshot' }, owner, fence);
+    const next = await kimi({ ...input, model: 'kimi-k3', agentTool: 'claude-code', provider: 'moonshot' }, owner, fence);
     const kimiMaterial = await next.launch.materialize();
     expect(kimiMaterial.env.ANTHROPIC_BASE_URL).toBe('https://api.moonshot.ai/anthropic');
     expect(kimiMaterial.env.ANTHROPIC_AUTH_TOKEN).toBe(KEY);
@@ -240,7 +241,16 @@ describe('private generation launch composition', () => {
   it('cleans the exact grant and private files after a connector binding boot race', async () => {
     const { resolve, bind, rpc, dataDir } = await rig();
     bind.mockRejectedValueOnce(new Error(SECRET_ERROR));
-    await expect(resolve(input, owner, fence)).rejects.toThrow('Chat launch could not be prepared');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const failed = await resolve(input, owner, fence).catch((error: unknown) => error);
+      expect(failed).toMatchObject({ message: 'Chat launch could not be prepared', cause: { name: 'Error' } });
+      // The operator detail follows the cause chain and still never stores the message.
+      expect(describeError(failed)).toMatchObject({ cause: { name: 'Error', message: 'Error' } });
+      expect(JSON.stringify(describeError(failed))).not.toContain(SECRET_ERROR);
+      expect(JSON.stringify(warn.mock.calls)).toContain(CHAT);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET_ERROR);
+    } finally { warn.mockRestore(); }
     expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
     expect(rpc.mock.calls.filter(call => call[1] === 'revoke_agent_runtime_session')).toHaveLength(1);
   });

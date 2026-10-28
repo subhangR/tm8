@@ -616,10 +616,172 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
                  from public.tracking_refresh_requests r cross join lateral unnest(r.entity_ids) value
                 where r.space_id=$1) entity_ids`, [fixture.spaceId],
     );
-    expect(queued[0]?.count).toBe(1);
+    // Three, not one: 371 has the link doors enqueue their own hydration, so the
+    // first linkPr and the first linkCommit each left a request behind before
+    // this explicit refresh added the third. The second linkCommit added none —
+    // its mirror was already covered by a queued request.
+    expect(queued[0]?.count).toBe(3);
     expect(new Set(queued[0]?.entity_ids)).toEqual(new Set([prId, commitId]));
     await expect(asApp(database, fixture.outsiderIdentityId, (q) => q.rpc('queue_tracking_refresh',
       [[prId], null, 'g02-refresh-outside']))).rejects.toMatchObject({ code: 'P0002' });
+  });
+
+  // 371. The link doors create a PLACEHOLDER mirror on purpose -- a commit's
+  // `message` is its own sha, a pull request's `title` is 'repo #number' -- and
+  // the real facts are meant to arrive from the tracking observer. But that
+  // observer is purely queue-driven and the link doors enqueued nothing, so a
+  // linked mirror stayed a stub forever unless a human ran `tracking refresh`
+  // by hand. On the node this was found on: 57 of 86 commit mirrors and 40 of
+  // 95 pull request mirrors had never been fetched, and every one of them had
+  // arrived by being linked.
+  //
+  // A FakeDb cannot see any of this -- the enqueue, its two suppressions, and
+  // the privilege that makes the helper safe are all plpgsql -- which is why it
+  // is pinned here against a real database.
+  it('schedules hydration for the placeholder mirrors that linking creates', async () => {
+    const queuedFor = async (entityId: string): Promise<number> => (
+      await database.query<{ n: number }>(
+        `select count(*)::integer n from public.tracking_refresh_requests
+          where space_id=$1 and status='queued' and $2::uuid = any(entity_ids)`,
+        [fixture.spaceId, entityId],
+      ))[0]!.n;
+    const drainQueue = async (entityId: string): Promise<void> => {
+      await database.transaction(async (client) => {
+        await client.query('set local role tm8_graph_owner');
+        await client.query(
+          `update public.tracking_refresh_requests set status='completed', completed_at=now()
+            where space_id=$1 and status='queued' and $2::uuid = any(entity_ids)`,
+          [fixture.spaceId, entityId]);
+      });
+    };
+    const linkCommit = (sha: string, cmid: string, taskId = fixture.taskId): Promise<unknown> =>
+      asApp(database, fixture.identityId, (q) => q.rpc('link_commit',
+        [taskId, `https://github.com/acme/tm8/commit/${sha}`, 'github', 'acme/tm8', sha,
+          null, null, cmid]));
+    const mirrorOf = async (sha: string): Promise<string> => (
+      await database.query<{ id: string }>(
+        `select entity_id::text id from public.commits where space_id=$1 and sha=$2`,
+        [fixture.spaceId, sha]))[0]!.id;
+
+    // The defect, inverted: linking now leaves a request behind.
+    await linkCommit('beef1234567890', 'g02-hydrate-link');
+    const commit = await mirrorOf('beef1234567890');
+    expect(await queuedFor(commit)).toBe(1);
+
+    // Linking the same commit to a second task before the observer's next tick
+    // is still one refresh. A queued request already covers it.
+    await linkCommit('beef1234567890', 'g02-hydrate-relink', fixture.childTaskId);
+    expect(await queuedFor(commit)).toBe(1);
+
+    // The queue drained without the mirror learning anything -- the 404 and
+    // rate-limit shapes the observer already handles. The mirror is still a
+    // stub, so the next link asks again rather than assuming it was handled.
+    await drainQueue(commit);
+    expect(await queuedFor(commit)).toBe(0);
+    await linkCommit('beef1234567890', 'g02-hydrate-retry');
+    expect(await queuedFor(commit)).toBe(1);
+
+    // Once the facts ARE applied, `fetched_at` is set and re-linking costs no
+    // provider request at all.
+    await drainQueue(commit);
+    await asApp(database, fixture.identityId, (q) => q.rpc('apply_commit_facts',
+      [commit, 'a real subject line', 'a-real-author', '2026-08-21T09:00:00Z', null]));
+    await linkCommit('beef1234567890', 'g02-hydrate-settled');
+    expect(await queuedFor(commit)).toBe(0);
+
+    // An ABBREVIATED sha hydrates too, in place: the link door's regex admits 7
+    // characters, and `apply_commit_facts` (081) writes by entity id and never
+    // rewrites `sha`. So the short row fills rather than forking.
+    //
+    // What it does NOT fix, deliberately: the mirror stays keyed on the short
+    // sha, and `commits_space_repo_sha_idx` is (space, provider, repo, sha), so
+    // a later FULL-sha sighting of the same commit still creates a second
+    // entity. Normalising abbreviations is a different defect in a different
+    // door and is not widened into here.
+    await linkCommit('610d9300', 'g02-hydrate-shortsha');
+    const short = await mirrorOf('610d9300');
+    expect(await queuedFor(short)).toBe(1);
+    await asApp(database, fixture.identityId, (q) => q.rpc('apply_commit_facts',
+      [short, 'subject for the abbreviated sha', 'a-real-author', '2026-08-26T14:47:00Z', null]));
+    expect((await database.query<{ sha: string; message: string; author: string }>(
+      `select sha, message, author from public.commits where entity_id=$1`, [short]))[0])
+      .toMatchObject({ sha: '610d9300', message: 'subject for the abbreviated sha', author: 'a-real-author' });
+
+    // Pull requests are placeholdered by the same door family and were equally
+    // unscheduled; the fix is symmetric.
+    await asApp(database, fixture.identityId, (q) => q.rpc('link_pull_request',
+      [fixture.taskId, 'https://github.com/acme/tm8/pull/77', 'github', 'acme/tm8', 77,
+        null, null, 'g02-hydrate-pr']));
+    const pr = (await database.query<{ id: string }>(
+      `select entity_id::text id from public.pull_requests where space_id=$1 and number=77`,
+      [fixture.spaceId]))[0]!.id;
+    expect(await queuedFor(pr)).toBe(1);
+
+    // The helper takes INVOKER rights, so the ability to enqueue comes from the
+    // SECURITY DEFINER link door and not from the helper itself. Reached
+    // directly by tm8_app it gets as far as the insert and is refused -- which
+    // is the whole reason it does not need an authorization check of its own.
+    await expect(asApp(database, fixture.identityId, (q) => q.query(
+      `select internal.schedule_tracking_hydration($1,$2,null)`, [fixture.spaceId, fixture.taskId])))
+      .rejects.toMatchObject({ code: '42501' });
+  });
+
+  // The commit projection returned repository/sha/message/committedAt and
+  // nothing else, while the pull_request arm twenty lines above it carried
+  // `url`, `fetchedAt` and `stale`. That is not a cosmetic asymmetry:
+  // GenericBody's LinkSummaryBlock is deliberately KIND-AGNOSTIC and reads
+  // `state.url` and `state.stale` for both kinds, so a commit could never render
+  // `open ↗` — although `public.commits.url` held the link — and the literal
+  // "stale — refetch to update" badge could never appear on a commit at all.
+  // The entity that "commits are not synced" was reported against had no way to
+  // say it was unsynced.
+  //
+  // Driven through the REAL projection against a REAL row, because the thing
+  // that was broken is the seam between `internal.entity_content` (which has
+  // always returned the whole commits row) and the arm that ignored most of it.
+  // A fixture asserting the object literal would have passed on the old code.
+  it('projects a commit with the url and staleness the panel reads, exactly as it does a PR', async () => {
+    const sha = 'cafe1234567890abcdef1234567890abcdef1234';
+    await asApp(database, fixture.identityId, (q) => q.rpc('link_commit',
+      [fixture.taskId, `https://github.com/acme/tm8/commit/${sha}`, 'github', 'acme/tm8', sha,
+        null, null, 'g02-projection-commit']));
+    const commitId = (await database.query<{ id: string }>(
+      `select entity_id::text id from public.commits where space_id=$1 and sha=$2`,
+      [fixture.spaceId, sha]))[0]!.id;
+
+    // A freshly linked mirror: message is the sha itself, nothing fetched.
+    const stub = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, commitId, fixture.identityId));
+    expect(stub.state).toMatchObject({
+      kind: 'commit',
+      repository: 'acme/tm8',
+      sha,
+      url: `https://github.com/acme/tm8/commit/${sha}`,
+      author: null,
+      fetchedAt: null,
+      // THE ONE THAT WAS UNREACHABLE. `fetched_at` is stamped only by
+      // `apply_commit_facts`, so null means no provider has ever answered about
+      // this row — the exact placeholder state that was reported.
+      stale: true,
+    });
+    // Still a valid EntityDetail after the widening — the contract arm is
+    // `.strict()`, so an unlisted member would fail here rather than silently.
+    expect(() => EntityDetailSchema.parse(stub)).not.toThrow();
+
+    // ...and once the observer has applied facts, the same projection stops
+    // claiming staleness and carries the author.
+    await asApp(database, fixture.identityId, (q) => q.rpc('apply_commit_facts',
+      [commitId, 'feat: a real subject', 'a-real-author', '2026-08-21T09:00:00Z', null]));
+    const hydrated = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, commitId, fixture.identityId));
+    expect(hydrated.state).toMatchObject({
+      kind: 'commit',
+      message: 'feat: a real subject',
+      author: 'a-real-author',
+      stale: false,
+    });
+    expect((hydrated.state as { fetchedAt?: string | null }).fetchedAt).toBeTruthy();
+    expect(() => EntityDetailSchema.parse(hydrated)).not.toThrow();
   });
 
   it('projects live connections with fingerprinted keysets and omits tombstoned endpoints', async () => {

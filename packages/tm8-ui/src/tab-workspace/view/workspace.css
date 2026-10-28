@@ -312,11 +312,6 @@
 .tws-rail-top::-webkit-scrollbar {
   display: none;
 }
-/* The pinned-only rail's folded rest (`tm8.ui.navigator = 'rail'`): a wrapper
-   for the fold alone, so its rules and groups keep the top's own 12px gaps. */
-.tws-rail-rest {
-  display: contents;
-}
 /* The space menu hangs out of the rail over the panel: the rail must not
    clip it (its scrolling top group keeps its own clip). */
 .tws-rail[data-pinned-only] {
@@ -364,8 +359,7 @@
 .tws-rail[data-pinned-only] .tws-rail-group {
   gap: var(--pn-space-2);
 }
-.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule,
-.tws-rail[data-pinned-only] .tws-rail-rest > .tws-rail-rule {
+.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule {
   margin-block: var(--pn-space-1);
 }
 .tws-rail-group,
@@ -965,6 +959,52 @@
   border-radius: var(--pn-r-sm);
   box-shadow: var(--pn-sh-pop);
   animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+/* THE MORE KINDS CARD (pinned-only rail): one menu row per unpinned kind,
+   its pin button at the right edge, then the sources under a hairline. */
+.tws-rail-pop[data-pop='more'] {
+  width: 260px;
+  padding: var(--pn-space-1);
+}
+.tws-rail-more-list {
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.tws-rail-more-row {
+  display: flex;
+  align-items: center;
+}
+.tws-rail-more-open {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tws-rail-more-open[aria-current='true'] {
+  background: var(--pn-active);
+}
+.tws-rail-more-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-rail-more-pin {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.tws-rail-more-row:hover .tws-rail-more-pin,
+.tws-rail-more-pin:focus-visible {
+  color: var(--pn-ink-2);
+}
+.tws-rail-more-rule {
+  width: 100%;
+  height: 0;
+  margin: var(--pn-space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+}
+.tws-rail-more-empty {
+  padding: var(--pn-space-2);
+  color: var(--pn-ink-3);
 }
 /* THE ACCOUNT CARD (RailUser): status on top, then the account menu inline,
    which brings its own rows and padding. */

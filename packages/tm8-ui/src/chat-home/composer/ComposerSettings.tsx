@@ -2,7 +2,11 @@
  * THE ⚙ BUTTON — the composer's one settings control.
  *
  * The trigger always names the selected role (`[sliders] Coordinator`), so the
- * mode is never hidden behind a click. The panel is three groups in one row
+ * mode is never hidden behind a click, and beside it the teammate the chat runs
+ * as whenever that name is not the role's own word (`[sliders] Coordinator ·
+ * Worker`). The roles share their names with seeded house teammates, so a chip
+ * reading only "Coordinator" over a chat that runs as Worker named the wrong
+ * teammate (task 01a181da). The panel is three groups in one row
  * grammar (`MenuRows`):
  *
  *   MODE      the three roles, compact: icon · name · a few words · ✓
@@ -23,6 +27,8 @@ export interface ComposerSettingsProps {
   /** The server mode underneath the role, carried on the trigger as `data-mode`. */
   mode?: ChatMode;
   onRoleChange: (role: ComposerRole) => void;
+  /** The label of the teammate the chat runs as; drawn on the trigger unless it is the role's own word. */
+  runsAs?: string | null;
   /** The roles cannot be changed (a host-pinned mode, a chat still starting); the rest of the panel still can. */
   roleLocked?: string | null;
   /** The thread's rows: runs as, project, permissions, credentials. */
@@ -32,20 +38,22 @@ export interface ComposerSettingsProps {
   testId?: string;
 }
 
-export function ComposerSettings({ role, mode, onRoleChange, roleLocked = null, thread, options, testId = 'tch-settings' }: ComposerSettingsProps) {
+export function ComposerSettings({ role, mode, onRoleChange, runsAs = null, roleLocked = null, thread, options, testId = 'tch-settings' }: ComposerSettingsProps) {
   const selected = roleSpec(role);
+  const teammate = runsAs && runsAs !== selected.label ? runsAs : null;
   return (
     <ComposerPopover
       label="Chat settings"
       testId={testId}
       className="tch-settings"
-      title={`Mode: ${selected.label} — ${selected.consequence}`}
+      title={`Mode: ${selected.label} — ${selected.consequence}${runsAs ? `; runs as ${runsAs}` : ''}`}
       menuHeight={460}
       menuWidth={300}
       fitViewport
       trigger={<>
         <ComposerIcon name="sliders" />
         <span className="tch-pop__value" data-testid={`${testId}-role`} data-mode={mode}>{selected.label}</span>
+        {teammate ? <span className="tch-pop__value tch-pop__runsas" data-testid={`${testId}-runs-as`}>· {teammate}</span> : null}
       </>}
     >
       {(close) => (

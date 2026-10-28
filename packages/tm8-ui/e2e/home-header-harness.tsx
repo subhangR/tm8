@@ -4,7 +4,7 @@ import { createFixtureSeam } from '../src/data/fixtures/seam-fixture';
 import { ChatHomeScreen, type HomeRootOption } from '../src/chat-home/ChatHomeScreen';
 import { createChatHomeFixturePort, CHAT_HOME_FIXTURE_THREAD } from '../src/chat-home/fixtures';
 import type { ChatModelOption } from '../src/chat-home/types';
-import { EntityListPanel, ListViewSwitcher } from '../src/panels';
+import { EntityListPanel } from '../src/panels';
 import { getKind, CHATS_ROOT, type CollectionMode } from '../src/domain';
 import type { HomeRoot } from '../src/stores/homeRegionStore';
 import { useGateData } from '../src/views/useGateData';
@@ -78,18 +78,6 @@ function Harness() {
     [modeByKind],
   );
 
-  const renderRootAside = useCallback(
-    (listRoot: HomeRoot): ReactNode =>
-      listRoot === CHATS_ROOT || legacy ? null : (
-        <ListViewSwitcher
-          config={getKind(listRoot)}
-          mode={modeFor(listRoot)}
-          onMode={(next) => setModeByKind((prev) => ({ ...prev, [listRoot]: next }))}
-        />
-      ),
-    [modeFor, legacy],
-  );
-
   const renderRootList = useCallback(
     (listRoot: HomeRoot): ReactNode => {
       if (listRoot === CHATS_ROOT || !data.ready) return null;
@@ -147,7 +135,6 @@ function Harness() {
           kindCell={ROOT_OPTIONS.find((o) => o.kind === kind) ?? ROOT_OPTIONS[0]!}
           rootKindOptions={ROOT_OPTIONS}
           renderRootList={renderRootList}
-          renderRootAside={renderRootAside}
           onNewEntity={() => {}}
           newEntityUnavailable={null}
         />

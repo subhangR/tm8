@@ -33,6 +33,7 @@ export function RichBody({
   attach,
   onAttached,
   skillOptions,
+  insertButton = true,
 }: {
   save: DocSaveHandle;
   label?: string;
@@ -43,6 +44,8 @@ export function RichBody({
   onAttached?: () => void;
   /** Skills '/' offers beside the blocks. */
   skillOptions?: readonly TriggerOption[];
+  /** False ⇒ no ＋ Insert a file button (see `InsertBar`); drop and paste still insert. */
+  insertButton?: boolean;
 }) {
   const readOnly = save.unavailable !== null;
   const canInsert = attach !== undefined && !readOnly;
@@ -259,6 +262,7 @@ export function RichBody({
         error={uploadError}
         begin={(files) => uploadRef.current(files)}
         readOnly={readOnly}
+        button={insertButton}
       />
     </div>
   );

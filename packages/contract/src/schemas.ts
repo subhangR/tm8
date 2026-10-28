@@ -99,7 +99,7 @@ import type {
   ServiceKeyProviderName, ServiceKeyView,
   CredentialPolicySource, CredentialsSpaceCommandInput, CredentialsSpaceCreateInput,
   CredentialsSpaceDeleteResult, CredentialsSpaceListView, CredentialsSpacePolicySetInput,
-  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
+  CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialSeedingView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceShareInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
@@ -581,6 +581,16 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     sha: z.string(),
     message: z.string(),
     committedAt: z.string().nullable().optional(),
+    // Parity with the pull request arm above, and for the same reason: the
+    // panel's link-summary row reads `state.url` and `state.stale` for both
+    // kinds. A commit carried neither, so it could not render its link and
+    // could not say it was unsynced.
+    author: z.string().nullable().optional(),
+    url: z.string().optional(),
+    fetchedAt: z.string().nullable().optional(),
+    // Required, like the pull request arm's. An absent boolean reads as false,
+    // which is exactly the wrong answer for "never fetched".
+    stale: z.boolean(),
   }).strict(),
   z.object({
     kind: z.literal('container'),
@@ -803,6 +813,9 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
       kind: EntityKindSchema,
       title: z.string(),
     }).strict().nullable().optional(),
+    // Additive (276 configurer lock): per viewer; absent = not computed, which
+    // a client reads as unknown and never as a refusal.
+    canSetModel: z.boolean().optional(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -1697,6 +1710,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   replyParticipants: z.array(ActorSummarySchema).optional(),
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
+  sourceWorkSessionId: EntityIdSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
@@ -2725,6 +2739,32 @@ const CredentialReadinessProviderSchema = z.object({
   reason: z.enum(['no_credential', 'stale', 'policy_excludes_space']).nullable(),
 }).strict();
 
+const CredentialSeedingPollReasonSchema = z.enum(['no_space_owned_credential', 'stale']);
+const CredentialSeedingLaunchReasonSchema = z.enum(['policy_excludes_space', 'stale', 'no_default', 'no_credential']);
+const CredentialSeedingProviderSchema = z.object({
+  ready: z.boolean(),
+  needs: z.array(z.enum(['launch', 'poll'])),
+  launchReason: CredentialSeedingLaunchReasonSchema.nullable(),
+  pollReason: CredentialSeedingPollReasonSchema.nullable(),
+  reason: z.union([CredentialSeedingLaunchReasonSchema, CredentialSeedingPollReasonSchema]).nullable(),
+}).strict();
+
+const CredentialSeedingViewSchema: z.ZodType<CredentialSeedingView> = z.object({
+  window: z.string(),
+  agentSessions: z.number().int().nonnegative(),
+  sessionsWithoutRecord: z.number().int().nonnegative(),
+  githubProjects: z.number().int().nonnegative(),
+  usedProviders: z.array(SpaceCredentialProviderNameSchema),
+  providers: z.object({
+    anthropic: CredentialSeedingProviderSchema.optional(),
+    openai: CredentialSeedingProviderSchema.optional(),
+    github: CredentialSeedingProviderSchema.optional(),
+  }).strict(),
+  missing: z.array(SpaceCredentialProviderNameSchema),
+  state: z.enum(['green', 'red', 'idle']),
+  readyForCut: z.boolean(),
+}).strict();
+
 export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceReadinessView> = z.object({
   spaceId: z.string(),
   canLaunch: z.object({
@@ -2743,6 +2783,7 @@ export const CredentialsSpaceReadinessViewSchema: z.ZodType<CredentialsSpaceRead
     activeSpaceOwnedCredentials: z.number().int().nonnegative(),
     reason: z.enum(['no_space_owned_credential', 'stale']).nullable(),
   }).strict(),
+  seeding: CredentialSeedingViewSchema,
 }).strict();
 
 export const CredentialsSpacePolicySetInputSchema: z.ZodType<CredentialsSpacePolicySetInput> = z.object({

@@ -22,6 +22,7 @@ export {
   DEFAULT_MODEL,
   DEFAULT_PERMISSION_MODE,
   ECHO_AGENT_CMD,
+  CODEX_DISABLE_STARTUP_UPDATE_CHECK,
   CODEX_LOOPBACK_CONFIG_OVERRIDES,
   CODEX_LOOPBACK_HOSTS,
   agentToolForModel,
@@ -29,6 +30,7 @@ export {
   buildCodexArgs,
   connectorBridgeConfig,
   codexLoopbackConfigArgs,
+  codexUpdateCheckConfigArgs,
   composeEnv,
   composeManifest,
   asPermissionMode,
@@ -93,6 +95,27 @@ export {
 } from './agent-credentials.js';
 export { SpawnError } from './types.js';
 export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
+export {
+  codexMcpHomesRoot,
+  codexMcpSessionDir,
+  scrubCodexMcpHome,
+  sweepCodexMcpHomeSecrets,
+} from './mcp-home.js';
+export {
+  codexHomeReclaimReason,
+  manifestReclaimReason,
+  reclaimSessionArtifacts,
+  spaceHomeReclaimReason,
+  type CodexHomeReclaimReason,
+  type ManifestReclaimReason,
+  type SessionArtifact,
+  type SessionArtifactReclaimReason,
+  type SessionArtifactReclaimReport,
+  type SessionHomeFacts,
+  type SessionHomeOwnerFacts,
+  type SessionHomeRetention,
+  type SpaceHomeReclaimReason,
+} from './session-artifact-reclaim.js';
 export {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,

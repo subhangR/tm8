@@ -236,6 +236,38 @@ describe('execution.transcript handler', () => {
   });
 
   /**
+   * Every Codex child runs with CODEX_HOME repointed at its own isolated home
+   * under the data dir, so that is where its rollout is — while rows recorded
+   * since fdb2e3fbd still name the operator's source `~/.codex`.
+   */
+  it('reads a Codex rollout from the session’s isolated CODEX_HOME when the row names the source home', async () => {
+    const isolated = join(dataDir, 'manifests', 'mcp-homes', SESSION_ID, 'codex');
+    const day = join(isolated, 'sessions', '2026', '10', '19');
+    await mkdir(day, { recursive: true });
+    await writeFile(join(day, 'rollout-iso.jsonl'), [
+      { type: 'session_meta', timestamp: '2026-10-19T10:00:00.000Z', payload: { id: 'native-iso', cwd: '/work/tm8' } },
+      {
+        type: 'response_item',
+        timestamp: '2026-10-19T10:00:01.000Z',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `go <tm8_session_id>${SESSION_ID}</tm8_session_id>` }] },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-10-19T10:00:02.000Z',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Visible from the isolated home.' }] },
+      },
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    const handler = buildHandler({
+      dataDir,
+      home,
+      rows: () => [row({ agent_tool: 'codex', native_session_id: null, agent_config_dir: join(home, '.codex') })],
+    });
+    const page = await call(handler, ctxFor(SESSION_ID));
+    expect(page.available).toBe(true);
+    expect(page.entries.map((e) => e.text)).toContain('Visible from the isolated home.');
+  });
+
+  /**
    * `workdir_path` is written BEFORE the session id exists, so for a scratch
    * session it names a directory the agent never ran in. Trusting it here would
    * send the reader to an encoded project dir that does not exist and report
