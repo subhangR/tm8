@@ -146,7 +146,10 @@ it('accepts config-only version advances, refuses changed source, and frees dele
   const before = await version(tool);
   await db.rpc(auth(), 'set_tool_config', [tool, before, 'value', JSON.stringify('new'), false, null, randomUUID()]);
   const session = await run(tool, { value: 'new' }, false, auth(), before);
-  expect((await database.query('select tool_version from public.work_sessions where entity_id=$1', [session]))[0]!.tool_version).toBe(await version(tool));
+  // 388: the run pins the definition version (tools.execution_version), which a
+  // config write leaves alone; entities.version advanced as the concurrency token.
+  expect((await database.query('select tool_version from public.work_sessions where entity_id=$1', [session]))[0]!.tool_version).toBe(before);
+  expect(await version(tool)).toBe(before + 1);
   await db.rpc(auth(), 'update_tool_entity', [tool, await version(tool), { ...definition('version-pin'), source: 'echo changed' }, null, randomUUID()]);
   await expect(run(tool, {}, false, auth(), before)).rejects.toThrow('source changed');
   for (const [index, patch] of [
