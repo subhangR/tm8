@@ -26,6 +26,7 @@
  *                 ▼               │   └─ a press of the SAME id ──► starting
  *              checking ──fail────┘
  *                 └──admit──► admitted
+ *   failed ──choose (the person picks a found session)──► admitted
  *
  * `page` is ORTHOGONAL to `state` — where the launching page lives: queued
  * behind Work's restore, in a Work tab, or nowhere (Work refused the tab; the
@@ -55,6 +56,12 @@ export interface LaunchFailure {
    * inviting a blind retry.
    */
   uncertain: boolean;
+  /**
+   * Sessions that started on the subject since the press, when a timed-out
+   * launch could not be matched to one: the person picks (`choose`) — the
+   * page never adopts one of them silently.
+   */
+  candidates?: readonly { id: EntityId; title: string }[];
 }
 
 /** Where the launching page lives, and in which (viewer, space) Work. */
@@ -86,13 +93,15 @@ export type LaunchEvent =
   | { type: 'check' }
   | { type: 'admit'; sessionId: EntityId; at: number }
   | { type: 'fail'; failure: LaunchFailure }
+  /** The person picked, on a failed page, the session this launch started. */
+  | { type: 'choose'; sessionId: EntityId; at: number }
   | { type: 'land'; page: LaunchPage };
 
 const TAKES: Record<LaunchState, ReadonlySet<LaunchEvent['type']>> = {
   starting: new Set(['send', 'check', 'admit', 'fail', 'land']),
   checking: new Set(['admit', 'fail', 'land']),
   admitted: new Set(['land']),
-  failed: new Set(['land']),
+  failed: new Set(['choose', 'land']),
 };
 
 function next(record: LaunchRecord, event: LaunchEvent): LaunchRecord {
@@ -102,6 +111,7 @@ function next(record: LaunchRecord, event: LaunchEvent): LaunchRecord {
     case 'check':
       return { ...record, state: 'checking' };
     case 'admit':
+    case 'choose':
       return { ...record, state: 'admitted', sessionId: event.sessionId, admittedAt: event.at, failure: null };
     case 'fail':
       return { ...record, state: 'failed', failure: event.failure };

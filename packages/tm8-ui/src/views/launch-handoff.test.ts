@@ -81,7 +81,7 @@ function handoffFor(
     spaceId: ws.spaceId,
     spawnSession,
     runtimeFor: () => ws.runtime,
-    inWork: () => true,
+    workPresence: () => 'mounted',
     navigateToWork,
     landing: () => 'work',
     ...overrides,
@@ -206,9 +206,9 @@ describe('a refusal and a timeout', () => {
     expect(sessionsSince).not.toHaveBeenCalled();
   });
 
-  it('when the replay cannot answer either, the subject’s sessions decide', async () => {
+  it('when the replay cannot answer either, the subject’s sessions are OFFERED — never adopted — and the person picks', async () => {
     const ws = workspace();
-    const sessionsSince = vi.fn().mockResolvedValue([{ id: 'session-7', title: 'Fix the flaky login test' }]);
+    const sessionsSince = vi.fn().mockResolvedValue([{ id: 'session-7', title: 'A teammate’s run' }]);
     const { handoff, spawnSession } = handoffFor(ws, { sessionsSince });
     spawnSession.mockRejectedValue(timeout());
     handoff.onLaunchStarted(launchOf());
@@ -216,7 +216,16 @@ describe('a refusal and a timeout', () => {
     await handoff.spawn(inputOf());
 
     expect(sessionsSince).toHaveBeenCalledWith('task-1', expect.any(String));
+    expect(launchRecord('mut-1')).toMatchObject({
+      state: 'failed',
+      sessionId: null,
+      failure: { uncertain: true, candidates: [{ id: 'session-7', title: 'A teammate’s run' }] },
+    });
+    expect(entityTabOf(ws.runtime, 'session-7')).toBeNull();
+
+    handoff.choose('mut-1', 'session-7' as EntityId);
     expect(launchRecord('mut-1')).toMatchObject({ state: 'admitted', sessionId: 'session-7' });
+    expect(entityTabOf(ws.runtime, 'session-7')).not.toBeNull();
   });
 
   it('no session found after a timeout is a plain failure; a check that fails too is an uncertain one', async () => {
@@ -247,7 +256,7 @@ describe('a refusal and a timeout', () => {
 describe('the press, outside Work', () => {
   it('waits behind Work’s restore and makes ONE navigation into Work', () => {
     const ws = workspace();
-    const { handoff, navigateToWork } = handoffFor(ws, { inWork: () => false });
+    const { handoff, navigateToWork } = handoffFor(ws, { workPresence: () => 'elsewhere' });
 
     expect(handoff.onLaunchStarted(launchOf())).toBe(true);
 
@@ -263,7 +272,7 @@ describe('the press, outside Work', () => {
 
   it('a launch the node admitted while Work mounted opens as the session’s own tab', async () => {
     const ws = workspace();
-    const { handoff, spawnSession } = handoffFor(ws, { inWork: () => false });
+    const { handoff, spawnSession } = handoffFor(ws, { workPresence: () => 'elsewhere' });
     spawnSession.mockResolvedValue('session-1' as EntityId);
     handoff.onLaunchStarted(launchOf());
     await handoff.spawn(inputOf());
@@ -276,7 +285,7 @@ describe('the press, outside Work', () => {
 
   it('a launch dismissed before Work drained opens nothing', () => {
     const ws = workspace();
-    const { handoff } = handoffFor(ws, { inWork: () => false });
+    const { handoff } = handoffFor(ws, { workPresence: () => 'elsewhere' });
     handoff.onLaunchStarted(launchOf());
     handoff.dismiss('mut-1');
     landQueuedLaunches(ws.runtime);
@@ -355,21 +364,17 @@ describe('Dismiss and Edit and retry', () => {
 });
 
 describe('re-attach: a page that finds a launch this window holds no record of', () => {
-  function reloaded(startedAgoMs: number, input: ExecutionSpawnInput | null = inputOf()) {
+  function reloaded(startedAgoMs: number, input: ExecutionSpawnInput | null = inputOf(), failure: LaunchTabValues['failure'] = null) {
     const ws = workspace();
     const now = 1_000_000;
-    const values: LaunchTabValues = { launchId: 'mut-1', launch: launchOf(), input, startedAt: now - startedAgoMs };
+    const values: LaunchTabValues = { launchId: 'mut-1', launch: launchOf(), input, startedAt: now - startedAgoMs, failure };
     /* The tab survives the reload; the in-memory record does not. */
     openLaunchTab(ws.runtime, values, 'system');
-    let scheduled: { run: () => void; ms: number; cancelled: boolean } | null = null;
+    let scheduled: { run: () => void; ms: number } | null = null;
     const deps = handoffFor(ws, {
       now: () => now,
       schedule: (run, ms) => {
-        const entry = { run, ms, cancelled: false };
-        scheduled = entry;
-        return () => {
-          entry.cancelled = true;
-        };
+        scheduled = { run, ms };
       },
     });
     return { ws, values, ...deps, scheduled: () => scheduled };
@@ -391,7 +396,26 @@ describe('re-attach: a page that finds a launch this window holds no record of',
     expect(entityTabOf(ws.runtime, 'session-1')).not.toBeNull();
   });
 
-  it('reload after the node refused: the replay returns the refusal and the page offers Edit and retry', async () => {
+  it('reload after a STORED refusal draws the failure as it is, and replays nothing', () => {
+    const refusal = { message: 'session concurrency cap reached (64/64)', code: 'conflict', uncertain: false };
+    const { values, handoff, spawnSession, scheduled } = reloaded(30_000, inputOf(), refusal);
+    handoff.resume(values);
+    expect(launchRecord('mut-1')).toMatchObject({ state: 'failed', failure: refusal });
+    expect(scheduled()).toBeNull();
+    expect(spawnSession).not.toHaveBeenCalled();
+  });
+
+  it('a refusal is stored on the tab, so the reload above is what a reload sees', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    spawnSession.mockRejectedValue(Object.assign(new Error('cap reached'), { code: 'conflict' }));
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf());
+    const tab = findLaunchTab(ws.runtime, 'mut-1')!;
+    expect(launchTabValues(ws.runtime.drafts.get(tab.draftId))?.failure).toMatchObject({ message: 'cap reached', code: 'conflict' });
+  });
+
+  it('reload while the node refused unseen: the replay returns the refusal and the page offers Edit and retry', async () => {
     const { values, handoff, spawnSession, scheduled } = reloaded(30_000);
     spawnSession.mockRejectedValue(new Error('session concurrency cap reached (64/64)'));
 
@@ -421,12 +445,22 @@ describe('re-attach: a page that finds a launch this window holds no record of',
     expect(spawnSession).toHaveBeenCalledTimes(1);
   });
 
-  it('the grace is cancelled when the page goes away first, so nothing is replayed', () => {
-    const { values, handoff, spawnSession, scheduled } = reloaded(1_000);
-    const cancel = handoff.resume(values);
-    cancel();
-    expect(scheduled()?.cancelled).toBe(true);
+  it('the replay is skipped when the tab no longer holds the launch when the grace ends (bound or closed elsewhere)', async () => {
+    const { ws, values, handoff, spawnSession, scheduled } = reloaded(1_000);
+    handoff.resume(values);
+    const tab = findLaunchTab(ws.runtime, 'mut-1')!;
+    ws.runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' });
+    scheduled()!.run();
+    await flush();
     expect(spawnSession).not.toHaveBeenCalled();
+  });
+
+  it('a second resume of the same launch (the page remounted) schedules nothing more', () => {
+    const { values, handoff, scheduled } = reloaded(1_000);
+    handoff.resume(values);
+    const first = scheduled();
+    handoff.resume(values);
+    expect(scheduled()).toBe(first);
   });
 
   it('a press whose input never left the window fails without sending anything', () => {
@@ -434,5 +468,55 @@ describe('re-attach: a page that finds a launch this window holds no record of',
     handoff.resume(values);
     expect(launchRecord('mut-1')).toMatchObject({ state: 'failed', failure: { uncertain: false } });
     expect(spawnSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('a launch tab is never reused, and never reuses', () => {
+  it('＋ New → Session does not reuse a launch tab, even after a reload dropped its `submitting`', () => {
+    const ws = workspace();
+    const { handoff } = handoffFor(ws);
+    handoff.onLaunchStarted(launchOf());
+    const launchTab = findLaunchTab(ws.runtime, 'mut-1')!;
+    /* What a restore leaves: the same record, `submitting` false. */
+    ws.runtime.store.setState((s) => ({ ...s, tabs: { ...s.tabs, [launchTab.id]: { ...launchTab, submitting: false } } }));
+
+    const opened = ws.runtime.dispatch({ command: 'workspace.drafts.open', args: { kind: 'work_session' }, source: 'click' });
+    expect(opened.tabId).not.toBe(launchTab.id);
+    expect(findLaunchTab(ws.runtime, 'mut-1')?.id).toBe(launchTab.id);
+  });
+
+  it('a second launch opens its own tab and leaves the first launch’s stored input alone', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    spawnSession.mockReturnValue(new Promise(() => undefined));
+    handoff.onLaunchStarted(launchOf('mut-1'));
+    void handoff.spawn(inputOf('mut-1'));
+    handoff.onLaunchStarted(launchOf('mut-2'));
+    const first = findLaunchTab(ws.runtime, 'mut-1')!;
+    const second = findLaunchTab(ws.runtime, 'mut-2')!;
+    expect(second.id).not.toBe(first.id);
+    expect(launchTabValues(ws.runtime.drafts.get(first.draftId))?.input?.clientMutationId).toBe('mut-1');
+  });
+
+  it('a launch does not take over a blank New session draft', () => {
+    const ws = workspace();
+    const blank = ws.runtime.dispatch({ command: 'workspace.drafts.open', args: { kind: 'work_session' }, source: 'click' }).tabId!;
+    const { handoff } = handoffFor(ws);
+    handoff.onLaunchStarted(launchOf());
+    expect(findLaunchTab(ws.runtime, 'mut-1')?.id).not.toBe(blank);
+    const blankTab = ws.runtime.store.getState().tabs[blank];
+    expect(blankTab).toMatchObject({ type: 'draft' });
+    expect(launchTabValues(ws.runtime.drafts.get((blankTab as { draftId: string }).draftId))).toBeNull();
+  });
+});
+
+describe('one navigation, decided on the nav view', () => {
+  it('Work’s route already showing but its view still mounting: the tab queues, and nothing is pushed', () => {
+    const ws = workspace();
+    const { handoff, navigateToWork } = handoffFor(ws, { workPresence: () => 'mounting' });
+    expect(handoff.onLaunchStarted(launchOf())).toBe(true);
+    expect(navigateToWork).not.toHaveBeenCalled();
+    landQueuedLaunches(ws.runtime);
+    expect(findLaunchTab(ws.runtime, 'mut-1')).not.toBeNull();
   });
 });

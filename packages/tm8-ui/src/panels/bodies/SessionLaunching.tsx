@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import {
+  bootIsFresh,
   formatElapsed,
   launchPageModel,
   useLaunchForSession,
@@ -63,12 +64,19 @@ function useElapsed(startedAt: number, running: boolean): number {
 }
 
 /**
- * The page for a session's work view while it boots, or null once the
- * session's own surfaces should show. A failed boot stays on the page only
- * when this window launched it — it holds the launch, so it can offer the
- * retry; any other failed session is the work view's to tell.
+ * What a session's work view shows for its boot: the page while it boots, or
+ * null once the session's own surfaces should show.
+ *
+ *   - Booting is shown only while the boot is PLAUSIBLY LIVE: this window
+ *     launched it, or its last phase change (else its birth) is inside the
+ *     node's lost-session window. A session stuck in `spawning` past that —
+ *     a node that crashed mid-boot — gets its surfaces back; `stale` lets the
+ *     view say, in one line, that it never finished starting.
+ *   - A failed boot stays on the page only when this window launched it — it
+ *     holds the launch, so it can offer the retry; any other failed session is
+ *     the work view's to tell.
  */
-export function useSessionLaunching(boot: BootingSession | null): LaunchPageModel | null {
+export function useSessionLaunching(boot: BootingSession | null): { page: LaunchPageModel | null; stale: boolean } {
   const record = useLaunchForSession(boot?.id);
   /* A recorded boot overwrites its phase with `failed`, so the last step seen
      is kept to put the failure on the row after it. */
@@ -78,9 +86,11 @@ export function useSessionLaunching(boot: BootingSession | null): LaunchPageMode
     if (step) setLastStep(step);
   }, [step]);
   const model = boot ? launchPageModel(record, boot, step ?? lastStep) : null;
-  if (model?.state === 'booting') return model;
-  if (model?.state === 'failed' && model.launchId) return model;
-  return null;
+  if (model?.state === 'booting') {
+    return record || bootIsFresh(boot!, Date.now()) ? { page: model, stale: false } : { page: null, stale: true };
+  }
+  if (model?.state === 'failed' && model.launchId) return { page: model, stale: false };
+  return { page: null, stale: false };
 }
 
 function Mark({ mark }: { mark: PhaseMark }) {
@@ -163,6 +173,17 @@ export function SessionLaunching({ model }: { model: LaunchPageModel }) {
         {model.failure ? (
           <div className="slaunch__failure" role="alert" data-testid="session-launching-failure">
             <p className="slaunch__reason">{model.failure.message}</p>
+            {actions && launchId && model.failure.candidates.length > 0 ? (
+              <ul className="slaunch__candidates" data-testid="session-launching-candidates">
+                {model.failure.candidates.map((c) => (
+                  <li key={c.id}>
+                    <button type="button" className="pn-btn" onClick={() => actions.choose(launchId, c.id)}>
+                      {`Open “${c.title}”`}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {actions && launchId ? (
               <div className="slaunch__actions">
                 <button

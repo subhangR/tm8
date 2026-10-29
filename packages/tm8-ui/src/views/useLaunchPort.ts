@@ -65,6 +65,21 @@ export type LaunchPort = LaunchSources & {
   handoff: LaunchHandoff;
 };
 
+/**
+ * AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
+ * after `since` — the launch that may have gone through. The one read both
+ * the card's in-card check and the launch hand-off ask.
+ */
+export function useSessionsSince(seam: GateData['seam']) {
+  return useCallback(async (subjectId: string, since: string) => {
+    const page = await seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
+    return page.items
+      .map((edge) => edge.source)
+      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
+      .map((s) => ({ id: s.id, title: s.title }));
+  }, [seam]);
+}
+
 export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): LaunchPort {
   const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev, loadSkillPreview } = data.launch;
   const { loadLaunchDefaults, memories, skillCandidates, referenceCandidates } = data.launch;
@@ -221,16 +236,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     [data.seam, data.spaceId],
   );
 
-  /* AFTER A SPAWN TIMEOUT: sessions working on the subject that started at or
-     after `since` — the launch that may have gone through. The ledger only
-     replays a FINISHED attempt, so the card must look before retrying. */
-  const sessionsSince = useCallback(async (subjectId: string, since: string) => {
-    const page = await data.seam.connections(subjectId as EntityId, { types: ['working_on'], direction: 'incoming', limit: 50 });
-    return page.items
-      .map((edge) => edge.source)
-      .filter((s) => s.kind === 'work_session' && s.createdAt >= since)
-      .map((s) => ({ id: s.id, title: s.title }));
-  }, [data.seam]);
+  const sessionsSince = useSessionsSince(data.seam);
 
   /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. */
   const jevKeyStatus = useCallback(() => data.seam.credentials.serviceKeys(), [data.seam]);

@@ -4,9 +4,11 @@
  * its re-attach.
  *
  * CONTRACT
- *   in   Work's gate data — the same launch port every Work surface builds.
+ *   in   Work's gate data and runtime.
  *   out  `LaunchPageHostContext` for the subtree, and the retry popup while
- *        one is open.
+ *        one is open. The hand-off is built directly (`useLaunchHandoff`), and
+ *        the full launch port only inside the retry popup while it is open —
+ *        a port for all of Work, rebuilt per render, would churn the host.
  *   who  `TabWorkspaceView`, around its content.
  *   invariants
  *     - Edit and retry re-opens the FULL launch popup on the launch's subject —
@@ -16,29 +18,21 @@
  *       a launch the node never admitted leaves no failed page behind beside
  *       its retry. A session that failed while BOOTING keeps its own tab: it
  *       is a real session, with its own record of what went wrong;
- *     - Dismiss and resume are the hand-off's own (`views/useLaunchHandoff`).
+ *     - Dismiss, choose and resume are the hand-off's own (`views/useLaunchHandoff`).
  */
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { launchRecord, LaunchPageHostContext, type LaunchPageHost, type LaunchRecord } from '../../launch-handoff';
 import { LaunchComposerPopup } from '../../new-session';
 import { readDraft, writeDraft } from '../../new-session/launch-draft';
-import { useLaunchPort, type LaunchPort } from '../../views/useLaunchPort';
+import { useLaunchHandoff } from '../../views/useLaunchHandoff';
+import { useLaunchPort, useSessionsSince } from '../../views/useLaunchPort';
 import { useWorkspace } from './context';
 
 export function LaunchPageHostProvider({ children }: { children: ReactNode }) {
-  const { gate, runtime } = useWorkspace();
-  /* Work's own landing for a retry the popup does not hand over: the session
-     opens as its tab, as every Work surface opens one. */
-  const onSpawn = useCallback(
-    async (input: ExecutionSpawnInput) => {
-      const sessionId = await gate.data.spawn(input);
-      runtime.dispatch({ command: 'workspace.tabs.open', args: { kind: 'work_session', entityId: sessionId }, source: 'system' });
-    },
-    [gate.data, runtime],
-  );
-  const port = useLaunchPort(gate.data, { onSpawn });
-  const { handoff } = port;
+  const { gate, viewerId, spaceId } = useWorkspace();
+  const sessionsSince = useSessionsSince(gate.data.seam);
+  const handoff = useLaunchHandoff({ viewerId, spaceId, spawnSession: gate.data.spawn, sessionsSince });
   const [retrying, setRetrying] = useState<LaunchRecord | null>(null);
 
   const host = useMemo<LaunchPageHost>(
@@ -51,8 +45,9 @@ export function LaunchPageHostProvider({ children }: { children: ReactNode }) {
         setRetrying(record);
       },
       dismiss: (launchId) => handoff.dismiss(launchId),
-      resume: (launch, input, startedAt) =>
-        handoff.resume({ launchId: launch.clientMutationId, launch, input, startedAt }),
+      choose: (launchId, sessionId) => handoff.choose(launchId, sessionId),
+      resume: (launch, input, startedAt, failure) =>
+        handoff.resume({ launchId: launch.clientMutationId, launch, input, startedAt, failure }),
     }),
     [handoff],
   );
@@ -60,26 +55,26 @@ export function LaunchPageHostProvider({ children }: { children: ReactNode }) {
   return (
     <LaunchPageHostContext.Provider value={host}>
       {children}
-      {retrying ? (
-        <RetryPopup record={retrying} port={port} detailOf={gate.data.detailOf} onDismiss={() => setRetrying(null)} />
-      ) : null}
+      {retrying ? <RetryPopup record={retrying} onDismiss={() => setRetrying(null)} /> : null}
     </LaunchPageHostContext.Provider>
   );
 }
 
-function RetryPopup({
-  record,
-  port,
-  detailOf,
-  onDismiss,
-}: {
-  record: LaunchRecord;
-  port: LaunchPort;
-  detailOf: (id: string) => { id: string; title: string; kind: string } | undefined;
-  onDismiss: () => void;
-}) {
+/** The full launch popup on the failed launch's subject; its port lives only while it is open. */
+function RetryPopup({ record, onDismiss }: { record: LaunchRecord; onDismiss: () => void }) {
+  const { gate, runtime } = useWorkspace();
+  /* Work's own landing for a retry the popup does not hand over: the session
+     opens as its tab, as every Work surface opens one. */
+  const onSpawn = useCallback(
+    async (input: ExecutionSpawnInput) => {
+      const sessionId = await gate.data.spawn(input);
+      runtime.dispatch({ command: 'workspace.tabs.open', args: { kind: 'work_session', entityId: sessionId }, source: 'system' });
+    },
+    [gate.data, runtime],
+  );
+  const port = useLaunchPort(gate.data, { onSpawn });
   const { subjectId, title, verb } = record.launch;
-  const detail = detailOf(subjectId);
+  const detail = gate.data.detailOf(subjectId);
   const subject = detail ? { id: detail.id, title: detail.title, kind: detail.kind } : { id: subjectId, title };
   return (
     <LaunchComposerPopup

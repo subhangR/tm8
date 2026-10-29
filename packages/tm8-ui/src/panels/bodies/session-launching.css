@@ -230,3 +230,12 @@
     animation: none;
   }
 }
+
+.cv2-root .slaunch__candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin: var(--pn-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}

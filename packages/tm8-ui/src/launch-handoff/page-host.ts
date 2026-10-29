@@ -14,19 +14,22 @@
  * page, the store and the hand-off share.
  */
 import { createContext, useContext } from 'react';
-import type { ExecutionSpawnInput } from '@tm8/contract';
+import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import type { LaunchStarted } from '../new-session/launch-started';
+import type { LaunchFailure } from './store';
 
 export interface LaunchPageHost {
   /** Re-open the launch popup on the subject, with the launch's notes as its draft. */
   editAndRetry(launchId: string): void;
   /** Forget the launch and close its tab. A session that started keeps running. */
   dismiss(launchId: string): void;
+  /** The person picked, among the sessions a timed-out check found, the one this launch started. */
+  choose(launchId: string, sessionId: EntityId): void;
   /**
    * Re-attach to a launch this window holds no record of (a reload, another
-   * window) from what its tab stored. Returns the cancel.
+   * window) from what its tab stored. Fire and forget: the host owns any replay.
    */
-  resume(launch: LaunchStarted, input: ExecutionSpawnInput | null, startedAt: number): () => void;
+  resume(launch: LaunchStarted, input: ExecutionSpawnInput | null, startedAt: number, failure: LaunchFailure | null): void;
 }
 
 export const LaunchPageHostContext = createContext<LaunchPageHost | null>(null);

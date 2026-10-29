@@ -224,7 +224,7 @@ export function WorkSessionContent({
   belowSwitch = null,
   boot = null,
 }: WorkSessionContentProps) {
-  const launching = useSessionLaunching(boot);
+  const { page: launching, stale: neverStarted } = useSessionLaunching(boot);
   /*
    * ONE FORK, FROM THE HOST. Not `useShellKind()` and not a media query: the
    * shell decision is `(pointer: coarse) && width < 500` and `GateApp` has made
@@ -621,6 +621,11 @@ export function WorkSessionContent({
     >
       {switchEl ? (ridesPanelBar && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
       {oneSurface ? belowSwitch : null}
+      {neverStarted ? (
+        <p className="pn-surface-compat" role="status" data-testid="work-session-never-started">
+          This session never finished starting: it has been starting for longer than the node waits before calling a session lost.
+        </p>
+      ) : null}
 
       {/*
         A ROUTE THAT NAMED A REFUSED SURFACE GETS AN ANSWER ABOUT THAT SURFACE.

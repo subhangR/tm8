@@ -11,31 +11,42 @@
  *        launch's.
  *   invariants: draws, never decides — the page's state is the page model's;
  *        a record this window lacks (a reload, another window) is re-adopted
- *        through the page host's `resume`, which replays the SAME input.
+ *        through the page host's `resume`: a stored failure is drawn as it is,
+ *        otherwise the SAME input is replayed after the grace.
  *
  * The body never binds the tab: Work renders only the active tab, so a page
  * that bound on mount would leave a background launch unbound. The hand-off
  * binds through the runtime when the node answers, wherever the viewer is.
  */
 import { useEffect, useRef } from 'react';
-import { launchPageModel, startingRecord, useLaunchPageHost, useLaunchRecord } from '../../launch-handoff';
+import { launchPageModel, launchRecord, startingRecord, useLaunchPageHost, useLaunchRecord } from '../../launch-handoff';
 import { SessionLaunching } from '../../panels/bodies/SessionLaunching';
 import type { LaunchTabValues } from '../runtime/launchTabs';
 
 export function LaunchTabBody({ values }: { values: LaunchTabValues }) {
   const host = useLaunchPageHost();
   const record = useLaunchRecord(values.launchId);
-  const known = record !== null;
   const stored = useRef(values);
   stored.current = values;
 
+  /* RE-ATTACH, keyed by the LAUNCH and nothing else. Adopting the launch puts
+     a record in the store, so an effect that also keyed on "has a record"
+     would re-run on its own adoption; and the replay is the hand-off's to own
+     (`resume` schedules it and re-checks the tab when it fires), so this has
+     no cleanup that could cancel it. */
   useEffect(() => {
-    if (known || !host) return;
-    const { launch, input, startedAt } = stored.current;
-    return host.resume(launch, input, startedAt);
-  }, [known, host, values.launchId]);
+    if (!host || launchRecord(values.launchId)) return;
+    const { launch, input, startedAt, failure } = stored.current;
+    host.resume(launch, input, startedAt, failure);
+  }, [host, values.launchId]);
 
-  const model = launchPageModel(record ?? startingRecord(values.launch, values.input, values.startedAt, null), null);
+  const model = launchPageModel(
+    record ?? {
+      ...startingRecord(values.launch, values.input, values.startedAt, null),
+      ...(values.failure ? { state: 'failed' as const, failure: values.failure } : {}),
+    },
+    null,
+  );
   return (
     <div className="tws-launch-tab" data-testid="tws-launch-tab" data-launch-id={values.launchId}>
       {model ? <SessionLaunching model={model} /> : null}

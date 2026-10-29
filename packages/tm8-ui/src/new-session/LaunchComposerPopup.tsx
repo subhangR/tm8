@@ -57,6 +57,7 @@ import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
 import type { LaunchStarted } from './launch-started';
+import { isLaunchTimeout, LAUNCH_TIMEOUT_WORDS } from '../launch-handoff/failure';
 import { useOverlayHost } from '../kit/useOverlayHost';
 import { rosterForLaunchScope, useCraftLaunchScope } from './launch-scope';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
@@ -500,24 +501,24 @@ export function LaunchComposerPopup({
     setShaking(true);
     if (!sessionsSince) {
       setTimedOut('unknown');
-      setNodeRefusal('The node didn’t answer in time — the launch may have started. This surface can’t check, so look at the task’s sessions before launching again.');
+      setNodeRefusal(LAUNCH_TIMEOUT_WORDS.cannotCheck);
       return;
     }
     setTimedOut('checking');
-    setNodeRefusal('The node didn’t answer in time — the launch may have started. Checking…');
+    setNodeRefusal(LAUNCH_TIMEOUT_WORDS.checking);
     sessionsSince(subject.id, openedAt.current).then(
       (found) => {
         if (found.length > 0) {
           setTimedOut('found');
-          setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
+          setNodeRefusal(LAUNCH_TIMEOUT_WORDS.started(found[0]!.title));
         } else {
           setTimedOut('none');
-          setNodeRefusal('No session started on this task. Launch again to retry.');
+          setNodeRefusal(LAUNCH_TIMEOUT_WORDS.none);
         }
       },
       () => {
         setTimedOut('unknown');
-        setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
+        setNodeRefusal(LAUNCH_TIMEOUT_WORDS.checkFailed);
       },
     );
   };
@@ -573,7 +574,7 @@ export function LaunchComposerPopup({
       })
       .catch((error: unknown) => {
         const e = error as { code?: string; message?: string };
-        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout();
+        if (isLaunchTimeout(e)) afterTimeout();
         else fail(error);
       });
   };

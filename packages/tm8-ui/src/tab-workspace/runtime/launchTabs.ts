@@ -11,10 +11,11 @@
  * have had to teach the node's reducer, its stored-workspace validation and
  * every window's sync about it.
  *
- * NEVER REUSED. `drafts.open` reuses an untouched draft of the kind, so a
- * launch tab is flagged `submitting` from its first frame to its last —
- * otherwise the next ＋ New → Session (or the next launch) would be handed a
- * failed launch's page as its blank form.
+ * NEVER REUSED, NEVER REUSING. A launch tab is opened with `holds: 'launch'`,
+ * a field of the tab record that persists and syncs (unlike `submitting`,
+ * which every restore drops): `drafts.open` never hands it to ＋ New → Session
+ * or to another launch, and a launch never takes over a blank New session
+ * draft — it always opens its own.
  *
  * THE VALUES CARRY THE LAUNCH: its summary and its exact spawn input, so a
  * reload — or another window of the same viewer, which the node syncs the
@@ -22,6 +23,7 @@
  * answers a replayed `clientMutationId` with the session it already started.
  */
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
+import type { LaunchFailure } from '../../launch-handoff/store';
 import type { LaunchStarted } from '../../new-session/launch-started';
 import type { WorkspaceRuntime } from './dispatch';
 import type { DraftTabRecord, Source } from './types';
@@ -37,6 +39,11 @@ export interface LaunchTabValues {
   input: ExecutionSpawnInput | null;
   /** Epoch ms of the press. */
   startedAt: number;
+  /**
+   * The failure, once there is one — stored so a reload (or another window)
+   * draws the failed page instead of replaying a launch the node refused.
+   */
+  failure: LaunchFailure | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,7 +64,11 @@ export function launchTabValues(values: Record<string, unknown> | null | undefin
   const input = isRecord(values.input) && values.input.clientMutationId === values.launchId
     ? (values.input as unknown as ExecutionSpawnInput)
     : null;
-  return { launchId: values.launchId, launch: launch as unknown as LaunchStarted, input, startedAt };
+  const f = values.failure;
+  const failure: LaunchFailure | null = isRecord(f) && typeof f.message === 'string'
+    ? { message: f.message, code: typeof f.code === 'string' ? f.code : null, uncertain: f.uncertain === true }
+    : null;
+  return { launchId: values.launchId, launch: launch as unknown as LaunchStarted, input, startedAt, failure };
 }
 
 /** The open launch tab for `launchId`, if any. */
@@ -65,7 +76,7 @@ export function findLaunchTab(runtime: WorkspaceRuntime, launchId: string): Draf
   const state = runtime.store.getState();
   for (const id of state.orderedTabIds) {
     const tab = state.tabs[id];
-    if (tab?.type !== 'draft' || tab.kind !== LAUNCH_TAB_KIND) continue;
+    if (tab?.type !== 'draft' || tab.holds !== 'launch') continue;
     if (launchTabValues(runtime.drafts.get(tab.draftId))?.launchId === launchId) return tab;
   }
   return null;
@@ -84,7 +95,7 @@ export function openLaunchTab(runtime: WorkspaceRuntime, values: LaunchTabValues
     runtime.dispatch({ command: 'workspace.tabs.activate', args: { tabId: existing.id }, source });
     return existing.id;
   }
-  const result = runtime.dispatch({ command: 'workspace.drafts.open', args: { kind: LAUNCH_TAB_KIND }, source });
+  const result = runtime.dispatch({ command: 'workspace.drafts.open', args: { kind: LAUNCH_TAB_KIND, holds: 'launch' }, source });
   const tab = result.tabId ? runtime.store.getState().tabs[result.tabId] : undefined;
   if (result.status !== 'applied' || tab?.type !== 'draft') return null;
   runtime.drafts.set(tab.draftId, { ...values });
@@ -104,13 +115,17 @@ export function rewriteLaunchTab(runtime: WorkspaceRuntime, fromLaunchId: string
   return tab.id;
 }
 
-/** Record the spawn input on the tab, for a replay after a reload. */
-export function storeLaunchInput(runtime: WorkspaceRuntime, launchId: string, input: ExecutionSpawnInput): void {
+/** Record what a reload needs on the tab: the input (for the replay), or the failure (for the page). */
+export function storeLaunchFacts(
+  runtime: WorkspaceRuntime,
+  launchId: string,
+  facts: { input: ExecutionSpawnInput } | { failure: LaunchFailure },
+): void {
   const tab = findLaunchTab(runtime, launchId);
   if (!tab) return;
   const values = launchTabValues(runtime.drafts.get(tab.draftId));
   if (!values) return;
-  runtime.drafts.set(tab.draftId, { ...values, input });
+  runtime.drafts.set(tab.draftId, { ...values, ...facts });
 }
 
 /**

@@ -24,7 +24,7 @@
  *   live      every step done
  *   failed    refused, timed out with no session to show, or the boot failed
  */
-import { launchModel, type WorkSessionBootPhase, type WorkSessionStatus } from '@tm8/contract';
+import { launchModel, type EntityId, type WorkSessionBootPhase, type WorkSessionStatus } from '@tm8/contract';
 import { accessModeLabel, EFFORT_LABELS } from '../domain/launch';
 import type { LaunchRecord } from './store';
 import { bootPhaseOf, launchPhases, type BootStep, type LaunchWorkdirMode, type PhaseRow } from './phases';
@@ -51,6 +51,8 @@ export interface BootingSession {
   checkoutBranch: string | null;
   /** The node's sentence for a failed session. */
   endedReason: string | null;
+  /** ISO time of the last recorded boot phase, when the node records one. */
+  bootPhaseAt: string | null;
 }
 
 export interface LaunchPageModel {
@@ -63,7 +65,12 @@ export interface LaunchPageModel {
   startedAt: number;
   /** How long the node took to admit it, when this window watched the answer. */
   admittedMs: number | null;
-  failure: { message: string; uncertain: boolean } | null;
+  failure: {
+    message: string;
+    uncertain: boolean;
+    /** Sessions a timed-out check found on the subject: offered, never adopted. */
+    candidates: readonly { id: EntityId; title: string }[];
+  } | null;
   /** The launch's record id, when this window holds one — the actions' key. */
   launchId: string | null;
 }
@@ -98,6 +105,7 @@ export function bootingSessionOf(detail: {
     createdAt: detail.createdAt,
     status,
     bootPhase: bootPhaseOf(state)?.phase ?? null,
+    bootPhaseAt: bootPhaseOf(state)?.at ?? null,
     started: typeof state.startedAt === 'string' && state.startedAt.length > 0,
     teammate: teammateName,
     model: typeof state.model === 'string' ? state.model : null,
@@ -191,8 +199,12 @@ export function launchPageModel(
   const failure = state !== 'failed'
     ? null
     : sessionFailed
-      ? { message: session?.endedReason?.trim() || BOOT_FAILED, uncertain: false }
-      : { message: record!.failure?.message ?? BOOT_FAILED, uncertain: record!.failure?.uncertain ?? false };
+      ? { message: session?.endedReason?.trim() || BOOT_FAILED, uncertain: false, candidates: [] }
+      : {
+        message: record!.failure?.message ?? BOOT_FAILED,
+        uncertain: record!.failure?.uncertain ?? false,
+        candidates: record!.failure?.candidates ?? [],
+      };
 
   const createdAt = session ? Date.parse(session.createdAt) : Number.NaN;
   return {
@@ -207,3 +219,16 @@ export function launchPageModel(
   };
 }
 
+/**
+ * How long a boot can sit in `spawning` and still be plausibly live: the
+ * node's lost-session reaper default (`TM8_LOST_SESSION_AFTER_MIN`, 10 min).
+ * Past it the session is a ghost — a node crashed mid-boot — and the page,
+ * which can only ever say "starting", would hold its surfaces hostage.
+ */
+export const BOOT_STALE_MS = 10 * 60_000;
+
+/** Is this boot plausibly still in progress, at `now`? From its last phase change, else its birth. */
+export function bootIsFresh(session: Pick<BootingSession, 'createdAt' | 'bootPhaseAt'>, now: number): boolean {
+  const since = Date.parse(session.bootPhaseAt ?? session.createdAt);
+  return Number.isFinite(since) && now - since < BOOT_STALE_MS;
+}

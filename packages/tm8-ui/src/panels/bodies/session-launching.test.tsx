@@ -47,11 +47,12 @@ const booting = (patch: Partial<BootingSession> = {}): BootingSession => ({
   workdirMode: 'worktree',
   checkoutBranch: 'tm8/s-1',
   endedReason: null,
+  bootPhaseAt: null,
   ...patch,
 });
 
 function host(): LaunchPageHost {
-  return { editAndRetry: vi.fn(), dismiss: vi.fn(), resume: vi.fn(() => () => undefined) };
+  return { editAndRetry: vi.fn(), dismiss: vi.fn(), choose: vi.fn(), resume: vi.fn() };
 }
 
 afterEach(() => {
@@ -96,6 +97,22 @@ describe('the launching page', () => {
     expect(pageHost.editAndRetry).toHaveBeenCalledWith('mut-1');
     fireEvent.click(screen.getByTestId('session-launching-dismiss'));
     expect(pageHost.dismiss).toHaveBeenCalledWith('mut-1');
+  });
+
+  it('a timed-out check’s found sessions are offered to pick, never adopted', () => {
+    beginLaunch(launch);
+    const failed = transition('mut-1', {
+      type: 'fail',
+      failure: { message: 'found some', code: 'upstream_unavailable', uncertain: true, candidates: [{ id: 's-7' as EntityId, title: 'A teammate’s run' }] },
+    });
+    const pageHost = host();
+    render(
+      <LaunchPageHostContext.Provider value={pageHost}>
+        <SessionLaunching model={launchPageModel(failed, null)!} />
+      </LaunchPageHostContext.Provider>,
+    );
+    fireEvent.click(screen.getByText('Open “A teammate’s run”'));
+    expect(pageHost.choose).toHaveBeenCalledWith('mut-1', 's-7');
   });
 
   it('draws no verbs where no host can perform them', () => {
@@ -150,6 +167,20 @@ describe('the session’s work view while it boots', () => {
   it('a failed session this window did not launch is the work view’s to tell', () => {
     render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting({ status: 'failed', bootPhase: 'failed' })} />);
     expect(screen.queryByTestId('session-launching')).toBeNull();
+  });
+
+  it('a session stuck starting past the node’s lost-session window gets its surfaces back, with one line saying so', () => {
+    const old = new Date(Date.now() - 60 * 60_000).toISOString();
+    render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting({ createdAt: old })} />);
+    expect(screen.queryByTestId('session-launching')).toBeNull();
+    expect(screen.getByTestId('the-terminal')).toBeTruthy();
+    expect(screen.getByTestId('work-session-never-started')).toBeTruthy();
+  });
+
+  it('a recent phase change keeps an old session’s boot on the page', () => {
+    const old = new Date(Date.now() - 60 * 60_000).toISOString();
+    render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting({ createdAt: old, bootPhase: 'lane', bootPhaseAt: new Date().toISOString() })} />);
+    expect(screen.getByTestId('session-launching')).toBeTruthy();
   });
 
   it('a session with no boot facts renders its surfaces as before', () => {

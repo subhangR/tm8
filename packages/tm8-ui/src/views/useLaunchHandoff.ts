@@ -25,7 +25,10 @@
  *     - ONE clientMutationId per launch: the timeout check REPLAYS the same
  *       input — the node answers a replayed id with the session it already
  *       started and boots nothing — and `sessionsSince` is asked only when the
- *       replay cannot answer either.
+ *       replay cannot answer either; what it finds is OFFERED, never adopted.
+ *       The replay is safe only on a node that joins a replay to the attempt
+ *       in flight (lane C, #1404: single-flight on the mutation id from
+ *       request entry), which is why this ships after it.
  *     - A launch the popup did not hand over (no record: a host without the
  *       seam, the phone, the legacy desktop) runs the host's own spawn verb
  *       exactly as before, awaited, its errors rethrown into the card.
@@ -33,13 +36,14 @@
 import { useMemo } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import type { LaunchStarted } from '../new-session/launch-started';
-import { isLaunchTimeout, launchFailureOf } from '../launch-handoff/failure';
+import { isLaunchTimeout, LAUNCH_TIMEOUT_WORDS, launchFailureOf } from '../launch-handoff/failure';
 import {
   adoptLaunch,
   beginLaunch,
   dropLaunch,
   launchRecord,
   transition,
+  type LaunchFailure,
   type LaunchPage,
   type LaunchRecord,
 } from '../launch-handoff/store';
@@ -55,7 +59,7 @@ import {
   openLaunchTab,
   queueLaunchTab,
   rewriteLaunchTab,
-  storeLaunchInput,
+  storeLaunchFacts,
   type LaunchTabValues,
 } from '../tab-workspace/runtime/launchTabs';
 import { navStore } from '../stores/navStore';
@@ -113,13 +117,20 @@ export interface LaunchHandoff {
   spawn(input: ExecutionSpawnInput, fallback?: (input: ExecutionSpawnInput) => void | Promise<void>): Promise<void>;
   /** Dismiss: forget the launch and close its page's tab. A session that started keeps running. */
   dismiss(launchId: string): void;
+  /** The person picked, on a failed page, the found session this launch started. */
+  choose(launchId: string, sessionId: EntityId): void;
   /**
    * Re-attach to a launch this window has no record of — a reload, or another
-   * window of the viewer — from what its tab stored, and replay the SAME input
-   * after the grace. Returns the cancel (the page unmounted, or bound).
+   * window of the viewer — from what its tab stored. A stored failure is drawn
+   * as it is; otherwise the SAME input is replayed once, after the grace, if
+   * the tab still holds the launch then. Owned here, not by the page: a page
+   * remounts, a scheduled replay must not care.
    */
-  resume(values: LaunchTabValues): () => void;
+  resume(values: LaunchTabValues): void;
 }
+
+/** Where Work stands right now: on screen, being mounted onto, or elsewhere. */
+export type WorkPresence = 'mounted' | 'mounting' | 'elsewhere';
 
 export interface LaunchHandoffDeps {
   viewerId: string | null | undefined;
@@ -130,25 +141,26 @@ export interface LaunchHandoffDeps {
   sessionsSince?: (subjectId: string, since: string) => Promise<readonly { id: string; title: string }[]>;
   /* Seams for tests; the real ones by default. */
   runtimeFor?: (viewerId: string, spaceId: string) => WorkspaceRuntime;
-  /** Is the Work view mounted and on screen right now? */
-  inWork?: (runtime: WorkspaceRuntime) => boolean;
+  workPresence?: (runtime: WorkspaceRuntime) => WorkPresence;
   /** Push the ONE navigation into Work. */
   navigateToWork?: () => void;
   landing?: () => 'work' | null;
   now?: () => number;
-  schedule?: (run: () => void, ms: number) => () => void;
+  schedule?: (run: () => void, ms: number) => void;
 }
 
-const defaultInWork = (runtime: WorkspaceRuntime) =>
-  navStore.getState().view.view === 'tabs' && runtime.hooks.viewMounted();
+/**
+ * Decided on the NAV VIEW: Work's route already showing means no push, whether
+ * or not its view has finished mounting — a second push would leave Back on
+ * bare Work.
+ */
+const defaultWorkPresence = (runtime: WorkspaceRuntime): WorkPresence =>
+  navStore.getState().view.view !== 'tabs' ? 'elsewhere' : runtime.hooks.viewMounted() ? 'mounted' : 'mounting';
 const defaultNavigateToWork = () => navStore.getState().navigate(workspaceTabView(null));
-const defaultSchedule = (run: () => void, ms: number) => {
-  const timer = setTimeout(run, ms);
-  return () => clearTimeout(timer);
-};
+const defaultSchedule = (run: () => void, ms: number) => void setTimeout(run, ms);
 
 function valuesOf(record: LaunchRecord): LaunchTabValues {
-  return { launchId: record.id, launch: record.launch, input: record.input, startedAt: record.startedAt };
+  return { launchId: record.id, launch: record.launch, input: record.input, startedAt: record.startedAt, failure: record.failure };
 }
 
 /** Open the session's own tab — the landing when no launch tab holds the page. */
@@ -168,7 +180,7 @@ function closeSessionTab(runtime: WorkspaceRuntime, sessionId: string): void {
 
 export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   const runtimeFor = deps.runtimeFor ?? getWorkspaceRuntime;
-  const inWork = deps.inWork ?? defaultInWork;
+  const workPresence = deps.workPresence ?? defaultWorkPresence;
   const navigateToWork = deps.navigateToWork ?? defaultNavigateToWork;
   const landingNow = deps.landing ?? launchLanding;
   const now = deps.now ?? Date.now;
@@ -176,18 +188,26 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
 
   const runtimeOfPage = (page: LaunchPage | null) => (page ? runtimeFor(page.viewerId, page.spaceId) : null);
 
-  /** The node answered: the page becomes the session, wherever the page is. */
-  const admit = (launchId: string, sessionId: EntityId) => {
-    const record = transition(launchId, { type: 'admit', sessionId, at: now() });
+  /** The session is known: the page becomes it, wherever the page is. */
+  const land = (record: LaunchRecord | null, sessionId: EntityId) => {
     const runtime = runtimeOfPage(record?.page ?? null);
     if (!record?.page || !runtime) return; // Dismissed while the node was answering.
-    if (record.page.at === 'tab') bindLaunchTab(runtime, launchId, sessionId, record.launch.title);
+    if (record.page.at === 'tab') bindLaunchTab(runtime, record.id, sessionId, record.launch.title);
     else if (record.page.at === 'none') openSessionTab(runtime, sessionId);
     /* `queued`: Work's drain opens it as the session's tab. A launch tab the
        viewer closed meanwhile stays closed — the session runs on regardless. */
   };
+  const admit = (launchId: string, sessionId: EntityId) =>
+    land(transition(launchId, { type: 'admit', sessionId, at: now() }), sessionId);
 
-  /** "Did it start?" — the replay first, the subject's sessions second. */
+  /** The failure, on the record and on the tab — a reload draws it, never replays it. */
+  const fail = (launchId: string, failure: LaunchFailure) => {
+    const record = transition(launchId, { type: 'fail', failure });
+    const runtime = runtimeOfPage(record?.page ?? null);
+    if (record && runtime) storeLaunchFacts(runtime, launchId, { failure });
+  };
+
+  /** "Did it start?" — the replay first; the subject's sessions, offered, second. */
   const check = async (launchId: string, input: ExecutionSpawnInput) => {
     if (!transition(launchId, { type: 'check' })) return;
     try {
@@ -195,42 +215,28 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       return;
     } catch (again) {
       if (!isLaunchTimeout(again)) {
-        transition(launchId, { type: 'fail', failure: launchFailureOf(again) });
+        fail(launchId, launchFailureOf(again));
         return;
       }
     }
     const record = launchRecord(launchId);
     if (!record) return;
     if (!deps.sessionsSince) {
-      transition(launchId, {
-        type: 'fail',
-        failure: {
-          message: 'The node didn’t answer in time — the launch may have started. Look at the task’s sessions before launching again.',
-          code: 'upstream_unavailable',
-          uncertain: true,
-        },
-      });
+      fail(launchId, { message: LAUNCH_TIMEOUT_WORDS.cannotCheck, code: 'upstream_unavailable', uncertain: true });
       return;
     }
     try {
       const found = await deps.sessionsSince(record.launch.subjectId, new Date(record.startedAt).toISOString());
-      if (found.length > 0) {
-        admit(launchId, found[0]!.id as EntityId);
-        return;
-      }
-      transition(launchId, {
-        type: 'fail',
-        failure: { message: 'The node didn’t answer in time, and no session started on this task.', code: 'upstream_unavailable', uncertain: false },
-      });
-    } catch {
-      transition(launchId, {
-        type: 'fail',
-        failure: {
-          message: 'The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.',
+      fail(launchId, found.length > 0
+        ? {
+          message: LAUNCH_TIMEOUT_WORDS.foundSince,
           code: 'upstream_unavailable',
           uncertain: true,
-        },
-      });
+          candidates: found.map((s) => ({ id: s.id as EntityId, title: s.title })),
+        }
+        : { message: LAUNCH_TIMEOUT_WORDS.none, code: 'upstream_unavailable', uncertain: false });
+    } catch {
+      fail(launchId, { message: LAUNCH_TIMEOUT_WORDS.checkFailed, code: 'upstream_unavailable', uncertain: true });
     }
   };
 
@@ -239,7 +245,7 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       admit(launchId, await deps.spawnSession(input));
     } catch (error) {
       if (isLaunchTimeout(error)) await check(launchId, input);
-      else transition(launchId, { type: 'fail', failure: launchFailureOf(error) });
+      else fail(launchId, launchFailureOf(error));
     }
   };
 
@@ -263,7 +269,8 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       return false;
     }
 
-    if (inWork(runtime)) {
+    const presence = workPresence(runtime);
+    if (presence === 'mounted') {
       /* A tab scope without sessions would answer the open with the reveal
          prompt, whose replay opens a BLANK New session draft; that launch
          keeps the popup's in-card state instead. */
@@ -277,12 +284,13 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       return true;
     }
 
-    /* Outside Work: the tab waits behind Work's restore, and the ONE
-       navigation is this push into Work. */
+    /* Work not on screen (or still mounting): the tab waits behind Work's
+       restore, and the ONE navigation is a push into Work — unless Work's
+       route is already the one showing. */
     const record = beginLaunch(launch, now());
     queueLaunchTab(viewerId, spaceId, valuesOf(record));
     transition(record.id, { type: 'land', page: { at: 'queued', viewerId, spaceId } });
-    navigateToWork();
+    if (presence === 'elsewhere') navigateToWork();
     return true;
   };
 
@@ -301,7 +309,7 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     if (record.input !== null || record.state !== 'starting') return;
     transition(record.id, { type: 'send', input });
     const runtime = runtimeOfPage(record.page);
-    if (runtime && record.page.at === 'tab') storeLaunchInput(runtime, record.id, input);
+    if (runtime && record.page.at === 'tab') storeLaunchFacts(runtime, record.id, { input });
     await send(record.id, input);
   };
 
@@ -315,28 +323,39 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     dropLaunch(launchId);
   };
 
-  const resume = (values: LaunchTabValues): (() => void) => {
+  const choose = (launchId: string, sessionId: EntityId) =>
+    land(transition(launchId, { type: 'choose', sessionId, at: now() }), sessionId);
+
+  const resume = (values: LaunchTabValues): void => {
     const { viewerId, spaceId } = deps;
-    if (!viewerId || !spaceId || launchRecord(values.launchId)) return () => undefined;
+    if (!viewerId || !spaceId || launchRecord(values.launchId)) return;
     adoptLaunch(values.launch, values.input, values.startedAt, { at: 'tab', viewerId, spaceId });
+    if (values.failure) {
+      transition(values.launchId, { type: 'fail', failure: values.failure });
+      return;
+    }
     const input = values.input;
     if (!input) {
       /* Pressed, but the page went away before the input was sent: there is
          nothing to replay, and composing one now would be a second launch. */
-      transition(values.launchId, {
-        type: 'fail',
-        failure: {
-          message: 'This launch was interrupted before it reached the node, so nothing started. Edit and retry to launch it.',
-          code: null,
-          uncertain: false,
-        },
+      fail(values.launchId, {
+        message: 'This launch was interrupted before it reached the node, so nothing started. Edit and retry to launch it.',
+        code: null,
+        uncertain: false,
       });
-      return () => undefined;
+      return;
     }
-    return schedule(() => void check(values.launchId, input), Math.max(0, values.startedAt + RESUME_GRACE_MS - now()));
+    const runtime = runtimeFor(viewerId, spaceId);
+    schedule(() => {
+      /* Still this window's to settle? Another window may have bound or
+         dismissed the tab meanwhile, or this one dropped the launch. */
+      const record = launchRecord(values.launchId);
+      if (!record || record.state !== 'starting' || !findLaunchTab(runtime, values.launchId)) return;
+      void check(values.launchId, input);
+    }, Math.max(0, values.startedAt + RESUME_GRACE_MS - now()));
   };
 
-  return { onLaunchStarted, spawn, dismiss, resume };
+  return { onLaunchStarted, spawn, dismiss, choose, resume };
 }
 
 /**

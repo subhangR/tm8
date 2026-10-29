@@ -144,6 +144,7 @@ describe('the page model', () => {
     workdirMode: 'worktree',
     checkoutBranch: 'tm8/s-1',
     endedReason: null,
+    bootPhaseAt: null,
     ...patch,
   });
 

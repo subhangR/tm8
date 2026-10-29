@@ -26,6 +26,6 @@ export {
   type LaunchState,
 } from './store';
 export { BOOT_PHASES, bootPhaseOf, formatElapsed, launchPhases, stepsDone, type BootStep, type PhaseMark, type PhaseRow } from './phases';
-export { bootingSessionOf, launchPageModel, type BootingSession, type LaunchPageModel, type LaunchPageState } from './page';
+export { BOOT_STALE_MS, bootIsFresh, bootingSessionOf, launchPageModel, type BootingSession, type LaunchPageModel, type LaunchPageState } from './page';
 export { isLaunchTimeout, launchFailureOf } from './failure';
 export { LaunchPageHostContext, useLaunchPageHost, type LaunchPageHost } from './page-host';

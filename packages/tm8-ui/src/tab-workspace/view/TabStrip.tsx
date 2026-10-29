@@ -145,7 +145,11 @@ export function useTabFacts(tab: TabRecord): {
   if (tab.type === 'draft') {
     if (launch) {
       shownTitle = launch.launch.title || shownTitle;
-      state = launchState === 'failed' ? 'error' : 'running';
+      /* With no record in this window (a reload, another window) the stored
+         values are the truth: failed, or not known to be running. */
+      state = launchState
+        ? (launchState === 'failed' ? 'error' : 'running')
+        : (launch.failure ? 'error' : null);
     } else state = tab.dirty ? 'unsaved' : null;
   } else if (entityId) {
     const gone = deleted ? 'deleted' : known ? undefined : probe;
