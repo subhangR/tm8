@@ -731,3 +731,50 @@ test('385 — claim-then-fire: due read, claim, overlap skip/queue/409, launch b
   assert.match(scalar(`select last_error from public.loops where entity_id = ${uuid(orphan.id)}`, { url: OWNER_URL }), /needs arming/);
   ok(`update public.members set status = 'active', left_at = null where space_id = ${uuid(w.spaceB)}`, { url: OWNER_URL });
 });
+
+test('385 — a retry never overrides an edit made during the firing, a held-back queue loop takes no slot, a launch keeps a parked reason', () => {
+  const human = { ...w.claimsA, 'tm8.auth_kind': 'browser' };
+  const worker = { 'tm8.identity_id': w.identityA, 'tm8.node_admin': 'true', 'tm8.background_job': 'loops.execute-due' };
+  const past = `now() - interval '1 minute'`;
+  const loop = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Fixes', null, 'every 1h', ${uuid(w.personaA)},
+       p_next_run_at => ${past}, p_retry_attempts => 2, p_retry_delay_seconds => 600,
+       p_client_mutation_id => ${literal(cmid('loop-385-fixes-create'))})`,
+    { claims: human },
+  ).entity;
+  const id = uuid(loop.id);
+  const claim = (next) => json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], ${next})`, { claims: worker });
+  const claimable = () => rows(`select entity_id from public.loops_claimable(25, now())`, { claims: worker }).some((row) => row.entity_id === loop.id);
+
+  // The retry never pushes a sooner deadline later: the next deadline (2 min) beats the 10-minute delay.
+  const c1 = claim(`now() + interval '2 minutes'`);
+  json(`select public.loop_run_launch_failed(${uuid(c1.runId)}, 'spawn refused', now())`, { claims: worker });
+  assert.deepEqual(rows(`select (next_run_at <= now() + interval '3 minutes') sooner, retry_attempt from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ sooner: true, retry_attempt: 1 }]);
+
+  // A write made during the firing (here: a deadline a week out) wins over the re-arm.
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  const c2 = claim(`now() + interval '1 hour'`);
+  ok(`update public.loops set next_run_at = now() + interval '7 days' where entity_id = ${id}`, { url: OWNER_URL });
+  json(`select public.loop_run_launch_failed(${uuid(c2.runId)}, 'spawn refused again', now())`, { claims: worker });
+  assert.deepEqual(rows(`select (next_run_at > now() + interval '6 days') kept, retry_attempt, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ kept: true, retry_attempt: 0, last_error: 'spawn refused again' }]);
+
+  // A queue loop held back by an open firing stays due but is not claimable, so it takes no slot of the tick.
+  ok(`update public.loops set concurrency = 'queue', next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  const c3 = claim(`now() + interval '1 hour'`);
+  assert.equal(c3.launch, 'fired');
+  json(`select public.loop_run_launched(${uuid(c3.runId)}, ${uuid(w.taskA)}, null)`, { claims: worker });
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  assert.equal(claimable(), false, 'held back by its open firing');
+  json(`select public.loop_run_settle(${uuid(c3.runId)}, 'completed')`, { claims: worker });
+  assert.equal(claimable(), true, 'claimable again once the run settles');
+
+  // A launch that succeeds does not clear a parked loop's reason (Run now on a loop whose schedule cannot be evaluated).
+  json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], null, 'schedule "0 0 30 2 *" never matches')`, { claims: worker });
+  const manual = json(`select public.loop_run_claim(${id}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-fixes-manual'))})`, { claims: w.claimsA });
+  json(`select public.loop_run_launched(${uuid(manual.runId)}, ${uuid(w.taskA)}, null)`, { claims: w.claimsA });
+  assert.deepEqual(rows(`select next_run_at is null parked, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
+  json(`select public.loop_run_settle(${uuid(manual.runId)}, 'completed')`, { claims: w.claimsA });
+});

@@ -5,7 +5,7 @@ import {
 import { loadActors, actorOf } from '../facade/entity-read.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import type { Querier } from '../db/types.js';
-import { loopRunsFacts } from './runs.js';
+import { emptyLoopRuns, loopRunsFacts } from './runs.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
 
@@ -91,10 +91,8 @@ async function viewsOf(q: Querier, rows: LoopRow[], options: LoopViewOptions): P
     id: row.id, concurrency: row.concurrency, enabled: row.enabled,
     nextRunAt: row.next_run_at, pausedUntil: row.paused_until,
   })));
-  const none = { runs: { total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 },
-    usage: { inputTokens: null, outputTokens: null, costUsd: null } }, waitingOnRunId: null } satisfies
-    { runs: LoopRunsSummary; waitingOnRunId: string | null };
-  return rows.map(row => viewOf(row, actors, options, facts.get(row.id) ?? none));
+  // loopRunsFacts answers for every id; the fallback only satisfies the Map type.
+  return rows.map(row => viewOf(row, actors, options, facts.get(row.id) ?? { runs: emptyLoopRuns(), waitingOnRunId: null }));
 }
 
 export async function loadLoopView(q: Querier, loopId: string, options: LoopViewOptions = { withNext: true }): Promise<LoopView> {

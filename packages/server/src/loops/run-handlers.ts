@@ -30,7 +30,7 @@ import { toCollabError } from '../facade/execution-handlers.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import type { RequestContext } from '../http/types.js';
 import type { DueLoop, LoopExecutorPort } from '../scheduler/jobs/loops.js';
-import { claimLoopRun, errorText, recordLoopLaunch, recordLoopLaunchFailure, settleLoopRun } from './bookkeeping.js';
+import { claimLoopRun, errorText, recordLoopLaunch, recordLoopLaunchFailure, retryOnce, settleLoopRun } from './bookkeeping.js';
 import { listLoopRuns, loadLoopRun } from './runs.js';
 
 export interface LoopRunHandlerDeps {
@@ -155,18 +155,42 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
         });
       }
       const runId = claim.runId as string;
-      // A replayed claim (same clientMutationId) comes back with the run that
-      // already launched: firing it again replays the spawn's own ledger (same
-      // key), so this stays a single run either way.
+      // A replayed claim (same clientMutationId) comes back with the run it
+      // recorded. Only a launch still in flight is fired again, and that replays
+      // the spawn's own ledger (same key). A run that already has its session, or
+      // whose launch failed (a failure the spawn ledger never saw), is answered
+      // as it stands: firing it again would start a session no run records.
+      const recorded = await readRun(claims, runId, false);
+      if (recorded.status !== 'running' || recorded.sessionId !== null) {
+        const replayed: LoopRunResult = { run: recorded };
+        return replayed;
+      }
       const loopClaims = executor.claimsForLoop(loop, loop.actAsIdentity);
+      let launched: { taskId: string | null; sessionId: string };
       try {
-        const launched = await executor.fire(loop, loopClaims, now, runId);
-        await recordLoopLaunch(db, claims, runId, launched);
-        if (loop.action === 'dispatch') await settleLoopRun(db, claims, runId, 'completed', null);
+        launched = await executor.fire(loop, loopClaims, now, runId);
       } catch (error) {
         const message = errorText(error);
-        await recordLoopLaunchFailure(db, claims, runId, message, now).catch(() => undefined);
+        await recordLoopLaunchFailure(db, claims, runId, message, now).catch((cause: unknown) => {
+          // Logged, never swallowed (the job's rule): an unrecorded failure leaves
+          // the run open and in flight, holding every firing back as an overlap.
+          console.warn(`[tm8:loops] Run now of loop ${loop.entityId} failed AND its failure could not be recorded on run ${runId}: ${errorText(cause)}`);
+        });
         throw toCollabError(error);
+      }
+      // The session is live from here: a bookkeeping failure must not read as a
+      // launch failure, or the caller is invited to start a second session.
+      try {
+        await retryOnce(() => recordLoopLaunch(db, claims, runId, launched));
+        if (loop.action === 'dispatch') await retryOnce(() => settleLoopRun(db, claims, runId, 'completed', null));
+      } catch (cause) {
+        console.warn(`[tm8:loops] Run now of loop ${loop.entityId} started session ${launched.sessionId} but run ${runId} could not record it: ${errorText(cause)}`);
+        // Retryable on purpose: the same clientMutationId replays this claim and
+        // re-fires through the spawn's own ledger (same key, same session), so a
+        // retry records the run; a new id is an overlap while this run is open.
+        throw new CollabError('upstream_unavailable',
+          `the run started (session ${launched.sessionId}) but could not be recorded; retry this request to record it`,
+          { details: { runId, sessionId: launched.sessionId } });
       }
       const result: LoopRunResult = { run: await readRun(claims, runId, false) };
       return result;
