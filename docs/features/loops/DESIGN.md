@@ -27,6 +27,7 @@ The body's "378+" was renumbered at merge, as §10 expected. Both numbers sort b
 - `--credential-source` is the scalar `member|space|node`; there is no `provider=` form.
 - The selection headers (`--when-to-use`, `--summary`, `--keyword`) are written with `entities.header.set` after `loops.create`, never by it. A failed header write names the created loop and the mutation id to re-run with.
 - `--clear-subject` became `--subject none`, and `edit` gained `--clear-inputs`.
+- `edit --base-ref none` clears a worktree's base ref (before PR4's review it was stored as a ref named "none").
 - `show` labels the next instants "schedule from now" (the body's "upcoming").
 
 **Deviations and open items.**
@@ -260,7 +261,7 @@ tm8 loop create <title> --schedule <expr> [--timezone <iana>]
       [--disabled] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]   # headers: entities.header.set after loops.create
 tm8 loop list [--enabled|--disabled] [--action spawn|dispatch|tool] [--words <w>] [--limit] [--cursor]
 tm8 loop show <id|title>
-tm8 loop edit <id> --expect-version <n> [any create flag] [--subject none] [--clear-tool] [--clear-inputs]
+tm8 loop edit <id> --expect-version <n> [any create flag] [--subject none] [--base-ref none] [--clear-tool] [--clear-inputs]
 tm8 loop enable|disable|resume <id> --expect-version <n>
 tm8 loop pause <id> --until <iso|+<n>{m|h|d}> --expect-version <n>
 tm8 loop run-now <id> [--force]            → prints run id, task id, session id, and `tm8 session transcript <id>` hint
