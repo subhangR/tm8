@@ -7,15 +7,16 @@
 --   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '384_loops_first_class.sql'"
 --
 -- DESTROYS DATA: every loop_runs row, and every loop's action, tool, timezone,
--- pause and policy columns. A tool loop (no 091 meaning) is left as a dispatch
--- loop if it names no runner. Restores the 091 doors, 343's trigger body, 375's
--- due read and 292's header kinds verbatim.
+-- pause and policy columns. Under 091 a loop with a runner SPAWNS it, so every
+-- tool loop and every dispatch loop naming a runner is DISABLED first, with
+-- last_error saying why; nothing fires as something it was not. Restores the
+-- 091 doors, 343's trigger body and 375's due read verbatim, and 292's header
+-- kinds unless 380 (Tools PR-E) is applied: its list is 384's, and it stays.
 -- =============================================================================
 
 set role tm8_graph_owner;
 
 drop function if exists public.loop_run_settle(uuid,text,text);
-drop function if exists public.loop_run_record(uuid,timestamptz,text,text,integer,text,text,uuid,uuid,text,uuid,text);
 drop table if exists public.loop_runs;
 
 drop function if exists public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer,text);
@@ -123,6 +124,14 @@ $$;
 alter table public.loops disable trigger loops_stamp_armed_by;
 alter table public.loops disable trigger loops_touch_updated_at;
 alter table public.loops disable trigger loops_w2_snapshot_version;
+-- 091 has no action: its executor spawns any runner it finds. A tool loop's
+-- persona, or a runner on a dispatch loop, would be spawned every period.
+update public.loops
+   set enabled = false,
+       last_error = case when action = 'tool'
+                         then 'disabled by the 384 rollback: a tool loop has no meaning before 384'
+                         else 'disabled by the 384 rollback: under 091 a dispatch loop that names a runner spawns it' end
+ where enabled and (action = 'tool' or (action = 'dispatch' and team_member_id is not null));
 alter table public.loops
   drop column action, drop column tool_id, drop column tool_inputs, drop column timezone,
   drop column paused_until, drop column armed_at, drop column concurrency,
@@ -357,10 +366,17 @@ comment on function public.loops_due_for_executor(integer) is
 revoke all on function public.loops_due_for_executor(integer) from public;
 grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 
--- 292's header kinds, verbatim.
-create or replace function internal.header_kind_allowed(p_kind text)
-returns boolean language sql immutable set search_path = public, internal, pg_temp as $$
-  select p_kind in ('team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story')
-$$;
+-- 292's header kinds, verbatim, unless 380 (Tools PR-E) is applied: it set the
+-- same converged list as 384, and tool headers depend on it.
+do $rollback$
+begin
+  if not exists (select 1 from public.applied_migrations where filename like '380\_%') then
+    create or replace function internal.header_kind_allowed(p_kind text)
+    returns boolean language sql immutable set search_path = public, internal, pg_temp as $f$
+      select p_kind in ('team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story')
+    $f$;
+  end if;
+end
+$rollback$;
 
 reset role;

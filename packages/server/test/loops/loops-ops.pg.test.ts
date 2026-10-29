@@ -24,7 +24,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
 let database: W1ScratchDatabase, db: Db, server: FacadeServer, base: string;
 const space = randomUUID(), member = randomUUID(), account = randomUUID(), authSession = randomUUID(), persona = randomUUID();
-const otherSpace = randomUUID(), writeTool = randomUUID();
+const otherSpace = randomUUID(), writeTool = randomUUID(), goneTool = randomUUID();
 const identityId = 'loops-http-owner', secret = generateSecret(), token = formatToken(authSession, secret);
 const owner = async () => ({ identityId, accountId: account, username: identityId, isNodeAdmin: false, isOwner: false });
 
@@ -47,6 +47,10 @@ beforeAll(async () => {
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'tool',0,$3)", [writeTool, space, member]);
     await c.query("insert into public.tools(entity_id,space_id,title,definition) values($1,$2,'probe',$3)", [writeTool, space,
       { name: 'probe', description: 'Probe', help: '', runtime: 'bash', source: 'exit 0', inputs: [], tm8Access: 'write', timeoutSeconds: 60 }]);
+    // A tool one case deletes after a loop is configured to run it.
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'tool',0,$3)", [goneTool, space, member]);
+    await c.query("insert into public.tools(entity_id,space_id,title,definition) values($1,$2,'gone-probe',$3)", [goneTool, space,
+      { name: 'gone-probe', description: 'Probe', help: '', runtime: 'bash', source: 'exit 0', inputs: [], tm8Access: 'none', timeoutSeconds: 60 }]);
   });
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
@@ -237,6 +241,36 @@ describe('loops.update and the control ops', () => {
       .toMatch(/^schedule:/);
   });
 
+  it('a tool deleted after the loop was configured blocks nothing: rename, disable and the executor bookkeeping still write (review B2)', async () => {
+    const view = ok(await create({ title: 'Probe hourly', schedule: 'every 1h', action: 'tool', toolId: goneTool }));
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('update public.entities set deleted_at = now() where id = $1', [goneTool]);
+    });
+    const renamed = ok(await request('PATCH', `/v2/loops/${view.id}`, { expectedVersion: view.version, definition: { title: 'Probe, renamed' } }));
+    const off = ok(await request('POST', `/v2/loops/${view.id}/disable`, { expectedVersion: renamed.version }));
+    expect(off.state.enabled).toBe(false);
+    // The executor's bookkeeping write (jobs/loops.ts recordRun): no version, a new deadline.
+    await database.transaction(async c => {
+      await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [identityId]);
+      await c.query("select public.update_loop($1::uuid, null, null, p_next_run_at => now() + interval '3 hours')", [view.id]);
+    });
+    const after = ok(await request('GET', `/v2/loops/${view.id}`));
+    expect(new Date(after.state.nextRunAt).getTime()).toBeGreaterThan(Date.now() + 2 * 60 * 60_000);
+    // Naming the runner again IS judged: the deleted tool cannot be re-pointed to.
+    const repoint = await request('PATCH', `/v2/loops/${view.id}`, { expectedVersion: after.version, definition: { toolId: goneTool } });
+    expect(repoint.status, JSON.stringify(repoint.json)).toBeGreaterThanOrEqual(400);
+  });
+
+  it('a dispatch loop names no runner; a tool loop becomes a dispatch loop only by clearing its tool and runner (review 3)', async () => {
+    refused(await create({ title: 'Routed with a runner', schedule: 'every 1h', action: 'dispatch', teamMemberId: persona }), 400, 'invalid_input');
+    const tool = ok(await create({ title: 'Probe as persona', schedule: 'every 1h', action: 'tool', toolId: writeTool, teamMemberId: persona }));
+    refused(await request('PATCH', `/v2/loops/${tool.id}`, { expectedVersion: tool.version, definition: { action: 'dispatch' } }), 400, 'invalid_input');
+    const routed = ok(await request('PATCH', `/v2/loops/${tool.id}`, { expectedVersion: tool.version,
+      definition: { action: 'dispatch', toolId: null, teamMemberId: null } }));
+    expect(routed.definition).toMatchObject({ action: 'dispatch', toolId: null, teamMemberId: null });
+  });
+
   it('pause until a future instant, refuse a past one, resume clears it', async () => {
     const view = ok(await create({ title: 'Pausable', schedule: 'every 1h', action: 'dispatch' }));
     refused(await request('POST', `/v2/loops/${view.id}/pause`, { expectedVersion: view.version, until: '2001-01-01T00:00:00Z' }), 400, 'invalid_input');
@@ -270,6 +304,15 @@ describe('entities.* loop arm', () => {
 
   it('refuses an invalid schedule (assertValidSchedule on every write)', async () => {
     refused(await request('POST', '/v2/entities', { spaceId: space, kind: 'loop', title: 'Broken', content: { schedule: 'sometimes' } }), 400, 'invalid_input');
+  });
+
+  it('refuses a member with the wrong type instead of letting Postgres coerce it (review 4)', async () => {
+    const view = ok(await create({ title: 'Typed', schedule: 'every 1h', action: 'dispatch' }, { enabled: false }));
+    for (const content of [{ schedule: 15 }, { enabled: 'true' }, { teamMemberId: 5 }, { prompt: 7 }]) {
+      const error = refused(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: view.version, content }), 400, 'invalid_input');
+      expect(error.message).toMatch(new RegExp(`^content\\.${Object.keys(content)[0]}`));
+    }
+    expect(ok(await request('GET', `/v2/loops/${view.id}`)).state).toMatchObject({ enabled: false, nextRunAt: null });
   });
 
   it("keeps 091's meaning: clearing a spawn loop's runner routes it to the dispatcher", async () => {
