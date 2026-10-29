@@ -4962,10 +4962,10 @@ const COMMAND_ALIASES = new Map<string, {
     tags: ['tools', 'version', 'history', 'definition', 'snapshot'],
     notes: [
       'sugar over entities.versions on the tool — it adds no catalog operation',
-      'by default the rows are DEFINITION versions, the numbers runs pin as toolVersion: stored writes whose content.execution_version equals their version, plus writes older than migration 381 whose executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ from the next older write; the whole history is read, --limit caps the rows shown and --cursor is refused',
+      'by default the rows are DEFINITION versions, the numbers runs pin as toolVersion: stored writes whose content.execution_version equals their version, plus writes older than migration 388 whose executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ from the next older write; the whole history is read, --limit caps the rows shown and --cursor is refused',
       '--all pages every stored write through the Server (configuration, secret and name/description/help writes included), labelled by what changed and by the definition version it pins',
       'each row names the fields that differ from the next older listed snapshot (name, description, runtime, source, inputs, help, tm8Access, timeoutSeconds, config, secrets) and the sha256 of its source, the digest `tm8 tool runs` pins per run',
-      'versions written before migration 381 (2026-10-28) may have been folded, so --all can skip numbers; a note says so',
+      'versions written before migration 388 may have been folded, so --all can skip numbers; a note says so',
     ],
     examples: ['tm8 tool versions <name>', 'tm8 tool versions <name> --all --limit 20'],
   }],

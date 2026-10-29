@@ -16,8 +16,8 @@ export interface ToolVersionRef {
   executionVersion: number | null;
   /**
    * True when a run can pin this version: the pin equals the entity version (every definition write
-   * since migration 381), or the executable fields differ from the next older stored snapshot
-   * (definition writes before 381, whose pin counted separately).
+   * since migration 388), or the executable fields differ from the next older stored snapshot
+   * (definition writes before 388, whose pin counted separately).
    */
   definition: boolean;
   changedAt: string | null; changedBy: ActorSummary | null;
@@ -54,7 +54,7 @@ export interface ToolDiffResult {
 const FIELDS = ['name', 'description', 'runtime', 'source', 'inputs', 'help', 'tm8Access', 'timeoutSeconds'] as const;
 /** The fields whose change bumps the execution version: what a run executes, and how. */
 const EXECUTABLE: ReadonlySet<string> = new Set(['source', 'runtime', 'inputs', 'tm8Access', 'timeoutSeconds']);
-export const FOLDED_VERSIONS_NOTE = 'versions written before migration 381 (2026-10-28) may have been folded, so not every version number has a stored snapshot';
+export const FOLDED_VERSIONS_NOTE = 'versions written before migration 388 may have been folded, so not every version number has a stored snapshot';
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};

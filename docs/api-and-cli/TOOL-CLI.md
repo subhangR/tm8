@@ -116,10 +116,10 @@ and the CLI share: a stored version is a definition version when
 `snapshot.content.execution_version` equals its own `version`; a metadata edit
 when its `content.definition` differs from the previous row but the execution
 version is unchanged; otherwise a configuration write, whose definition is
-identical to the previous row. Only for writes older than migration 381
+identical to the previous row. Only for writes older than migration 388
 (2026-10-28) does a fallback apply: such a row is a definition version when its
 executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ
-from the next older stored write, because before 381 the pinned number counted
+from the next older stored write, because before 388 the pinned number counted
 separately. The whole history is read; `--limit` caps the rows shown, a
 `hidden:` line counts the configuration and metadata writes left out, and
 `--cursor` is refused.
@@ -142,7 +142,7 @@ json` carries both version references (version, execution version, definition
 flag, who, when, source digest), every changed field and the diff as one
 string; it is empty when the sources are identical.
 
-Versions written before migration 381 (2026-10-28) may have been folded: rapid
+Versions written before migration 388 may have been folded: rapid
 edits by one author within five minutes stored one snapshot, and that history
 keeps its gaps (a run's `toolVersion` from that time may name no stored row).
 `versions --all` prints a note when a page skips numbers; `diff` refuses a

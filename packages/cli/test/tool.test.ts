@@ -44,7 +44,7 @@ let stdout = '', stderr = '', fast = false, completed = false, exitCode = 37, ke
 let namePage = 0;
 let noReplay = false, statusDelay = 0, noTerminalEnd = false;
 const AUTHOR = { id: CREDENTIAL, kind: 'team_member' as const, displayName: 'Author', isAgent: false };
-// Stored snapshots, newest first, as entities.versions returns them. Since migration 381 a definition
+// Stored snapshots, newest first, as entities.versions returns them. Since migration 388 a definition
 // write pins execution_version = version; a configuration, secret or metadata write keeps the older pin.
 const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<string, unknown> = {}, executionVersion = version) => ({
   entityId: TOOL, version, changedBy: AUTHOR, changedAt: `2026-10-28T1${version}:00:00.000Z`,
@@ -160,7 +160,7 @@ beforeEach(() => {
   noReplay = false; statusDelay = 0; noTerminalEnd = false; versionPageCap = 200;
   spaceTools = undefined; headerRefused = false; headerNotStored = false; createRefusals = {};
   history = [
-    // v6: an inputs edit after migration 381 (pin 6). v5: a configuration write before it (pin 2).
+    // v6: an inputs edit after migration 388 (pin 6). v5: a configuration write before it (pin 2).
     // v4: a source edit before it whose v2 and v3 folded into it (pin 2). v1: created.
     stored(6, { source: 'echo one\necho two\n', help: 'New help', inputs: definition.inputs.slice(0, 2) }, { limit: 4 }),
     stored(5, { source: 'echo one\necho two\n' }, { limit: 4 }, 2),
@@ -312,7 +312,7 @@ describe('version history', () => {
   const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
   type Row = { version: number; executionVersion: number; definition: boolean; changed: string[] | null; previousVersion: number | null };
   const shape = (rows: Row[]) => rows.map(row => [row.version, row.executionVersion, row.definition, row.changed, row.previousVersion]);
-  it('lists definition versions by default from the whole history, classifying pre-381 rows by their executable fields', async () => {
+  it('lists definition versions by default from the whole history, classifying pre-388 rows by their executable fields', async () => {
     versionPageCap = 2;
     expect(await run(['tool', 'versions', 'demo', '--format', 'json'])).toBe(0);
     const page = JSON.parse(stdout);
@@ -348,7 +348,7 @@ describe('version history', () => {
     expect(stdout).toContain('demo: 4 stored writes, newest first (current v6)');
     expect(stdout).toMatch(/v5 +2026-10-28T15:00:00.000Z +Author +config +definition v2/);
     expect(stdout).toMatch(/v4 .* source +sha256 /);
-    expect(stdout).toContain('note: versions written before migration 381 (2026-10-28) may have been folded');
+    expect(stdout).toContain('note: versions written before migration 388 may have been folded');
     expect(stdout).not.toContain('hidden:'); expect(stdout).not.toContain('more:');
     stdout = '';
     expect(await run(['tool', 'versions', TOOL, '--all', '--limit', '1'])).toBe(0);
@@ -385,7 +385,7 @@ describe('version history', () => {
     expect(requests.filter(req => req.path.endsWith('/versions'))).toHaveLength(1);
     requests = [];
     expect(await run(['tool', 'diff', 'demo', '--from', '3'])).toBe(5);
-    expect(stderr).toContain('demo v3 has no stored snapshot (nearest stored: v4, v1); versions written before migration 381 (2026-10-28) may have been folded');
+    expect(stderr).toContain('demo v3 has no stored snapshot (nearest stored: v4, v1); versions written before migration 388 may have been folded');
     expect(requests.filter(req => req.path.endsWith('/versions'))).toHaveLength(2);
     expect(await run(['tool', 'diff', 'demo', '--to', '9'])).toBe(5);
     expect(stderr).toContain('demo v9 has no stored snapshot (nearest stored: v6)');
