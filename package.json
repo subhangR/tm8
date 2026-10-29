@@ -17,8 +17,7 @@
       },
       "mobile": {
         "react": "19.3.0",
-        "react-dom": "19.3.0",
-        "@types/react": "~19.3.0"
+        "react-dom": "19.3.0"
       }
     }
   },
@@ -62,6 +61,7 @@
     "build:jev": "tsc -b packages/jev"
   },
   "devDependencies": {
+    "@types/react": "catalog:web",
     "react": "catalog:web",
     "react-dom": "catalog:web",
     "typescript": "^5.5.0"

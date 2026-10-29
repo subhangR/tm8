@@ -12,7 +12,7 @@
  * so the assertions see the layout bun actually installed.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const APP = join(__dirname, '..');
@@ -42,7 +42,9 @@ function rendererBuiltFor(reactNativeDir: string): string[] {
 }
 
 interface RootManifest {
-  workspaces: { catalogs: Record<'web' | 'mobile', Record<'react' | 'react-dom', string>> };
+  workspaces: {
+    catalogs: { web: Record<'react' | 'react-dom' | '@types/react', string>; mobile: Record<'react' | 'react-dom', string> };
+  };
   devDependencies: Record<string, string>;
   overrides?: Record<string, string>;
 }
@@ -113,5 +115,27 @@ describe('packages/tm8-ui keeps one React, the one its react-dom matches', () =>
   it('no root override forces one React on both sides', () => {
     expect(root.overrides?.react).toBeUndefined();
     expect(root.overrides?.['react-dom']).toBeUndefined();
+  });
+});
+
+describe("React's types are one version for the whole repo", () => {
+  // Under bun's isolated linker every library that declares no @types/react peer
+  // (@react-three/fiber in tm8-ui, expo-router and many React Native libraries
+  // here) reads React's types from one hidden hoist, which holds the root's
+  // version. Two versions would put one side's libraries on the other side's
+  // types (README, "The React split").
+  const types = root.workspaces.catalogs.web['@types/react'];
+
+  it('the app, tm8-ui and the root resolve the catalog "web" @types/react', () => {
+    expect(resolveFrom(APP, '@types/react').version).toBe(types);
+    expect(resolveFrom(TM8_UI, '@types/react').version).toBe(types);
+    expect(resolveFrom(REPO, '@types/react').version).toBe(types);
+    expect(root.devDependencies['@types/react']).toBe('catalog:web');
+  });
+
+  it('the hidden hoist that peer-less libraries read holds that version', () => {
+    const hoist = join(REPO, 'node_modules', '.bun', 'node_modules', '@types', 'react', 'package.json');
+    if (!existsSync(hoist)) return; // bun's hoisted linker has no .bun store; the root's copy is the one
+    expect((JSON.parse(readFileSync(hoist, 'utf8')) as { version: string }).version).toBe(types);
   });
 });
