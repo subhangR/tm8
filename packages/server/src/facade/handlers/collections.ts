@@ -935,7 +935,9 @@ function resolveTree(tree: CollectionQuery['tree']): ResolvedTree | null {
  * Bounded at every step: a level holds at most 200 rows, so the next level's
  * parents are at most the 200 ids `filters.parentIn` allows. The rank reads
  * ids and sort keys only; the full rows, and their assembly, are read for the
- * kept ids alone.
+ * kept ids alone. What the 200 does NOT bound is the rank itself: row_number()
+ * sees every child of up to 200 parents before the cut, where the step query
+ * could stop at its 201st row, so a level costs its parents' total child count.
  */
 async function readTree(
   q: Querier,
