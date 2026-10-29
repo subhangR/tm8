@@ -48,15 +48,15 @@ export interface ScheduleState { schedule: string; timezone: string; enabled: bo
 
 /**
  * The one rule for when the server writes next_run_at (§3.1): on create
- * (enabled), on a schedule or timezone change, and on enable, always from now.
- * Disable leaves it alone; the due read ignores a disabled loop. No client value
- * is ever consulted.
+ * (enabled), on enable, and on any schedule or timezone change (enabled or not,
+ * so a disabled loop's view stays honest), always from now. Disabling leaves it
+ * alone; the due read ignores a disabled loop. No client value is ever consulted.
  */
 export function scheduleWrite(before: ScheduleState | null, after: ScheduleState, now: Date = new Date()): ScheduleWrite {
-  if (!after.enabled) return { nextRunAt: undefined, lastError: undefined };
-  const changed = before === null || !before.enabled
-    || before.schedule.trim() !== after.schedule.trim() || before.timezone !== after.timezone;
-  return changed ? recompute(after.schedule, after.timezone, now) : { nextRunAt: undefined, lastError: undefined };
+  const rescheduled = before !== null
+    && (before.schedule.trim() !== after.schedule.trim() || before.timezone !== after.timezone);
+  const armed = after.enabled && (before === null || !before.enabled);
+  return rescheduled || armed ? recompute(after.schedule, after.timezone, now) : { nextRunAt: undefined, lastError: undefined };
 }
 
 function messageOf(error: unknown): string {

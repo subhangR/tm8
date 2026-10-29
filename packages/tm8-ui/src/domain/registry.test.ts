@@ -85,6 +85,16 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
   });
 });
 
+describe('a tool is created from its definition (Tools v2 §3.1)', () => {
+  it('opens the tool-definition form from the list header, the New tab and the palette', () => {
+    const tool = getKind('tool');
+    expect(tool.list.quickCreate).toBe(true);
+    expect(tool.createForm).toBe('tool-definition');
+    expect(tool.createInstant).toBeUndefined();
+    expect(tool.palette?.createLabel).toBe('New tool');
+  });
+});
+
 describe('loop management is registry-declared and fully wired', () => {
   it('selects staged create, typed edit, lifecycle controls, and the live Edit verb', () => {
     const loop = getKind('loop');

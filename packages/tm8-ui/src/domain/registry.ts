@@ -2049,7 +2049,13 @@ const ROWS: readonly KindConfig[] = [
     slug: 'tools', strategy: 'collection', defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
-    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    /* A tool is born from its DEFINITION (`tools.create`: name, runtime,
+       source, inputs…), never from a bare title, so New opens the staged
+       `tool-definition` form (Tools v2 §3.1): `ToolCreateControl` in the list
+       header and the palette, `ToolDraftBody` in the New tab. */
+    list: baseList({ quickCreate: true, tile: { badges: [] } }),
+    createForm: 'tool-definition',
+    palette: { createLabel: 'New tool' },
     panel: { archetype: 'scripted', blocks: [COLLECTIONS_BLOCK] },
   },
 

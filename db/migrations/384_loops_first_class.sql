@@ -1,7 +1,8 @@
 -- =============================================================================
--- 378 — loops become first-class (design of record 01a182d4, §2; task 01a182d5).
+-- 384 — loops become first-class (design of record 01a182d4, §2; task 01a182d5).
 --
--- Predecessor: 377_mcp_refresh_failures_and_revoke_all.sql.
+-- Predecessor: the highest on main at open, currently 377_mcp_refresh_failures_and_revoke_all.sql;
+-- 378 belongs to PR #1389 (coordinator arbitration, 2026-10-28).
 --
 -- §1 adds the definition and policy columns of §2.1 with the action backfill;
 -- §2 extends 343's armer trigger with `armed_at` and the widened bookkeeping
@@ -44,13 +45,13 @@ alter table public.loops
     check (retry_attempt >= 0);
 
 comment on column public.loops.action is
-  '378: what a firing does. spawn requires team_member_id; tool requires tool_id '
+  '384: what a firing does. spawn requires team_member_id; tool requires tool_id '
   '(team_member_id is then the runs-as persona); dispatch needs neither.';
 comment on column public.loops.timezone is
-  '378: the IANA zone the cron half of the schedule is evaluated in. Membership '
+  '384: the IANA zone the cron half of the schedule is evaluated in. Membership '
   'in the IANA set is checked by the server before the door.';
 comment on column public.loops.armed_at is
-  '378: when armed_by_* was last stamped; set and cleared by the same trigger.';
+  '384: when armed_by_* was last stamped; set and cleared by the same trigger.';
 
 -- Backfill (§2.1): a loop that names no runner has always meant "route through
 -- the dispatcher" (091). The update is bookkeeping a migration owes the rows,
@@ -131,7 +132,7 @@ end
 $$;
 revoke all on function internal.stamp_loop_armed_by() from public;
 
--- Loops armed before 378 have no recorded instant; their last update is the
+-- Loops armed before 384 have no recorded instant; their last update is the
 -- closest truth there is.
 alter table public.loops disable trigger loops_stamp_armed_by;
 alter table public.loops disable trigger loops_touch_updated_at;
@@ -186,7 +187,7 @@ create function public.create_loop(
   p_next_run_at timestamptz default null,
   p_parent_id uuid default null, p_position double precision default null,
   p_client_mutation_id text default null,
-  -- 378
+  -- 384
   p_action text default null, p_tool_id uuid default null,
   p_tool_inputs jsonb default '{}'::jsonb, p_timezone text default 'UTC',
   p_concurrency text default 'skip', p_max_runtime_seconds integer default null,
@@ -282,7 +283,7 @@ create function public.update_loop(
   p_last_run_at timestamptz default null,
   p_last_error text default null, p_clear_last_error boolean default false,
   p_client_mutation_id text default null,
-  -- 378
+  -- 384
   p_action text default null, p_tool_id uuid default null, p_clear_tool boolean default false,
   p_tool_inputs jsonb default null, p_timezone text default null,
   p_paused_until timestamptz default null, p_clear_paused_until boolean default false,
@@ -417,8 +418,10 @@ create index loop_runs_open_session_idx on public.loop_runs (session_id)
   where outcome is null and launch = 'fired';
 
 alter table public.loop_runs enable row level security;
+-- Readable exactly when the loop is: entities' own RLS decides, in the 218 shape
+-- (no per-row membership helper).
 create policy loop_runs_select on public.loop_runs for select to tm8_app
-  using (internal.entity_readable(loop_id));
+  using ((exists (select 1 from public.entities readable_entity where readable_entity.id = loop_runs.loop_id and readable_entity.deleted_at is null offset 0)));
 grant select on public.loop_runs to tm8_app;
 
 -- Writers: the in-process executor (375's worker claim) or a member of the
@@ -553,5 +556,7 @@ create or replace function internal.header_kind_allowed(p_kind text)
 returns boolean language sql immutable set search_path = public, internal, pg_temp as $$
   select p_kind in ('team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story', 'tool', 'loop')
 $$;
+
+analyze public.loop_runs, public.loops;
 
 reset role;

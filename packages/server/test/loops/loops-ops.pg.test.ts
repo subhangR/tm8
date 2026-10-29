@@ -179,6 +179,17 @@ describe('loops.update and the control ops', () => {
     expect(new Date(on.state.nextRunAt).getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
   });
 
+  it('a schedule change on a DISABLED loop still moves nextRunAt (lead ruling: show/list stay honest)', async () => {
+    const view = ok(await spawnLoop('Disabled edit'));
+    const off = ok(await request('POST', `/v2/loops/${view.id}/disable`, { expectedVersion: view.version }));
+    const edited = ok(await request('PATCH', `/v2/loops/${view.id}`, { expectedVersion: off.version, definition: { schedule: 'every 6h' } }));
+    expect(edited.state.enabled).toBe(false);
+    expect(edited.state.nextRunAt).not.toBe(view.state.nextRunAt);
+    const due = new Date(edited.state.nextRunAt).getTime() - Date.now();
+    expect(due).toBeGreaterThan(6 * 60 * 60_000 - 60_000);
+    expect(due).toBeLessThanOrEqual(6 * 60 * 60_000);
+  });
+
   it('pause until a future instant, refuse a past one, resume clears it', async () => {
     const view = ok(await create({ title: 'Pausable', schedule: 'every 1h', action: 'dispatch' }));
     refused(await request('POST', `/v2/loops/${view.id}/pause`, { expectedVersion: view.version, until: '2001-01-01T00:00:00Z' }), 400, 'invalid_input');

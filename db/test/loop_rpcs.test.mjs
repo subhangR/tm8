@@ -516,10 +516,10 @@ test('entity_tree walks the task hierarchy the composer renders', () => {
   );
 });
 
-test('378 — runner invariants, the action backfill rule, loop_runs and loop headers', () => {
+test('384 — runner invariants, the action backfill rule, loop_runs and loop headers', () => {
   const dispatch = json(
     `select public.create_loop(${uuid(w.spaceA)}, 'Routed', null, 'every 1h',
-       p_client_mutation_id => ${literal(cmid('loop-378-dispatch'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-384-dispatch'))})`,
     { claims: w.claimsA },
   ).entity;
   // A caller written against 091 names no action: no runner still means dispatch.
@@ -533,7 +533,7 @@ test('378 — runner invariants, the action backfill rule, loop_runs and loop he
     `select public.create_loop(${uuid(w.spaceA)}, 'Spawned', null, '0 9 * * 1-5',
        ${uuid(w.personaA)}, p_timezone => 'Europe/London', p_concurrency => 'queue',
        p_max_runtime_seconds => 600, p_retry_attempts => 2, p_retry_delay_seconds => 60,
-       p_client_mutation_id => ${literal(cmid('loop-378-spawn'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-384-spawn'))})`,
     { claims: w.claimsA },
   ).entity;
   assert.equal(spawn.content.action, 'spawn');
@@ -564,7 +564,7 @@ test('378 — runner invariants, the action backfill rule, loop_runs and loop he
   const until = '2030-01-01T09:00:00Z';
   const paused = json(
     `select public.update_loop(${uuid(spawn.id)}, 1, null, p_paused_until => ${literal(until)},
-       p_client_mutation_id => ${literal(cmid('loop-378-pause'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-384-pause'))})`,
     { claims: w.claimsA },
   ).entity;
   assert.equal(new Date(paused.content.paused_until).toISOString(), new Date(until).toISOString());
@@ -572,7 +572,7 @@ test('378 — runner invariants, the action backfill rule, loop_runs and loop he
   // loop_runs: recorded by a member, settled once, invisible outside the space.
   const run = json(
     `select public.loop_run_record(${uuid(spawn.id)}, now(), 'manual', 'fired',
-       p_client_mutation_id => ${literal(cmid('loop-378-run'))})`,
+       p_client_mutation_id => ${literal(cmid('loop-384-run'))})`,
     { claims: w.claimsA },
   );
   assert.ok(run.runId);
