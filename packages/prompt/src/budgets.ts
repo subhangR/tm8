@@ -18,7 +18,8 @@
 /**
  * The hard ceilings — a validated Interaction Profile may choose smaller,
  * never larger — plus the `<context_index>` sub-caps (`referenceIndex`,
- * `rosterIndex`, `memoryInjection`). Those are node DEFAULTS: a profile's
+ * `rosterIndex`, `memoryInjection`, `toolIndex`). Those are node DEFAULTS
+ * (`toolIndex` has no profile knob): a profile's
  * `contextBudgets` may reallocate them up or down inside
  * `combinedInitialInjection`: a save that over-promises is warned (§10 Q5.6),
  * and the launch trim bounds it.
@@ -45,6 +46,13 @@ export const BYTE_BUDGETS = {
    */
   referenceIndex: 8192,
   rosterIndex: 8192,
+  /**
+   * The `tools` group's sub-cap (Tools v2 PR-E): at most eight of the space's
+   * tools, trimmed like references (summaries first, then whole entries from
+   * the bottom, declared in `omitted` with `tm8 tool list`). A node default
+   * with no profile knob: the group is a directory, not a launch selection.
+   */
+  toolIndex: 4096,
   /**
    * Memories injected WHOLE, before the lowest-ranked collapse into the
    * index (§10 Q1, Q3). Critical memories never collapse: past this they

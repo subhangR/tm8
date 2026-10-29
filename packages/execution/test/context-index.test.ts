@@ -453,6 +453,8 @@ describe('I5b: memory collapse (§10 Q1)', () => {
       { groups: ['references'], cap: 2048 },
       { groups: ['teammates'], cap: 1024 },
       { groups: ['skills'], cap: 4096 },
+      // The space's tools: a node default no profile budget replaces (Tools v2 PR-E).
+      { groups: ['tools'], cap: BYTE_BUDGETS.toolIndex },
     ]);
     expect(contextIndexCaps('dispatcher')[2]).toEqual({ groups: ['teammates'], cap: BYTE_BUDGETS.rosterIndex });
   });
