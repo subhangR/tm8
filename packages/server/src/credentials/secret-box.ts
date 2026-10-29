@@ -98,9 +98,24 @@ export interface OAuthPendingSecretBinding {
   readonly returnTo: string | null;
 }
 
+/**
+ * A phone's push token (392 `public.devices`): AAD
+ * `push-device|<identity_id>|<token_hash>`. Literal prefix, like the
+ * server-gate and keyed forms, so it collides with no other form whatever the
+ * ids hold. Binding the token's own sha256 pins the ciphertext to the row's
+ * `token_hash`, the column a dead-token report deletes by: a ciphertext moved to
+ * another person's row, or paired with another token's hash, does not open.
+ * `devices/device-token.ts` is the only module that builds one.
+ */
+export interface DeviceTokenSecretBinding {
+  readonly identityId: string;
+  /** Hex sha256 of the push token. */
+  readonly tokenHash: string;
+}
+
 export type SecretBinding =
   | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding
-  | KeyedSpaceSecretBinding | OAuthPendingSecretBinding;
+  | KeyedSpaceSecretBinding | OAuthPendingSecretBinding | DeviceTokenSecretBinding;
 
 /** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
@@ -110,6 +125,11 @@ export function bindingAad(binding: SecretBinding): string {
       binding.returnTo === null ? '-' : encodeURIComponent(binding.returnTo)];
     if (parts.some(part => part.includes('|'))) throw new Error('secret binding part must not contain "|"');
     return `mcp-oauth|${parts.join('|')}`;
+  }
+  if ('tokenHash' in binding) {
+    if (binding.identityId.includes('|')) throw new Error('secret binding identity id must not contain "|"');
+    if (!/^[a-f0-9]{64}$/.test(binding.tokenHash)) throw new Error('secret binding token hash must be 64 hex characters');
+    return `push-device|${binding.identityId}|${binding.tokenHash}`;
   }
   if ('keyId' in binding) {
     if (binding.keyId.includes('|')) throw new Error('secret binding key id must not contain "|"');
