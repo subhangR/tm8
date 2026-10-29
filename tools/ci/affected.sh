@@ -64,6 +64,12 @@ declare -A MODULE_OF=(
   [packages/cli]=cli
   [packages/execution]=execution
   [packages/tm8-ui]=ui
+  # @tm8/client-core: the pure modules tm8-ui and the phone app share (t-p0-client-core).
+  # tm8-ui reads its source and its tests used to live in tm8-ui, so a change here is a
+  # ui change. No module of its own: rule (c) of ci-wiring.test.sh would demand a ci.yml
+  # job, and nothing edits .github/workflows (owner rulings Q11, Q12). Its own suite runs
+  # in tools/ci/mobile-check.sh (t-p0-ci-wiring).
+  [packages/client-core]=ui
   [packages/contract]=small
   [packages/jev]=small
   [tools/conformance]=small
