@@ -5,7 +5,8 @@ import type { LoopRun, LoopView, ToolView } from '@tm8/contract';
 import { run } from '../src/run.js';
 import { loopState, pauseUntil, renderLoop } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
-import { matchIntent, tokenize } from '../src/discovery/search.js';
+import { discovery } from '../src/discovery/operations.js';
+import { matchIntent, queryWords } from '../src/discovery/search.js';
 import { searchHelp } from '../src/discovery/help.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
@@ -450,11 +451,14 @@ describe('tm8 loop discovery', () => {
       for (const bad of ['entity delete', 'loop create', 'loop run-now']) expect(top, query).not.toBe(bad);
     }
     expect(matchIntent('delete the loop run')?.candidates[0]?.path).toEqual(['loop', 'runs']);
-    // Deleting the loop itself still is.
-    expect(matchIntent('stop and delete the loop')?.candidates[0]?.path).toEqual(['entity', 'delete']);
+    // "stop and delete the loop" names a stop too: the safe answer, which points at the delete (round 5).
+    expect(matchIntent('stop and delete the loop')?.candidates[0]).toMatchObject(
+      { path: ['loop', 'edit'], example: expect.stringContaining('tm8 entity delete <loop-id>') });
   });
   it('removing a loop is the entity delete, never a create or a run', () => {
-    for (const query of ['delete a loop', 'delete the nightly loop', 'remove the loop', 'archive the loop', 'delete loops']) {
+    for (const query of ['delete a loop', 'delete the nightly loop', 'remove the loop', 'archive the loop', 'delete loops',
+      'drop the loop', 'drop the nightly loop', 'erase the loop', 'purge the loop', 'wipe the loop', 'get rid of the loop',
+      'delete the test loop', 'how do I delete my old loops']) {
       expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['entity', 'delete']);
       const top = searchHelp(query).matches[0]?.command;
       expect(top, query).toBe('entity delete');
@@ -478,7 +482,7 @@ describe('tm8 loop discovery', () => {
 });
 
 /*
- * THE ROUTING CORPUS (review of #1405, rounds 1-4). Every phrasing a reviewer
+ * THE ROUTING CORPUS (review of #1405, rounds 1-5). Every phrasing a reviewer
  * measured, with the command `tm8 help --query` must answer FIRST — route or
  * ranker. Each round of review found a new misroute; this table is where the
  * next one is added, so a fix for one row cannot quietly break another.
@@ -490,6 +494,8 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['make a nightly loop', 'loop create'], ['add a new loop with a weekly schedule', 'loop create'], ['set up a loop', 'loop create'],
   ['set up a nightly loop', 'loop create'], ['set up a loop for nightly triage', 'loop create'], ['set-up a loop', 'loop create'],
   ['setup a loop', 'loop create'], ['make a loop that runs every day', 'loop create'],
+  ['create a loop to run nightly', 'loop create'], ['start a new loop', 'loop create'], ['new recurring loop', 'loop create'],
+  ['how do I create a loop', 'loop create'],
   // firing an existing loop
   ['run a loop now', 'loop run-now'], ['run the nightly loop', 'loop run-now'], ['fire the loop now', 'loop run-now'],
   ['trigger the loop again', 'loop run-now'],
@@ -503,25 +509,54 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['terminate the running loop', 'loop stop'], ['halt the loop runs', 'loop stop'], ['stop running the loop again', 'loop stop'],
   ['stop the loop now', 'loop disable'], ['cancel the loop now', 'loop disable'], ['kill the loop', 'loop disable'],
   ['abort the loop', 'loop disable'], ['halt the loop', 'loop disable'], ['stop the loop', 'loop disable'],
+  ['stop the loop from firing', 'loop disable'], ['deactivate the loop', 'loop disable'],
+  // steering words that are on no list fall to their own verb or to the last loop route: never run-now
+  ['suspend the loop now', 'loop pause'], ['freeze the running loop', 'loop pause'], ["clear the loop's trigger", 'loop edit'],
+  ["wipe the loop's trigger", 'loop edit'], ["clear the loop's task", 'loop edit'], ["clear the loop's session", 'loop edit'],
+  ['remove the pause from the loop', 'loop resume'], ['end the pause on the loop', 'loop resume'],
   // editing, including clearing a field
   ["set a loop's schedule", 'loop edit'], ["change the loop's timezone", 'loop edit'], ['add a teammate to the loop', 'loop edit'],
   ['remove the subject from the loop', 'loop edit'], ['remove the teammate from the loop', 'loop edit'],
   ['remove the tool from the loop', 'loop edit'], ['remove the prompt from the loop', 'loop edit'],
   ['remove the memory from the loop', 'loop edit'], ['remove the max runtime from the loop', 'loop edit'],
   ["delete the loop's schedule", 'loop edit'], ['clear the loop subject', 'loop edit'],
+  ['remove the cron from the loop', 'loop edit'], ["delete the loop's history", 'loop edit'], ["delete the loop's last error", 'loop edit'],
+  ["delete the loop's header", 'loop edit'], ['remove the dispatcher from the loop', 'loop edit'],
+  ['remove me from the loop', 'loop edit'], ['remove it from the loop', 'loop edit'], ['stop and delete the loop', 'loop edit'],
   // runs: read them; a run is never deleted on its own
   ['delete the loop run', 'loop runs'], ['delete the loop runs', 'loop runs'], ['remove a loop run', 'loop runs'],
   // deleting the loop itself
   ['delete a loop', 'entity delete'], ['delete the nightly loop', 'entity delete'], ['remove the loop', 'entity delete'],
   ['archive the loop', 'entity delete'], ['trash the loop', 'entity delete'], ['delete loops', 'entity delete'],
-  ['stop and delete the loop', 'entity delete'],
-  // reading
-  ['list loops', 'loop list'], ['preview a cron schedule', 'loop preview'],
+  ['drop the loop', 'entity delete'], ['drop the nightly loop', 'entity delete'], ['erase the loop', 'entity delete'],
+  ['purge the loop', 'entity delete'], ['wipe the loop', 'entity delete'], ['get rid of the loop', 'entity delete'],
+  ['delete the test loop', 'entity delete'],
+  // reading: nothing that names a loop without asking to create, fire or delete one answers those
+  ['list loops', 'loop list'], ['preview a cron schedule', 'loop preview'], ['check the loop schedule', 'loop show'],
+  ['make the loop run hourly', 'loop show'], ['add the loop to a story', 'loop show'], ['check the new loop', 'loop show'],
+  ['fix the loop', 'loop show'], ['view the schedule', 'loop list'], ['what is my schedule', 'loop list'],
+  ['show the loop runs', 'loop runs'], ['list my loops', 'loop list'],
 ];
 
-/** The only words a destructive answer may carry besides the loop: its verbs and plain descriptions of which loop. */
-const LOOP_ONLY_OBJECT = new Set(['loop', 'loops', 'delete', 'remove', 'archive', 'destroy', 'trash', 'stop',
-  'nightly', 'daily', 'weekly', 'hourly', 'old', 'stale', 'unused']);
+/**
+ * THE RULE (round 5): a destructive answer needs a phrasing that names nothing but the loop: a removal
+ * verb, the loop, which loop, and plain request words. Stated here on its own, not imported from the
+ * router, so widening the router's lists has to widen this one in review too.
+ */
+const ONLY_THE_LOOP = new Set([
+  'loop', 'loops', 'delete', 'remove', 'archive', 'destroy', 'trash', 'drop', 'erase', 'purge', 'wipe', 'rid',
+  'nightly', 'daily', 'weekly', 'hourly', 'monthly', 'old', 'stale', 'unused', 'test', 'broken', 'obsolete',
+  'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
+  'would', 'should', 'will', 'how', 'do', 'does', 'want', 'need', 'to', 'and', 'is', 'are', 'am', 'just', 'let', 'go', 'ahead',
+]);
+const namesOnlyTheLoop = (query: string) => queryWords(query).every(word => ONLY_THE_LOOP.has(word));
+
+/** Every word the help catalog itself uses: the vocabulary a caller borrows from it. */
+const CATALOG_WORDS = [...new Set(discovery().flatMap(row =>
+  queryWords([row.noun, row.verb, row.summary, ...row.intentTags, ...row.notes].join(' '))))].sort();
+/** Things a person may remove from a loop that are only stopwords to the tokenizer. */
+const PRONOUNS = ['me', 'it', 'them', 'him', 'her', 'us', 'this', 'that', 'everything', 'something', 'all', 'one'];
+const answer = (query: string) => matchIntent(query)?.candidates[0]?.path.join(' ');
 
 describe('tm8 help --query: the routing corpus', () => {
   it.each(ROUTING_CORPUS)('"%s" answers %s first', (query, top) => {
@@ -530,8 +565,69 @@ describe('tm8 help --query: the routing corpus', () => {
   it('a destructive answer (entity delete) only ever answers a phrasing whose sole object is the loop itself', () => {
     for (const [query] of ROUTING_CORPUS) {
       if (searchHelp(query).matches[0]?.command !== 'entity delete') continue;
-      const others = tokenize(query).filter(token => !LOOP_ONLY_OBJECT.has(token));
-      expect(others, `"${query}" deletes the loop but names more than the loop`).toEqual([]);
+      expect(namesOnlyTheLoop(query), `"${query}" deletes the loop but names more than the loop`).toBe(true);
+    }
+  });
+});
+
+/*
+ * GENERATED PHRASINGS (round 5). The router, not only the table: every catalog
+ * word in each slot a reviewer probed. Each phrasing names a loop, so a route
+ * always answers it (the last loop routes): what `tm8 help --query` reads
+ * first is that route's command, which these assert, and a sample confirms
+ * the full answer agrees.
+ */
+describe('tm8 help --query: generated loop phrasings never delete, create or fire unasked', () => {
+  const sampleAgrees = (queries: string[]) => {
+    for (const query of queries.filter((_, i) => i % 97 === 0)) {
+      expect(searchHelp(query).matches[0]?.command, query).toBe(answer(query));
+    }
+  };
+  it('has a vocabulary to draw on', () => {
+    expect(CATALOG_WORDS.length).toBeGreaterThan(300);
+  });
+  it('removing anything from a loop is never the loop\'s delete, nor a create or a run', () => {
+    const templates = ['remove the {w} from the loop', "delete the loop's {w}", "clear the loop's {w}", 'drop the {w} from the loop',
+      "erase the loop's {w}", 'purge the {w} from the loop', "wipe the loop's {w}", 'get rid of the {w} on the loop', 'remove {w} from the loop',
+      'delete the {w} of the loop'];
+    const queries = templates.flatMap(t => [...CATALOG_WORDS, ...PRONOUNS].filter(w => !ONLY_THE_LOOP.has(w)).map(w => t.replace('{w}', w)));
+    for (const query of queries) {
+      const top = answer(query);
+      expect(top, query).toBeDefined();
+      for (const bad of ['entity delete', 'loop create', 'loop run-now']) expect(top, query).not.toBe(bad);
+    }
+    sampleAgrees(queries);
+  });
+  it('stopping, pausing, resuming, disabling or enabling a loop never fires or creates one', () => {
+    const verbs = ['stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'pause', 'resume', 'disable', 'enable', 'suspend',
+      'freeze', 'unpause', 'deactivate'];
+    const tails = ['the loop', 'the loop now', 'the loop run', 'the running loop', 'the loop immediately', 'the loop again',
+      'the nightly loop now', 'the loop once', 'the loop {w}', 'the {w} loop now'];
+    const queries = verbs.flatMap(v => tails.flatMap(t => (t.includes('{w}') ? CATALOG_WORDS.map(w => t.replace('{w}', w)) : [t]).map(t2 => `${v} ${t2}`)));
+    for (const query of queries) {
+      const top = answer(query);
+      expect(top, query).toBeDefined();
+      for (const bad of ['loop run-now', 'loop create', 'entity delete']) expect(top, query).not.toBe(bad);
+    }
+    sampleAgrees(queries);
+  });
+  it('any other verb on a loop reads it: never a create, a run or a delete', () => {
+    const creating = new Set(['create', 'setup', 'build', 'automate', 'make', 'add', 'schedule', 'new']);
+    const firing = new Set(['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once']);
+    const verbs = CATALOG_WORDS.filter(w => !creating.has(w) && !firing.has(w) && !ONLY_THE_LOOP.has(w));
+    const tails = ['the loop', 'the nightly loop', 'my loops', 'the loop schedule', "the loop's teammate"];
+    const queries = verbs.flatMap(v => tails.map(t => `${v} ${t}`));
+    for (const query of queries) {
+      const top = answer(query);
+      expect(top, query).toBeDefined();
+      for (const bad of ['loop create', 'loop run-now', 'entity delete']) expect(top, query).not.toBe(bad);
+    }
+    sampleAgrees(queries);
+  });
+  it('every generated delete is a phrasing that names only the loop', () => {
+    const queries = [...CATALOG_WORDS, ...PRONOUNS].flatMap(w => [`delete the ${w} loop`, `remove ${w} loop`, `${w} the loop`]);
+    for (const query of queries) {
+      if (answer(query) === 'entity delete') expect(namesOnlyTheLoop(query), query).toBe(true);
     }
   });
 });
