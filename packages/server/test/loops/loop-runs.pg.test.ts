@@ -149,7 +149,8 @@ describePg('loops PR2: runs on a real node', () => {
     const overlap = refused(await runNow(loop.id), 409, 'conflict');
     expect(overlap.message).toMatch(/still live/);
 
-    const stopped = LoopRunSchema.parse(ok(await request<{ run: LoopRun }>('POST', `/v2/loop-runs/${run.id}/stop`, {})).run);
+    const stopCmid = cmid();
+    const stopped = LoopRunSchema.parse(ok(await request<{ run: LoopRun }>('POST', `/v2/loop-runs/${run.id}/stop`, { clientMutationId: stopCmid })).run);
     expect(stopped.status).toBe('stopped');
     expect(stopped.endedAt).not.toBeNull();
     expect(stopped.durationMs).not.toBeNull();
@@ -162,8 +163,9 @@ describePg('loops PR2: runs on a real node', () => {
     expect(session!.outcome).toBe('stopped');
     expect(['exited', 'failed']).toContain(session!.status);
 
-    // Stopping again is a conflict, not a second stop; the run reads the same.
-    refused(await request('POST', `/v2/loop-runs/${run.id}/stop`, {}), 409, 'conflict');
+    // A transport retry of the same stop replays its answer (review 1398 item 6); it is not a second stop.
+    const again = LoopRunSchema.parse(ok(await request<{ run: LoopRun }>('POST', `/v2/loop-runs/${run.id}/stop`, { clientMutationId: stopCmid })).run);
+    expect(again).toMatchObject({ id: run.id, status: 'stopped', endedAt: stopped.endedAt });
     expect((await getRun(run.id)).status).toBe('stopped');
     expect((await listRuns(loop.id, '?status=stopped')).items).toHaveLength(1);
 
@@ -218,7 +220,9 @@ describePg('loops PR2: runs on a real node', () => {
     await backdate(skipper.id); await backdate(queuer.id);
 
     const outcome = await tick();
-    expect(outcome).toMatchObject({ detail: { due: 2, fired: 0, skipped: 1, queued: 1 } });
+    // The queuer is held back by its LIVE Run-now run, so the due read does not
+    // return it at all (no tick slot spent on it); it stays due and waits.
+    expect(outcome).toMatchObject({ detail: { due: 1, fired: 0, skipped: 1, queued: 0 } });
 
     const skipped = await listRuns(skipper.id);
     expect(skipped.items.map((r) => [r.status, r.skipReason])).toEqual([['skipped', 'overlap'], ['running', null]]);

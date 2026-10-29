@@ -123,6 +123,8 @@ export interface OpenLoopRun {
   readonly toolExitCode: number | null;
   readonly exitedAt: string | Date | null;
   readonly actAsIdentity: string | null;
+  /** work_sessions.outcome (302): 'stopped' when someone stopped the session, so the run settles 'stopped'. */
+  readonly sessionOutcome?: string | null;
 }
 
 /** Why a session is being stopped, in the words the row will carry (171). */
@@ -227,7 +229,7 @@ const CLAIMABLE_SQL = `
          d.paused_until             "pausedUntil",
          d.next_run_at              "nextRunAt",
          d.act_as_identity          "actAsIdentity"
-    from public.loops_claimable($1, $2) d`;
+    from public.loops_claimable($1, $2, $3::uuid[]) d`;
 
 const PARK_ORPHANS_SQL = `
   select p.entity_id::text "entityId", p.space_id::text "spaceId", p.title "title"
@@ -247,10 +249,14 @@ const OPEN_RUNS_SQL = `
          o.exit_code                 "exitCode",
          o.tool_exit_code            "toolExitCode",
          o.exited_at                 "exitedAt",
-         o.act_as_identity           "actAsIdentity"
+         o.act_as_identity           "actAsIdentity",
+         o.session_outcome           "sessionOutcome"
     from public.loop_runs_open_for_executor($1) o`;
 
 const TERMINAL_STATUSES = new Set(['exited', 'failed']);
+
+/** The settle reason for a run whose session is gone from this node (a restart, a crash). */
+export const SESSION_LOST = 'session lost: it is no longer running on this node (the node may have restarted)';
 
 /** The advanced instant for one loop, or the reason the schedule could not be evaluated. */
 export function advanceFor(loop: Pick<DueLoop, 'schedule' | 'timezone'>, firedAt: Date): { nextRunAt: Date | null; scheduleError: string | null } {
@@ -272,8 +278,10 @@ export function advanceFor(loop: Pick<DueLoop, 'schedule' | 'timezone'>, firedAt
  * non-zero exit is the RUN's failure (§3.4); an agent session's outcome is its
  * status (ghost reconciliation and the lost-session reaper both record 'failed').
  */
-export function outcomeOfExitedSession(run: Pick<OpenLoopRun, 'sessionStatus' | 'sessionKind' | 'toolExitCode' | 'exitCode'>): { outcome: LoopRunOutcome; error: string | null } | null {
+export function outcomeOfExitedSession(run: Pick<OpenLoopRun, 'sessionStatus' | 'sessionKind' | 'toolExitCode' | 'exitCode' | 'sessionOutcome'>): { outcome: LoopRunOutcome; error: string | null } | null {
   if (run.sessionStatus === null || !TERMINAL_STATUSES.has(run.sessionStatus)) return null;
+  // Stopped outside the loop (execution.terminate), or by loops.runs.stop racing this sweep.
+  if (run.sessionOutcome === 'stopped') return { outcome: 'stopped', error: null };
   if (run.sessionStatus === 'failed') return { outcome: 'failed', error: 'the session failed' };
   if (run.sessionKind === 'tool' && run.toolExitCode !== null && run.toolExitCode !== 0) {
     return { outcome: 'failed', error: `the tool exited with code ${run.toolExitCode}` };
@@ -312,8 +320,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         );
       }
 
-      const due = await db.query<DueLoop>(worker, CLAIMABLE_SQL, [maxPerTick, nowIso]);
-      const live = port.liveSessionIds();
+      const due = await db.query<DueLoop>(worker, CLAIMABLE_SQL, [maxPerTick, nowIso, [...port.liveSessionIds()]]);
       let fired = 0;
       let skipped = 0;
       let failed = 0;
@@ -324,15 +331,26 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         if (ctx.signal.aborted) break;
 
         const { nextRunAt: advance, scheduleError } = advanceFor(loop, now);
-        const claim = await claimLoopRun(db, worker, {
-          loopId: loop.entityId,
-          now,
-          trigger: 'schedule',
-          liveSessionIds: live,
-          nextRunAt: advance,
-          scheduleError,
-          actedAsIdentityId: loop.actAsIdentity,
-        });
+        let claim: Awaited<ReturnType<typeof claimLoopRun>>;
+        try {
+          claim = await claimLoopRun(db, worker, {
+            loopId: loop.entityId,
+            now,
+            trigger: 'schedule',
+            // Read per claim, not per tick: a session launched while this tick
+            // was spawning the loops ahead (Run now, say) is an overlap here.
+            liveSessionIds: port.liveSessionIds(),
+            nextRunAt: advance,
+            scheduleError,
+            actedAsIdentityId: loop.actAsIdentity,
+          });
+        } catch (error) {
+          // One loop's claim (deleted since the read, a lock conflict) must not
+          // end the tick for the loops after it, or the sweep.
+          ctx.logger.warn(`loop ${loop.entityId} could not be claimed: ${errorText(error)}`);
+          failed += 1;
+          continue;
+        }
 
         if (!claim.claimed) {
           // 'queued': stays due, no row, fires when the previous run settles.
@@ -394,9 +412,9 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         }
       }
 
-      const sweep = await sweepOpenRuns({ db, port, worker, now, live, launchGraceMs, ctx });
+      const sweep = await sweepOpenRuns({ db, port, worker, now, live: port.liveSessionIds(), launchGraceMs, ctx });
 
-      if (due.length === 0 && parked.length === 0 && sweep.timedOut + sweep.settled + sweep.abandoned === 0) {
+      if (due.length === 0 && parked.length === 0 && sweep.timedOut + sweep.settled + sweep.abandoned + sweep.lost === 0) {
         return { skipped: true, reason: 'no loops are due' };
       }
       return {
@@ -412,6 +430,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           ...(sweep.timedOut > 0 ? { timedOut: sweep.timedOut } : {}),
           ...(sweep.settled > 0 ? { settled: sweep.settled } : {}),
           ...(sweep.abandoned > 0 ? { abandoned: sweep.abandoned } : {}),
+          ...(sweep.lost > 0 ? { lost: sweep.lost } : {}),
         },
       };
     },
@@ -421,15 +440,17 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
 /**
  * The max-runtime and settle sweep (§3.3), over every open firing.
  *
+ *   - a dispatch run → 'completed' (done at delivery; its session is the
+ *     space's shared dispatcher, never the run's);
  *   - a launch with no session after `launchGraceMs` → 'failed' (the server
  *     died between the claim and the launch record);
- *   - a session at a terminal status → 'completed' or 'failed' from its facts,
- *     so the open set stays the live set;
+ *   - a session at a terminal status → 'stopped', 'completed' or 'failed' from
+ *     its facts, so the open set stays the live set;
+ *   - a session not in the PTY map after `launchGraceMs` → 'failed', session
+ *     lost (it died with the node; nothing else settles it in every space);
  *   - a LIVE session past fired_at + max_runtime_seconds → stopped through the
- *     port, then 'timed_out'. Liveness is the PTY map: a ghost row has nothing
- *     to stop, and its reconciliation settles the run above on a later tick.
- *     If the stop itself fails the run is left open and retried next tick,
- *     rather than recorded as stopped while the process still runs.
+ *     port, then 'timed_out'. If the stop itself fails the run is left open
+ *     and retried next tick, rather than recorded as stopped while it runs.
  */
 async function sweepOpenRuns(input: {
   db: Db;
@@ -439,13 +460,14 @@ async function sweepOpenRuns(input: {
   live: readonly string[];
   launchGraceMs: number;
   ctx: JobContext;
-}): Promise<{ timedOut: number; settled: number; abandoned: number }> {
+}): Promise<{ timedOut: number; settled: number; abandoned: number; lost: number }> {
   const { db, port, worker, now, ctx } = input;
   const liveSet = new Set(input.live);
   const open = await db.query<OpenLoopRun>(worker, OPEN_RUNS_SQL, [now.toISOString()]);
   let timedOut = 0;
   let settled = 0;
   let abandoned = 0;
+  let lost = 0;
 
   const settle = async (run: OpenLoopRun, outcome: LoopRunOutcome, error: string | null): Promise<boolean> => {
     try {
@@ -461,6 +483,14 @@ async function sweepOpenRuns(input: {
     if (ctx.signal.aborted) break;
     const firedAt = new Date(run.firedAt).getTime();
 
+    // A dispatch run is done at delivery and its session is the space's shared
+    // dispatcher: one left open (both settle attempts failed) must not hold the
+    // loop as an overlap, nor be "timed out" by stopping the dispatcher.
+    if (run.action === 'dispatch') {
+      if (await settle(run, 'completed', null)) settled += 1;
+      continue;
+    }
+
     if (run.sessionId === null) {
       if (now.getTime() - firedAt >= input.launchGraceMs) {
         if (await settle(run, 'failed', 'the launch was never recorded (the server may have restarted mid-firing)')) abandoned += 1;
@@ -474,13 +504,20 @@ async function sweepOpenRuns(input: {
       continue;
     }
 
+    // Not terminal and not running on this node: the session died with it.
+    // Ghost reconciliation cannot settle it: it lists sessions under the node
+    // owner's RLS and so misses every space the owner is not a member of. The
+    // run is settled here once its launch grace has passed, so it never holds
+    // its loop as an overlap or a queue forever (§3.2 restart).
+    if (!liveSet.has(run.sessionId)) {
+      if (now.getTime() - firedAt >= input.launchGraceMs) {
+        if (await settle(run, 'failed', SESSION_LOST)) lost += 1;
+      }
+      continue;
+    }
+
     if (run.maxRuntimeSeconds === null) continue;
     if (firedAt + run.maxRuntimeSeconds * 1000 > now.getTime()) continue;
-    // Live is the PTY map, as for overlap: a session whose row still says
-    // running but has no PTY died with the node, and ghost reconciliation (171)
-    // settles it through the exited branch above; stopping it would record a
-    // death as a timeout.
-    if (!liveSet.has(run.sessionId)) continue;
     if (run.actAsIdentity === null) {
       ctx.logger.warn(`loop run ${run.runId} exceeded its max runtime but its space has no active member to stop it as`);
       continue;
@@ -499,5 +536,5 @@ async function sweepOpenRuns(input: {
     if (await settle(run, 'timed_out', `exceeded the maximum runtime of ${run.maxRuntimeSeconds} seconds`)) timedOut += 1;
   }
 
-  return { timedOut, settled, abandoned };
+  return { timedOut, settled, abandoned, lost };
 }

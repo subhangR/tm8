@@ -222,6 +222,12 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
       const input = { ...LoopRunStopInputSchema.parse(ctx.body), runId: routeId(ctx, 'runId') };
       const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
       const run = await readRun(claims, input.runId, false);
+      // Stop is idempotent: a stopped run answers as it stands, so a transport
+      // retry of a stop that worked replays its answer instead of a 409.
+      if (run.status === 'stopped') {
+        const already: LoopRunResult = { run };
+        return already;
+      }
       if (run.status !== 'running') {
         throw new CollabError('conflict', `the run is ${run.status}, not running`, {
           details: { reason: 'loop_run_not_running', status: run.status },

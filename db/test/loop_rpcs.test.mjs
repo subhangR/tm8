@@ -754,7 +754,8 @@ test('385 — a retry never overrides an edit made during the firing, a held-bac
   ).entity;
   const id = uuid(loop.id);
   const claim = (next) => json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], ${next})`, { claims: worker });
-  const claimable = () => rows(`select entity_id from public.loops_claimable(25, now())`, { claims: worker }).some((row) => row.entity_id === loop.id);
+  const claimable = (live = `'{}'::uuid[]`) => rows(`select entity_id from public.loops_claimable(25, now(), ${live})`, { claims: worker })
+    .some((row) => row.entity_id === loop.id);
 
   // The retry never pushes a sooner deadline later: the next deadline (2 min) beats the 10-minute delay.
   const c1 = claim(`now() + interval '2 minutes'`);
@@ -770,15 +771,20 @@ test('385 — a retry never overrides an edit made during the firing, a held-bac
   assert.deepEqual(rows(`select (next_run_at > now() + interval '6 days') kept, retry_attempt, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
     [{ kept: true, retry_attempt: 0, last_error: 'spawn refused again' }]);
 
-  // A queue loop held back by an open firing stays due but is not claimable, so it takes no slot of the tick.
+  // A queue loop held back by a LIVE open firing stays due but is not claimable,
+  // so it takes no slot of the tick. Live is the claim's rule: a launch in
+  // flight, or a session in the PTY set the executor passes. A run whose
+  // session is not live (it died with the node) never holds the loop.
   ok(`update public.loops set concurrency = 'queue', next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
   const c3 = claim(`now() + interval '1 hour'`);
   assert.equal(c3.launch, 'fired');
-  json(`select public.loop_run_launched(${uuid(c3.runId)}, ${uuid(w.taskA)}, null)`, { claims: worker });
   ok(`update public.loops set next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
-  assert.equal(claimable(), false, 'held back by its open firing');
+  assert.equal(claimable(), false, 'held back by a launch in flight');
+  json(`select public.loop_run_launched(${uuid(c3.runId)}, ${uuid(w.taskA)}, ${uuid(w.taskA)})`, { claims: worker });
+  assert.equal(claimable(`array[${uuid(w.taskA)}]::uuid[]`), false, 'held back while its session is live');
+  assert.equal(claimable(), true, 'a session that is not live (a restart) never holds the loop');
   json(`select public.loop_run_settle(${uuid(c3.runId)}, 'completed')`, { claims: worker });
-  assert.equal(claimable(), true, 'claimable again once the run settles');
+  assert.equal(claimable(), true, 'claimable once the run settles');
 
   // A launch that succeeds does not clear a parked loop's reason (Run now on a loop whose schedule cannot be evaluated).
   json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], null, 'schedule "0 0 30 2 *" never matches')`, { claims: worker });
@@ -787,4 +793,11 @@ test('385 — a retry never overrides an edit made during the firing, a held-bac
   assert.deepEqual(rows(`select next_run_at is null parked, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
     [{ parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
   json(`select public.loop_run_settle(${uuid(manual.runId)}, 'completed')`, { claims: w.claimsA });
+
+  // A manual launch failure leaves a scheduled retry series and a parked reason alone.
+  ok(`update public.loops set retry_attempt = 1 where entity_id = ${id}`, { url: OWNER_URL });
+  const manual2 = json(`select public.loop_run_claim(${id}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-fixes-manual-fail'))})`, { claims: w.claimsA });
+  json(`select public.loop_run_launch_failed(${uuid(manual2.runId)}, 'spawn refused', now())`, { claims: w.claimsA });
+  assert.deepEqual(rows(`select retry_attempt, next_run_at is null parked, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ retry_attempt: 1, parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
 });

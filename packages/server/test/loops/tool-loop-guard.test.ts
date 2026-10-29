@@ -14,7 +14,7 @@ const untouched = new Proxy({}, {
   get: (_target, key) => { throw new Error(`the port touched ${String(key)}`); },
 });
 
-describe('the loop executor port and a tool loop', () => {
+describe('the loop executor port picks its branch by action', () => {
   it('refuses to fire it, before any read, spawn or dispatch', async () => {
     const port = createLoopExecutorPort({
       db: untouched as never,
@@ -29,5 +29,21 @@ describe('the loop executor port and a tool loop', () => {
     } as unknown as DueLoop;
     await expect(port.fire(loop, { identityId: 'owner', nodeAdmin: false, requestId: 'test' }, new Date(), 'run-1'))
       .rejects.toMatchObject({ code: 'not_implemented', message: TOOL_LOOP_NOT_RUNNABLE });
+  });
+
+  it('branches on the action, never the runner: a spawn loop with no runner is refused, not routed to the dispatcher', async () => {
+    const port = createLoopExecutorPort({
+      db: untouched as never,
+      pty: untouched as never,
+      spawnService: untouched as never,
+      resolveOwner: async () => { throw new Error('the port resolved the owner'); },
+    });
+    const loop = {
+      entityId: 'loop-2', spaceId: 'space-1', title: 'Orphaned spawn', schedule: 'every 1h', timezone: 'UTC',
+      action: 'spawn', teamMemberId: null, subjectId: null, toolId: null, toolInputs: {},
+      prompt: 'sweep', config: null, version: 1, actAsIdentity: 'owner',
+    } as unknown as DueLoop;
+    await expect(port.fire(loop, { identityId: 'owner', nodeAdmin: false, requestId: 'test' }, new Date(), 'run-2'))
+      .rejects.toMatchObject({ code: 'invalid_input' });
   });
 });

@@ -18,7 +18,7 @@ drop function if exists public.loop_run_launch_failed(uuid,text,timestamptz);
 drop function if exists public.loop_run_launched(uuid,uuid,uuid);
 drop function if exists public.loop_run_claim(uuid,timestamptz,text,uuid[],timestamptz,text,text,uuid,boolean,text);
 drop function if exists public.loops_park_orphans(timestamptz);
-drop function if exists public.loops_claimable(integer,timestamptz);
+drop function if exists public.loops_claimable(integer,timestamptz,uuid[]);
 drop function if exists public.loop_acting_as(uuid);
 drop function if exists internal.loop_acting_identity(uuid);
 

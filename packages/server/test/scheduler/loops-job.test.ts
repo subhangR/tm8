@@ -22,6 +22,7 @@ import {
   advanceFor,
   createLoopsJob,
   outcomeOfExitedSession,
+  SESSION_LOST,
   type DueLoop,
   type LoopExecutorPort,
   type OpenLoopRun,
@@ -323,6 +324,39 @@ describe('failure handling', () => {
   });
 });
 
+describe('per-claim liveness and isolation (review 1398 items 4 and 8)', () => {
+  it('reads the live set at each claim, not once per tick', async () => {
+    let reads = 0;
+    const { db, port, rec } = harness({
+      due: [dueLoop(), dueLoop({ entityId: 'loop-2' })],
+      claims: [{ claimed: true, runId: 'run-1', launch: 'fired' }, { claimed: true, runId: 'run-2', launch: 'fired' }],
+    });
+    port.liveSessionIds = () => { reads += 1; return [`live-${reads}`]; };
+    await createLoopsJob({ db, port }).run(ctx());
+    const claimed = rpcsNamed(rec, 'loop_run_claim').map((r) => r.args[3]);
+    expect(claimed).toHaveLength(2);
+    expect(claimed[0]).not.toEqual(claimed[1]);
+  });
+
+  it('a claim that raises (a loop deleted since the read, a lock conflict) ends only its own loop', async () => {
+    const warnings: string[] = [];
+    const { db, port, rec } = harness({
+      due: [dueLoop(), dueLoop({ entityId: 'loop-2' })],
+      claims: [{ claimed: true, runId: 'run-2', launch: 'fired' }],
+    });
+    const original = db.rpc.bind(db);
+    let first = true;
+    (db as { rpc: Db['rpc'] }).rpc = async (c, fn, args) => {
+      if (fn === 'loop_run_claim' && first) { first = false; throw new Error('loop not found'); }
+      return original(c, fn, args);
+    };
+    const outcome = await createLoopsJob({ db, port }).run(ctx(AT, warnings));
+    expect(rec.fired.map((f) => f.loopId)).toEqual(['loop-2']);
+    expect(outcome).toMatchObject({ detail: { fired: 1, failed: 1 } });
+    expect(warnings.some((w) => w.includes('could not be claimed'))).toBe(true);
+  });
+});
+
 describe('actions', () => {
   it('a bookkeeping write that fails AFTER a successful fire is retried once, logged, and never recorded as a launch failure', async () => {
     // Recording it as a failure would re-arm a retry and fire this deadline again while the first session runs.
@@ -392,7 +426,7 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
   });
 
   it('never stops a ghost past its max runtime: liveness is the PTY map, not the row', async () => {
-    // Status still says running but no PTY: the session died with the node; ghost reconciliation settles it.
+    // Status still says running but no PTY: the session died with the node; within the grace it is left alone.
     const { db, port, rec } = harness({
       open: [openRun({ maxRuntimeSeconds: 60, firedAt: new Date(AT.getTime() - 120_000).toISOString(), sessionStatus: 'running' })],
       live: [],
@@ -400,6 +434,40 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
     await createLoopsJob({ db, port }).run(ctx());
     expect(rec.stopped).toHaveLength(0);
     expect(rpcsNamed(rec, 'loop_run_settle')).toHaveLength(0);
+  });
+
+  it('settles a run whose session is gone from the PTY map past the grace "failed: session lost" (review 1398 B1: a restart)', async () => {
+    // Ghost reconciliation lists sessions under the node owner's RLS and misses
+    // a human's space; the sweep is what keeps a dead run from holding its loop.
+    const { db, port, rec } = harness({
+      open: [
+        openRun({ runId: 'r-ghost', sessionId: 's-ghost', sessionStatus: 'running', firedAt: new Date(AT.getTime() - 11 * 60_000).toISOString() }),
+        openRun({ runId: 'r-young', sessionId: 's-young', sessionStatus: 'spawning', firedAt: new Date(AT.getTime() - 60_000).toISOString() }),
+        openRun({ runId: 'r-live', sessionId: 's-live', sessionStatus: 'running', firedAt: '2020-01-01T00:00:00Z' }),
+      ],
+      live: ['s-live'],
+    });
+    const outcome = await createLoopsJob({ db, port }).run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([['r-ghost', 'failed', SESSION_LOST]]);
+    expect(rec.stopped).toHaveLength(0);
+    expect(outcome).toMatchObject({ detail: { lost: 1 } });
+  });
+
+  it('settles an open dispatch run completed, and never stops its session: it is the shared dispatcher (review 1398 item 5)', async () => {
+    const { db, port, rec } = harness({
+      open: [openRun({ runId: 'r-dispatch', action: 'dispatch', sessionId: 'dispatcher', maxRuntimeSeconds: 60,
+        firedAt: new Date(AT.getTime() - 120_000).toISOString() })],
+      live: ['dispatcher'],
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => [r.args[0], r.args[1]])).toEqual([['r-dispatch', 'completed']]);
+    expect(rec.stopped).toHaveLength(0);
+  });
+
+  it('settles a session someone stopped (outcome stopped) as stopped, not completed (review 1398 nit 10)', async () => {
+    const { db, port, rec } = harness({ open: [openRun({ runId: 'r-stopped', sessionStatus: 'exited', sessionOutcome: 'stopped' })] });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => [r.args[0], r.args[1]])).toEqual([['r-stopped', 'stopped']]);
   });
 
   it('leaves a live run within its max runtime alone', async () => {

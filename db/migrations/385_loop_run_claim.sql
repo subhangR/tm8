@@ -126,7 +126,10 @@ grant execute on function public.loop_acting_as(uuid) to tm8_app;
 --     with a reason instead, so 25 orphans can no longer sit at the front of
 --     the queue and starve every other loop on the node (research A).
 -- -----------------------------------------------------------------------------
-create or replace function public.loops_claimable(p_limit integer default 25, p_now timestamptz default now())
+create or replace function public.loops_claimable(
+  p_limit integer default 25, p_now timestamptz default now(),
+  p_live_session_ids uuid[] default '{}'::uuid[]
+)
 returns table (
   entity_id            uuid,
   space_id             uuid,
@@ -167,20 +170,26 @@ set search_path = public, internal, pg_temp as $$
      and l.next_run_at <= p_now
      and (l.paused_until is null or l.paused_until <= p_now)
      and a.act_as is not null
-     -- A queue loop held back by an open firing stays due (§3.3) but is not
+     -- A queue loop held back by a LIVE open firing stays due (§3.3) but is not
      -- claimable: it would take one of the tick's slots every tick and starve
-     -- the loops behind it. It returns once the sweep settles that run (a
-     -- session that died with the node settles through ghost reconciliation).
+     -- the loops behind it. Live is the claim's own rule (the PTY set the
+     -- executor passes, or a launch still in flight), so a run whose session
+     -- died with the node never holds the loop: it reaches the claim and fires
+     -- (§3.2 restart), and the sweep settles the dead run. A dispatch run's
+     -- session is the space's shared dispatcher, never the run's liveness.
      and not (l.concurrency = 'queue' and exists (
            select 1 from public.loop_runs r
-            where r.loop_id = l.entity_id and r.launch = 'fired' and r.outcome is null))
+            where r.loop_id = l.entity_id and r.launch = 'fired' and r.outcome is null
+              and not (r.action = 'dispatch' and r.session_id is not null)
+              and (r.session_id = any(coalesce(p_live_session_ids, '{}'::uuid[]))
+                   or (r.session_id is null and r.fired_at > p_now - interval '10 minutes'))))
    order by l.next_run_at
    limit greatest(coalesce(p_limit, 25), 0)
 $$;
-revoke all on function public.loops_claimable(integer, timestamptz) from public;
-grant execute on function public.loops_claimable(integer, timestamptz) to tm8_app;
+revoke all on function public.loops_claimable(integer, timestamptz, uuid[]) from public;
+grant execute on function public.loops_claimable(integer, timestamptz, uuid[]) to tm8_app;
 
-comment on function public.loops_claimable(integer, timestamptz) is
+comment on function public.loops_claimable(integer, timestamptz, uuid[]) is
   '385: due loops across every space with everything a firing branches on, for '
   'the in-process executor only (internal.is_loops_worker). A lapsed pause is '
   'due (§3.2); a loop with no identity to act as is left to loops_park_orphans.';
@@ -287,8 +296,20 @@ begin
   replay := internal.ledger_replay(p_client_mutation_id, 'loops.runs.claim');
   if replay is not null then return replay; end if;
 
-  -- The lock. A row another claimer holds is skipped, not waited for: the
-  -- holder is deciding this very deadline and the next tick re-reads.
+  -- The locks, entity row FIRST: update_loop takes entities (assert_version)
+  -- and then loops, and this claim's own update of loops locks entities again
+  -- through the version-snapshot trigger, so locking loops first could
+  -- deadlock with a human's save. A row someone else holds is skipped, not
+  -- waited for: the holder is deciding this very deadline or editing it, and
+  -- the next tick re-reads.
+  perform 1 from public.entities where id = p_loop_id for update skip locked;
+  if not found then
+    perform 1 from public.entities where id = p_loop_id;
+    if not found then
+      raise exception 'loop % not found', p_loop_id using errcode = 'P0002';
+    end if;
+    return jsonb_build_object('claimed', false, 'reason', 'locked');
+  end if;
   select * into l from public.loops where entity_id = p_loop_id for update skip locked;
   if l.entity_id is null then
     perform 1 from public.loops where entity_id = p_loop_id;
@@ -344,6 +365,8 @@ begin
    where r.loop_id = p_loop_id
      and r.launch = 'fired'
      and r.outcome is null
+     -- A dispatch run's session is the shared dispatcher; it settles at delivery.
+     and not (r.action = 'dispatch' and r.session_id is not null)
      and (r.session_id = any(coalesce(p_live_session_ids, '{}'::uuid[]))
           or (r.session_id is null and r.fired_at > p_now - interval '10 minutes'))
    order by r.fired_at desc
@@ -490,8 +513,12 @@ begin
            updated_at = now()
      where entity_id = r.loop_id;
   else
+    -- A manual failure leaves a scheduled retry series alone (no extra
+    -- attempt), and does not overwrite the reason a parked loop carries.
     update public.loops
-       set retry_attempt = 0, last_error = v_error, updated_at = now()
+       set retry_attempt = case when r.trigger = 'manual' then retry_attempt else 0 end,
+           last_error = case when r.trigger = 'manual' and next_run_at is null then last_error else v_error end,
+           updated_at = now()
      where entity_id = r.loop_id;
   end if;
   return jsonb_build_object('runId', r.id, 'attempt', r.attempt, 'retryAt', v_retry_at);
@@ -526,7 +553,8 @@ returns table (
   exit_code            integer,
   tool_exit_code       integer,
   exited_at            timestamptz,
-  act_as_identity      text
+  act_as_identity      text,
+  session_outcome      text
 )
 language sql stable security definer
 set search_path = public, internal, pg_temp as $$
@@ -537,7 +565,8 @@ set search_path = public, internal, pg_temp as $$
          coalesce(
            (select m.identity_id from public.members m
              where m.identity_id = r.acted_as_identity_id and m.space_id = r.space_id and m.status = 'active'),
-           internal.loop_acting_identity(r.loop_id))
+           internal.loop_acting_identity(r.loop_id)),
+         ws.outcome
     from public.loop_runs r
     join public.loops l on l.entity_id = r.loop_id
     left join public.work_sessions ws on ws.entity_id = r.session_id

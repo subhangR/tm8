@@ -297,6 +297,8 @@ export async function loopRunsFacts(
       `select distinct on (r.loop_id) r.loop_id, r.id from public.loop_runs r
          left join public.work_sessions ws on ws.entity_id = r.session_id
         where r.loop_id = any($1::uuid[]) and r.launch = 'fired' and r.outcome is null
+          -- A dispatch run's session is the shared dispatcher, never the run's liveness.
+          and not (r.action = 'dispatch' and r.session_id is not null)
           and ((r.session_id is null and r.fired_at > $2::timestamptz - interval '10 minutes')
                or ws.status in ('spawning', 'running', 'idle'))
         order by r.loop_id, r.fired_at desc`,

@@ -3092,6 +3092,14 @@ export function createLoopExecutorPort(deps: {
       // one place both the scheduled job and Run now fire through, rather than
       // run as a spawn (its persona) or a dispatch. The run records the reason.
       if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
+      // §3.4: the ACTION picks the branch, never the runner, so the port agrees
+      // with the job, Run now and the projection by construction. A spawn loop
+      // that lost its runner (team_member_id is `on delete set null`) is
+      // refused, never routed to the space's shared dispatcher.
+      const runner = loop.action === 'spawn' ? loop.teamMemberId : null;
+      if (loop.action === 'spawn' && !runner) {
+        throw new CollabError('invalid_input', `spawn loop ${loop.entityId} names no runner: choose the teammate it runs as`);
+      }
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(
@@ -3133,10 +3141,10 @@ export function createLoopExecutorPort(deps: {
       await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-task:${loop.entityId}:${taskId}`);
 
       let sessionId: string;
-      if (loop.teamMemberId) {
+      if (runner) {
         sessionId = (await spawnService.spawn(claims, {
           spaceId: loop.spaceId,
-          teamMemberId: loop.teamMemberId,
+          teamMemberId: runner,
           parentSessionId: null,
           taskIds: [taskId],
           projectId: null,
