@@ -58,12 +58,17 @@ const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 /** "other space", "cross space", "linked spaces" → one hyphenated token. */
 const SPACE_PHRASE = /\b(other|another|cross|linked)[\s_]+spaces?\b/g;
 
-export function tokenize(query: string): string[] {
-  const base = query
+/** The query's words in order, stopwords KEPT: an `only` route reads every word, not just the intent ones. */
+export function queryWords(query: string): string[] {
+  return query
     .toLowerCase()
     .replace(SPACE_PHRASE, (_m, w: string) => `${w}-space`)
     .split(/[^a-z0-9-]+/)
-    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+    .filter((t) => t.length > 1);
+}
+
+export function tokenize(query: string): string[] {
+  const base = queryWords(query).filter((t) => !STOPWORDS.has(t));
   return [...new Set(base.flatMap((t) => [t, ...(SYNONYMS[t] ?? [])]))];
 }
 
@@ -181,11 +186,17 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
+  // A query that stops, prevents or negates a run ("abort the run", "skip the run now", "don't run
+  // it now") is never answered by `tool run`, which STARTS one: it ranks after every other row
+  // (task 01a187ed). "run the url-check tool" carries none of these words and still answers it.
+  const notRun = tokens.some((t) => NOT_RUN_WORDS.has(t));
+  const starts = (s: Scored) => (notRun && s.row.operation === 'tools.run' ? 1 : 0);
   return rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
+        starts(a) - starts(b) ||
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
     )
@@ -222,10 +233,33 @@ export interface IntentRoute {
   all: readonly (readonly string[])[];
   /** Any shared token vetoes the route. */
   none?: readonly string[];
+  /**
+   * An allowlist over the query's WORDS, stopwords included: each must be in
+   * `all`, here, or a plain request word ("how do I", "the", "my"), or the route
+   * does not match. An answer that ends something live uses it, because a
+   * denylist of what a human might name can never be complete ("cancel the
+   * session invite" is not a stop).
+   */
+  only?: readonly string[];
   candidates: readonly { path: readonly string[]; example: string }[];
 }
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
+
+/** Stopping something live. */
+const STOP_WORDS = ['stop', 'stopping', 'cancel', 'cancelling', 'canceling', 'kill', 'killing', 'abort', 'aborting', 'halt', 'halting', 'terminate', 'terminating', 'interrupt'];
+/** What a stop may name for `session terminate`: a run, the tool running, or its session. */
+const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessions'];
+/** A query with any of these does not ask to START a run: the ranker never answers `tool run` first. */
+const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
+  ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
+  'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
+]);
+/** The plain words a request carries that name nothing: an `only` route always allows them. */
+const PLAIN_WORDS: ReadonlySet<string> = new Set([
+  'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
+  'would', 'should', 'will', 'how', 'do', 'does', 'want', 'need', 'to', 'and', 'is', 'are', 'am', 'just', 'let', 'go', 'ahead',
+]);
 
 export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
@@ -314,16 +348,35 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       { path: ['link', 'list'], example: 'tm8 link list   then   tm8 --space <alias> entity query --kind task' },
     ],
   },
+  {
+    intent: 'stop a running tool or session',
+    // Scored, "abort the run" answered `tool run` first: `run` is one of its tags and nothing
+    // tags the stop verbs (task 01a187ed). A run is a work session, so stopping one is
+    // `session terminate`. That ends a live session, so the query may say nothing else: a stop
+    // verb, what runs, plain request words, and when ("cancel the session invite" falls through).
+    all: [STOP_WORDS, RUN_WORDS],
+    none: ['loop', 'loops', 'chat', 'chats', 'turn', 'turns'],
+    only: ['now', 'immediately', 'current', 'stuck', 'runaway'],
+    candidates: [
+      {
+        path: ['session', 'terminate'],
+        example: 'tm8 session terminate <session-id> --yes  (a tool run is a work session: `tm8 tool runs <tool>` lists its id; --stop --note <why> records why)',
+      },
+    ],
+  },
 ];
 
 /** The first route whose token groups all match the query, or undefined. */
 export function matchIntent(query: string): IntentRoute | undefined {
   const tokens = new Set(tokenize(query));
   if (tokens.size === 0) return undefined;
+  const words = queryWords(query);
   return INTENT_ROUTES.find(
     (r) =>
       r.all.every((group) => group.some((t) => tokens.has(t))) &&
-      !(r.none ?? []).some((t) => tokens.has(t)),
+      !(r.none ?? []).some((t) => tokens.has(t)) &&
+      (r.only === undefined ||
+        words.every((w) => PLAIN_WORDS.has(w) || r.only!.includes(w) || r.all.some((group) => group.includes(w)))),
   );
 }
 

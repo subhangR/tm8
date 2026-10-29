@@ -240,6 +240,65 @@ describe('help --query routes closeout intents to the exact command, first', () 
   });
 });
 
+describe('help --query: stopping a run never answers tool run; only a plain stop answers session terminate (01a187ed)', () => {
+  /** Nothing but a stop verb, what runs, plain request words and when: `session terminate` first. */
+  const STOPS = [
+    'abort the run',
+    'stop the tool run',
+    'kill the running tool',
+    'cancel the run',
+    'halt the run now',
+    'terminate the stuck tool session',
+    'how do I stop a running tool',
+    'interrupt the run',
+    'stop the runaway tool immediately',
+    'kill the current run',
+  ];
+  /** A stop verb with a run word that is NOT a stop of a live session: never `session terminate` first. */
+  const NOT_SESSION_STOPS = [
+    'cancel the session invite',
+    'stop the tool from running twice',
+    "cancel the job's schedule",
+    'stop watching the run',
+    'stop the loop run',
+    'interrupt the chat turn',
+    'cancel a tool run that keeps its shell open',
+  ];
+  /** Asks NOT to start a run: never `tool run` first. */
+  const NOT_RUNS = [...STOPS, ...NOT_SESSION_STOPS, 'block the run now', 'skip the run now', 'prevent the run now', "don't run it now", 'do not run the tool', 'never run the tool twice'];
+
+  for (const q of STOPS) {
+    it(`"${q}" answers session terminate`, () => {
+      expect(matchIntent(q)?.intent, q).toBe('stop a running tool or session');
+      const top = searchHelp(q).matches[0];
+      expect(top?.command, q).toBe('session terminate');
+      expect(top?.example, q).toContain('tm8 session terminate <session-id> --yes');
+    });
+  }
+
+  for (const q of NOT_SESSION_STOPS) {
+    it(`"${q}" falls through to the ranker, never to session terminate`, () => {
+      expect(matchIntent(q)?.intent, q).not.toBe('stop a running tool or session');
+      expect(searchHelp(q).matches[0]?.command, q).not.toBe('session terminate');
+    });
+  }
+
+  it('"stop sharing the session" is not the stop route (the ranker\'s own answer predates this route)', () => {
+    expect(matchIntent('stop sharing the session')?.intent).not.toBe('stop a running tool or session');
+  });
+
+  it('no stop, block, skip, prevent or negated run is answered by tool run first', () => {
+    for (const q of NOT_RUNS) expect(searchHelp(q).matches[0]?.command, q).not.toBe('tool run');
+  });
+
+  it('running a tool still answers tool run first', () => {
+    for (const q of ['run the url-check tool', 'run a tool', 'run the tool with inputs', 'run the tool with no inputs']) {
+      expect(matchIntent(q), q).toBeUndefined();
+      expect(searchHelp(q).matches[0]?.command, q).toBe('tool run');
+    }
+  });
+});
+
 describe('help topics that are operation ids resolve; unknown topics suggest', () => {
   for (const argv of [
     ['entities.patch'],
