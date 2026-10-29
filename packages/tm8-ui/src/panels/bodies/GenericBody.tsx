@@ -15,7 +15,9 @@ import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
-import { LoopControls } from '../../loops/LoopControls';
+import { LoopDefinitionHost, LoopHeaderBlock, LoopRunsBlock, definitionSection } from '../../loops/LoopPageBlocks';
+import type { LoopsClient } from '../../loops/api';
+import type { LoopFormSources } from '../../loops/LoopForm';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';
@@ -44,7 +46,9 @@ export interface ArtifactPreviewCommands {
 
 type GenericBodyCommands = Partial<
   ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort }
+  & { loops: LoopsClient; loopForm: LoopFormSources; deleteEntity: LoopDeleteEntity }
 >;
+type LoopDeleteEntity = NonNullable<Parameters<typeof LoopHeaderBlock>[0]['deleteEntity']>;
 
 /**
  * THE GENERIC ARCHETYPE — a renderer over an ORDERED LIST OF CONTENT BLOCKS.
@@ -233,19 +237,34 @@ function ContentBlock({
             barSlot={barSlot ?? null}
           />
         );
-      case 'loop-controls':
+      /* The loop page (design 01a182d4 §6): one `loops.get` read shared by
+         the three blocks through `useLoopView`; the client is the seam's
+         `commands.loops`, so no host is edited to mount it. */
+      case 'loop-header':
         return (
-          <LoopControls
+          <LoopHeaderBlock
             detail={detail}
-            commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
-            onSaved={onSaved}
+            port={commands?.loops}
+            sources={commands?.loopForm}
+            onOpenEntity={onOpenEntity}
+            deleteEntity={commands?.deleteEntity}
           />
         );
+      case 'loop-definition':
+        return (
+          <LoopDefinitionHost
+            detail={detail}
+            port={commands?.loops}
+            sources={commands?.loopForm}
+            onOpenEntity={onOpenEntity}
+            section={definitionSection(block.params?.section)}
+          />
+        );
+      case 'loop-runs':
+        return <LoopRunsBlock detail={detail} port={commands?.loops} onOpenEntity={onOpenEntity} />;
       /* The same extracted block `ProfileBody` and `SubtreeBody` draw — one
-         implementation, three bodies. A `loop` is the reason it is here: its
-         RUN HISTORY *is* its inbound `triggered_by` edges (086 §4.4, "there is
-         no separate run table"), and a loop must live in this body because it
-         is the only one handed a command executor for its verbs. */
+         implementation, three bodies, so a generic kind can list its peers
+         over one edge type as registry data. */
       case 'peer-rows':
         return (
           <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />

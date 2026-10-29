@@ -6,8 +6,8 @@
  * backfill; overlap guard; errors never disable), scheduler/schedule.ts (the
  * `every <n>{m|h|d}` / 5-field UTC cron grammar), createLoopExecutorPort in
  * facade/execution-handlers.ts (derive task → triggered_by → spawn or
- * dispatch → triggered_by), loops/LoopControls.tsx (Run now, Disable keeps
- * the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
+ * dispatch → triggered_by), loops/LoopHeader.tsx (Run now fires through
+ * loops.runNow; Disable keeps the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
  * The toolkit's verbs are the `tm8 loop` noun (packages/cli/src/commands/loop.ts,
  * docs/api-and-cli/LOOP-CLI.md).
  *

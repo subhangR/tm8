@@ -81,7 +81,7 @@ import {
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
-import { assertToolPersona, isRunNowRequest, requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
+import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
@@ -1717,9 +1717,8 @@ export class W2EntitiesCommandsTrackingService {
             // to null a column — so an unrelated patch cannot silently
             // unschedule a loop or drop its runner.
             // Loops design §3.1: nextRunAt is the server's, recomputed from now on
-            // a schedule/timezone change or an enable; a client value is ignored,
-            // except the loop panel's Run now (a nextRunAt of now, LoopControls),
-            // kept as "due at the next tick" until the UI calls loops.runNow.
+            // a schedule/timezone change or an enable; a client value is ignored.
+            // Run now is loops.runNow (the loop page calls it since PR5b).
             {
               const current = (await q.query<{
                 schedule: string; timezone: string; enabled: boolean; action: string;
@@ -1752,12 +1751,11 @@ export class W2EntitiesCommandsTrackingService {
               const action = content.action
                 ?? (current.action === 'spawn' && content.teamMemberId === null ? 'dispatch'
                   : current.action === 'dispatch' && typeof content.teamMemberId === 'string' ? 'spawn' : null);
-              const runNow = isRunNowRequest(content.nextRunAt, { viaLink: Boolean(ctx.identity?.viaLinkId) });
-              if (content.nextRunAt !== undefined && !runNow) {
+              if (content.nextRunAt !== undefined) {
                 console.warn(`[tm8:loops] entities.patch ignored a client nextRunAt for loop ${id}`);
               }
               const write = scheduleWrite(current, after);
-              const nextRunAt = runNow ? new Date().toISOString() : write.nextRunAt;
+              const nextRunAt = write.nextRunAt;
               const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
               raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
                 input.title ?? null, content.schedule ?? null,

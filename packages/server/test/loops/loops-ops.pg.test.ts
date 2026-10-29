@@ -324,13 +324,15 @@ describe('entities.* loop arm', () => {
     expect(ok(await request('GET', `/v2/loops/${id}`)).definition).toMatchObject({ action: 'dispatch', teamMemberId: null });
   });
 
-  it("honours the loop panel's Run now (a nextRunAt of now) and ignores a later client value", async () => {
+  it('ignores a client nextRunAt on entities.patch, now as well as later (Run now is loops.runNow)', async () => {
     const view = ok(await create({ title: 'Run me', schedule: 'every 1d', action: 'dispatch' }));
-    ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: view.version, content: { nextRunAt: new Date().toISOString() } }));
-    const due = ok(await request('GET', `/v2/loops/${view.id}`));
-    expect(new Date(due.state.nextRunAt).getTime()).toBeLessThanOrEqual(Date.now());
-    ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: due.version, content: { nextRunAt: '2099-01-01T00:00:00.000Z' } }));
-    expect(ok(await request('GET', `/v2/loops/${view.id}`)).state.nextRunAt).toBe(due.state.nextRunAt);
+    let version = view.version;
+    for (const nextRunAt of [new Date().toISOString(), '2001-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z']) {
+      ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: version, content: { nextRunAt } }));
+      const after = ok(await request('GET', `/v2/loops/${view.id}`));
+      expect(after.state.nextRunAt, nextRunAt).toBe(view.state.nextRunAt);
+      version = after.version;
+    }
   });
 
   it('applies the tool persona rule loops.create applies', async () => {
