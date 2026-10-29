@@ -47,7 +47,7 @@ describe('createPushJobs', () => {
         calls.push(fn);
         return fn === 'public.claim_push_dispatch'
           ? { items: [], enqueued: 0, skippedRead: 0, skippedNoDevice: 0, expired: 0 }
-          : { ticketIds: [], expired: 0 };
+          : { ticketIds: [], expired: 0, pruned: 0 };
       },
       tx: async () => { throw new Error('no transaction expected'); },
       query: async () => [],

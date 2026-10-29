@@ -45,7 +45,9 @@ export function createPushReceiptJob(options: {
     quietSkips: true,
     async run(): Promise<JobOutcome> {
       const result = await options.checker.tick();
-      if (result.checked === 0 && result.expired === 0) return { skipped: true, reason: 'no receipt due' };
+      if (result.checked === 0 && result.expired === 0 && result.pruned === 0) {
+        return { skipped: true, reason: 'no receipt due' };
+      }
       return { affected: result.devicesDeleted, detail: { ...result } };
     },
   };

@@ -300,6 +300,8 @@ export interface PushReceiptResult {
   devicesDeleted: number;
   /** Tickets past the relay's 24 hours, forgotten unanswered. */
   expired: number;
+  /** Settled queue rows past their week, dropped. */
+  pruned: number;
   refused: Record<string, number>;
   /** The relay could not be asked; the tickets come back after their lease. */
   deferred: boolean;
@@ -310,10 +312,11 @@ export class PushReceiptChecker {
 
   async tick(): Promise<PushReceiptResult> {
     const result: PushReceiptResult = {
-      checked: 0, answered: 0, pending: 0, devicesDeleted: 0, expired: 0, refused: {}, deferred: false,
+      checked: 0, answered: 0, pending: 0, devicesDeleted: 0, expired: 0, pruned: 0, refused: {}, deferred: false,
     };
     const claimed = await this.options.store.claimReceipts(this.options.batch ?? DEFAULT_RECEIPT_BATCH);
     result.expired = claimed.expired;
+    result.pruned = claimed.pruned;
     result.checked = claimed.ticketIds.length;
     if (claimed.ticketIds.length === 0) return result;
 

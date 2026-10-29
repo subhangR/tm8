@@ -107,8 +107,12 @@ export class PgPushStore implements PushStore {
     return { devicesDeleted: Number(raw?.devicesDeleted ?? 0) };
   }
 
-  async claimReceipts(limit: number): Promise<{ readonly ticketIds: readonly string[]; readonly expired: number }> {
-    const raw = await this.options.db.rpc<{ ticketIds?: unknown; expired?: unknown } | null>(
+  async claimReceipts(limit: number): Promise<{
+    readonly ticketIds: readonly string[];
+    readonly expired: number;
+    readonly pruned: number;
+  }> {
+    const raw = await this.options.db.rpc<{ ticketIds?: unknown; expired?: unknown; pruned?: unknown } | null>(
       await this.options.claims(),
       'public.claim_push_receipts',
       [
@@ -118,7 +122,7 @@ export class PgPushStore implements PushStore {
       ],
     );
     const ids = Array.isArray(raw?.ticketIds) ? raw.ticketIds.filter((id): id is string => typeof id === 'string') : [];
-    return { ticketIds: ids, expired: Number(raw?.expired ?? 0) };
+    return { ticketIds: ids, expired: Number(raw?.expired ?? 0), pruned: Number(raw?.pruned ?? 0) };
   }
 
   async settleReceipts(

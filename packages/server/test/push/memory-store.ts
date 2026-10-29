@@ -65,8 +65,12 @@ export class MemoryPushStore implements PushStore {
     return { devicesDeleted };
   }
 
-  async claimReceipts(limit: number): Promise<{ readonly ticketIds: readonly string[]; readonly expired: number }> {
-    return { ticketIds: [...this.tickets.keys()].slice(0, limit), expired: 0 };
+  async claimReceipts(limit: number): Promise<{
+    readonly ticketIds: readonly string[];
+    readonly expired: number;
+    readonly pruned: number;
+  }> {
+    return { ticketIds: [...this.tickets.keys()].slice(0, limit), expired: 0, pruned: 0 };
   }
 
   async settleReceipts(

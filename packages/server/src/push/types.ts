@@ -98,7 +98,12 @@ export interface PushStore {
   notification(item: ClaimedPush): Promise<PushNotification | null>;
   /** `devicesDeleted`: dead devices actually deleted (a rotated token is not). */
   settle(outboxId: string, settlement: PushSettlement): Promise<{ readonly devicesDeleted: number }>;
-  claimReceipts(limit: number): Promise<{ readonly ticketIds: readonly string[]; readonly expired: number }>;
+  /** `expired`: tickets past the relay's 24 hours; `pruned`: settled queue rows past 7 days. */
+  claimReceipts(limit: number): Promise<{
+    readonly ticketIds: readonly string[];
+    readonly expired: number;
+    readonly pruned: number;
+  }>;
   settleReceipts(
     done: readonly string[],
     dead: readonly string[],

@@ -517,6 +517,25 @@ describe('retry, read first, and expiry', () => {
     expect(row!.last_error).toBe('expired: relay down');
   });
 
+  it('the slow pass drops settled queue rows after a week, and nothing still pending', async () => {
+    await seedDevice(ALICE, ids.aliceAccount);
+    const old = await notify({ recipientMember: ids.aliceMember });
+    const recent = await notify({ recipientMember: ids.aliceMember });
+    const pending = await notify({ recipientMember: ids.aliceMember });
+    const batch = await store().claim(25);
+    for (const item of batch.items) {
+      if (item.notificationId === pending) continue;
+      await store().settle(item.outboxId, { outcome: 'sent', tickets: [], dead: [], error: null });
+    }
+    await asOwner(`update public.notification_outbox set processed_at = now() - interval '8 days' where notification_id = $1`, [old]);
+    await asOwner(`update public.notification_outbox set processed_at = now() - interval '6 days' where notification_id = $1`, [recent]);
+    const claimed = await store().claimReceipts(10);
+    expect(claimed.pruned).toBe(1);
+    expect(await outbox(old)).toBeUndefined();
+    expect(await outbox(recent)).toBeDefined();
+    expect(await outbox(pending)).toBeDefined();
+  });
+
   it('a device signed out after the push was queued gets nothing', async () => {
     const phone = await seedDevice(ALICE, ids.aliceAccount);
     const n = await notify({ recipientMember: ids.aliceMember });

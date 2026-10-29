@@ -224,6 +224,9 @@ begin
    where n.recipient_team_member_id is null
      and n.read_at is null
      and n.created_at > now() - win
+     and not exists (
+       select 1 from public.notification_outbox q
+        where q.notification_id = n.id and q.channel = 'push')
   on conflict (notification_id, channel) do nothing;
   get diagnostics enqueued = row_count;
 
@@ -299,15 +302,6 @@ begin
       'attempt', r.attempts + 1,
       'devices', targets));
   end loop;
-
-  -- 5. RETENTION: settled rows are kept a week for diagnosis, then dropped in
-  --    bounded batches (a cascade from the notification also removes them).
-  delete from public.notification_outbox o
-   where o.id in (
-     select x.id from public.notification_outbox x
-      where x.channel = 'push'
-        and coalesce(x.processed_at, x.dead_lettered_at) < now() - interval '7 days'
-      limit 500);
 
   return jsonb_build_object(
     'items', items,
@@ -396,7 +390,8 @@ comment on function public.settle_push_dispatch(uuid, text, text, jsonb, jsonb, 
 
 -- Tickets old enough to have a receipt (Expo: check after about 15 minutes),
 -- leased so a slow pass is not doubled. Tickets past Expo's 24 hours are
--- forgotten here: their receipts are gone.
+-- forgotten here: their receipts are gone. The queue's retention rides on this
+-- slow pass too, so the fast one never scans settled rows.
 create or replace function public.claim_push_receipts(
   p_limit integer default 300,
   p_min_age_seconds integer default 900,
@@ -410,6 +405,7 @@ declare
   lease interval := make_interval(secs => greatest(coalesce(p_lease_seconds, 600), 10));
   ids jsonb;
   expired integer := 0;
+  pruned integer := 0;
 begin
   if not internal.is_push_worker() then
     raise exception 'push worker required' using errcode = '42501';
@@ -417,6 +413,16 @@ begin
 
   delete from public.push_tickets where created_at < now() - interval '24 hours';
   get diagnostics expired = row_count;
+
+  -- RETENTION: settled queue rows are kept a week for diagnosis, then dropped
+  -- in bounded batches (deleting the notification also cascades them away).
+  delete from public.notification_outbox o
+   where o.id in (
+     select x.id from public.notification_outbox x
+      where x.channel = 'push'
+        and coalesce(x.processed_at, x.dead_lettered_at) < now() - interval '7 days'
+      limit 500);
+  get diagnostics pruned = row_count;
 
   with picked as (
     select t.ticket_id
@@ -435,13 +441,13 @@ begin
   )
   select coalesce(jsonb_agg(claimed.ticket_id order by claimed.ticket_id), '[]'::jsonb) into ids from claimed;
 
-  return jsonb_build_object('ticketIds', ids, 'expired', expired);
+  return jsonb_build_object('ticketIds', ids, 'expired', expired, 'pruned', pruned);
 end
 $$;
 
 comment on function public.claim_push_receipts(integer, integer, integer) is
-  '393: lease relay tickets due a receipt check; forget tickets older than 24 hours. '
-  'Push worker only.';
+  '393: lease relay tickets due a receipt check; forget tickets older than 24 hours and '
+  'settled push queue rows older than 7 days. Push worker only.';
 
 -- What the receipts said: `p_done` are tickets that have a receipt (forget them),
 -- `p_dead` those whose receipt was DeviceNotRegistered (delete the device the
