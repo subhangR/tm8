@@ -75,6 +75,8 @@ import { createForgeWatcherJob } from './tracking/loops.js';
 import { createAttentionDeliveryJob } from './facade/services/attention/index.js';
 import { createTaskNudgeJob } from './tracking/task-nudges.js';
 import { createFormDeliveryJob, FormDeliveryDrain } from './facade/services/w2/form-delivery.js';
+import { loadOrCreateCredentialKey } from './credentials/credential-key.js';
+import { createPushJobs, nodeDeviceTokenOpener, pushConfigFromEnv } from './push/index.js';
 import { createSpawnModeHandlers } from './facade/services/w2/form-delivery-spawn.js';
 import {
   dispatchSessionMessages,
@@ -1276,6 +1278,31 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         }),
       );
     }
+    // TM8 Mobile S6 (393): push dispatch, DARK unless TM8_PUSH_RELAY=expo and
+    // TM8_PUBLIC_ORIGIN are both set, so no lane node ever reaches a relay. The
+    // worker runs as the node owner with the closed `push.dispatch` job claim
+    // (the 306/375 pattern); each push's text is read under its recipient's
+    // own claims (push/store.ts), and device tokens are opened in-process with
+    // the node's credential key (push/token-opener.ts, the join with 392).
+    const push = pushConfigFromEnv(process.env, config.publicOrigin);
+    if (push.enabled) {
+      const pushJobs = createPushJobs({
+        db,
+        config: push.config,
+        openToken: nodeDeviceTokenOpener(await loadOrCreateCredentialKey(dataDir)),
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'push.dispatch',
+            backgroundJob: 'push.dispatch',
+          };
+        },
+        logger: { warn: (message, meta) => console.warn(`  ${message}`, meta ?? '') },
+      });
+      for (const job of pushJobs) scheduler.register(job);
+    }
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
@@ -1287,6 +1314,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
       console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');
     }
+    console.log(push.enabled
+      ? `  push: dispatching inbox notifications to the ${push.config.relay} relay every 2s for ${push.config.origin}; receipts every 5m`
+      : `  push: OFF, ${push.reason}`);
   }
 
   if (execution) {

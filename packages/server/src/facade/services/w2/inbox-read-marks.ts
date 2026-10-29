@@ -29,7 +29,7 @@ import {
   loadEntitySummariesByIds,
 } from '../../entity-read.js';
 
-interface NotificationRow {
+export interface NotificationRow {
   id: string;
   space_id: string;
   recipient_member_id: string;
@@ -313,7 +313,12 @@ function messageIdOf(row: NotificationRow): string {
   return typeof id === 'string' ? id : '';
 }
 
-async function hydrateNotifications(
+/**
+ * Rows → the NotificationItem the inbox shows, under the viewer's claims.
+ * Exported for the push worker (push/store.ts), so a push says exactly what
+ * the recipient's own inbox row says and never a title they cannot read.
+ */
+export async function hydrateNotifications(
   q: Querier,
   rows: readonly NotificationRow[],
   viewerIdentityId: string,
