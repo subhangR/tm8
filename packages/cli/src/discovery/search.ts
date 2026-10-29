@@ -212,7 +212,24 @@ export function rank(
  * RANKED_LAST holds for every query.
  */
 export function rankedLast(tokens: readonly string[], operation: string): boolean {
-  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)));
+  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)))
+    || (tokens.some((t) => ENDING_WORDS.has(t)) && startsOrDestroys(tokens, operation));
+}
+
+/**
+ * A query that ends, prevents or steers something ("kill it", "cancel the recurring task", "don't
+ * spawn a session", "postpone the run") never gets an operation that STARTS, CREATES, ADDS or
+ * DESTROYS something first, whichever row outscores the rest: with `execution.terminate` held back,
+ * "kill it" was answering `credentials.space.delete`, and "kill everything" `space create`
+ * (follow-up 01a188d3-0526). When nothing else matched, the query answers nothing, as for every
+ * ranked-last operation. The verb is the operation name's last segment, or that segment's leading
+ * word (`addItem`, `runNow`). Leaving a NAMED space stays ("quit the space"), and a revoke is how
+ * access ends, so neither is held back.
+ */
+const STARTS_OR_DESTROYS = /\.(create|add|delete|remove|purge|destroy|spawn|launch|invoke|run|start|leave)([A-Z][A-Za-z]*)?$/;
+function startsOrDestroys(tokens: readonly string[], operation: string): boolean {
+  return STARTS_OR_DESTROYS.test(operation)
+    && !(operation === 'spaces.leave' && tokens.some((t) => t === 'space' || t === 'spaces' || t === 'workspace'));
 }
 
 /**
@@ -312,6 +329,9 @@ const LOOP_ATTRIBUTE_WORDS = [
 const LOOP_REMOVAL_WORDS = ['delete', 'remove', 'archive', 'destroy', 'trash', 'drop', 'erase', 'purge', 'wipe', 'rid'];
 /** Words that say WHICH loop, never WHAT of it: the only words a loop's delete may carry besides the verb. */
 const WHICH_LOOP_WORDS = ['nightly', 'daily', 'weekly', 'hourly', 'monthly', 'old', 'stale', 'unused', 'test', 'broken', 'obsolete'];
+/** What a caller calls a loop when they don't say "loop": a recurring task or job. */
+const RECURRING_WORDS = ['recurring', 'recurrent'];
+const TASK_JOB_WORDS = ['task', 'tasks', 'job', 'jobs'];
 
 /** "Run it now" — the run-now route's words. */
 const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
@@ -329,6 +349,15 @@ const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessio
 const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
   ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
   'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
+]);
+/**
+ * Ending, preventing or steering something: `rankedLast` holds back what starts, creates, adds or
+ * destroys (see `startsOrDestroys`). A steer changes what exists ("postpone the recurring task", "nudge
+ * the run"), so it never starts a new one either.
+ */
+const ENDING_WORDS: ReadonlySet<string> = new Set([
+  ...NOT_RUN_WORDS, 'close', 'closing', 'shut', 'shutdown', 'nuke', 'off',
+  'steer', 'steering', 'redirect', 'redirecting', 'nudge', 'nudging', 'postpone', 'postponing', 'delay', 'delaying', 'change', 'changing',
 ]);
 /** The plain words a request carries that name nothing: an `only` route always allows them. */
 const PLAIN_WORDS: ReadonlySet<string> = new Set([
@@ -625,6 +654,22 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
     intent: 'disable a loop',
     all: [['loop', 'loops'], ['disable', 'deactivate']],
+    candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
+  },
+  {
+    // A recurring task or job IS a loop (follow-up 01a188d3-0526): its delete is the loop's, with the
+    // loop delete's allowlist ("remove the subject FROM the recurring task" is an edit, never this).
+    intent: 'delete a recurring task (its loop)',
+    all: [RECURRING_WORDS, TASK_JOB_WORDS, LOOP_REMOVAL_WORDS],
+    only: WHICH_LOOP_WORDS,
+    candidates: [{ path: ['entity', 'delete'], example: 'tm8 entity delete <loop-id>   (find it: tm8 loop list)' }],
+  },
+  {
+    // Stopping one ("cancel / kill / turn off the recurring task") disables its loop, never loop create.
+    // A run named ("cancel the recurring run") is the run stop's above.
+    intent: 'stop a recurring task (disable its loop)',
+    all: [RECURRING_WORDS, TASK_JOB_WORDS, [...LOOP_STOP_WORDS, 'off', 'disable', 'deactivate']],
+    none: ['run', 'running', 'runs'],
     candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
   },
   {
