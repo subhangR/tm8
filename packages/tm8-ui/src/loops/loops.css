@@ -87,6 +87,28 @@
   color: var(--pn-paper);
 }
 
+.cv2-root .loop-form__segment:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-ink));
+  outline-offset: -2px;
+}
+
+.cv2-root .loop-form__segment:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* A fieldset only to disable its controls while a save is in flight: it lays
+   out like the open Advanced section it sits in and draws nothing of its own. */
+.cv2-root .loop-form__plain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
 .cv2-root .loop-form__schedule,
 .cv2-root .loop-form__row,
 .cv2-root .loop-form__chips {
@@ -256,10 +278,27 @@
   color: var(--pn-ink-2);
 }
 
-.cv2-root .loop-chip--ok { background: var(--pn-run-soft); color: var(--pn-run); }
-.cv2-root .loop-chip--bad { background: var(--pn-block-soft); color: var(--pn-block); }
-.cv2-root .loop-chip--warn { background: var(--pn-wait-soft); color: var(--pn-wait); }
-.cv2-root .loop-chip--live { background: var(--pn-info-soft); color: var(--pn-info); }
+/* The row open in the detail pane: the list's own selected treatment. */
+.cv2-root .loops-table__row--selected td {
+  background: var(--pn-active);
+}
+
+/* -- a loop row's facts in the generic lists (LoopRowNote) --------------- */
+
+.cv2-root .loop-row-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .loop-row-note__schedule {
+  font-family: var(--pn-mono);
+}
+
+.cv2-root .loop-row-note__error {
+  color: var(--pn-block);
+}
 
 .cv2-root .loop-switch {
   position: relative;

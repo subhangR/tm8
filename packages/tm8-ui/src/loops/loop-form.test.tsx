@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CollabError, type EntitySummary, type SpaceId, type ToolView } from '@tm8/contract';
+import { MobileSurfaceProvider } from '../mobile/surface';
 import { fieldPathOf, type LoopsClient } from './api';
 import { createFixtureLoopsClient, fixtureLoopView } from './fixture';
 import { LoopEditDialog } from './LoopEditDialog';
@@ -106,7 +107,8 @@ describe('the loop form validates per action', () => {
     fireEvent.click(screen.getByTestId('loop-tool'));
     fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
     const inputs = await screen.findByTestId('loop-tool-inputs');
-    expect(inputs.textContent).toContain('Uses the secret bound on the tool');
+    // Nothing is bound for `token`, so the form says so rather than promising a secret.
+    expect(inputs.textContent).toContain('No secret is bound on the tool for this input');
     expect(screen.queryByLabelText('token')).toBeNull();
     submit();
     expect(await screen.findByText('A value is required.')).toBeTruthy();
@@ -410,5 +412,335 @@ describe('the field a refusal names', () => {
     submit();
     expect(await screen.findByText('cron needs 5 fields, got 2')).toBeTruthy();
     expect(screen.queryByText(/^schedule: /)).toBeNull();
+  });
+});
+
+/* --- PR5a review fixes --------------------------------------------------- */
+
+const conflict = () => new CollabError('version_conflict', 'version 9 is stale');
+
+describe('an edit refused for a stale version (every firing moves it)', () => {
+  const stored = () => fixtureLoopView('019fe999-0000-7000-8000-00000000e001', SPACE, {
+    title: 'Nightly', action: 'dispatch', prompt: 'sweep',
+  }, { version: 9 });
+
+  it('re-reads and resends the same patch, under the same mutation id, when nothing it changes has moved', async () => {
+    const view = stored();
+    const client = createFixtureLoopsClient([view]);
+    // The loop fired meanwhile: same definition, a newer version.
+    client.loops.set(view.id, { ...view, version: 10, state: { ...view.state, lastRunAt: new Date().toISOString() } });
+    const update = vi.spyOn(client, 'update');
+    const { onSaved } = mount(client, { mode: 'edit', view });
+    name('Nightly sweep');
+    submit();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update.mock.calls[0]![0]).toMatchObject({ version: 9 });
+    expect(update.mock.calls[1]![0]).toMatchObject({ version: 10 });
+    expect(update.mock.calls[1]![1]).toEqual({ title: 'Nightly sweep' });
+    expect(update.mock.calls[1]![2]!.clientMutationId).toBe(update.mock.calls[0]![2]!.clientMutationId);
+  });
+
+  it('a real overlap asks the human to re-read, and the re-read keeps their edit over the fresh loop', async () => {
+    const view = stored();
+    const client = createFixtureLoopsClient([view]);
+    // Someone renamed it and rewrote the instructions.
+    client.loops.set(view.id, { ...view, version: 11, definition: { ...view.definition, title: 'Their title', prompt: 'their prompt' } });
+    const update = vi.spyOn(client, 'update');
+    const { onSaved } = mount(client, { mode: 'edit', view });
+    name('My title');
+    submit();
+    expect(await screen.findByText('save refused — this loop changed while you were editing')).toBeTruthy();
+    expect(screen.getByText(/Someone changed the name since you opened it/)).toBeTruthy();
+    expect(update).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 're-read' }));
+    // Their instructions arrive; my title stays.
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('My title');
+    expect((screen.getByTestId('loop-instructions') as HTMLTextAreaElement).value).toBe('their prompt');
+    submit();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[1]![0]).toMatchObject({ version: 11 });
+    expect(update.mock.calls[1]![1]).toEqual({ title: 'My title' });
+  });
+
+  it('a conflict the re-read cannot settle reads as a re-read-and-retry hint, never a raw error', async () => {
+    const view = stored();
+    const client = createFixtureLoopsClient([view]);
+    vi.spyOn(client, 'update').mockRejectedValue(conflict());
+    vi.spyOn(client, 'get').mockRejectedValue(new Error('offline'));
+    mount(client, { mode: 'edit', view });
+    name('Nightly sweep');
+    submit();
+    expect(await screen.findByText(/A loop's version also moves each time it fires: re-read it and retry/)).toBeTruthy();
+  });
+});
+
+describe('one intent, one mutation id', () => {
+  it('the refusal card\'s retry resends a create under the id it first used', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create').mockRejectedValueOnce(new CollabError('upstream_unavailable', 'node busy', { retryable: true }));
+    const { onSaved } = mount(client);
+    name('Morning triage');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    submit();
+    fireEvent.click(await screen.findByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(create).toHaveBeenCalledTimes(2);
+    const first = create.mock.calls[0]![3]!.clientMutationId;
+    expect(first).toMatch(/^au-/);
+    expect(create.mock.calls[1]![3]!.clientMutationId).toBe(first);
+  });
+
+  it('an unchanged edit sends nothing and closes', async () => {
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000e002', SPACE, { title: 'Weekly', action: 'dispatch' });
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    const { onClose, onSaved } = mount(client, { mode: 'edit', view });
+    submit();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(update).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+describe('the pickers', () => {
+  it('the subject search asks the server for words through filters, not a top-level key', async () => {
+    const held = sources();
+    render(<div className="cv2-root"><LoopForm mode="create" spaceId={SPACE} client={createFixtureLoopsClient()} sources={held} onSaved={vi.fn()} onClose={vi.fn()} /></div>);
+    fireEvent.click(screen.getAllByTestId('membership-add')[0]!);
+    fireEvent.change(screen.getByLabelText('Filter candidates by title'), { target: { value: 'road' } });
+    await screen.findByText('Roadmap');
+    const searched = held.query.mock.calls.map(([input]) => input as Record<string, unknown>).filter(input => !input.kinds);
+    expect(searched.at(-1)).toMatchObject({ spaceId: SPACE, filters: { words: 'road' } });
+    expect(searched.every(input => !('words' in input))).toBe(true);
+  });
+
+  it('Enter in the subject filter picks the match without submitting; Escape closes the picker, not the dialog', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    const { onClose } = mount(client);
+    fireEvent.click(screen.getAllByTestId('membership-add')[0]!);
+    const filter = screen.getByLabelText('Filter candidates by title');
+    fireEvent.change(filter, { target: { value: 'road' } });
+    await screen.findByText('Roadmap');
+    fireEvent.keyDown(filter, { key: 'Escape' });
+    expect(screen.queryByLabelText('Filter candidates by title')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByTestId('membership-add')[0]!);
+    const again = screen.getByLabelText('Filter candidates by title');
+    fireEvent.change(again, { target: { value: 'road' } });
+    await screen.findByText('Roadmap');
+    fireEvent.keyDown(again, { key: 'Enter' });
+    expect((await screen.findByTestId('loop-subject')).textContent).toContain('Roadmap');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('re-picking the tool already chosen keeps what was typed for it', async () => {
+    mount(createFixtureLoopsClient());
+    fireEvent.click(screen.getByTestId('loop-action-tool'));
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    fireEvent.change(await screen.findByLabelText('depth'), { target: { value: '4' } });
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    expect((screen.getByLabelText('depth') as HTMLInputElement).value).toBe('4');
+  });
+
+  it('a list that cannot be read says so instead of looking empty', async () => {
+    const failing = sources();
+    failing.query.mockImplementation(async () => { throw new Error('read refused'); });
+    render(<div className="cv2-root"><LoopForm mode="create" spaceId={SPACE} client={createFixtureLoopsClient()} sources={failing} onSaved={vi.fn()} onClose={vi.fn()} /></div>);
+    fireEvent.click(screen.getByTestId('loop-teammate'));
+    expect(await screen.findByText(/Could not read the list: read refused/)).toBeTruthy();
+  });
+
+  it('a tool still being read holds a create back rather than skipping its input checks', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    mount(client, {}, () => new Promise<ToolView>(() => undefined));
+    name('Sweep');
+    fireEvent.click(screen.getByTestId('loop-action-tool'));
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    submit();
+    expect(await screen.findByText('The tool is still being read; its inputs appear in a moment.')).toBeTruthy();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('a bound secret is named as bound', async () => {
+    const bound = { ...TOOL_VIEW, secretBindings: [{ inputName: 'token' }] } as unknown as ToolView;
+    mount(createFixtureLoopsClient(), {}, async () => bound);
+    fireEvent.click(screen.getByTestId('loop-action-tool'));
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    expect((await screen.findByTestId('loop-tool-inputs')).textContent).toContain('Uses the secret bound on the tool');
+  });
+
+  it('a draft or retired profile is offered, refused with why', async () => {
+    const withProfiles = sources();
+    const rows: Record<string, EntitySummary[]> = {
+      team_member: [summary(ADA, 'team_member', 'Ada')],
+      interaction_profile: [
+        { id: 'p-active', kind: 'interaction_profile', title: 'Careful', state: { kind: 'interaction_profile', status: 'active' } },
+        { id: 'p-draft', kind: 'interaction_profile', title: 'Sketch', state: { kind: 'interaction_profile', status: 'draft' } },
+      ] as unknown as EntitySummary[],
+    };
+    withProfiles.query.mockImplementation(async (input: { kinds?: string[] }) => ({ page: { items: rows[input.kinds?.[0] ?? ''] ?? [], nextCursor: null } }));
+    render(<div className="cv2-root"><LoopForm mode="create" spaceId={SPACE} client={createFixtureLoopsClient()} sources={withProfiles} onSaved={vi.fn()} onClose={vi.fn()} /></div>);
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByTestId('loop-profile'));
+    const draft = await screen.findByTestId('loop-profile-p-draft');
+    expect(draft.getAttribute('aria-disabled')).toBe('true');
+    expect(draft.getAttribute('title')).toMatch(/draft/);
+    expect(screen.getByTestId('loop-profile-p-active').getAttribute('aria-disabled')).toBeNull();
+  });
+});
+
+describe('the fields keep what the human typed', () => {
+  it('an emptied Every field stays empty (no snap to 1) and names what is missing', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    mount(client);
+    name('Often');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    fireEvent.change(screen.getByTestId('loop-preset'), { target: { value: 'interval' } });
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '' } });
+    expect((screen.getByLabelText('Every') as HTMLInputElement).value).toBe('');
+    submit();
+    expect(await screen.findByText('Enter how often, as a whole number.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '45' } });
+    submit();
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]![1]).toMatchObject({ schedule: 'every 45m' });
+  });
+
+  it('a max runtime that is not a whole number is refused, not silently cleared', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    mount(client);
+    name('Bounded');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.change(screen.getByLabelText('Max runtime (minutes)'), { target: { value: '1e' } });
+    submit();
+    expect(await screen.findByText(/Max runtime \(minutes\) must be a whole number from 1 to 1440/)).toBeTruthy();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('a typed custom cron survives a round trip through another preset', () => {
+    mount(createFixtureLoopsClient());
+    fireEvent.change(screen.getByTestId('loop-preset'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Cron expression'), { target: { value: '17 3 * * 1-5' } });
+    fireEvent.change(screen.getByTestId('loop-preset'), { target: { value: 'hourly' } });
+    fireEvent.change(screen.getByTestId('loop-preset'), { target: { value: 'custom' } });
+    expect((screen.getByLabelText('Cron expression') as HTMLInputElement).value).toBe('17 3 * * 1-5');
+  });
+
+  it('a stored JSON input opens as JSON, and an untouched one is not resent', async () => {
+    const jsonTool = { ...TOOL_VIEW, definition: { ...TOOL_VIEW.definition, inputs: [{ name: 'payload', type: 'json' }] } } as unknown as ToolView;
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000e003', SPACE, {
+      title: 'Post', action: 'tool', toolId: TOOL, toolInputs: { payload: 'abc' },
+    }, { version: 2 });
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view }, async () => jsonTool);
+    expect(((await screen.findByLabelText('payload')) as HTMLTextAreaElement).value).toBe('"abc"');
+    name('Post daily');
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ title: 'Post daily' });
+  });
+});
+
+describe('the schedule an edit opens on', () => {
+  it('uses the preview loops.get returned, and a stored schedule that never fires does not block a title edit', async () => {
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000e004', SPACE, { title: 'Leap', action: 'dispatch', schedule: '0 0 30 2 *' }, {
+      schedule: { valid: false, problem: 'the schedule never matches within a year', summary: '', next: [] },
+    });
+    const client = createFixtureLoopsClient([view]);
+    const preview = vi.spyOn(client, 'schedulePreview');
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view });
+    expect(screen.getByTestId('loop-schedule-problem').textContent).toBe('the schedule never matches within a year');
+    expect(screen.getByTestId('loop-schedule-stored-note')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Save loop' }) as HTMLButtonElement).disabled).toBe(false);
+    name('Leap day');
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ title: 'Leap day' });
+    expect(preview).not.toHaveBeenCalled();
+  });
+});
+
+describe('while a save is in flight', () => {
+  it('the action radios are disabled, and Escape does not close the form', async () => {
+    const client = createFixtureLoopsClient();
+    let release: (value: never) => void = () => undefined;
+    vi.spyOn(client, 'create').mockImplementation(() => new Promise(resolve => { release = resolve as never; }));
+    const { onClose } = mount(client);
+    name('Slow');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    submit();
+    await waitFor(() => expect((screen.getByTestId('loop-action-spawn') as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { release(fixtureLoopView('019fe999-0000-7000-8000-00000000e005', SPACE) as never); });
+  });
+
+  it('the radio group moves with the arrow keys', () => {
+    mount(createFixtureLoopsClient());
+    const group = screen.getByRole('radiogroup', { name: 'What should run?' });
+    expect(screen.getByTestId('loop-action-spawn').getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(group, { key: 'ArrowRight' });
+    expect(screen.getByTestId('loop-action-dispatch').getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByTestId('loop-action-dispatch'));
+    fireEvent.keyDown(group, { key: 'End' });
+    expect(screen.getByTestId('loop-action-tool').getAttribute('aria-checked')).toBe('true');
+    fireEvent.keyDown(group, { key: 'ArrowRight' });
+    expect(screen.getByTestId('loop-action-spawn').getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('on the phone', () => {
+  it('the dialog joins the sheet host, so a picker sheet opened from it is drawn above it', () => {
+    const host = document.createElement('div');
+    host.className = 'msheet-host';
+    document.body.appendChild(host);
+    render(
+      <MobileSurfaceProvider sheetHost={host}>
+        <div className="cv2-root">
+          <LoopForm mode="create" spaceId={SPACE} client={createFixtureLoopsClient()} sources={sources()} onSaved={vi.fn()} onClose={vi.fn()} />
+        </div>
+      </MobileSurfaceProvider>,
+    );
+    expect(host.querySelector(':scope > .au-dialog__backdrop [data-testid="loop-form"]')).toBeTruthy();
+    host.remove();
+  });
+});
+
+describe('the panel edit dialog hands Escape to the loop form', () => {
+  it('Escape mid-save cancels nothing; Escape at rest closes once', async () => {
+    const { EditEntityDialog } = await import('../authoring/EditEntityDialog');
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000e006', SPACE, { title: 'Weekly', action: 'dispatch' });
+    const client = createFixtureLoopsClient([view]);
+    let release: (value: never) => void = () => undefined;
+    vi.spyOn(client, 'update').mockImplementation(() => new Promise(resolve => { release = resolve as never; }));
+    const cancel = vi.fn();
+    const flow = {
+      open: true, cancel, state: { phase: 'idle' }, values: {}, initialValues: {},
+      loopEditor: { loopId: view.id, spaceId: SPACE, client, sources: sources(), onSaved: vi.fn() },
+    } as never;
+    render(<div className="cv2-root"><EditEntityDialog flow={flow} fields={[]} title="Edit loop" /></div>);
+    await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Weekly'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    cancel.mockClear();
+    name('Weekly digest');
+    submit();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Saving…' })).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(cancel).not.toHaveBeenCalled();
+    await act(async () => { release(view as never); });
   });
 });

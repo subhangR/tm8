@@ -1113,7 +1113,7 @@ export interface Seam {
     /** `loops.*` (design 01a182d4 §4): the form, the list and the loop page. */
     loops?: import("../loops/api").LoopsClient;
     /** The loop form's picker reads — a view over this seam's own nouns, like `managed`. */
-    loopForm?: import("../loops/LoopForm").LoopFormSources;
+    loopForm?: import("../loops/sources").LoopFormSources;
     /**
      * The managed panel's port (task 01a0e24d): credential, space link and
      * server verbs by OPERATION name, gated by `actions.list`. Optional like

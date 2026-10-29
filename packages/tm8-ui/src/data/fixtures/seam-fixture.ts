@@ -23,8 +23,8 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import { managedPortFromSeam } from '../../managed/port';
-import { createFixtureLoopsClient } from '../../loops/fixture';
-import { loopFormSourcesOf } from '../../loops/LoopForm';
+import { createFixtureLoopsClient, fixtureLoopViewOf } from '../../loops/fixture';
+import { loopFormSourcesOf } from '../../loops/sources';
 import {
   type ContainerProfile,
   type CreateInviteInput,
@@ -6300,7 +6300,10 @@ export function createFixtureSeam(): FixtureSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
-  seam.commands.loops = createFixtureLoopsClient();
+  // Seeded from the fixture loop entities, so the list and the loop page agree with the entity rows.
+  seam.commands.loops = createFixtureLoopsClient(
+    [...summaries.values()].flatMap((row) => fixtureLoopViewOf(row) ?? []),
+  );
   seam.commands.loopForm = loopFormSourcesOf(seam);
   return seam;
 }

@@ -125,3 +125,120 @@ describe('the loops list', () => {
     expect((await screen.findByTestId('loops-empty')).textContent).toContain('No loops yet');
   });
 });
+
+/* --- PR5a review fixes --------------------------------------------------- */
+
+const ADA_ID = '019fe999-0000-7000-8000-00000000d001';
+
+describe('a row\'s version goes stale each time its loop fires', () => {
+  it('the switch re-reads a loop it was refused for and flips the fresh one', async () => {
+    const { client } = mount();
+    // The loop fired: same definition and state, a newer version.
+    client.loops.set(ADA_ID, { ...client.loops.get(ADA_ID)!, version: 5 });
+    const disable = vi.spyOn(client, 'disable');
+    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Ada sweep' }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Enable Ada sweep' })).toBeTruthy());
+    expect(disable.mock.calls.map(([loop]) => loop.version)).toEqual([1, 5]);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a loop someone else already flipped is shown as it is, and nothing is sent again', async () => {
+    const { client } = mount();
+    const ada = client.loops.get(ADA_ID)!;
+    client.loops.set(ADA_ID, { ...ada, version: 2, state: { ...ada.state, enabled: false } });
+    const disable = vi.spyOn(client, 'disable');
+    fireEvent.click(await screen.findByRole('switch', { name: 'Disable Ada sweep' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Already disabled by someone else.');
+    expect(disable).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('switch', { name: 'Enable Ada sweep' })).toBeTruthy();
+  });
+
+  it('a read that started before a toggle cannot land the older row over it', async () => {
+    const { client } = mount();
+    await screen.findByRole('table');
+    const stale = await client.list(SPACE, { limit: 100 });
+    let answer: (page: typeof stale) => void = () => undefined;
+    const list = vi.spyOn(client, 'list').mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
+    // A refresh starts (the tab comes back), then the toggle lands first.
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable Ada sweep' }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Enable Ada sweep' })).toBeTruthy());
+    answer(stale);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(screen.getByRole('switch', { name: 'Enable Ada sweep' })).toBeTruthy();
+  });
+});
+
+describe('the list stays honest when a read fails or a fact is missing', () => {
+  it('a failed refresh keeps the rows on screen and says they may be stale', async () => {
+    const { client } = mount();
+    await screen.findByRole('table');
+    vi.spyOn(client, 'list').mockRejectedValue(new Error('node unreachable'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect((await screen.findByTestId('loops-refresh-error')).textContent).toContain('node unreachable');
+    expect(screen.getByRole('table')).toBeTruthy();
+  });
+
+  it('Last run falls back to the loop\'s lastRunAt while the run projection is empty', async () => {
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000d010', SPACE, { title: 'Quiet', action: 'dispatch' }, {
+      state: { ...fixtureLoopView('x', SPACE).state, lastRunAt: inHours(-5) },
+    });
+    mount(createFixtureLoopsClient([view]));
+    const row = await screen.findByTestId('loop-row-019fe999-0000-7000-8000-00000000d010');
+    expect(row.textContent).toMatch(/5h ago/);
+    expect(row.textContent).not.toContain('Never');
+  });
+
+  it('a paused loop reads "Paused · resumes in …"; an expired pause reads as scheduled', async () => {
+    const paused = fixtureLoopView('019fe999-0000-7000-8000-00000000d011', SPACE, { title: 'Held', action: 'dispatch' }, {
+      state: { ...fixtureLoopView('x', SPACE).state, pausedUntil: inHours(3), nextRunAt: inHours(1) },
+    });
+    const expired = fixtureLoopView('019fe999-0000-7000-8000-00000000d012', SPACE, { title: 'Back', action: 'dispatch' }, {
+      state: { ...fixtureLoopView('x', SPACE).state, pausedUntil: inHours(-1), nextRunAt: inHours(2) },
+    });
+    mount(createFixtureLoopsClient([paused, expired]));
+    expect((await screen.findByTestId('loop-row-019fe999-0000-7000-8000-00000000d011')).textContent).toMatch(/Paused · resumes in 3h/);
+    expect(screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d012').textContent).toMatch(/in 2h/);
+  });
+
+  it('Show more reads one page at a time, however often it is clicked', async () => {
+    const many = Array.from({ length: 101 }, (_, index) =>
+      fixtureLoopView(`019fe999-0000-7000-8000-${String(index).padStart(12, '0')}`, SPACE, { title: `Loop ${index}`, action: 'dispatch' }));
+    const client = createFixtureLoopsClient(many);
+    mount(client);
+    const more = await screen.findByRole('button', { name: 'Show more' });
+    const list = vi.spyOn(client, 'list');
+    fireEvent.click(more);
+    fireEvent.click(more);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Show more|Loading/ })).toBeNull());
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('switch')).toHaveLength(101);
+  });
+
+  it('does not poll while the tab is hidden', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      const { client } = mount();
+      await screen.findByRole('table');
+      const list = vi.spyOn(client, 'list');
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(list).not.toHaveBeenCalled();
+      visibility.mockReturnValue('visible');
+      await vi.advanceTimersByTimeAsync(61_000);
+      expect(list).toHaveBeenCalled();
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('draws the loop open in the detail pane as the selected row', async () => {
+    const onOpen = vi.fn();
+    render(<div className="cv2-root"><LoopsList spaceId={SPACE} client={createFixtureLoopsClient(seed())} sources={sources} onOpen={onOpen} selectedId={ADA_ID} /></div>);
+    const row = await screen.findByTestId(`loop-row-${ADA_ID}`);
+    expect(row.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d002').getAttribute('aria-selected')).toBe('false');
+  });
+});

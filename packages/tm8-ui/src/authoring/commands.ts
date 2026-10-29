@@ -55,7 +55,7 @@ export interface AuthoringCommands {
   tools?: ToolPort;
   /** `loops.*` and the loop form's picker reads (design 01a182d4 §6). */
   loops?: import('../loops/api').LoopsClient;
-  loopForm?: import('../loops/LoopForm').LoopFormSources;
+  loopForm?: import('../loops/sources').LoopFormSources;
   createEntity(input: CreateEntityInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
   /**

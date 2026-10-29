@@ -586,11 +586,11 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
 // needs a schedule and a runner), drawn in the tab like the skill form
 // ---------------------------------------------------------------------------
 
-function LoopDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
+function LoopDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmitting }: DraftHostProps) {
   const { gate, spaceId } = useWorkspace();
   const { loops, loopForm } = gate.data.seam.commands;
   return (
-    <div className="tws-draft-form" data-testid="tws-draft-loop" onInput={() => onValues({})}>
+    <div className="tws-draft-form" data-testid="tws-draft-loop">
       <DraftHeading kind={tab.kind} />
       {loops && loopForm ? (
         <LoopForm
@@ -599,6 +599,10 @@ function LoopDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
           spaceId={spaceId as SpaceId}
           client={loops}
           sources={loopForm}
+          // The tab restores what was typed: a reload or a tab switch must not lose a half-made loop.
+          initialValues={values}
+          onDraftChange={onValues}
+          onBusy={onSubmitting}
           onClose={onCancel}
           onSaved={(view) => onCreated(view.id, view.definition.title)}
         />
