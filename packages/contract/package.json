@@ -12,6 +12,10 @@
     "./workspace": {
       "types": "./dist/workspace/index.d.ts",
       "default": "./dist/workspace/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
     }
   },
   "scripts": {

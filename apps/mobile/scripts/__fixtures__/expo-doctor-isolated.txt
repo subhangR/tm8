@@ -1,0 +1,95 @@
+Running 20 checks on your project...
+19/20 checks passed. 1 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+✖ Check that no duplicate dependencies are installed
+Your project contains duplicate native module dependencies, which should be de-duplicated.
+Native builds may only contain one version of any given native module, and having multiple versions of a single Native module installed may lead to unexpected build errors.
+Found duplicates for @expo/metro-runtime:
+  ├─ @expo/metro-runtime@58.0.15 (at: node_modules/@expo/metro-runtime)
+  │  └─ linked to: ../../node_modules/.bun/@expo+metro-runtime@58.0.15+2fc7239eeb9a536b/node_modules/@expo/metro-runtime
+  └─ @expo/metro-runtime@58.0.15 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/@expo/metro-runtime)
+     └─ linked to a different installation
+Found duplicates for expo:
+  ├─ expo@58.0.21 (at: node_modules/expo)
+  │  └─ linked to: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo
+  ├─ expo@58.0.21 (at: ../../node_modules/.bun/@expo+dom-webview@58.0.2+04c30a4b9a85347e/node_modules/expo)
+  │  └─ linked to a different installation
+  ├─ expo@58.0.21 (at: ../../node_modules/.bun/expo-keep-awake@58.0.3+77f80ffbc261da56/node_modules/expo)
+  │  └─ linked to a different installation
+  └─ expo@58.0.21 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/expo)
+     └─ linked to a different installation
+Found duplicates for expo-constants:
+  ├─ expo-constants@58.0.14 (at: node_modules/expo-constants)
+  │  └─ linked to: ../../node_modules/.bun/expo-constants@58.0.14+2fc7239eeb9a536b/node_modules/expo-constants
+  ├─ expo-constants@58.0.14 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo-constants)
+  │  └─ linked to a different installation
+  ├─ expo-constants@58.0.14 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/expo-constants)
+  │  └─ linked to a different installation
+  └─ expo-constants@58.0.14 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/expo-constants)
+     └─ linked to a different installation
+Found duplicates for expo-linking:
+  ├─ expo-linking@58.0.15 (at: node_modules/expo-linking)
+  │  └─ linked to: ../../node_modules/.bun/expo-linking@58.0.15+2fc7239eeb9a536b/node_modules/expo-linking
+  └─ expo-linking@58.0.15 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/expo-linking)
+     └─ linked to a different installation
+Found duplicates for expo-status-bar:
+  ├─ expo-status-bar@58.0.4 (at: node_modules/expo-status-bar)
+  │  └─ linked to: ../../node_modules/.bun/expo-status-bar@58.0.4+2fc7239eeb9a536b/node_modules/expo-status-bar
+  └─ expo-status-bar@58.0.4 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/expo-status-bar)
+     └─ linked to a different installation
+Found duplicates for react-native:
+  ├─ react-native@0.88.1 (at: node_modules/react-native)
+  │  └─ linked to: ../../node_modules/.bun/react-native@0.88.1+d800dbf40ea04471/node_modules/react-native
+  └─ react-native@0.88.1 (at: ../../node_modules/.bun/@react-native+virtualized-lists@0.88.1+740e1e5cca5a3268/node_modules/react-native)
+     └─ linked to a different installation
+Found duplicates for @expo/log-box:
+  ├─ @expo/log-box@58.0.13 (at: ../../node_modules/.bun/@expo+metro-runtime@58.0.15+2fc7239eeb9a536b/node_modules/@expo/log-box)
+  │  └─ linked to a different installation
+  ├─ @expo/log-box@58.0.13 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/@expo/log-box)
+  │  └─ linked to a different installation
+  ├─ @expo/log-box@58.0.13 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/@expo/log-box)
+  │  └─ linked to a different installation
+  └─ @expo/log-box@58.0.13 (at: ../../node_modules/.bun/expo-router@58.0.28+5dd078dfb75e1c4a/node_modules/@expo/log-box)
+     └─ linked to a different installation
+Found duplicates for @expo/dom-webview:
+  ├─ @expo/dom-webview@58.0.2 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/@expo/dom-webview)
+  │  └─ linked to a different installation
+  ├─ @expo/dom-webview@58.0.2 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/@expo/dom-webview)
+  │  └─ linked to a different installation
+  ├─ @expo/dom-webview@58.0.2 (at: ../../node_modules/.bun/@expo+log-box@58.0.13+2fc7239eeb9a536b/node_modules/@expo/dom-webview)
+  │  └─ linked to a different installation
+  └─ @expo/dom-webview@58.0.2 (at: ../../node_modules/.bun/@expo+log-box@58.0.13+91ce41ed9da12b9c/node_modules/@expo/dom-webview)
+     └─ linked to a different installation
+Found duplicates for expo-asset:
+  ├─ expo-asset@58.0.19 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo-asset)
+  │  └─ linked to a different installation
+  └─ expo-asset@58.0.19 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/expo-asset)
+     └─ linked to a different installation
+Found duplicates for expo-file-system:
+  ├─ expo-file-system@58.0.13 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo-file-system)
+  │  └─ linked to a different installation
+  └─ expo-file-system@58.0.13 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/expo-file-system)
+     └─ linked to a different installation
+Found duplicates for expo-font:
+  ├─ expo-font@58.0.11 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo-font)
+  │  └─ linked to a different installation
+  └─ expo-font@58.0.11 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/expo-font)
+     └─ linked to a different installation
+Found duplicates for expo-modules-core:
+  ├─ expo-modules-core@58.0.28 (at: ../../node_modules/.bun/expo@58.0.21+2fc7239eeb9a536b/node_modules/expo-modules-core)
+  │  └─ linked to a different installation
+  └─ expo-modules-core@58.0.28 (at: ../../node_modules/.bun/expo@58.0.21+2d9b8d166cb109b6/node_modules/expo-modules-core)
+     └─ linked to a different installation
+Found duplicates for expo-modules-jsi:
+  ├─ expo-modules-jsi@58.0.21 (at: ../../node_modules/.bun/expo-modules-core@58.0.28+2db28b82ddc887f4/node_modules/expo-modules-jsi)
+  │  └─ linked to a different installation
+  └─ expo-modules-jsi@58.0.21 (at: ../../node_modules/.bun/expo-modules-core@58.0.28+740e1e5cca5a3268/node_modules/expo-modules-jsi)
+     └─ linked to a different installation
+Advice:
+Your node_modules folder may be corrupted. Multiple copies of the same version exist for: @expo/metro-runtime, expo, expo-constants, expo-linking, expo-status-bar, react-native, @expo/log-box, @expo/dom-webview, expo-asset, expo-file-system, expo-font, expo-modules-core, expo-modules-jsi.
+- Try deleting your node_modules folders and reinstall your dependencies after.
+- If this error persists, delete your node_modules as well as your lockfile and reinstall.
+Resolve your dependency issues and deduplicate your dependencies. Learn more: https://expo.fyi/resolving-dependency-issues
+
+1 check failed, indicating possible issues with the project.
