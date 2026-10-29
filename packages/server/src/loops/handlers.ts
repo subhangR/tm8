@@ -1,7 +1,7 @@
 import {
   CollabError, decodeCursor, encodeCursor, LOOP_PAUSE_MAX_DAYS, LOOP_PREVIEW_DEFAULT_COUNT,
   LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopPauseInputSchema,
-  LoopSchedulePreviewInputSchema, type LoopAction, type OperationName,
+  LoopSchedulePreviewInputSchema, type LoopAction,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -11,13 +11,10 @@ import type { RequestContext } from '../http/types.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import { listLoopViews, loadLoopView } from './views.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite, type ScheduleState } from './write.js';
+import { registerLoopRunHandlers, type LoopRunHandlerDeps } from './run-handlers.js';
 
-/** An honest 501 (DEV-13) for a loops.* row whose handler has not landed yet. */
-function pending(operation: OperationName) {
-  return async (): Promise<never> => {
-    throw new CollabError('not_implemented', `operation ${operation} is not implemented on this node`);
-  };
-}
+/** What the composition root hands the loops family beyond FacadeDeps (PR2: the executor port). */
+export type LoopHandlerDeps = LoopRunHandlerDeps;
 
 /** The route names the target; a repeated body ID must agree with it. */
 function loopRouteId(ctx: RequestContext, field: 'spaceId' | 'loopId'): string {
@@ -81,7 +78,7 @@ function deadlinePatch(before: ScheduleState, after: ScheduleState): LoopPatch {
   };
 }
 
-export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps, loops: LoopHandlerDeps = {}): void {
   const command = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
     deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), work);
   const read = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
@@ -189,10 +186,6 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
       return { pausedUntil: until.toISOString() };
     }, LoopPauseInputSchema),
     'loops.resume': control(() => ({ clearPausedUntil: true })),
-    'loops.runNow': pending('loops.runNow'),
-    'loops.runs.list': pending('loops.runs.list'),
-    'loops.runs.get': pending('loops.runs.get'),
-    'loops.runs.stop': pending('loops.runs.stop'),
     'loops.schedule.preview': async ctx => {
       const input = LoopSchedulePreviewInputSchema.parse(ctx.body);
       const spaceId = loopRouteId(ctx, 'spaceId');
@@ -203,4 +196,6 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
       });
     },
   });
+  // PR2: runNow and runs.* (loops/run-handlers.ts), sharing the scheduler's executor port.
+  registerLoopRunHandlers(registry, deps, loops);
 }

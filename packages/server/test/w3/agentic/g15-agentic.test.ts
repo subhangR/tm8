@@ -106,12 +106,6 @@ afterAll(async () => {
   await harness?.close();
 });
 
-/**
- * Loops PR1 mounts the runs reads as honest 501s; PR2 (task 01a182d5-de68)
- * implements them and deletes this set. Named, so nothing else slips through.
- */
-const LOOPS_RUNS_PENDING_PR2: ReadonlySet<string> = new Set(['loops.runs.get', 'loops.runs.list']);
-
 describe('G15 reserved and residual honesty, via generated discovery only', () => {
   it('navigates root -> noun -> operation and finds exactly two reserved operations', async () => {
     const root = digestChecked(await queryW3Discovery({ kind: 'root' }));
@@ -225,7 +219,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // operation fallen back to a stub — and now fails by name.
     const residualNames = residual501.map((entry) => entry.operation).sort();
     expect(
-      residualNames.filter((name) => !name.startsWith('containers.') && !LOOPS_RUNS_PENDING_PR2.has(name)),
+      residualNames.filter((name) => !name.startsWith('containers.')),
       'a non-container v1 operation regressed to a stub',
     ).toEqual([]);
     expect(residualNames.length, residualNames.join(', ')).toBeGreaterThan(0);
@@ -264,7 +258,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     const registeredButUnbuilt = refused.length - unregistered.length;
     expect(
       refused.every(({ entry }) => entry.exposure === 'reserved'
-        || entry.operation.startsWith('containers.') || LOOPS_RUNS_PENDING_PR2.has(entry.operation)),
+        || entry.operation.startsWith('containers.')),
       'a non-container registered operation is answering 501',
     ).toBe(true);
     expect(registeredButUnbuilt).toBeGreaterThan(0);
@@ -305,7 +299,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // claim now covers BOTH the reserved pair and every registered-but-unbuilt
     // container row — which is the stronger version of the same claim: a 501
     // must touch no database, whatever the reason it refuses.
-    expect(residual501.every((entry) => entry.operation.startsWith('containers.') || LOOPS_RUNS_PENDING_PR2.has(entry.operation))).toBe(true);
+    expect(residual501.every((entry) => entry.operation.startsWith('containers.'))).toBe(true);
     const commandTargets = residual501.filter((entry) => entry.method !== 'GET');
     const attempts: Array<{ operation: string; clientMutationId: string }> = [];
     const plan = [

@@ -284,10 +284,10 @@ describe('loops.update and the control ops', () => {
     expect(resumed.state.pausedUntil).toBeNull();
   });
 
-  it('runNow and runs.* answer an honest 501 until PR2', async () => {
+  it('without an execution runtime Run now is an honest 501; the runs projection still reads', async () => {
     const view = ok(await create({ title: 'Later', schedule: 'every 1h', action: 'dispatch' }));
     refused(await request('POST', `/v2/loops/${view.id}/run`, {}), 501, 'not_implemented');
-    refused(await request('GET', `/v2/loops/${view.id}/runs`), 501, 'not_implemented');
+    expect(ok(await request('GET', `/v2/loops/${view.id}/runs`)).items).toEqual([]);
   });
 });
 

@@ -77,7 +77,8 @@ import {
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
-import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { firingKeyFor } from '../loops/firing.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -1918,6 +1919,12 @@ export interface ExecutionRuntime {
   /** Hand this to the WS layer — it is the instance the sessions live on. */
   pty: PtyHostService;
   /**
+   * The node id this runtime's SpawnService records on every session it
+   * spawns (`work_sessions.node_id`): `deps.nodeId`, else `<host>:<port>`.
+   * Its PTY map speaks for that node's sessions only.
+   */
+  nodeId: string;
+  /**
    * The two-signal prompt-delivery completion bridge `pty` above was
    * constructed with (its `onPromptSettled` closes over this instance's
    * `resolve`). Hand this to `createW2ExecutionDelivery` so the delivery saga
@@ -1997,6 +2004,7 @@ export interface ExecutionRuntime {
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
   const sessionCap = deps.sessionCap ?? resolveSessionCap(process.env);
+  const nodeId = deps.nodeId ?? `${deps.config.host}:${deps.config.port}`;
   const graph = new DbGraphPort(deps.db, sessionCap);
 
   let spawnService!: SpawnService;
@@ -2035,7 +2043,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Per-member credential delivery. Wired ONLY when this node has a data
     // root, because the credential home is a path underneath it: with no data
@@ -2072,6 +2080,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
 
   return {
     pty,
+    nodeId,
     promptSettlement,
     spawnService,
     graph,
@@ -2251,6 +2260,7 @@ export function registerExecutionHandlers(
   },
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
+  const nodeId = `${deps.config.host}:${deps.config.port}`;
   const worktrees = resolveWorktreeManager(deps.dataDir);
   const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
@@ -2259,7 +2269,7 @@ export function registerExecutionHandlers(
     pty: deps.pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Same wiring as `createExecutionRuntime` above, deliberately duplicated
     // rather than shared: a node on the legacy shape must not silently lose
@@ -2294,6 +2304,7 @@ export function registerExecutionHandlers(
   registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
   return {
     pty: deps.pty,
+    nodeId,
     // See the docblock above this function — disconnected, never resolves.
     promptSettlement: new PromptSettlementWaiter(),
     spawnService,
@@ -3044,6 +3055,8 @@ export function createLoopExecutorPort(deps: {
   resolveOwner: () => Promise<LoopbackOwner>;
   /** Same seam `execution.dispatch` uses; absent ⇒ stored-but-undelivered. */
   dispatchDelivery?: DispatchDelivery;
+  /** The execution runtime's `nodeId`: the node whose sessions `pty` speaks for. */
+  nodeId?: string;
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
@@ -3086,7 +3099,20 @@ export function createLoopExecutorPort(deps: {
       requestId: `loop-executor:${loop.entityId}`,
     }),
     liveSessionIds: () => pty.liveSessionIds(),
-    async fire(loop, claims, firedAt) {
+    nodeId: deps.nodeId ?? null,
+    async fire(loop, claims, firedAt, runId) {
+      // Until the tool action exists (loops PR3) a tool loop is refused here, the
+      // one place both the scheduled job and Run now fire through, rather than
+      // run as a spawn (its persona) or a dispatch. The run records the reason.
+      if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
+      // §3.4: the ACTION picks the branch, never the runner, so the port agrees
+      // with the job, Run now and the projection by construction. A spawn loop
+      // that lost its runner (team_member_id is `on delete set null`) is
+      // refused, never routed to the space's shared dispatcher.
+      const runner = loop.action === 'spawn' ? loop.teamMemberId : null;
+      if (loop.action === 'spawn' && !runner) {
+        throw new CollabError('invalid_input', `spawn loop ${loop.entityId} names no runner: choose the teammate it runs as`);
+      }
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(
@@ -3120,7 +3146,7 @@ export function createLoopExecutorPort(deps: {
        * not what stops a pile-up here; the overlap guard is, and that is
        * precisely what it is for.
        */
-      const firingKey = `${loop.entityId}:${firedAt.toISOString()}`;
+      const firingKey = firingKeyFor(loop, firedAt, runId);
 
       // STABLE on purpose, and the contrast with `firingKey` is the point: this
       // edge asserts "this task belongs to this loop", which is one fact no
@@ -3128,10 +3154,10 @@ export function createLoopExecutorPort(deps: {
       await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-task:${loop.entityId}:${taskId}`);
 
       let sessionId: string;
-      if (loop.teamMemberId) {
+      if (runner) {
         sessionId = (await spawnService.spawn(claims, {
           spaceId: loop.spaceId,
-          teamMemberId: loop.teamMemberId,
+          teamMemberId: runner,
           parentSessionId: null,
           taskIds: [taskId],
           projectId: null,
@@ -3214,6 +3240,43 @@ export function createLoopExecutorPort(deps: {
       }
 
       return { taskId, sessionId };
+    },
+    /**
+     * PR2 (§3.3): stop a run's session the way `execution.terminate` does —
+     * `stop_work_session` while the outcome is open (claims released, outcome
+     * 'stopped'), then `SpawnService.terminate` with 171's ending facts — so a
+     * loop-stopped session is indistinguishable in the graph from an
+     * operator-stopped one, and the max-runtime sweep and `loops.runs.stop`
+     * share one path. A completed session that is merely still open closes as
+     * `exited_clean`, exactly as the HTTP op records it.
+     */
+    async stopSession(claims, sessionId, request) {
+      const rows = await db.query<{ outcome: string | null }>(
+        claims,
+        'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
+        [sessionId],
+      );
+      if (rows.length === 0) {
+        throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+      }
+      const outcome = rows[0]!.outcome;
+      let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
+      if (outcome === 'completed') {
+        ending = CLOSED_AFTER_COMPLETION;
+      } else {
+        if (outcome !== 'stopped') {
+          await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
+        }
+        ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
+      }
+      await rethrowing(() =>
+        spawnService.terminate(claims, sessionId, {
+          force: false,
+          clientMutationId: request.clientMutationId,
+          reason: request.reason,
+          ...ending,
+        }),
+      );
     },
   };
 }
