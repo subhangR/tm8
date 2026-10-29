@@ -73,6 +73,10 @@ Open a tool entity. Its page shows source, inputs, configuration and run history
 
 Live terminal output can include a secret printed by a program. The stored tail is redacted. The remaining shell has declared secret variables and tm8 agent identity removed. This environment cleanup is not an OS sandbox: tools run as the node user.
 
+## Run on a schedule
+
+A loop whose action is `tool` runs a tool on its schedule. Choose the tool and its input values when you create the loop, and the persona the run acts as (required when the tool's tm8 access is `read` or `write`). Each firing is an ordinary run in the tool's history, attributed to the loop, with the shell closed on exit. A nonzero exit is a completed run with that code, not a loop failure. A firing the server refuses (stale or renamed inputs, a missing persona, the eight-session cap, an unavailable credential, a failed launch) becomes the loop's last error and the schedule advances. Details are in [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md).
+
 ## Verify locally
 
 Build the repository, then run the integration suite against a **test** Postgres cluster:
