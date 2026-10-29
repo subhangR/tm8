@@ -1,4 +1,4 @@
-import { McpPicker } from '../mcp/McpPicker';
+import { McpPicker, usePickerGate } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -448,7 +448,7 @@ export function LaunchComposerPopup({
   const openedAt = useRef(new Date().toISOString());
 
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
-  const [mcpReady, setMcpReady] = useState(true);
+  const [mcpGate, onMcpGate] = usePickerGate();
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
 
@@ -463,7 +463,7 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : (!mcpReady ? "Choose a connected account for each connector." : null) ?? selection.launchBlock
+      : mcpGate.problem ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -921,7 +921,7 @@ export function LaunchComposerPopup({
             targetId={subject.id}
             value={mcpSelections}
             onChange={setMcpSelections}
-            onReady={setMcpReady}
+            onReady={onMcpGate}
             disabled={pending}
             layout="grid"
             notice={bind.harnessSurface === 'inherit'

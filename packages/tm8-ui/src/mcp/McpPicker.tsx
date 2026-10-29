@@ -5,22 +5,42 @@
  * Inputs: the scope (`targetId`, `teamMemberId`), the selection the host holds
  * (`undefined` = the Space's defaults, `[]` = none, a list = exactly these) and
  * `onChange`. Outputs, reported from layout effects so a host never paints a
- * stale answer: `onReady` — false ONLY when an explicit pick has no account the
- * server will open (`selection-gate.ts`), never while the catalog loads,
- * refreshes or fails — and `onCount`, how many connectors it offers. Callers:
- * the launch card (`compact`), the new-session screen (`grid`), the chat
- * composer (`headless`, the send gate only).
+ * stale answer:
+ *  - `onReady(ready, problem)` — the gate (`selection-gate.ts`): false only for
+ *    an explicit pick `bind` would refuse, with the sentence that names it;
+ *    never false while the catalog loads, refreshes or fails. A host shows
+ *    `problem` as its refusal (`usePickerGate` keeps both for it).
+ *  - `onCount(n)` — how many connectors it offers; 0 exactly when it draws
+ *    nothing but, at most, its one loading or error line.
+ * Callers: the launch card (`compact`), the new-session screen (`grid`), the
+ * chat composer (`headless`, the send gate only).
  *
  * It owns no presentation of its own beyond choosing one: the rows are
  * `ConnectorToggleList`'s, the chips `ConnectorChips`'.
  */
-import { useLayoutEffect, useId, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useId, useState, type ReactNode } from 'react';
 import { ConnectorChips } from './ConnectorChips';
 import { ConnectorToggleList } from './ConnectorToggleList';
 import { useMcpCatalog } from './context';
-import { selectionBlocked, selectionProblem } from './selection-gate';
+import { OPEN_GATE, selectionGate, type SelectionGate } from './selection-gate';
 import type { McpSelection } from './port';
 import './mcp.css';
+
+/**
+ * A host's state for the picker's verdict: the gate, and a STABLE `onReady`
+ * that stores it. Stable because the picker reports from a layout effect keyed
+ * on `onReady`, so a fresh arrow per render would report, set state and render
+ * again forever.
+ */
+export function usePickerGate(): [SelectionGate, (ready: boolean, problem: string | null) => void] {
+  const [gate, setGate] = useState<SelectionGate>(OPEN_GATE);
+  const onReady = useCallback((ready: boolean, problem: string | null) => {
+    setGate(current => (current.blocked === !ready && current.problem === problem
+      ? current
+      : ready ? OPEN_GATE : { blocked: true, problem }));
+  }, []);
+  return [gate, onReady];
+}
 
 /**
  * Renders nothing unless there is a connector to choose or a problem to fix.
@@ -36,22 +56,24 @@ import './mcp.css';
  * sending it meant a connector connected between the page load and the launch
  * was silently left off.
  *
- * The gate is true before the catalog arrives for the same reason: an unedited
+ * The gate is open before the catalog arrives for the same reason: an unedited
  * picker resolves server-side, so no host waits on this read to launch, and an
  * edited one is checked as soon as its catalog is in.
  */
 export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, onCount, disabled = false, headless = false, retryClassName,
   layout = 'list', notice, resetLabel }: {
   targetId?: string; teamMemberId?: string; value: McpSelection[] | undefined;
-  onChange(value: McpSelection[] | undefined): void; onReady?(ready: boolean): void;
+  onChange(value: McpSelection[] | undefined): void;
+  /** `problem` is the gate's sentence when `ready` is false, null otherwise. */
+  onReady?(ready: boolean, problem: string | null): void;
   /**
    * How many connectors the picker offers: every one the viewer may attach
-   * here, which is what the full list draws. 0 before the catalog arrives,
-   * when it cannot be read, when the viewer may not attach here and when the
-   * Space has none — exactly when the picker draws nothing but, at most, its
-   * one loading or error line. A host hides its own chrome at 0 and KEEPS THIS
-   * NODE MOUNTED: the count is reported from here, so an unmounted picker can
-   * never announce the connectors that arrive later.
+   * here, which is what the full list draws — or 1 when it draws only a
+   * selection problem (an explicit pick whose connector is gone), which still
+   * needs the host's chrome. 0 exactly when the picker draws nothing but, at
+   * most, its one loading or error line. A host hides its own chrome at 0 and
+   * KEEPS THIS NODE MOUNTED: the count is reported from here, so an unmounted
+   * picker can never announce the connectors that arrive later.
    */
   onCount?(count: number): void;
   disabled?: boolean;
@@ -68,28 +90,29 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   notice?: ReactNode;
   resetLabel?: string;
 }) {
-  const compact = layout === 'compact';
-  const { phase, catalog, error, port, refresh } = useMcpCatalog(targetId, teamMemberId, { lastKnown: compact });
+  const { phase, catalog, error, port, refresh } = useMcpCatalog(targetId, teamMemberId, { lastKnown: layout === 'compact' });
   const id = useId();
-  const problem = catalog ? selectionProblem(catalog, value) : null;
-  const blocked = catalog ? selectionBlocked(catalog, value) : false;
+  const gate = catalog ? selectionGate(catalog, value) : OPEN_GATE;
   const attachable = catalog?.canAttach ? catalog.servers.filter(server => server.canAttach) : [];
-  const count = headless ? 0 : attachable.length;
-  useLayoutEffect(() => { onReady?.(!blocked); }, [blocked, onReady]);
+  // What is drawn decides the count, never the other way round.
+  const draws = !!port && !headless && !!catalog?.canAttach && (attachable.length > 0 || gate.problem !== null);
+  const count = draws ? Math.max(attachable.length, 1) : 0;
+  useLayoutEffect(() => { onReady?.(!gate.blocked, gate.problem); }, [gate.blocked, gate.problem, onReady]);
   useLayoutEffect(() => { onCount?.(count); }, [count, onCount]);
   if (!port || headless) return null;
-  const retry = <button type="button" className={retryClassName} onClick={refresh}>Retry connectors</button>;
-  if (compact) {
-    if (phase === 'loading') return <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-loading">Loading connectors…</p>;
-    if (phase === 'failed') return <p className="mcp-error mcp-compact__line" role="alert" data-testid="mcp-compact-error">{error} {retry}</p>;
-  }
-  if (!catalog) return error ? <p className="mcp-error" role="alert">{error} {retry}</p> : null;
-  if (!catalog.canAttach) return null;
-  if (attachable.length === 0 && !problem) return null;
+  const readError = error
+    ? <p className="mcp-error mcp-compact__line" role="alert" data-testid="mcp-picker-error">{error} <button type="button" className={retryClassName} onClick={refresh}>Retry connectors</button></p>
+    : null;
   if (layout === 'compact') {
-    return <ConnectorChips catalog={catalog} value={value} onChange={onChange} disabled={disabled} problem={problem}
-      {...(notice ? { notice } : {})} {...(resetLabel ? { resetLabel } : {})} />;
+    if (phase === 'loading') return <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-loading">Loading connectors…</p>;
+    if (!catalog) return readError;
+    if (!draws) return null;
+    // A failed RE-read keeps the chips it was showing, with one line saying so.
+    return <ConnectorChips catalog={catalog} value={value} onChange={onChange} disabled={disabled} problem={gate.problem}
+      readError={readError} {...(notice ? { notice } : {})} {...(resetLabel ? { resetLabel } : {})} />;
   }
+  if (!catalog) return readError;
+  if (!draws) return null;
   // §10.5: COLLAPSED BY DEFAULT to one summary line, which is also what keeps
   // the launch card's layout from being decided by how many connectors a Space
   // happens to hold. The summary names the connectors that are on and says
@@ -99,6 +122,7 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   const summary = `Connectors: ${names.length > 0 ? names.join(', ') : 'none'}${value === undefined ? ' (Space defaults)' : ''}`;
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
+    {readError}
     <details>
       <summary data-testid="mcp-picker-summary">{summary}</summary>
       <p id={`${id}-help`}>Choose the connectors and account for this session.</p>
@@ -111,7 +135,7 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
         testId="mcp-picker-toggles"
         {...(resetLabel ? { resetLabel } : {})}
         {...(notice ? { notice } : {})}
-        {...(problem ? { problem } : {})}
+        {...(gate.problem ? { problem: gate.problem } : {})}
       />
     </details>
   </fieldset>;

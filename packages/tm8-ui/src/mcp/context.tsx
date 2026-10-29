@@ -11,12 +11,14 @@
  *   revalidating  a catalog is shown — the previous revision's, or with
  *                 `lastKnown` the scope's previous read — while a read is in flight
  *   ready         the catalog is the latest read's answer
- *   failed        the latest read failed and there is nothing to show
+ *   failed        the latest read failed; whatever was shown STAYS shown,
+ *                 with the error beside it (a picker whose re-read fails does
+ *                 not collapse rows that were right a second ago)
  *
  * Invariants: a catalog is never shown under another scope's key; `failed`
- * carries no catalog (an unreadable scope does not keep drawing what it used
- * to be); `loading` in the result is exactly `loading` or `revalidating`, the
- * meaning every existing reader of it already relies on.
+ * keeps the catalog it was showing and has none only when nothing was shown;
+ * `loading` in the result is exactly `loading` or `revalidating`, the meaning
+ * every existing reader of it already relies on.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { McpCatalog, McpPort } from './port';
@@ -47,7 +49,9 @@ function step(current: CatalogSnapshot, event: CatalogEvent): CatalogSnapshot {
       return shown ? { phase: 'revalidating', catalog: shown } : { phase: 'loading' };
     }
     case 'answered': return { phase: 'ready', catalog: event.catalog };
-    case 'failed': return { phase: 'failed', error: event.error };
+    case 'failed': return current.catalog
+      ? { phase: 'failed', catalog: current.catalog, error: event.error }
+      : { phase: 'failed', error: event.error };
   }
 }
 
@@ -68,11 +72,10 @@ function step(current: CatalogSnapshot, event: CatalogEvent): CatalogSnapshot {
 const lastKnown = new WeakMap<McpPort, Map<string, McpCatalog>>();
 /** Scopes kept per port. A person opens a few tasks, not hundreds; the oldest goes first. */
 const LAST_KNOWN_SCOPES = 16;
-function remember(port: McpPort, scope: string, catalog: McpCatalog | undefined) {
+function remember(port: McpPort, scope: string, catalog: McpCatalog) {
   let scopes = lastKnown.get(port);
   if (!scopes) { scopes = new Map(); lastKnown.set(port, scopes); }
   scopes.delete(scope);
-  if (!catalog) return;
   scopes.set(scope, catalog);
   for (const oldest of scopes.keys()) { if (scopes.size <= LAST_KNOWN_SCOPES) break; scopes.delete(oldest); }
 }
@@ -92,13 +95,17 @@ export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?
       snapshot: step(previous.port === port && previous.scope === scope ? previous.snapshot : NOTHING, { type: 'read', seed: start }) }));
     void port.catalog(targetId, teamMemberId).then(
       catalog => {
-        if (!active) return;
+        // Remembered even when this mount is gone: a card closed before its
+        // first read landed is exactly the one whose next open needs the seed.
         if (keep) remember(port, scope, catalog);
+        if (!active) return;
         setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'answered', catalog }) }));
       },
+      // A failure forgets nothing. The scope's last-known copy is shown
+      // whenever it exists, so a failed read either keeps showing it (and
+      // says so) or had none to forget.
       () => {
         if (!active) return;
-        if (keep) remember(port, scope, undefined);
         setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'failed', error: 'Connectors could not be loaded. Try again.' }) }));
       },
     );

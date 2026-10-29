@@ -81,6 +81,8 @@ export interface ConnectorRow {
    * shared WITH the viewer, which the server never chooses by itself.
    */
   account: McpAccount | undefined;
+  /** The pick names an account that no longer opens (revoked, expired, removed). */
+  deadPin: boolean;
   action: ConnectorAction;
   /** The viewer can use or fix it themselves; false while it waits on an admin (`ADMINS_TO_FIX`). */
   actionable: boolean;
@@ -198,6 +200,11 @@ const ACTION: Record<ConnectorStatus, ConnectorAction> = {
   access_denied: 'none',
 };
 
+/** The remedy §10.0 offers for this connector's status: connect, reconnect, approve… */
+export function connectorAction(server: McpServer): ConnectorAction {
+  return ACTION[connectorStatus(server)];
+}
+
 /** The §10.0 status of one connector, for this viewer. */
 export function connectorStatus(server: McpServer): ConnectorStatus {
   if (!server.canAttach) return 'access_denied';
@@ -224,10 +231,10 @@ export function connectorStatus(server: McpServer): ConnectorStatus {
  */
 export function connectorAccess(server: McpServer, credentialId?: string): string {
   if (server.auth === 'none') return '—';
-  // The pin, else §3's own-then-shared choice. This used to fall back to the
-  // FIRST usable account, which is not the order the resolver takes: a member
-  // with their own connection and an older Space one was told "Shared".
-  const account = pickedAccount(server, credentialId) ?? resolvedAccount(server);
+  // The account the pick opens — the usable pin, else §3's own-then-shared
+  // choice — and NOTHING for a dead pin: the row must not say "Shared" for a
+  // pick the gate is holding because its account is gone.
+  const account = pickedAccount(server, credentialId);
   if (!account) return '—';
   return account.ownerId ? 'Just me' : 'Shared';
 }
@@ -265,6 +272,7 @@ export function connectorRows(
       credentialId: pick?.credentialId,
       accounts: usableAccounts(server),
       account: pickedAccount(server, pick?.credentialId),
+      deadPin: Boolean(pick?.credentialId) && !pickedAccount(server, pick?.credentialId),
       action: ACTION[status],
       actionable: !ADMINS_TO_FIX.has(status),
     };

@@ -45,6 +45,26 @@ describe('MCP real operation adapter', () => {
     release();
     expect((await reading).attachedServerIds).toEqual(['server']);
   });
+  it('reports the connector list’s refusal, whatever the parallel reads answered first', async () => {
+    const { seam } = harness();
+    const refuse = (status: number, message: string) => new Response(JSON.stringify({ error: { code: 'forbidden', message } }), { status, headers: { 'content-type': 'application/json' } });
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/resolve')) return refuse(403, 'defaults refused');
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return refuse(403, 'list refused');
+    });
+    await expect(createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space').catalog('task', 'teammate')).rejects.toThrow('list refused');
+  });
+  it('answers a viewer who may not attach with a catalog, not with the defaults read’s refusal', async () => {
+    const { seam } = harness();
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/resolve')) return new Response(JSON.stringify({ error: { code: 'forbidden', message: 'MCP defaults target is unavailable' } }), { status: 403, headers: { 'content-type': 'application/json' } });
+      const data = url.endsWith('/credentials') ? [] : { items: [server], nextCursor: null, allowed: { register: false, attach: false } };
+      return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const catalog = await createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space').catalog('task', 'teammate');
+    expect(catalog).toMatchObject({ canAttach: false, defaults: [] });
+  });
   it('writes equips edges in the correct direction and deletes only matching edges', async () => {
     const { port, seam } = harness(); await port.attach('task', 'server'); await port.detach('task', 'server');
     expect(seam.commands.createEdge).toHaveBeenCalledWith(expect.objectContaining({ srcId: 'task', dstId: 'server', type: 'equips', props: {} }));

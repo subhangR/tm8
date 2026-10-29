@@ -275,16 +275,29 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       // target's attachments are independent reads and go out together; only
       // the accounts wait, because they are asked per connector. Every launch
       // card opens on this read, so its depth is the card's.
-      const [items, resolved, attached] = await Promise.all([
+      //
+      // SETTLED, NOT RACED. The list is the authority on whether this viewer
+      // may read or attach here, so its refusal is the one reported, whatever
+      // landed first; and for a viewer the list says may NOT attach here, a
+      // refused defaults or attachments read is not an error — that viewer is
+      // shown no picker, so the target it refuses was never going to be used.
+      const [listed, resolving, attaching] = await Promise.allSettled([
         allServers(targetId, teamMemberId),
         http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } }),
         targetId ? attachments(targetId) : Promise.resolve([]),
       ]);
+      if (listed.status === 'rejected') throw listed.reason;
+      const items = listed.value;
+      const attach = items.allowed.attach;
+      if (attach && resolving.status === 'rejected') throw resolving.reason;
+      if (attach && attaching.status === 'rejected') throw attaching.reason;
+      const resolved = resolving.status === 'fulfilled' ? resolving.value.selections : [];
+      const attached = attaching.status === 'fulfilled' ? attaching.value : [];
       const servers = await Promise.all(items.map(async server => {
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
         return viewOf(server, accounts);
       }));
-      return { servers, attachedServerIds: attached.map(e => e.serverId), defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: items.allowed.register, canAttach: items.allowed.attach };
+      return { servers, attachedServerIds: attached.map(e => e.serverId), defaults: resolved.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: items.allowed.register, canAttach: attach };
     },
     async catalogEntries() {
       // Asked WITH the Space, so each entry carries `added` (B16) and Discover

@@ -32,6 +32,7 @@
  * there is nothing there to change — the launch already happened.
  */
 import { useId, useState, type ReactNode } from 'react';
+import { AccountSelect, wantsAccountChoice } from './AccountSelect';
 import { ConnectorsLink } from './ConnectorsLink';
 import { connectorRows, pinned, toggled, type ConnectorRow } from './row-model';
 import type { McpCatalog, McpSelection } from './port';
@@ -280,26 +281,15 @@ function Row({
         * and that is not enough: a connection only SHARED with the viewer is
         * opened by the server only when it is pinned (`resolvedAccount`), so a
         * row whose one account is a share would switch on and never send. It
-        * is drawn whenever there is an account to name, and left out when
-        * there is none (the row's action is [Connect] then, which is the real
-        * remedy). "Choose for me" sends no pin: the server's own-then-shared
-        * order picks, and `accountProblem` blocks it only when that order has
-        * nothing to pick.
+        * is drawn whenever there is an account to name OR a dead pin to
+        * replace (`wantsAccountChoice`), and left out otherwise (the row's
+        * action is [Connect] then, which is the real remedy). The control is
+        * `AccountSelect`, shared with the launch chips.
         */}
-      {!readOnly && row.on && row.server.auth !== 'none' && row.accounts.length > 0 ? (
+      {!readOnly && wantsAccountChoice(row) ? (
         <label className="mcp-toggles__account">
           <span>Account for {server.title}</span>
-          <select
-            value={row.credentialId ?? ''}
-            disabled={disabled}
-            data-testid={`${testId}-account-${server.id}`}
-            onChange={event => onPinAccount(event.target.value)}
-          >
-            <option value="">Choose for me</option>
-            {row.accounts.map(account => (
-              <option key={account.id} value={account.id}>{account.label}</option>
-            ))}
-          </select>
+          <AccountSelect row={row} disabled={disabled} testId={`${testId}-account-${server.id}`} onPin={onPinAccount} />
         </label>
       ) : null}
       {!readOnly && row.action !== 'none' ? <RowAction row={row} /> : null}

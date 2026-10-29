@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { accountProblem, selectionBlocked, selectionProblem } from './selection-gate';
-import { resolvedAccount } from './row-model';
+import { accountProblem, OPEN_GATE, selectionGate } from './selection-gate';
+import { connectorAccess, connectorRows, resolvedAccount } from './row-model';
 import type { McpAccount, McpCatalog, McpServer } from './port';
 
 const account = (over: Partial<McpAccount> & { id: string }): McpAccount => ({
@@ -11,6 +11,7 @@ const server = (over: Partial<McpServer> = {}): McpServer => ({
   auth: 'oauth', approved: true, enabled: true, canManage: false, canAttach: true, accounts: [], ...over,
 });
 const catalog = (...servers: McpServer[]): McpCatalog => ({ servers, defaults: [], canRegister: false, canAttach: true });
+const blocked = (problem: string) => ({ blocked: true, problem });
 
 /** The three kinds of connection §3 tells apart, as the adapter builds them. */
 const mine = account({ id: 'mine', ownerId: 'me', canManage: true, sharing: 'private' });
@@ -37,50 +38,64 @@ describe('resolvedAccount — §3 below the pin, as resolve_mcp_account orders i
   });
 });
 
+describe('the row for a dead pin', () => {
+  const revoked = { ...mine, status: 'revoked', canUse: false };
+  it('says no access rather than the shared account the pick will NOT open', () => {
+    expect(connectorAccess(server({ accounts: [revoked, spaceOwned] }), 'mine')).toBe('—');
+    expect(connectorAccess(server({ accounts: [revoked, spaceOwned] }))).toBe('Shared');
+  });
+  it('marks the pin dead and names no account', () => {
+    const [row] = connectorRows(catalog(server({ accounts: [revoked, spaceOwned] })), [{ serverId: 'notion', credentialId: 'mine' }], true);
+    expect(row).toMatchObject({ deadPin: true, account: undefined, credentialId: 'mine' });
+  });
+});
+
 describe('the launch gate', () => {
-  it('never blocks or complains about the Space defaults', () => {
+  it('never blocks the Space defaults, nor [] — that is a choice', () => {
     const data = catalog(server({ accounts: [] }));
     data.defaults = [{ serverId: 'notion' }];
-    expect(selectionBlocked(data, undefined)).toBe(false);
-    expect(selectionProblem(data, undefined)).toBeNull();
+    expect(selectionGate(data, undefined)).toEqual(OPEN_GATE);
+    expect(selectionGate(data, [])).toEqual(OPEN_GATE);
   });
-  it('lets [] through: no connectors is a choice', () => {
-    expect(selectionBlocked(catalog(server()), [])).toBe(false);
+  it('lets through an unpinned pick the server can open by itself', () => {
+    expect(selectionGate(catalog(server({ accounts: [mine] })), [{ serverId: 'notion' }])).toEqual(OPEN_GATE);
+    expect(selectionGate(catalog(server({ accounts: [spaceOwned] })), [{ serverId: 'notion' }])).toEqual(OPEN_GATE);
+    expect(selectionGate(catalog(server({ auth: 'none' })), [{ serverId: 'notion' }])).toEqual(OPEN_GATE);
   });
-  it('sends an unpinned pick the server can open by itself', () => {
-    expect(selectionBlocked(catalog(server({ accounts: [mine] })), [{ serverId: 'notion' }])).toBe(false);
-    expect(selectionBlocked(catalog(server({ accounts: [spaceOwned] })), [{ serverId: 'notion' }])).toBe(false);
+  it('blocks, by name, every explicit pick bind would refuse', () => {
+    expect(selectionGate(catalog(), [{ serverId: 'gone' }]))
+      .toEqual(blocked('A connector picked here no longer exists. Reset the connectors to drop it.'));
+    expect(selectionGate(catalog(server({ approved: false, accounts: [mine] })), [{ serverId: 'notion' }]))
+      .toEqual(blocked('Notion is awaiting approval and would be refused. Switch it off.'));
+    expect(selectionGate(catalog(server({ enabled: false, accounts: [mine] })), [{ serverId: 'notion' }]))
+      .toEqual(blocked('Notion is disabled by an admin and would be refused. Switch it off.'));
+    expect(selectionGate(catalog(server({ transport: 'stdio', auth: 'none', source: { stdioTrusted: false } as McpServer['source'] })), [{ serverId: 'notion' }]))
+      .toEqual(blocked('Notion runs a local command this node does not trust and would be refused. Switch it off.'));
   });
-  it('blocks an unpinned pick whose only account needs a pin, and passes once it is pinned', () => {
+  it('does not block for the target’s attach permission alone — bind never refuses a pick for it', () => {
+    expect(selectionGate(catalog(server({ canAttach: false, accounts: [mine] })), [{ serverId: 'notion' }])).toEqual(OPEN_GATE);
+  });
+  it('blocks an unpinned pick whose only account needs a pin, and opens once it is pinned', () => {
     const data = catalog(server({ accounts: [sharedWithMe] }));
-    expect(selectionBlocked(data, [{ serverId: 'notion' }])).toBe(true);
-    expect(selectionProblem(data, [{ serverId: 'notion' }])).toBe('Choose an account for Notion: a connection shared with you is used only when you pick it.');
-    expect(selectionBlocked(data, [{ serverId: 'notion', credentialId: 'shared' }])).toBe(false);
+    expect(selectionGate(data, [{ serverId: 'notion' }]))
+      .toEqual(blocked('Choose an account for Notion: a connection shared with you is used only when you pick it.'));
+    expect(selectionGate(data, [{ serverId: 'notion', credentialId: 'shared' }])).toEqual(OPEN_GATE);
   });
-  it('blocks a pin to an account that stopped working', () => {
-    const data = catalog(server({ accounts: [{ ...mine, status: 'credential_revoked', canUse: false }, spaceOwned] }));
-    expect(selectionBlocked(data, [{ serverId: 'notion', credentialId: 'mine' }])).toBe(true);
-    expect(accountProblem(data.servers[0]!, { serverId: 'notion', credentialId: 'mine' })).toBe('Choose a connected account for Notion.');
+  it('words a dead pin by its remedy: another account, or a reconnect', () => {
+    const revoked = { ...mine, status: 'credential_revoked', canUse: false };
+    expect(accountProblem(server({ accounts: [revoked, spaceOwned] }), { serverId: 'notion', credentialId: 'mine' }))
+      .toBe('Choose a connected account for Notion.');
+    expect(accountProblem(server({ accounts: [revoked] }), { serverId: 'notion', credentialId: 'mine' }))
+      .toBe('The account picked for Notion needs reconnecting. Reconnect it, or switch Notion off.');
   });
-  it('blocks a pick with no connected account at all', () => {
-    expect(selectionProblem(catalog(server()), [{ serverId: 'notion' }])).toBe('Connect an account for Notion, or switch it off.');
+  it('words a pick with no account by its remedy: reconnect the broken one, or connect one', () => {
+    expect(accountProblem(server({ accounts: [{ ...mine, status: 'needs_reconnect', canUse: false }] }), { serverId: 'notion' }))
+      .toBe('Reconnect Notion, or switch it off.');
+    expect(accountProblem(server(), { serverId: 'notion' })).toBe('Connect an account for Notion, or switch it off.');
   });
-  it('never blocks on a connector that needs no account', () => {
-    expect(selectionBlocked(catalog(server({ auth: 'none' })), [{ serverId: 'notion' }])).toBe(false);
-  });
-  it('reports, without blocking, what only an admin can fix', () => {
-    const disabled = catalog(server({ enabled: false, accounts: [mine] }));
-    expect(selectionBlocked(disabled, [{ serverId: 'notion' }])).toBe(false);
-    expect(selectionProblem(disabled, [{ serverId: 'notion' }])).toBe('Notion is awaiting approval or disabled, so the launch will refuse it. Switch it off.');
-    const untrusted = catalog(server({ transport: 'stdio', auth: 'none', source: { stdioTrusted: false } as McpServer['source'] }));
-    expect(selectionBlocked(untrusted, [{ serverId: 'notion' }])).toBe(false);
-    expect(selectionProblem(untrusted, [{ serverId: 'notion' }])).toContain('does not trust');
-    expect(selectionBlocked(catalog(), [{ serverId: 'gone' }])).toBe(false);
-    expect(selectionProblem(catalog(), [{ serverId: 'gone' }])).toBe('A connector picked here is no longer available. Reset the connectors to drop it.');
-  });
-  it('explains the held button first when a pick blocks and another only warns', () => {
+  it('names the FIRST pick that would be refused', () => {
     const data = catalog(server({ id: 'off', title: 'Off', enabled: false }), server({ accounts: [sharedWithMe] }));
-    expect(selectionBlocked(data, [{ serverId: 'off' }, { serverId: 'notion' }])).toBe(true);
-    expect(selectionProblem(data, [{ serverId: 'off' }, { serverId: 'notion' }])).toMatch(/^Choose an account for Notion/);
+    expect(selectionGate(data, [{ serverId: 'notion' }, { serverId: 'off' }]).problem).toMatch(/^Choose an account for Notion/);
+    expect(selectionGate(data, [{ serverId: 'off' }, { serverId: 'notion' }]).problem).toMatch(/^Off is disabled/);
   });
 });

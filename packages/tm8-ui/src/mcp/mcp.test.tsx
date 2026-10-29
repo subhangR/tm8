@@ -37,9 +37,9 @@ describe('native MCP picker', () => {
   it('sends an unpinned pick the viewer has an account for, pins one on request, and distinguishes defaults from none', async () => {
     const onReady = vi.fn(), onChange = vi.fn(); render(<Picker port={fixture()} onReady={onReady} onChange={onChange} />);
     fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
-    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server' }]); expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server' }]); expect(onReady).toHaveBeenLastCalledWith(true, null);
     fireEvent.change(screen.getByRole('combobox', { name: 'Account for Calendar' }), { target: { value: 'account' } });
-    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server', credentialId: 'account' }]); expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server', credentialId: 'account' }]); expect(onReady).toHaveBeenLastCalledWith(true, null);
     fireEvent.click(screen.getByRole('button', { name: 'Turn all off' })); expect(onChange).toHaveBeenLastCalledWith([]);
     fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' })); expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
@@ -73,7 +73,7 @@ describe('native MCP picker', () => {
     const data = catalog(); data.defaults = [{ serverId: 'server' }]; const onReady = vi.fn(), onChange = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
     await screen.findByRole('switch', { name: /Calendar/ });
-    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true, null));
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByTestId('mcp-picker-toggles-using').textContent).toBe('Using: Space defaults');
     expect(screen.queryByRole('alert')).toBeNull();
@@ -86,14 +86,14 @@ describe('native MCP picker', () => {
     data.defaults = [{ serverId: 'server' }, { serverId: 'open' }]; const onChange = vi.fn(), onReady = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
     await screen.findByRole('switch', { name: /Docs/ });
-    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true, null));
     // The old behaviour sent `[{serverId:'open'}]` — a list the user never
     // chose, which would ALSO have pinned the thread or session to it.
     expect(onChange).not.toHaveBeenCalled();
   });
   it('renders nothing and stays ready when no connectors are registered', async () => {
     const data = catalog(); data.servers = []; const port = fixture(data), onReady = vi.fn(); render(<Picker port={port} onReady={onReady} />);
-    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true, null));
     expect(document.body.textContent).toBe(''); expect(screen.queryByRole('group')).toBeNull();
   });
   it('does not show a loading placeholder', async () => {
@@ -102,7 +102,7 @@ describe('native MCP picker', () => {
   });
   it('does not expose an upstream secret-bearing error or block the launch on it', async () => {
     const port = fixture(); port.catalog = vi.fn().mockRejectedValue(new Error('token=secret-value')); const onReady = vi.fn(); render(<Picker port={port} onReady={onReady} />);
-    await screen.findByRole('alert'); expect(document.body.textContent).not.toContain('secret-value'); expect(onReady).toHaveBeenLastCalledWith(true);
+    await screen.findByRole('alert'); expect(document.body.textContent).not.toContain('secret-value'); expect(onReady).toHaveBeenLastCalledWith(true, null);
   });
 });
 describe('native MCP management', () => {
@@ -172,7 +172,7 @@ describe('MCP readiness and recovery', () => {
     const onReady=vi.fn(), onChange=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange}/>);
     // §10.0: a revoked connection reads [Reconnect].
     await screen.findByRole('link',{name:'Reconnect Calendar'});
-    await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+    await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true, null));
     // S22: the revoked default is dropped by the SERVER's resolution, not by
     // the browser sending a shorter list.
     expect(onChange).not.toHaveBeenCalled();
@@ -184,10 +184,10 @@ describe('MCP readiness and recovery', () => {
     const data = catalog(); data.servers[0]!.accounts[0] = { ...data.servers[0]!.accounts[0]!, ownerId: 'someone', canManage: false, sharing: 'members' };
     const onReady = vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} />);
     fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
-    expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(onReady).toHaveBeenLastCalledWith(false, 'Choose an account for Calendar: a connection shared with you is used only when you pick it.');
     expect(screen.getByRole('alert').textContent).toBe('Choose an account for Calendar: a connection shared with you is used only when you pick it.');
     fireEvent.change(screen.getByRole('combobox', { name: 'Account for Calendar' }), { target: { value: 'account' } });
-    expect(onReady).toHaveBeenLastCalledWith(true); expect(screen.queryByRole('alert')).toBeNull();
+    expect(onReady).toHaveBeenLastCalledWith(true, null); expect(screen.queryByRole('alert')).toBeNull();
   });
   it('preserves sharing selection and offers the named member after loading', async () => {
     const port=fixture(); render(<McpProvider port={port}><McpSettings/></McpProvider>);
@@ -213,7 +213,7 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   const onReady=vi.fn();
   render(<McpProvider port={port}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
   fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
-  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true, null));
   fireEvent.click(screen.getByRole('button',{name:'Disconnect'}));
   fireEvent.click(screen.getByRole('button',{name:'Confirm disconnect'}));
   // S22: a DEFAULT losing its account does not block the launch — the server
@@ -221,7 +221,7 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   // the picker reflecting the revocation, which is the reconnect link below
   // (§10.0: a revoked connection reads Reconnect, not Connect).
   await screen.findByRole('link',{name:'Reconnect Calendar'});
-  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true, null));
   expect(screen.queryByRole('button',{name:'Confirm disconnect'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
   expect(screen.getByText(/You haven.t connected an account here/)).toBeTruthy();
@@ -266,6 +266,6 @@ it('blocks a changed connector account and offers reconnect without key rotation
   expect(drawer().getByRole('button',{name:'Reconnect'}).hasAttribute('disabled')).toBe(false);
   // S22, as above: a default whose account changed under it is the server's to
   // skip, so the launch stays ready and the UI offers the reconnect.
-  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true, null));
   expect(screen.getByRole('link',{name:'Reconnect Calendar'})).toBeTruthy();
 });

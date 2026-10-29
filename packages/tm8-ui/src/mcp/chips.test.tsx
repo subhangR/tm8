@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { McpProvider } from './context';
-import { McpPicker } from './McpPicker';
+import { McpPicker, usePickerGate } from './McpPicker';
 import type { McpAccount, McpCatalog, McpPort, McpSelection, McpServer } from './port';
 afterEach(cleanup);
 
@@ -38,22 +38,22 @@ describe('the compact launch row', () => {
     render(<Launch port={port} onCount={onCount} onReady={onReady} />);
     await waitFor(() => expect(screen.queryByTestId('mcp-compact-loading')).toBeNull());
     expect(document.body.textContent).toBe('');
-    expect(onCount).toHaveBeenLastCalledWith(0); expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onCount).toHaveBeenLastCalledWith(0); expect(onReady).toHaveBeenLastCalledWith(true, null);
   });
 
   it('is one quiet line while the first read is in flight, and never holds the launch', () => {
     const onCount = vi.fn(), onReady = vi.fn();
     render(<Launch port={portFor(() => new Promise<McpCatalog>(() => {}))} onCount={onCount} onReady={onReady} />);
     expect(screen.getByTestId('mcp-compact-loading').textContent).toBe('Loading connectors…');
-    expect(onReady).toHaveBeenLastCalledWith(true); expect(onCount).toHaveBeenLastCalledWith(0);
+    expect(onReady).toHaveBeenLastCalledWith(true, null); expect(onCount).toHaveBeenLastCalledWith(0);
   });
 
   it('is one error line with a retry, and never holds the launch', async () => {
     const onReady = vi.fn(); const port = portFor(() => Promise.reject(new Error('token=secret-value')));
     render(<Launch port={port} onReady={onReady} />);
-    const line = await screen.findByTestId('mcp-compact-error');
+    const line = await screen.findByTestId('mcp-picker-error');
     expect(line.textContent).not.toContain('secret-value');
-    expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
     fireEvent.click(within(line).getByRole('button', { name: 'Retry connectors' }));
     await waitFor(() => expect(port.catalog).toHaveBeenCalledTimes(2));
   });
@@ -116,11 +116,11 @@ describe('the compact launch row', () => {
     data.servers[2]!.accounts = [{ id: 'shared', label: 'Team Figma', ownerId: 'them', canUse: true, canManage: false, status: 'connected', sharing: 'members' }];
     const onReady = vi.fn(); render(<Launch port={portFor(async () => data)} onReady={onReady} />);
     fireEvent.click(await screen.findByTestId('mcp-chip-toggle-figma'));
-    expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(onReady).toHaveBeenLastCalledWith(false, 'Choose an account for Figma: a connection shared with you is used only when you pick it.');
     expect(screen.getByRole('alert').textContent).toBe('Choose an account for Figma: a connection shared with you is used only when you pick it.');
     expect(screen.getByTestId('mcp-chip-toggle-figma').textContent).toContain('Choose account');
     fireEvent.change(screen.getByTestId('mcp-chip-account-figma'), { target: { value: 'shared' } });
-    expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
     expect(screen.getByTestId('mcp-chip-toggle-figma').textContent).toContain('Team Figma');
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -132,7 +132,7 @@ describe('the compact launch row', () => {
     expect(notion.textContent).toContain('Reconnect');
     expect(notion.getAttribute('title')).toBe('Needs reconnect. On, but it will not reach this session until this is fixed.');
     // A default is the server's to skip (§7.3): the launch is not held.
-    expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
   });
 
   it('draws a reopened card from the scope’s last-known catalog on the first frame, then revalidates', async () => {
@@ -160,5 +160,86 @@ describe('the compact launch row', () => {
     // Another task is another scope: its defaults are not this one's.
     render(<Launch port={port} targetId="other-task" />);
     expect(screen.getByTestId('mcp-compact-loading')).toBeTruthy();
+  });
+
+  it('keeps its chips when a RE-read fails, with one error line, and keeps counting them', async () => {
+    let fail = false;
+    const port = portFor(async () => { if (fail) throw new Error('down'); return catalog(); });
+    const onCount = vi.fn();
+    render(<McpProvider port={port}><McpPicker layout="compact" targetId="task" value={undefined} onChange={() => {}} onCount={onCount} /></McpProvider>);
+    await screen.findByTestId('mcp-chip-toggle-notion');
+    fail = true;
+    // Window focus is the provider's refresh: the catalog is read again, and fails.
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await screen.findByTestId('mcp-picker-error');
+    expect(screen.getByTestId('mcp-chip-toggle-notion')).toBeTruthy();
+    expect(onCount).toHaveBeenLastCalledWith(3);
+    expect(port.catalog).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the host the gate’s own sentence for every pick bind would refuse', async () => {
+    const data = catalog(); data.servers[1] = { ...data.servers[1]!, approved: false };
+    const port = portFor(async () => data);
+    function Host() {
+      const [value, setValue] = useState<McpSelection[] | undefined>([{ serverId: 'docs' }]);
+      const [gate, onReady] = usePickerGate();
+      return <McpProvider port={port}>
+        <McpPicker layout="compact" targetId="task" value={value} onChange={setValue} onReady={onReady} />
+        <p data-testid="host-refusal">{gate.problem ?? 'ready'}</p>
+      </McpProvider>;
+    }
+    render(<Host />);
+    await waitFor(() => expect(screen.getByTestId('host-refusal').textContent).toBe('Docs is awaiting approval and would be refused. Switch it off.'));
+    // The chip is ON, so it stays on the row to be switched off — and then the host is ready.
+    fireEvent.click(screen.getByTestId('mcp-chip-toggle-docs'));
+    expect(screen.getByTestId('host-refusal').textContent).toBe('ready');
+  });
+
+  it('offers the account control for a dead pin, and Choose for me unpins it', async () => {
+    const data = catalog();
+    data.servers[0]!.accounts = [{ ...mine, status: 'revoked', canUse: false }, { id: 'team', label: 'Team', canUse: true, canManage: false, status: 'connected', sharing: 'space' }];
+    const onChange = vi.fn(), onReady = vi.fn();
+    render(<Launch port={portFor(async () => data)} initial={[{ serverId: 'notion', credentialId: 'work' }]} onChange={onChange} onReady={onReady} />);
+    const select = await screen.findByTestId('mcp-chip-account-notion') as HTMLSelectElement;
+    // The value names an option that exists: the dead account, drawn as such.
+    expect(select.value).toBe('work');
+    expect(within(select).getByRole('option', { name: 'Work (needs reconnect)' })).toBeTruthy();
+    expect(onReady).toHaveBeenLastCalledWith(false, 'Choose a connected account for Notion.');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'notion' }]);
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
+  });
+
+  it('counts what it draws: a problem with no connectors still needs the host’s chrome', async () => {
+    const data = catalog(); data.servers = []; data.defaults = [];
+    const onCount = vi.fn(), onChange = vi.fn();
+    render(<Launch port={portFor(async () => data)} initial={[{ serverId: 'gone' }]} onCount={onCount} onChange={onChange} />);
+    expect((await screen.findByRole('alert')).textContent).toBe('A connector picked here no longer exists. Reset the connectors to drop it.');
+    expect(onCount).toHaveBeenLastCalledWith(1);
+    // Nothing behind ⋯ to open, so no ⋯; the remedy is Reset.
+    expect(screen.queryByTestId('mcp-picker-summary')).toBeNull();
+    fireEvent.click(screen.getByTestId('mcp-compact-reset'));
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+    await waitFor(() => expect(onCount).toHaveBeenLastCalledWith(0));
+  });
+
+  it('seeds the next open even when the card closed before its first read landed', async () => {
+    let release: (value: McpCatalog) => void = () => {};
+    const port = portFor(() => new Promise<McpCatalog>(resolve => { release = resolve; }));
+    const first = render(<Launch port={port} />);
+    first.unmount();
+    await act(async () => { release(catalog()); });
+    render(<Launch port={port} />);
+    expect(screen.getByTestId('mcp-chip-toggle-notion')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-compact-loading')).toBeNull();
+  });
+
+  it('draws one Reset: the chips’ own goes while the full list, which has its own, is open', async () => {
+    render(<Launch port={portFor(async () => catalog())} initial={[{ serverId: 'docs' }]} />);
+    await screen.findByTestId('mcp-chip-toggle-docs');
+    expect(screen.getByTestId('mcp-compact-reset')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('mcp-picker-summary'));
+    expect(screen.queryByTestId('mcp-compact-reset')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /Reset/ })).toHaveLength(1);
   });
 });

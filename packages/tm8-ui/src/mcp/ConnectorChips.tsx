@@ -19,10 +19,11 @@
  * demotes an option; it never removes one.
  */
 import { useId, useState, type ReactNode } from 'react';
+import { AccountSelect, wantsAccountChoice } from './AccountSelect';
 import { ConnectorLogo, serverLogo } from './connector-logos';
 import { ConnectorsLink } from './ConnectorsLink';
 import { ConnectorToggleList } from './ConnectorToggleList';
-import { connectorRows, pinned, resolvedAccount, toggled, type ConnectorRow } from './row-model';
+import { connectorRows, pinned, toggled, type ConnectorRow } from './row-model';
 import type { McpCatalog, McpSelection } from './port';
 import './mcp.css';
 
@@ -33,14 +34,16 @@ export interface ConnectorChipsProps {
   onChange(next: McpSelection[] | undefined): void;
   /** Keep the chips, refuse the change (a launch in flight). */
   disabled?: boolean;
-  /** The selection's problem (`selectionProblem`), drawn under the row. */
+  /** The selection gate's sentence (`selectionGate`), drawn under the row. */
   problem?: string | null;
+  /** The catalog's last read failed while these chips are still shown: one line, with its retry. */
+  readError?: ReactNode;
   /** §10.5's harness note, drawn in the full list. */
   notice?: ReactNode;
   resetLabel?: string;
 }
 
-export function ConnectorChips({ catalog, value, onChange, disabled = false, problem, notice, resetLabel }: ConnectorChipsProps) {
+export function ConnectorChips({ catalog, value, onChange, disabled = false, problem, readError, notice, resetLabel }: ConnectorChipsProps) {
   // The full list's one state: shut (the row alone) or open (the list on its own line under it).
   const [full, setFull] = useState(false);
   const listId = useId();
@@ -58,16 +61,20 @@ export function ConnectorChips({ catalog, value, onChange, disabled = false, pro
         onPin={credentialId => onChange(pinned(selected, row.server.id, credentialId))} />)}
     </ul>
     {/* Back to undefined — "the Space decides" — which is a different value
-        from today's defaults written out as a list (S23). */}
-    {value !== undefined ? <button type="button" className="mcp-compact__reset" data-testid="mcp-compact-reset" disabled={disabled}
+        from today's defaults written out as a list (S23). Not while the full
+        list is open: it carries its own Reset, and one action gets one button. */}
+    {value !== undefined && !full ? <button type="button" className="mcp-compact__reset" data-testid="mcp-compact-reset" disabled={disabled}
       title="Back to the Space’s default connectors" onClick={() => onChange(undefined)}>{resetLabel ?? 'Reset'}</button> : null}
-    <button type="button" className="mcp-compact__more" data-testid="mcp-picker-summary" aria-expanded={full}
-      aria-controls={listId} aria-label="All connectors and options"
-      title={hidden > 0 ? `${hidden} more waiting on an admin, and every option` : 'Every connector option'}
-      onClick={() => setFull(open => !open)}>
-      {hidden > 0 ? `+${hidden} more` : '⋯'}
-    </button>
+    {rows.length > 0 ? (
+      <button type="button" className="mcp-compact__more" data-testid="mcp-picker-summary" aria-expanded={full}
+        aria-controls={listId} aria-label="All connectors and options"
+        title={hidden > 0 ? `${hidden} more waiting on an admin, and every option` : 'Every connector option'}
+        onClick={() => setFull(open => !open)}>
+        {hidden > 0 ? `+${hidden} more` : '⋯'}
+      </button>
+    ) : null}
     {problem ? <p className="mcp-error mcp-compact__line" role="alert">{problem}</p> : null}
+    {readError}
     {full ? (
       <div id={listId} className="mcp-compact__full">
         <ConnectorToggleList
@@ -105,19 +112,16 @@ function Chip({ row, disabled, onToggle, onPin }: {
   const title = row.on && row.status !== 'ready' && row.status !== 'server_unavailable'
     ? `${row.text}. On, but it will not reach this session until this is fixed.`
     : row.text;
-  // An account to choose in place: several to pick from, or one only a pin opens.
-  const choose = row.on && server.auth !== 'none' && (row.accounts.length > 1 || (row.accounts.length > 0 && !row.account));
+  // The chip draws the account control only when there is a CHOICE to make —
+  // several accounts, one only a pin opens, or a dead pin to replace. One own
+  // or shared account is named on the chip instead; the full list still
+  // offers the control for it.
+  const choose = wantsAccountChoice(row) && (row.deadPin || row.accounts.length > 1 || !row.account);
   return <li className="mcp-chip" data-status={row.status} data-on={row.on || undefined} data-testid={`mcp-chip-${server.id}`}>
     {row.toggle
       ? <button type="button" className="mcp-chip__toggle" aria-pressed={row.on} disabled={disabled} title={title}
           data-testid={`mcp-chip-toggle-${server.id}`} onClick={() => onToggle(!row.on)}>{body}</button>
       : <ConnectorsLink label={`${row.action === 'reconnect' ? 'Reconnect' : 'Connect'} ${server.title}`} title={row.text}>{body}</ConnectorsLink>}
-    {choose ? (
-      <select className="mcp-chip__account" aria-label={`Account for ${server.title}`} value={row.credentialId ?? ''}
-        disabled={disabled} data-testid={`mcp-chip-account-${server.id}`} onChange={event => onPin(event.target.value)}>
-        <option value="">{resolvedAccount(server) ? 'Choose for me' : 'Choose an account'}</option>
-        {row.accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}
-      </select>
-    ) : null}
+    {choose ? <AccountSelect row={row} disabled={disabled} testId={`mcp-chip-account-${server.id}`} className="mcp-chip__account" onPin={onPin} /> : null}
   </li>;
 }
