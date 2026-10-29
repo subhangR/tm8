@@ -2,7 +2,7 @@ import { createMcpPort } from '../../mcp/adapter';
 import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
 import { createToolPort } from '../../tools/adapter';
 import { createLoopsClient } from '../../loops/api';
-import { loopFormSourcesOf } from '../../loops/LoopForm';
+import { loopFormSourcesOf } from '../../loops/sources';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
  * (LLD §5–§6, §9). Drop-in interchangeable with `createFixtureSeam()`: both are

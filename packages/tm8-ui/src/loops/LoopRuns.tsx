@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pill } from '../kit/Pill';
 import { absTime, elapsed, relTime, useNow } from '../kit/time';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
@@ -16,6 +16,8 @@ import { RUN_STATUS, durationLabel, errorText, isNotImplemented, runNote } from 
  */
 
 const PAGE = 20;
+/** While a row is running, page one is re-read this often (visible tab only), so it settles on screen. */
+export const RUNNING_POLL_MS = 15_000;
 
 type Load =
   | { phase: 'loading' }
@@ -33,8 +35,12 @@ export function LoopRuns({
   loopId: string;
   port: LoopPagePort;
   canControl: boolean;
-  /** Bumped by the header after Run now: re-read page one. */
-  epoch: number;
+  /**
+   * Re-read page one when this changes: the header's Run now bumps it, and the
+   * loop's own firing facts (last run, run count) are part of it, so a
+   * scheduled firing shows up without a remount.
+   */
+  epoch: number | string;
   onOpenEntity?: (id: string) => void;
   /** A run was stopped: the header re-reads the loop. */
   onChanged?: () => void;
@@ -47,12 +53,23 @@ export function LoopRuns({
   const [stopping, setStopping] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ runId: string; text: string } | null>(null);
 
+  // Only the latest read may write: a slow answer for an earlier read (or another loop) is dropped.
+  const seq = useRef(0);
+
+  // Another loop starts empty, so its table never shows the previous loop's runs.
+  useEffect(() => {
+    setRuns([]); setCursor(null); setLoad({ phase: 'loading' }); setRowError(null);
+  }, [loopId]);
+
   const first = useCallback(async () => {
+    const mine = ++seq.current;
     setLoad({ phase: 'loading' });
     try {
       const page = await port.runsList(loopId, { limit: PAGE });
+      if (mine !== seq.current) return;
       setRuns(page.items); setCursor(page.nextCursor); setLoad({ phase: 'ready' });
     } catch (failure) {
+      if (mine !== seq.current) return;
       setLoad({
         phase: 'error',
         unsupported: isNotImplemented(failure),
@@ -65,11 +82,22 @@ export function LoopRuns({
 
   useEffect(() => { void first(); }, [first, epoch]);
 
+  // A running row settles on screen: page one is re-read while one is live and the tab is visible.
+  const live = runs.some((run) => run.status === 'running');
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') void first(); }, RUNNING_POLL_MS);
+    return () => clearInterval(timer);
+  }, [live, first]);
+
   const next = async () => {
     if (!cursor || more) return;
+    // A page-one read started meanwhile owns the list; this older page must not land on it.
+    const mine = seq.current;
     setMore(true);
     try {
       const page = await port.runsList(loopId, { limit: PAGE, cursor });
+      if (mine !== seq.current) return;
       setRuns((prev) => [...prev, ...page.items.filter((r) => !prev.some((p) => p.id === r.id))]);
       setCursor(page.nextCursor);
     } catch (failure) {

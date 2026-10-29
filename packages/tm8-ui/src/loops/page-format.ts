@@ -1,6 +1,7 @@
 import { isCollabError } from '@tm8/contract';
 import type { PillTone } from '../kit/Pill';
 import { parseInstant, zonedTime } from '../kit/time';
+import { formatDuration } from '../transcript/session-stats';
 import type { LoopRun, LoopRunSkipReason, LoopRunStatus, LoopView } from './page-port';
 
 /*
@@ -12,23 +13,19 @@ import type { LoopRun, LoopRunSkipReason, LoopRunStatus, LoopView } from './page
 
 /**
  * An instant in the LOOP's zone ('Thu 29 Oct 09:00 UTC'), through the app's
- * one formatter. An unknown zone falls back to UTC rather than blanking.
+ * one formatter, which draws a zone it cannot read in UTC, labelled.
  */
 export function zonedInstant(value: string | null | undefined, timeZone: string): string {
-  return zonedTime(value, timeZone) || zonedTime(value, 'UTC');
+  return zonedTime(value, timeZone);
 }
 
-/** '45s' · '3m 12s' · '1h 4m' — null in, em dash out (unknown is not zero). */
+/** '45s' · '3m 12s' · '1h 4m' (the session stats' formatter) — null in, em dash out (unknown is not zero). */
 export function durationLabel(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return formatDuration(ms);
 }
 
+/** A run status's words and kit `Pill` tone — one table for the page and the list. */
 export const RUN_STATUS: Record<LoopRunStatus, { label: string; tone: PillTone }> = {
   running: { label: 'Running', tone: 'run' },
   completed: { label: 'Completed', tone: 'info' },

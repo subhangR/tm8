@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
+import type { FileUploadTask } from '../files/upload';
+import type { TriggerOption } from '../rich-input';
 import type { LoopsClient, LoopView } from './api';
-import { LoopFormDialog, type LoopFormSources } from './LoopForm';
+import { LoopForm } from './LoopForm';
+import type { LoopFormSources } from './sources';
 
 /** What `useEntityEdit` hands the edit dialog for a loop. */
 export interface LoopEditor {
@@ -15,9 +18,17 @@ export interface LoopEditor {
 /**
  * The panel's Edit verb for a loop: read the loop through `loops.get` (the
  * form needs the whole definition and the version it guards), then open the
- * same form the create flow uses, prefilled.
+ * same form the create flow uses, prefilled. The form owns Escape once it is
+ * open (it refuses it mid-save); until then this dialog does.
  */
-export function LoopEditDialog({ editor, onClose }: { editor: LoopEditor; onClose(): void }) {
+export function LoopEditDialog({ editor, onClose, skillOptions, attach, onAttached }: {
+  editor: LoopEditor;
+  onClose(): void;
+  /** The instructions field's `/` skills and uploader, as the generic edit dialog's prose fields get them. */
+  skillOptions?: readonly TriggerOption[];
+  attach?: (file: File) => FileUploadTask;
+  onAttached?: () => void;
+}) {
   const [state, setState] = useState<{ phase: 'loading' } | { phase: 'ready'; view: LoopView } | { phase: 'error'; message: string }>({ phase: 'loading' });
   const { client, loopId } = editor;
   useEffect(() => {
@@ -28,6 +39,18 @@ export function LoopEditDialog({ editor, onClose }: { editor: LoopEditor; onClos
     );
     return () => { live = false; };
   }, [client, loopId]);
+
+  const reading = state.phase !== 'ready';
+  useEffect(() => {
+    if (!reading) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [reading, onClose]);
 
   if (state.phase !== 'ready') {
     return (
@@ -43,7 +66,7 @@ export function LoopEditDialog({ editor, onClose }: { editor: LoopEditor; onClos
     );
   }
   return (
-    <LoopFormDialog
+    <LoopForm
       mode="edit"
       spaceId={editor.spaceId}
       client={client}
@@ -51,6 +74,9 @@ export function LoopEditDialog({ editor, onClose }: { editor: LoopEditor; onClos
       view={state.view}
       onClose={onClose}
       onSaved={view => { editor.onSaved(view); onClose(); }}
+      {...(skillOptions ? { skillOptions } : {})}
+      {...(attach ? { attach } : {})}
+      {...(onAttached ? { onAttached } : {})}
     />
   );
 }

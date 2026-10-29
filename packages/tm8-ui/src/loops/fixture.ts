@@ -1,4 +1,4 @@
-import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
+import type { ActorSummary, EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import { CollabError } from '@tm8/contract';
 import type { LoopDefinition, LoopDefinitionPatch, LoopRun, LoopSchedulePreview, LoopsClient, LoopView } from './api';
 
@@ -35,6 +35,33 @@ export function fixtureLoopView(id: EntityId, spaceId: SpaceId, definition: Loop
   };
 }
 
+/**
+ * The view of a fixture loop ENTITY, so the fixture seam's loops client
+ * answers for the same loops its entity list shows. Only what the summary
+ * carries is filled; the rest is the server's defaults.
+ */
+export function fixtureLoopViewOf(row: EntitySummary): LoopView | null {
+  const state = row.state;
+  if (state.kind !== 'loop') return null;
+  return fixtureLoopView(row.id, row.spaceId, {
+    title: row.title, schedule: state.schedule, timezone: state.timezone, action: state.action,
+    teamMemberId: state.teamMemberId, toolId: state.toolId, subjectId: state.subjectId,
+  }, {
+    state: {
+      ...fixtureLoopView(row.id, row.spaceId).state,
+      enabled: state.enabled, pausedUntil: state.pausedUntil, nextRunAt: state.nextRunAt,
+      lastRunAt: state.lastRunAt, lastError: state.lastError,
+    },
+  });
+}
+
+/** Every word of `words`, case-insensitively, in the title — the server's `loops.list` filter, closely enough for a fixture. */
+function titleMatches(title: string, words: string | undefined): boolean {
+  const needles = (words ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = title.toLowerCase();
+  return needles.every(needle => hay.includes(needle));
+}
+
 export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsClient & { readonly loops: Map<string, LoopView> } {
   const loops = new Map(seed.map(loop => [loop.id, loop]));
   const runs = new Map<string, LoopRun>();
@@ -68,12 +95,16 @@ export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsC
       return { ...loop, definition: merged, schedule: preview(merged.schedule, merged.timezone) };
     }),
     get: async loopId => find(loopId),
-    list: async (spaceId, query = {}) => ({
-      items: [...loops.values()].filter(loop => loop.spaceId === spaceId
+    list: async (spaceId, query = {}) => {
+      const all = [...loops.values()].filter(loop => loop.spaceId === spaceId
         && (query.enabled === undefined || loop.state.enabled === query.enabled)
-        && (query.action === undefined || loop.definition.action === query.action)),
-      nextCursor: null,
-    }),
+        && (query.action === undefined || loop.definition.action === query.action)
+        && titleMatches(loop.definition.title, query.words));
+      // The cursor is an offset: opaque to callers, like the server's.
+      const start = query.cursor ? Number(query.cursor) : 0;
+      const end = query.limit ? start + query.limit : all.length;
+      return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null };
+    },
     enable: ref => write(ref, loop => ({ ...loop, state: { ...loop.state, enabled: true } })),
     disable: ref => write(ref, loop => ({ ...loop, state: { ...loop.state, enabled: false } })),
     pause: (ref, until) => write(ref, loop => ({ ...loop, state: { ...loop.state, pausedUntil: until } })),

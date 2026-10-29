@@ -156,7 +156,8 @@ export const LOOP_HELP: KindHelpModule = {
       <>
         <p>
           A loop is a schedule with a job attached. It says <em>when</em> (<code>every 1d</code>, or a five-field cron
-          line read in UTC), <em>who</em> (a teammate, or nobody, which hands each firing to the Dispatcher) and{' '}
+          line read in the loop&rsquo;s own timezone, UTC unless you pick one), <em>who</em> (a teammate, or nobody,
+          which hands each firing to the Dispatcher) and{' '}
           <em>what</em> (a prompt every firing carries). When its moment comes, tm8 derives a
           task, spawns a session on it and ties both back to the loop.
         </p>
@@ -224,13 +225,14 @@ export const LOOP_HELP: KindHelpModule = {
       },
       {
         eyebrow: 'The catch',
-        title: 'No next run, no firing',
+        title: 'Only the server sets the clock',
         body: (
           <p>
-            The scheduler reads one column: the next run time. The app&rsquo;s create form fills it in. A loop made from
-            the command line without a <code>nextRunAt</code> is stored, valid, and never due. <strong>Run now</strong>{' '}
-            sets that time to the present, so the firing starts on the next pass. <strong>Disable</strong> keeps the
-            stored deadline, and enabling again picks up where it was.
+            The scheduler reads one column, the next run time, and only the server writes it: on create, on enable and
+            whenever the schedule or its timezone changes, counted from now. No form or command sends one. A schedule
+            that never matches (the 30th of February) is stored but parked, with that reason as its last error.{' '}
+            <strong>Run now</strong> starts a run at once, beside the schedule. <strong>Disable</strong> keeps the
+            stored deadline; enabling again counts a fresh one from now.
           </p>
         ),
       },
@@ -241,7 +243,7 @@ export const LOOP_HELP: KindHelpModule = {
       { name: 'Due', note: 'That time has passed. The next scheduler pass, within about a minute, takes it.' },
       { name: 'Fired', note: 'Task derived or reused, session spawned, receipts written, next deadline counted from now.' },
       { name: 'Skipped', note: 'The last session is still live, or the firing failed. Last error says which; still enabled.' },
-      { name: 'Disabled', note: 'Kept whole, deadline preserved. Enable resumes it.' },
+      { name: 'Disabled', note: 'Kept whole, deadline preserved. Enable counts the next run from now.' },
       { name: 'Deleted', note: 'Soft-deleted and never due again. Restore brings the appointment back.' },
     ],
   },

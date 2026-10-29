@@ -81,7 +81,6 @@ export function fieldKey(field: DialogField): string {
 export function editsFrom(
   fields: readonly DialogField[],
   values: Readonly<Record<string, string>>,
-  _initialValues?: Readonly<Record<string, string>>,
 ): EntityEdits {
   const edits: EntityEdits = {};
   for (const field of fields) {
@@ -217,7 +216,9 @@ export function EditEntityDialog({
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (!flow.open) return;
+    /* The loop form owns Escape (and refuses it while its save is in flight,
+       which this dialog's `saving` cannot see). */
+    if (!flow.open || flow.loopEditor) return;
     const close = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !saving) {
         event.stopPropagation();
@@ -235,7 +236,15 @@ export function EditEntityDialog({
   /* A loop is edited by its own form (design 01a182d4 §6): pickers, presets
      and the server's schedule preview, through `loops.update`. */
   if (flow.open && flow.loopEditor) {
-    return <LoopEditDialog editor={flow.loopEditor} onClose={flow.cancel} />;
+    return (
+      <LoopEditDialog
+        editor={flow.loopEditor}
+        onClose={flow.cancel}
+        {...(skillOptions ? { skillOptions } : {})}
+        {...(attach ? { attach } : {})}
+        {...(onAttached ? { onAttached } : {})}
+      />
+    );
   }
   if (!flow.open || fields.length === 0) return null;
 
@@ -247,7 +256,7 @@ export function EditEntityDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (saving || missing.length > 0 || problems.length > 0 || flow.unavailable) return;
-    void flow.save(editsFrom(fields, flow.values, flow.initialValues));
+    void flow.save(editsFrom(fields, flow.values));
   };
 
   const stop = (event: MouseEvent) => event.stopPropagation();

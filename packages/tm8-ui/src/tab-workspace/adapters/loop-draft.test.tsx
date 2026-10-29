@@ -59,14 +59,15 @@ function openLoopDraft() {
     gate: { data, reasons: {}, serverBaseUrl: undefined, viewerMemberId: 'member-1', onNotice: () => {} },
   } as unknown as WorkspaceContextValue;
   runtime.dispatch({ command: 'workspace.drafts.open', args: { kind: 'loop' }, source: 'click' });
-  render(
+  const mount = () => render(
     <WorkspaceContext.Provider value={value}>
       <ContentHost />
     </WorkspaceContext.Provider>,
   );
+  mount();
   const tab = Object.values(store.getState().tabs).find((t) => t.type === 'draft');
   if (!tab || tab.type !== 'draft') throw new Error('no draft tab opened');
-  return { loops, store, tab };
+  return { loops, store, tab, runtime, mount };
 }
 
 describe('New loop draft tab', () => {
@@ -76,6 +77,19 @@ describe('New loop draft tab', () => {
     expect(screen.getByTestId('loop-form')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.querySelector('.au-dialog__backdrop')).toBeNull();
+  });
+
+  it('keeps what was typed: a remount (tab switch, reload) restores the half-made loop', async () => {
+    const { tab, runtime, mount } = openLoopDraft();
+    expect(store_dirty(runtime, tab.id)).toBe(false);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Morning triage' } });
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    await waitFor(() => expect(runtime.drafts.get(tab.draftId)).toMatchObject({ v: 1, title: 'Morning triage', action: 'dispatch' }));
+    expect(store_dirty(runtime, tab.id)).toBe(true);
+    cleanup();
+    mount();
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Morning triage');
+    expect(screen.getByTestId('loop-action-dispatch').getAttribute('aria-checked')).toBe('true');
   });
 
   it('a create binds the tab to the new loop', async () => {
@@ -90,3 +104,8 @@ describe('New loop draft tab', () => {
     await waitFor(() => expect(store.getState().tabs[tab.id]).toMatchObject({ type: 'entity', kind: 'loop', entityId: created.id }));
   });
 });
+
+function store_dirty(runtime: ReturnType<typeof createWorkspaceRuntime>, tabId: string): boolean {
+  const tab = runtime.store.getState().tabs[tabId];
+  return tab?.type === 'draft' ? Boolean(tab.dirty) : false;
+}

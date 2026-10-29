@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CollabError, type ActorSummary, type CommandResult, type EntityDetail } from '@tm8/contract';
 import { getKind } from '../domain';
 import { GenericBody } from '../panels/bodies/GenericBody';
 import { LoopHeader } from './LoopHeader';
 import { LoopRuns } from './LoopRuns';
 import { PauseDialog, resolvePause, tomorrowAtNine } from './PauseDialog';
-import type { LoopFormSources } from './LoopForm';
+import type { LoopFormSources } from './sources';
 import type { LoopPagePort, LoopRun, LoopView } from './page-port';
 import { durationLabel, loopStatus, zonedInstant } from './page-format';
-import { resetLoopPageStore } from './useLoopView';
+import { resetLoopPageStore, useLoopView } from './useLoopView';
+import { RUNNING_POLL_MS } from './LoopRuns';
 
 const LOOP_ID = '019fe999-0000-7000-8000-000000000002';
 const SESSION_ID = '019fe999-0000-7000-8000-0000000000aa';
@@ -187,7 +188,7 @@ describe('loop page controls', () => {
     const props = header(view(), p);
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
     const started = await screen.findByTestId('loop-run-started');
-    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID);
+    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID, false);
     expect(within(started).getByText('Running')).toBeTruthy();
     fireEvent.click(within(started).getByRole('button', { name: 'Open session' }));
     expect(props.onOpenEntity).toHaveBeenCalledWith(SESSION_ID);
@@ -449,3 +450,143 @@ describe('the registry row mounts the page through GenericBody', () => {
     expect(what).not.toContain('tool-1');
   });
 });
+
+/* --- PR5b review fixes --------------------------------------------------- */
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function Probe({ p, version }: { p: LoopPagePort; version: number }) {
+  const slot = useLoopView(p, LOOP_ID, version);
+  return (
+    <div>
+      <span data-testid="probe-version">{slot.view ? slot.view.version : 'none'}</span>
+      <span data-testid="probe-error">{slot.error ? 'error' : ''}</span>
+      <button type="button" onClick={() => slot.setView({ ...view(), version: 9 })}>set9</button>
+      <button type="button" onClick={() => void slot.reload()}>reload</button>
+    </div>
+  );
+}
+
+describe('one read for the page: newer wins', () => {
+  it('a read in flight for an older version is not reused, and its late answer cannot land', async () => {
+    const first = deferred<LoopView>(), second = deferred<LoopView>();
+    const get = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const p = port({ get });
+    const { rerender } = render(<Probe p={p} version={7} />);
+    rerender(<Probe p={p} version={8} />);
+    expect(get).toHaveBeenCalledTimes(2);
+    await act(async () => { second.resolve({ ...view(), version: 8 }); });
+    expect(screen.getByTestId('probe-version').textContent).toBe('8');
+    await act(async () => { first.resolve({ ...view(), version: 7 }); });
+    expect(screen.getByTestId('probe-version').textContent).toBe('8');
+  });
+
+  it('a command\'s newer view survives an older reload, and its version needs no second read', async () => {
+    const stale = deferred<LoopView>();
+    const get = vi.fn().mockResolvedValueOnce({ ...view(), version: 7 }).mockReturnValueOnce(stale.promise);
+    const p = port({ get });
+    const { rerender } = render(<Probe p={p} version={7} />);
+    await waitFor(() => expect(screen.getByTestId('probe-version').textContent).toBe('7'));
+    fireEvent.click(screen.getByText('reload'));
+    fireEvent.click(screen.getByText('set9'));
+    await act(async () => { stale.resolve({ ...view(), version: 8 }); });
+    expect(screen.getByTestId('probe-version').textContent).toBe('9');
+    rerender(<Probe p={p} version={9} />);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('the slot goes with the last block, so a failed read does not outlive the page', async () => {
+    const get = vi.fn().mockRejectedValueOnce(new Error('blip')).mockResolvedValue(view());
+    const p = port({ get });
+    render(<Probe p={p} version={7} />);
+    await waitFor(() => expect(screen.getByTestId('probe-error').textContent).toBe('error'));
+    cleanup();
+    render(<Probe p={p} version={7} />);
+    await waitFor(() => expect(screen.getByTestId('probe-version').textContent).toBe('7'));
+    expect(screen.getByTestId('probe-error').textContent).toBe('');
+  });
+});
+
+describe('the runs table follows the loop', () => {
+  it('another loop starts empty, and a slow answer for the previous loop is dropped', async () => {
+    const slowA = deferred<{ items: LoopRun[]; nextCursor: string | null }>();
+    const runsList = vi.fn((loopId: string) => (loopId === LOOP_ID ? slowA.promise : Promise.resolve({ items: [run({ id: 'run-b', loopId: 'loop-b' })], nextCursor: null })));
+    const p = port({ runsList: runsList as never });
+    const { rerender } = render(<LoopRuns loopId={LOOP_ID} port={p} canControl epoch={0} />);
+    rerender(<LoopRuns loopId="loop-b" port={p} canControl epoch={0} />);
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1));
+    await act(async () => { slowA.resolve({ items: [run({ id: 'run-a1' }), run({ id: 'run-a2' })], nextCursor: null }); });
+    expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
+  });
+
+  it('re-reads page one while a run is live, until it settles', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
+      .mockResolvedValue({ items: [run({ status: 'completed' })], nextCursor: null });
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    await waitFor(() => expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('running'));
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    await waitFor(() => expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('completed'));
+    const calls = runsList.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS * 2); });
+    expect(runsList).toHaveBeenCalledTimes(calls);
+  });
+
+  it('a scheduled firing (a new lastRunAt) refreshes the table through GenericBody', async () => {
+    const runsList = vi.fn(async () => ({ items: [run()], nextCursor: null }));
+    const get = vi.fn().mockResolvedValueOnce(view()).mockResolvedValue({ ...view({ state: { lastRunAt: '2026-10-28T11:59:00.000Z' } }), version: 8 });
+    const p = port({ get, runsList });
+    const body = (version: number) => (
+      <div className="cv2-root">
+        <GenericBody detail={{ ...pageDetail(), version } as EntityDetail} blocks={getKind('loop').panel.blocks ?? []} commands={{ loops: p, loopForm: sources() }} />
+      </div>
+    );
+    const { rerender } = render(body(7));
+    await waitFor(() => expect(runsList).toHaveBeenCalledTimes(1));
+    rerender(body(8));
+    await waitFor(() => expect(runsList).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('the header after the review', () => {
+  it('a deadline inside a pause fires when the pause ends, and says so', () => {
+    header(view({ state: { pausedUntil: '2026-10-28T18:00:00.000Z', nextRunAt: '2026-10-28T15:00:00.000Z' } }));
+    expect(screen.getByTestId('loop-next-run').textContent).toMatch(/^Next run when the pause ends/);
+  });
+
+  it('Run now on a disabled loop says it fires once and the schedule stays off', () => {
+    header(view({ state: { enabled: false } }));
+    expect(screen.getByTestId('loop-run-disabled-note').textContent).toMatch(/fires it once/);
+    expect(screen.getByRole('button', { name: 'Run now' }).getAttribute('title')).toMatch(/schedule stays off/);
+  });
+
+  it('after a delete nothing on the page acts on the loop, and the host is told', async () => {
+    const onDeleted = vi.fn();
+    const props = header(view(), port(), { onDeleted });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete loop' }));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    expect(props.deleteEntity).toHaveBeenCalledTimes(1);
+    // Every control is now refused with why (DisabledAction), never a live button.
+    for (const name of ['Run now', 'Disable', 'Edit', 'Delete']) {
+      expect(screen.getByRole('button', { name }).getAttribute('aria-disabled')).toBe('true');
+    }
+  });
+});
+
+function pageDetail(): EntityDetail {
+  return {
+    id: LOOP_ID, kind: 'loop', title: 'Daily sweep', version: 7,
+    content: { kind: 'loop', schedule: '0 9 * * *', teamMemberId: RUNNER_ID, config: { model: 'opus' } },
+    state: { kind: 'loop' },
+    capabilities: { canEdit: true, canDelete: true },
+    connections: { outgoing: [], incoming: [] },
+  } as unknown as EntityDetail;
+}

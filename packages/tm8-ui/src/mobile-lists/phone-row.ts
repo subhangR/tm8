@@ -13,6 +13,7 @@
  */
 import type { EntitySummary, WorkSessionStatus } from '@tm8/contract';
 import { listTime } from '../kit/time';
+import { loopRowStatus, loopRowWords } from '../loops/row-facts';
 
 /** The pill's colour family — mapped onto `--pn-run/wait/block/idle/info`. */
 export type PhoneTone = 'run' | 'wait' | 'block' | 'idle' | 'info' | 'review';
@@ -168,6 +169,14 @@ export function phoneRowOf(row: EntitySummary, now: number = Date.now()): PhoneR
         who: person(author),
         ...(prose(row.excerpt) ? { excerpt: prose(row.excerpt) } : {}),
       };
+    }
+    case 'loop': {
+      // The schedule and next run, as the server stored them; a failing or idle loop says so.
+      const status = loopRowStatus(state, now);
+      const pill: PhonePill | undefined = state.lastError ? { label: 'failing', tone: 'block' }
+        : status === 'disabled' ? { label: 'disabled', tone: 'idle' }
+          : status === 'paused' ? { label: 'paused', tone: 'wait' } : undefined;
+      return { ...base, meta: loopRowWords(row, now) ?? author, ...(pill ? { pill } : {}) };
     }
     case 'task': {
       const assignee = state.assignees[0]?.displayName ?? null;

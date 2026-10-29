@@ -13,18 +13,25 @@ export type PreviewState =
   | { phase: 'ready'; preview: LoopSchedulePreview; stale: boolean }
   | { phase: 'error'; message: string };
 
+/** An answer the caller already holds — the edit form's `loops.get` carries its stored schedule's preview. */
+export interface KnownPreview { schedule: string; timezone: string; preview: LoopSchedulePreview }
+
 /**
  * The server's reading of a schedule while a human types: debounced, and
- * a late answer for an older expression never overwrites a newer one.
+ * a late answer for an older expression never overwrites a newer one. An
+ * expression the caller's `known` answer is for is not asked again.
  */
 export function useSchedulePreview(
   client: Pick<LoopsClient, 'schedulePreview'> | null,
   spaceId: SpaceId,
   schedule: string,
   timezone: string,
+  known?: KnownPreview,
 ): PreviewState {
-  const [state, setState] = useState<PreviewState>({ phase: 'idle' });
+  const answered = known && known.schedule === schedule && known.timezone === timezone ? known.preview : null;
+  const [state, setState] = useState<PreviewState>(() => (answered ? { phase: 'ready', preview: answered, stale: false } : { phase: 'idle' }));
   useEffect(() => {
+    if (answered) { setState({ phase: 'ready', preview: answered, stale: false }); return; }
     if (!client || schedule.trim() === '') { setState({ phase: 'idle' }); return; }
     let live = true;
     setState(previous => (previous.phase === 'ready' ? { ...previous, stale: true } : { phase: 'loading' }));
@@ -37,7 +44,7 @@ export function useSchedulePreview(
       );
     }, PREVIEW_DEBOUNCE_MS);
     return () => { live = false; clearTimeout(timer); };
-  }, [client, spaceId, schedule, timezone]);
+  }, [client, spaceId, schedule, timezone, answered]);
   return state;
 }
 

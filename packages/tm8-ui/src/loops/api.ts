@@ -3,6 +3,9 @@ import type {
   LoopAction,
   LoopDefinitionDraft,
   LoopDefinitionPatch,
+  LoopListResult,
+  LoopRunListResult,
+  LoopRunResult,
   LoopRun,
   LoopRunStatus,
   LoopSchedulePreview,
@@ -10,8 +13,8 @@ import type {
   OperationName,
   SpaceId,
 } from '@tm8/contract';
+import { nextMutationId } from '../authoring/commands';
 import type { HttpClient } from '../data/real/http';
-import type { Seam } from '../data/seam';
 
 /*
  * THE LOOPS CLIENT — the one place the UI reaches `loops.*`.
@@ -29,7 +32,10 @@ export type {
   LoopDefinition,
   LoopDefinitionDraft,
   LoopDefinitionPatch,
+  LoopListResult,
   LoopRun,
+  LoopRunListResult,
+  LoopRunResult,
   LoopRunSkipReason,
   LoopRunStatus,
   LoopRunTrigger,
@@ -43,57 +49,66 @@ export type LoopSessionMode = import('@tm8/contract').LoopSpawnMode;
 /** What `loops.create` takes: timezone/config/concurrency/retry/toolInputs have server defaults. */
 export type LoopCreateDefinition = LoopDefinitionDraft;
 
-export interface LoopListQuery {
+/** `loops.list`'s query string (the server reads exactly these keys). */
+export type LoopListQuery = {
   enabled?: boolean;
   action?: LoopAction;
   words?: string;
   limit?: number;
   cursor?: string;
-}
+};
 
-export interface LoopPage<T> { items: T[]; nextCursor: string | null }
+/** `loops.runs.list`'s query string. */
+export type LoopRunListQuery = { status?: LoopRunStatus; limit?: number; cursor?: string };
+
+/**
+ * A command's idempotency key. The doors replay a recorded result for a key
+ * they have seen, so a caller that may RETRY one intent (a lost response, a
+ * conflict re-read) passes the same key each time; omitted, each call mints
+ * its own.
+ */
+export interface LoopCommandOptions { clientMutationId?: string }
 
 export interface LoopsClient {
-  create(spaceId: SpaceId, definition: LoopCreateDefinition, enabled?: boolean): Promise<LoopView>;
-  update(loop: Pick<LoopView, 'id' | 'version'>, definition: LoopDefinitionPatch): Promise<LoopView>;
+  create(spaceId: SpaceId, definition: LoopCreateDefinition, enabled?: boolean, options?: LoopCommandOptions): Promise<LoopView>;
+  update(loop: Pick<LoopView, 'id' | 'version'>, definition: LoopDefinitionPatch, options?: LoopCommandOptions): Promise<LoopView>;
   get(loopId: EntityId): Promise<LoopView>;
-  list(spaceId: SpaceId, query?: LoopListQuery): Promise<LoopPage<LoopView>>;
-  enable(loop: Pick<LoopView, 'id' | 'version'>): Promise<LoopView>;
-  disable(loop: Pick<LoopView, 'id' | 'version'>): Promise<LoopView>;
-  pause(loop: Pick<LoopView, 'id' | 'version'>, until: string): Promise<LoopView>;
-  resume(loop: Pick<LoopView, 'id' | 'version'>): Promise<LoopView>;
-  runNow(loopId: EntityId, force?: boolean): Promise<{ run: LoopRun }>;
-  runsList(loopId: EntityId, query?: { status?: LoopRunStatus; limit?: number; cursor?: string }): Promise<LoopPage<LoopRun>>;
+  list(spaceId: SpaceId, query?: LoopListQuery): Promise<LoopListResult>;
+  enable(loop: Pick<LoopView, 'id' | 'version'>, options?: LoopCommandOptions): Promise<LoopView>;
+  disable(loop: Pick<LoopView, 'id' | 'version'>, options?: LoopCommandOptions): Promise<LoopView>;
+  pause(loop: Pick<LoopView, 'id' | 'version'>, until: string, options?: LoopCommandOptions): Promise<LoopView>;
+  resume(loop: Pick<LoopView, 'id' | 'version'>, options?: LoopCommandOptions): Promise<LoopView>;
+  runNow(loopId: EntityId, force?: boolean, options?: LoopCommandOptions): Promise<LoopRunResult>;
+  runsList(loopId: EntityId, query?: LoopRunListQuery): Promise<LoopRunListResult>;
   runsGet(runId: string): Promise<LoopRun>;
-  runsStop(runId: string): Promise<{ run: LoopRun }>;
+  runsStop(runId: string, options?: LoopCommandOptions): Promise<LoopRunResult>;
   schedulePreview(spaceId: SpaceId, schedule: string, timezone?: string, count?: number): Promise<LoopSchedulePreview>;
 }
 
 /** All requests go through the operation catalog and the authenticated transport, like `createToolPort`. */
 export function createLoopsClient(http: HttpClient): LoopsClient {
-  const command = () => ({ clientMutationId: `loop-${crypto.randomUUID()}` });
-  const versioned = (loop: Pick<LoopView, 'id' | 'version'>) => ({ ...command(), loopId: loop.id, expectedVersion: loop.version });
+  const command = (options?: LoopCommandOptions) => ({ clientMutationId: options?.clientMutationId ?? nextMutationId() });
+  const versioned = (loop: Pick<LoopView, 'id' | 'version'>, options?: LoopCommandOptions) =>
+    ({ ...command(options), loopId: loop.id, expectedVersion: loop.version });
   const call = <T>(name: OperationName, options: Parameters<HttpClient['call']>[1]) =>
     http.call<T>(name, options);
   const loopParams = (loop: Pick<LoopView, 'id'>) => ({ params: { loopId: loop.id } });
   return {
-    create: (spaceId, definition, enabled = true) =>
-      call<LoopView>('loops.create', { params: { spaceId }, body: { ...command(), spaceId, definition, enabled } }),
-    update: (loop, definition) =>
-      call<LoopView>('loops.update', { ...loopParams(loop), body: { ...versioned(loop), definition } }),
+    create: (spaceId, definition, enabled = true, options) =>
+      call<LoopView>('loops.create', { params: { spaceId }, body: { ...command(options), spaceId, definition, enabled } }),
+    update: (loop, definition, options) =>
+      call<LoopView>('loops.update', { ...loopParams(loop), body: { ...versioned(loop, options), definition } }),
     get: loopId => call<LoopView>('loops.get', { params: { loopId } }),
-    list: (spaceId, query = {}) =>
-      call<LoopPage<LoopView>>('loops.list', { params: { spaceId }, query: stringQuery(query) }),
-    enable: loop => call<LoopView>('loops.enable', { ...loopParams(loop), body: versioned(loop) }),
-    disable: loop => call<LoopView>('loops.disable', { ...loopParams(loop), body: versioned(loop) }),
-    pause: (loop, until) => call<LoopView>('loops.pause', { ...loopParams(loop), body: { ...versioned(loop), until } }),
-    resume: loop => call<LoopView>('loops.resume', { ...loopParams(loop), body: versioned(loop) }),
-    runNow: (loopId, force) =>
-      call<{ run: LoopRun }>('loops.runNow', { params: { loopId }, body: { ...command(), loopId, ...(force ? { force: true } : {}) } }),
-    runsList: (loopId, query = {}) =>
-      call<LoopPage<LoopRun>>('loops.runs.list', { params: { loopId }, query: stringQuery(query) }),
+    list: (spaceId, query = {}) => call<LoopListResult>('loops.list', { params: { spaceId }, query }),
+    enable: (loop, options) => call<LoopView>('loops.enable', { ...loopParams(loop), body: versioned(loop, options) }),
+    disable: (loop, options) => call<LoopView>('loops.disable', { ...loopParams(loop), body: versioned(loop, options) }),
+    pause: (loop, until, options) => call<LoopView>('loops.pause', { ...loopParams(loop), body: { ...versioned(loop, options), until } }),
+    resume: (loop, options) => call<LoopView>('loops.resume', { ...loopParams(loop), body: versioned(loop, options) }),
+    runNow: (loopId, force, options) =>
+      call<LoopRunResult>('loops.runNow', { params: { loopId }, body: { ...command(options), loopId, ...(force ? { force: true } : {}) } }),
+    runsList: (loopId, query = {}) => call<LoopRunListResult>('loops.runs.list', { params: { loopId }, query }),
     runsGet: runId => call<LoopRun>('loops.runs.get', { params: { runId } }),
-    runsStop: runId => call<{ run: LoopRun }>('loops.runs.stop', { params: { runId }, body: { ...command(), runId } }),
+    runsStop: (runId, options) => call<LoopRunResult>('loops.runs.stop', { params: { runId }, body: { ...command(options), runId } }),
     schedulePreview: (spaceId, schedule, timezone, count) =>
       call<LoopSchedulePreview>('loops.schedule.preview', {
         params: { spaceId },
@@ -102,15 +117,9 @@ export function createLoopsClient(http: HttpClient): LoopsClient {
   };
 }
 
-function stringQuery(query: object): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(query) as [string, unknown][]) if (value !== undefined) out[key] = String(value);
-  return out;
-}
-
-/** The seam's loops client, or null on a surface wired without one (fixtures, a read-only host). */
-export function useLoopsClient(seam: Pick<Seam, 'commands'> | null | undefined): LoopsClient | null {
-  return seam?.commands.loops ?? null;
+/** A refusal because the loop moved since it was read — an edit by someone else, or just a firing. */
+export function isVersionConflict(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'version_conflict';
 }
 
 /**

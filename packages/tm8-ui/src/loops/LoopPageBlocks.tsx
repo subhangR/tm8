@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import type { CommandContext, CommandResult, EntityDetail, EntityId } from '@tm8/contract';
 import { LoopDefinitionBlock, type LoopDefinitionSection } from './LoopDefinition';
-import { LoopFormDialog, type LoopFormSources } from './LoopForm';
+import { LoopForm } from './LoopForm';
 import { LoopHeader, type LoopHeaderProps } from './LoopHeader';
 import { LoopRuns } from './LoopRuns';
 import type { LoopPagePort } from './page-port';
+import type { LoopFormSources } from './sources';
 import { errorText, isNotImplemented } from './page-format';
 import { useLoopView } from './useLoopView';
 import './page.css';
@@ -49,6 +50,7 @@ function ViewState({ slot, children }: { slot: ReturnType<typeof useView>; child
 
 export function LoopHeaderBlock(props: BlockProps & {
   deleteEntity?: (id: EntityId, ctx?: CommandContext) => Promise<CommandResult>;
+  onDeleted?: (result: CommandResult) => void;
 }) {
   const slot = useView(props);
   const { port, sources } = props;
@@ -57,7 +59,7 @@ export function LoopHeaderBlock(props: BlockProps & {
      version it guards is the one the header is showing. */
   const renderEditor: LoopHeaderProps['renderEditor'] = sources
     ? ({ view, onClose, onSaved }) => (
-      <LoopFormDialog mode="edit" spaceId={view.spaceId} client={port} sources={sources} view={view} onSaved={onSaved} onClose={onClose} />
+      <LoopForm mode="edit" spaceId={view.spaceId} client={port} sources={sources} view={view} onSaved={onSaved} onClose={onClose} />
     )
     : undefined;
   return (
@@ -71,6 +73,7 @@ export function LoopHeaderBlock(props: BlockProps & {
           onRunsChanged={slot.bumpRuns}
           onOpenEntity={props.onOpenEntity}
           deleteEntity={props.deleteEntity}
+          onDeleted={props.onDeleted}
           renderEditor={renderEditor}
         />
       ) : null}
@@ -95,7 +98,8 @@ export function LoopRunsBlock(props: BlockProps) {
       loopId={props.detail.id}
       port={props.port}
       canControl={slot.view?.capabilities.canControl ?? false}
-      epoch={slot.runsEpoch}
+      // Run now and Stop bump runsEpoch; a scheduled firing moves lastRunAt and the run count.
+      epoch={`${slot.runsEpoch}:${slot.view?.state.lastRunAt ?? ''}:${slot.view?.runs.total ?? 0}`}
       onOpenEntity={props.onOpenEntity}
       onChanged={() => void slot.reload()}
     />

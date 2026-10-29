@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind } from '../../domain';
 import { Chip } from '../../kit';
@@ -250,9 +250,33 @@ export function MembershipPicker({
     });
   };
 
+  const addRef = useRef<HTMLButtonElement | null>(null);
+  const pick = (option: EntitySummary) => {
+    onPick(option.id, option.title);
+    setOpen(false);
+    setQuery('');
+  };
+  /* The filter's keys belong to the picker. Enter picks the first match and
+     never submits a form the picker sits in (the loop form hosts two);
+     Escape closes the picker and goes no further, so it never also closes
+     the dialog or panel underneath — one press, one layer. */
+  const onFilterKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (options[0]) pick(options[0]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      setQuery('');
+      addRef.current?.focus();
+    }
+  };
+
   return (
     <div className="pn-membership__add">
       <button
+        ref={addRef}
         type="button"
         className="pn-memory__add"
         data-testid="membership-add"
@@ -276,6 +300,7 @@ export function MembershipPicker({
             aria-label="Filter candidates by title"
             value={query}
             onChange={(event) => runSearch(event.target.value)}
+            onKeyDown={onFilterKey}
           />
           {options.length === 0 ? (
             <p className="pn-section__empty">No recent match. The list is one recent page, not a full search.</p>
@@ -286,11 +311,7 @@ export function MembershipPicker({
                 type="button"
                 className="pn-membership__option"
                 data-testid="membership-option"
-                onClick={() => {
-                  onPick(option.id, option.title);
-                  setOpen(false);
-                  setQuery('');
-                }}
+                onClick={() => pick(option)}
               >
                 <KindIcon kind={option.kind} /> {option.title}
               </button>
