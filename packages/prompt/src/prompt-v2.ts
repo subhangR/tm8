@@ -81,6 +81,16 @@ export { PLACEMENT_RULE } from './placement-rule.js';
 import { PLACEMENT_RULE } from './placement-rule.js';
 
 /**
+ * Tools (Tools v2 PR-E, design doc 01a182cb §5): the one line that tells an
+ * agent the space's runnable scripts exist and how to use one safely. Base
+ * rule 6, so every mode carries it once; the `<context_index>` `tools` group
+ * lists the space's tools by name when it has any.
+ */
+export const TOOLS_RULE =
+  'Tools: `tm8 tool list` shows this space\'s runnable scripts; read `tm8 tool help <name>` before ' +
+  '`tm8 tool run <name> …`; a run prints its session id first and exits with the tool\'s exit code.';
+
+/**
  * The coordinator's half of placement: a unit of the assignment is a subtask
  * of it, created before its worker is spawned on it, so the work tree mirrors
  * the delegation tree. v1 and v2 coordinator layers carry the same sentence.
@@ -116,6 +126,7 @@ export const BASE_PROMPT_V2 = [
     "`tm8 artifact publish`, never your harness's artifact tool.",
   `4. ${HEADER_AUTHORING_RULE}`,
   `5. ${PLACEMENT_RULE}`,
+  `6. ${TOOLS_RULE}`,
   '</tm8>',
 ].join('\n');
 
