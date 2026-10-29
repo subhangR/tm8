@@ -23,11 +23,13 @@ import {
   AuthClaimResultSchema,
   AuthInviteSignupResultSchema,
   AuthLoginResultSchema,
+  AuthSessionGetResultSchema,
   AuthSessionsListResultSchema,
   AuthSpaceEnterResultSchema,
   type AuthClaimResult,
   type AuthInviteSignupResult,
   type AuthLoginResult,
+  type AuthSessionGetResult,
   type AuthSessionsListResult,
   type AuthSpaceEnterResult,
 } from '@tm8/contract';
@@ -184,7 +186,7 @@ describe.sequential('the three sign-in paths mint a mobile session (HTTP)', () =
 });
 
 describe('every sign-in result is in its contract shape (ISO-8601 UTC timestamps), whatever the kind', () => {
-  it('auth.login, auth.invite.signup and auth.space.enter results parse for browser, cli and mobile', async () => {
+  it('auth.login, auth.invite.signup, auth.space.enter and auth.session.get results parse for browser, cli and mobile', async () => {
     const spaceId = await ownSpace('shapes');
     for (const kind of ['browser', 'cli', 'mobile'] as const) {
       const signedIn = await send<AuthLoginResult>('POST', '/v2/auth/login', { ...OWNER, kind, label: LABEL });
@@ -195,6 +197,9 @@ describe('every sign-in result is in its contract shape (ISO-8601 UTC timestamps
       const entered = await send<AuthSpaceEnterResult>('POST', '/v2/auth/space/enter', { spaceId }, signedIn.data!.token);
       expect([kind, AuthSpaceEnterResultSchema.safeParse(entered.data).error?.issues]).toEqual([kind, undefined]);
       expect(entered.data!.session.kind).toBe(kind);
+      const current = await send<AuthSessionGetResult>('GET', '/v2/auth/session', undefined, signedIn.data!.token);
+      expect([kind, AuthSessionGetResultSchema.safeParse(current.data).error?.issues]).toEqual([kind, undefined]);
+      expect(current.data!.session).toMatchObject({ kind, label: LABEL });
     }
   });
 });
@@ -226,6 +231,18 @@ describe.sequential('a mobile session at the human-only doors (HTTP)', () => {
   it('a catalog humanOnly read (credentials.status) answers a mobile bearer', async () => {
     const status = await send('GET', '/v2/identity/credentials', undefined, login.data!.token);
     expect([status.status, status.error?.code]).toEqual([200, undefined]);
+  });
+
+  it('auth.sessions.list still parses when the member also holds a stored space-link session', async () => {
+    const spaceId = await ownSpace('link');
+    const [link] = await server.rows<{ id: string }>(
+      `insert into public.auth_sessions(account_id, kind, token_hash, label, expires_at, space_id)
+       values ($1, 'link', $2, 'link probe', now() + interval '1 hour', $3) returning id::text`,
+      [claim.data!.account.accountId, hashToken(generateSecret()), spaceId]);
+    const listed = await send<AuthSessionsListResult>('GET', '/v2/auth/sessions', undefined, login.data!.token);
+    expect(listed.data!.sessions.find((row) => row.sessionId === link!.id)).toMatchObject({ kind: 'link', origin: 'link' });
+    expect(AuthSessionsListResultSchema.safeParse(listed.data).error?.issues).toBeUndefined();
+    await server.rows('update public.auth_sessions set revoked_at = now() where id = $1', [link!.id]);
   });
 });
 

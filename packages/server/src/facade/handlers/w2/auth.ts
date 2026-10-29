@@ -215,7 +215,8 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
           ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
           label: session.label,
           spaceId: session.spaceId,
-          expiresAt: session.expiresAt,
+          // resolve_auth_session's jsonb text ('…+00:00') is not the contract's ISO-8601 UTC form.
+          expiresAt: new Date(session.expiresAt).toISOString(),
         },
       };
       // Browser passes issued before cookie-backed WebSockets shipped still

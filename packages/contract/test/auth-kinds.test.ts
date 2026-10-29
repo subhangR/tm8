@@ -56,4 +56,23 @@ describe('auth kinds on the wire', () => {
       current: true,
     }).success).toBe(true);
   });
+
+  it('a sessions-list row for a stored space-link session parses: kind link beside origin link', () => {
+    const row = {
+      sessionId: '00000000-0000-4000-8000-0000000000c2',
+      kind: 'link',
+      createdAt: '2026-10-29T12:00:00.000Z',
+      lastUsedAt: null,
+      expiresAt: '2027-01-27T12:00:00.000Z',
+      label: 'link to acme',
+      spaceId: '00000000-0000-4000-8000-0000000000d1',
+      spaceName: 'Acme',
+      parentSessionId: null,
+      origin: 'link',
+      originEntityId: null,
+      owner: { identityId: 'id_alice', displayName: 'Alice' },
+      current: false,
+    };
+    expect(AuthSessionListingSchema.safeParse(row).error?.issues).toBeUndefined();
+  });
 });
