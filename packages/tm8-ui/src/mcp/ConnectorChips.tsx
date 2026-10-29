@@ -69,7 +69,7 @@ export function ConnectorChips({ catalog, value, onChange, disabled = false, pro
       title="Back to the Space’s default connectors" onClick={() => onChange(undefined)}>{resetLabel ?? 'Reset'}</button> : null}
     {rows.length > 0 ? (
       <button type="button" className="mcp-compact__more" data-testid="mcp-picker-summary" aria-expanded={full}
-        aria-controls={listId} aria-label="All connectors and options"
+        aria-controls={full ? listId : undefined} aria-label="All connectors and options"
         title={hidden > 0 ? `${hidden} more waiting on an admin, and every option` : 'Every connector option'}
         onClick={() => setFull(open => !open)}>
         {hidden > 0 ? `+${hidden} more` : '⋯'}

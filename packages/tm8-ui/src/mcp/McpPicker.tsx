@@ -7,8 +7,10 @@
  * `onChange`. Outputs, reported from layout effects so a host never paints a
  * stale answer:
  *  - `onReady(ready, problem)` — the gate (`selection-gate.ts`): false only for
- *    an explicit pick `bind` would refuse, with the sentence that names it;
- *    never false while the catalog loads, refreshes or fails. A host shows
+ *    an explicit pick `bind` would refuse, with the sentence that names it,
+ *    or an explicit non-empty pick still waiting on this mount's first read
+ *    ("Checking connectors…"). An untouched or empty selection never waits,
+ *    and a failed read ends the wait. A host shows
  *    `problem` as its refusal (`usePickerGate` keeps both for it).
  *  - `onCount(n)` — how many connectors it offers; 0 exactly when it draws
  *    nothing but, at most, its one loading line.
@@ -25,9 +27,9 @@ import { useMcpCatalog } from './context';
 import { connectorRows } from './row-model';
 import { OPEN_GATE, selectionGate, type SelectionGate } from './selection-gate';
 import type { McpSelection } from './port';
+import './mcp.css';
 
 const CHECKING: SelectionGate = { blocked: true, problem: 'Checking connectors…' };
-import './mcp.css';
 
 /**
  * A host's state for the picker's verdict: the gate, and a STABLE `onReady`
@@ -59,9 +61,9 @@ export function usePickerGate(): [SelectionGate, (ready: boolean, problem: strin
  * sending it meant a connector connected between the page load and the launch
  * was silently left off.
  *
- * The gate is open before the catalog arrives for the same reason: an unedited
- * picker resolves server-side, so no host waits on this read to launch, and an
- * edited one is checked as soon as its catalog is in.
+ * The gate is open before the catalog arrives for an unedited picker for the
+ * same reason: it resolves server-side, so no host waits on this read to
+ * launch. An edited one (a chat thread's stored picks, say) waits for it.
  */
 export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, onCount, disabled = false, headless = false, retryClassName,
   layout = 'list', notice, resetLabel }: {
@@ -96,16 +98,19 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
 }) {
   const { phase, catalog, error, port, refresh, seeded } = useMcpCatalog(targetId, teamMemberId, { lastKnown: layout === 'compact' });
   const id = useId();
-  // An EXPLICIT pick is never judged against the last-known photograph: until
-  // this mount's own read answers, it waits with a named reason, so a
-  // first-frame press cannot pass here and meet the server's raw refusal. An
-  // untouched selection is the server's to resolve and never waits.
-  const gate = !catalog ? OPEN_GATE
-    : seeded && phase === 'revalidating' && (value?.length ?? 0) > 0 ? CHECKING
-    : selectionGate(catalog, value);
+  // An EXPLICIT pick is judged only against this mount's own read — never
+  // against nothing, never against the last-known photograph — on every
+  // layout: until that read answers it waits with a named reason, so a
+  // first-frame press (or a chat thread's stored dead pick) cannot pass here
+  // and meet the server's raw refusal. An untouched or empty selection is the
+  // server's to resolve and never waits; a failed read ends the wait.
+  const waiting = (value?.length ?? 0) > 0 && (phase === 'loading' || (seeded && phase === 'revalidating'));
+  const gate = waiting ? CHECKING : !catalog ? OPEN_GATE : selectionGate(catalog, value);
   // `[]` is never judged: bind cannot refuse "no connectors".
   const rows = catalog?.canAttach ? connectorRows(catalog, value ?? catalog.defaults, value !== undefined) : [];
-  const attachable = rows.map(row => row.server);
+  // A connector waiting on an admin is shown in the full list (inert), but it
+  // is not an option: a scope holding only those offers nothing.
+  const attachable = rows.filter(row => row.on || row.actionable).map(row => row.server);
   // What is drawn decides the count, never the other way round.
   const draws = !!port && !headless && !!catalog?.canAttach && (attachable.length > 0 || gate.problem !== null);
   // The one error line counts too: a failed read is drawn, and the host must

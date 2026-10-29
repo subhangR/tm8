@@ -220,9 +220,11 @@ export function definitionRefusal(server: McpServer): 'not_approved' | 'disabled
 
 /** The §10.0 status of one connector, for this viewer. */
 export function connectorStatus(server: McpServer): ConnectorStatus {
-  if (!server.canAttach) return 'access_denied';
+  // The definition first: the server clears `canAttach` for an unapproved or
+  // disabled connector, and the admin's state is the truer label.
   const refused = definitionRefusal(server);
   if (refused) return refused;
+  if (!server.canAttach) return 'access_denied';
   if (server.auth !== 'none' && usableAccounts(server).length === 0) return credentialStatus(server);
   // The health record is the viewer's own last test of this connector
   // (`mcp_server_health` is keyed by member), so an unreachable server is
@@ -248,7 +250,10 @@ function accessOf(server: McpServer, account: McpAccount | undefined): string {
 }
 
 /**
- * Every row the viewer may see, in catalog order.
+ * Every row the viewer may see, in catalog order: what they may attach, plus
+ * what an admin's state keeps from them (awaiting approval, disabled) — the
+ * server clears `canAttach` for those, but they are drawn inert with that
+ * state, never switchable on, so the launch shows what the Space holds.
  *
  * `selected` is the EFFECTIVE set — `value ?? catalog.defaults` — and
  * `explicit` says which of the two it was, because §10.4's header and §10.5's
@@ -261,7 +266,7 @@ export function connectorRows(
   selected: readonly McpSelection[],
   explicit: boolean,
 ): ConnectorRow[] {
-  return catalog.servers.filter(server => server.canAttach).map(server => {
+  return catalog.servers.filter(server => server.canAttach || definitionRefusal(server) !== null).map(server => {
     const pick = selected.find(s => s.serverId === server.id);
     const status = connectorStatus(server);
     const copy = COPY[status];

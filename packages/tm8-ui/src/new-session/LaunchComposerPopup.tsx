@@ -461,8 +461,8 @@ export function LaunchComposerPopup({
       : !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
     : !verdict.ok ? verdict.reason
-      /* An edited group's defaults are re-reading: wait, or that group would
-         launch on its defaults and drop the person's removals. */
+      /* The connector picker's sentence: a pick `bind` would refuse, or an
+         explicit pick still waiting on this mount's own catalog read. */
       : mcpGate.problem ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 

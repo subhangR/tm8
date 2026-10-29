@@ -31,6 +31,32 @@ function Launch({ port, targetId = 'task', onReady = vi.fn(), onCount = vi.fn(),
   </McpProvider>;
 }
 
+describe('an explicit pick before the first read answers', () => {
+  function Headless({ port, value, onReady }: { port: McpPort; value: McpSelection[] | undefined; onReady(ready: boolean, problem: string | null): void }) {
+    return <McpProvider port={port}><McpPicker headless targetId="task" value={value} onChange={vi.fn()} onReady={onReady} /></McpProvider>;
+  }
+
+  it('is held on a headless picker until the catalog answers, then judged', async () => {
+    let answer!: (catalog: McpCatalog) => void;
+    const onReady = vi.fn();
+    render(<Headless port={portFor(() => new Promise<McpCatalog>(resolve => { answer = resolve; }))} value={[{ serverId: 'gone' }]} onReady={onReady} />);
+    expect(onReady).toHaveBeenLastCalledWith(false, 'Checking connectors…');
+    await act(async () => { answer(catalog()); });
+    expect(onReady).toHaveBeenLastCalledWith(false, 'A connector picked here no longer exists. Reset the connectors to drop it.');
+  });
+
+  it('never holds an untouched or empty selection, and a failed read ends the wait', async () => {
+    const pending = portFor(() => new Promise<McpCatalog>(() => {}));
+    const untouched = vi.fn(), empty = vi.fn(), failed = vi.fn();
+    render(<Headless port={pending} value={undefined} onReady={untouched} />);
+    render(<Headless port={pending} value={[]} onReady={empty} />);
+    render(<Headless port={portFor(() => Promise.reject(new Error('down')))} value={[{ serverId: 'notion' }]} onReady={failed} />);
+    expect(untouched).toHaveBeenLastCalledWith(true, null);
+    expect(empty).toHaveBeenLastCalledWith(true, null);
+    await waitFor(() => expect(failed).toHaveBeenLastCalledWith(true, null));
+  });
+});
+
 describe('the compact launch row', () => {
   it('draws nothing and counts 0 when the Space has no connectors', async () => {
     const data = catalog(); data.servers = []; data.defaults = [];
@@ -92,12 +118,13 @@ describe('the compact launch row', () => {
   });
 
   it('keeps what waits on an admin, and every option of the full list, one press away', async () => {
-    const data = catalog(); data.servers.push(server({ id: 'linear', title: 'Linear', approved: false }));
+    // As the server sends it: an unapproved connector is never attachable.
+    const data = catalog(); data.servers.push(server({ id: 'linear', title: 'Linear', approved: false, canAttach: false }));
     const onCount = vi.fn(); render(<Launch port={portFor(async () => data)} onCount={onCount} />);
     await screen.findByTestId('mcp-chip-toggle-notion');
     expect(screen.queryByTestId('mcp-chip-linear')).toBeNull();
-    // Counted all the same: the picker offers it, behind the disclosure.
-    expect(onCount).toHaveBeenLastCalledWith(4);
+    // Shown, not offered: it is not counted.
+    expect(onCount).toHaveBeenLastCalledWith(3);
     const summary = screen.getByTestId('mcp-picker-summary');
     expect(summary.textContent).toBe('+1 more');
     expect(summary.getAttribute('aria-expanded')).toBe('false');
@@ -107,6 +134,7 @@ describe('the compact launch row', () => {
     const list = screen.getByTestId('mcp-picker-toggles');
     expect(within(list).getAllByTestId('mcp-picker-toggles-row')).toHaveLength(4);
     expect(within(list).getByText('Awaiting approval')).toBeTruthy();
+    expect((within(list).getByTestId('mcp-picker-toggles-switch-linear') as HTMLInputElement).disabled).toBe(true);
     expect(within(list).getByTestId('mcp-picker-toggles-none').textContent).toBe('Turn all off');
     expect(within(list).getByRole('link', { name: 'Manage connectors' })).toBeTruthy();
   });
@@ -177,8 +205,19 @@ describe('the compact launch row', () => {
     expect(port.catalog).toHaveBeenCalledTimes(2);
   });
 
+  it('draws nothing and counts 0 when every connector waits on an admin', async () => {
+    const data = catalog(); data.defaults = [];
+    data.servers = [server({ id: 'linear', title: 'Linear', approved: false, canAttach: false }), server({ id: 'jira', title: 'Jira', enabled: false, canAttach: false })];
+    const onCount = vi.fn(), onReady = vi.fn(); const port = portFor(async () => data);
+    render(<Launch port={port} onCount={onCount} onReady={onReady} />);
+    await waitFor(() => expect(port.catalog).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('mcp-compact-loading')).toBeNull());
+    expect(document.body.textContent).toBe('');
+    expect(onCount).toHaveBeenLastCalledWith(0); expect(onReady).toHaveBeenLastCalledWith(true, null);
+  });
+
   it('hands the host the gate’s own sentence for every pick bind would refuse', async () => {
-    const data = catalog(); data.servers[1] = { ...data.servers[1]!, approved: false };
+    const data = catalog(); data.servers[1] = { ...data.servers[1]!, approved: false, canAttach: false };
     const port = portFor(async () => data);
     function Host() {
       const [value, setValue] = useState<McpSelection[] | undefined>([{ serverId: 'docs' }]);

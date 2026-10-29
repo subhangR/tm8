@@ -18,7 +18,8 @@
  *    one disabled, an untrusted local command, and an account problem — a dead
  *    pin, or no pin when §3's own-then-shared order has nothing to open.
  *  - The catalog's own loading, refreshing and failed states never reach here:
- *    with no catalog there is nothing to judge, and the gate is open.
+ *    `McpPicker` holds an explicit pick with "Checking connectors…" until its
+ *    own read answers, and opens the gate when the read fails.
  *  - The target's attach permission is not a problem here. `bind` does not
  *    refuse an explicit pick for it, and a viewer who may not attach is shown
  *    no picker at all.

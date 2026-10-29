@@ -215,7 +215,7 @@ describe('round 4', () => {
     const data = catalog(); data.servers.push(server({ id: 'figma', title: 'Figma', auth: 'oauth' }));
     render(<Launch port={{ catalog: vi.fn(async () => data) } as unknown as McpPort} disabled />);
     const chip = await screen.findByTestId('mcp-chip-figma');
-    expect(within(chip).queryByRole('link')).toBeNull();
+    expect(chip.querySelector('a')).toBeNull();
     expect(within(chip).getByLabelText('Connect Figma').getAttribute('aria-disabled')).toBe('true');
   });
 });
