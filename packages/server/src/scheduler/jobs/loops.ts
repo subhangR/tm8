@@ -125,6 +125,8 @@ export interface OpenLoopRun {
   readonly actAsIdentity: string | null;
   /** work_sessions.outcome (302): 'stopped' when someone stopped the session, so the run settles 'stopped'. */
   readonly sessionOutcome?: string | null;
+  /** work_sessions.node_id: the node hosting the session. Only that node may call it lost. */
+  readonly sessionNodeId?: string | null;
 }
 
 /** Why a session is being stopped, in the words the row will carry (171). */
@@ -166,6 +168,12 @@ export interface LoopExecutorPort {
   claimsForLoop(loop: Pick<DueLoop, 'entityId' | 'spaceId'>, actAsIdentity: string): DbClaims;
   /** Session ids with a genuinely live PTY right now (the liveness probe). */
   liveSessionIds(): readonly string[];
+  /**
+   * The node whose sessions `liveSessionIds` speaks for (the execution
+   * runtime's `nodeId`, the `work_sessions.node_id` its spawns record). Absent
+   * or null: every session counts as this node's, SpawnService's rule.
+   */
+  readonly nodeId?: string | null;
   /**
    * Fire a claimed run per `loop.action` (§3.4): spawn, dispatch or tool.
    * Returns the derived task (null for a tool firing) and the session.
@@ -250,13 +258,23 @@ const OPEN_RUNS_SQL = `
          o.tool_exit_code            "toolExitCode",
          o.exited_at                 "exitedAt",
          o.act_as_identity           "actAsIdentity",
-         o.session_outcome           "sessionOutcome"
+         o.session_outcome           "sessionOutcome",
+         o.session_node_id           "sessionNodeId"
     from public.loop_runs_open_for_executor($1) o`;
 
 const TERMINAL_STATUSES = new Set(['exited', 'failed']);
 
 /** The settle reason for a run whose session is gone from this node (a restart, a crash). */
 export const SESSION_LOST = 'session lost: it is no longer running on this node (the node may have restarted)';
+
+/**
+ * Whether this node's PTY map can say a session is gone: it hosts the session,
+ * or either side has no node recorded. Another node's session may be live
+ * there. The rule SpawnService applies before it marks a session lost.
+ */
+export function isThisNodesSession(sessionNodeId: string | null | undefined, nodeId: string | null | undefined): boolean {
+  return sessionNodeId == null || nodeId == null || sessionNodeId === nodeId;
+}
 
 /**
  * How long a session must have been missing from the PTY map, seen by an
@@ -450,14 +468,17 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
 /**
  * The max-runtime and settle sweep (§3.3), over every open firing.
  *
- *   - a dispatch run → 'completed' (done at delivery; its session is the
- *     space's shared dispatcher, never the run's);
+ *   - a dispatch run that has its session → 'completed' (done at delivery;
+ *     that session is the space's shared dispatcher, never the run's). One
+ *     with no session yet takes the launch rule below;
  *   - a launch with no session after `launchGraceMs` → 'failed' (the server
  *     died between the claim and the launch record);
  *   - a session at a terminal status → 'stopped', 'completed' or 'failed' from
  *     its facts, so the open set stays the live set;
- *   - a session not in the PTY map after `launchGraceMs` → 'failed', session
- *     lost (it died with the node; nothing else settles it in every space);
+ *   - a session THIS node hosts, missing from its PTY map on two sweeps at
+ *     least LOST_CONFIRM_MS apart and older than `launchGraceMs` → 'failed',
+ *     session lost (it died with the node; nothing else settles it in every
+ *     space). Another node's session is left to that node;
  *   - a LIVE session past fired_at + max_runtime_seconds → stopped through the
  *     port, then 'timed_out'. If the stop itself fails the run is left open
  *     and retried next tick, rather than recorded as stopped while it runs.
@@ -525,6 +546,9 @@ async function sweepOpenRuns(input: {
     // run is settled here once its launch grace has passed, so it never holds
     // its loop as an overlap or a queue forever (§3.2 restart).
     if (!liveSet.has(run.sessionId)) {
+      // Hosted by another node: its PTY may be live there, so absence here
+      // proves nothing, and neither its loss nor its max runtime is ours.
+      if (!isThisNodesSession(run.sessionNodeId, port.nodeId)) continue;
       const first = missingSince.get(run.runId);
       if (first === undefined) {
         missingSince.set(run.runId, now.getTime());

@@ -551,6 +551,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           pty: execution.pty,
           spawnService: execution.spawnService,
           resolveOwner: owner,
+          nodeId: execution.nodeId,
           ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
         })
       : undefined;

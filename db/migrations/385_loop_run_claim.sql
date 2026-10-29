@@ -540,6 +540,9 @@ grant execute on function public.loop_run_launch_failed(uuid,text,timestamptz) t
 --     within ten minutes (the server died mid-firing). `act_as_identity` is the
 --     identity whose membership lets the stop go through the ordinary doors:
 --     the run''s own, while still active, else the loop''s current one.
+--     `session_node_id` is the node that hosts the session: only that node''s
+--     PTY map can say it is gone, so a node calls lost only its own sessions
+--     (or ones with no node recorded), as SpawnService and the reaper do.
 -- -----------------------------------------------------------------------------
 create or replace function public.loop_runs_open_for_executor(p_now timestamptz default now())
 returns table (
@@ -557,7 +560,8 @@ returns table (
   tool_exit_code       integer,
   exited_at            timestamptz,
   act_as_identity      text,
-  session_outcome      text
+  session_outcome      text,
+  session_node_id      text
 )
 language sql stable security definer
 set search_path = public, internal, pg_temp as $$
@@ -569,7 +573,8 @@ set search_path = public, internal, pg_temp as $$
            (select m.identity_id from public.members m
              where m.identity_id = r.acted_as_identity_id and m.space_id = r.space_id and m.status = 'active'),
            internal.loop_acting_identity(r.loop_id)),
-         ws.outcome
+         ws.outcome,
+         ws.node_id
     from public.loop_runs r
     join public.loops l on l.entity_id = r.loop_id
     left join public.work_sessions ws on ws.entity_id = r.session_id

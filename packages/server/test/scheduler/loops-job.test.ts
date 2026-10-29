@@ -21,6 +21,7 @@ import type { LoopRunClaim } from '../../src/loops/bookkeeping.js';
 import {
   advanceFor,
   createLoopsJob,
+  isThisNodesSession,
   outcomeOfExitedSession,
   SESSION_LOST,
   type DueLoop,
@@ -447,10 +448,77 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
       ],
       live: ['s-live'],
     });
-    const outcome = await createLoopsJob({ db, port }).run(ctx());
+    const job = createLoopsJob({ db, port });
+    // The first sweep that finds it missing only notes it (the reaper's first-missing rule, item 17).
+    expect(await job.run(ctx())).toMatchObject({ skipped: true });
+    expect(rpcsNamed(rec, 'loop_run_settle')).toHaveLength(0);
+    // Still missing a tick later: lost. The young run is still inside its launch grace.
+    const outcome = await job.run(ctx(new Date(AT.getTime() + 60_000)));
     expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([['r-ghost', 'failed', SESSION_LOST]]);
     expect(rec.stopped).toHaveLength(0);
     expect(outcome).toMatchObject({ detail: { lost: 1 } });
+  });
+
+  it('a session missing on one sweep and exited by the next settles from its facts, never as lost (review 1398 item 17)', async () => {
+    // A PTY leaves the map the moment it exits; the row turns terminal a little
+    // later (handlePtyExit). A sweep in that gap must not record a clean exit as lost.
+    const firedAt = new Date(AT.getTime() - 11 * 60_000).toISOString();
+    const opts: Parameters<typeof harness>[0] = {
+      open: [openRun({ runId: 'r-exit', sessionId: 's-exit', sessionStatus: 'running', firedAt })],
+      live: [],
+    };
+    const { db, port, rec } = harness(opts);
+    const job = createLoopsJob({ db, port });
+    await job.run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_settle')).toHaveLength(0);
+    opts.open = [openRun({ runId: 'r-exit', sessionId: 's-exit', sessionStatus: 'exited', exitCode: 0, firedAt })];
+    const outcome = await job.run(ctx(new Date(AT.getTime() + 60_000)));
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([['r-exit', 'completed', null]]);
+    expect(outcome).toMatchObject({ detail: { settled: 1 } });
+  });
+
+  it('waits until the session has been missing for LOST_CONFIRM_MS, not merely for two sweeps (review 1398 item 17)', async () => {
+    const { db, port, rec } = harness({
+      open: [openRun({ runId: 'r-ghost', sessionId: 's-ghost', firedAt: new Date(AT.getTime() - 11 * 60_000).toISOString() })],
+      live: [],
+    });
+    const job = createLoopsJob({ db, port });
+    await job.run(ctx());
+    await job.run(ctx(new Date(AT.getTime() + 10_000)));
+    expect(rpcsNamed(rec, 'loop_run_settle')).toHaveLength(0);
+    await job.run(ctx(new Date(AT.getTime() + 30_000)));
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([['r-ghost', 'failed', SESSION_LOST]]);
+  });
+
+  it('calls lost only a session this node hosts (or one with no node recorded): another node\'s may be live there (review 1398 item 18)', async () => {
+    const firedAt = new Date(AT.getTime() - 11 * 60_000).toISOString();
+    const h = harness({
+      open: [
+        openRun({ runId: 'r-other', sessionId: 's-other', sessionNodeId: 'node-b', maxRuntimeSeconds: 60, firedAt }),
+        openRun({ runId: 'r-mine', sessionId: 's-mine', sessionNodeId: 'node-a', firedAt }),
+        openRun({ runId: 'r-unrecorded', sessionId: 's-unrecorded', sessionNodeId: null, firedAt }),
+      ],
+      live: [],
+    });
+    const job = createLoopsJob({ db: h.db, port: { ...h.port, nodeId: 'node-a' } });
+    await job.run(ctx());
+    const outcome = await job.run(ctx(new Date(AT.getTime() + 60_000)));
+    expect(rpcsNamed(h.rec, 'loop_run_settle').map((r) => r.args)).toEqual([
+      ['r-mine', 'failed', SESSION_LOST],
+      ['r-unrecorded', 'failed', SESSION_LOST],
+    ]);
+    // Nor is its max runtime this node's to enforce: the node that hosts it stops it.
+    expect(h.rec.stopped).toHaveLength(0);
+    expect(outcome).toMatchObject({ detail: { lost: 2 } });
+  });
+
+  it('isThisNodesSession: SpawnService\'s rule, where a missing node on either side counts as this node', () => {
+    expect(isThisNodesSession('node-a', 'node-a')).toBe(true);
+    expect(isThisNodesSession('node-b', 'node-a')).toBe(false);
+    expect(isThisNodesSession(null, 'node-a')).toBe(true);
+    expect(isThisNodesSession(undefined, 'node-a')).toBe(true);
+    expect(isThisNodesSession('node-b', null)).toBe(true);
+    expect(isThisNodesSession('node-b', undefined)).toBe(true);
   });
 
   it('settles an open dispatch run completed, and never stops its session: it is the shared dispatcher (review 1398 item 5)', async () => {
@@ -462,6 +530,22 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
     await createLoopsJob({ db, port }).run(ctx());
     expect(rpcsNamed(rec, 'loop_run_settle').map((r) => [r.args[0], r.args[1]])).toEqual([['r-dispatch', 'completed']]);
     expect(rec.stopped).toHaveLength(0);
+  });
+
+  it('a dispatch run with no session yet is still in flight, not delivered: the launch rule applies (review 1398 item 16)', async () => {
+    // A Run now of a dispatch loop may still be spawning the dispatcher when a
+    // tick's sweep runs; settling it 'completed' would make its failure unrecordable.
+    const { db, port, rec } = harness({
+      open: [
+        openRun({ runId: 'r-in-flight', action: 'dispatch', sessionId: null, sessionStatus: null, firedAt: new Date(AT.getTime() - 60_000).toISOString() }),
+        openRun({ runId: 'r-died', action: 'dispatch', sessionId: null, sessionStatus: null, firedAt: new Date(AT.getTime() - 11 * 60_000).toISOString() }),
+      ],
+    });
+    const outcome = await createLoopsJob({ db, port }).run(ctx());
+    expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([
+      ['r-died', 'failed', 'the launch was never recorded (the server may have restarted mid-firing)'],
+    ]);
+    expect(outcome).toMatchObject({ detail: { abandoned: 1 } });
   });
 
   it('settles a session someone stopped (outcome stopped) as stopped, not completed (review 1398 nit 10)', async () => {

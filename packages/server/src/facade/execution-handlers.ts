@@ -1919,6 +1919,12 @@ export interface ExecutionRuntime {
   /** Hand this to the WS layer — it is the instance the sessions live on. */
   pty: PtyHostService;
   /**
+   * The node id this runtime's SpawnService records on every session it
+   * spawns (`work_sessions.node_id`): `deps.nodeId`, else `<host>:<port>`.
+   * Its PTY map speaks for that node's sessions only.
+   */
+  nodeId: string;
+  /**
    * The two-signal prompt-delivery completion bridge `pty` above was
    * constructed with (its `onPromptSettled` closes over this instance's
    * `resolve`). Hand this to `createW2ExecutionDelivery` so the delivery saga
@@ -1998,6 +2004,7 @@ export interface ExecutionRuntime {
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
   const sessionCap = deps.sessionCap ?? resolveSessionCap(process.env);
+  const nodeId = deps.nodeId ?? `${deps.config.host}:${deps.config.port}`;
   const graph = new DbGraphPort(deps.db, sessionCap);
 
   let spawnService!: SpawnService;
@@ -2036,7 +2043,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Per-member credential delivery. Wired ONLY when this node has a data
     // root, because the credential home is a path underneath it: with no data
@@ -2073,6 +2080,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
 
   return {
     pty,
+    nodeId,
     promptSettlement,
     spawnService,
     graph,
@@ -2252,6 +2260,7 @@ export function registerExecutionHandlers(
   },
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
+  const nodeId = `${deps.config.host}:${deps.config.port}`;
   const worktrees = resolveWorktreeManager(deps.dataDir);
   const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
@@ -2260,7 +2269,7 @@ export function registerExecutionHandlers(
     pty: deps.pty,
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
-    nodeId: `${deps.config.host}:${deps.config.port}`,
+    nodeId,
     ...(deps.logger ? { logger: deps.logger } : {}),
     // Same wiring as `createExecutionRuntime` above, deliberately duplicated
     // rather than shared: a node on the legacy shape must not silently lose
@@ -2295,6 +2304,7 @@ export function registerExecutionHandlers(
   registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
   return {
     pty: deps.pty,
+    nodeId,
     // See the docblock above this function — disconnected, never resolves.
     promptSettlement: new PromptSettlementWaiter(),
     spawnService,
@@ -3045,6 +3055,8 @@ export function createLoopExecutorPort(deps: {
   resolveOwner: () => Promise<LoopbackOwner>;
   /** Same seam `execution.dispatch` uses; absent ⇒ stored-but-undelivered. */
   dispatchDelivery?: DispatchDelivery;
+  /** The execution runtime's `nodeId`: the node whose sessions `pty` speaks for. */
+  nodeId?: string;
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
@@ -3087,6 +3099,7 @@ export function createLoopExecutorPort(deps: {
       requestId: `loop-executor:${loop.entityId}`,
     }),
     liveSessionIds: () => pty.liveSessionIds(),
+    nodeId: deps.nodeId ?? null,
     async fire(loop, claims, firedAt, runId) {
       // Until the tool action exists (loops PR3) a tool loop is refused here, the
       // one place both the scheduled job and Run now fire through, rather than
