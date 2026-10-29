@@ -6,7 +6,7 @@
 -- §2.1, §2.4, §3.1-§3.7, D20, D23, D25; build step B0a in §7.2. Task
 -- 01a189d7-0ada-736e-aa83-728df7a38a6b. Where this file departs from the
 -- design's §3.2 text it says so at the object and in D31-D34
--- (docs/features/bridges/B0A-DECISIONS.md).
+-- (BRIDGE-ENTITY-DESIGN.md §8).
 --
 -- Predecessor: 390_tool_selection_headers.sql (main's top at open). 391 is
 -- B0b's (labels); this file touches no object 391 does.
@@ -108,7 +108,7 @@ comment on table public.bridge_connections is
 
 -- The bridge's detail row (§3.2).
 --
--- DEPARTURES FROM §3.2, each in B0A-DECISIONS.md:
+-- DEPARTURES FROM §3.2, each in §8 of the design:
 --   * credential_id is NULLABLE (D32): the offer flow that mints the space
 --     credential (bridges.connections.offer) is not part of B0a, so a bridge is
 --     created on its connection and the column is filled when the offer ships.
@@ -134,6 +134,7 @@ create table public.bridges (
   purpose                  text check (purpose is null or (char_length(purpose) between 1 and 300 and purpose !~ '[\r\n]')),
   quiet_hours              jsonb,
   worker_posting           boolean not null default true,
+  -- The ceiling for bridges.listen; update_bridge clamps workers above it (D34).
   worker_wake              text not null default 'directed' check (worker_wake in ('directed', 'thread', 'all')),
   ended_at                 timestamptz,
   created_at               timestamptz not null default now(),
@@ -279,7 +280,7 @@ grant select on public.bridge_participants to tm8_app;
 alter table public.bridge_handles enable row level security;
 create policy bridge_handles_select on public.bridge_handles for select to tm8_app
   using ((exists (select 1 from public.entities readable_entity
-                   where readable_entity.id = bridge_handles.entity_id offset 0)));
+                   where readable_entity.id = bridge_handles.entity_id and readable_entity.deleted_at is null offset 0)));
 grant select on public.bridge_handles to tm8_app;
 
 alter table public.bridge_handle_appearances enable row level security;
@@ -632,7 +633,7 @@ revoke all on function internal.bridge_target_title(text, uuid) from public;
 create or replace function internal.bridge_mask(p text) returns text
 language sql immutable set search_path = public, internal, pg_temp as $$
   select case when p is null then null
-              when char_length(p) <= 4 then '…'
+              when char_length(regexp_replace(p, '@.*$', '')) <= 4 then '…'
               else '…' || right(regexp_replace(p, '@.*$', ''), 4) end
 $$;
 revoke all on function internal.bridge_mask(text) from public;
@@ -653,6 +654,9 @@ declare
   guests integer;
   handle_count integer;
 begin
+  -- Definer, so readability is checked here, not left to RLS: a caller who
+  -- cannot read the bridge entity gets nothing, from any space.
+  if not internal.entity_readable(p_bridge_id) then return null; end if;
   select * into b from public.bridges where entity_id = p_bridge_id;
   if b.entity_id is null then return null; end if;
   select * into conn from public.bridge_connections where id = b.connection_id;
@@ -675,14 +679,16 @@ begin
     from public.bridge_outbox ob where ob.bridge_id = p_bridge_id;
 
   select count(*),
-         count(*) filter (where exists (
+         count(*) filter (where pl.linked),
+         count(*) filter (where not pl.linked and p.last_seen_at > now() - interval '7 days')
+    into participants, linked, guests
+    from public.bridge_participants p
+    cross join lateral (select exists (
            select 1 from public.bridge_identity_links l
             where l.provider = b.provider and l.revoked_at is null
               and (l.external_id = p.external_id or l.external_id = any(p.alt_external_ids))
-              and (l.space_id is null or l.space_id = b.space_id))),
-         count(*) filter (where p.last_seen_at > now() - interval '7 days')
-    into participants, linked, guests
-    from public.bridge_participants p where p.bridge_id = p_bridge_id;
+              and (l.space_id is null or l.space_id = b.space_id)) as linked) pl
+   where p.bridge_id = p_bridge_id;
   select count(*) into handle_count from public.bridge_handle_appearances a where a.bridge_id = p_bridge_id;
 
   return jsonb_build_object(
@@ -706,7 +712,7 @@ begin
       'queued', coalesce(queued, 0), 'failed24h', coalesce(failed, 0),
       'detail', case when conn.status = 'removed' then 'connection removed' end),
     'people', jsonb_build_object('participants', coalesce(participants, 0), 'linked', coalesce(linked, 0),
-                                 'guestsSeen7d', greatest(coalesce(guests, 0) - coalesce(linked, 0), 0)),
+                                 'guestsSeen7d', coalesce(guests, 0)),
     'handles', coalesce(handle_count, 0),
     'retentionDays', b.retention_days,
     'teammateId', b.teammate_id,
@@ -832,6 +838,24 @@ end
 $$;
 revoke all on function internal.bridge_assert_target_free(uuid, uuid) from public;
 
+-- The partial uniques behind D20 and D25, re-raised with their reason when a
+-- concurrent door wins the race past the friendly checks. Called only from an
+-- exception handler, where the diagnostics still name the constraint.
+create or replace function internal.bridge_reraise_unique(p_constraint text)
+returns void language plpgsql set search_path = public, internal, pg_temp as $$
+begin
+  if p_constraint = 'bridges_one_per_target' then
+    perform internal.bridge_refuse('target_has_bridge',
+      'this target already has a bridge; one group, one bridge, one chat');
+  elsif p_constraint = 'bridges_one_per_conversation' then
+    perform internal.bridge_refuse('already_connected', 'already connected by another member');
+  end if;
+  raise exception 'bridge write conflicts with %', coalesce(p_constraint, 'a unique constraint')
+    using errcode = '23505';
+end
+$$;
+revoke all on function internal.bridge_reraise_unique(text) from public;
+
 create or replace function internal.bridge_live_target(p_space_id uuid, p_target_id uuid)
 returns public.entities language plpgsql stable set search_path = public, internal, pg_temp as $$
 declare target public.entities;
@@ -902,6 +926,7 @@ declare
   policy jsonb;
   new_id uuid;
   b public.bridges;
+  v_constraint text;
 begin
   -- D28: a human, a space admin, and the owner of the number.
   perform internal.require_human_auth_kind();
@@ -950,6 +975,7 @@ begin
   perform internal.validate_bridge_policy(policy);
 
   new_id := internal.create_envelope(p_space_id, 'bridge', actor, null, null);
+  begin
   insert into public.bridges(entity_id, space_id, provider, connection_id, credential_id,
                              external_conversation_id, conversation, target_kind, target_id, policy,
                              retention_days, teammate_id, purpose, quiet_hours, worker_posting)
@@ -962,6 +988,11 @@ begin
           coalesce(p_retention_days, case when p_conversation ->> 'kind' = 'dm' then 90 end),
           p_teammate_id, nullif(btrim(p_purpose), ''), p_quiet_hours, coalesce(p_worker_posting, true))
   returning * into b;
+  exception when unique_violation then
+    -- A concurrent create won between the checks above and this insert.
+    get stacked diagnostics v_constraint = constraint_name;
+    perform internal.bridge_reraise_unique(v_constraint);
+  end;
   perform internal.bridge_write_target_edge(b, actor);
   perform internal.record_initial_version(new_id, actor);
   return internal.ledger_record(p_client_mutation_id, 'bridges.create',
@@ -1039,6 +1070,14 @@ begin
          quiet_hours = b.quiet_hours, worker_posting = b.worker_posting, worker_wake = b.worker_wake,
          retention_days = b.retention_days, conversation = b.conversation
    where entity_id = p_bridge_id;
+  -- A lowered ceiling lowers every worker above it in the same write, so no
+  -- reader has to remember to take the least of the two (§2.7).
+  if p_patch ? 'workerWake' then
+    update public.bridge_read_cursors c set wake = b.worker_wake
+     where c.bridge_id = p_bridge_id
+       and ('{"directed":0,"thread":1,"all":2}'::jsonb ->> c.wake)::int
+         > ('{"directed":0,"thread":1,"all":2}'::jsonb ->> b.worker_wake)::int;
+  end if;
   return internal.ledger_record(p_client_mutation_id, 'bridges.update',
     internal.command_result(p_bridge_id, null,
       internal.record_activity(b.space_id, p_bridge_id, actor, 'updated', null,
@@ -1054,7 +1093,7 @@ create or replace function public.retarget_bridge(
   p_bridge_id uuid, p_expected_version integer, p_target_id uuid,
   p_actor_id uuid default null, p_client_mutation_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare replay jsonb; actor uuid; b public.bridges; target public.entities;
+declare replay jsonb; actor uuid; b public.bridges; target public.entities; v_constraint text;
 begin
   perform internal.require_human_auth_kind();
   b := internal.bridge_for_admin(p_bridge_id);
@@ -1072,8 +1111,13 @@ begin
     raise exception 'the bridge already targets this entity' using errcode = '22023';
   end if;
   perform internal.bridge_assert_target_free(p_target_id, p_bridge_id);
-  update public.bridges set target_kind = target.kind, target_id = target.id
-   where entity_id = p_bridge_id returning * into b;
+  begin
+    update public.bridges set target_kind = target.kind, target_id = target.id
+     where entity_id = p_bridge_id returning * into b;
+  exception when unique_violation then
+    get stacked diagnostics v_constraint = constraint_name;
+    perform internal.bridge_reraise_unique(v_constraint);
+  end;
   perform internal.bridge_write_target_edge(b, actor);
   return internal.ledger_record(p_client_mutation_id, 'bridges.retarget',
     internal.command_result(p_bridge_id, null,
@@ -1190,6 +1234,8 @@ declare
   v_session uuid;
   v_row public.bridge_handles;
   v_title text := nullif(btrim(p_title), '');
+  v_attempt integer := 0;
+  v_constraint text;
 begin
   perform internal.require_space_member(p_space_id);
   v_session := internal.caller_work_session(p_space_id);
@@ -1201,18 +1247,25 @@ begin
     raise exception 'a handle title is at most four words' using errcode = '22023';
   end if;
   select * into v_row from public.bridge_handles where space_id = p_space_id and entity_id = v_session;
-  if v_row.handle is null then
-    -- Two concurrent claims for one session: the unique on (space, entity)
-    -- makes the loser re-read the winner's row.
+  -- Two races, told apart by which unique fired: the same session claiming
+  -- twice (the (space, entity) unique: re-read the winner's row), and two
+  -- sessions minting the same name at once (the primary key: mint again).
+  while v_row.handle is null loop
+    v_attempt := v_attempt + 1;
+    if v_attempt > 8 then raise exception 'could not mint a free handle' using errcode = '53400'; end if;
     begin
       insert into public.bridge_handles(space_id, handle, entity_id, kind, title)
       values (p_space_id, internal.bridge_new_handle(p_space_id), v_session, 'work_session',
               coalesce(v_title, left(nullif(internal.bridge_target_title('work_session', v_session), ''), 80)))
       returning * into v_row;
     exception when unique_violation then
-      select * into v_row from public.bridge_handles where space_id = p_space_id and entity_id = v_session;
+      get stacked diagnostics v_constraint = constraint_name;
+      if v_constraint <> 'bridge_handles_pkey' then
+        select * into v_row from public.bridge_handles where space_id = p_space_id and entity_id = v_session;
+      end if;
     end;
-  elsif v_title is not null and v_title is distinct from v_row.title then
+  end loop;
+  if v_title is not null and v_title is distinct from v_row.title then
     update public.bridge_handles set title = v_title
      where space_id = p_space_id and handle = v_row.handle returning * into v_row;
   end if;

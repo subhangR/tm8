@@ -25,6 +25,7 @@ const teammate = randomUUID();
 const chatA = randomUUID(), chatB = randomUUID(), chatC = randomUUID();
 const channel = randomUUID(), sessionA = randomUUID(), sessionB = randomUUID();
 const connection = randomUUID(), adminConnection = randomUUID();
+const outsiderMember = randomUUID(), outsiderIdentity = `bridge-outsider-${randomUUID()}`, sessionOther = randomUUID();
 
 type Kind = 'browser' | 'cli' | 'agent';
 const as = <T>(identityId: string, fn: (q: Querier) => Promise<T>, authKind: Kind = 'browser', workSessionId?: string) =>
@@ -84,6 +85,14 @@ beforeAll(async () => {
       await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
         values ($1,'Worker','running','none',now())`, [id]);
     }
+    await c.query(`insert into public.user_profiles(identity_id, display_name) values ($1,'Outsider')`, [outsiderIdentity]);
+    await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'member',$1)`, [outsiderMember, otherSpace]);
+    await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1,$2,$3,'owner','Outsider')`,
+      [outsiderMember, otherSpace, outsiderIdentity]);
+    await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`,
+      [sessionOther, otherSpace, outsiderMember]);
+    await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at)
+      values ($1,'Other worker','running','none',now())`, [sessionOther]);
     await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status)
       values ($1,'whatsapp',$2,'+91 …9494','linked'),($3,'whatsapp',$4,'+91 …1999','linked')`,
       [connection, ownerAccount, adminConnection, adminAccount]);
@@ -123,6 +132,11 @@ describe('bridges.create (§3.4, D20, D25, D28)', () => {
     });
     const edges = await scratch.query<{ dst_id: string }>(`select dst_id from public.edges where src_id = $1 and type = 'bridged_to'`, [infra.entity.id]);
     expect(edges.map(e => e.dst_id)).toEqual([chatA]);
+  });
+
+  it('bridge_view answers nothing to a reader outside the bridge\'s space', async () => {
+    const [row] = await as(outsiderIdentity, q => q.query<{ v: unknown }>('select internal.bridge_view($1) as v', [infra.entity.id]));
+    expect(row!.v).toBeNull();
   });
 
   it('refuses a space admin who does not own the number (D28)', async () => {
@@ -241,6 +255,16 @@ describe('handles (D23)', () => {
     expect(dupEntity.code).toBe('23505');
   });
 
+  it('uniqueness is per space: another space may hold the same name, and a claim names only a session of that space', async () => {
+    const [a] = await scratch.query<{ handle: string }>('select handle from public.bridge_handles where entity_id = $1', [sessionA]);
+    await scratch.query(`insert into public.bridge_handles(space_id, handle, entity_id, kind) values ($1,$2,$3,'work_session')`,
+      [otherSpace, a!.handle, sessionOther]);
+    const e = await refusal(as(outsiderIdentity, q => q.rpc('claim_bridge_handle', [otherSpace, null]), 'agent', sessionA));
+    expect(reasonOf(e)).toBe('not_a_session');
+    const mine = await as(outsiderIdentity, q => q.rpc<{ handle: string; entityId: string }>('claim_bridge_handle', [otherSpace, null]), 'agent', sessionOther);
+    expect(mine).toMatchObject({ handle: a!.handle, entityId: sessionOther });
+  });
+
   it('refuses a caller that is not a session in the space', async () => {
     const e = await refusal(as(ownerIdentity, q => q.rpc('claim_bridge_handle', [spaceId, null])));
     expect(reasonOf(e)).toBe('not_a_session');
@@ -258,6 +282,18 @@ describe('listen (§2.7)', () => {
     expect((await listen('directed')).wake).toBe('directed');
     const e = await refusal(listen('all'));
     expect(reasonOf(e)).toBe('above_bridge_ceiling');
+  });
+
+  it('lowering the bridge ceiling lowers the workers above it', async () => {
+    const [b] = await scratch.query<{ id: string }>(`select entity_id as id from public.bridges where ended_at is null and target_kind = 'chat' limit 1`);
+    const version = async () => (await scratch.query<{ version: number }>('select version from public.entities where id = $1', [b!.id]))[0]!.version;
+    const update = async (workerWake: string) =>
+      as(ownerIdentity, async q => q.rpc('update_bridge', [b!.id, await version(), JSON.stringify({ workerWake }), null, randomUUID()]));
+    await update('all');
+    await as(ownerIdentity, q => q.rpc('set_bridge_listen', [b!.id, 'all']), 'agent', sessionA);
+    await update('thread');
+    const [c] = await scratch.query<{ wake: string }>('select wake from public.bridge_read_cursors where bridge_id = $1 and session_id = $2', [b!.id, sessionA]);
+    expect(c!.wake).toBe('thread');
   });
 });
 
