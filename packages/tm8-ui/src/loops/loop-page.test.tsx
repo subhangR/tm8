@@ -196,16 +196,54 @@ describe('loop page controls', () => {
   });
 
   it('Run now on 409 loop_run_overlap offers Run anyway, which forces', async () => {
+    // The server's real shape (run-handlers.ts): details {reason, runId}; its message is API wording, never shown.
     const runNow = vi.fn()
-      .mockRejectedValueOnce(new CollabError('conflict', 'Run run-live is still live.', { details: { code: 'loop_run_overlap', liveRunId: 'run-live' } }))
+      .mockRejectedValueOnce(new CollabError('conflict', 'a run of this loop is still live; pass force to run anyway',
+        { details: { reason: 'loop_run_overlap', runId: 'run-live' } }))
       .mockResolvedValueOnce({ run: run({ id: 'run-forced', status: 'running' }) });
-    header(view(), port({ runNow }));
+    header(view(), port({ runNow, runsGet: vi.fn(async () => run({ id: 'run-live', status: 'running', sessionId: 'sess-live' })) }));
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
     const overlap = await screen.findByTestId('loop-overlap');
-    expect(overlap.textContent).toContain('still live');
-    fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway' }));
+    expect(overlap.textContent).toContain('Not started: the previous run');
+    expect(overlap.textContent).toContain('is still live');
+    expect(overlap.textContent).not.toContain('pass force');
+    expect(within(overlap).getByRole('button', { name: 'Open the live run' })).toBeTruthy();
+    fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway (starts a second run)' }));
     await screen.findByTestId('loop-run-started');
     expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true, { clientMutationId: expect.any(String) });
+  });
+
+  it('an overlap with a run still LAUNCHING says it is starting, and Show run opens its session once it has one', async () => {
+    const runNow = vi.fn().mockRejectedValueOnce(new CollabError('conflict',
+      'a run of this loop is still launching (run run-live): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run',
+      { details: { reason: 'loop_run_overlap', runId: 'run-live', launching: true } }));
+    const runsGet = vi.fn()
+      .mockResolvedValueOnce(run({ id: 'run-live', status: 'running', sessionId: null, firedAt: new Date(Date.now() - 60_000).toISOString() }))
+      .mockResolvedValueOnce(run({ id: 'run-live', status: 'running', sessionId: null }))
+      .mockResolvedValue(run({ id: 'run-live', status: 'running', sessionId: 'sess-live' }));
+    const props = header(view(), port({ runNow, runsGet }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    const overlap = await screen.findByTestId('loop-overlap');
+    await waitFor(() => expect(overlap.textContent).toMatch(/The previous run \(fired .+\) is still starting\./));
+    expect(overlap.textContent).not.toContain('clientMutationId');
+    expect(within(overlap).getByRole('button', { name: 'Run anyway (starts a second run)' })).toBeTruthy();
+    // No session yet: the table re-reads and the page says so.
+    fireEvent.click(within(overlap).getByRole('button', { name: 'Show run' }));
+    expect(await screen.findByText(/still starting: its row in RUNS shows its session/)).toBeTruthy();
+    expect(props.onRunsChanged).toHaveBeenCalled();
+    expect(props.onOpenEntity).not.toHaveBeenCalled();
+    // Once it has one, Show run opens it.
+    runNow.mockRejectedValueOnce(new CollabError('conflict', 'still launching', { details: { reason: 'loop_run_overlap', runId: 'run-live', launching: true } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    fireEvent.click(within(await screen.findByTestId('loop-overlap')).getByRole('button', { name: 'Show run' }));
+    await waitFor(() => expect(props.onOpenEntity).toHaveBeenCalledWith('sess-live'));
+  });
+
+  it('a lastError with no firing yet reads "Not scheduled", not "Last firing failed"', () => {
+    header(view({ state: { lastError: 'schedule never matches within a year', lastRunAt: null } }));
+    const banner = screen.getByTestId('loop-last-error');
+    expect(banner.textContent).toContain('Not scheduled: schedule never matches within a year');
+    expect(banner.textContent).not.toContain('Last firing failed');
   });
 
   it('Run now holds ONE mutation id per intent: a retry after a timeout replays it, a new press after success does not', async () => {
