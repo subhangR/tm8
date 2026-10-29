@@ -11,12 +11,15 @@
  *
  * Pinned here: the old read misses the other space's ghost (the reproduction);
  * the node read and the ending door reach it; the ending is the process fact
- * only (outcome and claims untouched), pairs status with kind, leaves an
- * `execution.node_ending` ledger row and returns the usage facts; the usage
- * door writes in any space; only a node admin may call any door, and the node
- * id scopes each; `session_capacity` gives every caller the node-wide `used`;
- * and the cap's count equals the node read on a fixture holding every
- * status × outcome × kind × deleted combination.
+ * only (outcome and claims untouched), pairs status with kind, is recorded on
+ * its `session.process_changed` event with `endedByNode`, and returns the
+ * usage facts; the usage door writes in any space; the auto-close read is
+ * node-wide and only lists rows the door will end; only a node admin may call
+ * any door, and the node id scopes each; `session_capacity` gives every caller
+ * the node-wide `used` and counts as ghosts only rows past the stale window;
+ * and, on a fixture holding every status × outcome × kind × deleted
+ * combination, the node read is "a process recorded live" of any kind while
+ * the cap counts only unfinished agents.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -171,13 +174,26 @@ const capacity = async (
   identity: string,
   node: string | null,
   held: string[] = [],
+  staleAfter = '0 seconds',
 ): Promise<{ used: number; ghosts: number | null }> => {
   const row = (
-    await asApp((q) => q(`select used, ghosts from public.session_capacity($1,$2::uuid[])`, [node, held]),
-      identity, false)
+    await asApp((q) => q(`select used, ghosts from public.session_capacity($1,$2::uuid[],$3::interval)`,
+      [node, held, staleAfter]), identity, false)
   )[0]!;
   return { used: Number(row.used), ghosts: row.ghosts === null ? null : Number(row.ghosts) };
 };
+
+/** The rows the agent cap counts on a node, spelled out rather than through the predicate. */
+const capRows = async (node: string): Promise<string[]> =>
+  (
+    await asGraphOwner(
+      `select ws.entity_id from public.work_sessions ws join public.entities e on e.id = ws.entity_id
+        where ws.node_id = $1 and ws.status in ('spawning','running','idle') and ws.outcome <> 'completed'
+          and ws.session_kind = 'agent' and e.deleted_at is null
+        order by 1`,
+      [node],
+    )
+  ).map((r) => String(r.entity_id));
 
 beforeAll(async () => {
   database = await createW1ScratchDatabase('ghost-378');
@@ -285,19 +301,27 @@ describe('378 — node ghost sessions', () => {
     expect((await sessionRow(foreign)).status).toBe('running');
   });
 
-  it('leaves an execution.node_ending ledger row naming the node identity and the reason', async () => {
+  it('records the ending durably on its session.process_changed event, naming the node', async () => {
     const foreign = await spawnRunning(theirs);
     expect(await recordLost(foreign)).toBe(true);
-    const rows = await asGraphOwner(
-      `select identity_id, operation, result from public.command_ledger
-        where operation = 'execution.node_ending' and result->>'sessionId' = $1`,
+    const events = await asGraphOwner(
+      `select payload from public.workspace_events
+        where event_type = 'session.process_changed' and payload->>'id' = $1 order by seq`,
       [foreign],
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      identity_id: mine.identityId,
-      result: { nodeId: NODE, status: 'failed', endedKind: 'lost', reason: 'marked lost by test' },
+    // running (the member door, in spawnRunning) then failed (the node door).
+    expect(events.map((e) => (e.payload as Record<string, unknown>).to)).toEqual(['running', 'failed']);
+    expect(events[1]!.payload).toMatchObject({
+      from: 'running', to: 'failed', endedKind: 'lost', endedReason: 'Lost: gone.', endedByNode: NODE,
     });
+    // A member-door transition says nothing about a node: byte-identical to before.
+    expect(Object.keys(events[0]!.payload as object)).not.toContain('endedByNode');
+    // And no idempotency-envelope row is minted for it.
+    const ledger = await asGraphOwner(
+      `select 1 from public.command_ledger where result->>'sessionId' = $1 and operation like 'execution.node%'`,
+      [foreign],
+    );
+    expect(ledger).toEqual([]);
   });
 
   it('closes a completed session’s idle process as exited / exited_clean, outcome untouched', async () => {
@@ -308,13 +332,33 @@ describe('378 — node ghost sessions', () => {
         where entity_id = $1 and (select true from ok)`,
       [done],
     );
-    // Not a ghost candidate (the cap does not count it either)...
-    expect(await nodeLive()).not.toContain(done);
-    // ...but its process is still recorded live, so the auto-close may end it.
+    // Its process is still recorded live, so it is endable, and the cap no longer counts it.
+    expect(await nodeLive()).toContain(done);
     expect((await recordEnding(done, 'exited_clean', 'exited')).recorded).toBe(true);
     expect(await sessionRow(done)).toMatchObject({ status: 'exited', outcome: 'completed', ended_kind: 'exited_clean' });
   });
 
+  it('lists auto-close candidates in a space the node owner is not in, through the node door only', async () => {
+    const done = await spawnRunning(theirs);
+    await asGraphOwner(
+      `with ok as (select set_config('tm8.work_session_outcome','on',true))
+       update public.work_sessions set outcome = 'completed', outcome_at = now() - interval '2 hours',
+              outcome_source = 'operator'
+        where entity_id = $1 and (select true from ok)`,
+      [done],
+    );
+    await asGraphOwner(`update public.entities set activity_at = now() - interval '2 hours' where id = $1`, [done]);
+    const due = await asNode((q) => q(`select session_id from public.node_completed_sessions_to_close($1)`, [NODE]));
+    expect(due.map((r) => String(r.session_id))).toContain(done);
+    await expect(
+      asApp((q) => q(`select * from public.node_completed_sessions_to_close($1)`, [NODE]), theirs.identityId, false),
+    ).rejects.toMatchObject({ code: '42501' });
+    // Every candidate is endable: the door's precondition is the read's.
+    expect((await recordEnding(done, 'exited_clean', 'exited')).recorded).toBe(true);
+    // The member-filtered predecessor is gone.
+    const left = await asGraphOwner(`select 1 from pg_proc where proname = 'completed_sessions_to_close'`);
+    expect(left).toEqual([]);
+  });
   it('writes usage for a session this node ran, in a space the node owner is not in', async () => {
     const foreign = await spawnRunning(theirs);
     await recordLost(foreign);
@@ -339,13 +383,20 @@ describe('378 — node ghost sessions', () => {
     for (const identity of [theirs.identityId, mine.identityId]) {
       expect((await capacity(identity, null)).used).toBe(cap);
     }
+    // `ghosts` is the part of `used` on this node, so the cap's population: the
+    // node read lists every kind and outcome, the cap only unfinished agents.
+    const counted = await capRows(NODE);
     expect(await capacity(theirs.identityId, null)).toMatchObject({ ghosts: null });
-    expect((await capacity(theirs.identityId, NODE)).ghosts).toBe(live.length);
-    expect((await capacity(theirs.identityId, NODE, [held])).ghosts).toBe(live.length - 1);
+    expect((await capacity(theirs.identityId, NODE)).ghosts).toBe(counted.length);
+    expect((await capacity(theirs.identityId, NODE, [held])).ghosts).toBe(counted.length - 1);
     expect((await capacity(theirs.identityId, NODE, live)).ghosts).toBe(0);
+    // A row younger than the reaper's stale window is not called dead: `held`
+    // was spawned a moment ago, so a 10-minute window leaves it out.
+    const others = counted.filter((id) => id !== held);
+    expect((await capacity(theirs.identityId, NODE, others, '10 minutes')).ghosts).toBe(0);
   });
 
-  it('the cap and the node read share one definition of live, on every combination', async () => {
+  it('two named predicates, on every combination: the node read lists every live process, the cap only unfinished agents', async () => {
     const template = await spawnRunning(mine);
     const statuses = ['spawning', 'running', 'idle', 'exited', 'failed'];
     const outcomes = ['open', 'completed', 'stopped'];
@@ -380,27 +431,43 @@ describe('378 — node ghost sessions', () => {
       }
     }
 
-    // Every session in this database is on NODE or OTHER_NODE; take OTHER_NODE's out.
+    // Every session in this database is on NODE or OTHER_NODE.
     const cap = Number((await asGraphOwner(`select internal.live_work_session_count(null) n`))[0]!.n);
-    const otherNode = (await nodeLive(OTHER_NODE)).length;
-    const live = await nodeLive();
-    expect(cap - otherNode).toBe(live.length);
+    const counted = [...(await capRows(NODE)), ...(await capRows(OTHER_NODE))];
+    expect(cap).toBe(counted.length);
     // The capacity read counts the same population as the cap.
     expect((await capacity(theirs.identityId, null)).used).toBe(cap);
     // Not vacuous: 3 live statuses x 2 unfinished outcomes, agent, not deleted.
-    expect(live.length).toBeGreaterThanOrEqual(6);
+    expect(counted.length).toBeGreaterThanOrEqual(6);
 
-    // And row for row: the node read is exactly the rows the shared predicate calls live.
-    const expected = (
+    // The node read is exactly "a process is recorded live on this node":
+    // every kind and every outcome, never a deleted or ended row.
+    const live = await nodeLive();
+    const recordedLive = (
       await asGraphOwner(
         `select ws.entity_id from public.work_sessions ws join public.entities e on e.id = ws.entity_id
-          where ws.node_id = $1
-            and ws.status in ('spawning','running','idle') and ws.outcome <> 'completed'
-            and ws.session_kind = 'agent' and e.deleted_at is null
+          where ws.node_id = $1 and ws.status in ('spawning','running','idle') and e.deleted_at is null
           order by 1`,
         [NODE],
       )
     ).map((r) => String(r.entity_id));
-    expect(live).toEqual(expected);
+    expect(live).toEqual(recordedLive);
+    const kindsListed = await asGraphOwner(
+      `select distinct ws.session_kind k from public.work_sessions ws where ws.entity_id = any($1::uuid[])`,
+      [live],
+    );
+    expect(kindsListed.map((r) => r.k).sort()).toEqual(['agent', 'credential', 'shell']);
+    // A shell ghost is endable through the same door, like an agent's.
+    const shell = await asGraphOwner(
+      `select ws.entity_id from public.work_sessions ws join public.entities e on e.id = ws.entity_id
+        where ws.node_id = $1 and ws.session_kind = 'shell' and ws.status = 'running' and e.deleted_at is null
+        limit 1`,
+      [NODE],
+    );
+    expect(await recordLost(String(shell[0]!.entity_id))).toBe(true);
+    // The cap's rows on this node are a subset of it.
+    const capHere = await capRows(NODE);
+    expect(capHere.every((id) => live.includes(id))).toBe(true);
+    expect(capHere.length).toBeLessThan(live.length);
   });
 });

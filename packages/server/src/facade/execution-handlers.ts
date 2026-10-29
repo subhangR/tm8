@@ -71,8 +71,7 @@ import {
   WorktreeManager,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
-  type GhostReconcileReport,
-  type LostSessionReapReport,
+  type NodeEndingSweepReport,
   type NodeEndedKind,
   type NodeSessionEnding,
   type WorktreeReconcileReport,
@@ -1592,7 +1591,7 @@ export class DbGraphPort implements GraphPort {
   ): Promise<Array<{ sessionId: string; minutes: number }>> {
     const rows = await this.db.query<{ session_id: string; minutes: number }>(
       this.claims(auth),
-      `select session_id, minutes from public.completed_sessions_to_close($1)`,
+      `select session_id, minutes from public.node_completed_sessions_to_close($1)`,
       [nodeId],
     );
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
@@ -1964,7 +1963,7 @@ export interface ExecutionRuntime {
    * the ordering (and so tests can drive it deliberately). Resolves to the count
    * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
    */
-  reconcileGhosts(): Promise<GhostReconcileReport>;
+  reconcileGhosts(): Promise<NodeEndingSweepReport>;
   /**
    * §6 — reconcile this node's worktree ALLOCATIONS. A sibling of
    * `reconcileGhosts`, called at the same point and with the same posture: the
@@ -1987,9 +1986,9 @@ export interface ExecutionRuntime {
    * Spec D1 §4.4 — the ghost reaper. Records `failed / lost` for this node's
    * sessions that have had no process for `staleAfterMs`. Never rejects.
    */
-  reapLost(staleAfterMs: number): Promise<LostSessionReapReport>;
+  reapLost(staleAfterMs: number): Promise<NodeEndingSweepReport>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
-  closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  closeIdleCompleted(): Promise<NodeEndingSweepReport>;
   /**
    * Remove the per-session artifacts on this node that nothing can read
    * again (Codex homes, space-key homes, manifest files), and with a
@@ -1999,6 +1998,11 @@ export interface ExecutionRuntime {
   reclaimSessionArtifacts(
     retention: SessionHomeRetention,
   ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
+}
+
+/** A node job that could not start (no owner, no graph): one error, nothing counted. */
+function failedSweep(message: string): NodeEndingSweepReport {
+  return { candidates: 0, retired: 0, notRecorded: 0, errors: [{ message }] };
 }
 
 /**
@@ -2143,7 +2147,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         // not.
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
-        return { retired: 0, errors: [{ message }] };
+        return failedSweep(message);
       }
     },
     closeIdleCompleted: async () => {
@@ -2153,7 +2157,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return failedSweep(error instanceof Error ? error.message : String(error));
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2179,7 +2183,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { staleAfterMs },
         );
       } catch (error) {
-        return { candidates: 0, reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return failedSweep(error instanceof Error ? error.message : String(error));
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2355,10 +2359,7 @@ export function registerExecutionHandlers(
           requestId: 'startup-reconcile',
         });
       } catch (error) {
-        return {
-          retired: 0,
-          errors: [{ message: error instanceof Error ? error.message : String(error) }],
-        };
+        return failedSweep(error instanceof Error ? error.message : String(error));
       }
     },
     closeIdleCompleted: async () => {
@@ -2368,7 +2369,7 @@ export function registerExecutionHandlers(
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return failedSweep(error instanceof Error ? error.message : String(error));
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2394,7 +2395,7 @@ export function registerExecutionHandlers(
           { staleAfterMs },
         );
       } catch (error) {
-        return { candidates: 0, reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return failedSweep(error instanceof Error ? error.message : String(error));
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2957,6 +2958,12 @@ export interface RegisterHandlersOptions {
   readonly dispatchDelivery?: DispatchDelivery;
   /** This node's id, for the capacity read's `ghosts` count (378). */
   readonly nodeId?: string;
+  /**
+   * The lost-session reaper's stale window (`lostAfterMsFromEnv`). `ghosts`
+   * counts only rows unchanged for this long, so it names what the reaper
+   * would retire, not a launch whose PTY is a second away. Default 10 min.
+   */
+  readonly ghostStaleAfterMs?: number;
 }
 
 /**
@@ -3326,14 +3333,15 @@ function registerHandlers(
     // 378: `used` and `ghosts` in ONE read of ONE population, node-wide as the
     // spawn gate counts it (`session_capacity` is a definer; the plain-SQL
     // count under the caller's RLS saw only the caller's spaces). `ghosts` is
-    // the share of `used` recorded against THIS node with no PTY here.
+    // the share of `used` the reaper would retire: on THIS node, no PTY here,
+    // unchanged for its stale window.
     // OPT-IN (`?ghosts=1`): `capacity` is `.strict()` in the contract, so a
     // client that does not ask gets exactly the bytes it got before.
     const wantGhosts = options.nodeId !== undefined && ctx.query.get('ghosts') === '1';
     const capacityRows = await db.query<{ used: number | string; ghosts: number | string | null }>(
       claims,
-      'select used, ghosts from public.session_capacity($1, $2::uuid[])',
-      [wantGhosts ? options.nodeId : null, live],
+      'select used, ghosts from public.session_capacity($1, $2::uuid[], make_interval(secs => $3))',
+      [wantGhosts ? options.nodeId : null, live, (options.ghostStaleAfterMs ?? 10 * 60_000) / 1000],
     );
     const capacity = capacityRows?.[0];
     const ghosts = wantGhosts && capacity?.ghosts != null ? Number(capacity.ghosts) : undefined;

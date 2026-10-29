@@ -375,6 +375,18 @@ export class FakeGraph implements GraphPort {
     return this.nodeLiveSessions;
   }
 
+  /** Rows the completed auto-close should find. Set by the test. */
+  completedToClose: Array<{ sessionId: string; minutes: number }> = [];
+
+  async listCompletedSessionsToClose(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>> {
+    this.authSeen.push(auth);
+    this.nodeSessionQueries.push(nodeId);
+    return this.completedToClose;
+  }
+
   /** Recorded as a transition too, so `statusesFor` reads both doors. */
   async recordNodeSessionEnding(
     auth: GraphAuth,

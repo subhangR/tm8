@@ -1837,7 +1837,10 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
      outcomeBy: EntityId | null; receiptMessageId: EntityId | null;
      outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
  | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
-     endedKind: WorkSessionEndedKind | null; endedReason: string | null; clientMutationId?: string }
+     endedKind: WorkSessionEndedKind | null; endedReason: string | null;
+     /** 378: the node that recorded this ending itself (a ghost, a lost or auto-closed session). Absent otherwise. */
+     endedByNode?: string;
+     clientMutationId?: string }
  /**
   * A `working_on` claim ended (Spec D1 §6.3 R4). The edge row is KEPT with
   * `props.endedAt`/`props.endReason` (its own `edge.upsert` carries that); this

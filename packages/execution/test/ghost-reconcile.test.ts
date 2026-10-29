@@ -47,7 +47,7 @@ describe('startup ghost reconciliation', () => {
 
     const retired = await service.reconcileNodeGhosts(AUTH);
 
-    expect(retired).toEqual({ retired: 1, errors: [] });
+    expect(retired).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
     // 378: through the node door, in any space. The door itself writes the
     // `execution.node_ending` ledger row with the node identity and the reason
@@ -67,7 +67,7 @@ describe('startup ghost reconciliation', () => {
       { sessionId: 'g-idle', status: 'idle' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 2, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 2, retired: 2, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('g-spawning')).toEqual(['failed']);
     expect(graph.statusesFor('g-idle')).toEqual(['failed']);
   });
@@ -88,13 +88,13 @@ describe('startup ghost reconciliation', () => {
       { sessionId: 'ghost', status: 'running' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 1, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('alive')).toEqual([]);
     expect(graph.statusesFor('ghost')).toEqual(['failed']);
   });
 
   it('does nothing, quietly, when there are no ghosts', async () => {
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 0, retired: 0, notRecorded: 0, errors: [] });
     expect(graph.transitions).toHaveLength(0);
   });
 
@@ -141,7 +141,7 @@ describe('startup ghost reconciliation', () => {
     });
     graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
 
-    expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
+    expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 0, retired: 0, notRecorded: 0, errors: [] });
     expect(graph.nodeSessionQueries).toHaveLength(0);
     expect(graph.transitions).toHaveLength(0);
   });

@@ -146,14 +146,13 @@ import type {
   SpaceCredentialPort,
   SpaceCredentialProvider,
   Tm8Manifest,
-  LostSessionReapReport,
+  NodeEndingSweepReport,
   NodeEndedKind,
   SessionUsageFacts,
   TransitionInput,
   WorkSessionEndedKind,
   WorkSessionStatus,
   WorktreeAllocationRow,
-  GhostReconcileReport,
 } from './types.js';
 import { SpawnError } from './types.js';
 import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
@@ -3812,8 +3811,8 @@ export class SpawnService {
    *
    * @returns how many sessions were retired.
    */
-  async reconcileNodeGhosts(auth: GraphAuth): Promise<GhostReconcileReport> {
-    if (!this.nodeId) return { retired: 0, errors: [] };
+  async reconcileNodeGhosts(auth: GraphAuth): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
@@ -3824,7 +3823,12 @@ export class SpawnService {
         nodeId: this.nodeId,
         error: message,
       });
-      return { retired: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+      return {
+        candidates: 0,
+        retired: 0,
+        notRecorded: 0,
+        errors: [{ message: `could not list this node's sessions: ${message}` }],
+      };
     }
 
     // WAS THE KERNEL INVOLVED? Asked ONCE, before the sweep, because it is a
@@ -3857,6 +3861,7 @@ export class SpawnService {
     const nodeId = this.nodeId;
 
     let retired = 0;
+    let notRecorded = 0;
     const errors: Array<{ message: string }> = [];
     for (const { sessionId, status } of ghosts) {
       try {
@@ -3900,7 +3905,10 @@ export class SpawnService {
                   'it can be resumed to pick up where it left off.',
               }),
         });
-        if (!recorded) continue;
+        if (!recorded) {
+          notRecorded += 1;
+          continue;
+        }
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
@@ -3930,7 +3938,7 @@ export class SpawnService {
         retired,
       });
     }
-    return { retired, errors };
+    return { candidates: ghosts.length, retired, notRecorded, errors };
   }
 
   /**
@@ -3951,15 +3959,20 @@ export class SpawnService {
   async reapLostSessions(
     auth: GraphAuth,
     opts: { staleAfterMs: number; now?: number },
-  ): Promise<LostSessionReapReport> {
-    if (!this.nodeId) return { candidates: 0, reaped: 0, errors: [] };
+  ): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
     const now = opts.now ?? Date.now();
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
       candidates = await this.graph.listNodeLiveSessions(auth, this.nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { candidates: 0, reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+      return {
+        candidates: 0,
+        retired: 0,
+        notRecorded: 0,
+        errors: [{ message: `could not list this node's sessions: ${message}` }],
+      };
     }
     const nodeId = this.nodeId;
     const ghosts = new Set<string>();
@@ -3969,7 +3982,8 @@ export class SpawnService {
     for (const id of [...this.ghostFirstSeen.keys()]) {
       if (!ghosts.has(id)) this.ghostFirstSeen.delete(id);
     }
-    let reaped = 0;
+    let retired = 0;
+    let notRecorded = 0;
     const errors: Array<{ message: string }> = [];
     for (const sessionId of ghosts) {
       const first = this.ghostFirstSeen.get(sessionId);
@@ -3991,12 +4005,13 @@ export class SpawnService {
           endedReason: lost.endedReason,
         });
         this.ghostFirstSeen.delete(sessionId);
-        if (recorded) reaped += 1;
+        if (recorded) retired += 1;
+        else notRecorded += 1;
       } catch (error) {
         errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
       }
     }
-    return { candidates: ghosts.size, reaped, errors };
+    return { candidates: ghosts.size, retired, notRecorded, errors };
   }
 
   /**
@@ -4028,17 +4043,23 @@ export class SpawnService {
    */
   async closeIdleCompletedSessions(
     auth: GraphAuth,
-  ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
-    if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+  ): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
     const nodeId = this.nodeId;
     let due: Array<{ sessionId: string; minutes: number }>;
     try {
       due = await this.graph.listCompletedSessionsToClose(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
+      return {
+        candidates: 0,
+        retired: 0,
+        notRecorded: 0,
+        errors: [{ message: `could not list completed sessions to close: ${message}` }],
+      };
     }
-    let closed = 0;
+    let retired = 0;
+    let notRecorded = 0;
     const errors: Array<{ message: string }> = [];
     for (const { sessionId, minutes } of due) {
       try {
@@ -4057,12 +4078,13 @@ export class SpawnService {
           errors.push({ message: `session ${sessionId}: the kill signal itself failed` });
           continue;
         }
-        if (recorded) closed += 1;
+        if (recorded) retired += 1;
+        else notRecorded += 1;
       } catch (error) {
         errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
       }
     }
-    return { closed, errors };
+    return { candidates: due.length, retired, notRecorded, errors };
   }
 
   /** First time the reaper saw each live-recorded session with no PTY here. */

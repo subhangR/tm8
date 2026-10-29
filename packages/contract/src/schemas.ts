@@ -1831,6 +1831,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     to: WorkSessionStatusSchema,
     endedKind: WorkSessionEndedKindSchema.nullable(),
     endedReason: z.string().nullable(),
+    endedByNode: z.string().min(1).optional(),
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({

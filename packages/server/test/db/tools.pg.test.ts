@@ -135,7 +135,9 @@ it('settles exit outcomes independently of PTY state, excludes runs from counts 
       await c.query("update public.work_sessions set outcome_at=now()-interval '2 days' where entity_id=$1", [session]);
       await c.query("update public.entities set activity_at=now()-interval '2 days' where id=$1", [session]);
     });
-    expect(await db.rpc(auth(), 'completed_sessions_to_close', ['tool-test'])).toEqual([]);
+    // 378: the node's own auto-close read (node admin, no space pin).
+    const node: DbClaims = { identityId: 'tools-owner', authKind: 'browser', nodeAdmin: true };
+    expect(await db.rpc(node, 'node_completed_sessions_to_close', ['tool-test'])).toEqual([]);
   }
   const counts = await db.rpc<Array<{ kind: string; total: number }>>(auth(), 'space_kind_counts', [space]);
   expect(counts.find(c => c.kind === 'work_session')?.total).toBe(1); // Only the invoking agent fixture.

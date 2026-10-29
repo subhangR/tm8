@@ -66,7 +66,7 @@ describe('node ghost doors (378)', () => {
   });
 
   it('boot reconciliation retires the ghost in a space the node identity is not a member of', async () => {
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 2, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 2, retired: 2, notRecorded: 0, errors: [] });
     expect(graph.nodeEndings.map((w) => w.sessionId)).toEqual(['ghost-a', 'ghost-b']);
     for (const w of graph.nodeEndings) {
       expect(w.nodeId).toBe(NODE);
@@ -82,7 +82,8 @@ describe('node ghost doors (378)', () => {
     expect(graph.nodeEndings).toEqual([]);
     expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN })).toEqual({
       candidates: 2,
-      reaped: 2,
+      retired: 2,
+      notRecorded: 0,
       errors: [],
     });
     expect(graph.nodeEndings.map((w) => [w.sessionId, w.endedKind])).toEqual([
@@ -95,7 +96,7 @@ describe('node ghost doors (378)', () => {
   it('does not count a row whose own exit won the race, nor one with a live PTY', async () => {
     pty.spawn({ sessionId: 'ghost-a', command: 'sleep 5', cwd: '/tmp', env: {} });
     graph.recordNodeSessionEnding = async () => ({ recorded: false, usageFacts: null });
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 1, retired: 0, notRecorded: 1, errors: [] });
   });
 
   it('the panel’s "Mark lost" stays on the member door: a person acts with their own claims', async () => {
@@ -147,7 +148,7 @@ describe('node ghost doors (378)', () => {
       { sessionId: 'ghost-b', minutes: 45 },
     ];
     pty.spawn({ sessionId: 'done-a', command: 'sleep 5', cwd: '/tmp', env: {} });
-    expect(await service.closeIdleCompletedSessions(AUTH)).toEqual({ closed: 2, errors: [] });
+    expect(await service.closeIdleCompletedSessions(AUTH)).toEqual({ candidates: 2, retired: 2, notRecorded: 0, errors: [] });
     expect(pty.hasSession('done-a')).toBe(false);
     expect(graph.nodeEndings.map((w) => [w.sessionId, w.status, w.endedKind])).toEqual([
       ['done-a', 'exited', 'exited_clean'],

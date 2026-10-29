@@ -70,15 +70,22 @@ export type WorkSessionEndedKind =
   | 'unknown';
 
 /**
- * One lost-session reaper pass (`SpawnService.reapLostSessions`). `candidates`
- * is how many of this node's live sessions had no process here on this look;
- * `reaped` how many were recorded `failed / lost`; `errors` one per refusal.
- * The job logs all three every tick, so a pass that saw ghosts and retired
- * none is never silent again.
+ * One pass of a node job that ends this node's processes (378): boot ghost
+ * reconciliation, the lost-session reaper, the completed auto-close.
+ *
+ * - `candidates`: rows the pass would end (ghosts with no PTY here, or
+ *   completed sessions past their window);
+ * - `retired`: endings the node door recorded;
+ * - `notRecorded`: endings the door answered `recorded: false` for — the row
+ *   was no longer recorded live on this node by the time of the write;
+ * - `errors`: one per refusal or failure.
+ *
+ * Counted apart so a pass that ends nothing is never mistaken for a clean one.
  */
-export interface LostSessionReapReport {
+export interface NodeEndingSweepReport {
   candidates: number;
-  reaped: number;
+  retired: number;
+  notRecorded: number;
   errors: Array<{ message: string }>;
 }
 
@@ -1062,17 +1069,6 @@ export interface ResumeRequest {
  * single GraphPort instance serves every request on the node — a port that
  * captured claims at construction would hand one caller's identity to the next.
  */
-/**
- * What a ghost sweep did, and what it could not do — the shape its worktree
- * sibling (`WorktreeReconcileReport`) already has, for the reason that sibling's
- * failures reach the operator at boot and this one's did not.
- */
-export interface GhostReconcileReport {
-  readonly retired: number;
-  /** Empty on a clean sweep. Non-empty means rows were left claiming to be alive. */
-  readonly errors: readonly { readonly message: string }[];
-}
-
 export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
@@ -1350,11 +1346,12 @@ export interface GraphPort {
   ): Promise<boolean>;
   /**
    * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
-   * recorded live and has been idle past its space's auto-close window
-   * (`public.completed_sessions_to_close`). Optional: a port without it never
-   * auto-closes anything.
+   * recorded live and has been idle past its space's auto-close window, in
+   * every space (`public.node_completed_sessions_to_close`, 378). Node admin,
+   * like the other node doors; the member-filtered read it replaced closed
+   * nothing outside the owner's spaces.
    */
-  listCompletedSessionsToClose?(
+  listCompletedSessionsToClose(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;

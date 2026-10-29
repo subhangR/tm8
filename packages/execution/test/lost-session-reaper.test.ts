@@ -31,15 +31,15 @@ describe('the lost-session reaper (Spec D1 §4.4)', () => {
 
   it('never reaps on the first sighting, nor before the window has passed', async () => {
     graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
-    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 })).toEqual({ candidates: 1, reaped: 0, errors: [] });
-    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN - 1 })).toEqual({ candidates: 1, reaped: 0, errors: [] });
+    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 })).toEqual({ candidates: 1, retired: 0, notRecorded: 0, errors: [] });
+    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN - 1 })).toEqual({ candidates: 1, retired: 0, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost')).toEqual([]);
   });
 
   it('records failed / lost once the session has had no process for the whole window', async () => {
     graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
     await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 });
-    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN })).toEqual({ candidates: 1, reaped: 1, errors: [] });
+    expect(await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN })).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost')).toEqual(['failed']);
     const t = graph.transitions.find((x) => x.sessionId === 'ghost');
     expect(t).toMatchObject({ endedKind: 'lost' });
@@ -52,21 +52,21 @@ describe('the lost-session reaper (Spec D1 §4.4)', () => {
     graph.nodeLiveSessions = [];
     await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 1 });
     graph.nodeLiveSessions = [{ sessionId: 'flicker', status: 'running' }];
-    expect((await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN })).reaped).toBe(0);
+    expect((await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN })).retired).toBe(0);
   });
 
   it('never reaps a session with a live PTY on this node', async () => {
     pty.spawn({ sessionId: 'alive', command: 'sleep 5', cwd: '/tmp', env: {} });
     graph.nodeLiveSessions = [{ sessionId: 'alive', status: 'running' }];
     await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 });
-    expect((await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 2 * TEN_MIN })).reaped).toBe(0);
+    expect((await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 2 * TEN_MIN })).retired).toBe(0);
     expect(graph.statusesFor('alive')).toEqual([]);
   });
 
   it('reports, never throws, when the graph cannot be read', async () => {
     graph.listNodeLiveSessionsError = new Error('graph unreachable');
     const r = await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 });
-    expect(r.reaped).toBe(0);
+    expect(r.retired).toBe(0);
     expect(r.errors[0]?.message).toMatch(/could not list/);
   });
 
