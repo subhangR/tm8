@@ -87,6 +87,8 @@ export interface OperationDiscovery {
   inputSchemaRef: string | null;
   outputSchemaRef: string;
   sideEffect: SideEffect;
+  /** What the operation does, when its name's `verb` misleads (`tm8 help --query`'s stop rule reads it). */
+  does?: string;
   authzTarget: AuthzTarget;
   idempotency: Idempotency;
   versioning: Versioning;
@@ -124,6 +126,12 @@ interface Row {
   /** `none` = no request payload; `unbound` = payload, no frozen schema; `bound` = frozen schema. */
   input: 'none' | 'unbound' | 'bound';
   side?: SideEffect;
+  /**
+   * What the operation does, for `tm8 help --query`'s stop rule, when its name's verb misleads
+   * (follow-up 01a188d3-0526): `projects.folderUploads.complete` materializes and links a working
+   * directory, so it does a `create`, never the end of an upload. (`verb` is the name's own.)
+   */
+  does?: string;
   ver?: Versioning;
   tags?: readonly string[];
   notes?: readonly string[];
@@ -2552,6 +2560,7 @@ const ROWS: Record<OperationName, Row> = {
   'projects.folderUploads.complete': {
     cmd: null,
     sum: 'Materialize a staged folder upload as a project working directory and link it to the Space',
+    does: 'create',
     authz: 'space',
     input: 'bound',
     tags: ['file', 'folder', 'upload', 'project', 'import'],
@@ -4496,6 +4505,7 @@ function build(operation: OperationName): BaseRow {
     inputSchemaRef: row.input === 'none' ? null : `tm8://schema/${operation}/input`,
     outputSchemaRef: `tm8://schema/${operation}/output`,
     sideEffect: row.side ?? (op.kind === 'command' ? 'durable' : 'none'),
+    ...(row.does ? { does: row.does } : {}),
     authzTarget: row.authz,
     idempotency: op.kind === 'command' ? 'required' : 'none',
     versioning: row.ver ?? 'none',

@@ -106,6 +106,24 @@ describe('help --query: an ending query never gets a write that does not end som
     expect(name(first('stop the token'))).toBe('mcp tokens revoke');
   });
 
+  it('an operation whose verb ENDS but whose summary creates declares what it does, and set F stops at the abort (review of e9eef355a)', () => {
+    const ENDS = new Set([...PURE_STOPS, ...DETACHES]);
+    const CREATES = /\b(materiali[sz]es?|creates?|link it|starts?|spawns?|adds?|launch(es)?)\b/i;
+    const undeclared = DISCOVERY.filter((r) => {
+      const v = r.command && r.command.length > 0 ? r.command.at(-1)! : /^[a-z]+/.exec(r.operation.slice(r.operation.lastIndexOf('.') + 1))?.[0] ?? '';
+      return ENDS.has(v) && CREATES.test(r.summary) && r.does === undefined;
+    }).map((r) => `${r.operation}: ${r.summary}`);
+    expect(undeclared).toEqual([]);
+    expect(DISCOVERY.find((r) => r.operation === 'projects.folderUploads.complete')?.does).toBe('create');
+    // Doc 01a188d7-7e77 v6 set F: a stop of an upload is its abort, never its materialize.
+    for (const q of ['stop the upload', 'cancel the folder upload', 'stop the project upload', 'cancel the project upload']) {
+      expect(name(first(q)), q).toBe('op:projects.folderUploads.abort');
+    }
+    // A project link has no upload to abort: a read or nothing, never the materialize or a link's create.
+    const link = first('stop the project link');
+    expect(link === undefined || (SIDE.get(link.operation) ?? 'durable') === 'none', name(link)).toBe(true);
+  });
+
   it('every alias whose name or summary says it merges, commits, stashes, rolls back, stages, pushes, applies, branches, checkpoints or restores declares a write', () => {
     const VERBS = /\b(merge|merges|commit|commits|stash|stashes|rollback|roll back|rolls back|stage|stages|push|pushes|apply|applies|branch|branches|checkpoint|checkpoints|restore|restores)\b/i;
     // Reads that use those words as nouns ("with branch, status", "the push history").

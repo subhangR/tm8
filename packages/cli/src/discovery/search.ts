@@ -266,11 +266,14 @@ const NAMES_NOTHING: ReadonlySet<string> = new Set([
 const NEGATIONS: ReadonlySet<string> = new Set(['don', 'dont', 'not', 'never']);
 
 /**
- * What an operation does: its CLI command's last word, since commands are verb-last (`file upload
+ * What an operation does: its row's declared `does` when the name misleads (folderUploads.complete
+ * is a create), else its CLI command's last word, since commands are verb-last (`file upload
  * abort`, `chat stop`, `collection add`), else its name's last segment or that segment's leading
  * word (`credentials.space.delete`, `runNow`).
  */
 function verbOf(operation: string, command: string | readonly string[] | null): string {
+  const declared = catalogRow(operation)?.does;
+  if (declared) return declared;
   const words = typeof command === 'string' ? command.split(' ') : command;
   if (words && words.length > 0) return words[words.length - 1]!;
   return /^[a-z]+/.exec(operation.slice(operation.lastIndexOf('.') + 1))?.[0] ?? '';
@@ -278,11 +281,12 @@ function verbOf(operation: string, command: string | readonly string[] | null): 
 
 /**
  * What an operation acts on: its CLI command's words before the verb (`mcp tokens revoke` acts on a
- * token, `credential unshare` on a credential), else its name's segments before the verb, singular.
+ * token, `credential unshare` on a credential), else its name's segment just before the verb, singular.
  */
 function nounsOf(operation: string, command: string | readonly string[] | null): ReadonlySet<string> {
   const path = typeof command === 'string' ? command.split(' ') : command;
-  const words = path && path.length > 0 ? path.slice(0, -1) : operation.split('.').slice(0, -1);
+  // With no command, the object is the segment just before the verb (`folderUploads`), never a namespace (`projects`).
+  const words = path && path.length > 0 ? path.slice(0, -1) : operation.split('.').slice(-2, -1);
   return new Set(words.flatMap((w) => w.split(/-|(?=[A-Z])/)).map(singular));
 }
 const singular = (word: string): string => {
