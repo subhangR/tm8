@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { LoopRunListResultSchema, LoopRunSchema, LoopViewSchema, type LoopRun, type LoopView } from '@tm8/contract';
+import { LoopRunListResultSchema, LoopRunSchema, LoopViewSchema, ToolRunSchema, type LoopRun, type LoopView } from '@tm8/contract';
 import { createLoopExecutorPort } from '../../src/facade/execution-handlers.js';
 import { createLoopsJob, type LoopExecutorPort } from '../../src/scheduler/jobs/loops.js';
 import type { JobContext } from '../../src/scheduler/types.js';
@@ -398,12 +398,16 @@ describePg('loops PR2: runs on a real node', () => {
       return { toolId: tool.id, loop: await createLoop({ title, action: 'tool', toolId: tool.id, toolInputs: {}, ...extra }) };
     }
 
-    async function fireToolRun(loopId: string): Promise<LoopRun> {
-      const run = LoopRunSchema.parse(ok(await runNow(loopId)).run);
+    async function fireToolRun(loop: LoopView): Promise<LoopRun> {
+      const run = LoopRunSchema.parse(ok(await runNow(loop.id)).run);
       expect(run).toMatchObject({ action: 'tool', status: 'running', taskId: null });
       live.add(run.sessionId!);
       expect(node.production.execution!.pty.hasSession(run.sessionId!)).toBe(true);
       expect(await tokensOf(run.sessionId!)).toEqual([{ revoked: false }]);
+      // The tool's own run view (Tools #1412) labels it with its loop, from the
+      // provenance-marked triggered_by edge 394's start_tool_session writes.
+      const toolRun = ToolRunSchema.parse(ok(await request<unknown>('GET', `/v2/tool-runs/${run.sessionId}`)));
+      expect(toolRun.triggeredBy).toEqual({ id: loop.id, title: loop.definition.title });
       return run;
     }
 
@@ -432,7 +436,7 @@ describePg('loops PR2: runs on a real node', () => {
 
     it('loops.runs.stop: the tool is recorded killed, its token revoked, and the run reads stopped', async () => {
       const { toolId, loop } = await toolLoop('Tool run, stopped');
-      const run = await fireToolRun(loop.id);
+      const run = await fireToolRun(loop);
       const stopped = LoopRunSchema.parse(ok(await request<{ run: LoopRun }>('POST', `/v2/loop-runs/${run.id}/stop`, {})).run);
       // (4)
       expect(stopped.status).toBe('stopped');
@@ -442,7 +446,7 @@ describePg('loops PR2: runs on a real node', () => {
 
     it('max runtime: the sweep stops the tool, which is recorded killed, its token revoked, and the run timed_out', async () => {
       const { toolId, loop } = await toolLoop('Tool run, bounded', { maxRuntimeSeconds: 60 });
-      const run = await fireToolRun(loop.id);
+      const run = await fireToolRun(loop);
       await sql(`update public.loop_runs set fired_at = now() - interval '2 minutes' where id = $1`, [run.id]);
       expect(await tick()).toMatchObject({ detail: { timedOut: 1 } });
       // (4)
