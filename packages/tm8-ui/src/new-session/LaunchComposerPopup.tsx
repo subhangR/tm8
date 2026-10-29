@@ -490,13 +490,21 @@ export function LaunchComposerPopup({
   const phaseNow = useRef<PressPhase>('idle');
   const moveTo = (next: PressPhase) => { phaseNow.current = next; setPhase(next); };
   const pending = phase !== 'idle';
-  /* A CHANGED SUBJECT is a new card: nothing in flight carries over. */
+  /* A CHANGED SUBJECT is a new card GENERATION: a press belongs to the
+     generation that made it, and its late answer (success, refusal,
+     timeout) is ignored once the card has moved on. */
+  const generation = useRef(0);
   const subjectSeen = useRef(subject.id);
   useEffect(() => {
     if (subjectSeen.current === subject.id) return;
     subjectSeen.current = subject.id;
+    generation.current += 1;
     moveTo('idle');
   }, [subject.id]);
+  /** `act`, run only while the press made in generation `gen` is still this card's. */
+  const ifCurrent = <A extends unknown[]>(gen: number, act: (...args: A) => void) => (...args: A) => {
+    if (gen === generation.current) act(...args);
+  };
   /* DETACHABLE once a press has been in flight DETACH_AFTER_MS. */
   const [detachable, setDetachable] = useState(false);
   const detachableNow = useRef(false);
@@ -552,7 +560,12 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : (!mcpReady ? 'Connectors: choose a connected account for each connector you picked.' : null) ?? selection.launchBlock
+      /* Not ready with nothing drawn is the catalog still being read; not
+         ready with rows drawn is a picked connector with no account. Lane
+         F's gate sentence replaces both after its picker swap. */
+      : (!mcpReady
+        ? (mcpCount === 0 ? 'Reading connectors…' : 'Connectors: choose a connected account for each connector you picked.')
+        : null) ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -578,7 +591,7 @@ export function LaunchComposerPopup({
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
      in-flight retry, the card looks for the session before offering one. */
-  const afterTimeout = () => {
+  const afterTimeout = (gen: number) => {
     if (phaseNow.current === 'detached') {
       refuse('The node didn’t answer in time — the launch may have started. Look at the task’s sessions before launching again.');
       return;
@@ -593,7 +606,7 @@ export function LaunchComposerPopup({
     setTimedOut('checking');
     setNodeRefusal('The node didn’t answer in time — the launch may have started. Checking…');
     sessionsSince(subject.id, openedAt.current).then(
-      (found) => {
+      ifCurrent(gen, (found: readonly { id: string; title: string }[]) => {
         if (found.length > 0) {
           setTimedOut('found');
           setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
@@ -601,11 +614,11 @@ export function LaunchComposerPopup({
           setTimedOut('none');
           setNodeRefusal('No session started on this task. Launch again to retry.');
         }
-      },
-      () => {
+      }),
+      ifCurrent(gen, () => {
         setTimedOut('unknown');
         setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
-      },
+      }),
     );
   };
 
@@ -683,6 +696,7 @@ export function LaunchComposerPopup({
        `run` is the only call of `onSpawn` (on the next microtask, so the
        handoff below is still asked first). */
     moveTo('launching');
+    const gen = generation.current;
     /* THE HANDOFF: asked synchronously, before the node is. A host that
        throws is a refused launch, and nothing is sent. */
     let taken = false;
@@ -701,15 +715,14 @@ export function LaunchComposerPopup({
       return;
     }
     run
-      .then(() => {
+      .then(ifCurrent(gen, () => {
         keepPicks();
         succeed();
-      })
-      .catch((error: unknown) => {
+      }), ifCurrent(gen, (error: unknown) => {
         const e = error as { code?: string; message?: string };
-        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout();
+        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout(gen);
         else fail(error);
-      });
+      }));
   };
 
   /* ---- THE VERB: the KIND of session ---- */
@@ -895,6 +908,13 @@ export function LaunchComposerPopup({
   }
   const stripJev: StripJev = {
     carried: { memories: jev.entity.memories.carried, skills: jev.entity.skills.carried, references: jev.entity.references.carried },
+    /* Everything Jev's Apply added, ticked or not: an unticked pick stays a
+       row (under Attach → Suggested), one click from coming back. */
+    picked: {
+      memories: jev.entity.memories.applied?.added ?? [],
+      skills: jev.entity.skills.applied?.added ?? [],
+      references: jev.entity.references.applied?.added ?? [],
+    },
     why: jevWhy,
   };
   const strip = buildStrip({ defaults: selection.defaults, edits: selection.edits, added: selection.added, jev: stripJev, teammates: jevTeammateRows });
@@ -960,9 +980,10 @@ export function LaunchComposerPopup({
     if (!onDispatch || phaseNow.current !== 'idle' || dispatchRefusal) return;
     setNodeRefusal(null);
     moveTo('dispatching');
+    const gen = generation.current;
     Promise.resolve()
       .then(() => onDispatch(note || undefined, dispatchKey.current.keyFor(`${subject.id}\n${note}`)))
-      .then((result) => {
+      .then(ifCurrent(gen, (result: unknown) => {
         const r = result as Partial<ExecutionDispatchResult> | undefined;
         if (r?.delivery === 'undelivered') {
           /* Not a success: the request is stored on the task, but no
@@ -971,8 +992,7 @@ export function LaunchComposerPopup({
           return;
         }
         succeed();
-      })
-      .catch(fail);
+      }), ifCurrent(gen, fail));
   };
   const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
   /* THE LAUNCHING LINE: the card collapses to what was pressed, not a greyed form. */
@@ -1128,18 +1148,27 @@ export function LaunchComposerPopup({
 
 
 /**
- * How many CONNECTOR ROWS the picker drew (`.mcp-toggles__rows > li`): 0
- * while it draws none — its loading or error line is not a connector. A
- * stand-in for lane F's `McpPicker onCount`; lane F deletes it when that
- * lands. The child stays MOUNTED at 0: it reads its catalog and readiness
- * while hidden.
+ * What in the picker is worth drawing the connectors block for: a connector
+ * row, or an error/problem line (role=alert, with its Retry) — something to
+ * act on. Its loading line is not.
+ *
+ * TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): this couples the
+ * card to classes in lane F's files. It is deleted by F's swap to
+ * `McpPicker onCount` in #1390, which merges after this.
+ */
+const MCP_DRAWN_SELECTOR = '.mcp-toggles__rows > li, [role="alert"]';
+
+/**
+ * How many things the picker drew that are worth the block (MCP_DRAWN_SELECTOR):
+ * 0 while it draws none. A stand-in for lane F's `McpPicker onCount`. The
+ * child stays MOUNTED at 0: it reads its catalog and readiness while hidden.
  */
 function DrawnCount({ onCount, children }: { onCount(n: number): void; children: ReactNode }) {
   const ref = useRef<HTMLSpanElement | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const read = () => onCount(el.querySelectorAll('.mcp-toggles__rows > li').length);
+    const read = () => onCount(el.querySelectorAll(MCP_DRAWN_SELECTOR).length);
     read();
     if (typeof MutationObserver === 'undefined') return;
     const observer = new MutationObserver(read);

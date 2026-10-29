@@ -261,9 +261,15 @@ function useFitInside(menu: RefObject<HTMLElement | null>, card: RefObject<HTMLE
     /* REFIT AS IT GROWS: a menu whose rows land after it opened (Attach's
        candidates) was clamped to its first, shorter height. */
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => fitMenu(m, c));
+    /* On the next frame, not inside the callback: the fit changes the size
+       being observed, which is the resize-loop pattern. */
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitMenu(m, c));
+    });
     observer.observe(m);
-    return () => observer.disconnect();
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [menu, card, key]);
 }
 
@@ -347,8 +353,6 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   actions: ReactNode;
   /** Extra class on the card: `lcd--v3`. */
   className?: string;
-  /** Escape closes this first (an open preview), before menus and the drawer. */
-  onEscapeFirst?: (() => boolean) | undefined;
   /** The access mode is fixed by the node, and why — the control shows Full access, locked. */
   accessLock?: string | null;
   /** Tab cycles inside the card, and focus returns to the opener when it closes. */
@@ -375,7 +379,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
     installedPlugins, installedPluginsNote, pluginSkillCounts, plugins, onPluginsChange, budget, advancedEdited,
     onAdvancedOpen,
     jevTeammate = null, jevModel = null,
-    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, collapsed = null, scrim = false,
+    verb, center, actions, className, accessLock = null, trapFocus = false, collapsed = null, scrim = false,
   } = props;
 
   const card = useRef<HTMLDivElement | null>(null);
@@ -392,14 +396,21 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   const dragDepth = useRef(0);
 
   const close = useCallback(() => setOpen(null), []);
+  /* COLLAPSING CLOSES ANY OPEN MENU: it is not on screen, and after a refusal
+     it came back open, while Escape and the scrim closed it (invisibly)
+     instead of reaching the card. */
+  const isCollapsed = collapsed !== null;
+  useEffect(() => { if (isCollapsed) setOpen(null); }, [isCollapsed]);
+  /* FILES ARE NOT TAKEN while a press is in flight: its input is fixed. */
+  const takesFiles = Boolean(onFiles) && !isCollapsed && !busy;
   const toggle = useCallback((name: string) => setOpen((current) => (current === name ? null : name)), []);
   useFitInside(menuRef, card, open);
 
   const blocked = busy || Boolean(refusal);
   const submit = () => { if (!blocked) onSubmit(); };
 
-  /* THE KEYBOARD, layered as the mock rules it: Escape closes a preview
-     first, then a menu, then an open context popover or Jev panel, then the
+  /* THE KEYBOARD, layered as the mock rules it: Escape closes a menu first,
+     then an open context popover or Jev panel, then the
      drawer, then the popup; ⌘. toggles the drawer; ⌘↵ launches.
 
      CAPTURE PHASE, AND CONSUMED: the popup sits over panels that close on
@@ -408,8 +419,8 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
      a real node. The one exception is Escape from inside the context
      popover or the Jev panel, which close themselves first. The ref keeps
      one listener for the card's life. */
-  const keys = useRef({ open, drawer, submit, onClose, onEscapeFirst, trapFocus });
-  keys.current = { open, drawer, submit, onClose, onEscapeFirst, trapFocus };
+  const keys = useRef({ open, drawer, submit, onClose, trapFocus, isCollapsed });
+  keys.current = { open, drawer, submit, onClose, trapFocus, isCollapsed };
   /* FOCUS GOES BACK TO THE OPENER when the card closes (v3): the Run button
      that opened it, so a keyboard user lands where they were. */
   useEffect(() => {
@@ -422,8 +433,8 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       const k = keys.current;
       const mod = event.metaKey || event.ctrlKey;
       if (event.key === 'Tab' && k.trapFocus && card.current) {
-        /* TAB STAYS INSIDE: the open preview if there is one, else the card. */
-        const scope = card.current.querySelector<HTMLElement>('[data-focus-scope]') ?? card.current;
+        /* TAB STAYS INSIDE the card. */
+        const scope = card.current;
         const focusable = [...scope.querySelectorAll<HTMLElement>(
           'button, input, textarea, select, [tabindex]:not([tabindex="-1"])',
         )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]'));
@@ -447,13 +458,17 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       } else if (mod && event.key === 'Enter') {
         k.submit();
       } else if (event.key === 'Escape') {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest('.lsel-popover, .jev-entry__pop')) return;
-        if (k.onEscapeFirst?.()) {
+        /* COLLAPSED, nothing but the line is on screen: Escape is the card's
+           (the host decides what closing means mid-flight), never a hidden
+           drawer's. */
+        if (k.isCollapsed) {
+          k.onClose();
           event.preventDefault();
           event.stopPropagation();
           return;
         }
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('.lsel-popover, .jev-entry__pop')) return;
         /* Those two only hear an Escape with focus inside them. Typing in the
            instructions with the Jev panel open, then Escape, closed the whole
            card and dropped the instructions — found live on a real node. */
@@ -510,7 +525,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   const menu: LaunchCardMenu = { open, toggle, close, menuProps, stop, card };
 
   const files = (list_: FileList | null) => {
-    if (!list_ || list_.length === 0 || !onFiles) return;
+    if (!list_ || list_.length === 0 || !onFiles || !takesFiles) return;
     onFiles([...list_]);
   };
 
@@ -531,20 +546,20 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       className={className ? `lcd ${className}` : 'lcd'}
       data-testid="launch-card"
       data-shake={shaking || undefined}
-      data-drop={dropping || undefined}
+      data-drop={(dropping && takesFiles) || undefined}
       data-busy={busy || undefined}
       onAnimationEnd={onShakeEnd}
       onClick={close}
       /* FILES DROP ANYWHERE ON THE CARD. Only a drag that carries files lights
          the target; dragging text within the card is left alone. */
       onDragEnter={(event) => {
-        if (!onFiles || !event.dataTransfer.types.includes('Files')) return;
+        if (!takesFiles || !event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
         dragDepth.current += 1;
         setDropping(true);
       }}
       onDragOver={(event) => {
-        if (onFiles && event.dataTransfer.types.includes('Files')) event.preventDefault();
+        if (takesFiles && event.dataTransfer.types.includes('Files')) event.preventDefault();
       }}
       onDragLeave={() => {
         if (!dropping) return;
@@ -552,7 +567,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         if (dragDepth.current <= 0) { dragDepth.current = 0; setDropping(false); }
       }}
       onDrop={(event) => {
-        if (!onFiles || !event.dataTransfer.types.includes('Files')) return;
+        if (!takesFiles || !event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
         dragDepth.current = 0;
         setDropping(false);

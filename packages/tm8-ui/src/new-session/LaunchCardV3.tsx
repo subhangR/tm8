@@ -267,15 +267,33 @@ function LaunchingLine({ line, onDetach }: { line: string; onDetach?: () => void
 /** About six lines of notes, then the box scrolls. */
 const NOTES_MAX_PX = 156;
 
+/** Sizes the notes box to its text, up to NOTES_MAX_PX. */
+function fitNotes(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = 'auto';
+  if (el.scrollHeight > 0) el.style.height = `${String(Math.min(el.scrollHeight, NOTES_MAX_PX))}px`;
+}
+
 /** The notes box: one line that grows with what is typed, up to NOTES_MAX_PX. */
 function Notes(props: LaunchCardV3Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
-  useLayoutEffect(() => {
+  useLayoutEffect(() => { fitNotes(ref.current); }, [props.notes]);
+  /* A WIDTH CHANGE rewraps the text: re-fit on the next frame (the fit
+     changes the observed box's height, so never inside the callback). */
+  useEffect(() => {
     const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    if (el.scrollHeight > 0) el.style.height = `${String(Math.min(el.scrollHeight, NOTES_MAX_PX))}px`;
-  }, [props.notes]);
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let width = el.clientWidth;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitNotes(el));
+    });
+    observer.observe(el);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, []);
   return (
     <textarea
       ref={ref}

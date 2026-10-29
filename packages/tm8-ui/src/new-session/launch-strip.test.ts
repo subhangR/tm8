@@ -45,6 +45,16 @@ describe('buildStrip', () => {
     expect(task.rows[0]).toMatchObject({ source: 'jev', jev: 'picked', jevWhy: 'useful · 2.1' });
   });
 
+  it('a Jev pick the person unticked stays a row — unticked, ✦, its reason kept — and counts nowhere', () => {
+    const strip = buildStrip({
+      defaults, edits: NO_SELECTION_EDITS, added: { ...NONE, references: [row('t-2', 'task')] },
+      jev: { carried: { references: { added: [], removed: [] } }, picked: { references: ['t-2' as EntityId] }, why: { 't-2': 'useful · 2.1' } },
+    });
+    const task = strip.find((g) => g.def.kind === 'task')!;
+    expect(task).toMatchObject({ yours: 0, jev: 0 });
+    expect(task.rows[0]).toMatchObject({ ticked: false, source: 'jev', jev: 'picked', jevWhy: 'useful · 2.1' });
+  });
+
   it('a default Jev left out is tagged, not counted as your removal', () => {
     const edits = { ...NO_SELECTION_EDITS, memories: { removed: ['ent-mem-tokens' as EntityId], added: [] } };
     const mem = buildStrip({

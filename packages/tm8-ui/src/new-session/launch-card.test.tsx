@@ -21,7 +21,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, waitFor, within } from '@testing-library/react';
 
 import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
-import { DETACH_AFTER_MS } from './LaunchComposerPopup';
+import { McpProvider } from '../mcp/context';
+import type { McpPort } from '../mcp/port';
+import { DETACH_AFTER_MS, LaunchComposerPopup } from './LaunchComposerPopup';
 import { controlledUpload, file, renderPopup } from './launch-test-kit';
 
 beforeEach(() => { localStorage.clear(); });
@@ -723,5 +725,75 @@ describe('detaching a long press', () => {
     expect(view.onDismiss).toHaveBeenCalledTimes(1);
     reject!(new Error('teammate is paused'));
     await waitFor(() => expect(onDetachedRefusal).toHaveBeenCalledWith('teammate is paused'));
+  });
+});
+
+describe('round 3: a press and what is still on the card', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('a menu open at the press is closed by the collapse: after 8 s Escape detaches instead of closing a hidden menu', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-model'));
+    expect(view.getByTestId('nsx-model-menu')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
+    await view.findByTestId('lcd3-launching');
+    act(() => { vi.advanceTimersByTime(DETACH_AFTER_MS); });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('files dropped while a press is in flight are not taken', async () => {
+    const { upload } = controlledUpload();
+    const view = renderPopup({ upload, onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await view.findByTestId('lcd3-launching');
+    fireEvent.drop(view.getByTestId('launch-card'), { dataTransfer: { files: [file('late.log')], types: ['Files'] } });
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('a press belongs to its subject: after the subject changes, the old answer is ignored and the new card launches', async () => {
+    let settle: (() => void) | null = null;
+    const onSpawn = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve; }))
+      .mockImplementation(() => new Promise<void>(() => {}));
+    const view = renderPopup({ onSpawn });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+    view.rerender(<div className="cv2-root"><LaunchComposerPopup {...view.props} subject={{ id: 'task-10', title: 'Another task' }} /></div>);
+    await waitFor(() => expect(view.queryByTestId('lcd3-launching')).toBeNull());
+    settle!();
+    await act(async () => { await Promise.resolve(); });
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
+    expect((onSpawn.mock.calls[1]![0] as { taskIds?: string[] }).taskIds).toEqual(['task-10']);
+  });
+});
+
+describe('round 3: connectors', () => {
+  const portWith = (catalog: () => Promise<never>) => ({ catalog }) as unknown as McpPort;
+
+  it('a connector read that FAILED shows its line and Retry — the block is not hidden', async () => {
+    const port = portWith(() => Promise.reject(new Error('down')));
+    const view = renderPopup({}, (card) => <McpProvider port={port}>{card}</McpProvider>);
+    const slot = view.getByTestId('lcd3-connectors');
+    await waitFor(() => expect(slot.hidden).toBe(false));
+    expect(within(slot).getByRole('alert').textContent).toContain('Retry connectors');
+  });
+
+  it('while connectors are still read, Launch says so — not "choose an account" — and the block stays hidden', async () => {
+    const port = portWith(() => new Promise<never>(() => {}));
+    const view = renderPopup({}, (card) => <McpProvider port={port}>{card}</McpProvider>);
+    await view.ready();
+    expect(view.getByTestId('nsx-send').getAttribute('title')).toBe('Reading connectors…');
+    expect(view.getByTestId('lcd3-connectors').hidden).toBe(true);
   });
 });

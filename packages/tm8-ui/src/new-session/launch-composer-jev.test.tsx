@@ -149,6 +149,23 @@ describe('asking', () => {
   });
 });
 
+describe('an unticked Jev pick', () => {
+  it('stays one click away: listed under Attach → Suggested with its reason, and one click ticks it back', async () => {
+    const view = setup();
+    await view.ask();
+    const menu = await view.openGroup('memory');
+    fireEvent.click(within(within(menu).getByTestId('lcd3-row-mem-a')).getByRole('menuitemcheckbox'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    const suggested = view.getByTestId('lcd3-attach-suggested-mem-a');
+    expect(suggested.textContent).toContain('✦ Jev');
+    expect(suggested.getAttribute('title')).toMatch(/^Jev: /);
+    fireEvent.click(suggested);
+    const input = await view.spawn();
+    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
+  });
+});
+
 describe('undo and staleness', () => {
   it('Undo Jev’s changes reverts its picks and its teammate, and keeps a later edit of yours', async () => {
     const view = setup();
