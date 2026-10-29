@@ -122,7 +122,7 @@ Python tools run with the node's `/usr/bin/python3 -I` and its system site-packa
 
 Open a tool entity. Its page shows source, inputs, configuration, versions and run history. Edit and save the definition or configure values, then choose **Run**. The dialog is generated from the inputs and prefilled from configured values; secrets are masked, and a refused run shows the server's message (a missing input, the session cap, a launch failure). Submitting opens the ordinary session terminal with a tool status chip. The terminal remains usable after exit with no idle auto-close. Close it when finished. Each row of the run history opens its terminal or its stored output.
 
-The live terminal stream and the stored tail both redact a secret's whole value as `[credential-redacted]`. Matching is by whole value only: a program that prints part of a secret or a transformation of it (`${TOKEN:0:6}`) prints it in the clear. The remaining shell has declared secret variables and tm8 agent identity removed. This environment cleanup is not an OS sandbox: tools run as the node user.
+The stored output tail and the CLI's attached stream redact a secret's whole value as `[credential-redacted]`. The session terminal in the UI does not: while its shell is open it shows everything the program printed, a secret included, to whoever can open that session. Matching is by whole value only: a program that prints part of a secret or a transformation of it (`${TOKEN:0:6}`) prints it in the clear. The remaining shell has declared secret variables and tm8 agent identity removed. This environment cleanup is not an OS sandbox: tools run as the node user.
 
 ## Verify locally
 

@@ -211,8 +211,9 @@ Values travel only in the authenticated request body. The CLI does not print
 them, and dynamic run/config/secret arguments are omitted from its command
 journal so even a refused literal cannot be recorded there.
 
-The live stream and the stored output tail both redact a secret's whole value
-(`[credential-redacted]`). Matching is by whole value only: a program that
+The CLI's attached stream and the stored output tail both redact a secret's
+whole value (`[credential-redacted]`); the session terminal in the UI shows the
+program's raw output while its shell is open. Matching is by whole value only: a program that
 prints part of a secret or a transformation of it (`${TOKEN:0:6}`) prints it
 unredacted.
 
