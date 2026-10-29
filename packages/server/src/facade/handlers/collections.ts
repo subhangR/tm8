@@ -902,11 +902,14 @@ type ResolvedTree = { depth: 1 | 2; perParent: number };
 /**
  * `tree` with its default filled in, or null when the query has none.
  * `CollectionQuerySchema` already refuses anything out of bounds at the door;
- * this re-check is for in-process callers (saved views, presets) that hand
- * the executor a query no schema has seen, the way `sort` is re-checked above.
+ * this re-check is for in-process callers that build a query themselves, the
+ * way `sort` and `groupBy` are re-checked above.
  */
 function resolveTree(tree: CollectionQuery['tree']): ResolvedTree | null {
   if (tree === undefined) return null;
+  if (typeof tree !== 'object' || tree === null) {
+    throw new CollabError('invalid_input', 'tree must be {depth: 1|2, perParent?: 1..200}');
+  }
   const { depth, perParent = COLLECTION_TREE_LEVEL_MAX } = tree;
   if (depth !== 1 && depth !== 2) {
     throw new CollabError('invalid_input', 'tree.depth must be 1 or 2: at most 2 levels are read under the page');
