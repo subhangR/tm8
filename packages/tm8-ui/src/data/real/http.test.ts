@@ -343,7 +343,7 @@ describe('http: per-operation deadlines', () => {
     }
   });
 
-  it('the floor table matches the CLI: spawn and resume only', () => {
-    expect(SLOW_OPERATION_TIMEOUT_MS).toEqual({ 'execution.spawn': 180_000, 'execution.resume': 180_000 });
+  it('the floor table matches the CLI: spawn, resume and a loop\'s Run now (a spawn) only', () => {
+    expect(SLOW_OPERATION_TIMEOUT_MS).toEqual({ 'execution.spawn': 180_000, 'execution.resume': 180_000, 'loops.runNow': 180_000 });
   });
 });

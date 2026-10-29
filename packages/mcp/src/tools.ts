@@ -533,8 +533,11 @@ const LOOP_ACT_GUIDES = [
   guide('loops.resume', 'End a loop\'s pause now, under its version.', {
     params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
   }),
-  guide('loops.runNow', 'Fire a loop once, now, beside its schedule (its next run is untouched); answers the run with '
-    + 'the task and session it made. A run still live refuses it (409 conflict, loop_run_overlap) unless force is true.', {
+  guide('loops.runNow', 'Fire a loop once, now, beside its schedule (its next run is untouched). It answers once the '
+    + 'session has started, which can take minutes, with the run and the task and session it made. A run still live '
+    + 'refuses it (409 conflict, loop_run_overlap) unless force is true. If the call fails as unavailable, the run may '
+    + 'have started: read loops.runs.list first; retry only with the SAME clientMutationId (pass your own). Never force '
+    + 'after a timeout.', {
     params: { loopId: '<loop-id>' }, body: { force: false },
   }),
   guide('loops.runs.stop', 'Stop a running run: its session is stopped and the run settles as stopped.', {

@@ -194,6 +194,31 @@ describe('failure classification', () => {
     expect((err as TransportError).message).not.toContain('is tm8-server running');
   });
 
+  it('loops.runNow gets the launch floor, as execution.spawn does: Run now answers once its session has settled', async () => {
+    vi.useFakeTimers();
+    try {
+      const hang = ((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        })) as typeof fetch;
+      // No timeoutMs: the DEFAULT deadline, which the floor raises (an explicit one would win).
+      const client = new Tm8Client({ baseUrl: 'http://127.0.0.1:4610', fetchImpl: hang });
+      const read = client.invoke('identity.get').catch((e: unknown) => e);
+      const run = client.invoke('loops.runNow', { params: { loopId: '019fe999-0000-7000-8000-0000000000f1' }, body: {} })
+        .catch((e: unknown) => e);
+      let settled = false;
+      void run.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect((await read as TransportError).message).toContain('timed out after 15000ms');
+      await vi.advanceTimersByTimeAsync(100_000);
+      expect(settled, 'Run now is still waiting at 115 s').toBe(false);
+      await vi.advanceTimersByTimeAsync(65_000);
+      expect((await run as TransportError).message).toContain('timed out after 180000ms');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the deadline armed through the body: headers then a stalled body times out', async () => {
     // A REAL socket, not a stub: `fetch` resolves on the headers, and the defect
     // lived in the gap after that — the timer was cleared there and `res.text()`
