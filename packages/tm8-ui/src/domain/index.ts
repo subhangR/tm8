@@ -158,7 +158,16 @@ export {
   sessionVerbsOf,
   withGrace,
 } from './session-outcome';
-export { LAUNCHERS_PER_READ, launchedByOf, launchedRowsFilter, treeParentOf } from './launched-by';
+export {
+  LAUNCHERS_PER_READ,
+  launchedByCrumb,
+  launchedByOf,
+  launchedRowsFilter,
+  launcherKindsOf,
+  launcherTitlesOf,
+  treeParentOf,
+  type RowsForKind,
+} from './launched-by';
 export { tileChildCount } from './tile-children';
 export type {
   GroupBulk,

@@ -79,6 +79,7 @@ import {
   getKind,
   homeRailGroups,
   isDrawerChatKind,
+  treeParentOf,
   type KindArt,
   type KindConfig,
 } from '../domain';
@@ -232,10 +233,12 @@ export function drawerForest(rows: readonly EntitySummary[]): {
   const children = new Map<string, EntitySummary[]>();
   const roots: EntitySummary[] = [];
   for (const row of live) {
-    if (row.parentId && ids.has(row.parentId) && row.parentId !== row.id) {
-      const list = children.get(row.parentId) ?? [];
+    /* A launched session hangs under its launcher (`treeParentOf`, 330). */
+    const up = treeParentOf(row);
+    if (up && ids.has(up) && up !== row.id) {
+      const list = children.get(up) ?? [];
       list.push(row);
-      children.set(row.parentId, list);
+      children.set(up, list);
     } else {
       roots.push(row);
     }

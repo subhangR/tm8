@@ -1669,6 +1669,7 @@
 .cv2-root .shell-empty__word--block { color: var(--pn-block); }
 .cv2-root .shell-empty__word--idle { color: var(--pn-ink-3); }
 .cv2-root .shell-empty__meta,
+.cv2-root .shell-empty__launcher,
 .cv2-root .shell-empty__record {
   font-family: var(--pn-mono);
   font-size: 10px;

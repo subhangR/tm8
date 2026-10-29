@@ -133,6 +133,14 @@ describe('phoneTree — roots with their loaded children', () => {
     expect(tree.map((n) => n.row.id)).toEqual(['r', 'orphan']);
     expect(tree[0]!.children.map((c) => c.id)).toEqual(['c1', 'g1']);
   });
+
+  it('a session LAUNCHED by a session folds under its launcher — 330 left it no parentId', () => {
+    const launched = (id: string, launchedBy: string) =>
+      summary({ id, parentId: null, state: { kind: 'work_session', status: 'running', launchedBy } as never });
+    const tree = phoneTree([launched('w1', 'coord'), s('coord', null), launched('w2', 'coord'), launched('w3', 'not-loaded')]);
+    expect(tree.map((n) => n.row.id)).toEqual(['coord', 'w3']);
+    expect(tree[0]!.children.map((c) => c.id)).toEqual(['w1', 'w2']);
+  });
 });
 
 describe('moreUrgent — a collapsed root borrows its most urgent child', () => {

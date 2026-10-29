@@ -13,6 +13,7 @@
  */
 import type { EntitySummary, WorkSessionStatus } from '@tm8/contract';
 import { listTime } from '../kit/time';
+import { treeParentOf } from '../domain/launched-by';
 
 /** The pill's colour family — mapped onto `--pn-run/wait/block/idle/info`. */
 export type PhoneTone = 'run' | 'wait' | 'block' | 'idle' | 'info' | 'review';
@@ -212,10 +213,12 @@ export function phoneTree(rows: readonly EntitySummary[]): PhoneTreeRow[] {
   const kids = new Map<string, EntitySummary[]>();
   const roots: EntitySummary[] = [];
   for (const r of rows) {
-    if (r.parentId && r.parentId !== r.id && ids.has(r.parentId)) {
-      const list = kids.get(r.parentId) ?? [];
+    /* A launched session hangs under its launcher (`treeParentOf`, 330). */
+    const up = treeParentOf(r);
+    if (up && up !== r.id && ids.has(up)) {
+      const list = kids.get(up) ?? [];
       list.push(r);
-      kids.set(r.parentId, list);
+      kids.set(up, list);
     } else {
       roots.push(r);
     }

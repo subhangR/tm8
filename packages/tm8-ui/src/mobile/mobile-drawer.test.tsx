@@ -442,4 +442,13 @@ describe('drawerForest', () => {
     expect(forest.roots.map((r) => r.id)).toEqual([orphan.id, root.id]);
     expect(forest.childrenOf(root.id).map((r) => r.id)).toEqual([sub.id]);
   });
+
+  it('hangs a session under the session that LAUNCHED it — 330 left it no parentId', () => {
+    const coord = row(SESSION, { title: 'Coordinator' });
+    const worker = row(SESSION, { title: 'Worker', state: { kind: SESSION, launchedBy: coord.id } as never });
+    const fromChat = row(SESSION, { title: 'From a chat', state: { kind: SESSION, launchedBy: 'chat-not-loaded' } as never });
+    const forest = drawerForest([coord, worker, fromChat]);
+    expect(forest.roots.map((r) => r.id)).toEqual([fromChat.id, coord.id]);
+    expect(forest.childrenOf(coord.id).map((r) => r.id)).toEqual([worker.id]);
+  });
 });

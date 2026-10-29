@@ -50,6 +50,7 @@ import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
+import { launchedByCrumb, launcherTitlesOf } from '../domain/launched-by';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
@@ -618,7 +619,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       status groups without turning this summary into a second full list. */
   const rosterRows = useMemo(() => {
     if (!TERMINAL_ROSTER_KIND) return [];
-    return data.rowsFor(TERMINAL_ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
+    const summaries = data.rowsFor(TERMINAL_ROSTER_KIND)(undefined);
+    /* A flat roster: each launched row names its launcher (task 01a182c8). */
+    const titles = launcherTitlesOf(summaries, TERMINAL_ROSTER_KIND, data.rowsFor);
+    return summaries.map((summary) => ({ ...toSessionRow(summary), launchedBy: launchedByCrumb(summary.state, titles) }));
   }, [data.rowsFor]);
 
   /** Session task rows come from durable `working_on` edges already projected
