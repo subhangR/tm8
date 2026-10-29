@@ -53,7 +53,21 @@ export interface DueLoop {
    * also the only place that can see the answer.
    */
   readonly actAsIdentity: string | null;
+  /**
+   * 384: the zone the cron half of the schedule is evaluated in (§3.1), and
+   * what a firing does. Optional so a row read before 384 still types; absent
+   * means UTC and the 091 meaning (a runner spawns, none dispatches).
+   */
+  readonly timezone?: string;
+  readonly action?: 'spawn' | 'dispatch' | 'tool';
 }
+
+/**
+ * Recorded on a tool loop instead of firing it: the tool action needs the
+ * scheduled tool runtime (loops PR3). Firing it through spawn or dispatch would
+ * run the wrong thing, so it is reported and the schedule moves on.
+ */
+export const TOOL_LOOP_NOT_RUNNABLE = 'tool loops cannot run on this server yet: the scheduled tool runtime is not installed';
 
 /**
  * What the job needs from the rest of the server, as a seam.
@@ -133,7 +147,9 @@ const DUE_LOOPS_SQL = `
          d.prompt                "prompt",
          d.config                "config",
          d.version               "version",
-         d.act_as_identity       "actAsIdentity"
+         d.act_as_identity       "actAsIdentity",
+         d.timezone              "timezone",
+         d.action                "action"
     from public.loops_due_for_executor($1) d`;
 
 /**
@@ -209,7 +225,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         let advance: Date | null = null;
         let scheduleError: string | null = null;
         try {
-          advance = nextRunAt(loop.schedule, ctx.firedAt);
+          advance = nextRunAt(loop.schedule, ctx.firedAt, loop.timezone ?? 'UTC');
           if (advance === null) scheduleError = `schedule "${loop.schedule}" never matches`;
         } catch (error) {
           scheduleError = error instanceof ScheduleError
@@ -226,6 +242,11 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           // Left ENABLED with the reason recorded: a bad expression is a thing
           // a human fixes, not a reason for the server to retire their loop.
           await recordRun(db, loopClaims, loop, null, scheduleError, ctx);
+          failed += 1;
+          continue;
+        }
+        if (loop.action === 'tool') {
+          await recordRun(db, loopClaims, loop, advance, TOOL_LOOP_NOT_RUNNABLE, ctx);
           failed += 1;
           continue;
         }
