@@ -4,16 +4,20 @@
 --
 -- Predecessor: 384_loops_first_class.sql.
 --
--- KEPT AT 385 BELOW MAIN'S TOP AT MERGE (387, 388): a deliberate exception to the
+-- KEPT AT 385 BELOW MAIN'S TOP AT MERGE (387-389): a deliberate exception to the
 -- PR-cleanup ordinal rule, as 384's is (Loops lead ruling, 2026-10-29). An
--- upgraded database applies this file after 388 and a fresh one applies it
+-- upgraded database applies this file after 389 and a fresh one applies it
 -- before 387; both end in the same schema. Checked: 385 only CREATES the eight
 -- functions listed below, none of which exists before it, and replaces or drops
 -- nothing that 387 (claim_text, header_text, rename_work_session), 388
 -- (snapshot_entity_version, start_tool_session, tools_snapshot), 389 (Tools
 -- PR-C: start_tool_session, issue_tool_session_loop_session) or 390 (Tools PR-E:
--- header_kind_allowed) touches. What it calls at run time (claim_text, the
--- loops snapshot trigger) resolves to whichever body is live.
+-- header_kind_allowed) touches. None of 387-389 adds or drops a column 385 reads
+-- (loops, loop_runs, work_sessions, members, entities) or replaces a helper it
+-- calls (is_loops_worker, require_space_member, resolve_actor, ledger_replay,
+-- ledger_record). What it calls at run time (claim_text through
+-- is_loops_worker, the loops snapshot trigger) resolves to whichever body is
+-- live.
 --
 -- WHAT 384 LEFT FOR THIS FILE. 384 added `loop_runs` and one door,
 -- `loop_run_settle` (settle once), and taught 375's due read about pauses. It
