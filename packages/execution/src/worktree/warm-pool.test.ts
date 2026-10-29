@@ -476,3 +476,31 @@ describe('P9 — failures', () => {
     await pool.drain();
   });
 });
+
+describe('P10 — a warm lane that is not clean', () => {
+  it.each([
+    ['an untracked file', 100, (lane: string) => writeFile(join(lane, 'stray.txt'), 'not ours\n')],
+    ['a modified tracked file', 101, (lane: string) => writeFile(join(lane, 'a.txt'), 'changed\n')],
+  ] as const)('%s never reaches the launched session: the lane is discarded and the caller goes cold', async (_what, n, dirty) => {
+    const a = await areas();
+    const log = logger();
+    const { manager, pool } = pooled(a, 1, log);
+    pool.replenish(PROJECT_ID, repoRoot);
+    await warmLanes(pool, 1);
+    const [lane] = pool.snapshot(PROJECT_ID);
+    await dirty(lane!.path);
+
+    const id = uuidN(n);
+    expect(await pool.claim({ projectId: PROJECT_ID, repoRoot, worktreeId: id, branch: `tm8/${id}`, baseCommitOid: firstOid }))
+      .toBeNull();
+    expect(await exists(await manager.computeWorktreePath(PROJECT_ID, id))).toBe(false);
+    expect(log.warns.some((w) => w.message.includes('not clean') && w.meta?.path === lane!.path)).toBe(true);
+    // One lane's problem, not the project's: no back-off, the pool refills.
+    expect(log.warns.some((w) => w.message.includes('backing off'))).toBe(false);
+    await waitFor('the pool to refill', () => pool.snapshot(PROJECT_ID).some((l) => l.state === 'warm' && l.path !== lane!.path));
+    const cold = await manager.add({ repoRoot, projectId: PROJECT_ID, worktreeId: id, branch: `tm8/${id}`, baseCommitOid: firstOid });
+    expect(await git(['status', '--porcelain', '--untracked-files=all'], cold.path)).toBe('');
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: cold.path, force: true });
+    await pool.drain();
+  });
+});

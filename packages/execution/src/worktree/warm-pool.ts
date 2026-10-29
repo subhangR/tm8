@@ -218,6 +218,13 @@ export class WarmLanePool {
       this.discard(lane);
       return null;
     }
+    // The pool area is ours, but nothing stops a process writing into it. A
+    // stray file is one lane's problem, not the project's: no back-off.
+    if ((await this.manager.isPristine(lane.path)) === false) {
+      this.logger?.warn('worktree pool: a warm lane was not clean at its claim; discarding it', { path: lane.path });
+      this.discard(lane);
+      return null;
+    }
 
     try {
       return await this.manager.adoptPoolLane({

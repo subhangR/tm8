@@ -567,6 +567,24 @@ export class WorktreeManager {
     return { path };
   }
 
+  /**
+   * Whether the tree holds exactly its HEAD plus the `LANE_SHARED_PATHS`
+   * links: no modified, staged, untracked or ignored file besides those. A
+   * warm lane's fast path (`checkout -b` with no start point) writes nothing,
+   * so anything else in the pool area would reach the launched session.
+   * `null` when `status` itself fails (the lane is gone, say): the caller
+   * learns that from the adoption, as before. No lock: one tree.
+   */
+  async isPristine(path: string): Promise<boolean | null> {
+    const res = await runGit(
+      ['-C', path, 'status', '--porcelain', '-z', '--untracked-files=all', '--ignored', '--no-renames'],
+      this.checkoutOpts(),
+    );
+    if (res.code !== 0) return null;
+    return res.stdout.split('\0').every((entry) =>
+      entry === '' || (entry.startsWith('!! ') && LANE_SHARED_PATHS.includes(entry.slice(3).replace(/\/$/, ''))));
+  }
+
   /** Move a warm lane's detached tree to `oid`, rewriting the files that differ. No lock: one tree. */
   async checkoutDetached(path: string, oid: string): Promise<void> {
     assertCommitOid(oid);
