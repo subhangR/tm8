@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { searchHelp } from '../src/discovery/help.js';
-import { DISCOVERY } from '../src/discovery/operations.js';
+import { DISCOVERY, aliasCommands } from '../src/discovery/operations.js';
 
 /** The ruling: a pure stop may lead any ending query; a detach only one that names what it ends. */
 const PURE_STOPS = new Set(['stop', 'terminate', 'disable', 'pause', 'interrupt', 'cancel']);
@@ -28,19 +28,29 @@ function verb(m: NonNullable<First>): string {
   if (m.command) return m.command.split(' ').at(-1)!;
   return /^[a-z]+/.exec(m.operation.slice(m.operation.lastIndexOf('.') + 1))?.[0] ?? '';
 }
-function namesSomething(q: string): boolean {
-  const words = q.toLowerCase().replace(/n't/g, ' not').split(/[^a-z']+/).filter((w) => w !== '' && w !== 'not' && w !== 'never');
+const singular = (w: string): string => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
+/** What the answer acts on: its command's words before the verb, else its name's segments. */
+function nouns(m: NonNullable<First>): Set<string> {
+  const words = m.command ? m.command.split(' ').slice(0, -1) : m.operation.split('.').slice(0, -1);
+  return new Set(words.flatMap((w) => w.split(/-|(?=[A-Z])/)).map((w) => singular(w.toLowerCase())));
+}
+/** The phrasing's object words: past its verb (and a negated verb, and an off/down). */
+function objectWords(q: string): string[] {
+  const words = q.toLowerCase().replace(/n't/g, ' not').split(/[^a-z']+/).filter((w) => w !== '' && w !== 'not' && w !== 'never' && w !== 'do');
   const rest = ['turn', 'switch', 'power', 'call', 'shut', 'cut'].includes(words[0] ?? '') && ['off', 'down'].includes(words[1] ?? '')
     ? words.slice(2) : words.slice(1);
-  return rest.some((w) => !FILLER.has(w));
+  return rest.filter((w) => !FILLER.has(w));
 }
 /** An ending query's first answer writes something other than its end (`phrasing -> answer`), or ''. */
 function wrongEnd(q: string): string {
   const m = first(q);
   if (m === undefined || (SIDE.get(m.operation) ?? 'durable') === 'none') return '';
-  const v = verb(m);
-  const ok = !NEGATED.test(q) && (PURE_STOPS.has(v) || (v === 'leave' && /\b(space|spaces|workspace)\b/.test(q))
-    || (DETACHES.has(v) && namesSomething(q)));
+  const v = verb(m), objects = objectWords(q);
+  const ok = !NEGATED.test(q) && (PURE_STOPS.has(v)
+    // Leaving ends only "quit the space" itself.
+    || (v === 'leave' && /^quit\b/i.test(q) && ['space', 'spaces', 'workspace'].includes(objects[0] ?? ''))
+    // A detach must name ITS OWN noun: "call off the deploy" is no token's revoke (lead ruling 01a1890c-a176).
+    || (DETACHES.has(v) && objects.some((w) => nouns(m).has(singular(w)))));
   return ok ? '' : `${q} -> ${name(m)}`;
 }
 const wrongEnds = (qs: readonly string[]): string[] => qs.map(wrongEnd).filter((x) => x !== '');
@@ -74,6 +84,26 @@ describe('help --query: an ending query never gets a write that does not end som
 
   it('a negation is never routed or ranked to the write it rejects', () => {
     expect(wrongEnds(NEGATIONS)).toEqual([]);
+  });
+
+  it('local git and other client-side writes are writes: never a "don\'t" answer (review of e975ddd3f)', () => {
+    expect(wrongEnds(GIT_PHRASINGS)).toEqual([]);
+    // A detach answers only for its own noun.
+    expect(name(first('call off the deploy'))).not.toBe('mcp tokens revoke');
+    for (const q of ['stop sharing the space']) expect(['credential unshare', 'space leave'], q).not.toContain(name(first(q)));
+    expect(name(first('stop sharing the credential'))).toBe('credential unshare');
+    expect(name(first('stop the token'))).toBe('mcp tokens revoke');
+  });
+
+  it('every alias whose name or summary says it merges, commits, stashes, rolls back, stages, pushes, applies, branches, checkpoints or restores declares a write', () => {
+    const VERBS = /\b(merge|merges|commit|commits|stash|stashes|rollback|roll back|rolls back|stage|stages|push|pushes|apply|applies|branch|branches|checkpoint|checkpoints|restore|restores)\b/i;
+    // Reads that use those words as nouns ("with branch, status", "the push history").
+    const READS = new Set(['worktree list', 'worktree status', 'style versions']);
+    const unmarked = aliasCommands().map((a) => a.command)
+      .filter((c) => (VERBS.test(c.command) || VERBS.test(c.summary)) && c.sideEffect === 'none' && !READS.has(c.command))
+      .map((c) => `${c.command}: ${c.summary}`);
+    expect(unmarked).toEqual([]);
+    for (const read of READS) expect(aliasCommands().find((a) => a.command.command === read)?.command.sideEffect, read).toBe('none');
   });
 
   it('set A: 52 create/add/start requests with an ending word in their object keep main 35e09b7c5\'s first answer', () => {
@@ -129,6 +159,50 @@ describe('help --query: an ending query never gets a write that does not end som
     expect(introduced).toEqual([]);
   }, 60_000);
 });
+
+/** Git and noun-mismatch phrasings (the Reviewer's round-3 set, msg 01a18912-2a6f, and their variants). */
+const GIT_PHRASINGS: readonly string[] = [
+  "abort it",
+  "abort this",
+  "abort",
+  "don't merge",
+  "do not merge",
+  "don't merge the branch",
+  "don't restore it",
+  "don't roll back the session",
+  "don't commit",
+  "don't stage the files",
+  "don't cherry-pick it",
+  "don't stash it",
+  "never drop the stash",
+  "don't checkpoint the session",
+  "don't rollback",
+  "never commit it",
+  "do not stage it",
+  "don't push",
+  "don't push the branch",
+  "don't apply the patch",
+  "don't apply the stash",
+  "don't create a branch",
+  "don't delete the branch",
+  "don't rename the branch",
+  "don't checkpoint it",
+  "stop the merge",
+  "cancel the merge",
+  "abort the merge",
+  "abort the cherry-pick",
+  "stop the rollback",
+  "cancel the commit",
+  "kill the stash",
+  "call off the deploy",
+  "stop sharing the space",
+  "stop sharing the credential",
+  "stop the token",
+  "close the token",
+  "cancel the claim",
+  "cancel the upload now",
+  "end my session",
+];
 
 /** Negations that hit a write route before (`don't enable the loop` answered `loop enable`). */
 const NEGATIONS: readonly string[] = [

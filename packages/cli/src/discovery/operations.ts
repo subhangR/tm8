@@ -4623,6 +4623,12 @@ const COMMAND_ALIASES = new Map<string, {
   examples: readonly string[];
   /** Extra intent words for `tm8 help --query`, beside the path words every alias is tagged with. */
   tags?: readonly string[];
+  /**
+   * What the COMMAND does, when its first operation is a read it only looks up (follow-up
+   * 01a188d3-0526): `worktree merge` declares `entities.get` first but merges with local git, and
+   * `workspace tabs close` changes your live window. `commandFrom` prefers it over the head's.
+   */
+  sideEffect?: SideEffect;
 }>([
   ['message reply', {
     path: ['message', 'reply'],
@@ -4726,6 +4732,7 @@ const COMMAND_ALIASES = new Map<string, {
   // whose graph writes are all existing doors.
   ['session checkpoint', {
     path: ['session', 'checkpoint'],
+    sideEffect: 'local',
     syntax: 'tm8 session checkpoint <session-id|worktree-id> [--message <text>] [--mutation-id <id>]',
     summary: "Commit the session worktree's entire WIP to its branch and return the checkpoint ref",
     notes: [
@@ -4736,6 +4743,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['session rollback', {
     path: ['session', 'rollback'],
+    sideEffect: 'local',
     syntax: 'tm8 session rollback <session-id|worktree-id> --to <checkpoint-ref> [--force] [--mutation-id <id>]',
     summary: 'Restore the session worktree to a checkpoint; untracked files refuse without --force',
     notes: [
@@ -4746,6 +4754,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree stage', {
     path: ['worktree', 'stage'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree stage <session-id|worktree-id> [<pathspec>...]',
     summary: 'List changed files (no pathspecs), or stage the named pathspecs ("." for all)',
     notes: [
@@ -4756,6 +4765,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree commit', {
     path: ['worktree', 'commit'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree commit <session-id|worktree-id> --message <text> [--mutation-id <id>]',
     summary: 'Commit exactly what is staged in the session worktree, with a durable receipt',
     notes: ['an empty index is a refusal, never an empty commit'],
@@ -4763,6 +4773,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree cherry-pick', {
     path: ['worktree', 'cherry-pick'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree cherry-pick <session-id|worktree-id> <commit>... [--task <task-id>] [--mutation-id <id>]',
     summary: "Apply commits onto the session's branch in its own worktree; a conflict aborts cleanly and is surfaced durably",
     notes: [
@@ -4773,6 +4784,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree branch', {
     path: ['worktree', 'branch'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree branch <create|rename|delete> <session-id|worktree-id> <name> [<new-name>] [--from <ref>] [--force] [--mutation-id <id>]',
     summary: "Create, rename or delete a branch in the session's repo, behind the safety refusals",
     notes: [
@@ -4783,6 +4795,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree stash', {
     path: ['worktree', 'stash'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree stash <push|list|pop|drop> <session-id|worktree-id> [--message <text>] [--index <n>] [--force] [--task <task-id>] [--mutation-id <id>]',
     summary: 'Stash WIP per worktree: push stores untracked too, a conflicted pop aborts cleanly and retains the entry, drop gates on --force',
     notes: [
@@ -4794,6 +4807,7 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['worktree merge', {
     path: ['worktree', 'merge'],
+    sideEffect: 'local',
     syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
     summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
     notes: [
@@ -4823,6 +4837,7 @@ const COMMAND_ALIASES = new Map<string, {
   // catalog rows for it would be the same two doors with a worse name.
   ['mcp connect', {
     path: ['mcp', 'connect'],
+    sideEffect: 'durable',
     syntax: 'tm8 mcp connect <server-id> [--shared] [--label <text>] [--input <@file|->]',
     summary: 'Connect an account to a connector — an API key, or an OAuth authorization URL to open',
     notes: [
@@ -5369,6 +5384,8 @@ for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
     summary,
     notes: [...notes, ...(CRAFT_TAB_VERBS.has(key) ? [CRAFT_TAB_NOTE] : []), WORKSPACE_IDEMPOTENCY, WORKSPACE_EXIT],
     examples,
+    // Each changes your live window (a tab, the layout, a dialog): a client-side write, not a read.
+    sideEffect: 'local',
   });
   COMMAND_OPS.set(key, ['workspace.command']);
 }
@@ -5455,7 +5472,7 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
     exposure: head.exposure,
     summary: alias?.summary ?? head.summary,
     syntax: alias?.syntax ?? head.syntax as string,
-    sideEffect: head.sideEffect,
+    sideEffect: alias?.sideEffect ?? head.sideEffect,
     idempotency: head.idempotency,
     versioning: head.versioning,
     notes: alias?.notes ?? [...new Set(rows.flatMap((r) => r.notes))],

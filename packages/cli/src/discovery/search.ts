@@ -220,7 +220,7 @@ export function rankedLast(
   if (RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)))) return true;
   if (sideEffect === 'none') return false;
   const ending = endingKind(tokens);
-  return ending === 'negation' || (ending === 'stop' && !endsItself(tokens, verbOf(operation, command)));
+  return ending === 'negation' || (ending === 'stop' && !endsItself(tokens, verbOf(operation, command), nounsOf(operation, command)));
 }
 
 /**
@@ -247,9 +247,9 @@ function endingKind(tokens: readonly string[]): 'stop' | 'negation' | null {
 
 /**
  * Write verbs that END something without destroying it (lead rulings 01a188fa-6dfa, 01a188fd-4c7c,
- * 01a188ff-61a7). A pure stop may lead any ending query; the rest detach or close something, so
- * they lead only when the query names what ("revoke the token", never "stop it"), as `leave` leads
- * only for a named space. Never discard, retire or resolve: they destroy or retire what persists,
+ * 01a188ff-61a7, 01a1890c-a176). A pure stop may lead any ending query; the rest detach or close
+ * something, so they lead only when the query names THEIR OWN noun ("stop the token" is a token's
+ * revoke; "stop it" and "call off the deploy" are not), as `leave` leads only for a named space. Never discard, retire or resolve: they destroy or retire what persists,
  * or answer a delete prompt.
  */
 const PURE_STOP_OP_VERBS: ReadonlySet<string> = new Set(['stop', 'terminate', 'disable', 'pause', 'interrupt', 'cancel']);
@@ -275,21 +275,43 @@ function verbOf(operation: string, command: string | readonly string[] | null): 
   return /^[a-z]+/.exec(operation.slice(operation.lastIndexOf('.') + 1))?.[0] ?? '';
 }
 
-/** That verb ends something, for this query. */
-function endsItself(tokens: readonly string[], verb: string): boolean {
+/**
+ * What an operation acts on: its CLI command's words before the verb (`mcp tokens revoke` acts on a
+ * token, `credential unshare` on a credential), else its name's segments before the verb, singular.
+ */
+function nounsOf(operation: string, command: string | readonly string[] | null): ReadonlySet<string> {
+  const path = typeof command === 'string' ? command.split(' ') : command;
+  const words = path && path.length > 0 ? path.slice(0, -1) : operation.split('.').slice(0, -1);
+  return new Set(words.flatMap((w) => w.split(/-|(?=[A-Z])/)).map(singular));
+}
+const singular = (word: string): string => {
+  const w = word.toLowerCase();
+  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+};
+
+/** That verb ends what this query names. A detach must name ITS OWN noun ("call off the deploy" is not a token's revoke). */
+function endsItself(tokens: readonly string[], verb: string, nouns: ReadonlySet<string>): boolean {
   if (PURE_STOP_OP_VERBS.has(verb)) return true;
-  if (verb === 'leave') return tokens.some((t) => t === 'space' || t === 'spaces' || t === 'workspace');
-  return DETACH_OP_VERBS.has(verb) && namesAnObject(tokens);
+  // Leaving is the end only of "quit the space" itself: never "stop sharing the space" or "quit it".
+  if (verb === 'leave') return queryVerb(tokens) === 'quit' && SPACE_WORDS.has(objectWords(tokens)[0] ?? '');
+  return DETACH_OP_VERBS.has(verb) && objectWords(tokens).some((t) => nouns.has(singular(t)));
 }
 
-/** Past the verb (and the verb a negation negates, and an off/down), the query names something. */
-function namesAnObject(tokens: readonly string[]): boolean {
+const SPACE_WORDS: ReadonlySet<string> = new Set(['space', 'spaces', 'workspace']);
+
+/** The query's verb: its first word past the request words ("how do I", "can you"). */
+function queryVerb(tokens: readonly string[]): string | undefined {
+  return tokens.find((t) => !REQUEST_WORDS.has(t));
+}
+
+/** The query's words past its verb (and the verb a negation negates, and an off/down) that name something. */
+function objectWords(tokens: readonly string[]): string[] {
   let i = 0;
   while (i < tokens.length && REQUEST_WORDS.has(tokens[i]!)) i++;
   let j = i + 1;
   if (NEGATIONS.has(tokens[i] ?? '')) j++;
   if (tokens[j] === 'off' || tokens[j] === 'down') j++;
-  return tokens.slice(j).some((t) => !NAMES_NOTHING.has(t));
+  return tokens.slice(j).filter((t) => !NAMES_NOTHING.has(t));
 }
 
 let SIDE_EFFECTS_BY_COMMAND: ReadonlyMap<string, SideEffect> | undefined;
