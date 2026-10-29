@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HISTORY_PART_WINDOW, HISTORY_TURN_WINDOW, projectHistory, readPortableHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
+import { BOOTSTRAP_MAX_BYTES, HISTORY_PART_WINDOW, HISTORY_TURN_WINDOW, MANIFEST_ENTRY_LIMIT, projectHistory, readPortableHistory, sameCoverage, type HistoricalTurn } from '../src/chat/continuity.js';
 import type { Db } from '../src/db/types.js';
 const turn=(ordinal:number,overrides:Partial<HistoricalTurn>={}):HistoricalTurn => ({turnId:`t${ordinal}`,ordinal,
   userMessageId:`u${ordinal}`,agentMessageId:`a${ordinal}`,input:{body:`request ${ordinal}`,attachments:['image-ref'],actorId:'member'},
@@ -58,9 +58,53 @@ describe('portable history',() => {
     expect(result.renderedContext).toContain('omittedTurns');
     expect(result.renderedContext).toContain('request 60');
     expect(result.renderedContext).not.toContain('"request 1"');
-    expect(result.manifest.some(x => x.treatment==='reference' && x.sourceId==='u1')).toBe(true);
+    // u1 is still accounted for, inside the folded manifest entry.
+    expect(result.manifest[0]).toMatchObject({treatment:'reference',sourceId:expect.stringMatching(/^manifest-folded:/)});
+    expect(result.manifest[0]!.reason).toContain('(u1 through ');
     expect(result.coverage.throughTurnOrdinal).toBe(60);
     expect(projectHistory(turns,{...options,currentTurnOrdinal:61,maxBytes:32768})).toEqual(result);
+  });
+  it('bounds the manifest so a long chat stays under the 256 KiB snapshot seal (readyai-main went silent, 2026-10-24)',() => {
+    // ~150 turns x 7 tool calls: the manifest listed every record of every
+    // earlier turn, ~1,000 entries (~235 KB). seal_chat_turn_snapshot refuses
+    // a bootstrap over 262,144 bytes, so every turn after that failed.
+    const id=(ordinal:number,i:number)=>`toolu_${String(ordinal).padStart(4,'0')}_${i}_${'k'.repeat(16)}`;
+    const turns=Array.from({length:150},(_,n)=>{
+      const ordinal=n+1;
+      return turn(ordinal,{userMessageId:`01a18000-0000-7000-8000-${String(ordinal).padStart(12,'0')}`,
+        agentMessageId:`01a18000-0000-7000-9000-${String(ordinal).padStart(12,'0')}`,
+        parts:[{seq:999,kind:'text',payload:{text:`answer ${ordinal}`}},...Array.from({length:7},(_,i)=>[
+          {seq:i*2,kind:'tool_call',payload:{id:id(ordinal,i),name:'Bash',args:{command:'x'.repeat(200)},state:'completed'}},
+          {seq:i*2+1,kind:'tool_result',payload:{tool_call_id:id(ordinal,i),content:'y'.repeat(400),is_error:false}},
+        ]).flat()]});
+    });
+    const result=projectHistory(turns,{...options,currentTurnOrdinal:151,maxBytes:32768});
+    // Postgres measures octet_length(jsonb::text), which adds a space after every ':' and ','.
+    const jsonbText=JSON.stringify(result).replace(/("(?:[^"\\]|\\.)*")|([:,])/g,(m,str)=>str ?? `${m} `);
+    expect(Buffer.byteLength(jsonbText)).toBeLessThanOrEqual(262144);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(BOOTSTRAP_MAX_BYTES);
+    expect(result.manifest.length).toBeLessThanOrEqual(MANIFEST_ENTRY_LIMIT);
+    const [folded,...kept]=result.manifest;
+    expect(folded!.sourceId).toMatch(/^manifest-folded:\d+$/);
+    // Every record is accounted for, plus the one omitted-turns notice.
+    expect(Number(folded!.sourceId.split(':')[1])+kept.length).toBe(150*(2+7)+1);
+    // The newest entries survive: the latest turn's tool evidence is listed last.
+    expect(kept.at(-1)!.sourceId).toBe(`01a18000-0000-7000-9000-000000000150:tool:${id(150,6)}`);
+    expect(Buffer.byteLength(result.renderedContext)).toBeLessThanOrEqual(32768);
+    expect(projectHistory(turns,{...options,currentTurnOrdinal:151,maxBytes:32768})).toEqual(result);
+  });
+  it('folds further when even the newest manifest entries overflow the seal',() => {
+    // Huge source ids: 255 entries would be ~1 MB, so the backstop halves until it fits.
+    const turns=Array.from({length:300},(_,n)=>turn(n+1,{userMessageId:`u${n+1}-${'z'.repeat(4000)}`,
+      parts:[{seq:0,kind:'text',payload:{text:'a'}}]}));
+    const result=projectHistory(turns,{...options,currentTurnOrdinal:301,maxBytes:32768});
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(BOOTSTRAP_MAX_BYTES);
+    expect(result.manifest.length).toBeLessThan(MANIFEST_ENTRY_LIMIT);
+    expect(result.manifest[0]!.sourceId).toMatch(/^manifest-folded:/);
+  });
+  it('leaves a short manifest untouched',() => {
+    const result=projectHistory([turn(1)],options);
+    expect(result.manifest.map(x=>x.sourceId)).toEqual(['u1','a1']);
   });
   it('ignores excluded future-input capture changes for semantic resume equality',() => {
     const a=projectHistory([turn(1)],options).coverage;
