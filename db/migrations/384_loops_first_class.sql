@@ -550,8 +550,8 @@ grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §6. Selection headers for loops. Sibling definer: Tools PR-E's
---     380_tool_selection_headers.sql replaces this function with the SAME list,
---     so either merge order leaves the converged set.
+--     390_tool_selection_headers.sql (380 on its branch) replaces this function
+--     with the SAME list, so either merge order leaves the converged set.
 -- -----------------------------------------------------------------------------
 create or replace function internal.header_kind_allowed(p_kind text)
 returns boolean language sql immutable set search_path = public, internal, pg_temp as $$
