@@ -32,7 +32,7 @@ const loopRun = (): LoopRun => ({ id: RUN, loopId: LOOP, spaceId: SPACE, firedAt
   actedAs: { id: MEMBER, kind: 'team_member', displayName: 'Opus' } as LoopRun['actedAs'], endedKind: null, usage: null });
 let server: Server, baseUrl: string;
 let requests: Array<{ method: string; path: string; query: URLSearchParams; body: Record<string, any> }> = [];
-let stdout = '', stderr = '', previewValid = true, notImplemented = false, conflict = false, headerFails = false;
+let stdout = '', stderr = '', previewValid = true, notImplemented = false, conflict = false, headerFails = false, slowRuns = false;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -62,7 +62,11 @@ beforeAll(async () => {
       else if (url.pathname.endsWith('/tools')) data = { items: Object.values(tools), nextCursor: null };
       else if (url.pathname.startsWith('/v2/tools/')) data = tools[url.pathname.slice('/v2/tools/'.length)];
       else if (url.pathname.endsWith('/collections/query')) data = { page: { items: [{ id: MEMBER, title: 'Opus 5.5 1M Teammate' }], nextCursor: null } };
-      else if (url.pathname.endsWith('/run') || url.pathname.endsWith('/stop')) data = { run: loopRun() };
+      else if (url.pathname.endsWith('/run') || url.pathname.endsWith('/stop')) {
+        // A Run now still launching (it answers once its session settles), or a slow stop.
+        if (slowRuns) { setTimeout(() => reply(200, { data: { run: loopRun() }, requestId: 'test' }), 2_500); return; }
+        data = { run: loopRun() };
+      }
       else if (url.pathname.endsWith('/runs')) data = { items: [loopRun()], nextCursor: null };
       else if (url.pathname.includes('/loop-runs/')) data = { ...loopRun(), status: 'completed', outputTail: 'done\n' };
       else if (url.pathname.endsWith('/header')) data = { ok: true };
@@ -372,6 +376,26 @@ describe('tm8 loop reads', () => {
 });
 
 describe('tm8 loop runs', () => {
+  it('a timed-out run-now or stop names the id it was sent with, so a re-run reads it back (finding 11)', async () => {
+    slowRuns = true;
+    try {
+      expect(await run(['loop', 'run-now', LOOP, '--timeout', '1'])).toBe(7);
+      const sent = requests.find(r => r.path === `/v2/loops/${LOOP}/run`)!.body.clientMutationId as string;
+      expect(sent).toMatch(/\S/);
+      expect(stderr).toContain(`re-run with --mutation-id ${sent} to read it back`);
+      expect(stderr).toContain('--force would start a second run');
+      stderr = '';
+      expect(await run(['loop', 'stop', RUN, '--timeout', '1'])).toBe(7);
+      const stop = requests.find(r => r.path === `/v2/loop-runs/${RUN}/stop`)!.body.clientMutationId as string;
+      expect(stderr).toContain(`the stop may have gone through: re-run with --mutation-id ${stop}`);
+      // A caller's own id is the one named.
+      stderr = '';
+      expect(await run(['loop', 'run-now', LOOP, '--timeout', '1', '--mutation-id', 'mine-1'])).toBe(7);
+      expect(stderr).toContain('re-run with --mutation-id mine-1');
+    } finally {
+      slowRuns = false;
+    }
+  }, 30_000);
   it('run-now prints the run, its session and the transcript hint', async () => {
     expect(await run(['loop', 'run-now', LOOP, '--force'])).toBe(0);
     expect(last()).toMatchObject({ method: 'POST', path: `/v2/loops/${LOOP}/run`, body: { force: true } });

@@ -130,8 +130,9 @@
  * A markdown table on desktop scrolls inside its wrapper. On the phone it is
  * the column's width and its cells wrap: `fixed` layout divides the width by
  * column instead of by content, which is the only way a table with one long
- * cell does not push the others off the edge. The loop page's RUNS table
- * (loops/page.css) is one of them.
+ * cell does not push the others off the edge. The loop page's RUNS wrapper
+ * (loops/page.css) is one of them; its table stacks each run on the phone
+ * (loops/page.css, PHONE), so it is not laid out as a table here.
  */
 .cv2-root[data-shell='mobile'] .md-tablewrap,
 .cv2-root[data-shell='mobile'] .tool-table-scroll,
@@ -142,13 +143,12 @@
 }
 .cv2-root[data-shell='mobile'] .md-table,
 .cv2-root[data-shell='mobile'] .tool-table-scroll table,
-.cv2-root[data-shell='mobile'] .crf-table-wrap table,
-.cv2-root[data-shell='mobile'] .loop-runs {
+.cv2-root[data-shell='mobile'] .crf-table-wrap table {
   table-layout: fixed;
   width: 100%;
   min-width: 0;
 }
-.cv2-root[data-shell='mobile'] :is(.md-table, .tool-table-scroll table, .crf-table-wrap table, .loop-runs) :is(th, td) {
+.cv2-root[data-shell='mobile'] :is(.md-table, .tool-table-scroll table, .crf-table-wrap table) :is(th, td) {
   overflow-wrap: anywhere;
   white-space: normal;
 }

@@ -11,6 +11,9 @@ import type { LoopFormSources } from './sources';
 import type { LoopPagePort, LoopRun, LoopView } from './page-port';
 import { durationLabel, loopStatus, zonedInstant } from './page-format';
 import { resetLoopPageStore, useLoopView } from './useLoopView';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RUNNING_POLL_MS } from './LoopRuns';
 
 const LOOP_ID = '019fe999-0000-7000-8000-000000000002';
@@ -188,7 +191,7 @@ describe('loop page controls', () => {
     const props = header(view(), p);
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
     const started = await screen.findByTestId('loop-run-started');
-    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID, false);
+    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID, false, { clientMutationId: expect.any(String) });
     expect(within(started).getByText('Running')).toBeTruthy();
     fireEvent.click(within(started).getByRole('button', { name: 'Open session' }));
     expect(props.onOpenEntity).toHaveBeenCalledWith(SESSION_ID);
@@ -196,16 +199,72 @@ describe('loop page controls', () => {
   });
 
   it('Run now on 409 loop_run_overlap offers Run anyway, which forces', async () => {
+    // The server's real shape (run-handlers.ts): details {reason, runId}; its message is API wording, never shown.
     const runNow = vi.fn()
-      .mockRejectedValueOnce(new CollabError('conflict', 'Run run-live is still live.', { details: { code: 'loop_run_overlap', liveRunId: 'run-live' } }))
+      .mockRejectedValueOnce(new CollabError('conflict', 'a run of this loop is still live; pass force to run anyway',
+        { details: { reason: 'loop_run_overlap', runId: 'run-live' } }))
       .mockResolvedValueOnce({ run: run({ id: 'run-forced', status: 'running' }) });
-    header(view(), port({ runNow }));
+    header(view(), port({ runNow, runsGet: vi.fn(async () => run({ id: 'run-live', status: 'running', sessionId: 'sess-live' })) }));
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
     const overlap = await screen.findByTestId('loop-overlap');
-    expect(overlap.textContent).toContain('still live');
-    fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway' }));
+    expect(overlap.textContent).toContain('Not started: the previous run');
+    expect(overlap.textContent).toContain('is still live');
+    expect(overlap.textContent).not.toContain('pass force');
+    expect(within(overlap).getByRole('button', { name: 'Open the live run' })).toBeTruthy();
+    fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway (starts a second run)' }));
     await screen.findByTestId('loop-run-started');
-    expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true);
+    expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true, { clientMutationId: expect.any(String) });
+  });
+
+  it('an overlap with a run still LAUNCHING says it is starting, and Show run opens its session once it has one', async () => {
+    const runNow = vi.fn().mockRejectedValueOnce(new CollabError('conflict',
+      'a run of this loop is still launching (run run-live): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run',
+      { details: { reason: 'loop_run_overlap', runId: 'run-live', launching: true } }));
+    const runsGet = vi.fn()
+      .mockResolvedValueOnce(run({ id: 'run-live', status: 'running', sessionId: null, firedAt: new Date(Date.now() - 60_000).toISOString() }))
+      .mockResolvedValueOnce(run({ id: 'run-live', status: 'running', sessionId: null }))
+      .mockResolvedValue(run({ id: 'run-live', status: 'running', sessionId: 'sess-live' }));
+    const props = header(view(), port({ runNow, runsGet }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    const overlap = await screen.findByTestId('loop-overlap');
+    await waitFor(() => expect(overlap.textContent).toMatch(/The previous run \(fired .+\) is still starting\./));
+    expect(overlap.textContent).not.toContain('clientMutationId');
+    expect(within(overlap).getByRole('button', { name: 'Run anyway (starts a second run)' })).toBeTruthy();
+    // No session yet: the table re-reads and the page says so.
+    fireEvent.click(within(overlap).getByRole('button', { name: 'Show run' }));
+    expect(await screen.findByText(/still starting: its row in RUNS shows its session/)).toBeTruthy();
+    expect(props.onRunsChanged).toHaveBeenCalled();
+    expect(props.onOpenEntity).not.toHaveBeenCalled();
+    // Once it has one, Show run opens it.
+    runNow.mockRejectedValueOnce(new CollabError('conflict', 'still launching', { details: { reason: 'loop_run_overlap', runId: 'run-live', launching: true } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    fireEvent.click(within(await screen.findByTestId('loop-overlap')).getByRole('button', { name: 'Show run' }));
+    await waitFor(() => expect(props.onOpenEntity).toHaveBeenCalledWith('sess-live'));
+  });
+
+  it('a lastError with no firing yet reads "Not scheduled", not "Last firing failed"', () => {
+    header(view({ state: { lastError: 'schedule never matches within a year', lastRunAt: null } }));
+    const banner = screen.getByTestId('loop-last-error');
+    expect(banner.textContent).toContain('Not scheduled: schedule never matches within a year');
+    expect(banner.textContent).not.toContain('Last firing failed');
+  });
+
+  it('Run now holds ONE mutation id per intent: a retry after a timeout replays it, a new press after success does not', async () => {
+    const runNow = vi.fn()
+      .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer within 180000ms'))
+      .mockResolvedValueOnce({ run: run({ id: 'run-new', status: 'running' }) })
+      .mockResolvedValueOnce({ run: run({ id: 'run-next', status: 'running' }) });
+    const props = header(view(), port({ runNow }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('may have started');
+    expect(props.onRunsChanged).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await screen.findByTestId('loop-run-started');
+    const [first, second] = runNow.mock.calls.map(call => (call[2] as { clientMutationId: string }).clientMutationId);
+    expect(second).toBe(first);
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(runNow).toHaveBeenCalledTimes(3));
+    expect((runNow.mock.calls[2]![2] as { clientMutationId: string }).clientMutationId).not.toBe(first);
   });
 
   it('Run now refusal (501 until PR2) is named, not swallowed', async () => {
@@ -522,6 +581,54 @@ describe('the runs table follows the loop', () => {
     await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1));
     await act(async () => { slowA.resolve({ items: [run({ id: 'run-a1' }), run({ id: 'run-a2' })], nextCursor: null }); });
     expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
+  });
+
+  it('a page-one refresh MERGES: older pages and their cursor stay while a live run is polled (PR5b #3)', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: 'c1' })
+      .mockResolvedValueOnce({ items: [run({ id: 'old-1' }), run({ id: 'old-2' })], nextCursor: 'c2' })
+      .mockResolvedValue({ items: [run({ id: 'new', status: 'running', endedAt: null, durationMs: null }), run({ id: 'live', status: 'completed' })], nextCursor: 'c1-later' });
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(3));
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(4));
+    expect(screen.getAllByTestId('loop-run-row').map((row) => row.getAttribute('data-run-id'))).toEqual(['new', 'live', 'old-1', 'old-2']);
+    expect(screen.getAllByTestId('loop-run-row')[1]!.getAttribute('data-status')).toBe('completed');
+    // The cursor still points after the older page, not after page one.
+    fireEvent.click(screen.getByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(runsList).toHaveBeenLastCalledWith(LOOP_ID, { limit: 20, cursor: 'c2' }));
+  });
+
+  it('each RUNS cell carries its column, so the phone can stack a run instead of eight 37 px columns (PR5b #4)', async () => {
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList: vi.fn(async () => ({ items: [run({ id: 'r1', taskId: null })], nextCursor: null })) })} canControl epoch={0} />);
+    const row = await screen.findByTestId('loop-run-row');
+    const classes = [...row.querySelectorAll('td')].map((cell) => cell.className);
+    expect(classes).toEqual(['loop-runs__fired', 'loop-runs__trigger', 'loop-runs__status', 'loop-runs__duration',
+      'loop-runs__task loop-runs__none', 'loop-runs__session', expect.stringContaining('loop-runs__note'), 'loop-runs__actions']);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'page.css'), 'utf8');
+    expect(css).toContain(".cv2-root[data-shell='mobile'] .loop-runs thead { display: none; }");
+    expect(css).toMatch(/\.cv2-root\[data-shell='mobile'\] \.loop-runs tr \{\s*display: flex; flex-wrap: wrap;/);
+  });
+
+  it('a failed background refresh keeps the rows and says so beside them', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
+      .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer'))
+      .mockResolvedValue({ items: [run({ id: 'live', status: 'completed' })], nextCursor: null });
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    await screen.findByTestId('loop-run-row');
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    const banner = await screen.findByTestId('loop-runs-refresh-error');
+    expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
+    expect(screen.queryByTestId('loop-runs-error')).toBeNull();
+    fireEvent.click(within(banner).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByTestId('loop-runs-refresh-error')).toBeNull());
+    expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('completed');
   });
 
   it('re-reads page one while a run is live, until it settles', async () => {

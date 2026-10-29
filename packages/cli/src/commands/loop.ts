@@ -10,7 +10,7 @@ import {
 } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
-import { ApiError } from '../errors.js';
+import { ApiError, TransportError } from '../errors.js';
 import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { UUID_PATTERN } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -519,13 +519,29 @@ export function pauseUntil(raw: string | undefined, now: Date = new Date()): str
   }
   return new Date(Date.parse(raw)).toISOString();
 }
+/**
+ * A Run now or a stop that TIMED OUT may still be happening on the server: Run now answers only once
+ * its session has settled. The id the request carried replays its result, while a new id is refused
+ * as an overlap, so the timeout names the id it was sent with (review of #1405, finding 11).
+ */
+async function replayable<T>(clientMutationId: string, hint: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    if (err instanceof TransportError && /timed out/.test(err.message)) {
+      throw new TransportError(`${err.message}\n  ${hint.replace('<id>', clientMutationId)}`, err);
+    }
+    throw err;
+  }
+}
 async function loopRunNow(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['force', 'mutation-id']); argumentsCount(cmd, 1);
   const force = flag(cmd, 'force');
   const { id } = await findLoop(cmd);
-  const result = await observedInvoke<LoopRunResult>(client(cmd), 'loops.runNow', { params: { loopId: id }, body: {
-    ...mutation(cmd), ...(force ? { force: true } : {}),
-  } });
+  const body = { ...mutation(cmd), ...(force ? { force: true } : {}) };
+  const result = await replayable(body.clientMutationId,
+    'the run may be launching: re-run with --mutation-id <id> to read it back (a new id is refused as an overlap; --force would start a second run)',
+    () => observedInvoke<LoopRunResult>(client(cmd), 'loops.runNow', { params: { loopId: id }, body }));
   cmd.out.data(result, value => renderRun(value.run)); return EXIT_OK;
 }
 async function loopRuns(cmd: CommandContext): Promise<ExitCode> {
@@ -548,7 +564,9 @@ async function loopRunShow(cmd: CommandContext): Promise<ExitCode> {
 }
 async function loopStop(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
-  const result = await observedInvoke<LoopRunResult>(client(cmd), 'loops.runs.stop', { params: { runId: requireArg(cmd, 0, '<run-id>') }, body: mutation(cmd) });
+  const body = mutation(cmd);
+  const result = await replayable(body.clientMutationId, 'the stop may have gone through: re-run with --mutation-id <id> to read it back',
+    () => observedInvoke<LoopRunResult>(client(cmd), 'loops.runs.stop', { params: { runId: requireArg(cmd, 0, '<run-id>') }, body }));
   cmd.out.data(result, value => renderRun(value.run)); return EXIT_OK;
 }
 async function loopPreview(cmd: CommandContext): Promise<ExitCode> {

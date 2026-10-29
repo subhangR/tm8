@@ -19,3 +19,19 @@
 .cv2-root .loop-runs td { padding: 4px 6px; border-bottom: 1px solid var(--pn-line); vertical-align: middle; }
 .cv2-root .loop-page__runs { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
 .cv2-root .loop-pause__picks { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 12px 0 8px; }
+
+/* PHONE (review of PR5b, #4): at 390 px an eight-column table gives each column about 37 px, so the pill
+   and the buttons painted over their neighbours. On the phone each run is a wrapped line of its facts
+   instead: when, trigger, status and duration, then its links and Stop, and its note on a line of its own.
+   The wrapper never pans sideways (mobile-noscroll.css §3). */
+.cv2-root[data-shell='mobile'] .loop-runs thead { display: none; }
+.cv2-root[data-shell='mobile'] .loop-runs,
+.cv2-root[data-shell='mobile'] .loop-runs tbody { display: block; width: 100%; }
+.cv2-root[data-shell='mobile'] .loop-runs tr {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root[data-shell='mobile'] .loop-runs td { display: block; padding: 0; border: 0; }
+.cv2-root[data-shell='mobile'] .loop-runs td.loop-runs__none { display: none; }
+.cv2-root[data-shell='mobile'] .loop-runs td.loop-runs__note { order: 1; flex-basis: 100%; }
+.cv2-root[data-shell='mobile'] .loop-runs td.loop-runs__note:empty { display: none; }

@@ -1,6 +1,6 @@
 # Verifying loops locally
 
-How to check, on your own machine or a dev slot, that loops do what [LOOPS.md](LOOPS.md) says and what [DESIGN.md](DESIGN.md) promises. VERIFY_RUN_NOTE On the shared tm8 host, wrap each heavy step (a pg suite, a full vitest, a build or a browser run) in `flock /tmp/tm8-heavy.lock …`.
+How to check, on your own machine or a dev slot, that loops do what [LOOPS.md](LOOPS.md) says and what [DESIGN.md](DESIGN.md) promises. The four end-to-end checks below were run for loops PR6 on the Loops integration branch at `30f064f2d`: `loops-e2e.pg.test.ts` passed against a real node, as one of the 50 serial pg suites of that branch's one full run, and its step 4 wrote the transcript in LOOPS.md. The browser spec was not run: no browser can start on the tm8 host (see that section). On the shared tm8 host, wrap each heavy step (a pg suite, a full vitest, a build or a browser run) in `flock /tmp/tm8-heavy.lock …`.
 
 ## Prerequisites
 

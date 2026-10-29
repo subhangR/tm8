@@ -74,7 +74,7 @@ From the CLI: `tm8 loop show <id|title>`, `tm8 loop runs <id> [--status failed]`
 
 ## Control it
 
-- **Run now** fires the loop at once, beside its schedule (the next run is untouched), and answers with the run and its session. While a run is live it refuses (`loop_run_overlap`) unless you choose *Run anyway* (`--force`). It also fires a disabled loop, once, and the schedule stays off.
+- **Run now** fires the loop at once, beside its schedule (the next run is untouched), and answers with the run and its session. While a run is live it refuses (`loop_run_overlap`) unless you choose *Run anyway* (`--force`). It also fires a disabled loop, once, and the schedule stays off. If Run now timed out, the run may still be launching: check RUNS before *Run anyway*, which starts a second run.
 - **Pause…** takes an hour, tomorrow at 09:00 or a time you pick. **Resume** ends a pause early.
 - **Enable** counts the next run from now. **Disable** keeps everything, and the schedule fires nothing until you enable it again (Run now still can); a run already live keeps going until you **Stop** it.
 - **Edit** opens the same form. Only what you change is sent, under the loop's version.
@@ -87,7 +87,143 @@ From the CLI: `tm8 loop show <id|title>`, `tm8 loop runs <id> [--status failed]`
 
 This is real output from this build, produced by the e2e suite (VERIFY.md) against a real node with real PTYs: preview, create, enable, Run now, an overlap, runs, stop, pause, resume, an edit, a stale edit, disable, show and list.
 
-TRANSCRIPT_PLACEHOLDER
+```console
+$ tm8 loop preview --schedule '0 9 * * 1-5' --timezone Europe/London --count 3
+Weekdays at 09:00 Europe/London
+2026-10-30T09:00:00.000Z
+2026-11-02T09:00:00.000Z
+2026-11-03T09:00:00.000Z
+[exit 0]
+
+$ tm8 loop create 'Morning triage' --schedule '0 9 * * 1-5' --timezone Europe/London --teammate 01a18889-a3de-7731-833a-7b98bb1ee94f --prompt 'Triage the inbox and file follow-ups' --concurrency skip --retry 1 --disabled
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v1 · disabled
+title: Morning triage
+schedule: 0 9 * * 1-5 (Europe/London) — Weekdays at 09:00 Europe/London
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: none · last run: never
+acts as: Owner (armer)
+schedule from now: 2026-10-30T09:00:00.000Z, 2026-11-02T09:00:00.000Z, 2026-11-03T09:00:00.000Z, 2026-11-04T09:00:00.000Z, 2026-11-05T09:00:00.000Z
+runs: 0 total · last 24h 0 fired, 0 failed, 0 skipped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop enable 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --expect-version 1
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v2 · enabled
+title: Morning triage
+schedule: 0 9 * * 1-5 (Europe/London) — Weekdays at 09:00 Europe/London
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-30T09:00:00.000Z · last run: never
+acts as: Owner (armer)
+schedule from now: 2026-10-30T09:00:00.000Z, 2026-11-02T09:00:00.000Z, 2026-11-03T09:00:00.000Z, 2026-11-04T09:00:00.000Z, 2026-11-05T09:00:00.000Z
+runs: 0 total · last 24h 0 fired, 0 failed, 0 skipped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop run-now 01a1888a-f980-7ecb-9ce0-6bab26dfaa84
+run ea04a2ee-29ca-4da3-acbc-b162c0e98e2b · running
+loop: 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 · spawn · manual · attempt 1 · acted as Owner
+fired: 2026-10-29T16:42:52.797Z · started: 2026-10-29T16:42:58.228Z · ended: —
+task: 01a1888a-fe24-786c-9223-1a5938a63264
+session: 01a1888a-fe84-7664-a5aa-4c3b51dc78d9
+transcript: tm8 session transcript 01a1888a-fe84-7664-a5aa-4c3b51dc78d9
+[exit 0]
+
+$ tm8 loop run-now 01a1888a-f980-7ecb-9ce0-6bab26dfaa84
+tm8: conflict: a run of this loop is still live; pass force to run anyway · reason: loop_run_overlap · requestId: req_8e473a_1g
+[exit 6]
+
+$ tm8 loop runs 01a1888a-f980-7ecb-9ce0-6bab26dfaa84
+ea04a2ee-29ca-4da3-acbc-b162c0e98e2b  running  manual  attempt 1  2026-10-29T16:42:52.797Z  session 01a1888a-fe84-7664-a5aa-4c3b51dc78d9
+[exit 0]
+
+$ tm8 loop stop ea04a2ee-29ca-4da3-acbc-b162c0e98e2b
+run ea04a2ee-29ca-4da3-acbc-b162c0e98e2b · stopped
+loop: 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 · spawn · manual · attempt 1 · acted as Owner
+fired: 2026-10-29T16:42:52.797Z · started: 2026-10-29T16:42:58.228Z · ended: 2026-10-29T16:42:59.981Z (stopped_by_operator)
+task: 01a1888a-fe24-786c-9223-1a5938a63264
+session: 01a1888a-fe84-7664-a5aa-4c3b51dc78d9
+transcript: tm8 session transcript 01a1888a-fe84-7664-a5aa-4c3b51dc78d9
+[exit 0]
+
+$ tm8 loop pause 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --until +2h --expect-version 3
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v4 · paused until 2026-10-29T18:43:01.648Z
+title: Morning triage
+schedule: 0 9 * * 1-5 (Europe/London) — Weekdays at 09:00 Europe/London
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-30T09:00:00.000Z · last run: 2026-10-29T16:42:52.797Z
+acts as: Owner (armer)
+schedule from now: 2026-10-30T09:00:00.000Z, 2026-11-02T09:00:00.000Z, 2026-11-03T09:00:00.000Z, 2026-11-04T09:00:00.000Z, 2026-11-05T09:00:00.000Z
+runs: 1 total · last 24h 1 fired, 0 failed, 0 skipped · last ea04a2ee-29ca-4da3-acbc-b162c0e98e2b stopped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop resume 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --expect-version 4
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v5 · enabled
+title: Morning triage
+schedule: 0 9 * * 1-5 (Europe/London) — Weekdays at 09:00 Europe/London
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-30T09:00:00.000Z · last run: 2026-10-29T16:42:52.797Z
+acts as: Owner (armer)
+schedule from now: 2026-10-30T09:00:00.000Z, 2026-11-02T09:00:00.000Z, 2026-11-03T09:00:00.000Z, 2026-11-04T09:00:00.000Z, 2026-11-05T09:00:00.000Z
+runs: 1 total · last 24h 1 fired, 0 failed, 0 skipped · last ea04a2ee-29ca-4da3-acbc-b162c0e98e2b stopped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop edit 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --schedule 'every 6h' --expect-version 5
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v6 · enabled
+title: Morning triage
+schedule: every 6h (Europe/London) — Every 6 hours
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-29T22:43:04.274Z · last run: 2026-10-29T16:42:52.797Z
+acts as: Owner (armer)
+schedule from now: 2026-10-29T22:43:04.292Z, 2026-10-30T04:43:04.292Z, 2026-10-30T10:43:04.292Z, 2026-10-30T16:43:04.292Z, 2026-10-30T22:43:04.292Z
+runs: 1 total · last 24h 1 fired, 0 failed, 0 skipped · last ea04a2ee-29ca-4da3-acbc-b162c0e98e2b stopped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop edit 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --title Stale --expect-version 1
+tm8: version_conflict: version conflict on 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 · requestId: req_8e473a_1r
+  currentVersion: 6
+  a loop's version also moves each time it fires: read it again with `tm8 loop show 01a1888a-f980-7ecb-9ce0-6bab26dfaa84` and retry
+[exit 6]
+
+$ tm8 loop disable 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 --expect-version 6
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v7 · disabled
+title: Morning triage
+schedule: every 6h (Europe/London) — Every 6 hours
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-29T22:43:04.274Z · last run: 2026-10-29T16:42:52.797Z
+acts as: Owner (armer)
+schedule from now: 2026-10-29T22:43:06.350Z, 2026-10-30T04:43:06.350Z, 2026-10-30T10:43:06.350Z, 2026-10-30T16:43:06.350Z, 2026-10-30T22:43:06.350Z
+runs: 1 total · last 24h 1 fired, 0 failed, 0 skipped · last ea04a2ee-29ca-4da3-acbc-b162c0e98e2b stopped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop show 01a1888a-f980-7ecb-9ce0-6bab26dfaa84
+loop 01a1888a-f980-7ecb-9ce0-6bab26dfaa84 v7 · disabled
+title: Morning triage
+schedule: every 6h (Europe/London) — Every 6 hours
+action: spawn 01a18889-a3de-7731-833a-7b98bb1ee94f · concurrency skip · retry 1×300s
+next run: 2026-10-29T22:43:04.274Z · last run: 2026-10-29T16:42:52.797Z
+acts as: Owner (armer)
+schedule from now: 2026-10-29T22:43:07.011Z, 2026-10-30T04:43:07.011Z, 2026-10-30T10:43:07.011Z, 2026-10-30T16:43:07.011Z, 2026-10-30T22:43:07.011Z
+runs: 1 total · last 24h 1 fired, 0 failed, 0 skipped · last ea04a2ee-29ca-4da3-acbc-b162c0e98e2b stopped
+prompt:
+  Triage the inbox and file follow-ups
+[exit 0]
+
+$ tm8 loop list
+01a18889-a447-7e10-b852-ff5a1dc4d65a  v1  enabled  every 1d  spawn 01a18889-a41b-7964-82ed-77dabb278f4a  next 2026-10-30T16:41:24.292Z  Dreamer daily sweep
+01a18889-abd8-7e7a-a9c7-e51832b3e716  v4  disabled  * * * * *  spawn 01a18889-a3de-7731-833a-7b98bb1ee94f  next 2026-10-29T16:43:00.000Z  Every minute
+01a1888a-f980-7ecb-9ce0-6bab26dfaa84  v7  disabled  every 6h  spawn 01a18889-a3de-7731-833a-7b98bb1ee94f  next 2026-10-29T22:43:04.274Z  Morning triage
+[exit 0]
+```
 
 ## When something looks wrong
 
@@ -98,4 +234,4 @@ TRANSCRIPT_PLACEHOLDER
 | Parked: *schedule never matches within a year* | The schedule can't fire (for example the 30th of February). Edit the schedule. |
 | Parked: *needs arming* | No armer and no active owner to run as. Its clock keeps running: once a human edits it (which arms it), it fires on its kept deadline. Disabling and re-enabling also arms it, but recounts the next run from now. `loop enable` alone changes nothing; it is still enabled. |
 | `version_conflict` from the CLI | The loop moved since you read it, often because it fired. Run `tm8 loop show` and retry with the new version. |
-| `loop_run_overlap` from Run now | A run is still live. Wait, stop it, or `--force`. |
+| `loop_run_overlap` from Run now | A run is still live, or still launching (often after a Run now that timed out; the server then says "a run of this loop is still launching (run <id>): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run"). Check `tm8 loop runs <id>` first. Re-send a timed-out Run now with the SAME `--mutation-id` (or `clientMutationId`; the CLI's timeout hint names it) to get its result. Otherwise wait, or stop the live run. `--force` starts a second run. |

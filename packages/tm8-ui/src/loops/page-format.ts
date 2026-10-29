@@ -87,6 +87,11 @@ export function overlapRunId(error: unknown): string | null {
   return typeof id === 'string' ? id : null;
 }
 
+/** An overlap whose open run is a launch still in flight (no session yet; PR2 nit 25's `details.launching`). */
+export function overlapLaunching(error: unknown): boolean {
+  return isCollabError(error) && error.details?.launching === true;
+}
+
 export function isNotImplemented(error: unknown): boolean {
   return isCollabError(error) && error.code === 'not_implemented';
 }

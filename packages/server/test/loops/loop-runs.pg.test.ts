@@ -380,6 +380,22 @@ describePg('loops PR2: runs on a real node', () => {
     expect(row!.outcome).toBe('stopped');
   });
 
+  it('an overlap with a launch still in flight says how to get its result, not to force (review 1398 nit 25)', async () => {
+    const loop = await createLoop({ title: 'Still launching' });
+    // A firing claimed but with no session yet: what a Run now that timed out on
+    // the client leaves behind while the server is still launching it.
+    const [fixture] = await sql(
+      `insert into public.loop_runs (loop_id, space_id, fired_at, trigger, action, launch)
+       values ($1, $2, now(), 'manual', 'spawn', 'fired') returning id`, [loop.id, spaceId]);
+    const runId = fixture!['id'] as string;
+    expect(await getRun(runId)).toMatchObject({ status: 'running', sessionId: null });
+    // A re-send with a NEW id: refused as an overlap that names the launching run.
+    const error = refused(await runNow(loop.id), 409, 'conflict') as { message: string; details?: unknown };
+    expect(error.message).toBe(`a run of this loop is still launching (run ${runId}): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run`);
+    expect(error.details).toEqual({ reason: 'loop_run_overlap', runId, launching: true });
+    await sql('delete from public.loop_runs where id = $1', [runId]);
+  });
+
   describe('a TOOL run (loops PR3): stop and max runtime end it through the same port', () => {
     // What the Tools lane asked PR3 to pin (msg 01a1884b-c443). Both stops go
     // through the port's stopSession (SpawnService.terminate), and the tool's own
