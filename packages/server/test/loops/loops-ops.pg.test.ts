@@ -18,6 +18,7 @@ import { createFacadeServer, type FacadeServer } from '../../src/http/server.js'
 import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { registerLoopHandlers } from '../../src/loops/handlers.js';
+import { registerLoopRunHandlers } from '../../src/loops/run-handlers.js';
 import { nextRunAt } from '../../src/scheduler/schedule.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
@@ -56,6 +57,7 @@ beforeAll(async () => {
   const registry = new HandlerRegistry();
   const deps = { db, config, owner };
   registerLoopHandlers(registry, deps);
+  registerLoopRunHandlers(registry, deps);
   registerW2EntitiesCommandsTrackingHandlers(registry, deps);
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;

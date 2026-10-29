@@ -654,11 +654,15 @@ describe('tm8 help --query: generated loop phrasings never delete, create or fir
   }, GENERATED_TIMEOUT);
   it('the ranker never answers loop run-now or session terminate first: firing or ending needs its route (rounds 6-7)', () => {
     const rows = discovery();
-    const queries = ['run it now', 'run now', 'fire it now', 'trigger it again', 'run the job now', 'run it again once',
+    const queries = ['run it now', 'run now', 'fire it now', 'fire now', 'trigger it again', 'run the job now', 'run it again once',
       'stop sharing the session', 'stop the session from spawning', 'kill it', 'end it', 'terminate', 'run',
       ...SAMPLED_WORDS.filter((_, index) => index % 4 === 0).flatMap(w => [`run the ${w} now`, `stop the session ${w}`])];
     expect(queries.filter(query => ['loops.runNow', 'execution.terminate'].includes(rank(query, rows, 5)[0]?.row.operation ?? '')))
       .toEqual([]);
+    // …and the FIRST ANSWER a caller reads, operations and alias commands ranked together (Tools PR-D),
+    // for every query no route answers.
+    expect(queries.filter(query => matchIntent(query) === undefined
+      && ['loop run-now', 'session terminate'].includes(searchHelp(query).matches[0]?.command ?? ''))).toEqual([]);
     // The routes still answer them, given their evidence and nothing more.
     expect(searchHelp('run the nightly loop now').matches[0]?.command).toBe('loop run-now');
     expect(searchHelp('terminate the work session').matches[0]?.command).toBe('session terminate');

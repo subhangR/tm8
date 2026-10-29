@@ -7,7 +7,7 @@
  * view". The tab workspace's entity body now provides it, opening the run's
  * session as its own tab exactly as a launched session opens.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail } from '@tm8/contract';
 import { fixtureDetails, sessionStale } from '../../fixtures';
@@ -124,10 +124,11 @@ describe('a tool tab in the Workspace', () => {
     fixture.finish(sessionId, 'exited', 0);
     openToolTab(fixture);
     await screen.findByRole('button', { name: 'Run', exact: true });
-    const rows = await screen.findAllByRole('button', { name: /· v1$/ });
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]).toHaveProperty('disabled', false);
-    fireEvent.click(rows[0]!);
+    // The run history table's row action (tool page v2): Open terminal for that run.
+    const history = await screen.findByRole('region', { name: 'Run history' });
+    const open = await within(history).findByRole('button', { name: /^Open terminal for / });
+    expect(open).toHaveProperty('disabled', false);
+    fireEvent.click(open);
     expect(openTab).toHaveBeenCalledWith('work_session', sessionId);
   });
 });
