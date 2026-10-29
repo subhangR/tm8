@@ -100,8 +100,9 @@ export interface DbClaims {
    * jobs and the loop executor set it; no HTTP, CLI or MCP claims builder does,
    * and `identity/claims.ts` never binds it. `internal.is_tracking_worker()`
    * reads it to let the tracking doors span spaces, and
-   * `internal.is_loops_worker()` (375) to let the loop executor READ due loops
-   * across spaces — and nothing else does. A name outside
+   * `internal.is_loops_worker()` (375) to let the loop executor read due loops
+   * and keep its run bookkeeping across spaces (384, 385) — and nothing else
+   * does. A name outside
    * `BACKGROUND_JOB_CLAIMS` binds as `''`.
    */
   readonly backgroundJob?: BackgroundJobClaim | undefined;
@@ -112,10 +113,13 @@ export interface DbClaims {
  * widens what a tracking door accepts, so the set of callers that can hold it
  * is a list a reviewer can read.
  *
- * `loops.execute-due` (375) is the narrowest of the three: it opens ONE
- * read-only function, `public.loops_due_for_executor`, and no write door at
- * all. The executor's writes run under the loop's own space claims instead —
- * see that migration's header.
+ * `loops.execute-due` (375) opens the executor's cross-space reads
+ * (`loops_due_for_executor`, `loops_claimable`, `loop_runs_open_for_executor`)
+ * and its run bookkeeping (`loop_run_claim`, `loop_run_launched`,
+ * `loop_run_launch_failed`, `loop_run_settle`, `loops_park_orphans`), and no
+ * door that writes a loop's content. A FIRING runs under the loop's own space
+ * claims instead — see 375's header. The allow-list line for
+ * `internal.is_loops_worker()` names each door.
  */
 export const BACKGROUND_JOB_CLAIMS = [
   'tracking.observer',
