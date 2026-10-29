@@ -1,6 +1,7 @@
 # Bridges v2 — every setting on screen, memories and loops on a bridge, and a WhatsApp command set that can run a team
 
-**Status:** DESIGN v2 · 2026-10-29 · task `01a1889e-d435-7b99-ac66-9e00425a3bcc`
+**Status:** FINAL · 2026-10-29 · task `01a1889e-d435-7b99-ac66-9e00425a3bcc` · the implementation design. The v1 doc's D23–D30 (FINAL v4, 2026-10-29) amend it in place, and **v1 §7.2 is the one build order** (§8 here points there).
+**Amended throughout by v1 v4:** the launch queue, `queued` workers, `/queue` and `launch_requests` are void, and a worker starts at once (D26: no worker cap). Handles are space-scoped and grant nothing (D23). Nothing is ever read from or sent to a conversation that isn't connected, DMs included (D28).
 **Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc. v1 D21 (2026-10-29) — workers read the whole conversation and post to it freely; `@handle` directs, it is not the only way in — amends §1.3, §1.7, §4.3, §4.4, §4.7, §4.8 and §5 here, in place. v1 D22 (same day) makes every `authored_from → bridge` below the server-written, inherited provenance edge of v1 §2.8.
 **Basis:** `origin/main` @ `cfb4622b4` (`integrations/whatsapp-bridge/src/{core,text,http,admin,forms,briefing,config}.ts`), the deployed copy in `prod-data/wa-bridge/src` (2026-10-20, same command set, no `forms.ts`), the loop executor (`packages/server/src/scheduler/jobs/loops.ts`, migrations 091/348/375), the launch defaults (`packages/contract/src/launch-defaults.ts`: `remembers` / `equips`), and `execution.spawn` (`tm8 help session spawn`).
 **Scope:** design only. No code.
@@ -16,17 +17,17 @@
 | Part | What v2 adds | Section |
 |---|---|---|
 | **UI gaps** | Six screens v1 left out: *History & retention*, the *What crosses to WhatsApp* choice in setup, *Pause / Resume / Remove* on the bridge itself, a *Test it* step and test button, a *confirm-the-consequence* dialog before any trust or access change, and a *mobile link flow* plus a reserved *Secrets* slot. A settings matrix proves every bridge field has exactly one home on screen. | §1 |
-| **Memories on a bridge** | A bridge `remembers` memories (the same edge teammates and tasks use). They ride every turn and every worker the bridge starts, and they move with the bridge, not with its target. Members can propose one from WhatsApp with `/remember`; it becomes live only after a human accepts it in tm8. | §2.1 |
-| **Loops on a bridge** | A loop whose subject is a bridge posts into the conversation on a schedule: *agent loops* (spawn a worker: "every weekday 9:00, post the stand-up") and *message loops* (no agent, a fixed reminder). Pausing the bridge suspends them, moving it keeps them, removing it disables them. | §2.2 |
+| **Memories on a bridge** | A bridge `remembers` memories (the same edge teammates and tasks use). They ride every turn and every worker the bridge starts, and they move with the bridge, not with its target. Members can propose one from WhatsApp with `/remember`; it becomes live only after a linked member of that group accepts it in tm8 (v1 D29). | §2.1 |
+| **Loops** | A loop is a **teammate started on a schedule** (v1 D26), built on main's first-class loops. Its instructions say what to do and which groups (`targets[]`) to update. A `post` reminder needs no worker. Pause skips one group, not the loop. Quiet hours are per bridge. One-shot and interactive modes. | §2.2 |
 | **Command inventory** | Every way a WhatsApp user drives the bridge today, read from code: 5 slash commands, 5 addressing forms, 4 implicit inputs, 4 status reactions, 14 agent-side HTTP doors, 15 operator CLI verbs — and the 12 weaknesses that make it brittle. | §3 |
-| **Command redesign** | Commands run **on the server**, as the linked member, through the same catalog operations the UI uses: never routed to an agent, always answered, idempotent on the WhatsApp message id. A `/work` command starts **several workers from one message**; a **launch queue** absorbs the space's 64-session cap instead of failing; `/workers`, `/status`, `/tell`, `/stop`, `/result`, `/retry` manage them from a phone. | §4 |
+| **Command redesign** | Commands run **on the server**, as the linked member, through the same catalog operations the UI uses: never routed to an agent, always answered, idempotent on the WhatsApp message id. A `/work` command starts **several workers from one message**, at once (no cap or queue, v1 D26); `/workers`, `/status`, `/tell`, `/stop`, `/result`, `/retry` manage them from a phone. | §4 |
 
 **Five decisions** (full list §6):
 
 1. **Memories and loops attach to the bridge, not to its target.** The group's knowledge and schedule belong to the group; retargeting keeps them. (V1)
 2. **Nothing that persistently changes agent behaviour goes live from WhatsApp alone.** `/remember` and agent `/loop` create *proposals* a human accepts in tm8 (v1 D9, extended). Message-only reminders are the one exception, capped. (V3)
 3. **Commands are server code, not prompts.** A command is parsed and executed by the bridge layer with the linked member's own authority; an agent never sees it. (V4)
-4. **Many workers is one request, many tasks, one queue.** `/work` makes one parent task with one child per line, then hands each to the launch queue; capacity is a wait, not an error. (V5)
+4. **Many workers is one request, many tasks.** `/work` makes one parent task with one child per line and starts each worker at once; there is no cap and no queue (v1 D26). (V5)
 5. **Every message gets an answer.** A command the bridge cannot run says why in one line; a silently dropped message is a bug. (V6)
 
 ---
@@ -255,53 +256,67 @@ A per-bridge switch *Accept memories from linked members without review* exists,
 |---|---|
 | link / unlink a memory (UI, CLI) | space admin; the memory's own author may unlink theirs |
 | propose (`/remember`, `/forget`) | linked members where `whoMayTrigger` admits them; never guests |
-| accept / drop a proposal | space admin, human-only |
+| accept / drop a proposal | in tm8 only, human-only: a linked member of that group (from the inbox item sent to the proposer and the group's linked members). A proposal from an admin-asserted link needs a member with a verified link, or an admin. Expires after 14 days (v1 D29) |
 | read the list | any member who can read the bridge; in WhatsApp, any sender allowed to trigger |
 
-### 2.2 Loops on a bridge
+### 2.2 Loops: a teammate on a schedule (v1 D26)
 
-**Model.** A `loop` whose `subjectId` is a bridge (the loop content already has `subjectId`, `schedule`, `teamMemberId`, `prompt`, `config`). Two flavours, chosen by `config.bridge.action`:
+**Model.** A loop is a **teammate started on a schedule**. It uses main's first-class loops (#1413, migrations 384/385: optional `subject_id`, `armed_by`, timezone, pause, `concurrency`), extended rather than replaced.
 
-| | **Agent loop** (`action: 'agent'`) | **Message loop** (`action: 'message'`) |
+- **Instructions and targets.** The instructions say what to do and which groups to update, with a different message per group if needed. `targets[]` (bridge ids) are its default posting targets, and each target's recent log is loaded into context at start. They are not a permission (v1 D23). A bridge subject is no longer required; a loop with a bridge subject and no targets is the one-group shortcut.
+
+**Two actions:**
+
+| | **Agent** (`action: 'agent'`) | **Post** (`action: 'post'`) |
 |---|---|---|
-| Example | "*Every weekday 9:00, post yesterday's merged PRs and today's blockers.*" | "*Every Sunday 20:00: 'Reminder — papers due Monday'.*" |
-| On firing | the existing executor path: derive a task from the subject, spawn a session (`triggered_by` the loop), with the bridge's memories (§2.1) and a bridge handle; the session posts its result with `tm8 message send --to <bridge>` | **no session**: the executor posts `config.bridge.text` on the bridge's log anchor as the loop (author: the bridge, `via: {loopId}`), which crosses as `tm8: …` |
-| Cost | a session per firing | none |
-| Overlap guard | the executor's (previous session live → skip) | n/a |
-| Created from WhatsApp | proposal only (§4.4 `/loop`) | directly, by a linked member (`/remind`), capped at 10 live per bridge |
+| Example | *Every weekday 9:00: post yesterday's merged PRs and today's blockers in tm8-work, and the open bugs in tm8-bugs.* | *Every Sunday 20:00: "Reminder: papers due Monday".* |
+| On firing | Spawns a session as the loop's teammate (`triggered_by` the loop), with the targets' memories and recent logs. It posts with `tm8 message send --to <bridge>`, signed with the teammate's handle. | **No session.** The executor posts `config.text[bridgeId]` to each target. `targets[]` is the full recipient list. |
+| Modes | `one-shot`: post, then close. `interactive`: stay alive to drive a multi-user conversation, and close after about 30 minutes with nothing addressed to it. | — |
+| Overlap | `concurrency: replace`: a new run ends the previous live run. | n/a |
 
-`config.bridge` also carries `quietHours` (no posts 22:00–08:00 in the bridge's timezone unless the loop says otherwise), `onlyIfNew` (agent loops: the session is told to post nothing if nothing changed — "*no news*" messages are filler, the Phase-1 watchdog lesson) and `replyTo: 'none' | 'last'`.
+**Routing.** A reply to a loop post goes to the live loop session, or to the group's chat once that session has closed. Every other message goes to the group's chat, so each message has one answerer.
 
-The executor change is small: a `message` action branch beside the spawn branch in `loops.ts`, plus a pre-check that reads the subject bridge's `status`. Message loops keep the misfire rule (**skip, never backfill**): a reminder that missed its minute is gone, and the Loops tab shows *missed 1 · node was down*.
+**Per-group rules.**
 
-**UI — the Loops tab.**
+- **Pause.** A paused target is skipped with a `paused` result. The run continues, and the loop is not suspended.
+- **Quiet hours** (`bridges.quietHours`, in the bridge's timezone) hold only unprompted posts, never a reply to someone. Held posts are released when the window ends; if several are held, only the newest is sent. An admin can exempt a loop.
+- **Rate limits** are per (teammate, bridge), plus the per-number cap (v1 §6).
+- **Misfire:** skip, never backfill.
+- **`onlyIfNew`** (agent): post nothing if nothing changed.
 
-```
-┌ Loops ──────────────────────────────────────────────────────────────────── [+ New loop] ┐
-│  ⟳ Daily stand-up             weekdays 09:00   agent · Opus        next 09:00 tomorrow   │
-│     last: 09:00 today ✓ posted · 1 session · 3.2k tokens                  [⏸] [Edit] [⋯]  │
-│  ⟳ Papers reminder            Sun 20:00        message            next Sun 20:00         │
-│     "Reminder — papers due Monday"            by Rakesh (WhatsApp) ✓       [⏸] [Edit] [⋯]  │
-│  ⟳ Weekly digest              Fri 18:00        agent · proposed   ⚠ waiting for an admin │
-│     proposed by Rahul from WhatsApp · 10:44                     [Arm it] [Edit] [Drop]   │
-│                                                                                           │
-│  ◌ These loops wait while the bridge is paused.                                           │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
-```
+**Authority.**
 
-*+ New loop* opens the existing `LoopCreateControl` with the subject pre-filled and a flavour toggle; the schedule field accepts the phrases §4.4 accepts and shows the next three firings.
+- **Granted at arming,** with no per-run approval: create and edit stories, docs, tasks and labels, and post to groups.
+- **Still approval-gated:** delete, merge PRs, deploy, change members, bridges or permissions, and over-budget spend. The request goes to the owner in tm8, never to a group. The PR tracker reports merges and never asks for them.
+- The loop posts as the teammate and acts on the owner's (`armed_by`) authority.
+- **Owner leaves:** a loop with bridge targets is suspended and admins are notified. Any admin can take it over, which re-arms it in their name. Loops without bridge targets keep main's fallback.
 
-**Permissions.** Creating or arming an agent loop: space admin, human-only (it spends on a schedule; `armed_by_identity_id` (343) is the human who armed it, and 375's act-as rule applies). Message loops: admin in the UI; linked members from WhatsApp within the cap. Pausing a loop: anyone who may create one of that flavour. Guests: none.
+**Provenance.** Loop work gets `authored_from → loop`, plus `→ bridge` for the group that prompted it (v1 D30).
+
+**Agile loops** (v1 D29). Sprint loops are standing loops, armed once, that read the current sprint doc. Goals and sprints are docs kept by the agile, goal and sprint teammates.
+
+**Executor changes on main's loop code:**
+
+- `targets[]`;
+- the `post` action;
+- `concurrency: replace`;
+- `mode`, with the idle close;
+- the per-target pause and quiet-hours pass, with the held-post release;
+- the bridge-target owner-leaves rule.
+
+**Creating loops.** Arming happens from the CLI in the first slice (v1 §7.2 L); the Loops tab is B2. From WhatsApp, `/remind` makes a `post` loop on that one group (a linked member, capped at 10 live per bridge). An agent `/loop` is a proposal an admin arms in tm8.
+
+**UI (B2): the Loops tab** lists loops targeting the bridge, with next run, last result per group (`posted` · `paused` · `held (quiet hours)`), and *Edit*, *Pause* and *Take over* (admin, when the owner has left).
 
 ### 2.3 What happens to memories and loops when the bridge changes
 
 | Bridge event | Memories | Loops |
 |---|---|---|
-| **Paused** (`bridges.pause`, incl. *pause for…*) | kept; unused because nothing runs | **suspended**: the executor skips them with `lastError: 'bridge paused'`, `nextRunAt` keeps advancing from now (skip, never backfill). Not disabled — resuming the bridge resumes them with no human step |
+| **Paused** (`bridges.pause`, incl. *pause for…*) | kept; unused because nothing runs | **skipped for this group** (v1 D26): a run records `paused` for this target and goes on with the others. The loop is not suspended, and resuming the bridge needs no step on the loop. |
 | **Degraded** (connection down) | kept | agent loops still run (their result queues in the outbox and is sent when the connection returns, or fails after 6 h with a badge); message loops queue the same way, at most one pending per loop (no pile-up of stale reminders) |
 | **Moved** (`bridges.retarget`) | **move with the bridge** — they are on the bridge | **move with the bridge**; the next firing's worker gets the new target's lineage. The §1.5 dialog lists them |
 | **Removed** | edges removed; the memories stay in the space | **disabled** (`enabled: false`, `lastError: 'bridge removed'`) and kept, so a human can re-point them; the remove dialog (§1.3) says so |
-| **Connection unshared / owner leaves the space** | kept | the bridges pause (standing decision); loops suspend exactly as for *paused*, and the attention request to admins names them |
+| **Connection unshared / owner leaves the space** | kept | the bridges pause (standing decision). A loop whose **owner** (`armed_by`) leaves is suspended and admins are notified; any admin can take it over by re-arming it in their name (v1 D26). |
 | **Target ended** (a chat or session ends) | kept | agent loops keep firing (they spawn from the bridge, not the target); the bridge goes `degraded: target ended` until moved |
 
 ---
@@ -417,8 +432,8 @@ or on one line, items split on `;`: `/work fix login timeout; add upload retries
 **What the server does, in one transaction per item, keyed by the message's mutation ids:**
 
 1. Creates a **parent task** "*From WhatsApp · Infra · 10:41*" (only when there are ≥ 2 items) with `authored_from → bridge`, and one **child task per line** under it — each task, and each worker session started for it, carrying the server-written provenance edge with `command: '/work'` and the message id (v1 D22, §2.8); whatever those workers create inherits it, at any depth. The task body carries the line, the quoted message if the command was a reply, the sender (as the linked member) and the bridge id. (Rule: a task is created under the task it breaks down — the parent here.)
-2. For each child, a **launch request** to the queue (§4.5) with the bridge's **worker defaults**: teammate, project, workdir, access mode, effort (Routing → *Workers*, §1.7). If the bridge has a default project the worker starts in a worktree; otherwise `session dispatch` lets the dispatcher pick.
-3. Mints the **handle at request time** (not when a poller notices the session — fixes W8) in `bridge_handles` with `status: 'queued'`, and the 3-4-word title from the task title.
+2. For each child, an immediate `execution.spawn` (no queue, v1 D26) with the bridge's **worker defaults**: teammate, project, workdir, access mode, effort (Routing → *Workers*, §1.7). If the bridge has a default project the worker starts in a worktree; otherwise `session dispatch` lets the dispatcher pick.
+3. Mints the **handle at request time** (not when a poller notices the session — fixes W8) in the space's `bridge_handles` (v1 D23), and the 3-4-word title from the task title.
 4. Answers once, quoting the command:
 
 ```
@@ -492,29 +507,23 @@ When each actually starts, finishes, blocks or fails, it reports in the thread o
 | `/new` (A) | v1 "retarget to a fresh chat", **after a confirm**; the old chat is told to hand over (today's behaviour, kept) |
 | `/who` | v1 handles list (today's `/who`, kept as an alias of `/workers all` plus the chats) |
 
-### 4.5 The launch queue — capacity is a wait, not an error
+### 4.5 The launch queue: dropped
 
-The 64-session cap is a node/space fact; the fix is not to raise it but to stop failing at it.
-
-- `bridges.work.start` (and `/start`, `/retry`) writes a **launch request** row — `launch_requests(id, space_id, task_id, spawn_input jsonb, requested_by, source {bridgeId, externalMessageId, item}, status queued|starting|started|cancelled|failed, position, created_at)` — and returns immediately. The task already exists, so the work is durable even if nothing starts today.
-- A scheduler job (the R26 runner, beside `loops.execute-due`) starts requests in FIFO order per space when the cap has room, with the same mutation id each attempt, so a timeout-then-start is one session, not two (W7).
-- **Fair share**: at most `maxLiveWorkersPerBridge` per bridge running at once, so one busy group cannot take all 64 slots.
-- A request older than 24 h fails with a notice in its thread (*"couldn't start in 24 h — /retry"*); a cancelled task cancels its request.
-- The UI gets the same queue for free: a launch from the browser at the cap can offer *Queue it* instead of an error. (This is a space-wide feature the bridge needs first; it should land as its own task, §7 Q4.)
+**Dropped** (v1 D26, Subhang, 2026-10-29). The worker cap is removed, so there is nothing to queue against. `launch_requests`, its job, fair share, `/queue`, `launch.requests.*` and `tm8 launch queue` are not built. `/work`, `/start` and `/retry` start workers at once. A spawn that fails for any other reason answers in the thread with the reason and `/retry`.
 
 ### 4.6 Who may run what
 
 | Tier | Who | Commands |
 |---|---|---|
 | **Everyone** | any sender, guests included, even when `whoMayTrigger: linked` | `/help`, `/whoami`, `/link`, `/bridge` |
-| **Readers** | senders allowed to trigger | `/workers`, `/status`, `/result`, `/queue`, `/tasks`, `/docs`, `/memories`, `/loops`, `/who` |
+| **Readers** | senders allowed to trigger | `/workers`, `/status`, `/result`, `/tasks`, `/docs`, `/memories`, `/loops`, `/who` |
 | **Linked** | linked (or asserted) members allowed to trigger, acting with their own space permissions | `/work`, `/task`, `/start`, `/tell`, `/stop` (own), `/retry`, `/remember`, `/forget`, `/remind`, `/loop` (propose), own-reminder pause/delete |
 | **Admin** | linked members who are space admins; **asserted** links never count as admin | `/stop` others', `/stop all`, `/mute`, `/new`, loop pause/delete for any loop |
 | **Never from WhatsApp** | — | create/remove a bridge, change trust or `whoMayTrigger`, accept memory proposals, arm agent loops, approvals, anything with a secret |
 
 A bridge admin can switch tiers off (Routing → *Commands*: e.g. a family group with only `/remind` and `/help`). With `whoMayTrigger: anyone`, guests reach the *Readers* tier but never *Linked*: a guest has no member authority to run `/work` as, and the bridge does not lend its own.
 
-**Confirmations.** `/stop all`, `/new`, `/loop delete`, `/work` over 3 items or with `x≥2` answer with a summary and "*reply YES within 2 min*". Only the same sender's reply to that notice confirms; it is stored as a one-use row keyed by the notice's message id. A confirmation is *intent*, not *approval*: it never substitutes for a tm8 approval (v1 D9).
+**Confirmations.** `/stop all`, `/new`, `/loop delete`, `/work` over 3 items or with `x≥2` answer with a summary and "*reply YES within 2 min*". Only the same sender's reply to that notice confirms; it is stored as a one-use row keyed by the notice's message id. A confirmation is **intent, not approval**. It never substitutes for a tm8 approval (v1 D9), and nothing approval-gated ever runs on a YES (v1 D26: delete, merge a PR, deploy, change members, bridges or permissions, over-budget spend).
 
 ### 4.7 Agents in a bridged chat, after v2
 
@@ -542,16 +551,16 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 
 | Area | Addition |
 |---|---|
-| `bridges` content | `pausedUntil: string | null`, `timezone: string`, `commands: { tiers: {readers: bool, linked: bool, admin: bool}, acceptMemoriesFromLinked: bool }`, `workers: { teammateId, projectId, workdir, accessMode, effort, maxPerCommand, maxLive, wake: 'directed'|'thread'|'all', postLimit: {perMin, undirectedPer10Min} }` (wake and postLimit: v1 D21), `history: { lastImportAt, lastImportDays }` |
-| operations | `bridges.log.read`, `bridges.listen` (v1 §2.7, D21), `bridges.test`, `bridges.history.import`, `bridges.update --dry-run` → `consequences[]`, `bridges.memories.link|unlink|proposals.resolve`, `bridges.work.start`, `launch.requests.list|cancel` (space-wide, §4.5) |
+| `bridges` content | `teammateId`, `purpose`, `quietHours`, `workerPosting` (v1 §2.1: D23, D25, D26), `pausedUntil: string | null`, `timezone: string`, `commands: { tiers: {readers: bool, linked: bool, admin: bool}, acceptMemoriesFromLinked: bool }`, `workers: { teammateId, projectId, workdir, accessMode, effort, maxPerCommand, maxLive, wake: 'directed'|'thread'|'all', postLimit: {perMin, undirectedPer10Min} }` (wake and postLimit: v1 D21), `history: { lastImportAt, lastImportDays }` |
+| operations | `bridges.log.read`, `bridges.listen` (v1 §2.7, D21), `bridges.test`, `bridges.history.import`, `bridges.update --dry-run` → `consequences[]`, `bridges.memories.link|unlink|proposals.resolve`, `bridges.work.start`; `labels.*` (v1 §3.8) |
 | edges | `remembers` gains `src_kinds += bridge`; loops use the existing `subjectId`; `authored_from` gains `bridge` in `dst_kinds`, server-written only, keyed by `providerMessageId` (v1 D22, §2.8) |
 | launch context | `bridgeOrigins[]` on a session, copied by the entity recorder to everything it creates and to child sessions (v1 D22) |
-| loops | `config.bridge {action: 'agent'|'message', text?, quietHours?, onlyIfNew?, replyTo?}`; executor branch for `message`; subject-status pre-check |
+| loops | extends main's loops (384/385): `targets[]`, `action: 'agent'|'post'`, `text` per target, `mode: 'one-shot'|'interactive'`, `concurrency += 'replace'`, `quietHoursExempt`, `onlyIfNew`; per-target pause and quiet-hours pass (v1 D26) |
 | launch defaults | `LaunchDefaultVia += 'bridge'` |
 | runtime protocol | `history.fetch {connectionId, conversationId, sinceTs}` → `history.batch {items[], done}` |
-| events | `bridge.command {bridgeId, messageId, verb, outcome}`, `launch.request {id, status, position}` |
-| tables | `bridge_read_cursors(bridge_id, session_id, last_message_id, read_at)` (v1 §2.7, D21), `launch_requests` (§4.5), `bridge_command_confirms(notice_message_id pk, sender_external_id, command jsonb, expires_at, used_at)` |
-| CLI | `tm8 bridge log|listen` (v1 D21), `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run`, `tm8 launch queue [--cancel <id>]` |
+| events | `bridge.command {bridgeId, messageId, verb, outcome}` |
+| tables | `bridge_read_cursors(bridge_id, session_id, last_message_id, read_at)` (v1 §2.7, D21), `bridge_command_confirms(notice_message_id pk, sender_external_id, command jsonb, expires_at, used_at)` |
+| CLI | `tm8 bridge log|listen` (v1 D21), `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run`, `tm8 label …` (v1 §3.8) |
 
 ---
 
@@ -565,7 +574,7 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 | V4 | Commands execute server-side as the linked member, through catalog operations | commands as prompts to the main chat (today's RULE 2) | deterministic, instant, cheap, auditable, same permissions as the UI |
 | V5 | `/work`: one parent task, one child per line, one launch request each, handles minted at request time | one task with several sessions; agent decides | a line is a unit of work people can address and stop; durable before capacity exists |
 | V6 | Every message gets an answer; unknown commands are never routed | today's silent fall-through | the top source of "the bridge is broken" |
-| V7 | A space-wide **launch queue**, fair-shared per bridge | raise the cap; fail and ask the human | the cap protects the node; a queue turns a refusal into a wait |
+| V7 | ~~A space-wide launch queue~~ **Dropped** (v1 D26): there is no worker cap, so workers start at once | keep the cap and queue | Subhang, 2026-10-29 |
 | V8 | Pause from WhatsApp is `/mute` (commands keep working); full pause is UI-only | `/pause` + `/resume` | a fully paused bridge cannot hear `/resume` |
 | V9 | Every widening change goes through one consequence dialog fed by a server dry run | per-setting ad hoc warnings | words computed from data, the same in UI and CLI |
 | V10 | Mobile linking uses the pairing code; QR moves to a second screen by a member-addressed hand-off | QR only | a phone cannot scan its own screen |
@@ -579,7 +588,7 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 | Q1 | Should `/work` from a **linked member who is not a space admin** be allowed by default? | Yes, within the per-bridge limits — it is what the main chat already does for them today; admins can turn the *Linked* tier off per bridge. |
 | Q2 | Should the owner be able to accept a memory proposal **from WhatsApp** (e.g. replying YES)? | No for now (V3). Revisit when a link can be step-up verified (a fresh code) — then a code-verified admin could accept with `/accept #n TM8-XXXX`. |
 | Q3 | Cost visibility: should `/status` show tokens or money? | Tokens and a running count per bridge this week; money only where the space has a price table. Needs the tracking owner's view. |
-| Q4 | The launch queue is space-wide: who owns it? | A separate task in the execution lane, landing before bridge B2's `/work`; bridges are its first client, the launch sheet its second. |
+| Q4 | ~~Who owns the launch queue?~~ | Void: the queue is dropped (v1 D26). |
 | Q5 | `x3` races: should tm8 pick a winner? | No — report all three; the human picks by replying `/keep #2`. Out of scope for the first cut; ship `/work` without `x<n>` first. |
 | Q6 | Message loops in a **guest-heavy group**: may a guest-triggered `/remind` exist? | No; reminders need a linked member, so someone in tm8 is accountable for what the bridge posts on a schedule. |
 | Q7 | Default timezone when a member links from abroad? | The creating member's profile timezone, editable on Routing; every echoed time names its zone. |
@@ -587,15 +596,23 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 
 ---
 
-## 8. Build order (slots into v1 §7.2)
+## 8. Build order: see v1 §7.2
 
-| Phase | Adds from v2 |
-|---|---|
-| **P0 (now, Phase-1 code)** | tolerant parser, never-silent replies, `/whoami`, richer `/help` (Q8) |
-| **B0** | contract additions §5; `launch_requests` + queue job (own task, Q4) |
-| **B1** | server-side command executor; `/work`, `/workers`, `/status`, `/tell`, `/stop`, `/result`, `/retry`, `/queue`; `bridges.work.start` + CLI |
-| **B2** | UI gaps §1.1–1.6; Memory and Loops tabs; consequence dialog |
-| **B3** | memories (`remembers` from bridge, `via 'bridge'`, proposals); loops (`message` action, subject pre-check, `/remind`, `/loop` proposals); `/remember`, `/forget` |
-| **B4+** | history import per provider as each driver lands |
+The one build order for both documents is **v1 §7.2** (final, 2026-10-29). v2's pieces land there as follows:
 
-**Acceptance for the command layer (B1):** a `/work` with three lines from a linked member creates one parent and three child tasks, three handles, and one reply within 2 s; redelivering the same WhatsApp message creates nothing new; at the session cap the third item reads *queued* and starts by itself when a slot frees; `/stop calm-heron` from another non-admin member is refused with a reason; `/stp` gets a did-you-mean; a guest's `/work` gets "*link your number first*"; no command text ever reaches the main chat as a turn.
+- **B1b:** the command executor, with `/work`, `/task`, `/help`, `/whoami`, `/workers`, `/stop`, `/status`, `/tasks`, `/docs` and the tolerant parser.
+- **L:** loops (§2.2).
+- **B2 (deferred):** the UI gaps in §1, and the Memory and Loops tabs.
+- **When code links ship:** memories and `/remember` proposals.
+- **B4+:** history import, per provider.
+
+The P0 interim on the Phase-1 code (Q8) is optional; B1c's cutover replaces it.
+
+**Acceptance for the command layer (B1b):**
+
+- A `/work` with three lines from a linked member creates one parent and three child tasks, starts three workers at once with three space handles, and replies once within 2 s.
+- Redelivering the same WhatsApp message creates nothing new.
+- `/stop calm-heron` from another non-admin member is refused with a reason.
+- `/stp` gets a did-you-mean.
+- A guest's `/work` gets "*link your number first*".
+- No command text ever reaches the main chat as a turn.
