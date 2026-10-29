@@ -61,6 +61,9 @@ export function LoopRuns({
   const loaded = useRef(false);
   const pages = useRef(0);
   const shownLoop = useRef(loopId);
+  // The rows on screen, for a refresh to find the running ones page one no longer lists.
+  const shown = useRef<LoopRun[]>([]);
+  useEffect(() => { shown.current = runs; }, [runs]);
   const [refreshError, setRefreshError] = useState<string | null>(null);
 
   // Another loop starts empty, so its table never shows the previous loop's runs.
@@ -80,11 +83,20 @@ export function LoopRuns({
         setRuns(page.items); setCursor(page.nextCursor); pages.current = 1;
       } else {
         // A row on page one replaces its old copy, a new one goes on top, and the older pages stay.
+        const fresh = new Map(page.items.map((r) => [r.id, r]));
         setRuns((prev) => {
-          const fresh = new Map(page.items.map((r) => [r.id, r]));
           const added = page.items.filter((r) => !prev.some((p) => p.id === r.id));
           return [...added, ...prev.map((r) => fresh.get(r.id) ?? r)];
         });
+        // A RUNNING row that slid past page one (a skip loop adds a row per due tick while one is live) is
+        // read on its own, or it would read Running forever and keep this poll alive (review of PR5b, #10).
+        for (const stale of shown.current.filter((r) => r.status === 'running' && !fresh.has(r.id))) {
+          void port.runsGet(stale.id).then(
+            (settled) => {
+              if (shownLoop.current === loopId) setRuns((prev) => prev.map((r) => (r.id === settled.id ? settled : r)));
+            },
+            () => undefined);
+        }
         // Past page one, the cursor already points after the last page shown.
         if (pages.current <= 1) setCursor(page.nextCursor);
       }

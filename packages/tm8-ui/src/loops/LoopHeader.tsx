@@ -76,7 +76,8 @@ export function LoopHeader({
   // lost answer, the server's "retry to record it"), pressing Run now again re-sends the SAME id, which the
   // server replays as the run it started; a new id would be refused as an overlap. Success or a definite
   // refusal ends the intent; Run anyway (force) is an intent of its own.
-  const runIntent = useRef<{ loopId: string; force: boolean; clientMutationId: string } | null>(null);
+  // While a run MAY have started (pending), any press re-sends that intent, force or not, so it reads back.
+  const runIntent = useRef<{ loopId: string; force: boolean; clientMutationId: string; pending: boolean } | null>(null);
   const { state, capabilities: can, definition } = view;
   const zone = definition.timezone || 'UTC';
   const status = loopStatus(view, now);
@@ -110,19 +111,20 @@ export function LoopHeader({
   const runNow = async (force: boolean) => {
     if (busy) return;
     const held = runIntent.current;
-    const intent = held && held.loopId === view.id && held.force === force
-      ? held : { loopId: view.id, force, clientMutationId: nextMutationId() };
+    const intent = held && held.loopId === view.id && (held.pending || held.force === force)
+      ? held : { loopId: view.id, force, clientMutationId: nextMutationId(), pending: false };
     runIntent.current = intent;
     setBusy('run'); setNotice({ kind: 'none' });
     try {
-      const { run } = await port.runNow(view.id, force, { clientMutationId: intent.clientMutationId });
+      const { run } = await port.runNow(view.id, intent.force, { clientMutationId: intent.clientMutationId });
       runIntent.current = null;
       setNotice({ kind: 'run', run });
       onRunsChanged();
       void onReload();
     } catch (failure) {
       if (mayHaveStarted(failure)) {
-        // Keep the intent: the run may be launching. The table is re-read so a run that did start shows.
+        // Keep the intent, pending: the run may be launching. The table is re-read so a run that did start shows.
+        runIntent.current = { ...intent, pending: true };
         setNotice({ kind: 'error', text: 'Run now did not answer, so the run may have started. The runs table is refreshed; '
           + 'press Run now again to read it back (it will not start a second run).' });
         onRunsChanged();
@@ -199,9 +201,10 @@ export function LoopHeader({
 
       {state.lastError ? (
         <p className="loop-page__banner" role="alert" data-testid="loop-last-error">
-          {state.lastRunAt
-            ? <><strong>Last firing failed</strong>{` ${relTime(state.lastRunAt, now)}`}: {state.lastError}</>
-            : <><strong>Not scheduled</strong>: {state.lastError}</>}
+          {state.nextRunAt === null
+            // The server's parked rule (write.ts): no next run, and a reason.
+            ? <><strong>Not scheduled</strong>: {state.lastError}</>
+            : <><strong>Last firing failed</strong>{state.lastRunAt ? ` ${relTime(state.lastRunAt, now)}` : ''}: {state.lastError}</>}
           <span className="loop-page__hint"> The loop stays enabled; a failure never disables it.</span>
         </p>
       ) : null}
