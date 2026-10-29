@@ -6,11 +6,13 @@
 -- for the Tools lane and touch none of these objects, so either landing order
 -- applies clean.
 --
--- WHAT 384 LEFT FOR THIS FILE. 384 added `loop_runs` and two writer doors —
--- `loop_run_record` (insert one row) and `loop_run_settle` (settle once) — and
--- taught 375's due read about pauses. It deliberately did not decide HOW a
--- firing is recorded, because research A measured two defects in the old job
--- that a plain "insert a row, then update_loop" would have kept:
+-- WHAT 384 LEFT FOR THIS FILE. 384 added `loop_runs` and one door,
+-- `loop_run_settle` (settle once), and taught 375's due read about pauses. It
+-- has no insert door: rows are written here, by the claim, in one transaction
+-- with it (a free-standing insert door would let any member forge run history;
+-- review 5 of #1406). 384 did not decide HOW a firing is recorded, because
+-- research A measured two defects in the old job that a plain "insert a row,
+-- then update_loop" would have kept:
 --
 --   1. A human edit mid-firing made `update_loop` fail its version check, so
 --      the bookkeeping write was dropped: `next_run_at` never advanced and the

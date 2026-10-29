@@ -7,8 +7,8 @@
 --
 -- Destroys no data: 385 added functions only. `loop_runs` rows written through
 -- the claim door stay (they are ordinary 384 rows), and `loops.last_error`
--- values the orphan sweep wrote stay as text. 384's `loops_due_for_executor`,
--- `loop_run_record` and `loop_run_settle` are untouched by 385 and remain.
+-- values the orphan sweep wrote stay as text. 384's `loops_due_for_executor`
+-- and `loop_run_settle` are untouched by 385 and remain.
 -- =============================================================================
 
 set role tm8_graph_owner;

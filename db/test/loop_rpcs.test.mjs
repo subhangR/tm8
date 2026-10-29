@@ -569,25 +569,35 @@ test('384 — runner invariants, the action backfill rule, loop_runs and loop he
   ).entity;
   assert.equal(new Date(paused.content.paused_until).toISOString(), new Date(until).toISOString());
 
-  // loop_runs: recorded by a member, settled once, invisible outside the space.
-  const run = json(
-    `select public.loop_run_record(${uuid(spawn.id)}, now(), 'manual', 'fired',
-       p_client_mutation_id => ${literal(cmid('loop-384-run'))})`,
-    { claims: w.claimsA },
-  );
-  assert.ok(run.runId);
-  const first = json(`select public.loop_run_settle(${uuid(run.runId)}, 'stopped')`, { claims: w.claimsA });
-  const second = json(`select public.loop_run_settle(${uuid(run.runId)}, 'completed')`, { claims: w.claimsA });
+  // A dispatch loop names no runner: the executors choose spawn from the runner,
+  // so one would fire as a spawn of it (review 3 of #1406).
+  denied('create_loop: a dispatch loop that names a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Dispatch with a runner', null, 'every 1d',
+       ${uuid(w.personaA)}, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('update_loop: switching a spawn loop to dispatch while it keeps its runner',
+    `select public.update_loop(${uuid(spawn.id)}, null, null, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // loop_runs: rows come from PR2's claim door, never a free-standing insert door
+  // (one would let any member forge run history). Settled once, never with a
+  // null outcome, invisible outside the space.
+  assert.equal(scalar(`select count(*)::text from pg_proc where proname = 'loop_run_record'`, { url: OWNER_URL }), '0');
+  const runId = scalar(
+    `insert into public.loop_runs(loop_id, space_id, fired_at, trigger, action, launch)
+       values (${uuid(spawn.id)}, ${uuid(w.spaceA)}, now(), 'manual', 'spawn', 'fired') returning id::text`,
+    { url: OWNER_URL });
+  denied('loop_run_settle: a null outcome',
+    `select public.loop_run_settle(${uuid(runId)}, null)`, { claims: w.claimsA, expect: '22023' });
+  const first = json(`select public.loop_run_settle(${uuid(runId)}, 'stopped')`, { claims: w.claimsA });
+  const second = json(`select public.loop_run_settle(${uuid(runId)}, 'completed')`, { claims: w.claimsA });
   assert.equal(first.outcome, 'stopped');
   assert.equal(second.outcome, 'stopped', 'a run settles once');
-  assert.equal(
-    scalar(`select action from public.loop_runs where id = ${uuid(run.runId)}`, { claims: w.claimsA }),
-    'spawn', 'the run snapshots the loop action');
   assert.deepEqual(
-    rows(`select id from public.loop_runs where id = ${uuid(run.runId)}`, { claims: w.claimsB }),
+    rows(`select id from public.loop_runs where id = ${uuid(runId)}`, { claims: w.claimsB }),
     [], 'loop_runs is RLS-filtered for a non-member');
-  denied('loop_run_record: a non-member',
-    `select public.loop_run_record(${uuid(spawn.id)}, now(), 'manual', 'fired')`,
+  denied('loop_run_settle: a non-member',
+    `select public.loop_run_settle(${uuid(runId)}, 'completed')`,
     { claims: w.claimsB, expect: '42501' });
 
   assert.equal(scalar(`select internal.header_kind_allowed('loop')`, { url: OWNER_URL }), 't');
