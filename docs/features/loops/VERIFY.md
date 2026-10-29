@@ -66,4 +66,4 @@ For the UI, point the dev UI at the same node (HOW-TO-TEST.md §3b). Then New lo
 
 ## What a green run does not prove
 
-A **tool** loop fires its tool through `ToolRuntime.runScheduled` (loops PR3): `packages/server/test/loops/fire-tool.test.ts` pins the port's tool branch, and `packages/server/test/tools/scheduled-runs.pg.test.ts` the runtime and `start_tool_session`'s loop gate.
+A **tool** loop fires its tool through `ToolRuntime.runScheduled` (loops PR3): `packages/server/test/loops/fire-tool.test.ts` pins the port's tool branch; `packages/server/test/loops/loop-runs.pg.test.ts` fires one with Run now on a real node and stops it, by `loops.runs.stop` and by max runtime (the tool recorded killed, its token revoked, the run stopped / timed_out); `packages/server/test/tools/scheduled-runs.pg.test.ts` pins the runtime and 389's loop gate, and `packages/server/test/loops/validate.pg.test.ts` 394's (a loop-triggered run is of the loop's own tool).
