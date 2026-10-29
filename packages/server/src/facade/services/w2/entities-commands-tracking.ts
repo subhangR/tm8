@@ -82,7 +82,7 @@ import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
-import { assertLoopReferences } from '../../../loops/validate.js';
+import { assertLoopReferences, EVERY_REFERENCE } from '../../../loops/validate.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
@@ -1778,7 +1778,11 @@ export class W2EntitiesCommandsTrackingService {
                 content.maxRuntimeSeconds ?? null, content.maxRuntimeSeconds === null,
                 retry.attempts ?? null, retry.delaySeconds ?? null, null]);
               await assertToolPersona(q, id);
-              await assertLoopReferences(q, id);
+              // As loops.update: only what this patch sets (review B2), everything on an action change.
+              await assertLoopReferences(q, id, action !== null ? EVERY_REFERENCE : {
+                runner: typeof content.teamMemberId === 'string', config: content.config !== undefined,
+                tool: content.toolId !== undefined || content.toolInputs !== undefined,
+              });
             }
             break;
           case 'graph': {

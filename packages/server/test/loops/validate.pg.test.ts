@@ -5,11 +5,12 @@
  * loops-ops.pg.test.ts, plus the tools ops so a loop can name a real tool.
  *
  * What a "returned 400" check would miss, and what is pinned here: the refusal
- * names the field (details.path) and the offending ids; it is judged on the
- * row the write LEAVES, so a refused update rolls the door's write back; tool
- * inputs are judged against the tool's CURRENT definition, so an edit to the
- * tool surfaces on the next loop write rather than at fire time; and 394's
- * gate refuses a loop-triggered run of a tool the loop does not name.
+ * names the field (details.path) and the offending ids; an update is judged on
+ * the references it SETS, on the row the write leaves, so a refused update rolls
+ * the door's write back and a reference that went stale under the loop never
+ * blocks an unrelated edit (loops PR1 review B2); tool inputs are judged against
+ * the tool's CURRENT definition whenever a write sets them; and 394's gate
+ * refuses a loop-triggered run of a tool the loop does not name.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -129,22 +130,27 @@ describe('tool inputs are judged against the CURRENT tool definition', () => {
     expect(await database.query("select 1 from public.loops where title = 'Probe typo'")).toHaveLength(0);
   });
 
-  it('an edit to the tool surfaces on the loop\'s next write, and a refused update rolls the door\'s write back', async () => {
+  it('an edit to the tool is judged when the loop\'s tool inputs are next written, never on an unrelated edit (review B2); a refused update rolls the door\'s write back', async () => {
     const tool = await createTool('probe-evolving', [{ name: 'target', type: 'string', required: true }]);
     const view = ok(await create({ title: 'Evolving', schedule: 'every 1d', action: 'tool', toolId: tool.id, toolInputs: { target: 'db-1' }, prompt: 'v1' }));
     // The tool now requires a region as well; the loop's stored inputs no longer fit.
     ok(await request('PATCH', `/v2/tools/${tool.id}`, { expectedVersion: tool.version,
       definition: toolDefinition('probe-evolving', [{ name: 'target', type: 'string', required: true }, { name: 'region', type: 'enum', options: ['eu', 'us'], required: true }]) }));
 
-    const error = refused(await patch(view.id, view.version, { prompt: 'v2' }), 'definition.toolInputs');
-    expect(error.message).toContain('region (required)');
-    const row = await stored(view.id);
-    expect(row).toMatchObject({ prompt: 'v1', version: view.version, tool_inputs: { target: 'db-1' } });
-
-    // Supplying the input in the same patch passes; the stored row moves on.
-    const fixed = ok(await patch(view.id, view.version, { prompt: 'v2', toolInputs: { target: 'db-1', region: 'eu' } }));
-    expect(fixed.definition.toolInputs).toEqual({ target: 'db-1', region: 'eu' });
+    // A prompt edit sets no tool reference, so the stale inputs do not block it (loops PR1 review B2):
+    // the firing reports them, as the run's error and the loop's last_error.
+    const edited = ok(await patch(view.id, view.version, { prompt: 'v2' }));
     expect((await stored(view.id))!.prompt).toBe('v2');
+
+    // Writing the inputs is judged against the CURRENT definition, and a refusal rolls the write back.
+    const error = refused(await patch(view.id, edited.version, { prompt: 'v3', toolInputs: { target: 'db-2' } }), 'definition.toolInputs');
+    expect(error.message).toContain('region (required)');
+    expect(await stored(view.id)).toMatchObject({ prompt: 'v2', version: edited.version, tool_inputs: { target: 'db-1' } });
+
+    // Supplying the input passes; the stored row moves on.
+    const fixed = ok(await patch(view.id, edited.version, { prompt: 'v3', toolInputs: { target: 'db-1', region: 'eu' } }));
+    expect(fixed.definition.toolInputs).toEqual({ target: 'db-1', region: 'eu' });
+    expect((await stored(view.id))!.prompt).toBe('v3');
   });
 
   it('a secret slot is never a stored input: a value there is refused, a bound secret is used by leaving it out', async () => {

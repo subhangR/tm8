@@ -117,10 +117,12 @@ async function assertProjectRef(q: Querier, spaceId: string, projectId: string):
  * CURRENT definition; a dispatch loop's `config` still has to be well-formed
  * (it is stored, and an edit to `action` later would launch with it).
  */
-export async function assertLoopDefinitionReferences(q: Querier, spaceId: string, loop: LoopReferenceFields): Promise<void> {
-  const config = strictLoopSpawnConfig(loop.config);
+export async function assertLoopDefinitionReferences(
+  q: Querier, spaceId: string, loop: LoopReferenceFields, changed: LoopReferenceChange = EVERY_REFERENCE,
+): Promise<void> {
+  const config: LoopSpawnConfig = changed.config ? strictLoopSpawnConfig(loop.config) : {};
   const refs: Reference[] = [];
-  if (loop.teamMemberId) {
+  if (changed.runner && loop.teamMemberId) {
     refs.push({ id: loop.teamMemberId, kind: 'team_member', path: 'definition.teamMemberId', what: 'teamMemberId' });
   }
   if (config.projectId) await assertProjectRef(q, spaceId, config.projectId);
@@ -130,12 +132,12 @@ export async function assertLoopDefinitionReferences(q: Querier, spaceId: string
   for (const id of config.memoryIds ?? []) {
     refs.push({ id, kind: 'memory', path: 'definition.config.memoryIds', what: 'config.memoryIds' });
   }
-  if (loop.toolId) {
+  if (changed.tool && loop.toolId) {
     refs.push({ id: loop.toolId, kind: 'tool', path: 'definition.toolId', what: 'toolId' });
   }
   await assertReferencedEntities(q, spaceId, refs);
 
-  if (loop.action === 'tool' && loop.toolId) {
+  if (changed.tool && loop.action === 'tool' && loop.toolId) {
     const tool = await loadTool(q, loop.toolId);
     const problems = scheduledInputProblems(tool, loop.toolInputs);
     if (problems.length > 0) {
@@ -155,7 +157,7 @@ export async function assertLoopDefinitionReferences(q: Querier, spaceId: string
  * back. `not_found` only when the row itself is unreadable, which after a
  * door call that returned means the caller is not who the door thought.
  */
-export async function assertLoopReferences(q: Querier, loopId: string): Promise<void> {
+export async function assertLoopReferences(q: Querier, loopId: string, changed: LoopReferenceChange = EVERY_REFERENCE): Promise<void> {
   const [row] = await q.query<{
     spaceId: string; action: string; teamMemberId: string | null; toolId: string | null;
     toolInputs: Record<string, ToolJsonValue> | null; config: Record<string, unknown> | null;
@@ -173,5 +175,15 @@ export async function assertLoopReferences(q: Querier, loopId: string): Promise<
     toolId: row.toolId,
     toolInputs: row.toolInputs ?? {},
     config: row.config,
-  });
+  }, changed);
 }
+
+/**
+ * Which of a loop's references a write SETS, the only ones it is judged on (loops PR1 review B2: a
+ * tool deleted after the loop was configured blocks nothing). A create sets them all, and so does
+ * an action change, since what the loop launches then reads them. A reference that went stale
+ * under the loop (a deleted tool, an edited tool definition, a deleted memory) never blocks a
+ * rename or a schedule edit: the firing records it as the run's error and the loop's `last_error`.
+ */
+export interface LoopReferenceChange { readonly runner: boolean; readonly config: boolean; readonly tool: boolean }
+export const EVERY_REFERENCE: LoopReferenceChange = { runner: true, config: true, tool: true };

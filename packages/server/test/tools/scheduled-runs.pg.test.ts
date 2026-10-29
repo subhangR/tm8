@@ -42,6 +42,18 @@ async function createLoop(space: string, title: string, teamMemberId: string | n
     [space, title, null, 'every 1d', teamMemberId, null, '', '{}', false, null, null, null, cmid()]);
   return result.entity.id;
 }
+/**
+ * 394 (loops PR3): a loop-triggered run is of the tool its loop names, so each firing aims its
+ * fixture loop at the tool it fires. As the owner, like the persona fixtures: the doors would
+ * refuse a tool from another space, which the far loop's refusal case needs to reach.
+ */
+async function aim(loopId: string, tool: string) {
+  await node.database.transaction(async (q) => {
+    await q.query('set local role tm8_graph_owner');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [owner.identityId]);
+    await q.query("update public.loops set action='tool', tool_id=$2 where entity_id=$1", [loopId, tool]);
+  });
+}
 async function versionOf(id: string) {
   return (await node.database.query<{ version: number }>('select version from public.entities where id=$1', [id]))[0]!.version;
 }
@@ -104,6 +116,7 @@ afterAll(async () => { await node?.close(); });
 describe('389: start_tool_session with a loop', () => {
   const opened: Array<[string, DbClaims]> = [];
   async function start(claims: DbClaims, tool: string, loopId: string | null, opts: { version?: number | null; keepOpen?: boolean; cmid?: string } = {}) {
+    if (loopId !== null) await aim(loopId, tool);
     const result = await door().rpc<{ entity: { id: string }; __tm8_replayed: boolean }>(claims, 'start_tool_session',
       [spaceId, tool, opts.version === undefined ? await versionOf(tool) : opts.version, {}, opts.keepOpen ?? false,
         'scheduled-db', '/tmp', 100, null, opts.cmid ?? cmid(), loopId]);
@@ -162,6 +175,7 @@ describe('389: start_tool_session with a loop', () => {
 describe('389: issue_tool_session_loop_session', () => {
   const opened: Array<[string, DbClaims]> = [];
   async function start(claims: DbClaims, tool: string, loopId: string | null) {
+    if (loopId !== null) await aim(loopId, tool);
     const result = await door().rpc<{ entity: { id: string } }>(claims, 'start_tool_session',
       [spaceId, tool, await versionOf(tool), {}, false, 'scheduled-db', '/tmp', 100, null, cmid(), loopId]);
     opened.push([result.entity.id, claims]);
@@ -262,7 +276,12 @@ describe('runScheduled on the production server with real PTYs', () => {
     }, { timeout: 20000, interval: 50 });
     return row!;
   }
-  const fire = (tool: string, extra: Record<string, unknown> = {}, identityId = owner.identityId) => runtime.runScheduled(firingClaims(identityId, loop), {
+  /** Every firing aims its loop at the tool it fires (394). */
+  const scheduled: ToolRuntime['runScheduled'] = async (claims, request) => {
+    await aim(request.triggeredByLoopId, request.toolId);
+    return runtime.runScheduled(claims, request);
+  };
+  const fire = (tool: string, extra: Record<string, unknown> = {}, identityId = owner.identityId) => scheduled(firingClaims(identityId, loop), {
     toolId: tool, inputs: {}, firingKey: `${loop}:${new Date().toISOString()}:${randomUUID()}`, triggeredByLoopId: loop,
     runAsTeamMemberId: persona, title: 'Nightly check', ...extra });
   let readTool: string, firstFiring: { request: Parameters<ToolRuntime['runScheduled']>[1]; sessionId: string };
@@ -272,7 +291,7 @@ describe('runScheduled on the production server with real PTYs', () => {
     readTool = await createTool('nightly-read', 'read', source);
     const request = { toolId: readTool, inputs: {}, firingKey: `${loop}:2026-10-28T20:00:00.000Z`, triggeredByLoopId: loop,
       runAsTeamMemberId: persona, title: 'Nightly check' };
-    const result = await runtime.runScheduled(firingClaims(owner.identityId, loop), request);
+    const result = await scheduled(firingClaims(owner.identityId, loop), request);
     firstFiring = { request, sessionId: result.sessionId };
     expect(result).toEqual({ sessionId: expect.any(String), toolVersion: await versionOf(readTool),
       sourceSha256: createHash('sha256').update(source).digest('hex') });
@@ -295,11 +314,11 @@ describe('runScheduled on the production server with real PTYs', () => {
   });
 
   it('(4) a retry of that firing replays it; the next firing is a new run', async () => {
-    const retry = await runtime.runScheduled(firingClaims(owner.identityId, loop), firstFiring.request);
+    const retry = await scheduled(firingClaims(owner.identityId, loop), firstFiring.request);
     expect(retry.sessionId).toBe(firstFiring.sessionId);
     expect(await tokensOf(firstFiring.sessionId)).toHaveLength(1); // no remint
     expect(node.production.execution!.pty.hasSession(firstFiring.sessionId)).toBe(false); // no rerun
-    const next = await runtime.runScheduled(firingClaims(owner.identityId, loop), { ...firstFiring.request, firingKey: `${loop}:2026-10-28T20:05:00.000Z` });
+    const next = await scheduled(firingClaims(owner.identityId, loop), { ...firstFiring.request, firingKey: `${loop}:2026-10-28T20:05:00.000Z` });
     expect(next.sessionId).not.toBe(firstFiring.sessionId);
     expect((await settled(next.sessionId)).tool_exit_code).toBe(0);
   });
