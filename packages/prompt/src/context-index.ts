@@ -31,13 +31,20 @@ import { escapeAttr, escapeXml, untrustedData } from './escape.js';
 import { utf8Bytes } from './budgets.js';
 import { serializeSkillIndex, type PromptSkill } from './skill-index.js';
 
-/** The index's groups, in render order. `harness` is recorded, never rendered (§3.3). */
-export type ContextIndexGroupName = 'memories' | 'references' | 'teammates' | 'skills' | 'harness';
+/**
+ * The index's groups, in render order. `harness` is recorded, never rendered
+ * (§3.3). `tools` is the space's runnable scripts (Tools v2 PR-E), last: it is
+ * a directory of the space, not something this launch selected.
+ */
+export type ContextIndexGroupName = 'memories' | 'references' | 'teammates' | 'skills' | 'tools' | 'harness';
 
-export const CONTEXT_INDEX_GROUPS: readonly ContextIndexGroupName[] = ['memories', 'references', 'teammates', 'skills'];
+export const CONTEXT_INDEX_GROUPS: readonly ContextIndexGroupName[] = ['memories', 'references', 'teammates', 'skills', 'tools'];
 
-/** How an entry entered the launch set. */
-export type ContextIndexVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'builtin' | 'roster';
+/**
+ * How an entry entered the launch set. `space` is read from the space itself
+ * rather than from an edge or a pick (a `tools` entry).
+ */
+export type ContextIndexVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'builtin' | 'roster' | 'space';
 
 /** The header text of one entry. Untrusted graph content; rendered only inside `untrusted_data`. */
 export interface ContextEntryHeaderText {
@@ -131,6 +138,16 @@ export function loadPointerFor(
 ): string {
   if (native) return `${native.tool === 'codex' ? '$' : '/'}${native.qualifier}${native.invoke}`;
   return `tm8 entity context ${id}`;
+}
+
+/**
+ * A tool's pointer: its help, by name, which is what the base prompt's tools
+ * rule says to read before `tm8 tool run <name>`. A tool name is
+ * `^[a-z][a-z0-9-]{1,62}$` (the contract's `ToolDefinitionSchema`), so it
+ * needs no quoting.
+ */
+export function toolLoadPointer(name: string): string {
+  return `tm8 tool help ${name}`;
 }
 
 /**

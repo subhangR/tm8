@@ -1,4 +1,5 @@
 import { validateToolInputValue, type ToolInput, type ToolJsonValue, type ToolRun, type ToolView } from '@tm8/contract';
+import type { PillTone } from '../kit/Pill';
 
 export function initialValues(tool: ToolView): Record<string, string> {
   return Object.fromEntries(tool.definition.inputs.filter(input => input.type !== 'secret').map(input => {
@@ -29,7 +30,8 @@ export function runValues(tool: ToolView, values: Record<string, string>, secret
   }
   return { inputs, secrets: Object.fromEntries(Object.entries(secrets).filter(([, value]) => value !== '')) };
 }
-export function runLabel(run: ToolRun): string {
+type RunOutcome = Pick<ToolRun, 'state' | 'exitCode'>;
+export function runLabel(run: RunOutcome): string {
   switch (run.state) {
     case 'running': return 'Running';
     case 'exited': return run.exitCode === null ? 'Exited' : `Exited ${run.exitCode}`;
@@ -37,6 +39,34 @@ export function runLabel(run: ToolRun): string {
     case 'killed': return 'Killed';
   }
 }
+/** Running is in motion; anything but a clean exit 0 is a block. */
+export function runTone(run: RunOutcome): PillTone {
+  return run.state === 'running' ? 'run' : run.state !== 'exited' || run.exitCode !== 0 ? 'block' : 'idle';
+}
+/** '850ms', '12s', '3m 4s', '1h 2m': how long a run took, or has taken so far while it runs. */
+export function runDuration(run: Pick<ToolRun, 'startedAt' | 'exitedAt'>, now: number = Date.now()): string {
+  if (!run.startedAt) return '—';
+  const end = run.exitedAt ? Date.parse(run.exitedAt) : now;
+  const ms = Math.max(0, end - Date.parse(run.startedAt));
+  if (Number.isNaN(ms)) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+/**
+ * Who started a run, for the audit column: a loop when a provenance-marked
+ * `triggered_by` names one, an agent when the run is a child of an agent
+ * session (or its invoker is an agent), otherwise the human by name.
+ */
+export function runInvoker(run: Pick<ToolRun, 'parentSessionId' | 'invoker' | 'triggeredBy'>): { kind: 'loop' | 'agent' | 'human'; label: string } {
+  if (run.triggeredBy) return { kind: 'loop', label: run.triggeredBy.title ? `Loop · ${run.triggeredBy.title}` : 'Loop' };
+  if (run.parentSessionId || run.invoker?.isAgent) return { kind: 'agent', label: run.invoker?.displayName ? `Agent · ${run.invoker.displayName}` : 'Agent' };
+  return { kind: 'human', label: run.invoker?.displayName ?? 'Unknown' };
+}
+export const shortSha = (sha: string) => sha.slice(0, 8);
 /** What a run of a tool with tm8 API access may do as the person running it. */
 export function apiAccessNotice(access: 'read' | 'write'): string {
   return access === 'read'

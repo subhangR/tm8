@@ -7,6 +7,7 @@ import {
   composePrompt,
   HEADER_AUTHORING_RULE,
   PLACEMENT_RULE,
+  TOOLS_RULE,
   COORDINATOR_SUBTASK_RULE,
   instructionFor,
   DEFAULT_PROMPT_VERSION,
@@ -272,12 +273,13 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
     // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6),
     // then +815 B for base rule 5, placement (P0f 01a111b2-a4c8), and +142 B on
-    // the two coordinator layers for the subtask sentence.
-    worker: { bytes: 4685, ceiling: 4694, graph: true },
-    'coordinated-worker': { bytes: 5027, ceiling: 5036, graph: true },
-    coordinator: { bytes: 5075, ceiling: 5084, graph: true },
-    'coordinated-coordinator': { bytes: 5417, ceiling: 5426, graph: true },
-    dispatcher: { bytes: 4010, ceiling: 4050, graph: false },
+    // the two coordinator layers for the subtask sentence, then +196 B for
+    // base rule 6, tools (Tools v2 PR-E, design doc 01a182cb §5). MEASURED.
+    worker: { bytes: 4881, ceiling: 4890, graph: true },
+    'coordinated-worker': { bytes: 5223, ceiling: 5232, graph: true },
+    coordinator: { bytes: 5271, ceiling: 5280, graph: true },
+    'coordinated-coordinator': { bytes: 5613, ceiling: 5622, graph: true },
+    dispatcher: { bytes: 4206, ceiling: 4246, graph: false },
   };
 
   it('renders each mode at the doc\'s size, within its ceiling', () => {
@@ -289,8 +291,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     }
   });
 
-  it('keeps the base at 2,551 B (1,469 approved + rule 4 with its example + rule 5)', () => {
-    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(2551);
+  it('keeps the base at 2,747 B (1,469 approved + rule 4 with its example + rule 5 + rule 6)', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(2747);
   });
 
   it('matches its snapshot, per mode', () => {
@@ -332,8 +334,8 @@ describe('header authoring rule (doc 01a0d708)', () => {
 });
 
 describe('placement rule (Design Rules 01a10c5d §2.4, P0f)', () => {
-  it('is the last rule of the v2 base, said once in every mode', () => {
-    expect(BASE_PROMPT_V2.endsWith(`\n5. ${PLACEMENT_RULE}\n</tm8>`)).toBe(true);
+  it('is rule 5 of the v2 base, said once in every mode', () => {
+    expect(BASE_PROMPT_V2).toContain(`\n5. ${PLACEMENT_RULE}\n6. `);
     for (const mode of AGENT_MODES) {
       const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
       expect(count(e.system, 'decide where it belongs from what it is about'), mode).toBe(1);
@@ -375,6 +377,33 @@ describe('placement rule (Design Rules 01a10c5d §2.4, P0f)', () => {
       const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
       expect(e.system.includes('as a subtask of your task'), mode).toBe(coordinates);
     }
+  });
+});
+
+describe('tools rule (Tools v2 PR-E, design doc 01a182cb §5)', () => {
+  it('is the last rule of the v2 base, said once in every mode', () => {
+    expect(BASE_PROMPT_V2.endsWith(`\n6. ${TOOLS_RULE}\n</tm8>`)).toBe(true);
+    for (const mode of AGENT_MODES) {
+      const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
+      expect(count(e.system, TOOLS_RULE), mode).toBe(1);
+      expect(count(e.system, '`tm8 tool list`'), mode).toBe(1);
+    }
+  });
+
+  it('names list, help-before-run, and what a run prints and exits with', () => {
+    expect(TOOLS_RULE).toBe(
+      "Tools: `tm8 tool list` shows this space's runnable scripts; read `tm8 tool help <name>` before "
+      + "`tm8 tool run <name> …`; a run prints its session id first and exits with the tool's exit code.",
+    );
+    expect(utf8Bytes(TOOLS_RULE)).toBe(192);
+    // The v1 frame entity-escapes a double quote; the rule carries none.
+    expect(TOOLS_RULE).not.toContain('"');
+  });
+
+  it('is not added to the v1 frame: a stored v1 manifest re-renders what that session was given', () => {
+    for (const mode of AGENT_MODES) expect(instructionFor(mode), mode).not.toContain('tm8 tool');
+    const v1 = composePrompt({ ...base, promptVersion: '1' }, runtime);
+    expect(v1.system).not.toContain('tm8 tool');
   });
 });
 

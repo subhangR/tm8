@@ -67,6 +67,7 @@ export type HeaderFacts =
   | { kind: 'file'; name: string; mime: string | null; bytes: number | null }
   | { kind: 'story'; description: string | null; bytes: number | null }
   | { kind: 'task'; description: string | null; bytes: number | null }
+  | { kind: 'tool'; description: string | null; bytes: number | null }
   | { kind: 'collection'; description: Backstopped; members: Record<string, number> };
 
 interface Fields {
@@ -153,6 +154,7 @@ function kindFields(facts: HeaderFacts): Fields {
       };
     case 'story':
     case 'task':
+    case 'tool':
       return { whenToUse: null, whenCut: false, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
     case 'collection': {
       const counts = Object.entries(facts.members)

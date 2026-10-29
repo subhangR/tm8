@@ -3837,7 +3837,7 @@ export interface CreateEntityInput extends CommandContext {
   /**
    * An authored selection header, written in the same transaction as the
    * entity (`entities.header.set` semantics). Only kinds that can carry one
-   * (team_member, doc, artifact, drawing, file, task, collection, story) accept it.
+   * (team_member, doc, artifact, drawing, file, task, collection, story, tool) accept it.
    */
   header?: HeaderTextInput;
 }

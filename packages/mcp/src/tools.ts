@@ -127,7 +127,39 @@ const READ_GUIDES = [
   guide('spaceLinks.audit', 'Page the calls made through one link from this Space (your own rows; every row for a home admin).', {
     params: { linkId: '<link-id>' }, query: { limit: '50' },
   }),
+  /* Tools (Tools v2 PR-E, design doc 01a182cb §5): the Space's runnable
+     scripts. A model that could reach them only through the CLI never learned
+     they existed; these rows are the MCP half of discoverability. Every read
+     is open to a member who can read the tool. The two secret rows
+     (tools.secrets.bind/unbind) are human-only by catalog flag and are
+     deliberately NOT curated: an agent never handles a secret value. */
+  guide('tools.list', 'List this Space\'s tools (runnable bash or python scripts): id, definition (name, runtime, inputs, help), version, config and secret bindings (key hints, never a value). '
+    + 'query.words filters by a substring of name or description; page with limit and the returned nextCursor. The id is the toolId every other tools.* row takes.', {
+    params: { spaceId: '<space-id>' }, query: { limit: '50' },
+  }),
+  guide('tools.get', 'Read one tool in full: definition (name, description, runtime, source, inputs, help, tm8Access, timeoutSeconds), version, sourceSha256, config and secret bindings (key hints only, never a value).', {
+    params: { toolId: '<tool-id>' },
+  }),
+  guide('tools.help', 'Read a tool\'s usage before running it: description, help, runtime, tm8Access, timeout and every declared input with its type, flag, env name, whether it is configured and the configured value (a secret shows configured only). Its version is the expectedVersion to pass tools.run.', {
+    params: { toolId: '<tool-id>' },
+  }),
+  guide('tools.runs.list', 'Page a tool\'s recorded runs: id (the run\'s sessionId), state, exitCode, startedAt, exitedAt, toolVersion and invoker.', {
+    params: { toolId: '<tool-id>' }, query: { limit: '50' },
+  }),
+  guide('tools.runs.get', 'Read one run by the sessionId tools.run returned: state running|exited|timed_out|killed, exitCode, startedAt, exitedAt, the inputs it ran with (a secret as a reference) and the redacted outputTail (last 64 KiB) once it has settled.', {
+    params: { sessionId: '<run-session-id>' },
+  }),
 ] as const satisfies readonly OperationGuide[];
+
+/**
+ * How to retry a tools.* command safely (task 01a187b7). A body without a
+ * clientMutationId gets a fresh one per call (REQUIRES_MUTATION_ID, in
+ * `invokeOptions`), so only an id the caller keeps makes a retry a replay of the
+ * first call. Each row ends this sentence with what a blind retry does.
+ */
+export const TOOLS_RETRY_RULE = 'Put your own clientMutationId in the body (any unique string, e.g. a new UUID for each call you intend), '
+  + 'and to retry this call (a timeout, a lost answer) send the identical body again: the retry returns the first call\'s result instead of acting twice. '
+  + 'Left out, every call gets a fresh one';
 
 const ACT_GUIDES = [
   /* `parentId` is advertised DELIBERATELY, and its absence was a real defect.
@@ -255,6 +287,53 @@ const ACT_GUIDES = [
   }),
   guide('collections.removeItem', 'Remove membership of a collection, story or craft without deleting the entity.', {
     params: { id: '<collection-id>', entityId: '<entity-id>' }, body: {},
+  }),
+  /* Tools (Tools v2 PR-E, design doc 01a182cb §5, §7). Every row is a
+     ledgered command (REQUIRES_MUTATION_ID fills clientMutationId). tools.run
+     answers at once with a sessionId and the script settles in its own
+     session, so the row says where the result is (tools.runs.get) rather than
+     letting a model wait on the call. Secrets: a secret input is BOUND by a
+     human (`tm8 tool secret set`; tools.secrets.bind/unbind are human-only and
+     off this surface) and used by leaving its slot out of inputs, so a model
+     never passes a secret value as a literal and no template shows one. The
+     one example tool (url-check, input target) runs through the five rows. */
+  guide('tools.run', 'Run a tool. Returns at once with {sessionId, toolVersion, sourceSha256, keepOpen, reused}; the script runs in its own session, so read tools.runs.get with that sessionId for state (running|exited|timed_out|killed), exitCode and outputTail once it settles. '
+    + 'inputs: the tool\'s declared non-secret inputs by name (tools.help lists them with types and configured values; a configured one may be left out). expectedVersion: the version tools.help or tools.get showed, so a source change since refuses the run. keepOpen false ends the session when the script exits. '
+    + 'Never pass a secret value as a literal input or in any other field: a secret is bound by a human with `tm8 tool secret set <tool> <input> --value-stdin` (tools.secrets.* are human-only) and is used by leaving its slot out. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry runs the script again.`, {
+    params: { toolId: '<tool-id>' }, body: { expectedVersion: 1, inputs: { '<input-name>': '<value>' }, keepOpen: false },
+  }),
+  guide('tools.create', 'Create a tool: a versioned bash or python script with declared, typed inputs. definition.name is its CLI handle (^[a-z][a-z0-9-]{1,62}$, unique in the Space); each input declares type string|path|int|number|bool|enum|json|secret with required, description, flag and env (a secret input declares a SLOT only: a human binds its value later, never put one in the definition or source); tm8Access none|read|write is the run-scoped tm8 token; timeoutSeconds bounds a run. '
+    + 'Then write its selection header with entities.header.set (whenToUse, summary) so later agents find it in their context index. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry is refused as a name already taken although the first call created the tool.`, {
+    params: { spaceId: '<space-id>' },
+    body: {
+      definition: {
+        name: 'url-check', description: 'Checks that a URL answers 2xx', help: 'Pass --target <url>; exits 0 when the URL answers 2xx.',
+        runtime: 'bash', source: 'curl -fsS -o /dev/null "$TARGET"',
+        inputs: [{ name: 'target', type: 'string', required: true, description: 'URL to check' }],
+        tm8Access: 'none', timeoutSeconds: 60,
+      },
+    },
+  }),
+  guide('tools.update', 'Replace a tool\'s whole definition under its entity version (tools.get). A source, runtime or inputs change bumps the execution version every later run pins; config and secret bindings of inputs that still exist are kept. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry is refused as a version conflict although the first call applied.`, {
+    params: { toolId: '<tool-id>' },
+    body: {
+      expectedVersion: 1,
+      definition: {
+        name: 'url-check', description: 'Checks that a URL answers 2xx', help: 'Pass --target <url>; exits 0 when the URL answers 2xx.',
+        runtime: 'bash', source: 'curl -fsS -o /dev/null "$TARGET"',
+        inputs: [{ name: 'target', type: 'string', required: true, description: 'URL to check' }],
+        tm8Access: 'none', timeoutSeconds: 60,
+      },
+    },
+  }),
+  guide('tools.config.set', 'Set a declared non-secret input\'s configured value (what a run uses when it leaves the input out), under the tool\'s version; inputName is one of the tool\'s declared inputs (tools.help). Not for secrets: a secret is bound by a human (tm8 tool secret set), never stored here.', {
+    params: { toolId: '<tool-id>' }, body: { expectedVersion: 1, inputName: 'target', value: 'https://example.com' },
+  }),
+  guide('tools.config.unset', 'Remove a configured input value, under the tool\'s version.', {
+    params: { toolId: '<tool-id>' }, body: { expectedVersion: 1, inputName: 'target' },
   }),
 ] as const satisfies readonly OperationGuide[];
 
@@ -623,8 +702,8 @@ function overview(
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
-    { tool: 'tm8_read', purpose: 'context, search, graph traversal, inbox and action discovery' },
-    { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations' },
+    { tool: 'tm8_read', purpose: "context, search, graph traversal, inbox, action discovery and the Space's tools (tools.list/help)" },
+    { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations, and tool runs (tools.run)' },
     {
       tool: 'tm8_delegate',
       purpose: "dispatching and lifecycle of durable worker sessions; spawn mode 'coordinated-worker'"
@@ -738,6 +817,13 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'containers.expose',
   'containers.snapshot',
   'containers.fork',
+  // Tools (Tools v2 PR-E): every tools.* command is ledgered — the contract's
+  // ToolCreate/Update/ConfigSet/ConfigUnset/RunInputSchema require clientMutationId.
+  'tools.create',
+  'tools.update',
+  'tools.config.set',
+  'tools.config.unset',
+  'tools.run',
 ]);
 
 /**
