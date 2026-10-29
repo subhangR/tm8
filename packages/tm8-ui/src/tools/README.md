@@ -20,3 +20,7 @@ node packages/tm8-ui/e2e/tools-browser-check.mjs
 ```
 
 Set `TOOLS_UI_URL` or `TOOLS_CHROMIUM_PATH` when the fixture server or Chromium uses a different location.
+
+Creating a tool (Tools v2 §3.1): `ToolCreateControl` is the one door — a dialog from the Tools list header (`EntityCreateControl`, `createForm: 'tool-definition'`), the New tab draft body (`ToolDraftBody` in `tab-workspace/adapters/draft.tsx`), and through `NEW_KINDS` the ⌘K palette's "New tool" and the `n u` chord. It shares `DefinitionForm` with the page's editor, prefills every field from a `TOOL_STARTERS` entry ("Start from a starter"), and sends the selection header with `entities.header.set` after `tools.create`; a header the node does not store (a node without migration 380) is a notice, never a failed create. `errors.ts` places a refusal where the server's zod issue path points (`definition.inputs.3.default`), puts a taken name (SQLSTATE 23505) on Name, and otherwise shows the server's own message. "Install starter tools" (`InstallStarters`) creates the missing starters by name through `tools.create`.
+
+The tool page's Run reaches a terminal only through a session opener: `ToolLaunchProvider` (`context.tsx`) is mounted by the tab workspace's entity body (`tab-workspace/adapters/entity.tsx`) and opens the run's session as its own `work_session` tab.

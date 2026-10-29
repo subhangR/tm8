@@ -4,6 +4,7 @@ import { EMPTY_HEADER_DRAFT, headerDraftHasText, headerInputOf, type HeaderDraft
 import { HeaderFields } from '../panels/detail/HeaderSection';
 import { DefinitionForm, definitionOfDraft, draftOfDefinition, newDefinitionDraft, type DefinitionDraft } from './DefinitionForm';
 import { definitionProblemOf, type DefinitionProblem } from './errors';
+import type { InputDraft } from './InputsEditor';
 import type { ToolPort } from './port';
 import './tools.css';
 
@@ -36,10 +37,16 @@ export function toolCreateValuesOfStarter(name: string): ToolCreateValues | null
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isText = (value: unknown): value is string => typeof value === 'string';
+const INPUT_TEXT_FIELDS = ['name', 'type', 'description', 'flag', 'short', 'env', 'options', 'defaultValue', 'min', 'max'] as const;
+
+/* Every field, not just the name: `inputFromDraft` reads them all on submit. */
+function isInputDraft(value: unknown): value is InputDraft {
+  return isRecord(value) && typeof value.required === 'boolean' && INPUT_TEXT_FIELDS.every(key => isText(value[key]));
+}
 
 function isDefinitionDraft(value: unknown): value is DefinitionDraft {
   return isRecord(value) && isText(value.name) && isText(value.description) && (value.runtime === 'bash' || value.runtime === 'python')
-    && isText(value.source) && Array.isArray(value.inputs) && value.inputs.every(row => isRecord(row) && isText(row.name) && isText(row.type))
+    && isText(value.source) && Array.isArray(value.inputs) && value.inputs.every(isInputDraft)
     && isText(value.help) && (value.tm8Access === 'none' || value.tm8Access === 'read' || value.tm8Access === 'write') && isText(value.timeout);
 }
 
@@ -110,7 +117,7 @@ export function ToolCreateControl({ spaceId, port, label = 'New tool', autoOpen 
       onBusy={next => { setBusy(next); onBusy?.(next); }}
       onCancel={close}
       onNotice={onNotice}
-      onCreated={created => { if (!autoOpen) setOpen(false); onCreated?.(created); }}
+      onCreated={created => { setBusy(false); if (!autoOpen) setOpen(false); onCreated?.(created); }}
     />
   ) : null;
   if (autoOpen) return form;

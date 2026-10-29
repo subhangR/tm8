@@ -21,7 +21,11 @@ export function fixtureVersion(tool: ToolView, at = '2026-10-10T12:00:00Z'): Too
 }
 /** The fields whose change makes a new definition version (migration 381): what a run executes. */
 const executes = (definition: ToolDefinition) => JSON.stringify([definition.source, definition.runtime, definition.inputs, definition.tm8Access, definition.timeoutSeconds]);
-/** Today's node answer for a tool header (until the header kind list admits `tool`). */
+/**
+ * The node's answer for a tool header BEFORE migration 380 (PR-E) admits the kind:
+ * the write is skipped with a warning. Tests pass `headerStored: false` to exercise
+ * that fallback; the default simulates a node that stores it, as a node with 380 does.
+ */
 export const HEADER_NOT_STORED = 'a tool cannot carry a selection header; nothing was stored';
 
 /**

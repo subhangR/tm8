@@ -209,6 +209,22 @@ describe('ToolCreateControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('after a create, the next dialog still closes on Cancel and Escape (the busy state ends with the create)', async () => {
+    const onCreated = vi.fn();
+    render(<ToolCreateControl spaceId={SPACE} port={createToolFixture().port} label="New tool" onCreated={onCreated} />);
+    fireEvent.click(screen.getByRole('button', { name: 'New tool' }));
+    fillMinimal();
+    create();
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'New tool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'New tool' }));
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'New tool' }), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 });
 
 describe('toolCreateValuesOf', () => {
@@ -218,5 +234,8 @@ describe('toolCreateValuesOf', () => {
     expect(toolCreateValuesOf(null)).toBeNull();
     expect(toolCreateValuesOf({ title: 'a generic draft' })).toBeNull();
     expect(toolCreateValuesOf({ ...values, draft: { ...values.draft, runtime: 'perl' } })).toBeNull();
+    // An input row missing any field the submit reads is not this form's.
+    expect(toolCreateValuesOf({ ...values, draft: { ...values.draft, inputs: [{ name: 'state', type: 'enum' }] } })).toBeNull();
+    expect(toolCreateValuesOf({ ...values, draft: { ...values.draft, inputs: [{ ...values.draft.inputs[0]!, required: 'yes' }] } })).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CollabError, TOOL_STARTERS, toolStarterNamed } from '@tm8/contract';
 import { createToolFixture, fixtureTool, HEADER_NOT_STORED } from './fixture';
-import { InstallStarters, installStarters } from './InstallStarters';
+import { InstallStarters, installStarters, installSummary } from './InstallStarters';
 
 afterEach(cleanup);
 const SPACE = '00000000-0000-4000-8000-000000000001';
@@ -50,6 +50,24 @@ describe('installStarters', () => {
     const created = results.filter(result => result.status === 'created');
     expect(created.length).toBeGreaterThan(0);
     for (const result of created) expect(result).toMatchObject({ headerNotStored: HEADER_NOT_STORED });
+  });
+});
+
+describe('installSummary', () => {
+  it('says how many were installed, names each refusal, and gives a header the node did not store once', async () => {
+    const { port } = createToolFixture(undefined, {}, { headerStored: false });
+    const create = port.create;
+    port.create = vi.fn(async (spaceId, definition) => {
+      if (definition.name === 'slack-notify') throw new CollabError('forbidden', 'only a member with edit rights can create a tool');
+      return create(spaceId, definition);
+    });
+    const summary = installSummary(await installStarters(port, SPACE));
+    expect(summary).toBe(`Installed ${TOOL_STARTERS.length - 2} of ${TOOL_STARTERS.length} starter tools. slack-notify was not created: only a member with edit rights can create a tool Selection headers were not stored: ${HEADER_NOT_STORED}`);
+  });
+
+  it('is one plain sentence when every starter is created or already present', async () => {
+    expect(installSummary(await installStarters(createToolFixture().port, SPACE))).toBe(`Installed ${TOOL_STARTERS.length - 1} of ${TOOL_STARTERS.length} starter tools.`);
+    expect(installSummary(TOOL_STARTERS.map(starter => ({ name: starter.name, status: 'skipped' as const })))).toBe('Every starter tool is already in this space.');
   });
 });
 
