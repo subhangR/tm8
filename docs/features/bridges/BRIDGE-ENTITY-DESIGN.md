@@ -3,7 +3,7 @@
 **Status:** FINAL (v3) · 2026-10-29 · approved by Subhang as the starting design · tasks `01a182ac-746a-75f2-beef-9690a26f21b3` ("Bridge as an entity", v1, 2026-10-28) and `01a188e7-cacc-7cac-b70c-cbe4a95e6672` (final)
 **Companion:** [`BRIDGES-V2-DESIGN.md`](./BRIDGES-V2-DESIGN.md) (v2, 2026-10-29): UI gaps, memories and loops on a bridge, the WhatsApp command set. Where v2 changes something here, this document now says so in place and points to the v2 section; v2 holds the detail. Section numbers here are unchanged, so v2's "v1 §n" references still resolve.
 **Basis:** `origin/main` @ `fcc49604b`; the Phase-1 WhatsApp bridge (`integrations/whatsapp-bridge`, its `OPERATIONS.md`, and the Phase-1 design of 2026-10-19); the kind precedents `space_link`/`server` (migrations 250, 261), `mcp_server` (296, ADR 0297), channel members (080), `agent_runtime` sessions (105); *The Capability Model*; `docs/identity/IDENTITY-DESIGN.md`; `docs/architecture/01-LAWS.md`.
-**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). Every open question is settled (§8 D14–D19; §9).
+**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). v1's open questions are settled (§8 D14–D19); D20 (one connection per group, 2026-10-29) leaves two new ones, Q7 failover and Q8 hand-over (§9).
 
 > The ask (Subhang, 28 Oct): *"thinking of making bridge as tm8 entity. A bridge connects a channel from a provider to a tm8 session or chat. Different bridge types: WhatsApp, Facebook, Slack, etc. Space members and bridge-channel members link, so a channel member can act as a member in the tm8 space. A space can have multiple bridges: multiple WA groups, Slack channels, Instagram accounts."* And, during the work: *"see tm8 chat, session and channel — a bridge can be to any one of them."*
 
@@ -166,14 +166,14 @@ One bridge, one target, three kinds — and the kind decides what "bridging" mea
 Two rules hold across kinds, and one for channel targets:
 
 - **The log anchor rule.** `logAnchor = target.kind === 'channel' ? target : bridge`. Every inbound message is stored **once**, on the log anchor. A routed message to a chat or session is a **batch copy** — the existing multi-anchor `messages.post` with `anchorIds: [logAnchor, target]` and one `messageBatchId` — so the bridge copy and the chat copy are the same message by correlation, and a reply to either resolves to the same provider message.
-- **The target is retargetable but single.** `bridges.retarget` moves the `bridged_to` edge (the Phase-1 "epoch rollover" with a new main chat becomes "retarget to a new chat", or simply nothing, since chat continuity exists since migration 332). The bridge's memories and loops move with it (v2 V1, §2.3). Two bridges may not share a conversation (unique per connection, node-wide — the Phase-1 "a group is served by exactly one number" rule, enforced in SQL).
+- **The target is retargetable but single.** `bridges.retarget` moves the `bridged_to` edge (the Phase-1 "epoch rollover" with a new main chat becomes "retarget to a new chat", or simply nothing, since chat continuity exists since migration 332). The bridge's memories and loops move with it (v2 V1, §2.3). A conversation is connected **once per space** (D20): whichever member's number or account connects it, that one bridge is the group's only bridge in the space, so the group feeds exactly one main chat (or channel). Workers launched from the group are still reached by their `@handles` (§2.4); that is unchanged. Enforced in SQL by `unique (space_id, provider, external_conversation_id)`.
 - **A channel target's roster follows its links** (D18). A linked participant who is an active member of the space is added to the channel as a `has_member`; guests never are.
 
 ### 2.3 Messages: one store, two directions
 
 **Inbound.** The connector runtime hands the server one `inbound` per provider message (§2.5). The server:
 
-1. dedupes on `(connectionId, externalMessageId)` — at-least-once from the runtime, exactly-once in the graph;
+1. resolves the bridge from `(connectionId, conversationId)`, then dedupes on `(bridgeId, externalMessageId)`: a message whose provider message id is already stored for that bridge is dropped, **whichever number delivered it** (D20) — at-least-once from the runtime, exactly-once in the graph, per bridge and not per connection;
 2. resolves the **author** (§2.4): linked → the member; unlinked → the bridge as guest;
    - checks for a **command** (`/work`, `/stop`, … — v2 §4.1): a command is stored like any message but marked `command: true`, run server-side as the linked member, answered by a bridge notice, and **never** routed (step 5 is skipped);
 3. stores **every** message on the log anchor, routed or not (D14), with media as `file` entities attached and a voice transcript as a message part;
@@ -269,7 +269,10 @@ Health is **derived once on the server** from heartbeats and connection states a
 
 | Rule | Enforced by |
 |---|---|
-| A provider conversation is served by **one bridge, node-wide** | `unique (connection_id, external_conversation_id)` on `public.bridges` |
+| A provider conversation is connected **once per space**, whichever member's number or account connects it; a second attempt is refused with *already connected by <name>* (D20) | `unique (space_id, provider, external_conversation_id)` on `public.bridges` |
+| That bridge has **one target**: the group feeds exactly one main chat or channel; workers are reached by `@handles` | the single `bridged_to` edge (§2.2) |
+| Inbound is deduped **per bridge**, not per connection | `unique (bridge_id, external_message_id, direction)` on `public.message_origins` |
+| **Linking numbers to members is unlimited per group**: any number of participants may send `/link` and be linked; this is not the connection rule above | no limit; links are per identity (§2.4) |
 | A connection can serve bridges in **many spaces** | one offered `credential` per (connection, space) |
 | A space can have **many connections and many bridges** | nothing to enforce; the Settings page lists them by provider |
 | A bridge lives **in its target's space** | `bridges.create` checks it; the `bridged_to` edge is same-space like every edge |
@@ -310,7 +313,7 @@ create table public.bridges (
   paused_at                timestamptz,
   retention_days           integer,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
-  unique (connection_id, external_conversation_id)                                 -- one bridge per conversation, node-wide
+  unique (space_id, provider, external_conversation_id)                            -- connected once per space, by any member's connection (D20)
 );
 
 -- node-level, account-owned; holds NO secret bytes, only where the sealed blob is
@@ -351,7 +354,7 @@ create table public.message_origins (message_id uuid primary key references publ
   bridge_id uuid not null, connection_id uuid not null, direction text not null check (direction in ('in','out')),
   external_message_id text not null, external_conversation_id text not null, external_sender_id text,
   external_reply_to_id text, external_ts timestamptz,
-  unique (connection_id, external_message_id, direction));
+  unique (bridge_id, external_message_id, direction));                            -- dedupe per bridge, from any number (D20)
 ```
 
 Flavours, in T-L3's terms: `bridges` is a kind detail table; `bridge_connections` is **config** (node-level, like `server_connections` of 044); `bridge_participants` and `bridge_identity_links` are **per-member/per-person state** (the `space_link_tokens` precedent: a member's own row on a shared entity); `bridge_outbox` and `message_origins` are **operational**. None of them encodes a relation between entities — the one relation, bridge → target, is the `bridged_to` edge.
@@ -484,7 +487,7 @@ In v2 the *Connections* header is titled **Accounts & secrets**, reserving a slo
 Four steps (v2 §1.2, §1.4); `bridges.create` runs when step 3 is confirmed (nothing is committed before it; cancelling before it leaves nothing — the `EditEntityDialog` rule), and step 4 tests the bridge just created.
 
 1. **Connection** — pick one of the account's offered connections, or *Link a new account* (provider picker → the provider's own flow: QR / pairing code for WhatsApp, OAuth install for Slack, token paste for Telegram/Discord).
-2. **Conversation** — a live list from `bridges.conversations.list` with search; groups, channels and DMs grouped; a conversation already bridged anywhere is shown greyed with *bridged in <space> → <target>*.
+2. **Conversation** — a live list from `bridges.conversations.list` with search; groups, channels and DMs grouped. A conversation already connected in this space — by any member's number or account — is shown greyed and not selectable, with *already connected by <name> → <target>* (D20); `bridges.create` refuses it with the same words if two members race. Linking your own number to yourself (`/link`, §4.6) is still open in that group.
 3. **Target** — three cards: **Chat** (pick an existing chat, or *New chat* with teammate, model, mode — the chat is created from the browser, human-only as `chat.start` requires), **Session** (a live session in the space), **Channel** (existing, or *New channel* with the conversation's name slugged). Below, the policy derived from the choice, editable: trigger, **what crosses back** (`outbound`, v2 §1.2), direction, who may trigger, voice, style, and *History & retention* (D15, D17; v2 §1.1). The copy under each card is the row of §2.2 in one sentence.
 4. **Test it** — connection, read access, an optional test message, and a live `@tm8 ping` round trip (v2 §1.4). *Finish* is allowed after a failure; the bridge is then `degraded` with the reason on Health.
 
@@ -540,6 +543,8 @@ Account → Linked identities → *Link WhatsApp*:
 
 The row flips to *Linked · +91 ···· 0001 · verified 28 Oct* the moment the runtime's `link.claim` matches. The admin's *This is…* on the People tab is the other door, labelled *asserted* wherever it shows.
 
+**Linking is not connecting.** Any number of people in a group may link their numbers to themselves; there is no limit per group. What is limited is the *connection*: one member's number or account reads and replies for the group in a space (D20). Linking another number makes its messages count as that member; it does not connect the group a second time.
+
 ### 4.7 Registry and plumbing checklist
 
 - `domain/registry.ts`: a `bridge` row — `label 'Bridge'`, `slug 'bridges'`, `strategy 'collection'`, `defaultMode 'list'`, `hiddenModes ['board','gallery','tree']`, `chip {glyph:'⌒', tintBy:'none'}`, `card {fields:['bridgeProvider','bridgeTarget','bridgeStatus','bridgePeople']}`, `settingsHome {section:'bridges', label:'Manage in Bridges'}`, `list quickCreate:false`, `panel {archetype:'generic', blocks:[conversation, managed BRIDGE, people, routing, memory, loops, health, settings-home]}`; `NOT_LAUNCHABLE` gains `bridge`.
@@ -586,7 +591,8 @@ The vocabulary is closed and each provider declares what it can do; the UI shows
 | Spam and provider rate limits | Per-bridge and per-connection token buckets on the server outbox (Phase-1 numbers: 20/min per speaker, 30/min per conversation), 429-style refusal to the sender with the retry-after on the message's delivery badge. |
 | PII (phone numbers, handles) | Masked in every content field and every member-level read; full ids only on admin reads and in the participant row; retention per bridge (D15) runs through the existing retention job. |
 | A logged-out device, a dead socket | Heartbeats → `degraded` on every bridge of the runtime within 90 s; an attention request (`fyi`) to the connection's owner; inbound is queued by the provider, outbound by the outbox. Nothing is retried blind. |
-| Two bridges on one conversation (double routing) | `unique (connection_id, external_conversation_id)`. |
+| Two bridges on one conversation (double routing) — including two members connecting the same group from different numbers | `unique (space_id, provider, external_conversation_id)` on `bridges`; the wizard shows *already connected by <name>* and `bridges.create` refuses the second (D20). |
+| The same provider message arrives twice, from the connected number or another | Dedupe on `(bridge_id, external_message_id)`: stored once per bridge, from any number (D20). |
 | The agent sessions and the runtime share a uid (Phase-1 "limits of the lockdown") | The runtime owns no secrets a session could use (no speaker tokens exist), its blob is sealed under the node key the server holds, and it runs as its own uid under the supervisor. |
 
 ---
@@ -633,7 +639,7 @@ B0 and B1 are one lane each and can start together against the protocol document
 4. `tm8 message reply <id> "text"` from a session launched off Infra main lands in the group quoting the right message, signed `Title (handle): text`.
 5. No speaker token file exists; `curl 127.0.0.1:8787/say` is gone; the runtime's session can call `bridgeRuntime.inbound` and is refused `messages.post` with `forbidden`.
 6. Stopping the runtime marks every bridge `degraded` within 90 s and raises one `fyi` attention request to the connection owner; restarting clears it without duplicates.
-7. The same WhatsApp message delivered twice by the runtime stores one message.
+7. The same WhatsApp message delivered twice by the runtime stores one message. A second member connecting the Infra group from another number is refused with *already connected by <name>*, and the wizard shows the group greyed with the same words (D20).
 8. No read route returns `state_ref` bytes, a token, a QR or a pairing code; the QR event reaches only the requesting member's stream.
 9. `pg_dump` of the graph contains no provider secret (asserted by the existing secret-pattern test extended to `bridge_connections`).
 
@@ -673,12 +679,20 @@ Subhang accepted this gap for the first build (2026-10-29). It is deliberately n
 | D17 (was Q4) | History backfill is an explicit choice (*Import the last N days*, in the wizard and later from Routing, v2 §1.1), idempotent on external ids, logged only, never implicit | backfill on create; never | importing is a data decision a human makes; idempotency makes it safe to repeat; imported messages must not start turns |
 | D18 (was Q5) | A channel-target bridge adds linked participants who are space members as channel `has_member`s; guests are never channel members | no automatic membership | the channel's roster then reads truthfully; guests are not members (D4) |
 | D19 (was Q6) | The watchdog is a server scheduler job (`scheduler/jobs/`) over `message_origins` and turns; it reacts on the provider through the outbox and raises `fyi` attention | keep it in the runtime | the server owns derived truth (T-L12); the runtime holds no routing logic (D7) |
+| D20 | **One connection per group, per space.** A provider conversation (WhatsApp group, Slack channel) is connected once per space, whichever member's number or account connects it: `unique (space_id, provider, external_conversation_id)`; a second member sees *already connected by <name>*. That one bridge has one target, so the group feeds exactly one main chat or channel; workers keep their `@handles`. Inbound dedupes per bridge on the provider message id, from any number. Linking numbers to members (`/link`) stays unlimited per group. Approved by Subhang, 2026-10-29 | the old key `(connection_id, external_conversation_id)`, which only stopped one connection binding a group twice and let two members' numbers make two bridges; one bridge per member's number | two bridges on one group meant two main chats answering the same message and double replies; one bridge keeps "who answers" single (D2); per-bridge dedupe stays correct if another number ever delivers the same message (Q7) |
 
 ---
 
 ## 9. Open questions
 
-None. The six questions v1 left open (Q1–Q6) were settled on 2026-10-29 by adopting each recommendation, and are decisions D14–D19 in §8. The old numbers map as follows, so references to them (including in v2) still resolve: **Q1 → D14** (mirror every message), **Q2 → D15** (retention), **Q3 → D16** (guests triggering), **Q4 → D17** (backfill), **Q5 → D18** (channel members), **Q6 → D19** (watchdog). v2's own open questions are in its §7.
+Two, both from D20 (numbered after the settled ones so the old mapping below still holds):
+
+| # | Question |
+|---|---|
+| Q7 | **Failover.** If the connected member's phone goes offline (or is logged out), may another member's number, also in the group, take over reading and replying for the same bridge? D20's per-bridge dedupe already makes a second reader safe for inbound; open are who may stand in, whether it is automatic, and how outbound picks a number. |
+| Q8 | **Hand-over.** May the member whose connection serves a group hand it to another member (move the bridge to their connection) without removing and re-creating it, keeping its history, handles, memories and loops? |
+
+The six questions v1 left open (Q1–Q6) were settled on 2026-10-29 by adopting each recommendation, and are decisions D14–D19 in §8. The old numbers map as follows, so references to them (including in v2) still resolve: **Q1 → D14** (mirror every message), **Q2 → D15** (retention), **Q3 → D16** (guests triggering), **Q4 → D17** (backfill), **Q5 → D18** (channel members), **Q6 → D19** (watchdog). v2's own open questions are in its §7.
 
 ---
 

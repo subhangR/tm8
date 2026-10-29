@@ -189,7 +189,7 @@ The check behind "*configure everything*": each field a human can set, where it 
 | Field | Wizard step | Bridge panel | Settings → Bridges | CLI | Who |
 |---|---|---|---|---|---|
 | connection (number/workspace) | 1 | Health (read) | Connections | `bridge connection …` | owner |
-| conversation | 2 | header (read) | list row | `--conversation` | admin |
+| conversation | 2 (one already connected in the space is greyed: *already connected by <name>*, v1 D20) | header (read) | list row | `--conversation` | admin |
 | target | 3 | Routing → *Move* | row → panel | `bridge retarget` | admin, human |
 | `trigger` | 3 | Routing | — | `--trigger` | admin |
 | `outbound` | 3 (§1.2) | Routing | — | `--outbound` | admin |
@@ -387,7 +387,7 @@ In v1's inbound pipeline (v1 §2.3), between *resolve the author* (step 2) and *
 
 - **stored** on the log anchor like any message (the record is the point), marked `command: true`, and **never** routed to the target or shown to an agent as a turn;
 - **executed** by `internal.bridge_run_command` with the **linked member's own authority** — the same catalog operations the UI calls (`tasks.create`, `execution.spawn`, `sessions.terminate`, `loops.create`, …), so a command can do exactly what that member could do in the browser and nothing more. A guest has no authority, so a guest can run only the read-only tier (§4.6);
-- **idempotent**: every write carries a mutation id derived from `(connectionId, externalMessageId, itemIndex)`. The runtime redelivering the message, a retry after a timeout, or a reconnect replay re-run the same command to the same result (fixes W7);
+- **idempotent**: every write carries a mutation id derived from `(bridgeId, externalMessageId, itemIndex)` — per bridge, not per connection, so the same command is one command whichever number delivered it (v1 D20). The runtime redelivering the message, a retry after a timeout, or a reconnect replay re-run the same command to the same result (fixes W7);
 - **answered** by a bridge notice that replies to (quotes) the command, within 2 s: the final answer, or `⏳` reaction + the answer when it lands. A command that cannot run says why (fixes W1, W2).
 
 Commands are a bridge feature, independent of target kind: a DM bridge to a session or a channel bridge gets them too, each where it makes sense (`/work` on a channel bridge needs worker defaults, §4.3).
@@ -520,7 +520,7 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 | Concern | Rule |
 |---|---|
 | Ack latency | ≤ 2 s (reaction `⏳` if the answer needs longer) |
-| Duplicate delivery | mutation ids from `(connection, externalMessageId, item)`; the outbox reply is idempotent on the command's message id |
+| Duplicate delivery | inbound dropped when its provider message id is already stored for the bridge, from any number (v1 D20); mutation ids from `(bridge, externalMessageId, item)`; the outbox reply is idempotent on the command's message id |
 | Rate limits | per-sender 10 commands/min, per-bridge 30/min; over → one notice, then silence for the window (no notice storms) |
 | Output size | ≤ 10 lines per reply; `more: /workers 2` paging; never a wall of ids (style line rules) |
 | Loop guard | bridge notices carry the v1 echo guard and `BRIDGE_MARK`; a notice is never parsed as a command |
