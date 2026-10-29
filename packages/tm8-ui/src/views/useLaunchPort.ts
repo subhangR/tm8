@@ -248,15 +248,17 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
      adding one in Settings right now, and the card must see it when they
      come back. */
   const viewerId = data.viewerActor?.id ?? null;
+  const { seam } = data;
   const jevKeyStatus = useMemo(() => {
-    /* Per viewer: a new viewer is a new reader, so one person's usable key is
-       never another's verdict, whatever happens to the session in between. */
-    const status = sharedRead(() => data.seam.credentials.serviceKeys(), () => viewerId ?? 'unknown', {
+    /* One reader per viewer (the memo's key): one person's usable key is never
+       another's verdict. It holds only the seam, not the data snapshot. */
+    const status = sharedRead(() => seam.credentials.serviceKeys(), () => 'status', {
       freshForMs: LAUNCH_READ_FRESH_MS,
       keep: (view) => jevKeyUsable(view) === true,
     });
     return () => status(undefined);
-  }, [data.seam, viewerId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viewerId is the reader's identity, not a value it reads
+  }, [seam, viewerId]);
 
   return useMemo(
     () => ({

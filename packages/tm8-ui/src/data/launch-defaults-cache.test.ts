@@ -91,7 +91,7 @@ describe('across a reload', () => {
   });
 
   it('ignores a corrupt or wrong-shaped payload, and drops the corrupt one', async () => {
-    const key = 'tm8.launch-defaults.v2.local.sp-1.viewer-1';
+    const key = 'tm8.launch-defaults.v2|local|sp-1|viewer-1';
     localStorage.setItem(key, '{not json');
     const reloaded = await reloadModule();
     expect(reloaded.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1', () => 'viewer-1').peek?.(input('tm-a'))).toBeNull();
@@ -103,7 +103,7 @@ describe('across a reload', () => {
   });
 
   it('checks every field a drawn row reads — a stored row without its `via` or header is not drawn', async () => {
-    const key = 'tm8.launch-defaults.v2.local.sp-1.viewer-1';
+    const key = 'tm8.launch-defaults.v2|local|sp-1|viewer-1';
     const { via: _via, ...withoutVia } = LAUNCH_DEFAULTS.memories.items[0]!;
     const broken = { ...LAUNCH_DEFAULTS, memories: { ...LAUNCH_DEFAULTS.memories, items: [withoutVia] } };
     localStorage.setItem(key, JSON.stringify({ entries: [JSON.stringify({ key: 'tm-a|task-1|claude-code|', result: broken })] }));
@@ -120,14 +120,14 @@ describe('across a reload', () => {
     for (let i = 0; i < 25; i += 1) await load(input(`tm-${String(i)}`));
     expect(load.peek?.(input('tm-0'))).toBeNull();
     expect(load.peek?.(input('tm-24'))).toEqual(LAUNCH_DEFAULTS);
-    const stored = (JSON.parse(localStorage.getItem('tm8.launch-defaults.v2.local.sp-1.viewer-1')!) as { entries: string[] }).entries.map((e) => JSON.parse(e) as { key: string });
+    const stored = (JSON.parse(localStorage.getItem('tm8.launch-defaults.v2|local|sp-1|viewer-1')!) as { entries: string[] }).entries.map((e) => JSON.parse(e) as { key: string });
     expect(stored).toHaveLength(24);
     expect(stored[0]!.key).toBe('tm-24|task-1|claude-code|');
   });
 });
 
 describe('who and how much is stored', () => {
-  const KEY = 'tm8.launch-defaults.v2.local.sp-1.viewer-1';
+  const KEY = 'tm8.launch-defaults.v2|local|sp-1|viewer-1';
 
   it('is per viewer: another viewer on this browser is never seeded with it', async () => {
     await cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1', () => 'viewer-1')(input('tm-a'));
@@ -164,7 +164,7 @@ describe('who and how much is stored', () => {
 });
 
 describe('recency wins the size cap', () => {
-  const KEY = 'tm8.launch-defaults.v2.local.sp-1.viewer-1';
+  const KEY = 'tm8.launch-defaults.v2|local|sp-1|viewer-1';
   const keys = () => (JSON.parse(localStorage.getItem(KEY)!) as { entries: string[] }).entries.map((e) => (JSON.parse(e) as { key: string }).key);
 
   it('writes the newest launch first and drops the oldest that no longer fit', async () => {
@@ -191,7 +191,40 @@ describe('recency wins the size cap', () => {
   });
 });
 
+describe('one viewer at a time', () => {
+  it('what one viewer’s loader kept in memory never seeds the next viewer on the same page', async () => {
+    let viewer = 'viewer-a';
+    const load = cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1', () => viewer);
+    await load(input('tm-a'));
+    expect(load.peek?.(input('tm-a'))).toEqual(LAUNCH_DEFAULTS);
+    viewer = 'viewer-b';
+    expect(load.peek?.(input('tm-a'))).toBeNull();
+  });
+
+  it('an answer asked as one viewer and landing after the switch is stored under the asker, never the next', async () => {
+    let viewer = 'viewer-a';
+    let release!: (r: LaunchDefaultsResult) => void;
+    const load = cache.launchDefaultsLoader(() => new Promise<LaunchDefaultsResult>((r) => { release = r; }), 'local', 'sp-1', () => viewer);
+    const asked = load(input('tm-a'));
+    await Promise.resolve();
+    viewer = 'viewer-b';
+    release(LAUNCH_DEFAULTS);
+    await asked;
+    expect(localStorage.getItem('tm8.launch-defaults.v2|local|sp-1|viewer-b')).toBeNull();
+    expect(localStorage.getItem('tm8.launch-defaults.v2|local|sp-1|viewer-a')).not.toBeNull();
+  });
+});
+
 describe('an explicit sign-out', () => {
+  it('sweeps its node exactly — a node whose key merely starts the same is left alone', async () => {
+    await cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'https___host', 'sp-1', () => 'viewer-1')(input('tm-a'));
+    await cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'https___host.example', 'sp-1', () => 'viewer-1')(input('tm-a'));
+    cache.clearLaunchDefaultsCache('https___host');
+    const fresh = await reloadModule();
+    expect(fresh.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'https___host', 'sp-1', () => 'viewer-1').peek?.(input('tm-a'))).toBeNull();
+    expect(fresh.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'https___host.example', 'sp-1', () => 'viewer-1').peek?.(input('tm-a'))).toEqual(LAUNCH_DEFAULTS);
+  });
+
   it('never stores an answer that was still in flight when the viewer signed out', async () => {
     const gate = deferred<LaunchDefaultsResult>();
     const load = cache.launchDefaultsLoader(() => gate.promise, 'local', 'sp-1', () => 'viewer-1');
@@ -200,7 +233,7 @@ describe('an explicit sign-out', () => {
     gate.resolve(LAUNCH_DEFAULTS);
     await expect(asked).resolves.toBe(LAUNCH_DEFAULTS);
     expect(load.peek?.(input('tm-a'))).toBeNull();
-    expect(localStorage.getItem('tm8.launch-defaults.v2.local.sp-1.viewer-1')).toBeNull();
+    expect(localStorage.getItem('tm8.launch-defaults.v2|local|sp-1|viewer-1')).toBeNull();
   });
 
   it('a loader built before the sweep forgets what it kept the next time it is used', async () => {
@@ -218,7 +251,7 @@ describe('an explicit sign-out', () => {
     cache.clearLaunchDefaultsCache('local');
     expect(cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1', () => 'viewer-1').peek?.(input('tm-a'))).toBeNull();
     expect(cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-2', () => 'viewer-1').peek?.(input('tm-a'))).toBeNull();
-    expect(localStorage.getItem('tm8.launch-defaults.v2.local.sp-1.viewer-1')).toBeNull();
+    expect(localStorage.getItem('tm8.launch-defaults.v2|local|sp-1|viewer-1')).toBeNull();
     expect(cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'other_node', 'sp-1', () => 'viewer-1').peek?.(input('tm-a'))).toEqual(LAUNCH_DEFAULTS);
   });
 });

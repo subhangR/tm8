@@ -64,17 +64,8 @@ export interface LaunchSelection {
   edits: LaunchSelectionEdits;
   /** The node's own words when a group came back emptier than asked. */
   warnings: readonly string[];
-  /**
-   * One line about the defaults drawn from this browser's last answer: they
-   * turned out to differ from the node's, or the node could not confirm them
-   * (`defaultsNote`). Null otherwise — a confirmation that matches merges in
-   * without a word.
-   */
-  defaultsNote: string | null;
   /** Ask the node again after a failed read; a no-op otherwise. Edits are kept across it. */
   retryDefaults(): void;
-  /** The read failed and can be asked again (`retryDefaults`). */
-  canRetryDefaults: boolean;
   /**
    * THE ONE LINE both launch surfaces draw about their defaults, or null.
    * `text` is the note (changed since last time / could not be confirmed /
@@ -262,14 +253,13 @@ export function useLaunchSelection(args: {
     return out;
   }, [defaults, edits]);
 
+  const block = launchBlock(defaults, edits);
   return {
     defaults,
     edits,
     warnings: answer ? answer.warnings : [],
-    defaultsNote: defaultsNote(read),
     retryDefaults,
-    canRetryDefaults: read.phase === 'failed',
-    defaultsLine: lineOf(read, launchBlock(defaults, edits), retryDefaults),
+    defaultsLine: lineOf(read, block, retryDefaults),
     added,
     toggle,
     setEdit,
@@ -278,7 +268,7 @@ export function useLaunchSelection(args: {
     refusal,
     diff: (group) => groupDiff(defaults[group], edits[group]),
     lock: (group) => groupLock(defaults[group]),
-    launchBlock: launchBlock(defaults, edits),
+    launchBlock: block,
     outcomes,
   };
 }

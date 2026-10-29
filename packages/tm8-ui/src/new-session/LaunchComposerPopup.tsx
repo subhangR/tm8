@@ -477,11 +477,9 @@ export function LaunchComposerPopup({
     writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
   }, [subject.id]);
 
-  /** A launch that did not go through: Jev's held answers are shown after all. */
-  const jevUnseal = useRef<(() => void) | null>(null);
-  const releaseJev = () => { jevUnseal.current?.(); jevUnseal.current = null; };
+  /** The press's hold on Jev: released by the hook when the launch rejects; by `succeed` when the card stays up. */
+  const jevHold = useRef<{ unseal(): void } | null>(null);
   const fail = (error: unknown) => {
-    releaseJev();
     setPending(false);
     setNodeRefusal(
       String((error as { message?: string })?.message ?? error)
@@ -493,7 +491,7 @@ export function LaunchComposerPopup({
     committed.current = true;
     clearDraft(subject.id);
     /* A host with no dismissal keeps the card up and interactive. */
-    if (onDismiss) onDismiss(); else releaseJev();
+    if (onDismiss) onDismiss(); else jevHold.current?.unseal();
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
@@ -502,7 +500,6 @@ export function LaunchComposerPopup({
     setPending(false);
     setShaking(true);
     if (!sessionsSince) {
-      releaseJev();
       setTimedOut('unknown');
       setNodeRefusal('The node didn’t answer in time — the launch may have started. This surface can’t check, so look at the task’s sessions before launching again.');
       return;
@@ -512,18 +509,14 @@ export function LaunchComposerPopup({
     sessionsSince(subject.id, openedAt.current).then(
       (found) => {
         if (found.length > 0) {
-          /* The launch went through, but the card stays up and ✦ still works. */
-          releaseJev();
           setTimedOut('found');
           setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
         } else {
-          releaseJev();
           setTimedOut('none');
           setNodeRefusal('No session started on this task. Launch again to retry.');
         }
       },
       () => {
-        releaseJev();
         setTimedOut('unknown');
         setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
       },
@@ -538,11 +531,7 @@ export function LaunchComposerPopup({
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
        omitted (its defaults load) with a reason; an edited group is its
        exact set. No group edited ⇒ no `selection`. */
-    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
-       is held, never applied under it; a refused launch shows it (lane E). */
-    const sealed = jev.seal();
-    jevUnseal.current = sealed.unseal;
-    const jevFields = sealed.fields;
+    const jevFields = jev.toSpawnFields();
     const promptExtra = notes.trim();
     const launchFields = {
       ...composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons),
@@ -570,8 +559,12 @@ export function LaunchComposerPopup({
        key, so the node's ledger replays the session instead of starting a
        second one; any change to what is launched mints a fresh key. */
     const input = inputWith(spawnKey.current.keyFor(JSON.stringify(inputWith(''))));
-    Promise.resolve()
-      .then(() => onSpawn(input))
+    const run = Promise.resolve().then(() => onSpawn(input));
+    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
+       is held, never applied under it; the hook shows it if the launch is
+       refused, fails or times out (lane E). */
+    jevHold.current = jev.seal(run);
+    run
       .then(() => {
         if (remember && launched.teamMemberId) {
           writePicks(launched.teamMemberId, {

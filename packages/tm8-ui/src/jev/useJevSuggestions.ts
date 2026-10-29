@@ -281,16 +281,16 @@ export interface JevSuggestions {
 
   toSpawnFields(): JevSpawnFields;
   /**
-   * THE PRESS. Returns what the spawn carries from this run (`toSpawnFields`;
-   * a group still asking says `jev-pending`) and HOLDS every answer that lands
-   * from now on — its groups, ticks and run cost alike: Jev only ever
-   * SUGGESTS, and an answer for a launch already on its way must not change
-   * the card under it. `unseal()` is for a launch that was refused or failed
-   * and leaves the card up: the held answers are shown as if they had just
-   * landed, so nobody pays for the ask twice. A launch that went through never
-   * unseals; what was held goes with the card.
+   * THE PRESS — call it with the launch's flight, right after reading
+   * `toSpawnFields`. From then on every answer that lands is HELD — its groups,
+   * ticks and run cost alike: Jev only ever SUGGESTS, and an answer for a
+   * launch already on its way must not change the card under it. If the
+   * flight REJECTS (refused, failed, timed out) the held answers are shown as
+   * if they had just landed, so nobody pays for the ask twice. Success is the
+   * caller's: a card that closes takes them away; one that stays calls
+   * `unseal()`. A later press supersedes an earlier one's hold.
    */
-  seal(): { fields: JevSpawnFields; unseal(): void };
+  seal(flight: Promise<unknown>): { unseal(): void };
 
 }
 
@@ -916,20 +916,18 @@ export function useJevSuggestions(args: {
     return fields;
   }, [applied, groups, asked, runId]);
 
-  const seal = useCallback(() => {
-    const fields = toSpawnFields();
+  const seal = useCallback((flight: Promise<unknown>) => {
     const queue: Array<() => void> = [];
     held.current = queue;
-    return {
-      fields,
-      unseal: () => {
-        /* Only the press that held them releases them; a later press holds its own. */
-        if (held.current !== queue) return;
-        held.current = null;
-        for (const show of queue) show();
-      },
+    const unseal = () => {
+      /* Only the press that held them releases them; a later press holds its own. */
+      if (held.current !== queue) return;
+      held.current = null;
+      for (const show of queue) show();
     };
-  }, [toSpawnFields]);
+    flight.then(undefined, unseal);
+    return { unseal };
+  }, []);
 
   return {
     runId,

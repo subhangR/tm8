@@ -88,7 +88,7 @@ describe('cached defaults on the first frame', () => {
     await answer(LAUNCH_DEFAULTS);
     const skills = result.current.defaults.skills;
     expect(skills.status === 'ready' && skills.confirmation).toBeUndefined();
-    expect(result.current.defaultsNote).toBeNull();
+    expect(result.current.defaultsLine).toBeNull();
   });
 
   it('a different answer replaces the rows in place and says so in ONE line', async () => {
@@ -97,7 +97,7 @@ describe('cached defaults on the first frame', () => {
     await answer(WITH_EXTRA_SKILL);
     const skills = result.current.defaults.skills;
     expect(skills.status === 'ready' && skills.rows.map((r) => r.id)).toEqual(['ent-sk-review', 'ent-sk-new']);
-    expect(result.current.defaultsNote).toBe('This launch’s defaults changed since you last opened it: skills +1.');
+    expect(result.current.defaultsLine).toEqual({ text: 'This launch’s defaults changed since you last opened it: skills +1.', retry: null });
   });
 
   it('an edit made on cached rows survives the confirmation as the same diff', async () => {
@@ -126,7 +126,7 @@ describe('an edit made on cached rows is never lost', () => {
     // Kept, not dropped — and not launched on an unconfirmed list either.
     expect(result.current.edits.references.removed).toEqual(['ent-file-log']);
     expect(result.current.launchBlock).toBe('Couldn’t confirm this launch’s references defaults with the node. Retry before launching with your edits — they are kept.');
-    expect(result.current.canRetryDefaults).toBe(true);
+    expect(result.current.defaultsLine?.retry).toBeTypeOf('function');
     // An untouched group never blocks.
     expect(result.current.outcomes().memories).toEqual({ omit: 'not-asked' });
 
@@ -164,12 +164,12 @@ describe('one read per launch key', () => {
   it('a new loader recovers a card whose read FAILED: it reads through it and the answer is taken', async () => {
     const failing = vi.fn(() => Promise.reject(new Error('503')));
     const { rerender, result } = renderHook(({ load }) => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }), { initialProps: { load: failing as LoadLaunchDefaults } });
-    await waitFor(() => expect(result.current.canRetryDefaults).toBe(true));
+    await waitFor(() => expect(result.current.defaultsLine?.retry).toBeTypeOf('function'));
     const handed = loader();
     rerender({ load: handed.load });
     await handed.answer(LAUNCH_DEFAULTS);
     expect(result.current.defaults.skills.status).toBe('ready');
-    expect(result.current.canRetryDefaults).toBe(false);
+    expect(result.current.defaultsLine?.retry ?? null).toBeNull();
   });
 
   it('an EDITED group whose re-read failed with nothing to show blocks Launch, named, until a retry — the teammate-switch case', async () => {

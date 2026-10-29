@@ -66,4 +66,32 @@ describe('the sheet’s press', () => {
     fireEvent.click(launch);
     expect(onLaunch).toHaveBeenCalledTimes(1);
   });
+
+  it('a host whose onLaunch THROWS does not lock the sheet: the next press goes through', async () => {
+    const onLaunch = vi.fn(() => { throw new Error('host blew up'); });
+    const swallow = (event: ErrorEvent) => { event.preventDefault(); };
+    window.addEventListener('error', swallow);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = render(
+        <div className="cv2-root">
+          <LaunchSheet
+            subjectId={'task-1' as EntityId} spaceId="sp-1" fromChip="◔ Run ▸" fromCaption="task pre-associated"
+            teammates={LAUNCH_TEAMMATES} projects={LAUNCH_PROJECTS} profiles={LAUNCH_PROFILES} capacity={LAUNCH_CAPACITY}
+            memories={LAUNCH_MEMORIES} loadLaunchDefaults={async () => LAUNCH_DEFAULTS}
+            onLaunch={onLaunch} onDispatch={() => {}} onCancel={() => {}}
+          />
+        </div>,
+      );
+      await waitFor(() => expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default/));
+      const launch = view.getByRole('button', { name: /Launch ▸/ });
+      try { fireEvent.click(launch); } catch { /* the host's own error */ }
+      await act(async () => { await Promise.resolve(); });
+      try { fireEvent.click(launch); } catch { /* again */ }
+      expect(onLaunch).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener('error', swallow);
+      spy.mockRestore();
+    }
+  });
 });

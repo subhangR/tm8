@@ -66,9 +66,18 @@ interface StoredEntry {
   json: string;
 }
 
-/** Node, space AND viewer: two people on one browser never seed each other's first frame. */
+/**
+ * Node, space AND viewer: two people on one browser never seed each other's
+ * first frame. Each segment is URI-encoded and joined with `|` (which encoding
+ * never leaves bare), so one node's segment can never be a prefix of another's
+ * — `https___host` must not sweep `https___host.example`.
+ */
+const segment = (part: string) => encodeURIComponent(part);
+function nodePrefix(nodeKey: string): string {
+  return `${KEY_PREFIX}|${segment(nodeKey)}|`;
+}
 function storageKeyFor(nodeKey: string, spaceId: string, viewerId: string): string {
-  return `${KEY_PREFIX}.${nodeKey}.${spaceId}.${viewerId}`;
+  return `${nodePrefix(nodeKey)}${segment(spaceId)}|${segment(viewerId)}`;
 }
 
 /**
@@ -83,21 +92,20 @@ const sweepOf = (nodeKey: string): number => sweeps.get(nodeKey) ?? 0;
 const isText = (value: unknown): value is string => typeof value === 'string';
 const isTextOrNull = (value: unknown) => value === null || typeof value === 'string';
 const isNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
-/** Absent is allowed where an older node may omit the field; present must be the right type. */
-const optional = (test: (value: unknown) => boolean) => (value: unknown) => value === undefined || test(value);
 
 /**
- * Every field a reader of an answer uses, checked: `defaultRow` (entityId,
- * kind, title, via, headerText, headerSource), the meter (promptBytes, budget,
- * total) and the strip — so a stored row with `budget: "12k"` is not drawn.
+ * Every field the contract requires, checked — the typed shape this returns
+ * is the full `LaunchDefaultsResult`, so nothing is assumed: a stored row with
+ * `budget: "12k"` or no `minEntries` is not drawn (it is simply not cached;
+ * the node's own answer still arrives).
  */
 function isGroup(value: unknown): boolean {
-  const group = value as Partial<Record<'items' | 'total' | 'budget' | 'floor', unknown>> | null;
-  return !!group && isNumber(group.total) && optional((b) => b === null || isNumber(b))(group.budget)
-    && optional(isNumber)(group.floor) && Array.isArray(group.items) && group.items.every((item) => {
+  const group = value as Partial<Record<'items' | 'total' | 'budget' | 'floor' | 'minEntries', unknown>> | null;
+  return !!group && isNumber(group.total) && (group.budget === null || isNumber(group.budget))
+    && isNumber(group.floor) && isNumber(group.minEntries) && Array.isArray(group.items) && group.items.every((item) => {
       const row = item as Partial<Record<'entityId' | 'kind' | 'title' | 'via' | 'headerText' | 'headerSource' | 'promptBytes', unknown>> | null;
       return !!row && isText(row.entityId) && isText(row.kind) && isText(row.title) && isText(row.via)
-        && isTextOrNull(row.headerText) && isTextOrNull(row.headerSource) && optional(isNumber)(row.promptBytes);
+        && isTextOrNull(row.headerText) && isTextOrNull(row.headerSource) && isNumber(row.promptBytes);
     });
 }
 
@@ -106,8 +114,7 @@ function isAnswer(value: unknown): value is LaunchDefaultsResult {
   const answer = value as Partial<Record<keyof LaunchDefaultsResult, unknown>> | null;
   return !!answer && isGroup(answer.memories) && isGroup(answer.skills) && isGroup(answer.references)
     && isGroup(answer.teammates) && Array.isArray(answer.warnings) && answer.warnings.every(isText)
-    && optional(isTextOrNull)(answer.taskId)
-    && optional((c) => c === 'on' || c === 'off')(answer.contextIndex);
+    && isTextOrNull(answer.taskId) && (answer.contextIndex === 'on' || answer.contextIndex === 'off');
 }
 
 /** The stored answers, most recently answered first; [] when none, none readable, or none well-formed. */
@@ -201,19 +208,31 @@ export function launchDefaultsLoader(
     seed: (input) => storeOf()?.find(launchDefaultsKey(input)) ?? null,
     maxKept: MAX_REMEMBERED,
   });
-  /* A sweep since this loader was last used: what it kept, in memory and as
-     its parsed copies of the store, is the previous viewer's. */
+  /* What the reader keeps in memory belongs to ONE viewer, exactly like the
+     store: a sweep since this loader was last used, or a different viewer
+     now, and it is forgotten before anything is peeked or kept. */
   let sweptAt = sweepOf(nodeKey);
+  let keptFor = viewerOf();
   const current = () => {
-    if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); stores = new Map(); sweptAt = sweepOf(nodeKey); }
+    const viewer = viewerOf();
+    if (sweptAt !== sweepOf(nodeKey) || viewer !== keptFor) {
+      reader.forgetAll();
+      if (sweptAt !== sweepOf(nodeKey)) stores = new Map();
+      sweptAt = sweepOf(nodeKey);
+      keptFor = viewer;
+    }
     return reader;
   };
   /* The sweep a call is asked under is taken AT the call: an answer that lands
      after a sign-out is never stored for the next viewer. */
   const call = (input: LaunchDefaultsInput) => {
     const asked = sweepOf(nodeKey);
-    return current()(input).then((result) => {
-      if (asked === sweepOf(nodeKey)) storeOf()?.write(launchDefaultsKey(input), result);
+    const reading = current();
+    /* The store of the viewer who ASKED: an answer landing after the viewer
+       changed is never written under the next one's key. */
+    const store = storeOf();
+    return reading(input).then((result) => {
+      if (asked === sweepOf(nodeKey)) store?.write(launchDefaultsKey(input), result);
       return result;
     });
   };
@@ -224,5 +243,5 @@ export function launchDefaultsLoader(
 
 export function clearLaunchDefaultsCache(nodeKey: string): void {
   sweeps.set(nodeKey, sweepOf(nodeKey) + 1);
-  forgetKeysWithPrefix(`${KEY_PREFIX}.${nodeKey}.`);
+  forgetKeysWithPrefix(nodePrefix(nodeKey));
 }

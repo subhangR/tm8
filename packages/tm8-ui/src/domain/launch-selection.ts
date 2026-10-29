@@ -217,8 +217,9 @@ export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSele
   const failed = where((d) => (d.status === 'unknown' && d.readFailed === true) || (d.status === 'ready' && d.confirmation === 'failed'));
   if (failed.length > 0) return unconfirmedReason(failed);
   /* Unknown for a reason no retry fixes (no teammate, no loader): its own words. */
-  const idle = LAUNCH_SELECTION_GROUPS.map((g) => defaults[g]).find((d, i) => d.status === 'unknown' && edited(LAUNCH_SELECTION_GROUPS[i]!));
-  if (idle && idle.status === 'unknown') return idle.reason;
+  const idle = where((d) => d.status === 'unknown')[0];
+  const idleDefaults = idle ? defaults[idle] : null;
+  if (idleDefaults?.status === 'unknown') return idleDefaults.reason;
   const waiting = where((d) => d.status === 'loading' || (d.status === 'ready' && d.confirmation === 'pending'));
   return waiting.length > 0 ? defaultsWaitReason(waiting) : null;
 }

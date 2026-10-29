@@ -307,10 +307,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
     agentTool: agentToolId || null,
     interactionProfileId: profileId || null,
   });
-  /* THE PRESS HOLDS JEV (lane E): an answer landing while the launch is on its
-     way is held, and released on the press's OWN outcome — never on a prop
-     edge a host may not produce. A sheet the launch closed is gone by then. */
-  const jevUnseal = useRef<(() => void) | null>(null);
+  /* One press at a time while a launch is in flight (lane E). */
+  const pressing = useRef(false);
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),
     skills: props.skillCandidates,
@@ -1183,13 +1181,12 @@ export function LaunchSheet(props: LaunchSheetProps) {
                edited group, by hand or by an applied Jev pick, is its exact
                set. No group edited ⇒ no `selection`, so the launch loads
                exactly what it always has. */
-            /* One press at a time: a second one in the same tick is ignored. */
-            if (jevUnseal.current) return;
-            const sealed = jev.seal();
-            jevUnseal.current = sealed.unseal;
-            const jevFields = sealed.fields;
+            if (pressing.current) return;
+            const jevFields = jev.toSpawnFields();
             const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
-            const settled = props.onLaunch({
+            let settled: unknown;
+            let thrown: { error: unknown } | null = null;
+            try { settled = props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
               agentToolId: agentToolId || null,
@@ -1204,11 +1201,17 @@ export function LaunchSheet(props: LaunchSheetProps) {
               ...selectionFields,
               ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
               ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
-            });
-            const release = () => { const unseal = jevUnseal.current; jevUnseal.current = null; unseal?.(); };
-            /* A host that returns no settlement has no flight to hold through. */
-            if (settled && typeof (settled as Promise<unknown>).then === 'function') void (settled as Promise<unknown>).then(release, release);
-            else release();
+            }); } catch (error) { thrown = { error }; }
+            /* THE PRESS HOLDS JEV: the flight is the host's settlement (a host
+               that returns none has no flight; one that throws has failed).
+               The hook shows held answers on a rejection; a sheet still up
+               after a success is interactive again, so it shows them too. */
+            const inFlight = thrown !== null || (!!settled && typeof (settled as Promise<unknown>).then === 'function');
+            const flight = thrown ? Promise.reject(thrown.error) : inFlight ? (settled as Promise<unknown>) : Promise.resolve();
+            pressing.current = inFlight;
+            const hold = jev.seal(flight);
+            flight.then(() => { pressing.current = false; hold.unseal(); }, () => { pressing.current = false; });
+            if (thrown) throw thrown.error;
           }}
         >
           {launching ? 'Launching…' : 'Launch ▸'}
