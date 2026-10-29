@@ -216,9 +216,8 @@ export class RuntimeConnection {
   async onUpsert(msg: WAMessage): Promise<void> {
     const chat = msg.key.remoteJid
     if (!chat || !this.allowlist.allows(chat, msg.key.remoteJidAlt)) {
-      const isPollUpdate = !!msg.message?.pollUpdateMessage || !!msg.message?.ephemeralMessage?.message?.pollUpdateMessage
-      if (isPollUpdate) this.allowlist.dropped.pollUpdates++
-      else this.allowlist.dropped.messages++
+      // Decided on the key's JIDs alone: not even the message's type is looked at. Poll updates are messages here.
+      this.allowlist.dropped.messages++
       return
     }
     const frame = this.toInbound(msg)
@@ -228,7 +227,9 @@ export class RuntimeConnection {
   toInbound(msg: WAMessage): InboundFrame | null {
     if (!msg.key.id || !msg.key.remoteJid || !msg.message) return null
     const chatJid = jidNormalizedUser(msg.key.remoteJid)
-    const conversationId = this.allowlist.allows(chatJid) ? chatJid : jidNormalizedUser(msg.key.remoteJidAlt ?? chatJid)
+    // The id the server listed: a self chat may arrive as the LID while the bridge holds the PN.
+    const conversationId = this.allowlist.match(chatJid, msg.key.remoteJidAlt)
+    if (!conversationId) return null
     const isGroup = chatJid.endsWith('@g.us')
     const fromMe = !!msg.key.fromMe
     const own = [...this.allowlist.own]

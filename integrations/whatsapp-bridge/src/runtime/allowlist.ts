@@ -22,7 +22,7 @@ export function bareJid(jid: string): string {
   return `${user}@${server === 'c.us' ? 's.whatsapp.net' : server}`
 }
 
-const emptyCounters = (): DropCounters => ({ messages: 0, pollUpdates: 0, stanzas: 0, outboundRefused: 0 })
+const emptyCounters = (): DropCounters => ({ stanzas: 0, messages: 0, outboundRefused: 0 })
 
 /** One connection's allowlist. Before the first list arrives it allows nothing. */
 export class Allowlist {
@@ -50,12 +50,18 @@ export class Allowlist {
 
   /** Is this conversation connected? Any of the ids given (a JID and its PN/LID alternate) may match. */
   allows(...jids: (string | null | undefined)[]): boolean {
-    return jids.some((j) => {
-      if (!j) return false
+    return this.match(...jids) !== null
+  }
+
+  /** The listed conversation id the given JIDs stand for, or null. A connected self chat arrives under either own JID. */
+  match(...jids: (string | null | undefined)[]): string | null {
+    for (const j of jids) {
+      if (!j) continue
       const id = bareJid(j)
-      // A connected self chat may arrive under either of the number's own JIDs.
-      return this.ids.has(id) || (this.own.has(id) && [...this.own].some((o) => this.ids.has(o)))
-    })
+      if (this.ids.has(id)) return id
+      if (this.own.has(id)) for (const o of this.own) if (this.ids.has(o)) return o
+    }
+    return null
   }
 
   conversationIds(): string[] {

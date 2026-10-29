@@ -108,7 +108,14 @@ export type SentFrame =
   | { outboxId: string; connectionId: string; failed: { reason: string; retryable: boolean } }
 
 /** Counts only, never content (D28). */
-export type DropCounters = { messages: number; pollUpdates: number; stanzas: number; outboundRefused: number }
+export type DropCounters = {
+  /** Stanzas from off-list JIDs acked undecrypted (messages, receipts, notifications, presence). */
+  stanzas: number
+  /** Messages and poll updates that reached the socket from off the list and were dropped on their JID alone. */
+  messages: number
+  /** Outbound frames the guard refused. */
+  outboundRefused: number
+}
 
 export type HeartbeatFrame = {
   runtimeId: string
