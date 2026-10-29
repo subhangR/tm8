@@ -8,7 +8,7 @@
  * names the field (details.path) and the offending ids; it is judged on the
  * row the write LEAVES, so a refused update rolls the door's write back; tool
  * inputs are judged against the tool's CURRENT definition, so an edit to the
- * tool surfaces on the next loop write rather than at fire time; and 383's
+ * tool surfaces on the next loop write rather than at fire time; and 394's
  * gate refuses a loop-triggered run of a tool the loop does not name.
  */
 import { randomUUID } from 'node:crypto';
@@ -217,7 +217,7 @@ describe('config references must be live entities of the right kind in the space
   });
 });
 
-describe('383: a loop-triggered run executes the loop\'s own tool', () => {
+describe('394: a loop-triggered run executes the loop\'s own tool', () => {
   const opened: string[] = [];
   afterAll(async () => { for (const id of opened) await db.rpc(firing, 'work_session_transition', [id, 'failed', null, 'test cleanup']); });
 

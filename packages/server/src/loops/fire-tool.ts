@@ -1,6 +1,6 @@
 /**
  * The `action='tool'` firing (design of record 01a182d4 §3.4 "tool"; the seam
- * ruled on research task 01a182ca and built by Tools PR-C, migration 379).
+ * ruled on research task 01a182ca and built by Tools PR-C, migration 389).
  *
  * A tool firing is NOT a spawn: no task is derived (there is nothing for a
  * tool to be assigned), and the loop side writes NO `triggered_by` edge.
@@ -50,7 +50,7 @@ export async function fireTool(
     throw new CollabError('not_implemented', `loop "${loop.title}" runs a tool, but this node has no tool runtime`);
   }
   if (!loop.toolId) {
-    // The door refuses this shape (378 assert_loop_runner); reaching it means a
+    // The door refuses this shape (384 assert_loop_runner); reaching it means a
     // row was written around the door. Loud, and recorded on the loop.
     throw new CollabError('invariant_violation', `tool loop ${loop.entityId} names no tool`);
   }

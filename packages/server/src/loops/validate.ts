@@ -2,7 +2,7 @@
  * Write-time validation of what a loop definition REFERS TO (design of record
  * 01a182d4 §2.1, §4.3; PR3, task 01a182d5-e482).
  *
- * The doors (378) keep the loop consistent with itself — action vs runner,
+ * The doors (384) keep the loop consistent with itself — action vs runner,
  * same-space teammate and tool. What they cannot judge is whether the things
  * the definition points at are what the firing will need: a project that is
  * not a project, a memory that is not a memory, an interaction profile from
@@ -11,7 +11,7 @@
  * `last_error` — hours after the human who typed it has gone. This module makes
  * them an `invalid_input` at `loops.create`/`loops.update`, naming the field.
  *
- * Judged on the ROW THE WRITE LEAVES, the same rule as 378's
+ * Judged on the ROW THE WRITE LEAVES, the same rule as 384's
  * `assert_loop_runner`: the handler calls `assertLoopReferences` inside the
  * door's transaction, after the door, and a refusal rolls the write back. So a
  * patch that changes one field at a time cannot strand a loop with a dangling
