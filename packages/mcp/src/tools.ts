@@ -151,6 +151,16 @@ const READ_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/**
+ * How to retry a tools.* command safely (task 01a187b7). A body without a
+ * clientMutationId gets a fresh one per call (REQUIRES_MUTATION_ID, in
+ * `invokeOptions`), so only an id the caller keeps makes a retry a replay of the
+ * first call. Each row ends this sentence with what a blind retry does.
+ */
+export const TOOLS_RETRY_RULE = 'Put your own clientMutationId in the body (any unique string, e.g. a new UUID for each call you intend), '
+  + 'and to retry this call (a timeout, a lost answer) send the identical body again: the retry returns the first call\'s result instead of acting twice. '
+  + 'Left out, every call gets a fresh one';
+
 const ACT_GUIDES = [
   /* `parentId` is advertised DELIBERATELY, and its absence was a real defect.
      The field has always been accepted (`CreateEntityInput`), but a template
@@ -289,11 +299,13 @@ const ACT_GUIDES = [
      one example tool (url-check, input target) runs through the five rows. */
   guide('tools.run', 'Run a tool. Returns at once with {sessionId, toolVersion, sourceSha256, keepOpen, reused}; the script runs in its own session, so read tools.runs.get with that sessionId for state (running|exited|timed_out|killed), exitCode and outputTail once it settles. '
     + 'inputs: the tool\'s declared non-secret inputs by name (tools.help lists them with types and configured values; a configured one may be left out). expectedVersion: the version tools.help or tools.get showed, so a source change since refuses the run. keepOpen false ends the session when the script exits. '
-    + 'Never pass a secret value as a literal input or in any other field: a secret is bound by a human with `tm8 tool secret set <tool> <input> --value-stdin` (tools.secrets.* are human-only) and is used by leaving its slot out.', {
+    + 'Never pass a secret value as a literal input or in any other field: a secret is bound by a human with `tm8 tool secret set <tool> <input> --value-stdin` (tools.secrets.* are human-only) and is used by leaving its slot out. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry runs the script again.`, {
     params: { toolId: '<tool-id>' }, body: { expectedVersion: 1, inputs: { '<input-name>': '<value>' }, keepOpen: false },
   }),
   guide('tools.create', 'Create a tool: a versioned bash or python script with declared, typed inputs. definition.name is its CLI handle (^[a-z][a-z0-9-]{1,62}$, unique in the Space); each input declares type string|path|int|number|bool|enum|json|secret with required, description, flag and env (a secret input declares a SLOT only: a human binds its value later, never put one in the definition or source); tm8Access none|read|write is the run-scoped tm8 token; timeoutSeconds bounds a run. '
-    + 'Then write its selection header with entities.header.set (whenToUse, summary) so later agents find it in their context index.', {
+    + 'Then write its selection header with entities.header.set (whenToUse, summary) so later agents find it in their context index. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry is refused as a name already taken although the first call created the tool.`, {
     params: { spaceId: '<space-id>' },
     body: {
       definition: {
@@ -304,7 +316,8 @@ const ACT_GUIDES = [
       },
     },
   }),
-  guide('tools.update', 'Replace a tool\'s whole definition under its entity version (tools.get). A source, runtime or inputs change bumps the execution version every later run pins; config and secret bindings of inputs that still exist are kept.', {
+  guide('tools.update', 'Replace a tool\'s whole definition under its entity version (tools.get). A source, runtime or inputs change bumps the execution version every later run pins; config and secret bindings of inputs that still exist are kept. '
+    + `${TOOLS_RETRY_RULE}, so a blind retry is refused as a version conflict although the first call applied.`, {
     params: { toolId: '<tool-id>' },
     body: {
       expectedVersion: 1,
