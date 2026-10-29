@@ -131,6 +131,15 @@ describe('tool run tail at settle', () => {
     expect(run.host.hasSession()).toBe(true);
     expect(run.revokeToken).toHaveBeenCalledTimes(1);
   });
+  it('a keep-open tail ends with the footer even when the retained shell already started', async () => {
+    const run = await launch(true);
+    await run.finish();
+    // The exec'd shell's first bytes reach the ring before settle reads it (2 of 5 runs on a dev slot).
+    run.host.emit('\x1b[?2004htm8@host:/data/tool-workspaces/id_x/run$ ');
+    const exit = await run.recorded();
+    expectEachOnce(exit.outputTail, true);
+    expect(exit.outputTail).not.toContain('tool-workspaces');
+  });
   it('a closed run whose status is observed while the PTY is live stores the tail once after the exit', async () => {
     const run = await launch(false);
     await run.finish(0);

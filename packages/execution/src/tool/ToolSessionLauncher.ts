@@ -74,13 +74,32 @@ my $s = $?;
 exit(($s & 127) == 9 ? 137 : 124) if $timed;
 exit(($s & 127) ? 128 + ($s & 127) : $s >> 8);`;
 
+/** How the wrapper names a run in its header and footer. */
+const runLabel = (request: Pick<ToolLaunchRequest, 'definition' | 'toolVersion'>) => `${request.definition.name} v${request.toolVersion}`;
+/** The end of a keep-open run's footer line; the retained shell starts right after it. */
+const KEEP_OPEN_FOOTER_END = ' ── (shell is still open; exit to close)';
+
+/**
+ * A keep-open run is snapshotted while its retained shell starts, so the ring
+ * can already hold that shell's first bytes after the footer (bracketed-paste
+ * enable, a prompt naming the run's workspace). They are the terminal's, not
+ * the run's: the stored tail ends with the footer line.
+ */
+function endAtKeepOpenFooter(tail: string, label: string): string {
+  const footer = tail.lastIndexOf(`── ${label} exited `);
+  const end = footer === -1 ? -1 : tail.indexOf(KEEP_OPEN_FOOTER_END, footer);
+  if (end === -1) return tail;
+  const cut = end + KEEP_OPEN_FOOTER_END.length;
+  return tail.slice(0, tail.startsWith('\r\n', cut) ? cut + 2 : tail.startsWith('\n', cut) ? cut + 1 : cut);
+}
+
 /** A server-generated wrapper; no input value is interpolated into shell code. */
 export function toolWrapper(request: Pick<ToolLaunchRequest, 'definition' | 'toolVersion' | 'cwd' | 'keepOpen'>,
   runDir: string, shell: string, secretKeys: readonly string[]): string {
   const script = join(runDir, request.definition.runtime === 'bash' ? 'tool.sh' : 'tool.py');
   const interpreter = request.definition.runtime === 'bash'
     ? `/bin/bash --noprofile --norc ${shellQuote(script)}` : `/usr/bin/python3 -I ${shellQuote(script)}`;
-  const label = `${request.definition.name} v${request.toolVersion}`;
+  const label = runLabel(request);
   const names = request.definition.inputs.map(input => `${input.name}${input.type === 'secret' ? '=[masked]' : ''}`).join(', ');
   // Unset before the follow-on shell's rc files execute. Use the server-resolved
   // shell, never an input's SHELL. Credentials mode stays off for the retained shell.
@@ -103,7 +122,7 @@ else
   code=125
 fi
 end=$(/bin/date +%s)
-printf '\\n%s exited %s in %ss%s\\n' ${shellQuote(`── ${label}`)} "$code" "$((end-start))" ${shellQuote(request.keepOpen ? ' ── (shell is still open; exit to close)' : ' ──')}
+printf '\\n%s exited %s in %ss%s\\n' ${shellQuote(`── ${label}`)} "$code" "$((end-start))" ${shellQuote(request.keepOpen ? KEEP_OPEN_FOOTER_END : ' ──')}
 at=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
 printf '{"exit":%s,"at":"%s"}\\n' "$code" "$at" > ${shellQuote(join(runDir, 'status.tmp'))}
 /bin/mv -- ${shellQuote(join(runDir, 'status.tmp'))} ${shellQuote(join(runDir, 'status'))}
@@ -161,7 +180,8 @@ export class ToolSessionLauncher {
       // only once the PTY is gone: its exit flushed them before closing sinks.
       this.options.pty.removeSubscriber(request.sessionId, sink);
       const replay = this.options.pty.getReplay(request.sessionId, -1);
-      const outputTail = redactToolOutput((replay?.data ?? output.replayFrom(-1).data).toString('utf8'), secretValues);
+      const tail = (replay?.data ?? output.replayFrom(-1).data).toString('utf8');
+      const outputTail = redactToolOutput(request.keepOpen ? endAtKeepOpenFooter(tail, runLabel(request)) : tail, secretValues);
       // timeout --foreground leaves background jobs in the PTY group. Closed
       // runs kill that group even when its leader already exited. Keep-open runs
       // preserve shell/jobs until explicit tab closure; only the new shell's
