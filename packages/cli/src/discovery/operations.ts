@@ -173,6 +173,20 @@ const ROWS: Record<OperationName, Row> = {
   'tools.run': { cmd: ['tool', 'run'], syn: 'tm8 tool run [--detach] [--keep-open | --close] [--cwd <dir>] [--mutation-id <id>] <name|id> [tool arguments...]', sum: 'Run the stored tool source', authz: 'entity', input: 'bound', side: 'execution', ver: 'expectedVersion', notes: ['Run options precede the tool name; every subsequent token belongs to the declared tool inputs, including --help and short flags', 'Secrets use --<input>-from-env <VAR> or a hidden TTY prompt; literal values on argv are refused', 'Attached output uses human format and returns the tool process exit code; structured formats require --detach', 'The CLI pins the version just loaded and prints a source-change notice before execution; keepOpen defaults to false']},
   'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool', authz: 'entity', input: 'none', side: 'none' },
   'tools.runs.get': { cmd: ['tool', 'run-show'], syn: 'tm8 tool run-show <session-id> [--output]', sum: 'Read a recorded tool run', authz: 'session', input: 'none', side: 'none' },
+  // loops (design 01a182d4 §4.1): discoverable now; the `tm8 loop` verbs land with PR4.
+  'loops.create': { cmd: null, sum: 'Create a scheduled loop (spawn, dispatch or tool action)', authz: 'space', input: 'bound', side: 'durable', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.update': { cmd: null, sum: 'Edit a loop definition; a schedule or timezone change recomputes the next run', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.get': { cmd: null, sum: 'Read a loop: definition, schedule summary and next runs, state and run health', authz: 'entity', input: 'none', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.list': { cmd: null, sum: 'List loops in a Space', authz: 'space', input: 'none', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.enable': { cmd: null, sum: 'Enable a loop; the next run is computed from now', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.disable': { cmd: null, sum: 'Disable a loop; it keeps its schedule and stops firing', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.pause': { cmd: null, sum: 'Pause a loop until an instant', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.resume': { cmd: null, sum: 'Resume a paused loop; a deadline missed while paused fires once', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.runNow': { cmd: null, sum: 'Fire a loop now and return the run', authz: 'entity', input: 'bound', side: 'execution', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.runs.list': { cmd: null, sum: 'List the runs of a loop', authz: 'entity', input: 'none', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.runs.get': { cmd: null, sum: 'Read one loop run', authz: 'entity', input: 'none', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.runs.stop': { cmd: null, sum: 'Stop a live loop run', authz: 'entity', input: 'bound', side: 'execution', tags: ['loop', 'schedule', 'cron', 'recurring'] },
+  'loops.schedule.preview': { cmd: null, sum: 'Validate a schedule and preview its summary and next run instants', authz: 'space', input: 'bound', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'] },
 
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
@@ -4254,6 +4268,7 @@ const ROWS: Record<OperationName, Row> = {
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
   tools: 'tool',
+  loops: 'loop',
   mcp: 'mcp',
   workspace: 'workspace',
   identity: 'identity',
@@ -4377,6 +4392,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
      JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
@@ -4452,7 +4468,7 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f';
+  'sha256:2c09446a2a3ad1431ae8817e97d506cb4e1599537ad0646047e144cb936a575f';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -5403,6 +5419,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  * EVERY public noun, so these are deliberately short.
  */
 const NOUN_SUMMARY: Record<string, string> = {
+  loop: 'Scheduled work: a schedule (every <n>m|h|d or 5-field cron in an IANA timezone) and an action (spawn a teammate, dispatch, or run a tool), with run history',
   tool: 'Reusable scripts: declared inputs, generated help, configuration, secrets and recorded terminal runs',
   identity: 'Who this process is calling as',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',

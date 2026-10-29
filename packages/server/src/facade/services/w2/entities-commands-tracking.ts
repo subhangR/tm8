@@ -81,10 +81,21 @@ import {
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
+import { assertToolPersona, isRunNowRequest, requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The loop members entities.patch accepts (PATCH_CONTENT_MEMBERS.loop), each with the type its door parameter has. */
+const LOOP_PATCH_TYPES: ReadonlyArray<readonly [string, (value: unknown) => boolean, string]> = [
+  ['schedule', (v) => typeof v === 'string', 'must be a string'],
+  ['enabled', (v) => typeof v === 'boolean', 'must be true or false'],
+  ['teamMemberId', (v) => v === null || (typeof v === 'string' && UUID_RE.test(v)), 'must be an id or null'],
+  ['subjectId', (v) => v === null || (typeof v === 'string' && UUID_RE.test(v)), 'must be an id or null'],
+  ['prompt', (v) => typeof v === 'string', 'must be a string'],
+  ['nextRunAt', (v) => v === null || typeof v === 'string', 'must be an ISO instant or null'],
+];
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
 export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'member',
@@ -1488,11 +1499,30 @@ export class W2EntitiesCommandsTrackingService {
           // entities.create envelope, exactly as a memory is (056 pattern).
           // Same-space containment of teamMemberId/subjectId is enforced in the
           // door, not here — a check on this side would be advisory only.
-          raw = await q.rpc('create_loop', [input.spaceId, input.title, envelope.actorId ?? null,
-            content.schedule ?? null, content.teamMemberId ?? null, content.subjectId ?? null,
-            content.prompt ?? '', JSON.stringify(content.config ?? {}),
-            content.enabled ?? true, content.nextRunAt ?? null,
-            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          // Loops design §3.1: the server computes nextRunAt; a client value is
+          // ignored (logged, not refused) for the UI that still sends one.
+          {
+            const schedule = typeof content.schedule === 'string' ? content.schedule : '';
+            const timezone = typeof content.timezone === 'string' ? content.timezone : 'UTC';
+            const enabled = content.enabled === undefined ? true : content.enabled === true;
+            requireValidSchedule(schedule, timezone);
+            const config = requireSpawnConfig(content.config);
+            if (content.nextRunAt !== undefined) {
+              console.warn(`[tm8:loops] entities.create ignored a client nextRunAt for a loop in space ${input.spaceId}`);
+            }
+            const write = scheduleWrite(null, { schedule, timezone, enabled });
+            const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
+            raw = await q.rpc('create_loop', [input.spaceId, input.title, envelope.actorId ?? null,
+              schedule, content.teamMemberId ?? null, content.subjectId ?? null,
+              content.prompt ?? '', JSON.stringify(config),
+              enabled, write.nextRunAt ?? null,
+              input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null,
+              content.action ?? null, content.toolId ?? null, JSON.stringify(content.toolInputs ?? {}),
+              timezone, content.concurrency ?? 'skip', content.maxRuntimeSeconds ?? null,
+              retry.attempts ?? 0, retry.delaySeconds ?? 300, write.lastError ?? null]);
+            // The same persona rule loops.create applies (coordinator ruling, §2.1).
+            if (raw.entity) await assertToolPersona(q, raw.entity.id);
+          }
           break;
         case 'graph': {
           // Craft P1 (135): SOFT validation by law (R2) — the schema asserts
@@ -1686,16 +1716,66 @@ export class W2EntitiesCommandsTrackingService {
             // `null` MERGES and the explicit `clear*` booleans are the only way
             // to null a column — so an unrelated patch cannot silently
             // unschedule a loop or drop its runner.
-            raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
-              input.title ?? null, content.schedule ?? null,
-              content.teamMemberId ?? null, content.teamMemberId === null,
-              content.subjectId ?? null, content.subjectId === null,
-              content.prompt ?? null,
-              content.config === undefined ? null : JSON.stringify(content.config),
-              content.enabled ?? null,
-              content.nextRunAt ?? null, content.nextRunAt === null,
-              null, null, false,
-              envelope.clientMutationId ?? null]);
+            // Loops design §3.1: nextRunAt is the server's, recomputed from now on
+            // a schedule/timezone change or an enable; a client value is ignored,
+            // except the loop panel's Run now (a nextRunAt of now, LoopControls),
+            // kept as "due at the next tick" until the UI calls loops.runNow.
+            {
+              const current = (await q.query<{
+                schedule: string; timezone: string; enabled: boolean; action: string;
+                nextRunAt: Date | null; lastError: string | null;
+              }>(`select schedule, timezone, enabled, action, next_run_at as "nextRunAt", last_error as "lastError"
+                    from public.loops where entity_id = $1`, [id]))[0];
+              if (!current) throw new CollabError('not_found', `loop ${id} not found`);
+              // A member is forwarded to the door only with its parameter's type:
+              // Postgres would coerce anything else (15 -> '15', 'true' -> true),
+              // around validation and the §3.1 recompute (review 4 of #1406).
+              const mistyped = LOOP_PATCH_TYPES.find(([key, ok]) => content[key] !== undefined && !ok(content[key]));
+              if (mistyped) {
+                throw new CollabError('invalid_input', `content.${mistyped[0]}: ${mistyped[2]}`,
+                  { details: { path: `content.${mistyped[0]}` } });
+              }
+              const after = {
+                schedule: typeof content.schedule === 'string' ? content.schedule : current.schedule,
+                timezone: typeof content.timezone === 'string' ? content.timezone : current.timezone,
+                enabled: typeof content.enabled === 'boolean' ? content.enabled : current.enabled,
+              };
+              // Only what this patch writes is validated: disabling or renaming a
+              // loop whose stored schedule predates validation must still work.
+              if (typeof content.schedule === 'string' || typeof content.timezone === 'string') {
+                requireValidSchedule(after.schedule, after.timezone);
+              }
+              const config = content.config === undefined ? undefined : requireSpawnConfig(content.config);
+              // 091's meaning on this path: a runner is a spawn, no runner is the
+              // dispatcher. A patch that moves the runner and names no action
+              // moves the action with it; a tool loop's runner is its persona.
+              const action = content.action
+                ?? (current.action === 'spawn' && content.teamMemberId === null ? 'dispatch'
+                  : current.action === 'dispatch' && typeof content.teamMemberId === 'string' ? 'spawn' : null);
+              const runNow = isRunNowRequest(content.nextRunAt, { viaLink: Boolean(ctx.identity?.viaLinkId) });
+              if (content.nextRunAt !== undefined && !runNow) {
+                console.warn(`[tm8:loops] entities.patch ignored a client nextRunAt for loop ${id}`);
+              }
+              const write = scheduleWrite(current, after);
+              const nextRunAt = runNow ? new Date().toISOString() : write.nextRunAt;
+              const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
+              raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
+                input.title ?? null, content.schedule ?? null,
+                content.teamMemberId ?? null, content.teamMemberId === null,
+                content.subjectId ?? null, content.subjectId === null,
+                content.prompt ?? null,
+                config === undefined ? null : JSON.stringify(config),
+                content.enabled ?? null,
+                nextRunAt ?? null, nextRunAt === null,
+                null, write.lastError ?? null, write.lastError === null,
+                envelope.clientMutationId ?? null,
+                action, content.toolId ?? null, content.toolId === null,
+                content.toolInputs === undefined ? null : JSON.stringify(content.toolInputs),
+                content.timezone ?? null, null, false, content.concurrency ?? null,
+                content.maxRuntimeSeconds ?? null, content.maxRuntimeSeconds === null,
+                retry.attempts ?? null, retry.delaySeconds ?? null, null]);
+              await assertToolPersona(q, id);
+            }
             break;
           case 'graph': {
             // Craft P1: `null` MERGES (a patch carries only what it changes —

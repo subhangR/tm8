@@ -735,9 +735,11 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // has to produce a whole one rather than falling through to the open
       // `{ kind }` variant below.
       return {
-        kind: 'loop', schedule: state.schedule, enabled: state.enabled,
-        teamMemberId: state.teamMemberId, subjectId: state.subjectId,
-        prompt: '', config: {},
+        kind: 'loop', action: state.action, schedule: state.schedule, timezone: state.timezone,
+        enabled: state.enabled, pausedUntil: state.pausedUntil,
+        teamMemberId: state.teamMemberId, toolId: state.toolId, subjectId: state.subjectId,
+        prompt: '', config: {}, toolInputs: {}, concurrency: 'skip', maxRuntimeSeconds: null,
+        retry: { attempts: 0, delaySeconds: 300 },
         nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
     case 'graph':
