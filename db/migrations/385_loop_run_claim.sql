@@ -2,9 +2,18 @@
 -- 385 — the loop executor CLAIMS a run before it fires it (design 01a182d4
 --       §3.3; task 01a182d5-de68). Loops PR2.
 --
--- Predecessor on this branch: 384_loops_first_class.sql. 379–381 are reserved
--- for the Tools lane and touch none of these objects, so either landing order
--- applies clean.
+-- Predecessor: 384_loops_first_class.sql.
+--
+-- KEPT AT 385 BELOW MAIN'S TOP AT MERGE (387, 388): a deliberate exception to the
+-- PR-cleanup ordinal rule, as 384's is (Loops lead ruling, 2026-10-29). An
+-- upgraded database applies this file after 388 and a fresh one applies it
+-- before 387; both end in the same schema. Checked: 385 only CREATES the eight
+-- functions listed below, none of which exists before it, and replaces or drops
+-- nothing that 387 (claim_text, header_text, rename_work_session), 388
+-- (snapshot_entity_version, start_tool_session, tools_snapshot), 389 (Tools
+-- PR-C: start_tool_session, issue_tool_session_loop_session) or 390 (Tools PR-E:
+-- header_kind_allowed) touches. What it calls at run time (claim_text, the
+-- loops snapshot trigger) resolves to whichever body is live.
 --
 -- WHAT 384 LEFT FOR THIS FILE. 384 added `loop_runs` and one door,
 -- `loop_run_settle` (settle once), and taught 375's due read about pauses. It
@@ -302,10 +311,10 @@ begin
   -- deadlock with a human's save. A row someone else holds is skipped, not
   -- waited for: the holder is deciding this very deadline or editing it, and
   -- the next tick re-reads.
-  -- NO KEY: still excludes a human's save (assert_version takes FOR UPDATE), but
-  -- not the FOR KEY SHARE an FK insert takes (a spawn's session -> loop edge),
-  -- which would turn a Run now during a firing into 'locked' instead of an overlap.
-  perform 1 from public.entities where id = p_loop_id for no key update skip locked;
+  -- FOR UPDATE, not NO KEY UPDATE: the snapshot trigger re-locks this row FOR
+  -- UPDATE, and that upgrade would wait on an edge insert's FOR KEY SHARE while
+  -- the edge's activity touch waits on this claim (a deadlock, reproduced on PG16).
+  perform 1 from public.entities where id = p_loop_id for update skip locked;
   if not found then
     perform 1 from public.entities where id = p_loop_id;
     if not found then

@@ -24,6 +24,8 @@ tm8 tool create url-check --runtime bash \
 
 The spec accepts `inputs`, `help`, `tm8Access` and `timeoutSeconds`; name, runtime, description and source are CLI arguments. Change a definition with `tm8 tool edit <name> --source @file --spec @spec.json --expect-version <version>` after inspecting `tm8 tool show <name>`.
 
+Every definition edit is stored as its own version, even edits seconds apart by the same author; `tm8 entity versions <tool-id>` lists them. A run pins the tool's **execution version**, the stored version at which the source, runtime, inputs, access or timeout last changed, together with the sha256 of the source that ran. That is the `v<N>` in the run header and in run history, and `executionVersion` in `tm8 tool show`. Setting configuration or a secret, or editing only the name, description or help, stores a version but never moves the number runs pin. A stored version is a **definition version** when its execution version equals its own number; a **metadata edit** when its definition differs from the previous version but the execution version is unchanged (name, description or help); otherwise a **configuration write** (config set or unset, secret set or unset), whose definition is identical to the previous version. Version lists and diffs show definition versions by default, labelled `v<execution version>`, and the other rows behind an "all writes" toggle in the UI or `--all` in the CLI. Versions stored before migration 388 may have been folded by the former five-minute debounce, so an older run can name a version with no stored source; readers show "source unavailable" with the run's sha256, which still identifies what ran.
+
 ## Configure inputs and secrets
 
 ```sh
@@ -70,6 +72,10 @@ An agent can run the digest, inspect its output and pass the summary as `slack-n
 Open a tool entity. Its page shows source, inputs, configuration and run history. Edit and save the definition or configure values, then choose **Run**. The dialog is generated from the inputs and prefilled from configured values; secrets are masked. Submitting opens the ordinary session terminal with a tool status chip. The terminal remains usable after exit with no idle auto-close. Close it when finished.
 
 Live terminal output can include a secret printed by a program. The stored tail is redacted. The remaining shell has declared secret variables and tm8 agent identity removed. This environment cleanup is not an OS sandbox: tools run as the node user.
+
+## Run on a schedule
+
+A loop whose action is `tool` runs a tool on its schedule. Choose the tool and its input values when you create the loop, and the persona the run acts as (required when the tool's tm8 access is `read` or `write`). Each firing is an ordinary run in the tool's history, attributed to the loop, with the shell closed on exit. A nonzero exit is a completed run with that code, not a loop failure. A firing the server refuses (stale or renamed inputs, a missing persona, the eight-session cap, an unavailable credential, a failed launch) becomes the loop's last error and the schedule advances. Details are in [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md).
 
 ## Verify locally
 

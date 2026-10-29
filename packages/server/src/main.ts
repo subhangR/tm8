@@ -529,6 +529,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   let mcpEndpointRoute: McpEndpointRoute | undefined;
   // The loop executor port, when this node can fire a loop (see below).
   let loopExecutor: LoopExecutorPort | undefined;
+  // Tools v2 PR-C: also handed to the loop executor below, so a loop can run a tool.
+  let tools: ToolRuntime | undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -537,6 +539,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
+    tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
+      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
+    if (tools && owner) {
+      const o = await owner();
+      await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });
+    }
     /**
      * Loops (design 01a182d4 §3.3): ONE executor port, shared by the scheduler
      * job below and by `loops.runNow` / `loops.runs.stop`, so a manual run
@@ -552,15 +560,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           spawnService: execution.spawnService,
           resolveOwner: owner,
           nodeId: execution.nodeId,
+          // Tools v2 PR-C: the scheduled-run entry point a tool loop fires.
+          ...(tools ? { tools } : {}),
           ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
         })
       : undefined;
-    const tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
-      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
-    if (tools && owner) {
-      const o = await owner();
-      await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });
-    }
     registerFacadeHandlers(registry, {
       ...(tools ? { tools } : {}),
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
