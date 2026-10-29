@@ -93,6 +93,7 @@ import type {
   ExecutionSpawnResult,
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
+  WorkSessionBootState,
   CommandResult,
   ExecutionLiveness,
   ExecutionResumeInput,
@@ -111,6 +112,7 @@ import type {
   SpawnSelection,
 } from '@tm8/contract';
 import { createSpawnLogger } from './spawn-logger.js';
+import { bootPhaseFacts } from './entity-read.js';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -3582,6 +3584,39 @@ function registerHandlers(
    * running `composePrompt` over the stored manifest — would render today's
    * build's output as though it were the text that agent received.
    */
+  /**
+   * execution.bootState (379) — a session's boot from its row: status, boot
+   * phase, ended reason. Read under the caller's claims, so an unreadable
+   * session is a not_found like a missing one. `tm8 session spawn` polls this
+   * while it waits, instead of the full entity detail.
+   */
+  registry.register('execution.bootState', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+    const rows = await db.query<{
+      status: WorkSessionStatus;
+      boot_phase: string | null;
+      boot_phase_at: Date | string | null;
+      ended_reason: string | null;
+    }>(
+      claims,
+      `select ws.status, ws.boot_phase, ws.boot_phase_at, ws.ended_reason
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+        where ws.entity_id = $1 and e.deleted_at is null`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such work session: ${sessionId}`);
+    const state: WorkSessionBootState = {
+      sessionId,
+      status: row.status,
+      ...bootPhaseFacts({ ws_boot_phase: row.boot_phase, ws_boot_phase_at: row.boot_phase_at }),
+      endedReason: row.ended_reason,
+    };
+    return json(state);
+  });
   registry.register('execution.launch', async (ctx) => {
     const owner = await resolveOwner();
     const claims = claimsFor(owner, ctx);

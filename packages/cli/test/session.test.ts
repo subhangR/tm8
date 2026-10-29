@@ -58,6 +58,8 @@ let reply: { status: number; body: unknown } = {
   status: 200,
   body: { data: {}, requestId: 'req_t' },
 };
+/** Per-path answers, for a command that makes more than one request; `reply` otherwise. */
+let route: ((pathname: string) => { status: number; body: unknown } | undefined) | null = null;
 
 beforeAll(async () => {
   server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -72,8 +74,9 @@ beforeAll(async () => {
         body: raw ? (JSON.parse(raw) as unknown) : undefined,
       });
       res.setHeader('content-type', 'application/json');
-      res.statusCode = reply.status;
-      res.end(JSON.stringify(reply.body));
+      const answer = route?.(url.pathname) ?? reply;
+      res.statusCode = answer.status;
+      res.end(JSON.stringify(answer.body));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -89,6 +92,7 @@ afterAll(async () => {
 beforeEach(() => {
   seen = [];
   reply = { status: 200, body: { data: {}, requestId: 'req_t' } };
+  route = null;
 });
 
 // `TM8_*` is read by the REAL context resolver, so a leaked variable from
@@ -511,6 +515,64 @@ describe('session spawn', () => {
     expect(r.code).toBe(0);
     // The id a follow-up `session attach`/`terminate` needs is never dropped.
     expect(r.stdout).toContain(SESSION);
+  });
+});
+
+// ── session spawn: following an admitted launch (379) ──────────────────────
+
+describe('session spawn waits for the session it was answered at admission for', () => {
+  const ok = (data: unknown, status = 200) => ({ status, body: { data, requestId: 'req_t' } });
+  const admitted = { entity: { id: SESSION, kind: 'work_session', state: { kind: 'work_session', status: 'spawning', bootPhase: 'admitted' } }, patches: [] };
+  /** Answers `execution.bootState` with each state in turn, then the last forever. */
+  function boots(states: Array<Record<string, unknown>>): void {
+    let next = 0;
+    route = (pathname) => {
+      if (pathname === bindPath('execution.spawn', {})) return ok(admitted, 201);
+      if (pathname === bindPath('execution.bootState', { workSessionId: SESSION })) {
+        const state = states[Math.min(next, states.length - 1)];
+        next += 1;
+        return ok({ sessionId: SESSION, endedReason: null, ...state });
+      }
+      if (pathname === bindPath('entities.get', { id: SESSION })) {
+        return ok({ id: SESSION, kind: 'work_session', state: { kind: 'work_session', status: 'running', bootPhase: 'live' } });
+      }
+      return undefined;
+    };
+  }
+
+  it('prints each phase as it is reached and answers once the session runs', async () => {
+    boots([
+      { status: 'spawning', bootPhase: 'lane' },
+      { status: 'spawning', bootPhase: 'agent' },
+      { status: 'running', bootPhase: 'live' },
+    ]);
+    const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
+    expect(r.code).toBe(0);
+    for (const phase of ['admitted', 'lane', 'agent', 'live']) expect(r.stderr).toContain(`session ${SESSION}: ${phase}`);
+    expect(r.stdout).toContain(SESSION);
+    // Polled with the one-row boot read; the detail is read once, at the end.
+    expect(seen.filter((s) => s.pathname === bindPath('entities.get', { id: SESSION }))).toHaveLength(1);
+  });
+
+  it('a session that ended after a live boot STARTED: exit 0, no retry advice', async () => {
+    boots([{ status: 'exited', bootPhase: 'live', endedReason: 'The process ended by itself (exit code 0).' }]);
+    const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).not.toContain('new --mutation-id');
+  });
+
+  it('a boot that failed exits 6 with the reason the row records', async () => {
+    boots([{ status: 'failed', bootPhase: 'failed', endedReason: 'Failed to launch: agent CLI not found' }]);
+    const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
+    expect(r.code).toBe(6);
+    expect(r.stderr).toContain('Failed to launch: agent CLI not found');
+  });
+
+  it('--no-wait answers at admission and reads nothing more', async () => {
+    boots([{ status: 'running', bootPhase: 'live' }]);
+    const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--no-wait']);
+    expect(r.code).toBe(0);
+    expect(seen.map((s) => s.pathname)).toEqual([bindPath('execution.spawn', {})]);
   });
 });
 

@@ -57,6 +57,8 @@ import {
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionTranscriptPage,
+  type WorkSessionBootPhase,
+  type WorkSessionBootState,
 } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, spawnPostureText, spawnedWorktreeId, successReceipt } from '../receipt.js';
@@ -590,40 +592,64 @@ const SPAWN_POLL_MS = 400;
  */
 async function awaitSpawnedSession(cmd: CommandContext, admitted: unknown): Promise<unknown> {
   const result = isRecord(admitted) ? admitted : {};
-  let entity = isRecord(result.entity) ? result.entity : undefined;
+  const entity = isRecord(result.entity) ? result.entity : undefined;
   const sessionId = typeof entity?.id === 'string' ? entity.id : undefined;
   if (entity === undefined || sessionId === undefined) return admitted;
+  const first = isRecord(entity.state) ? entity.state : {};
+  // Only an ADMITTED answer (the session still `spawning`) has a boot to
+  // follow; a server that predates admission answered once the session ran.
+  if (first.status !== 'spawning') return admitted;
+
+  // Polled with the one-row boot read, not the entity detail: the detail is
+  // the read the admission itself pays for, and a dozen waiting CLIs re-reading
+  // it every poll would slow the very launches they wait on.
   const deadline = Date.now() + SPAWN_WAIT_MS;
+  let state: WorkSessionBootState = {
+    sessionId,
+    status: (typeof first.status === 'string' ? first.status : 'spawning') as WorkSessionBootState['status'],
+    ...(typeof first.bootPhase === 'string' ? { bootPhase: first.bootPhase as WorkSessionBootPhase } : {}),
+    endedReason: typeof first.endedReason === 'string' ? first.endedReason : null,
+  };
   let shown: string | undefined;
   for (;;) {
-    const state = isRecord(entity.state) ? entity.state : {};
-    const status = typeof state.status === 'string' ? state.status : undefined;
-    const phase = typeof state.bootPhase === 'string' ? state.bootPhase : undefined;
-    if (phase !== undefined && phase !== shown) {
-      cmd.out.note(`session ${sessionId}: ${phase}`);
-      shown = phase;
+    if (state.bootPhase !== undefined && state.bootPhase !== shown) {
+      cmd.out.note(`session ${sessionId}: ${state.bootPhase}`);
+      shown = state.bootPhase;
     }
-    if (status === 'running' || status === 'idle') break;
-    if (status === 'failed' || status === 'exited' || phase === 'failed') {
-      const reason = typeof state.endedReason === 'string' ? state.endedReason : `its boot ended ${status ?? 'failed'}`;
-      throw new CliError(`session ${sessionId} did not start: ${reason}`, EXIT_CONFLICT, {
+    // Started. A session that already ENDED after a live boot (a short task, a
+    // replay of a launch that ran, a stop once it was up) started too: telling
+    // the person to launch again would make a duplicate.
+    if (state.status === 'running' || state.status === 'idle' || state.bootPhase === 'live') break;
+    if (state.status === 'failed' || state.bootPhase === 'failed') {
+      throw new CliError(`session ${sessionId} did not start: ${state.endedReason ?? 'its boot failed'}`, EXIT_CONFLICT, {
         hint: `the reason is on the session (tm8 entity context ${sessionId}); retry with a new --mutation-id`,
+      });
+    }
+    if (state.status === 'exited') {
+      // Ended before it reported live, on a row without boot phases: it was
+      // stopped while starting, not refused. Nothing to retry automatically.
+      throw new CliError(`session ${sessionId} was stopped before it finished starting`, EXIT_CONFLICT, {
+        hint: `tm8 entity context ${sessionId}`,
       });
     }
     if (Date.now() >= deadline) {
       throw new CliError(
-        `session ${sessionId} is still starting (${phase ?? status ?? 'unknown'}) after ${String(SPAWN_WAIT_MS / 1000)}s`,
+        `session ${sessionId} is still starting (${state.bootPhase ?? state.status}) after ${String(SPAWN_WAIT_MS / 1000)}s`,
         EXIT_WAIT_TIMEOUT,
         { hint: `it keeps booting on the server; follow it with tm8 entity context ${sessionId}` },
       );
     }
     await new Promise((resolve) => setTimeout(resolve, SPAWN_POLL_MS));
-    const read = await clientFor(cmd.ctx).invoke<unknown>('entities.get', { params: { id: sessionId } });
-    if (isRecord(read)) entity = read;
+    state = await clientFor(cmd.ctx).invoke<WorkSessionBootState>('execution.bootState', {
+      params: { workSessionId: sessionId },
+    });
   }
-  if (entity === result.entity && result.launch !== undefined) return admitted;
-  const launch = result.launch ?? (await bootedLaunchReceipt(cmd, sessionId));
-  return { ...result, entity, ...(launch === undefined ? {} : { launch }) };
+  // Once, at the end: the session as it now is, and its posture receipt.
+  const [fresh, launch] = await Promise.all([
+    clientFor(cmd.ctx).invoke<unknown>('entities.get', { params: { id: sessionId } }).catch(() => entity),
+    result.launch !== undefined ? Promise.resolve(result.launch) : bootedLaunchReceipt(cmd, sessionId),
+  ]);
+  return { ...result, entity: isRecord(fresh) ? fresh : entity, ...(launch === undefined ? {} : { launch }) };
 }
 
 /** The posture receipt of a booted session, from its launch record. Best effort: absent is honest. */

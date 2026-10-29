@@ -420,6 +420,10 @@ function throwIfStopped(stopped: SpawnError | null): void {
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
 
+/** How long `prompt` waits for the PTY of a session still booting here before refusing. */
+const PROMPT_BOOT_WAIT_MS = 30_000;
+const PROMPT_BOOT_POLL_MS = 50;
+
 /** The longest a boot waits for its caller's answer (`AdmitOptions.bootAfter`) before it starts anyway. */
 const BOOT_AFTER_MAX_WAIT_MS = 2_000;
 
@@ -746,6 +750,13 @@ export class SpawnService {
    * row's age.
    */
   private readonly bootingWorktrees = new Set<string>();
+
+  /**
+   * Sessions this process admitted whose boot has not ended. `prompt` waits on
+   * these for their PTY instead of refusing: `execution.spawn` answers at
+   * admission, and a caller that prompts right after it must keep working.
+   */
+  private readonly bootingSessions = new Set<string>();
 
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
@@ -2004,9 +2015,13 @@ export class SpawnService {
     // A projectless scratch session's directory is named for the session, which
     // only exists now. A worktree's path needed no session id — it was computed
     // from an id generated before any write — so it is simply the reserved
-    // path, and the row above persisted this exact string (G3.6).
+    // path, and the row above persisted this exact string (G3.6). A REPLAY's
+    // worktree is the original launch's, whose path only its row knows: this
+    // call's reservation was just abandoned and will never be created.
     const cwd = worktree
-      ? worktree.path
+      ? replayed
+        ? await this.recordedWorkdirPath(auth, sessionId, worktree.path)
+        : worktree.path
       : context.project
         ? workdir.path
         : join(this.dataDir, 'scratch', sessionId);
@@ -2016,6 +2031,7 @@ export class SpawnService {
       // moment the row exists: a boot can fail, or its PTY exit, at any point
       // after this.
       this.sessionAuth.set(sessionId, auth);
+      this.bootingSessions.add(sessionId);
     }
 
     return {
@@ -2147,7 +2163,9 @@ export class SpawnService {
               this.graph.recordNativeSessionId(auth, sessionId, admitted.nativeSessionId as string))
           : Promise.resolve(true),
       ]);
-      const lanePhase = this.reportBootPhase(auth, sessionId, 'lane');
+      // Awaited before the briefing's first write (MCP binding rows, the
+      // credential home): a session stopped during its lane phase gets none.
+      throwIfStopped(await this.reportBootPhase(auth, sessionId, 'lane'));
 
       // --- briefing -----------------------------------------------------------
       // The MCP bind and the credentials both need the token and are otherwise
@@ -2176,7 +2194,6 @@ export class SpawnService {
           agentToken,
         )),
       ]);
-      throwIfStopped(await lanePhase);
       if (mcpSelections !== undefined) launch.mcpSelections = mcpSelections;
       // The RESOLVED sources: auto that landed on the space is recorded as
       // `space` with its id, which is what 206's manifest writer turns into
@@ -2509,6 +2526,7 @@ export class SpawnService {
       return { ok: false, error };
     } finally {
       if (worktree) this.bootingWorktrees.delete(worktree.worktreeId);
+      this.bootingSessions.delete(sessionId);
     }
   }
 
@@ -2526,25 +2544,21 @@ export class SpawnService {
   private async prepareLane(auth: GraphAuth, admitted: AdmittedLaunch, onLeased: () => void): Promise<void> {
     const { sessionId, worktree, workdir, context, cwd } = admitted;
     if (worktree) {
-      await allOrFirstFailure([
-        (async () => {
-          await this.materializeWorktreeFor(auth, admitted, worktree);
-          await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
-          onLeased();
-          await this.graph.linkSessionToWorktree(auth, {
-            spaceId: context.spaceId,
-            sessionId,
-            worktreeId: worktree.worktreeId,
-          });
-          await this.graph.setWorktreeAllocationState(auth, {
-            worktreeId: worktree.worktreeId,
-            state: 'ready',
-          });
-        })(),
-        // Worktree mode knows its branch without a probe — the reservation
-        // named it.
-        this.captureCheckoutBranch(auth, sessionId, worktree.branch),
-      ]);
+      await this.materializeWorktreeFor(auth, admitted, worktree);
+      // Only a checkout that exists has a branch to claim; the reservation
+      // named it, so no probe.
+      await this.captureCheckoutBranch(auth, sessionId, worktree.branch);
+      await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
+      onLeased();
+      await this.graph.linkSessionToWorktree(auth, {
+        spaceId: context.spaceId,
+        sessionId,
+        worktreeId: worktree.worktreeId,
+      });
+      await this.graph.setWorktreeAllocationState(auth, {
+        worktreeId: worktree.worktreeId,
+        state: 'ready',
+      });
       return;
     }
     if (workdir.mode === 'project') {
@@ -2638,6 +2652,23 @@ export class SpawnService {
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
+    }
+  }
+
+  /**
+   * The workdir path a session's row records, for a replay that must answer
+   * with the ORIGINAL launch's checkout. A row that cannot be read keeps the
+   * replay answering — it boots nothing either way — with what this call has.
+   */
+  private async recordedWorkdirPath(auth: GraphAuth, sessionId: string, fallback: string): Promise<string> {
+    try {
+      return (await this.graph.loadWorkSessionForResume(auth, sessionId)).workdirPath ?? fallback;
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read a replayed session\'s workdir path', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
     }
   }
 
@@ -3764,7 +3795,7 @@ export class SpawnService {
     if (!message || message.length === 0) {
       throw new SpawnError('prompt message must not be empty', 'invalid_input');
     }
-    if (!this.pty.hasSession(sessionId)) {
+    if (!this.pty.hasSession(sessionId) && !(await this.awaitBootedTerminal(sessionId))) {
       throw new SpawnError(
         `work session ${sessionId} has no live terminal to prompt`,
         'conflict',
@@ -3789,6 +3820,21 @@ export class SpawnService {
     }
 
     return { delivered: true, commandResult };
+  }
+
+  /**
+   * Wait, bounded, for the PTY of a session whose boot this process is running
+   * (379: `execution.spawn` answers before it exists). True once the terminal
+   * is live; false at once for a session that is not booting here, and false
+   * when its boot ends without one or the bound passes.
+   */
+  private async awaitBootedTerminal(sessionId: string): Promise<boolean> {
+    const deadline = Date.now() + PROMPT_BOOT_WAIT_MS;
+    while (this.bootingSessions.has(sessionId) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, PROMPT_BOOT_POLL_MS));
+      if (this.pty.hasSession(sessionId)) return true;
+    }
+    return this.pty.hasSession(sessionId);
   }
 
   /**

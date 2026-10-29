@@ -3202,6 +3202,19 @@ const ROWS: Record<OperationName, Row> = {
       'through a space link (`--space <alias>` from a session) only a session that link spawned as you is readable; any other answers `space_link_refused` (session_body)',
     ],
   },
+  'execution.bootState': {
+    // No command of its own: `tm8 session spawn` polls it while it waits for
+    // the session it was answered at admission for (379).
+    cmd: null,
+    sum: "Read how far a session's boot has got: status, boot phase and when it was reached, and why it ended",
+    authz: 'entity',
+    input: 'none',
+    tags: ['launch', 'spawn', 'boot', 'session', 'status'],
+    notes: [
+      'bootPhase: admitted → lane → briefing → agent → live, or failed; absent on a session from before boot phases',
+      'NO CLI COMMAND of its own: `tm8 session spawn` reads it while it waits; `tm8 entity context <session-id>` shows the same bootPhase',
+    ],
+  },
   'execution.launch': {
     cmd: ['session', 'launch'],
     syn: 'tm8 session launch <work-session-id>',

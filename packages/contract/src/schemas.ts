@@ -179,7 +179,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionBootState, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -4555,6 +4555,14 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
  * its interior would make this read fail closed on exactly the sessions a
  * debug surface most needs to explain. The envelope around it is strict.
  */
+export const WorkSessionBootStateSchema: z.ZodType<WorkSessionBootState> = z.object({
+  sessionId: EntityIdSchema,
+  status: WorkSessionStatusSchema,
+  bootPhase: WorkSessionBootPhaseSchema.optional(),
+  bootPhaseAt: z.string().optional(),
+  endedReason: z.string().nullable(),
+}).strict();
+
 export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),

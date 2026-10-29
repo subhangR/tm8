@@ -152,6 +152,46 @@ describe('SpawnService.admit — answer at admission, boot behind it', () => {
     expect(graph.bootPhaseReports.map((r) => r.bootPhase)).toEqual(['lane']);
   });
 
+  it('a session stopped between its agent report and `running` has its process killed', async () => {
+    graph.refuseBootPhase = 'agent';
+
+    const { boot } = await service.admit(AUTH, REQUEST);
+    const outcome = await boot;
+
+    expect(outcome.ok).toBe(false);
+    expect(spawnIfAbsent).toHaveBeenCalledTimes(1);
+    expect(kill).toHaveBeenCalledWith(SESSION_ID);
+    expect(graph.transitions.filter((t) => t.status === 'running')).toEqual([]);
+  });
+
+  it('a prompt sent while the session boots waits for its terminal instead of refusing', async () => {
+    let live = false;
+    spawnIfAbsent.mockImplementation(() => { live = true; return { reused: false } as never; });
+    vi.spyOn(pty, 'hasSession').mockImplementation(() => live);
+    const deliver = vi.spyOn(pty, 'deliverPrompt').mockResolvedValue(true);
+    const held = gate();
+    const record = graph.recordManifest.bind(graph);
+    vi.spyOn(graph, 'recordManifest').mockImplementation(async (...args) => {
+      await held.opened;
+      return record(...args);
+    });
+
+    const { boot } = await service.admit(AUTH, REQUEST);
+    const prompted = service.prompt(AUTH, SESSION_ID, 'hello');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(deliver).not.toHaveBeenCalled();
+
+    held.open();
+    await expect(prompted).resolves.toMatchObject({ delivered: true });
+    expect(deliver).toHaveBeenCalledWith(SESSION_ID, 'hello', 'send');
+    expect((await boot).ok).toBe(true);
+  });
+
+  it('a prompt to a session that is not booting here still refuses at once', async () => {
+    await expect(service.prompt(AUTH, '66666666-6666-4666-8666-666666666666', 'hello'))
+      .rejects.toMatchObject({ code: 'conflict' });
+  });
+
   describe('a ledger replay of the same launch boots nothing, in every phase', () => {
     async function replayWhileHeld(hold: (released: Promise<void>) => void): Promise<void> {
       const held = gate();
@@ -293,5 +333,40 @@ describe('SpawnService.admit — a worktree launch', () => {
     const allocations = [...graph.worktreeAllocations.values()];
     expect(allocations.map((a) => a.state).sort()).toEqual(['failed', 'ready']);
     expect(allocations.find((a) => a.state === 'failed')?.failureCode).toBe('spawn_replayed');
+  });
+
+  it('a session stopped during its lane phase gets no briefing and no process, and its lease is released', async () => {
+    graph.refuseBootPhase = 'lane';
+    const spawned = vi.spyOn(PtyHostService.prototype, 'spawnIfAbsent');
+
+    const { boot } = await service.admit(AUTH, WORKTREE_REQUEST);
+    const outcome = await boot;
+
+    expect(outcome.ok).toBe(false);
+    expect(graph.worktreeCalls.map((c) => c.call)).toContain('unlease');
+    expect(graph.manifests).toEqual([]);
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  it('records no branch for a checkout that was never made', async () => {
+    graph.failWorktreeEntity = new Error('create_worktree refused');
+
+    const outcome = await (await service.admit(AUTH, WORKTREE_REQUEST)).boot;
+
+    expect(outcome.ok).toBe(false);
+    expect(graph.checkoutBranches).toEqual([]);
+  });
+
+  it('a worktree replay answers with the ORIGINAL launch\'s path, read from its row', async () => {
+    const original = await service.spawn(AUTH, WORKTREE_REQUEST);
+    graph.resumeInfo = { sessionId: SESSION_ID, workdirPath: original.cwd } as never;
+    graph.replaySessionId = SESSION_ID;
+
+    const replay = await service.admit(AUTH, WORKTREE_REQUEST);
+
+    expect(replay.admission.cwd).toBe(original.cwd);
+    const outcome = await replay.boot;
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.result.manifest.session.workingDirectory).toBe(original.cwd);
   });
 });

@@ -6517,8 +6517,12 @@ export interface ExecutionSpawnResult extends CommandResult {
   createdTaskId?: EntityId;
   /**
    * What the new session actually launched with — the RESOLVED posture, not
-   * an echo of the request, which may name none of it. Absent from a server
-   * that predates it.
+   * an echo of the request, which may name none of it. ABSENT AT ADMISSION
+   * (379): `execution.spawn` answers before the boot resolves the credentials,
+   * so a current server never carries it here. Read it from `execution.launch`
+   * (`SessionLaunchRecord.launch`) once the session's manifest is recorded —
+   * by the time it is `running`. Only a server older than admission answers
+   * with it.
    */
   launch?: ExecutionSpawnLaunch;
   /** Where this request's time went, phase by phase. Absent from a server that predates it. */
@@ -7627,6 +7631,19 @@ export interface SessionLaunchRecord {
    * recorded, and on a manifest that predates the access-mode source.
    */
   launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * `execution.bootState` (379): how far a session's boot has got, read from its
+ * row. `bootPhase`/`bootPhaseAt` are absent on a row written before boot
+ * phases; `endedReason` says why a session that ended, ended.
+ */
+export interface WorkSessionBootState {
+  sessionId: EntityId;
+  status: WorkSessionStatus;
+  bootPhase?: WorkSessionBootPhase;
+  bootPhaseAt?: string;
+  endedReason: string | null;
 }
 
 /** What an entity was in the launch. */
