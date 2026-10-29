@@ -95,12 +95,18 @@ describe('tool exit capture on real PTYs', () => {
     const tail = run.recordExit.mock.calls[0]![0].outputTail;
     expect(tail).not.toContain('ordinary-secret-value'); expect(tail).not.toContain('tm8s_secret_run_token');
     expect(tail).toContain('[credential-redacted]'); expect(run.revokeToken).toHaveBeenCalledTimes(1);
+    expect(tail.split('── demo-tool v3 exited 7 in ').length - 1).toBe(1); // the footer, once
     expect(run.host.hasSession(run.sessionId)).toBe(false);
   });
   it('leaves a usable shell after exit with secrets, token and agent-context marker absent', async () => {
     const run = await launch('printf "done\\n"', true, { secret: 'shell-secret' });
     await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
     expect(run.host.hasSession(run.sessionId)).toBe(true);
+    // A keep-open run settles while the PTY is live: the stored tail still ends with the footer, each byte once.
+    const tail = run.recordExit.mock.calls[0]![0].outputTail;
+    expect(tail.split('done\r\n').length - 1).toBe(1);
+    expect(tail.split('── demo-tool v3 exited 0 in ').length - 1).toBe(1);
+    expect(tail).toMatch(/── demo-tool v3 exited 0 in \ds ── \(shell is still open; exit to close\)\r\n$/);
     run.host.write(run.sessionId, 'printf "CLEAN:%s:%s:%s:%s:%s\\n" "${KEY-unset}" "${TM8_AGENT_TOKEN-unset}" "${TM8_SESSION_ID-unset}" "$TM8_CREDENTIALS_MODE" "${DATABASE_URL-unset}"\r');
     await vi.waitFor(() => expect(run.host.getReplay(run.sessionId, -1)?.data.toString()).toContain('CLEAN:unset:unset:unset:off:unset'), { timeout: 15000 });
     expect(run.recordExit).toHaveBeenCalledTimes(1);
