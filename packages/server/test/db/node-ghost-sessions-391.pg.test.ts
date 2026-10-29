@@ -1,5 +1,5 @@
 /**
- * 378 against a real Postgres: a node retires its ghost sessions in EVERY
+ * 391 against a real Postgres: a node retires its ghost sessions in EVERY
  * space, and the cap and the ghost read agree on what "live" means.
  *
  * The defect (prod, 2026-10-28): boot reconciliation and the lost-session
@@ -45,7 +45,7 @@ let mine: SpaceFixture;
 /** A space the node owner is NOT a member of. */
 let theirs: SpaceFixture;
 let unique = 0;
-const cmid = (label: string): string => `ghost-378-${label}-${(unique += 1)}`;
+const cmid = (label: string): string => `ghost-391-${label}-${(unique += 1)}`;
 
 async function seedSpace(db: W1ScratchDatabase, identityId: string, name: string): Promise<SpaceFixture> {
   return db.transaction(async (client) => {
@@ -91,7 +91,7 @@ async function asApp<T>(fn: (q: Q) => Promise<T>, identityId: string, nodeAdmin:
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-378',true),
+              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-391',true),
               set_config('tm8.work_session_id','',true)`,
       [identityId, nodeAdmin ? 'true' : 'false'],
     );
@@ -196,22 +196,22 @@ const capRows = async (node: string): Promise<string[]> =>
   ).map((r) => String(r.entity_id));
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('ghost-378');
+  database = await createW1ScratchDatabase('ghost-391');
   database.apply(migrationFiles());
-  mine = await seedSpace(database, 'ghost-378-node-owner', 'Owner space');
-  theirs = await seedSpace(database, 'ghost-378-other-member', 'Someone else');
+  mine = await seedSpace(database, 'ghost-391-node-owner', 'Owner space');
+  theirs = await seedSpace(database, 'ghost-391-other-member', 'Someone else');
 });
 
 afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('378 — node ghost sessions', () => {
+describe('391 — node ghost sessions', () => {
   it('reproduction: the RLS-scoped candidate read misses a ghost in a space the node owner is not in', async () => {
     const own = await spawnRunning(mine);
     const foreign = await spawnRunning(theirs);
 
-    // The pre-378 `DbGraphPort.listNodeActiveSessions` SQL, verbatim, as the node.
+    // The pre-391 `DbGraphPort.listNodeActiveSessions` SQL, verbatim, as the node.
     const old = await asNode((q) =>
       q(
         `select ws.entity_id from public.work_sessions ws join public.entities e on e.id = ws.entity_id
@@ -223,7 +223,7 @@ describe('378 — node ghost sessions', () => {
     expect(oldIds).toContain(own);
     expect(oldIds).not.toContain(foreign);
 
-    // ...and the pre-378 write is refused for it.
+    // ...and the pre-391 write is refused for it.
     await expect(
       asNode((q) =>
         q(`select public.work_session_transition($1,'failed',null,'x',null,$2,'lost','x')`, [foreign, cmid('old')]),
@@ -283,7 +283,7 @@ describe('378 — node ghost sessions', () => {
     // An identity with no membership anywhere and no node-admin claim.
     await expect(
       asApp((q) => q(`select public.node_record_work_session_ending($1,$2,'failed','lost','r','e')`, [NODE, foreign]),
-        'ghost-378-stranger', false),
+        'ghost-391-stranger', false),
     ).rejects.toMatchObject({ code: '42501' });
     await expect(
       asApp((q) => q(`select public.node_record_work_session_usage($1,$2,'{}'::jsonb,'codex_rollout')`, [NODE, foreign]),
@@ -353,7 +353,7 @@ describe('378 — node ghost sessions', () => {
     await expect(
       asApp((q) => q(`select * from public.node_completed_sessions_to_close($1)`, [NODE]), theirs.identityId, false),
     ).rejects.toMatchObject({ code: '42501' });
-    // Deploy window: the pre-378 read survives as a wrapper over the same rule,
+    // Deploy window: the pre-391 read survives as a wrapper over the same rule,
     // still member-filtered — the space's member sees it, the node owner does not.
     const old = (identity: string) =>
       asApp((q) => q(`select session_id from public.completed_sessions_to_close($1)`, [NODE]), identity, false)

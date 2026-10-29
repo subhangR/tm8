@@ -1,5 +1,5 @@
 /**
- * 378: boot reconciliation and the lost-session reaper reach ghosts in EVERY
+ * 391: boot reconciliation and the lost-session reaper reach ghosts in EVERY
  * space, through the node doors (`listNodeLiveSessions`,
  * `recordNodeSessionEnding`), never the member door.
  *
@@ -7,7 +7,7 @@
  * only, so the member write (`transition`, which `terminate` uses) refuses B's
  * session with the error prod printed. Reconciliation and the reaper must not
  * touch that door at all; the SQL side of the doors is pinned by
- * packages/server/test/db/node-ghost-sessions-378.pg.test.ts.
+ * packages/server/test/db/node-ghost-sessions-391.pg.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +44,7 @@ class TwoSpaceGraph extends FakeGraph {
   }
 }
 
-describe('node ghost doors (378)', () => {
+describe('node ghost doors (391)', () => {
   let graph: TwoSpaceGraph;
   let pty: PtyHostService;
   let service: SpawnService;
@@ -91,6 +91,22 @@ describe('node ghost doors (378)', () => {
       ['ghost-b', 'lost'],
     ]);
     expect(graph.nodeEndings[0]!.endedReason).toMatch(/gone for 10 minutes/);
+  });
+
+  it('the reaper re-asks for a live PTY per session, just before its kill', async () => {
+    await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: 0 });
+    // While ghost-a's ending is written, ghost-b is resumed on this node: its
+    // new PTY must not be killed by the rest of this pass.
+    const write = graph.recordNodeSessionEnding.bind(graph);
+    graph.recordNodeSessionEnding = async (auth, input) => {
+      if (input.sessionId === 'ghost-a') pty.spawn({ sessionId: 'ghost-b', command: 'sleep 5', cwd: '/tmp', env: {} });
+      return write(auth, input);
+    };
+    const report = await service.reapLostSessions(AUTH, { staleAfterMs: TEN_MIN, now: TEN_MIN });
+    expect(report).toMatchObject({ retired: 1, notRecorded: 0, errors: [] });
+    expect(graph.nodeEndings.map((w) => w.sessionId)).toEqual(['ghost-a']);
+    expect(pty.hasSession('ghost-b')).toBe(true);
+    pty.kill('ghost-b', true);
   });
 
   it('does not count a row whose own exit won the race, nor one with a live PTY', async () => {

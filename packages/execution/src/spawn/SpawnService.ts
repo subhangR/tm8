@@ -468,11 +468,6 @@ async function isDirectory(path: string): Promise<boolean> {
  */
 const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
 
-/**
- * Writes one ending through a door (`memberEnding` or `nodeEnding`) and
- * resolves whether it was recorded. `killThenRecordEnding` calls it after the
- * kill, so every ending — operator, containment, node job — has one path.
- */
 /** One ending a node job records: what `sweepNodeEndings` hands to the node door. */
 type NodeEnding = {
   status: 'exited' | 'failed';
@@ -481,6 +476,11 @@ type NodeEnding = {
   endedReason: string;
 };
 
+/**
+ * Writes one ending through a door (`memberEnding` or `nodeEnding`) and
+ * resolves whether it was recorded. `killThenRecordEnding` calls it after the
+ * kill, so every ending — operator, containment, node job — has one path.
+ */
 type EndingWriter<K extends WorkSessionEndedKind> = (ending: {
   status: 'exited' | 'failed';
   error: string;
@@ -3694,7 +3694,7 @@ export class SpawnService {
   }
 
   /**
-   * The NODE DOOR for an ending (378): `recordNodeSessionEnding`, which every
+   * The NODE DOOR for an ending (391): `recordNodeSessionEnding`, which every
    * node job uses because the node's background identity is not a member of
    * every space it hosts. The usage instrument follows through the node's own
    * usage door, from the facts the ending returned. A row whose process was no
@@ -3817,7 +3817,7 @@ export class SpawnService {
    * running provably has no PTY. Rows belonging to other nodes are left alone —
    * they may be perfectly alive over there.
    *
-   * IN EVERY SPACE (378). Candidates and the write go through the node doors
+   * IN EVERY SPACE (391). Candidates and the write go through the node doors
    * (`listNodeLiveSessions`, then `killThenRecordEnding` with `nodeEnding`), so
    * a ghost in a space this node's identity is not a member of is retired like
    * any other, by the same definition of live the concurrency cap counts.
@@ -3920,7 +3920,7 @@ export class SpawnService {
   }
 
   /**
-   * THE ONE LOOP every node job ends sessions with (378): each item through
+   * THE ONE LOOP every node job ends sessions with (391): each item through
    * `killThenRecordEnding` and the node door, tallied into one report.
    *
    * - recorded → `retired`;
@@ -3928,13 +3928,16 @@ export class SpawnService {
    *   live on this node) → `notRecorded`;
    * - the kill itself failed (`outcome: 'error'`, not ESRCH) → an ERROR: the
    *   process may still be running, so it is never counted as benign;
-   * - anything thrown → an error, COLLECTED and logged. Before 378 a door
+   * - anything thrown → an error, COLLECTED and logged. Before 391 a door
    *   refusal fired here for every row outside the owner's spaces and the
    *   caller saw only `0`, indistinguishable from a clean pass.
    *
    * `onAnswered` runs for every item the door answered (recorded or not), so
-   * the reaper can forget its first sighting. `candidates` is the item count;
-   * a job that saw more than it ends this pass overrides it.
+   * the reaper can forget its first sighting. `stillDue`, when given, is asked
+   * per item just before its kill: the reaper's candidates can come back to
+   * life (a resume) while earlier items are written, and the kill would end a
+   * live PTY. `candidates` is the item count; a job that saw more than it ends
+   * this pass overrides it.
    */
   private async sweepNodeEndings(
     auth: GraphAuth,
@@ -3942,10 +3945,12 @@ export class SpawnService {
     job: string,
     items: ReadonlyArray<{ sessionId: string; ending: NodeEnding }>,
     onAnswered?: (sessionId: string) => void,
+    stillDue?: (sessionId: string) => boolean,
   ): Promise<NodeEndingSweepReport> {
     const report = emptySweep();
     report.candidates = items.length;
     for (const { sessionId, ending } of items) {
+      if (stillDue && !stillDue(sessionId)) continue;
       try {
         const { outcome, recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
           onNotFound: 'record',
@@ -4017,14 +4022,15 @@ export class SpawnService {
       const lost = lostEnding(now - first);
       due.push({ sessionId, ending: { status: 'failed', error: lost.reason, endedKind: lost.endedKind, endedReason: lost.endedReason } });
     }
-    // Re-asked just before the writes: a resume may have brought a session
+    // Re-asked just before each kill: a resume may have brought a session
     // back since the read, and a session with a live PTY here is not lost.
     const report = await this.sweepNodeEndings(
       auth,
       nodeId,
       'the lost-session reaper',
-      due.filter(({ sessionId }) => !this.pty.hasSession(sessionId)),
+      due,
       (sessionId) => { this.ghostFirstSeen.delete(sessionId); },
+      (sessionId) => !this.pty.hasSession(sessionId),
     );
     // `candidates` is every ghost seen on this look, including those still
     // inside the window: a tick that sees ghosts and ends none says so.
@@ -4054,7 +4060,7 @@ export class SpawnService {
    * already done, so the ending is `exited_clean` and the outcome is
    * untouched. NEVER THROWS.
    *
-   * Through the NODE DOOR (378), like reconciliation and the reaper: the
+   * Through the NODE DOOR (391), like reconciliation and the reaper: the
    * listing is node-wide, and the member door refused the node's identity
    * for every completed session outside its own spaces, every tick.
    */

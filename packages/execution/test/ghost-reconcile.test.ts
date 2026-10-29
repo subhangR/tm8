@@ -49,9 +49,9 @@ describe('startup ghost reconciliation', () => {
 
     expect(retired).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
-    // 378: through the node door, in any space. Its durable record is the
+    // 391: through the node door, in any space. Its durable record is the
     // `session.process_changed` event naming `endedByNode` (pinned in
-    // node-ghost-sessions-378.pg.test.ts); no member-door
+    // node-ghost-sessions-391.pg.test.ts); no member-door
     // `execution.terminate` command is asked for.
     expect(graph.nodeEndings).toMatchObject([
       { sessionId: 'ghost-1', status: 'failed', error: expect.stringMatching(/retired at node startup/) },
@@ -119,7 +119,7 @@ describe('startup ghost reconciliation', () => {
     ];
 
     // The swept one is still swept, AND the one that refused is now named.
-    // Before 378 this was the production case: on a node whose owner is not a
+    // Before 391 this was the production case: on a node whose owner is not a
     // member of the session's space EVERY retirement refused, and the caller
     // saw only `0` — indistinguishable from a clean boot.
     const partial = await service.reconcileNodeGhosts(AUTH);

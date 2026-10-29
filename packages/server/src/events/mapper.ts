@@ -587,7 +587,7 @@ export class WorkspaceEventMapper {
       }
       case 'session.process_changed': {
         const session = this.need(entities, str(p['id']), seq, 'session');
-        // 378: present only on an ending a node recorded itself, so every
+        // 391: present only on an ending a node recorded itself, so every
         // other event projects exactly as before.
         const endedByNode = str(p['endedByNode']);
         return {

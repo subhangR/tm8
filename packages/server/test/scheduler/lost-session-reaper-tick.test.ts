@@ -1,5 +1,5 @@
 /**
- * The node-ending jobs' tick log (378): the lost-session reaper and the
+ * The node-ending jobs' tick log (391): the lost-session reaper and the
  * completed auto-close each log one structured line on EVERY run — candidates,
  * retired, notRecorded, refused — so a pass that saw rows and ended none can
  * never again look like a quiet `skipped`.
@@ -24,7 +24,7 @@ const report = (r: Partial<NodeEndingSweepReport>): NodeEndingSweepReport => ({
   candidates: 0, retired: 0, notRecorded: 0, errors: [], ...r,
 });
 
-describe('node-ending job ticks (378)', () => {
+describe('node-ending job ticks (391)', () => {
   it('logs a line even when there is nothing to do', async () => {
     const { lines, log } = capture();
     const outcome = await runLostSessionReaperTick({ reap: async () => report({}) }, log);
