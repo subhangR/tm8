@@ -1,10 +1,10 @@
 /**
- * 381: every write to a tool stores its own entity_versions row (§1), and a run
+ * 388: every write to a tool stores its own entity_versions row (§1), and a run
  * pins the DEFINITION version, tools.execution_version (§2), so a run's
  * `tool_version` always resolves to the source that ran and never moves on a
  * config, secret or help-only write.
  *
- * Before 381 the `tools` snapshot trigger ran 001's 5-minute same-actor
+ * Before 388 the `tools` snapshot trigger ran 001's 5-minute same-actor
  * debounce, which RENUMBERS the latest row in place: create + two quick edits
  * left one row, and every earlier run kept a sha256 with no source behind it.
  * Runs also pinned entities.version, which `tm8 tool secret set` advanced. The
@@ -22,8 +22,6 @@ vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
 let database: W1ScratchDatabase;
 let db: Db;
 const space = randomUUID(), owner = randomUUID();
-// Not 'versions-owner': internal.claim_text (037) btrims E' \t\n\r\f\v', and
-// Postgres has no \v escape, so a claim's leading or trailing 'v' is trimmed.
 const human: DbClaims = { identityId: 'tool-versions-owner', authKind: 'browser', sessionSpaceId: space };
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const definition = (name: string, source: string, help = 'Usage') => ({ name, description: 'Version fixture', help, runtime: 'bash',
@@ -144,7 +142,7 @@ it('config, secret and help-only writes store their own rows and never move the 
   const afterConfig = await run(tool);
 
   const rows = await stored(tool);
-  // One row per write, as before 381 (only the folding is gone). The definition
+  // One row per write, as before 388 (only the folding is gone). The definition
   // source is unchanged from row 2 on, and every row names row 2 as the
   // execution version; only the help edit changes the definition at all.
   expect(rows.map(row => [row.version, row.execution_version, row.source, row.help])).toEqual([

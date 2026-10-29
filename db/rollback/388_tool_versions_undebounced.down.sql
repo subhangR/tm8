@@ -1,17 +1,17 @@
 -- =============================================================================
--- ROLLBACK for 381_tool_versions_undebounced.sql — NOT a migration
+-- ROLLBACK for 388_tool_versions_undebounced.sql — NOT a migration
 -- (db/migrate.mjs never reads this directory). Run by hand, as the migration
--- owner, only to undo 381:
+-- owner, only to undo 388:
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/381_tool_versions_undebounced.down.sql
---   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '381_tool_versions_undebounced.sql'"
+--   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/388_tool_versions_undebounced.down.sql
+--   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '388_tool_versions_undebounced.sql'"
 --
 -- After this: tool edits fold again (a same-actor edit inside 5 minutes
 -- renumbers the previous snapshot, so a run pinned to it loses its source), and
 -- new runs pin entities.version again, which config and secret writes advance.
--- Rows and pins 381 already wrote stay: a run pinned while 381 was live holds an
+-- Rows and pins 388 already wrote stay: a run pinned while 388 was live holds an
 -- execution_version, which is a smaller number than the entities.version a
--- pre-381 reader expects; both still name a stored row. Any later trigger
+-- pre-388 reader expects; both still name a stored row. Any later trigger
 -- created with 'undebounced' is debounced again once this restores 001's body;
 -- check pg_trigger for tgnargs > 0 first.
 -- =============================================================================

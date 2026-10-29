@@ -1,13 +1,13 @@
 -- =============================================================================
--- 381 — Tool versions a run can trust (Tools v2 PR-F, task 01a183cd):
+-- 388 — Tool versions a run can trust (Tools v2 PR-F, task 01a183cd):
 --   §1 every write to a tool row is its own stored version: the `tools`
 --      snapshot trigger opts out of the 5-minute same-actor debounce;
 --   §2 a run pins the DEFINITION version (tools.execution_version), not the
 --      concurrency token (entities.version).
 --
--- Number 381 is RESERVED by the Tools v2 coordinator (378 Loops PR1, 379 Tools
--- PR-C, 380 Tools PR-E, 381 this file, 382/383 Loops PR2/PR3). Nothing here
--- depends on 378-380.
+-- Authored as 381, a coordinator reservation; renumbered to 388, above main's
+-- top (387), at merge per the PR-cleanup ordinal rule. Nothing here depends on
+-- 378-387.
 --
 -- The hole. A tool run pins `work_sessions.tool_version` and `tool_source_sha256`
 -- (318 start_tool_session), and the audit promise is that the pinned version
@@ -58,7 +58,7 @@
 -- insert's pinned value changes; the body is otherwise 318's, verbatim.
 --
 -- Versions written before this migration may already have been folded; their
--- source cannot be recovered, and a pre-381 pin is an entities.version. Readers
+-- source cannot be recovered, and a pre-388 pin is an entities.version. Readers
 -- treat a missing row as "source unavailable" and keep the sha256.
 --
 -- SHARED-OBJECT NOTICE: internal.snapshot_entity_version is copied VERBATIM
@@ -67,8 +67,8 @@
 -- trigger created with no argument behaves exactly as before. Whoever replaces
 -- this function next must copy THIS body, or `tools` silently folds again.
 -- public.start_tool_session is copied from 318 (its only definition until now)
--- with the one change marked "381".
--- Rollback: db/rollback/381_tool_versions_undebounced.down.sql.
+-- with the one change marked "388".
+-- Rollback: db/rollback/388_tool_versions_undebounced.down.sql.
 -- =============================================================================
 
 set role tm8_graph_owner;
@@ -82,7 +82,7 @@ declare
   latest record;
   undebounced boolean;
 begin
-  -- 381: `execute function internal.snapshot_entity_version('undebounced')`
+  -- 388: `execute function internal.snapshot_entity_version('undebounced')`
   -- never folds. Any other argument is a typo that would silently keep the
   -- debounce, so it fails loudly instead.
   undebounced := TG_NARGS = 1 and TG_ARGV[0] = 'undebounced';
@@ -163,7 +163,7 @@ begin
  -- edits may advance the version while retaining the same execution settings.
  select * into e from public.entities where id=p_tool_id for share;
  if e.deleted_at is not null or not internal.entity_readable(e.id) then raise exception 'tool unavailable' using errcode='42501'; end if;
- -- 381: the run pins the definition version (execution_version), not e.version.
+ -- 388: the run pins the definition version (execution_version), not e.version.
  select definition,execution_version into d,pinned from public.tools where entity_id=e.id;
  if p_tool_version is not null and (p_tool_version>e.version or p_tool_version<pinned) then
    raise exception 'tool source changed or execution settings changed; reload before running' using errcode='40001';
