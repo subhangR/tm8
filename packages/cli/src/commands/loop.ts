@@ -121,26 +121,33 @@ function toolInputs(raws: readonly string[]): Record<string, unknown> {
 
 /**
  * The definition fields the flags name — only those, so `edit` sends a true
- * partial and the server keeps everything else. `create` fills the required
- * ones and lets the server default the rest.
+ * partial and the server keeps everything else. `create` (no `current`) fills
+ * the required ones and lets the server default the rest.
+ *
+ * With `--tool`, `--teammate` names the persona the tool runs as (§2.1; the
+ * server requires one when the tool reaches tm8). On `edit` of a tool loop,
+ * `--teammate` alone changes that persona; with `--clear-tool` it makes the
+ * loop a spawn loop.
  */
-async function definitionFlags(cmd: CommandContext, editing: boolean): Promise<Record<string, unknown>> {
+async function definitionFlags(cmd: CommandContext, current: LoopView | null): Promise<Record<string, unknown>> {
   const def: Record<string, unknown> = {};
   const o = cmd.options;
-  const runners = ['teammate', 'dispatch', 'tool'].filter(name => o.has(name));
-  if (runners.length > 1) throw new CliError('Supply exactly one of --teammate, --dispatch or --tool', EXIT_USAGE);
-  if (!editing && runners.length === 0) throw new CliError('Supply one of --teammate <id|name>, --dispatch or --tool <name|id>', EXIT_USAGE);
-  if (o.has('teammate')) { def.action = 'spawn'; def.teamMemberId = await resolveTeammate(cmd, o.value('teammate')!); }
-  if (o.bool('dispatch')) def.action = 'dispatch';
+  if (o.bool('dispatch') && (o.has('teammate') || o.has('tool'))) throw new CliError('--dispatch takes neither --teammate nor --tool', EXIT_USAGE);
+  if (!current && !o.has('teammate') && !o.bool('dispatch') && !o.has('tool')) {
+    throw new CliError('Supply one of --teammate <id|name>, --dispatch or --tool <name|id>', EXIT_USAGE);
+  }
+  if (o.bool('clear-tool') && o.has('tool')) throw new CliError('--clear-tool and --tool cannot be combined', EXIT_USAGE);
+  const keepsTool = current?.definition.action === 'tool' && !o.bool('clear-tool');
   if (o.has('tool')) { def.action = 'tool'; def.toolId = await resolveTool(cmd, o.value('tool')!); }
+  else if (o.has('teammate') && !keepsTool) def.action = 'spawn';
+  if (o.has('teammate')) def.teamMemberId = await resolveTeammate(cmd, o.value('teammate')!);
+  if (o.bool('dispatch')) def.action = 'dispatch';
+  const action = def.action ?? current?.definition.action;
   if (o.has('input')) {
-    if (def.action !== undefined && def.action !== 'tool') throw new CliError('--input applies to --tool loops only', EXIT_USAGE);
+    if (action !== undefined && action !== 'tool') throw new CliError('--input applies to --tool loops only', EXIT_USAGE);
     def.toolInputs = toolInputs(o.values('input'));
   }
-  if (o.bool('clear-tool')) {
-    if (o.has('tool')) throw new CliError('--clear-tool and --tool cannot be combined', EXIT_USAGE);
-    def.toolId = null;
-  }
+  if (o.bool('clear-tool')) def.toolId = null;
   if (o.bool('clear-subject')) {
     if (o.has('subject')) throw new CliError('--clear-subject and --subject cannot be combined', EXIT_USAGE);
     def.subjectId = null;
@@ -178,7 +185,7 @@ async function definitionFlags(cmd: CommandContext, editing: boolean): Promise<R
     config.credentialSource = parsed.credentialSource;
   }
   if (Object.keys(config).length) {
-    if (def.action === 'tool') throw new CliError('Launch flags (--model, --workdir, …) apply to --teammate and --dispatch loops', EXIT_USAGE);
+    if (action === 'tool') throw new CliError('Launch flags (--model, --workdir, …) apply to spawn and dispatch loops', EXIT_USAGE);
     def.config = config;
   }
   return def;
@@ -187,7 +194,8 @@ async function definitionFlags(cmd: CommandContext, editing: boolean): Promise<R
 // ── human rendering ───────────────────────────────────────────────────────
 const actor = (a: Actor): string => a?.displayName ?? 'nobody';
 const runner = (loop: LoopView): string => loop.definition.action === 'spawn' ? `spawn ${loop.definition.teamMemberId ?? '?'}`
-  : loop.definition.action === 'tool' ? `tool ${loop.definition.toolId ?? '?'}` : 'dispatch';
+  : loop.definition.action === 'tool'
+    ? `tool ${loop.definition.toolId ?? '?'}${loop.definition.teamMemberId ? ` as ${loop.definition.teamMemberId}` : ''}` : 'dispatch';
 function loopState(loop: LoopView): string {
   if (!loop.state.enabled) return 'disabled';
   if (loop.state.pausedUntil) return `paused until ${loop.state.pausedUntil}`;
@@ -247,7 +255,7 @@ async function loopCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [...DEFINITION_OPTIONS, 'disabled', ...HEADER_TEXT_OPTIONS, 'mutation-id']);
   argumentsCount(cmd, 1);
   if (!cmd.options.has('schedule')) throw new CliError('--schedule is required', EXIT_USAGE, { hint: 'every <n>{m|h|d} or a 5-field cron; try `tm8 loop preview --schedule <expr>`' });
-  const definition = { title: requireArg(cmd, 0, '<title>'), prompt: '', ...await definitionFlags(cmd, false) };
+  const definition = { title: requireArg(cmd, 0, '<title>'), prompt: '', ...await definitionFlags(cmd, null) };
   const body = mutation(cmd);
   let loop: LoopView = await observedInvoke(client(cmd), 'loops.create', {
     params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition, enabled: !cmd.options.bool('disabled') },
@@ -265,10 +273,13 @@ async function loopEdit(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [...DEFINITION_OPTIONS, 'title', 'clear-subject', 'clear-tool', 'expect-version', 'mutation-id']);
   argumentsCount(cmd, 1);
   const version = expectedVersion(cmd);
-  const definition = await definitionFlags(cmd, true);
-  if (cmd.options.value('title') !== undefined) definition.title = cmd.options.value('title');
-  if (Object.keys(definition).length === 0) throw new CliError('Nothing to change: pass at least one create flag', EXIT_USAGE);
+  if (![...DEFINITION_OPTIONS, 'title', 'clear-subject', 'clear-tool'].some(option => cmd.options.has(option))) {
+    throw new CliError('Nothing to change: pass at least one create flag', EXIT_USAGE);
+  }
+  // The flags are read against the stored action: --teammate on a tool loop is its persona.
   const loop = await loadLoop(cmd);
+  const definition = await definitionFlags(cmd, loop);
+  if (cmd.options.value('title') !== undefined) definition.title = cmd.options.value('title');
   cmd.out.data(await observedInvoke<LoopView>(client(cmd), 'loops.update', { params: { loopId: loop.id }, body: {
     ...mutation(cmd), expectedVersion: version, definition,
   } }), renderLoop);

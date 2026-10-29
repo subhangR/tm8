@@ -10,7 +10,7 @@ fields through `entities.*`. Design of record: doc `01a182d4` §5.
 
 | CLI command | Catalog operation |
 | --- | --- |
-| `loop create <title> --schedule <expr> (--teammate <id\|name> \| --dispatch \| --tool <name\|id>) [create flags]` | `loops.create` |
+| `loop create <title> --schedule <expr> (--teammate <id\|name> \| --dispatch \| --tool <name\|id> [--teammate <persona>]) [create flags]` | `loops.create` |
 | `loop list [--enabled \| --disabled] [--action spawn\|dispatch\|tool] [--words <text>] [--limit <count>] [--cursor <cursor>]` | `loops.list` |
 | `loop show <id\|title>` | `loops.get` |
 | `loop edit <id\|title> --expect-version <n> [--title <text>] [create flags] [--clear-subject] [--clear-tool]` | `loops.update` |
@@ -31,7 +31,7 @@ fields through `entities.*`. Design of record: doc `01a182d4` §5.
 | `--schedule <expr>`, `--timezone <iana>` (default `UTC`) | `schedule`, `timezone` |
 | `--teammate <id\|name>` | `action: spawn`, `teamMemberId` |
 | `--dispatch` | `action: dispatch` |
-| `--tool <name\|id>`, `--input <name>=<value>`… | `action: tool`, `toolId`, `toolInputs` |
+| `--tool <name\|id>` (+ `--teammate <persona>`), `--input <name>=<value>`… | `action: tool`, `toolId`, `teamMemberId` (the persona the tool runs as), `toolInputs` |
 | `--subject <entity-id>` / `--clear-subject` | `subjectId` |
 | `--prompt <text\|@file\|->` | `prompt` |
 | `--model`, `--agent-tool`, `--reasoning-effort`, `--access-mode`, `--mode`, `--launch-project`, `--workdir project\|worktree\|scratch` (+ `--base-ref`), `--memory <id>`…, `--credential-source member\|space\|node`, `--interaction-profile <id>` | `config` (spawn and dispatch loops only) |
@@ -44,6 +44,13 @@ tool's definition name. A loop reference matches the exact title, and two loops
 with that title are a usage error that lists both IDs. Each `--input` value that
 parses as JSON keeps its type (`limit=5` is a number), and anything else stays a
 string. The server checks inputs against the tool's declared inputs.
+
+A tool loop runs as a persona. With `--tool`, `--teammate` names that persona.
+The server requires one when the tool reaches tm8 (`tm8Access` read or write) and
+refuses the write at `definition.teamMemberId` without it. On `edit` of a tool
+loop, `--teammate` alone changes the persona and keeps the action. `--teammate`
+with `--clear-tool` turns the loop into a spawn loop. `--dispatch` takes neither
+flag.
 
 `edit` sends only the fields its flags name, and the server keeps the rest.
 Header flags (`--when-to-use`, `--summary`, repeatable `--keyword`) are

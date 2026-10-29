@@ -106,6 +106,11 @@ describe('tm8 loop create', () => {
     expect(await run(['loop', 'create', 'Sweep', '--schedule', 'every 6h', '--tool', 'triage', '--input', 'limit=5', '--input', 'repo=owner/repo', '--disabled'])).toBe(0);
     expect(last().body).toMatchObject({ enabled: false, definition: { action: 'tool', toolId: TOOL, toolInputs: { limit: 5, repo: 'owner/repo' } } });
   });
+  it('with --tool, --teammate names the persona the tool runs as', async () => {
+    expect(await run(['loop', 'create', 'Sweep', '--schedule', 'every 6h', '--tool', 'triage', '--teammate', 'opus 5.5 1m teammate'])).toBe(0);
+    expect(last().body).toMatchObject({ definition: { action: 'tool', toolId: TOOL, teamMemberId: MEMBER } });
+    expect(await run(['loop', 'create', 'X', '--schedule', 'every 1h', '--dispatch', '--teammate', MEMBER])).toBe(2);
+  });
   it('sets selection headers through entities.header.set, then rereads the loop', async () => {
     expect(await run(['loop', 'create', 'Sweep', '--schedule', 'every 1d', '--dispatch', '--when-to-use', 'Open when triage stalls', '--mutation-id', 'mut-h'])).toBe(0);
     const header = requests.find(r => r.path.endsWith('/header'))!;
@@ -135,6 +140,17 @@ describe('tm8 loop edit and controls', () => {
     expect(last()).toMatchObject({ method: 'PATCH', path: `/v2/loops/${LOOP}`,
       body: { expectedVersion: 4, definition: { schedule: 'every 30m', subjectId: null, retry: { delaySeconds: 60 } } } });
     expect(Object.keys(last().body.definition).sort()).toEqual(['retry', 'schedule', 'subjectId']);
+  });
+  it('edit reads the flags against the stored action: --teammate on a tool loop is its persona', async () => {
+    expect(await run(['loop', 'edit', LOOP, '--input', 'limit=5', '--expect-version', '4'])).toBe(2);
+    loop = { ...loop, definition: { ...loop.definition, action: 'tool', toolId: TOOL, teamMemberId: null } };
+    expect(await run(['loop', 'edit', LOOP, '--teammate', MEMBER, '--expect-version', '4'])).toBe(0);
+    expect(last().body.definition).toEqual({ teamMemberId: MEMBER });
+    expect(await run(['loop', 'edit', LOOP, '--teammate', MEMBER, '--clear-tool', '--expect-version', '4'])).toBe(0);
+    expect(last().body.definition).toEqual({ action: 'spawn', teamMemberId: MEMBER, toolId: null });
+    expect(await run(['loop', 'edit', LOOP, '--model', 'm', '--expect-version', '4'])).toBe(2);
+    expect(await run(['loop', 'show', LOOP])).toBe(0);
+    expect(stdout).toContain(`action: tool ${TOOL} · concurrency`);
   });
   it('edit refuses header flags (they belong to tm8 entity header set)', async () => {
     expect(await run(['loop', 'edit', LOOP, '--summary', 'x', '--expect-version', '4'])).toBe(2);
