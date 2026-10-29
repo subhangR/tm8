@@ -74,7 +74,7 @@ export class ToolRuntime {
     const sessionId = started.entity.id;
     const [pin] = await this.options.db.query<{ tool_version: number; tool_source_sha256: string; tool_keep_open: boolean }>(claims,
       'select tool_version,tool_source_sha256,tool_keep_open from public.work_sessions where entity_id=$1', [sessionId]);
-    const pinnedVersion = pin ? Number(pin.tool_version) : tool.version;
+    const pinnedVersion = pin ? Number(pin.tool_version) : tool.executionVersion;
     const result = { sessionId, toolId: tool.id, toolVersion: pinnedVersion, sourceSha256: pin?.tool_source_sha256 ?? tool.sourceSha256,
       keepOpen: pin?.tool_keep_open ?? input.keepOpen, reused: this.options.pty.hasSession(sessionId) };
     if (started.__tm8_replayed) {
