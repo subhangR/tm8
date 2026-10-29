@@ -34,12 +34,7 @@ import { createToolPort } from '../../tools/adapter';
  */
 import { managedPortFromSeam } from '../../managed/port';
 import {
-  type CreateInviteInput,
   type InvitePreview,
-  type InviteRedemption,
-  type RedeemInviteInput,
-  type SpaceInviteView,
-  type UpdateMemberRoleInput,
   CollabError,
   bindPath,
   type ActivityItem,
