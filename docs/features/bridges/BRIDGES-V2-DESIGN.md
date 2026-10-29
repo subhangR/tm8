@@ -1,7 +1,7 @@
 # Bridges v2 — every setting on screen, memories and loops on a bridge, and a WhatsApp command set that can run a team
 
 **Status:** DESIGN v2 · 2026-10-29 · task `01a1889e-d435-7b99-ac66-9e00425a3bcc`
-**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc.
+**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc.
 **Basis:** `origin/main` @ `cfb4622b4` (`integrations/whatsapp-bridge/src/{core,text,http,admin,forms,briefing,config}.ts`), the deployed copy in `prod-data/wa-bridge/src` (2026-10-20, same command set, no `forms.ts`), the loop executor (`packages/server/src/scheduler/jobs/loops.ts`, migrations 091/348/375), the launch defaults (`packages/contract/src/launch-defaults.ts`: `remembers` / `equips`), and `execution.spawn` (`tm8 help session spawn`).
 **Scope:** design only. No code.
 
