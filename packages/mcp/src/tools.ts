@@ -438,8 +438,9 @@ const LOOP_ACT_GUIDES = [
     + 'the version, so a version_conflict on a busy loop usually means it just fired: read it again and retry.', {
     params: { loopId: '<loop-id>' }, body: { expectedVersion: 1, definition: { schedule: 'every 30m' } },
   }),
-  guide('loops.enable', 'Enable a disabled loop under its version: the server counts its next run from now (and the '
-    + 'enabling human arms it). On a loop already enabled it changes nothing.', {
+  guide('loops.enable', 'Enable a disabled loop under its version: the server counts its next run from now. A human '
+    + 'enabling it from the UI or CLI arms it; an enable through MCP leaves it unarmed, running as the space\'s owner. '
+    + 'On a loop already enabled it changes nothing.', {
     params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
   }),
   guide('loops.disable', 'Disable a loop under its version: the schedule fires nothing until it is enabled again (Run now '
