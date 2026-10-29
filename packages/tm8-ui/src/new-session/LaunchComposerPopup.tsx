@@ -102,6 +102,9 @@ import './new-session.css';
  * shake (owner's ruling 2026-09-07).
  */
 
+/** Where a press is: see `phase` in the popup. */
+type PressPhase = 'idle' | 'launching' | 'dispatching';
+
 /** `ExecutionDispatchInput.note`'s cap in the contract schema. */
 const DISPATCH_NOTE_MAX = 4000;
 
@@ -457,12 +460,20 @@ export function LaunchComposerPopup({
 
   /**
    * THE PRESS, as one named state: idle (the card is editable), launching
-   * or dispatching (the card is the one-line in-flight row). A press leaves
+   * or dispatching (a press is in flight: the card is the one-line row, or
+   * the host took it over). `moveTo` is the only transition: a press leaves
    * idle; a refusal, a timeout or an undelivered dispatch returns to idle;
-   * success dismisses.
+   * success dismisses. The ref mirrors it SYNCHRONOUSLY, so a second press
+   * (or an Escape) in the same frame already sees the first one.
    */
-  const [phase, setPhase] = useState<'idle' | 'launching' | 'dispatching'>('idle');
+  const [phase, setPhase] = useState<PressPhase>('idle');
+  const phaseNow = useRef<PressPhase>('idle');
+  const moveTo = (next: PressPhase) => { phaseNow.current = next; setPhase(next); };
   const pending = phase !== 'idle';
+  /* NO DISMISSAL MID-FLIGHT: the spawn still answers this card (success
+     closes it, a refusal reopens it with the reason), so Escape, the scrim
+     and ✕ wait for it. */
+  const dismiss = () => { if (phaseNow.current === 'idle') onDismiss?.(); };
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
   /** One shake per refusal — cleared by its own animationend. */
@@ -505,7 +516,7 @@ export function LaunchComposerPopup({
   }, [subject.id]);
 
   const fail = (error: unknown) => {
-    setPhase('idle');
+    moveTo('idle');
     setNodeRefusal(
       String((error as { message?: string })?.message ?? error)
         || 'the node refused this launch and gave no reason',
@@ -521,7 +532,7 @@ export function LaunchComposerPopup({
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
      in-flight retry, the card looks for the session before offering one. */
   const afterTimeout = () => {
-    setPhase('idle');
+    moveTo('idle');
     setShaking(true);
     if (!sessionsSince) {
       setTimedOut('unknown');
@@ -573,7 +584,7 @@ export function LaunchComposerPopup({
   };
 
   const commit = () => {
-    if (!onSpawn || pending || refusal || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
+    if (!onSpawn || phaseNow.current !== 'idle' || refusal || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
     setTimedOut(null);
     setNodeRefusal(null);
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
@@ -617,19 +628,20 @@ export function LaunchComposerPopup({
         });
       }
     };
-    /* THE HANDOFF: asked synchronously, before the node is. A host that takes
-       it owns the progress and the failure, so the spawn's errors are not
-       drawn here — the card is gone by the time they arrive. */
+    /* ONE PRESS, ONE SPAWN: the phase leaves idle before anything else, and
+       `run` is the only call of `onSpawn` (on the next microtask, so the
+       handoff below is still asked first). */
+    moveTo('launching');
+    const run = Promise.resolve().then(() => onSpawn(input));
+    /* THE HANDOFF: asked synchronously, before the node answers. A host that
+       takes it owns the progress and the failure, so the spawn's errors are
+       not drawn here — the card is gone by the time they arrive. */
     if (onLaunchStarted?.(launchStarted(input)) === true) {
-      Promise.resolve()
-        .then(() => onSpawn(input))
-        .then(keepPicks, () => { /* the host's to show */ });
+      run.then(keepPicks, () => { /* the host's to show */ });
       succeed();
       return;
     }
-    setPhase('launching');
-    Promise.resolve()
-      .then(() => onSpawn(input))
+    run
       .then(() => {
         keepPicks();
         succeed();
@@ -886,9 +898,9 @@ export function LaunchComposerPopup({
       ? `Dispatch carries at most ${String(DISPATCH_NOTE_MAX)} characters of notes (these are ${String(note.length)}).`
       : null;
   const dispatch = () => {
-    if (!onDispatch || pending || dispatchRefusal) return;
+    if (!onDispatch || phaseNow.current !== 'idle' || dispatchRefusal) return;
     setNodeRefusal(null);
-    setPhase('dispatching');
+    moveTo('dispatching');
     Promise.resolve()
       .then(() => onDispatch(note || undefined, dispatchKey.current.keyFor(`${subject.id}\n${note}`)))
       .then((result) => {
@@ -896,7 +908,7 @@ export function LaunchComposerPopup({
         if (r?.delivery === 'undelivered') {
           /* Not a success: the request is stored on the task, but no
              dispatcher received it. Say so and keep the card up. */
-          setPhase('idle');
+          moveTo('idle');
           setNodeRefusal(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
           return;
         }
@@ -936,14 +948,8 @@ export function LaunchComposerPopup({
 
   return createPortal(
     <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
-      {/* The scrim IS the outside: a click on it closes an open menu first
-          (the card's own click-away), then the card. */}
-      <div className="nsx-popup__scrim" onClick={(event) => {
-        const card = event.currentTarget.parentElement?.querySelector<HTMLElement>('[data-testid="launch-card"]');
-        if (card?.querySelector('[data-menu]')) card.click();
-        else onDismiss?.();
-      }} aria-hidden="true" />
       <LaunchCardV3
+        scrim
         onAdvancedOpen={wantPlugins}
         connectors={{ count: mcpCount, node: (
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
@@ -980,12 +986,12 @@ export function LaunchComposerPopup({
         worktreeBaseRef={more.worktreeBaseRef}
         onWorktreeBaseRefChange={more.onWorktreeBaseRefChange}
         {...(capacity ? { capacity } : {})}
-        onClose={() => onDismiss?.()}
+        onClose={dismiss}
         {...(upload ? { onFiles: startUploads } : {})}
         subject={subject}
         continuing={continuing}
         description={description}
-        {...(canEditSubject && onDismiss && !continuing ? { onEditSubject: () => onDismiss() } : {})}
+        {...(canEditSubject && onDismiss && !continuing ? { onEditSubject: dismiss } : {})}
         inFull={{
           items: inFull.map((r) => ({ id: r.id, kind: r.kind, title: r.title, bytes: null, over: false })),
           refusal: IN_FULL_REFUSAL,

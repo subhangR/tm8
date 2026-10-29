@@ -193,6 +193,8 @@ export interface LaunchCardV3Props extends LaunchCardShellProps {
    * <model> · <effort>"): the card collapses to it. Null: nothing in flight.
    */
   launching?: string | null;
+  /** Draw the popup's scrim; its click closes an open menu, else the card (the shell owns both). */
+  scrim?: boolean;
   /** The node fixes the access mode for this verb, and why. */
   accessLock: string | null;
 }
@@ -207,12 +209,7 @@ export function LaunchCardV3(props: LaunchCardV3Props) {
       className="lcd--v3"
       onSubmit={props.onLaunch}
       trapFocus
-      overlay={launching ? (
-        <div className="lcd3-launching" role="status" aria-live="polite" data-testid="lcd3-launching" title={launching}>
-          <span className="lcd3-spinner" aria-hidden="true" />
-          <span className="lcd3-launching__t">{launching}</span>
-        </div>
-      ) : null}
+      overlay={launching ? <LaunchingLine line={launching} /> : null}
       verb={<VerbSwitch verb={verb} onChange={onVerbChange} />}
       center={(
         <div className="lcd-center lcd3-center">
@@ -226,6 +223,22 @@ export function LaunchCardV3(props: LaunchCardV3Props) {
       )}
       actions={<Actions {...props} />}
     />
+  );
+}
+
+/**
+ * The press in flight, as one line. Focus is PARKED on it: every control of
+ * the card is hidden while it shows, and focus must not fall to the page
+ * behind the modal.
+ */
+function LaunchingLine({ line }: { line: string }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { ref.current?.focus(); }, []);
+  return (
+    <div ref={ref} tabIndex={-1} className="lcd3-launching" role="status" aria-live="polite" data-testid="lcd3-launching" title={line}>
+      <span className="lcd3-spinner" aria-hidden="true" />
+      <span className="lcd3-launching__t">{line}</span>
+    </div>
   );
 }
 
@@ -394,7 +407,8 @@ function useLaneCounts(lane: React.RefObject<HTMLDivElement | null>, deps: reado
   const [counts, setCounts] = useState({ left: 0, right: 0 });
   const sync = useCallback(() => {
     const l = lane.current;
-    if (!l) return;
+    /* No lane (the in-full lane unmounts when empty): nothing is past either edge. */
+    if (!l) { setCounts((prev) => (prev.left === 0 && prev.right === 0 ? prev : { left: 0, right: 0 })); return; }
     const kids = [...l.children] as HTMLElement[];
     const right = kids.filter((c) => c.offsetLeft + c.offsetWidth > l.scrollLeft + l.clientWidth + 1).length;
     const left = kids.filter((c) => c.offsetLeft < l.scrollLeft - 1).length;
@@ -440,7 +454,7 @@ function TitleRow(props: LaunchCardV3Props) {
   const { subject, continuing, description, onEditSubject, inFull, candidates } = props;
   const { open, toggle, close, menuProps, stop } = useLaunchCardMenu();
   const lane = useRef<HTMLDivElement | null>(null);
-  const counts = useLaneCounts(lane, [inFull.items]);
+  const counts = useLaneCounts(lane, [inFull.items.length > 0, inFull.items]);
   const search = useTypedSearch();
   const openChip = open?.startsWith('full:') ? open.slice(5) : null;
   const chip = openChip ? inFull.items.find((i) => i.id === openChip) ?? null : null;

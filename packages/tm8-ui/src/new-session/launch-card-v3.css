@@ -36,15 +36,22 @@
 .lcd--v3 .lcd-stage { flex: none; flex-direction: column; }
 .lcd--v3 .lcd-stage:has(> .lcd-drawer[data-open]) { min-height: min(440px, calc(100cqh - 160px)); }
 .lcd--v3 .lcd-refusal { position: static; margin: 0 var(--g) 8px; box-shadow: none; }
-/* One accent: focus is the brand ring the shell's controls use, everywhere. */
+/* One accent: focus is the brand ring the shell's controls use, everywhere —
+   the autofocused notes box included. */
 .lcd--v3 :is(button, textarea, input):focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
-.lcd--v3 .lcd3-notes:focus-visible { outline: none; }
+/* MORE THAN FITS (`data-tall`, measured by the shell: long notes, connectors,
+   uploads, the drawer, a short viewport): the card takes its max height and
+   the STAGE scrolls inside it — the bands never leave the card. */
+.lcd--v3[data-tall] { height: calc(100cqh - 48px); }
+.lcd--v3[data-tall] .lcd-stage { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 
 /* -------------------------------------------------------- launching */
 
 /* THE PRESS IN FLIGHT: the card collapses to one line, not a greyed form. */
 .lcd--v3:has(> .lcd3-launching) > :not(.lcd3-launching) { display: none; }
 .lcd3-launching {
+  /* Focus is parked here (not a control): no ring on a status line. */
+  outline: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -420,4 +427,5 @@
    the width; this sheet loads after it, so it has to say it again. */
 @container lcpop (max-width: 600px) {
   .lcd--v3 { width: 100%; height: auto; max-height: 92cqh; }
+  .lcd--v3[data-tall] { height: 92cqh; }
 }

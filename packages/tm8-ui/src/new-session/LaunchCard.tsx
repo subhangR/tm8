@@ -288,6 +288,36 @@ function useFitInside(menu: RefObject<HTMLElement | null>, card: RefObject<HTMLE
   }, [menu, card, key]);
 }
 
+/**
+ * Whether a content-sized card (v3: `height: auto; max-height`) holds more
+ * than its max-height allows. Then the stage scrolls inside the card instead
+ * of the bands being pushed past its edge. Measured from the stage's CONTENT
+ * height, so turning the scroll on does not turn it off again. A fixed-height
+ * card (no max-height) is never tall.
+ */
+function useOverMaxHeight(card: RefObject<HTMLElement | null>, stage: RefObject<HTMLElement | null>): boolean {
+  const [tall, setTall] = useState(false);
+  useLayoutEffect(() => {
+    const c = card.current;
+    const st = stage.current;
+    if (!c || !st || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const max = parseFloat(getComputedStyle(c).maxHeight);
+      /* The bands' own heights (and the card's border), summed: "card minus
+         stage" reads short once the content already overflows the card. */
+      const bands = [...c.children].reduce((n, el) => (el === st ? n : n + (el as HTMLElement).offsetHeight), 0)
+        + c.offsetHeight - c.clientHeight;
+      setTall(Number.isFinite(max) && bands + st.scrollHeight > max + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(c);
+    for (const child of [...st.children]) observer.observe(child);
+    return () => observer.disconnect();
+  }, [card, stage]);
+  return tall;
+}
+
 export function Caret({ up }: { up?: boolean }) {
   return <span className="lcd-caret" aria-hidden="true">{up ? '▲' : '▼'}</span>;
 }
@@ -342,8 +372,13 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   accessLock?: string | null;
   /** Tab cycles inside the card, and focus returns to the opener when it closes. */
   trapFocus?: boolean;
-  /** Drawn over the whole card, bands included (v3's previews). */
+  /** Drawn over the whole card, bands included (v3's launching line). */
   overlay?: ReactNode;
+  /**
+   * Draw the popup's scrim. The shell owns which menu is open, so it owns the
+   * outside click too: a click there closes an open menu first, else the card.
+   */
+  scrim?: boolean;
 }) {
   const {
     verbLabel, teammates, teammateId, onPickTeammate, remember, onRememberChange, restoredLine,
@@ -356,19 +391,25 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
     installedPlugins, installedPluginsNote, pluginSkillCounts, plugins, onPluginsChange, budget, advancedEdited,
     onAdvancedOpen,
     jevTeammate = null, jevModel = null,
-    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, overlay,
+    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, overlay, scrim = false,
   } = props;
 
   const card = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
-  useEffect(() => { if (drawer) onAdvancedOpen?.(); }, [drawer, onAdvancedOpen]);
+  /* Fired on the closed → open EDGE only: a host's inline callback is a new
+     function every render, and keying the effect on it fired it each time. */
+  const advancedOpenRef = useRef(onAdvancedOpen);
+  advancedOpenRef.current = onAdvancedOpen;
+  useEffect(() => { if (drawer) advancedOpenRef.current?.(); }, [drawer]);
   const [teamQuery, setTeamQuery] = useState('');
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
 
   const close = useCallback(() => setOpen(null), []);
+  const stage = useRef<HTMLDivElement | null>(null);
+  const tall = useOverMaxHeight(card, stage);
   const toggle = useCallback((name: string) => setOpen((current) => (current === name ? null : name)), []);
   useFitInside(menuRef, card, open);
 
@@ -403,8 +444,12 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         const scope = card.current.querySelector<HTMLElement>('[data-focus-scope]') ?? card.current;
         const focusable = [...scope.querySelectorAll<HTMLElement>(
           'button, input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]'));
-        if (focusable.length === 0) return;
+        )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]')
+          /* A control under `display: none` (the v3 card while launching) is
+             not focusable either: Tab moved focus to the page behind. */
+          && (el.checkVisibility?.() ?? true));
+        /* Nothing to tab to (the launching line holds focus): Tab stays put. */
+        if (focusable.length === 0) { event.preventDefault(); return; }
         const first = focusable[0]!;
         const last = focusable[focusable.length - 1]!;
         const inside = document.activeElement instanceof Node && scope.contains(document.activeElement);
@@ -499,6 +544,9 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
 
   return (
     <LaunchCardMenuContext.Provider value={menu}>
+    {scrim ? (
+      <div className="nsx-popup__scrim" data-testid="lcd-scrim" aria-hidden="true" onClick={() => { if (open !== null) close(); else onClose(); }} />
+    ) : null}
     <div
       ref={card}
       className={className ? `lcd ${className}` : 'lcd'}
@@ -506,6 +554,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       data-shake={shaking || undefined}
       data-drop={dropping || undefined}
       data-busy={busy || undefined}
+      data-tall={tall || undefined}
       onAnimationEnd={onShakeEnd}
       onClick={close}
       /* FILES DROP ANYWHERE ON THE CARD. Only a drag that carries files lights
@@ -787,7 +836,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       </header>
 
       {/* ============ CENTER: the version's own ============ */}
-      <div className="lcd-stage">
+      <div className="lcd-stage" ref={stage}>
         {center}
         {/* REFUSAL floats over the bottom of the center: no permanent row. */}
         {(refusal ?? notice) ? (

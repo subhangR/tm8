@@ -39,6 +39,10 @@ const SHOTS = [
   { name: '1024x768-attached', w: 1024, h: 768, q: '?text=1' },
   { name: '800x700-attached', w: 800, h: 700, q: '?text=1' },
   { name: '390x844-phone', w: 390, h: 844, q: '?text=1' },
+  /* SHORT VIEWPORTS: more than fits — the stage scrolls, the bands stay in. */
+  { name: '1440x480-long-notes', w: 1440, h: 480, q: '?text=long' },
+  { name: '1440x480-long-notes-drawer', w: 1440, h: 480, q: '?text=long&drawer=1' },
+  { name: '390x600-phone-long-notes', w: 390, h: 600, q: '?text=long' },
 ];
 
 /* Measured in the page: the card's box, and every control/menu box that

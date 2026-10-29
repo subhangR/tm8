@@ -29,7 +29,7 @@ import '../src/panels/panels.css';
  *   ?open=<testid>         open one menu on mount by its test id: lcd3-attach,
  *                          nsx-model, nsx-effort, nsx-perm, nsx-workdir, lcd-verb
  *   ?drawer=1              open the advanced drawer
- *   ?text=1                type notes into the card
+ *   ?text=1|long           type notes into the card (long: eight lines)
  *   ?theme=dark            the dark palette
  *   ?attach=0              the launch starts with nothing attached
  *   ?launch=1              press Launch; the node never answers (the in-card launching state)
@@ -74,11 +74,12 @@ function Harness() {
      screenshot shows the shipping component reacting to real clicks — not a
      harness-only branch that the product never takes. */
   const drive = () => {
-    if (params.get('text') === '1') {
+    if (params.get('text') === '1' || params.get('text') === 'long') {
       const ta = document.querySelector<HTMLTextAreaElement>('[data-testid="lcd3-notes"]');
       if (ta) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        setter?.call(ta, 'Start from origin/main. Do not touch the seam; the popup already reads launch.defaults.');
+        const line = 'Start from origin/main. Do not touch the seam; the popup already reads launch.defaults.';
+        setter?.call(ta, params.get('text') === 'long' ? Array.from({ length: 8 }, () => line).join('\n') : line);
         ta.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }

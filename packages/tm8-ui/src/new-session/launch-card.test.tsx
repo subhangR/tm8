@@ -387,7 +387,6 @@ describe('the onLaunchStarted handoff', () => {
       notes: 'be brief',
       workdir: { kind: 'project', projectId: 'pj-a', mode: 'worktree', baseRef: null },
     });
-    expect(view.queryByTestId('lcd3-launching')).toBeNull();
     settle!();
   });
 
@@ -593,5 +592,69 @@ describe('present-only: the card draws what this launch carries', () => {
     const view = renderPopup();
     const slot = view.getByTestId('lcd3-connectors');
     expect(slot.hidden).toBe(true);
+  });
+});
+
+describe('a press in flight', () => {
+  it('Escape and the scrim do nothing while launching; the answer still closes the card, once', async () => {
+    let settle: (() => void) | null = null;
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>((resolve) => { settle = resolve; })) });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await view.findByTestId('lcd3-launching');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(document.querySelector('.nsx-popup__scrim')!);
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    settle!();
+    await waitFor(() => expect(view.onDismiss).toHaveBeenCalledTimes(1));
+  });
+
+  it('a refusal after Escape was pressed mid-flight is still drawn on the card', async () => {
+    let reject: ((e: Error) => void) | null = null;
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>((_, no) => { reject = no; })) });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(reject).not.toBeNull());
+    reject!(new Error('teammate is paused'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('teammate is paused'));
+    expect(view.onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('a double press calls onSpawn once — with the handoff taken by a host that keeps the card mounted, and without it', async () => {
+    for (const onLaunchStarted of [() => true, undefined]) {
+      const onSpawn = vi.fn(() => new Promise<void>(() => {}));
+      const view = renderPopup({ onSpawn, onDismiss: () => {}, ...(onLaunchStarted ? { onLaunchStarted } : {}) });
+      await view.ready();
+      await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+      fireEvent.click(view.getByTestId('nsx-send'));
+      fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+      expect(onSpawn).toHaveBeenCalledTimes(1);
+      view.unmount();
+    }
+  });
+
+  it('focus is parked on the launching line, never on the page behind', async () => {
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    const line = await view.findByTestId('lcd3-launching');
+    expect(document.activeElement).toBe(line);
+  });
+});
+
+describe('the advanced drawer', () => {
+  it('reads the plugin facts when it first opens — not at open, and not again on every render', async () => {
+    const loadInstalledPlugins = vi.fn(async () => ({ installed: ['sales@synced'] }));
+    const view = renderPopup({ loadInstalledPlugins });
+    await view.ready();
+    expect(loadInstalledPlugins).not.toHaveBeenCalled();
+    fireEvent.click(view.getByTestId('lcd-advanced-toggle'));
+    await waitFor(() => expect(loadInstalledPlugins).toHaveBeenCalledTimes(1));
+    fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'a re-render' } });
+    fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'another' } });
+    expect(loadInstalledPlugins).toHaveBeenCalledTimes(1);
   });
 });
