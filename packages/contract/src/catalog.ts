@@ -691,7 +691,7 @@ export const OPERATIONS = [
   { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
   // `meta.get` — what this node speaks (TM8 Mobile s-lld §4, version signals):
   // contract version, catalog digest, event schema version, the operations it
-  // answers and the oldest clients it serves. The other bootstrap read beside
+  // mounts and the oldest clients it serves. The other bootstrap read beside
   // `auth.claim.status`, and anonymous for the same reason: a client reads it
   // before it signs in. See `MetaGetResult`.
   { name: 'meta.get',                                    method: 'GET',    path: '/v2/meta',                                                           kind: 'read',    status: 'v1' },

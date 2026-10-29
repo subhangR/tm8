@@ -601,7 +601,7 @@ const ROWS: Record<OperationName, Row> = {
   'meta.get': {
     cmd: ['node', 'meta'],
     syn: 'tm8 node meta',
-    sum: 'Report what this Server speaks: its contract version, catalog digest, event schema version, the operations it answers, and the oldest client versions it serves',
+    sum: 'Report what this Server speaks: its contract version, catalog digest, event schema version, the operations it mounts, and the oldest client versions it serves',
     authz: 'server',
     input: 'none',
     tags: ['meta', 'version', 'contract', 'catalog', 'digest', 'features', 'capabilities', 'compatibility', 'minimum', 'client', 'node'],

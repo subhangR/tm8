@@ -55,7 +55,7 @@ export const CATALOG_SHA256 = createHash('sha256').update(JSON.stringify(OPERATI
  */
 export const MIN_CLIENT_VERSIONS: Readonly<Record<string, string>> = {};
 
-/** The operations this node answers, in catalog order. */
+/** The operations this node mounts, in catalog order. */
 export function metaFeatures(registry: Pick<HandlerRegistry, 'has'>): string[] {
   return OPERATIONS
     .filter((op) => op.status === 'v1' && (op.method === 'WS' || registry.has(op.name)))

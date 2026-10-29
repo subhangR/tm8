@@ -2,7 +2,7 @@
  * `tm8 node …` — facts about the Server as a node, and node administration.
  *
  * `node meta` reads `meta.get`: what the Server speaks (contract version,
- * catalog digest, event schema version, the operations it answers, the oldest
+ * catalog digest, event schema version, the operations it mounts, the oldest
  * client versions it serves). The Server answers it without a credential.
  *
  * `node mode` is SUGAR over `auth.claim.status`:
