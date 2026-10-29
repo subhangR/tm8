@@ -203,18 +203,25 @@ describe('the list stays honest when a read fails or a fact is missing', () => {
   });
 
   it('Show more reads one page at a time, however often it is clicked', async () => {
-    const many = Array.from({ length: 101 }, (_, index) =>
-      fixtureLoopView(`019fe999-0000-7000-8000-${String(index).padStart(12, '0')}`, SPACE, { title: `Loop ${index}`, action: 'dispatch' }));
-    const client = createFixtureLoopsClient(many);
-    mount(client);
-    const more = await screen.findByRole('button', { name: 'Show more' });
-    const list = vi.spyOn(client, 'list');
-    fireEvent.click(more);
-    fireEvent.click(more);
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Show more|Loading/ })).toBeNull());
-    // Only the page reads count: the minute refresh may also run on a slow machine, and it reads page one.
-    expect(list.mock.calls.filter(([, query]) => query?.cursor !== undefined)).toHaveLength(1);
-    expect(screen.getAllByRole('switch')).toHaveLength(101);
+    // A hidden tab: the minute refresh reads nothing, so a machine slow enough to cross 60 s cannot race
+    // the page read (the first read and Show more do not wait on visibility).
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      const many = Array.from({ length: 101 }, (_, index) =>
+        fixtureLoopView(`019fe999-0000-7000-8000-${String(index).padStart(12, '0')}`, SPACE, { title: `Loop ${index}`, action: 'dispatch' }));
+      const client = createFixtureLoopsClient(many);
+      mount(client);
+      const more = await screen.findByRole('button', { name: 'Show more' });
+      const list = vi.spyOn(client, 'list');
+      fireEvent.click(more);
+      fireEvent.click(more);
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Show more|Loading/ })).toBeNull());
+      expect(list).toHaveBeenCalledTimes(1);
+      expect(list.mock.calls[0]?.[1]?.cursor).toBeDefined();
+      expect(screen.getAllByRole('switch')).toHaveLength(101);
+    } finally {
+      visibility.mockRestore();
+    }
   });
 
   it('does not poll while the tab is hidden', async () => {

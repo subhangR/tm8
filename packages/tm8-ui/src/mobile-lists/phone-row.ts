@@ -174,7 +174,7 @@ export function phoneRowOf(row: EntitySummary, now: number = Date.now()): PhoneR
       // The schedule and next run, as the server stored them; a loop with an error or idle says so.
       // `lastError` may be a park reason with no run behind it, so the words are "last error", not "failing".
       const status = loopRowStatus(state, now);
-      const pill: PhonePill | undefined = state.lastError ? { label: 'last error', tone: 'wait' }
+      const pill: PhonePill | undefined = state.lastError ? { label: 'last error', tone: 'block' }
         : status === 'disabled' ? { label: 'disabled', tone: 'idle' }
           : status === 'paused' ? { label: 'paused', tone: 'wait' } : undefined;
       return { ...base, meta: loopRowWords(row, now) ?? author, ...(pill ? { pill } : {}) };
