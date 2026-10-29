@@ -13,11 +13,7 @@ import { listLoopViews, loadLoopView } from './views.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite, type ScheduleState } from './write.js';
 import type { LoopRunHandlerDeps } from './run-handlers.js';
 
-/**
- * What the composition root hands the loops family beyond FacadeDeps (PR2: the executor
- * port). Only the run ops use it: `registerLoopRunHandlers`, mounted next to
- * `registerLoopHandlers` in facade/index.ts.
- */
+/** What the composition root hands the loops family beyond FacadeDeps (PR2: the executor port). */
 export type LoopHandlerDeps = LoopRunHandlerDeps;
 
 /** The route names the target; a repeated body ID must agree with it. */

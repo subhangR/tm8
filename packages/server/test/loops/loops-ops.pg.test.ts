@@ -57,7 +57,6 @@ beforeAll(async () => {
   const registry = new HandlerRegistry();
   const deps = { db, config, owner };
   registerLoopHandlers(registry, deps);
-  // No executor: Run now answers 501, as on a node without execution.
   registerLoopRunHandlers(registry, deps);
   registerW2EntitiesCommandsTrackingHandlers(registry, deps);
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });

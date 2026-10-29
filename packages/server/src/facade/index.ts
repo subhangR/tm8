@@ -254,9 +254,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
-  // PR2: loops.runNow and loops.runs.*, sharing the scheduler's executor port. Mounted
-  // HERE, not from inside registerLoopHandlers: the W1 conformance inventory reads only
-  // the seams this function calls, so a nested registration hides its handlers from it.
+  // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside
+  // registerLoopHandlers, so the W1 source inventory (tools/conformance) counts its registrations.
   registerLoopRunHandlers(registry, facade, deps.loops);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
