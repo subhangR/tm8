@@ -22,7 +22,6 @@
  * `artifact` and `project` have no create door in this client, so the
  * registry marks them not creatable.
  */
-import { LoopFormDialog } from '../../loops/LoopForm';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type FormEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import {
@@ -44,6 +43,7 @@ import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
 import { FRESH_DOC_TITLE, markFreshDoc } from '../../doc-edit';
+import { LoopForm } from '../../loops/LoopForm';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
 import { ToolCreateControl, toolCreateValuesOf } from '../../tools/ToolCreateControl';
 import { onDraftFocusRequest } from '../runtime/draftFocus';
@@ -583,7 +583,7 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
 
 // ---------------------------------------------------------------------------
 // loop: the loop form (the generic header form cannot create one — a loop
-// needs a schedule and a runner)
+// needs a schedule and a runner), drawn in the tab like the skill form
 // ---------------------------------------------------------------------------
 
 function LoopDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
@@ -593,7 +593,8 @@ function LoopDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
     <div className="tws-draft-form" data-testid="tws-draft-loop" onInput={() => onValues({})}>
       <DraftHeading kind={tab.kind} />
       {loops && loopForm ? (
-        <LoopFormDialog
+        <LoopForm
+          inline
           mode="create"
           spaceId={spaceId as SpaceId}
           client={loops}

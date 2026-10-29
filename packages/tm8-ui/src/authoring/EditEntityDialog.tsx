@@ -11,8 +11,8 @@ import { LoopEditDialog } from '../loops/LoopEditDialog';
  * `authoring.css` is imported by `authoring/index.ts`, on the stated reasoning
  * that a host taking one symbol gets the whole vocabulary. That reasoning has a
  * hole a lane has already fallen down (#455): a DEEP-PATH import bypasses the
- * barrel entirely, and `loops/LoopCreateControl.tsx` — which wears `.au-dialog`
- * for the whole `scheduled-work` create form — imports `../authoring/commands`
+ * barrel entirely, and `loops/LoopForm.tsx` — which wears `.au-dialog`
+ * for the whole `scheduled-work` create and edit form — imports `../authoring/commands`
  * and `../authoring/RefusalCard` directly. It has never pulled the barrel.
  *
  * It renders styled today only because something ELSE in the bundle imported

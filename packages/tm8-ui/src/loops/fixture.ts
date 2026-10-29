@@ -82,7 +82,7 @@ export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsC
       const loop = find(loopId);
       const run: LoopRun = {
         id: crypto.randomUUID(), loopId, spaceId: loop.spaceId, firedAt: new Date().toISOString(),
-        trigger: 'manual', requestedBy: FIXTURE_ACTOR, action: loop.definition.action, attempt: 0,
+        trigger: 'manual', requestedBy: FIXTURE_ACTOR, action: loop.definition.action, attempt: 1,
         status: 'running', skipReason: null, error: null, taskId: null, sessionId: null,
         startedAt: null, endedAt: null, durationMs: null, exitCode: null, outputTail: null,
         actedAs: FIXTURE_ACTOR, endedKind: null, usage: null,

@@ -118,7 +118,9 @@ export function useLoopsClient(seam: Pick<Seam, 'commands'> | null | undefined):
  * path (design §4.3) either as `details.path` (string or segments) or, in the
  * facade's zod idiom, as a `path: message` prefix of the message. The
  * `definition.` prefix is dropped so `definition.schedule` → `schedule`, and
- * `definition.toolInputs.<name>` keeps its tail.
+ * `definition.toolInputs.<name>` keeps its tail. The loops doors also repeat
+ * the path at the head of the message (`schedule: cron needs 5 fields`); the
+ * field already names it, so that head is dropped from the text.
  */
 export function fieldPathOf(error: unknown): { path: string; message: string } | null {
   if (typeof error !== 'object' || error === null) return null;
@@ -134,6 +136,9 @@ export function fieldPathOf(error: unknown): { path: string; message: string } |
     path = match[1]!;
     text = match[2]!;
   }
+  const full = path;
   path = path.replace(/^body\./, '').replace(/^definition\./, '');
+  const head = [full, `definition.${path}`, path].find(prefix => prefix !== '' && text.startsWith(`${prefix}: `));
+  if (head) text = text.slice(head.length + 2);
   return path === '' ? null : { path, message: text };
 }
