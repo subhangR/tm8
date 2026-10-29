@@ -235,6 +235,10 @@ describe('tm8 loop edit', () => {
     // --base-ref alone retimes the stored worktree; a mode change drops a ref that no longer applies.
     expect(await run(['loop', 'edit', LOOP, '--base-ref', 'origin/release', '--expect-version', '4'])).toBe(0);
     expect(last().body.definition.config.workdir).toEqual({ mode: 'worktree', baseRef: 'origin/release' });
+    // --base-ref none drops the stored ref (never a ref named "none"); the loop stays on a worktree.
+    expect(await run(['loop', 'edit', LOOP, '--base-ref', 'none', '--expect-version', '4'])).toBe(0);
+    expect(last().body.definition.config.workdir).toEqual({ mode: 'worktree' });
+    expect(JSON.stringify(last().body)).not.toContain('"baseRef":"none"');
     expect(await run(['loop', 'edit', LOOP, '--workdir', 'project', '--expect-version', '4'])).toBe(0);
     expect(last().body.definition.config.workdir).toEqual({ mode: 'project' });
     expect(await run(['loop', 'edit', LOOP, '--workdir', 'scratch', '--base-ref', 'x', '--expect-version', '4'])).toBe(2);
@@ -394,6 +398,22 @@ describe('tm8 loop runs', () => {
 describe('tm8 loop discovery', () => {
   it('help --query routes setting up recurring work to loop create', () => {
     for (const query of ['schedule a teammate', 'run a teammate nightly', 'run a teammate weekly', 'create a loop', 'set up a cron job']) {
+      expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['loop', 'create']);
+    }
+  });
+  it('routes steering an existing loop to its own verb, never to loop create (review of #1405)', () => {
+    const routes: Array<[string, string[]]> = [
+      ['run a loop now', ['loop', 'run-now']],
+      ['run the nightly loop', ['loop', 'run-now']],
+      ['fire the loop now', ['loop', 'run-now']],
+      ['trigger the loop again', ['loop', 'run-now']],
+      ['start the loop', ['loop', 'enable']],
+      ["set a loop's schedule", ['loop', 'edit']],
+      ["change the loop's timezone", ['loop', 'edit']],
+    ];
+    for (const [query, path] of routes) expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(path);
+    // Creating stays a create, with or without a cadence word.
+    for (const query of ['schedule a loop', 'make a nightly loop', 'add a new loop with a weekly schedule']) {
       expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['loop', 'create']);
     }
   });

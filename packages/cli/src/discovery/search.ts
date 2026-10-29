@@ -191,6 +191,13 @@ export interface IntentRoute {
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
 
+/** Words that steer or read a loop that exists; any one keeps a query off `loop create`. */
+const LOOP_STEERING_WORDS = [
+  'pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
+  'runs', 'history', 'cancel', 'archive', 'loops', 'schedules', 'status',
+  'now', 'fire', 'trigger', 'again', 'once', 'immediately',
+];
+
 export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
     intent: 'tick acceptance criteria',
@@ -263,19 +270,59 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       { path: ['entity', 'create'], example: 'tm8 entity create task "<title>" --parent <task-id>' },
     ],
   },
+  /*
+   * LOOPS, steering before setting up. A query that names a loop with a
+   * steering verb is that verb's command (run-now, enable, edit) — never
+   * `loop create`, which would arm a second loop that keeps firing (review of
+   * #1405). These come first because the set-up routes below match on words
+   * a steering query also has ("run", "set", "schedule").
+   */
+  {
+    intent: 'change a loop (its schedule, timezone, instructions or runner)',
+    all: [
+      ['loop'],
+      ['set', 'change', 'edit', 'update', 'retime', 'reschedule'],
+      ['schedule', 'timezone', 'time', 'cadence', 'prompt', 'instructions', 'title', 'name', 'teammate', 'runner',
+        'tool', 'inputs', 'model', 'retry', 'retries', 'runtime', 'concurrency'],
+    ],
+    none: ['new', 'create', 'make', 'add', 'another'],
+    candidates: [{ path: ['loop', 'edit'], example: "tm8 loop edit <id|title> --schedule '<expr>' --expect-version <n>" }],
+  },
+  {
+    intent: 'run a loop now',
+    all: [['loop'], ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once']],
+    none: ['new', 'create', 'make', 'add', 'schedule', 'set', 'pause', 'stop', 'disable', 'delete', 'remove', 'list',
+      'show', 'preview', 'edit', 'runs', 'history', 'status'],
+    candidates: [{ path: ['loop', 'run-now'], example: 'tm8 loop run-now <id|title>' }],
+  },
+  {
+    intent: 'start (enable) a loop',
+    all: [['loop'], ['start', 'enable', 'arm', 'activate']],
+    none: ['new', 'create', 'make', 'add', 'schedule'],
+    candidates: [{ path: ['loop', 'enable'], example: 'tm8 loop enable <id|title> --expect-version <n>' }],
+  },
   {
     // Before `list teammates`: "schedule a teammate" is a loop, not a roster read.
     // Only SETTING UP recurring work routes here: a cadence word AND a set-up
-    // verb ("schedule" is both). Steering or reading an existing loop (pause,
-    // list, stop, preview, ...) falls through to the ranker, which finds that
-    // verb's own row; a one-off "send a daily report" has no set-up verb.
+    // verb ("schedule" is both). A query that names a loop is the routes'
+    // above and below: with a loop, run/start/set steer it. Steering or
+    // reading words veto; a one-off "send a daily report" has no set-up verb.
     intent: 'schedule recurring work (a loop)',
     all: [
-      ['schedule', 'scheduled', 'recurring', 'recur', 'cron', 'loop', 'periodically', 'nightly', 'hourly', 'daily', 'weekly'],
+      ['schedule', 'scheduled', 'recurring', 'recur', 'cron', 'periodically', 'nightly', 'hourly', 'daily', 'weekly'],
       ['schedule', 'create', 'set', 'setup', 'make', 'add', 'new', 'run', 'start', 'automate', 'repeat'],
     ],
-    none: ['pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
-      'runs', 'history', 'cancel', 'archive', 'loops', 'schedules', 'status'],
+    none: [...LOOP_STEERING_WORDS, 'loop'],
+    candidates: [
+      { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
+    ],
+  },
+  {
+    // A loop named with a creating verb. run, start and set are not creating
+    // verbs here: with a loop they steer one (the routes above).
+    intent: 'create a loop',
+    all: [['loop'], ['schedule', 'create', 'setup', 'make', 'add', 'new', 'automate', 'repeat']],
+    none: LOOP_STEERING_WORDS,
     candidates: [
       { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
     ],

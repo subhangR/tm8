@@ -204,14 +204,18 @@ function configFlags(cmd: CommandContext, stored: LoopView['definition']['config
     if (value !== undefined) config[field] = value;
   }
   // `--base-ref` belongs to the worktree variant only, as in `tm8 session spawn`.
-  const workdir = nullableChoice(cmd, 'workdir', WORKDIR_MODES), baseRef = o.value('base-ref');
-  if (workdir !== undefined || baseRef !== undefined) {
+  // `none` drops a stored base ref (the worktree is cut from the default ref),
+  // like every other launch flag's `none`; it is never a ref named "none".
+  const workdir = nullableChoice(cmd, 'workdir', WORKDIR_MODES), rawRef = o.value('base-ref');
+  if (workdir !== undefined || rawRef !== undefined) {
     const mode = workdir === undefined ? stored?.workdir?.mode : workdir;
-    if (baseRef !== undefined && mode !== 'worktree') {
+    if (rawRef !== undefined && mode !== 'worktree') {
       throw usage('--base-ref applies only to a worktree workdir', 'add --workdir worktree');
     }
+    const clearRef = rawRef === 'none';
     // Retiming the mode keeps a stored base ref only while the loop stays on a worktree.
-    const ref = baseRef ?? (mode === 'worktree' && stored?.workdir?.mode === 'worktree' ? stored.workdir.baseRef ?? undefined : undefined);
+    const ref = clearRef ? undefined
+      : rawRef ?? (mode === 'worktree' && stored?.workdir?.mode === 'worktree' ? stored.workdir.baseRef ?? undefined : undefined);
     config.workdir = mode === null || mode === undefined ? null : ref ? { mode, baseRef: ref } : { mode };
   }
   if (o.has('memory')) {
