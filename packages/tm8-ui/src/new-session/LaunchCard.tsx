@@ -257,65 +257,46 @@ function useFitInside(menu: RefObject<HTMLElement | null>, card: RefObject<HTMLE
     const m = menu.current;
     const c = card.current;
     if (!key || !m || !c) return;
-    m.style.left = '';
-    m.style.right = '';
-    const pad = 8;
-    const bounds = c.getBoundingClientRect();
-    let rect = m.getBoundingClientRect();
-    if (rect.width === 0) return; // not laid out (jsdom): nothing to fit
-    const scale = m.offsetWidth > 0 ? m.offsetWidth / rect.width : 1;
-    if (rect.right > bounds.right - pad) {
-      m.style.left = 'auto';
-      m.style.right = '0';
-      rect = m.getBoundingClientRect();
-    }
-    if (rect.left < bounds.left + pad) {
-      const anchor = m.parentElement?.getBoundingClientRect();
-      if (anchor) {
-        m.style.right = 'auto';
-        m.style.left = `${(bounds.left + pad - anchor.left) * scale}px`;
-      }
-    }
-    /* A content-sized card (v3) is shorter than its menus, so a menu may hang
-       past the card over the scrim — but never past the VIEWPORT: one that
-       would is clamped to the room it has and scrolls inside. */
-    m.style.maxHeight = '';
-    rect = m.getBoundingClientRect();
-    const room = rect.top < pad
-      ? rect.bottom - pad
-      : rect.bottom > window.innerHeight - pad ? window.innerHeight - pad - rect.top : null;
-    if (room !== null && room > 0) m.style.maxHeight = `${room * scale}px`;
+    fitMenu(m, c);
+    /* REFIT AS IT GROWS: a menu whose rows land after it opened (Attach's
+       candidates) was clamped to its first, shorter height. */
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => fitMenu(m, c));
+    observer.observe(m);
+    return () => observer.disconnect();
   }, [menu, card, key]);
 }
 
-/**
- * Whether a content-sized card (v3: `height: auto; max-height`) holds more
- * than its max-height allows. Then the stage scrolls inside the card instead
- * of the bands being pushed past its edge. Measured from the stage's CONTENT
- * height, so turning the scroll on does not turn it off again. A fixed-height
- * card (no max-height) is never tall.
- */
-function useOverMaxHeight(card: RefObject<HTMLElement | null>, stage: RefObject<HTMLElement | null>): boolean {
-  const [tall, setTall] = useState(false);
-  useLayoutEffect(() => {
-    const c = card.current;
-    const st = stage.current;
-    if (!c || !st || typeof ResizeObserver === 'undefined') return;
-    const measure = () => {
-      const max = parseFloat(getComputedStyle(c).maxHeight);
-      /* The bands' own heights (and the card's border), summed: "card minus
-         stage" reads short once the content already overflows the card. */
-      const bands = [...c.children].reduce((n, el) => (el === st ? n : n + (el as HTMLElement).offsetHeight), 0)
-        + c.offsetHeight - c.clientHeight;
-      setTall(Number.isFinite(max) && bands + st.scrollHeight > max + 1);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(c);
-    for (const child of [...st.children]) observer.observe(child);
-    return () => observer.disconnect();
-  }, [card, stage]);
-  return tall;
+/** Keeps one open menu inside the card sideways and inside the viewport vertically. */
+function fitMenu(m: HTMLElement, c: HTMLElement) {
+  m.style.left = '';
+  m.style.right = '';
+  const pad = 8;
+  const bounds = c.getBoundingClientRect();
+  let rect = m.getBoundingClientRect();
+  if (rect.width === 0) return; // not laid out (jsdom): nothing to fit
+  const scale = m.offsetWidth > 0 ? m.offsetWidth / rect.width : 1;
+  if (rect.right > bounds.right - pad) {
+    m.style.left = 'auto';
+    m.style.right = '0';
+    rect = m.getBoundingClientRect();
+  }
+  if (rect.left < bounds.left + pad) {
+    const anchor = m.parentElement?.getBoundingClientRect();
+    if (anchor) {
+      m.style.right = 'auto';
+      m.style.left = `${(bounds.left + pad - anchor.left) * scale}px`;
+    }
+  }
+  /* A content-sized card (v3) is shorter than its menus, so a menu may hang
+     past the card over the scrim — but never past the VIEWPORT: one that
+     would is clamped to the room it has and scrolls inside. */
+  m.style.maxHeight = '';
+  rect = m.getBoundingClientRect();
+  const room = rect.top < pad
+    ? rect.bottom - pad
+    : rect.bottom > window.innerHeight - pad ? window.innerHeight - pad - rect.top : null;
+  if (room !== null && room > 0) m.style.maxHeight = `${room * scale}px`;
 }
 
 export function Caret({ up }: { up?: boolean }) {
@@ -372,8 +353,11 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   accessLock?: string | null;
   /** Tab cycles inside the card, and focus returns to the opener when it closes. */
   trapFocus?: boolean;
-  /** Drawn over the whole card, bands included (v3's launching line). */
-  overlay?: ReactNode;
+  /**
+   * Drawn INSTEAD of the bands and the stage (v3's launching line). The
+   * shell stays mounted, so its state (drawer, picks) survives a refusal.
+   */
+  collapsed?: ReactNode;
   /**
    * Draw the popup's scrim. The shell owns which menu is open, so it owns the
    * outside click too: a click there closes an open menu first, else the card.
@@ -391,7 +375,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
     installedPlugins, installedPluginsNote, pluginSkillCounts, plugins, onPluginsChange, budget, advancedEdited,
     onAdvancedOpen,
     jevTeammate = null, jevModel = null,
-    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, overlay, scrim = false,
+    verb, center, actions, className, onEscapeFirst, accessLock = null, trapFocus = false, collapsed = null, scrim = false,
   } = props;
 
   const card = useRef<HTMLDivElement | null>(null);
@@ -408,8 +392,6 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   const dragDepth = useRef(0);
 
   const close = useCallback(() => setOpen(null), []);
-  const stage = useRef<HTMLDivElement | null>(null);
-  const tall = useOverMaxHeight(card, stage);
   const toggle = useCallback((name: string) => setOpen((current) => (current === name ? null : name)), []);
   useFitInside(menuRef, card, open);
 
@@ -444,10 +426,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         const scope = card.current.querySelector<HTMLElement>('[data-focus-scope]') ?? card.current;
         const focusable = [...scope.querySelectorAll<HTMLElement>(
           'button, input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]')
-          /* A control under `display: none` (the v3 card while launching) is
-             not focusable either: Tab moved focus to the page behind. */
-          && (el.checkVisibility?.() ?? true));
+        )].filter((el) => !el.hasAttribute('disabled') && !el.closest('[aria-hidden="true"], [hidden]'));
         /* Nothing to tab to (the launching line holds focus): Tab stays put. */
         if (focusable.length === 0) { event.preventDefault(); return; }
         const first = focusable[0]!;
@@ -554,7 +533,6 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       data-shake={shaking || undefined}
       data-drop={dropping || undefined}
       data-busy={busy || undefined}
-      data-tall={tall || undefined}
       onAnimationEnd={onShakeEnd}
       onClick={close}
       /* FILES DROP ANYWHERE ON THE CARD. Only a drag that carries files lights
@@ -581,6 +559,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         files(event.dataTransfer.files);
       }}
     >
+      {collapsed ?? <>
       {/* ============ TOP BAND: who · where · more ============ */}
       <header className="lcd-band lcd-band--top">
         {verb}
@@ -836,7 +815,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       </header>
 
       {/* ============ CENTER: the version's own ============ */}
-      <div className="lcd-stage" ref={stage}>
+      <div className="lcd-stage">
         {center}
         {/* REFUSAL floats over the bottom of the center: no permanent row. */}
         {(refusal ?? notice) ? (
@@ -1091,7 +1070,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         <span className="lcd-spacer" />
         {actions}
       </footer>
-      {overlay}
+      </>}
     </div>
     </LaunchCardMenuContext.Provider>
   );

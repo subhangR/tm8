@@ -86,7 +86,19 @@ function Harness() {
     const menu = params.get('open');
     if (menu) document.querySelector<HTMLElement>(`[data-testid="${menu}"]`)?.click();
     if (params.get('drawer') === '1') document.querySelector<HTMLElement>('[data-testid="lcd-advanced-toggle"]')?.click();
-    if (params.get('launch') === '1') document.querySelector<HTMLElement>('[data-testid="nsx-send"]')?.click();
+    if (params.get('launch') === '1') {
+      /* Press only once Launch is enabled (the defaults and readiness have
+         landed), as launch-test-kit does: a press on a refused Launch would
+         photograph the idle card as "launching". */
+      const press = () => {
+        const go = document.querySelector<HTMLElement>('[data-testid="nsx-send"]');
+        if (go?.getAttribute('aria-disabled') !== 'false') { requestAnimationFrame(press); return; }
+        go.click();
+        requestAnimationFrame(() => setReady(true));
+      };
+      press();
+      return;
+    }
     requestAnimationFrame(() => setReady(true));
   };
 

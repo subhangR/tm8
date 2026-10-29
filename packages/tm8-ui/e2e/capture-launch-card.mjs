@@ -43,6 +43,8 @@ const SHOTS = [
   { name: '1440x480-long-notes', w: 1440, h: 480, q: '?text=long' },
   { name: '1440x480-long-notes-drawer', w: 1440, h: 480, q: '?text=long&drawer=1' },
   { name: '390x600-phone-long-notes', w: 390, h: 600, q: '?text=long' },
+  { name: '1440x480-long-notes-attach-menu', w: 1440, h: 480, q: '?text=long&open=lcd3-attach' },
+  { name: '1440x480-long-notes-group-menu', w: 1440, h: 480, q: '?text=long&open=lcd3-group-doc' },
 ];
 
 /* Measured in the page: the card's box, and every control/menu box that

@@ -193,6 +193,11 @@ export interface LaunchCardV3Props extends LaunchCardShellProps {
    * <model> · <effort>"): the card collapses to it. Null: nothing in flight.
    */
   launching?: string | null;
+  /**
+   * Present once a press has been in flight long enough to be DETACHED: the
+   * launching line offers ✕, which closes the card and lets the press go on.
+   */
+  onDetach?(): void;
   /** Draw the popup's scrim; its click closes an open menu, else the card (the shell owns both). */
   scrim?: boolean;
   /** The node fixes the access mode for this verb, and why. */
@@ -209,15 +214,20 @@ export function LaunchCardV3(props: LaunchCardV3Props) {
       className="lcd--v3"
       onSubmit={props.onLaunch}
       trapFocus
-      overlay={launching ? <LaunchingLine line={launching} /> : null}
+      collapsed={launching ? <LaunchingLine line={launching} {...(props.onDetach ? { onDetach: props.onDetach } : {})} /> : null}
       verb={<VerbSwitch verb={verb} onChange={onVerbChange} />}
       center={(
         <div className="lcd-center lcd3-center">
           <TitleRow {...props} />
-          <Notes {...props} />
-          {connectors ? (
-            <div className="mcp-launch-slot" hidden={connectors.count <= 0} data-testid="lcd3-connectors">{connectors.node}</div>
-          ) : null}
+          {/* THE BODY is the only part that scrolls when the card hits its
+              max height: the title row and the strip — where every menu is
+              anchored — stay outside the scroller, so no menu is clipped. */}
+          <div className="lcd3-body">
+            <Notes {...props} />
+            {connectors ? (
+              <div className="mcp-launch-slot" hidden={connectors.count <= 0} data-testid="lcd3-connectors">{connectors.node}</div>
+            ) : null}
+          </div>
           <Strip {...props} />
         </div>
       )}
@@ -227,17 +237,29 @@ export function LaunchCardV3(props: LaunchCardV3Props) {
 }
 
 /**
- * The press in flight, as one line. Focus is PARKED on it: every control of
- * the card is hidden while it shows, and focus must not fall to the page
- * behind the modal.
+ * The press in flight, as one line, drawn INSTEAD of the card's bands. Focus
+ * is PARKED on it, so it never falls to the page behind the modal. Once the
+ * press may be detached, ✕ closes the card and lets the press go on.
  */
-function LaunchingLine({ line }: { line: string }) {
+function LaunchingLine({ line, onDetach }: { line: string; onDetach?: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
     <div ref={ref} tabIndex={-1} className="lcd3-launching" role="status" aria-live="polite" data-testid="lcd3-launching" title={line}>
       <span className="lcd3-spinner" aria-hidden="true" />
       <span className="lcd3-launching__t">{line}</span>
+      {onDetach ? (
+        <button
+          type="button"
+          className="lcd-icon lcd3-detach"
+          data-testid="lcd3-detach"
+          aria-label="Close — the launch continues"
+          title="Close · the launch continues"
+          onClick={(event) => { event.stopPropagation(); onDetach(); }}
+        >
+          ✕
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -638,11 +660,12 @@ function Strip(props: LaunchCardV3Props) {
      rows are back in Attach. One whose menu is open stays until it closes,
      so unticking its last row doesn't pull the menu out from under you. */
   const shownGroups = strip.filter((g) => g.yours + g.jev > 0 || g.def.kind === openGroup);
-  /* SUGGESTED BUT UNTICKED — a default or a Jev pick the person left out —
+  /* SUGGESTED BUT UNTICKED — a default or a Jev pick that is unticked —
      stays ONE click from the launch: listed first in Attach, counted on its
-     chip (coordinator's guard on present-only). Teammates can't be sent yet,
-     so they aren't offered. */
-  const suggested = strip.flatMap((g) => g.rows).filter((r) => !r.ticked && !r.unsent);
+     chip (coordinator's guard on present-only). A row Jev deliberately left
+     out is not a suggestion; teammates can't be sent yet. */
+  const suggested = strip.flatMap((g) => g.rows)
+    .filter((r) => !r.ticked && !r.unsent && r.jev !== 'left-out' && (r.source === 'default' || r.jev === 'picked'));
   const suggestedIds = new Set<string>(suggested.map((r) => r.id));
 
   const pool = candidates ?? [];

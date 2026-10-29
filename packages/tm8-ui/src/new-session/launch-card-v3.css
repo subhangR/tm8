@@ -33,22 +33,23 @@
 .lcd--v3 .lcd-band--bot { min-height: 52px; }
 /* The stage stacks: the center, then the refusal in flow — a content-sized
    center has no empty space for a floating one to sit over. */
-.lcd--v3 .lcd-stage { flex: none; flex-direction: column; }
-.lcd--v3 .lcd-stage:has(> .lcd-drawer[data-open]) { min-height: min(440px, calc(100cqh - 160px)); }
+.lcd--v3 .lcd-stage { flex: 0 1 auto; flex-direction: column; min-height: 0; }
+.lcd--v3 .lcd-stage:has(> .lcd-drawer[data-open]) { min-height: min(440px, calc(100cqh - 176px)); }
+/* MORE THAN FITS (long notes, connectors, the drawer, a short viewport): the
+   card's max-height shrinks the stage, the center and then the BODY (notes +
+   connectors), which scrolls. Plain flexbox, no measuring: the bands never
+   leave the card, and the title row and the strip — where every menu is
+   anchored — are never inside a scroller, so no menu is clipped. */
+.lcd--v3 .lcd3-center { flex: 0 1 auto; min-height: 0; }
+.lcd3-body { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 36px; overflow-y: auto; }
 .lcd--v3 .lcd-refusal { position: static; margin: 0 var(--g) 8px; box-shadow: none; }
 /* One accent: focus is the brand ring the shell's controls use, everywhere —
    the autofocused notes box included. */
 .lcd--v3 :is(button, textarea, input):focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
-/* MORE THAN FITS (`data-tall`, measured by the shell: long notes, connectors,
-   uploads, the drawer, a short viewport): the card takes its max height and
-   the STAGE scrolls inside it — the bands never leave the card. */
-.lcd--v3[data-tall] { height: calc(100cqh - 48px); }
-.lcd--v3[data-tall] .lcd-stage { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 
 /* -------------------------------------------------------- launching */
 
-/* THE PRESS IN FLIGHT: the card collapses to one line, not a greyed form. */
-.lcd--v3:has(> .lcd3-launching) > :not(.lcd3-launching) { display: none; }
+/* THE PRESS IN FLIGHT: the shell draws this line instead of its bands. */
 .lcd3-launching {
   /* Focus is parked here (not a control): no ring on a status line. */
   outline: none;
@@ -62,6 +63,7 @@
   font-size: 14px;
 }
 .lcd3-launching__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-detach { margin-left: auto; }
 .lcd3-spinner {
   flex: none;
   width: 16px;
@@ -427,5 +429,4 @@
    the width; this sheet loads after it, so it has to say it again. */
 @container lcpop (max-width: 600px) {
   .lcd--v3 { width: 100%; height: auto; max-height: 92cqh; }
-  .lcd--v3[data-tall] { height: 92cqh; }
 }

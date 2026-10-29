@@ -17,10 +17,11 @@
  * jsdom has no layout, so none of this says anything about clipping or the
  * card's width — the screenshots on the PR do.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, waitFor, within } from '@testing-library/react';
 
 import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
+import { DETACH_AFTER_MS } from './LaunchComposerPopup';
 import { controlledUpload, file, renderPopup } from './launch-test-kit';
 
 beforeEach(() => { localStorage.clear(); });
@@ -621,19 +622,42 @@ describe('a press in flight', () => {
     expect(view.onDismiss).not.toHaveBeenCalled();
   });
 
-  it('a double press calls onSpawn once — with the handoff taken by a host that keeps the card mounted, and without it', async () => {
-    for (const onLaunchStarted of [() => true, undefined]) {
-      const onSpawn = vi.fn(() => new Promise<void>(() => {}));
-      const view = renderPopup({ onSpawn, onDismiss: () => {}, ...(onLaunchStarted ? { onLaunchStarted } : {}) });
-      await view.ready();
-      await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
-      fireEvent.click(view.getByTestId('nsx-send'));
-      fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
-      await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
-      await new Promise((resolve) => { setTimeout(resolve, 20); });
-      expect(onSpawn).toHaveBeenCalledTimes(1);
-      view.unmount();
-    }
+  it('a double press in one frame calls onSpawn once', async () => {
+    const onSpawn = vi.fn(() => new Promise<void>(() => {}));
+    const view = renderPopup({ onSpawn, onDismiss: () => {} });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    fireEvent.keyDown(document, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(onSpawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('handed off to a host that keeps the card mounted: the card is idle again, and a second press replays the same key', async () => {
+    const onSpawn = vi.fn(() => new Promise<void>(() => {}));
+    const view = renderPopup({ onSpawn, onDismiss: () => {}, onLaunchStarted: () => true });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+    expect(view.queryByTestId('lcd3-launching')).toBeNull();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
+    const ids = onSpawn.mock.calls.map((c) => (c as unknown as [{ clientMutationId: string }])[0].clientMutationId);
+    expect(ids[1]).toBe(ids[0]);
+  });
+
+  it('a handoff that throws is a refused launch: nothing is sent and the card says why', async () => {
+    const onSpawn = vi.fn();
+    const view = renderPopup({ onSpawn, onLaunchStarted: () => { throw new Error('host exploded'); } });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(view.getByRole('alert').textContent).toContain('host exploded'));
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(onSpawn).not.toHaveBeenCalled();
+    expect(view.queryByTestId('lcd3-launching')).toBeNull();
   });
 
   it('focus is parked on the launching line, never on the page behind', async () => {
@@ -656,5 +680,48 @@ describe('the advanced drawer', () => {
     fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'a re-render' } });
     fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'another' } });
     expect(loadInstalledPlugins).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('detaching a long press', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('before DETACH_AFTER_MS Escape does nothing and there is no ✕; after it, ✕ and Escape close the card and the press goes on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let settle: (() => void) | null = null;
+    const onSpawn = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+    const view = renderPopup({ onSpawn });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await view.findByTestId('lcd3-launching');
+    act(() => { vi.advanceTimersByTime(DETACH_AFTER_MS - 100); });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.queryByTestId('lcd3-detach')).toBeNull();
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(view.getByTestId('lcd3-detach')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+    settle!();
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(1));
+    await act(async () => { await Promise.resolve(); });
+    expect(view.onDismiss).toHaveBeenCalledTimes(1); // the success does not dismiss twice
+  });
+
+  it('a refusal after detaching goes to the host’s onDetachedRefusal', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let reject: ((e: Error) => void) | null = null;
+    const onDetachedRefusal = vi.fn();
+    const view = renderPopup({ onSpawn: vi.fn(() => new Promise<void>((_, no) => { reject = no; })), onDetachedRefusal });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(reject).not.toBeNull());
+    act(() => { vi.advanceTimersByTime(DETACH_AFTER_MS); });
+    fireEvent.click(view.getByTestId('lcd3-detach'));
+    expect(view.onDismiss).toHaveBeenCalledTimes(1);
+    reject!(new Error('teammate is paused'));
+    await waitFor(() => expect(onDetachedRefusal).toHaveBeenCalledWith('teammate is paused'));
   });
 });

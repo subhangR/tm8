@@ -103,7 +103,14 @@ import './new-session.css';
  */
 
 /** Where a press is: see `phase` in the popup. */
-type PressPhase = 'idle' | 'launching' | 'dispatching';
+type PressPhase = 'idle' | 'launching' | 'dispatching' | 'detached';
+
+/**
+ * How long a press holds the card before ✕ and Escape may DETACH it: a
+ * spawn that hangs to its 180 s timeout must not lock the person behind the
+ * scrim, but a normal one answers well inside this.
+ */
+export const DETACH_AFTER_MS = 8000;
 
 /** `ExecutionDispatchInput.note`'s cap in the contract schema. */
 const DISPATCH_NOTE_MAX = 4000;
@@ -128,6 +135,13 @@ export interface LaunchComposerPopupProps {
   teammates: readonly PopupTeammate[];
   projects?: readonly LaunchProjectOption[];
   capacity?: LaunchCapacity;
+  /**
+   * A refusal that arrives after the person DETACHED the card (closed it
+   * mid-flight, after DETACH_AFTER_MS): the card is gone, so the host shows
+   * it (a toast). Absent ⇒ it reaches the person only through the session
+   * list.
+   */
+  onDetachedRefusal?(reason: string): void;
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
   /** Called synchronously when Launch is pressed, before the node answers. Return true to take over the progress display: the popup dismisses at once and the host owns everything after (progress, success, failure). Return false/undefined to keep the in-card "Launching…" state until onSpawn settles (today's behaviour, kept for hosts that do not implement it). */
@@ -239,6 +253,7 @@ export function LaunchComposerPopup({
   capacity,
   onSpawn,
   onLaunchStarted,
+  onDetachedRefusal,
   loadDescription,
   canEditSubject = false,
   onDismiss,
@@ -459,21 +474,56 @@ export function LaunchComposerPopup({
   };
 
   /**
-   * THE PRESS, as one named state: idle (the card is editable), launching
-   * or dispatching (a press is in flight: the card is the one-line row, or
-   * the host took it over). `moveTo` is the only transition: a press leaves
-   * idle; a refusal, a timeout or an undelivered dispatch returns to idle;
-   * success dismisses. The ref mirrors it SYNCHRONOUSLY, so a second press
-   * (or an Escape) in the same frame already sees the first one.
+   * THE PRESS, as one named state. `moveTo` is the only transition.
+   *   idle         the card is editable.
+   *   launching    a press is in flight: the card is the one-line row.
+   *   dispatching  the same, for Dispatch.
+   *   detached     the person closed the card mid-flight (after
+   *                DETACH_AFTER_MS): the press continues without it.
+   * A press leaves idle; a refusal, a timeout or an undelivered dispatch
+   * returns to idle (or, detached, goes to `onDetachedRefusal`); success, or
+   * a host taking the handoff, dismisses and returns to idle. The ref
+   * mirrors it SYNCHRONOUSLY, so a second press (or an Escape) in the same
+   * frame already sees the first one.
    */
   const [phase, setPhase] = useState<PressPhase>('idle');
   const phaseNow = useRef<PressPhase>('idle');
   const moveTo = (next: PressPhase) => { phaseNow.current = next; setPhase(next); };
   const pending = phase !== 'idle';
-  /* NO DISMISSAL MID-FLIGHT: the spawn still answers this card (success
-     closes it, a refusal reopens it with the reason), so Escape, the scrim
-     and ✕ wait for it. */
-  const dismiss = () => { if (phaseNow.current === 'idle') onDismiss?.(); };
+  /* A CHANGED SUBJECT is a new card: nothing in flight carries over. */
+  const subjectSeen = useRef(subject.id);
+  useEffect(() => {
+    if (subjectSeen.current === subject.id) return;
+    subjectSeen.current = subject.id;
+    moveTo('idle');
+  }, [subject.id]);
+  /* DETACHABLE once a press has been in flight DETACH_AFTER_MS. */
+  const [detachable, setDetachable] = useState(false);
+  const detachableNow = useRef(false);
+  useEffect(() => {
+    detachableNow.current = false;
+    setDetachable(false);
+    if (phase !== 'launching' && phase !== 'dispatching') return;
+    const timer = setTimeout(() => { detachableNow.current = true; setDetachable(true); }, DETACH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  /* DISMISSAL: idle closes. In flight, the spawn still answers this card
+     (success closes it, a refusal reopens it with the reason), so Escape,
+     the scrim and ✕ do nothing — until DETACH_AFTER_MS, after which they
+     detach it: the card closes and the press continues without it. */
+  const dismiss = () => {
+    if (phaseNow.current === 'idle') { onDismiss?.(); return; }
+    if (phaseNow.current === 'detached' || !detachableNow.current) return;
+    moveTo('detached');
+    onDismiss?.();
+  };
+  /** A refusal for the person: on the card, or — detached — to the host. */
+  const refuse = (reason: string) => {
+    if (phaseNow.current === 'detached') { onDetachedRefusal?.(reason); moveTo('idle'); return; }
+    moveTo('idle');
+    setNodeRefusal(reason);
+    setShaking(true);
+  };
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
   /** One shake per refusal — cleared by its own animationend. */
@@ -485,8 +535,8 @@ export function LaunchComposerPopup({
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
   /* TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): McpPicker's
-     `onCount(n)` replaces this probe; until then "the picker drew something"
-     is the only count the card can read. */
+     `onCount(n)` replaces the DrawnCount probe below, and lane F deletes it
+     in that change; until then the card counts the connector rows drawn. */
   const [mcpCount, setMcpCount] = useState(0);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
@@ -516,22 +566,23 @@ export function LaunchComposerPopup({
   }, [subject.id]);
 
   const fail = (error: unknown) => {
-    moveTo('idle');
-    setNodeRefusal(
-      String((error as { message?: string })?.message ?? error)
-        || 'the node refused this launch and gave no reason',
-    );
-    setShaking(true);
+    refuse(String((error as { message?: string })?.message ?? error) || 'the node refused this launch and gave no reason');
   };
   const succeed = () => {
     committed.current = true;
     clearDraft(subject.id);
-    onDismiss?.();
+    /* Detached, the card is already closed. */
+    if (phaseNow.current !== 'detached') onDismiss?.();
+    moveTo('idle');
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
      in-flight retry, the card looks for the session before offering one. */
   const afterTimeout = () => {
+    if (phaseNow.current === 'detached') {
+      refuse('The node didn’t answer in time — the launch may have started. Look at the task’s sessions before launching again.');
+      return;
+    }
     moveTo('idle');
     setShaking(true);
     if (!sessionsSince) {
@@ -632,11 +683,19 @@ export function LaunchComposerPopup({
        `run` is the only call of `onSpawn` (on the next microtask, so the
        handoff below is still asked first). */
     moveTo('launching');
+    /* THE HANDOFF: asked synchronously, before the node is. A host that
+       throws is a refused launch, and nothing is sent. */
+    let taken = false;
+    try {
+      taken = onLaunchStarted?.(launchStarted(input)) === true;
+    } catch (error) {
+      fail(error);
+      return;
+    }
     const run = Promise.resolve().then(() => onSpawn(input));
-    /* THE HANDOFF: asked synchronously, before the node answers. A host that
-       takes it owns the progress and the failure, so the spawn's errors are
-       not drawn here — the card is gone by the time they arrive. */
-    if (onLaunchStarted?.(launchStarted(input)) === true) {
+    /* A host that takes it owns the progress and the failure, so the spawn's
+       errors are not drawn here — the card is gone by the time they arrive. */
+    if (taken) {
       run.then(keepPicks, () => { /* the host's to show */ });
       succeed();
       return;
@@ -908,8 +967,7 @@ export function LaunchComposerPopup({
         if (r?.delivery === 'undelivered') {
           /* Not a success: the request is stored on the task, but no
              dispatcher received it. Say so and keep the card up. */
-          moveTo('idle');
-          setNodeRefusal(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
+          refuse(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
           return;
         }
         succeed();
@@ -919,7 +977,7 @@ export function LaunchComposerPopup({
   const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
   /* THE LAUNCHING LINE: the card collapses to what was pressed, not a greyed form. */
   const teammateWord = teammates.find((t) => t.id === config.teamMemberId)?.label ?? null;
-  const launchingLine = phase === 'idle'
+  const launchingLine = phase === 'idle' || phase === 'detached'
     ? null
     : phase === 'dispatching'
       ? `Dispatching ${subject.title}`
@@ -1021,6 +1079,7 @@ export function LaunchComposerPopup({
         } : null}
         onLaunch={commit}
         launching={launchingLine}
+        {...(detachable ? { onDetach: dismiss } : {})}
         models={catalog.map((entry) => ({
           id: entry.model,
           label: entry.label,
@@ -1069,20 +1128,22 @@ export function LaunchComposerPopup({
 
 
 /**
- * How many things a child drew: 0 while it renders nothing. A stand-in for
- * the count lane F's `McpPicker onCount` will report; the child stays
- * MOUNTED at 0, because it reads its catalog and readiness while hidden.
+ * How many CONNECTOR ROWS the picker drew (`.mcp-toggles__rows > li`): 0
+ * while it draws none — its loading or error line is not a connector. A
+ * stand-in for lane F's `McpPicker onCount`; lane F deletes it when that
+ * lands. The child stays MOUNTED at 0: it reads its catalog and readiness
+ * while hidden.
  */
 function DrawnCount({ onCount, children }: { onCount(n: number): void; children: ReactNode }) {
   const ref = useRef<HTMLSpanElement | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const read = () => onCount(el.childElementCount);
+    const read = () => onCount(el.querySelectorAll('.mcp-toggles__rows > li').length);
     read();
     if (typeof MutationObserver === 'undefined') return;
     const observer = new MutationObserver(read);
-    observer.observe(el, { childList: true });
+    observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [onCount]);
   return <span ref={ref} style={{ display: 'contents' }}>{children}</span>;
