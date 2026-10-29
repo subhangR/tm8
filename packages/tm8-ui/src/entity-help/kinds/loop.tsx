@@ -1,22 +1,27 @@
 /**
- * LOOP — Entity Help, wave 5.
+ * LOOP — Entity Help, wave 5; rewritten for first-class loops (loops PR6).
  *
- * Fact-checked against db/migrations/091_loops.sql (the table and both doors),
- * packages/server/src/scheduler/jobs/loops.ts (the executor: skip, never
- * backfill; overlap guard; errors never disable), scheduler/schedule.ts (the
- * `every <n>{m|h|d}` / 5-field UTC cron grammar), createLoopExecutorPort in
- * facade/execution-handlers.ts (derive task → triggered_by → spawn or
- * dispatch → triggered_by), loops/LoopHeader.tsx (Run now fires through
- * loops.runNow; Disable keeps the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
- * The toolkit's verbs are the `tm8 loop` noun (packages/cli/src/commands/loop.ts,
- * docs/api-and-cli/LOOP-CLI.md).
+ * Fact-checked against the merged code: the loops table and its doors
+ * (db/migrations/384_loops_first_class.sql, 385_loop_runs.sql: loop_run_claim,
+ * loop_run_settle), packages/server/src/scheduler/schedule.ts (`every
+ * <n>{m|h|d}` or a five-field cron read in the loop's IANA timezone;
+ * describeSchedule; previewSchedule), packages/server/src/loops/write.ts
+ * (scheduleWrite: the server sets every next run; a schedule that never
+ * matches parks the loop), packages/server/src/scheduler/jobs/loops.ts (the
+ * 60 s tick; claim, then fire; overlap skip|queue; retry; max runtime →
+ * timed_out; dispatch settles completed at delivery), loops/run-handlers.ts
+ * (Run now fires synchronously and answers the run, 409 loop_run_overlap
+ * unless forced; runs.stop), packages/cli/src/commands/loop.ts (the toolkit's
+ * verbs, docs/api-and-cli/LOOP-CLI.md), the loop form and page
+ * (packages/tm8-ui/src/loops/) and bootstrap/default-teammates.ts (the
+ * Dreamer's seeded loop).
  *
  * SIGNATURE MOMENT: the metronome. Eight due moments play left to right, one
- * beat at a time: fired, fired, skipped because the last session is still
- * live, three beats lost while the node was down, then a firing counted from
- * now. Each lit firing shows its receipt (↖), the session's triggered_by.
- * It is the executor's two rules, drawn. Under reduced motion every beat
- * is lit at once and the captions carry the same meaning.
+ * beat at a time: fired, fired, skipped because the last run is still live,
+ * three beats lost while the node was down, then a firing counted from then.
+ * Each lit firing leaves a run row (↖) and its session's triggered_by. It is
+ * the executor's two rules, drawn. Under reduced motion every beat is lit at
+ * once and the captions carry the same meaning.
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useMotion } from '../motion/MotionContext';
@@ -27,7 +32,7 @@ type BeatState = 'fired' | 'skipped' | 'missed' | 'recounted';
 const METRONOME: readonly { readonly state: BeatState; readonly mark: string; readonly caption: string }[] = [
   { state: 'fired', mark: '●', caption: 'fired' },
   { state: 'fired', mark: '●', caption: 'fired' },
-  { state: 'skipped', mark: '◐', caption: 'still live · skip' },
+  { state: 'skipped', mark: '◐', caption: 'still live · skipped run' },
   { state: 'missed', mark: '×', caption: 'down · gone' },
   { state: 'missed', mark: '×', caption: 'down · gone' },
   { state: 'missed', mark: '×', caption: 'down · gone' },
@@ -140,7 +145,7 @@ function Metronome() {
         })}
       </ol>
       <figcaption className="eh-eyebrow" style={{ display: 'block', marginTop: 'var(--pn-space-2)' }}>
-        ↖ · a new triggered_by from that firing’s session
+        ↖ · a run row, and that firing’s session points home (triggered_by)
       </figcaption>
     </figure>
   );
@@ -150,16 +155,17 @@ export const LOOP_HELP: KindHelpModule = {
   kind: 'loop',
 
   story: {
-    logline: 'A loop is a standing appointment the graph keeps for you, and every kept appointment leaves a receipt pointing home.',
+    logline: 'A loop is a standing appointment the graph keeps for you, and every kept appointment leaves a run behind it.',
 
     opening: (
       <>
         <p>
-          A loop is a schedule with a job attached. It says <em>when</em> (<code>every 1d</code>, or a five-field cron
-          line read in the loop&rsquo;s own timezone, UTC unless you pick one), <em>who</em> (a teammate, or nobody,
-          which hands each firing to the Dispatcher) and{' '}
-          <em>what</em> (a prompt every firing carries). When its moment comes, tm8 derives a
-          task, spawns a session on it and ties both back to the loop.
+          A loop is a schedule with a job attached. It says <em>when</em>: <code>every 2h</code>, or a five-field cron
+          line read in the loop&rsquo;s own timezone (UTC unless you pick one). It says <em>who</em>: a teammate, the
+          Dispatcher (which picks one each time), or a tool, run with its inputs. And it says <em>what</em>: the
+          instructions every firing carries, and optionally what it is about. When its moment comes, tm8 fires it: a
+          teammate&rsquo;s session on a task derived from that subject, a dispatch request, or a tool run. Every firing
+          is recorded as a run.
         </p>
         <p>
           Before loops, periodic work lived in someone&rsquo;s head or in a crontab on one machine, and whether it had
@@ -173,13 +179,14 @@ export const LOOP_HELP: KindHelpModule = {
     beats: [
       {
         eyebrow: 'Why it exists',
-        title: 'The receipts are the history',
+        title: 'Every firing is a run',
         body: (
           <p>
-            There is no run log. Each firing&rsquo;s session points back at the loop with a{' '}
-            <code>triggered_by</code> edge, and so does the task it works on, so the loop&rsquo;s inbound edges{' '}
-            <em>are</em> its run history. The RUNS block on the panel is that edge list, counted. The task&rsquo;s
-            edge is written before the session is spawned, so a firing that dies halfway still leaves its mark.
+            The loop page&rsquo;s RUNS table is the history: one row per firing, by schedule or by Run now, with its
+            status (running, completed, failed, skipped, stopped, timed out), how long it took, the task and session it
+            made, and why it failed or was skipped. The task and session also point back at the loop with a{' '}
+            <code>triggered_by</code> edge, so the graph tells the same story. A firing is claimed and recorded before
+            anything is launched, so one that dies halfway still leaves its row.
           </p>
         ),
       },
@@ -189,11 +196,12 @@ export const LOOP_HELP: KindHelpModule = {
         body: (
           <>
             <p>
-              The scheduler wakes about once a minute and fires whatever is due. If the last firing&rsquo;s session is
-              still live, this one is skipped. If the node was down for six hours, the missed firings are simply gone,
-              and the next deadline is counted from now. A loop means <em>do this periodically</em>, not{' '}
-              <em>keep a queue</em>. Six hours of an <code>every 5m</code> loop, replayed, would be seventy-two sessions at
-              once, and that is not catching up.
+              The scheduler wakes once a minute and fires whatever is due. If the last firing is still live, a loop set
+              to <em>skip</em> records this firing as skipped and waits for the next; one set to <em>queue</em> waits
+              and fires as soon as the previous run settles. If the node was down for six hours, the missed firings are
+              simply gone: the loop fires once when the node is back, and the next deadline is counted from that
+              firing. A loop means <em>do this periodically</em>, not <em>keep a backlog</em>. Six hours of an{' '}
+              <code>every 5m</code> loop, replayed, would be seventy-two sessions at once, and that is not catching up.
             </p>
             <Metronome />
           </>
@@ -201,13 +209,32 @@ export const LOOP_HELP: KindHelpModule = {
       },
       {
         eyebrow: 'Who runs it',
-        title: 'A named runner, or the Dispatcher',
+        title: 'A teammate, the Dispatcher, or a tool',
         body: (
           <p>
-            Name a teammate and each firing spawns that teammate, with the loop&rsquo;s spawn config choosing model,
-            tool and access mode. Leave the runner blank and the firing becomes a dispatch request, and the Dispatcher
-            picks the hands. The task is derived from the loop&rsquo;s subject, or from the loop itself when it names
-            none, and an open derived task is reused, so successive firings gather on one task until someone closes it.
+            Pick a teammate and each firing spawns that teammate, with the loop&rsquo;s advanced settings choosing how
+            it launches. Pick <em>Dispatcher decides</em> and the firing becomes a dispatch request: the Dispatcher
+            picks the hands. Pick a tool and the firing runs it with the inputs you typed; a tool that reaches tm8 runs
+            as the teammate you name under <em>Runs as</em>. A teammate&rsquo;s task is derived from what the loop is
+            about, or from the loop itself, and an open derived task is reused, so successive firings gather on one
+            task until someone closes it. A firing acts as the loop&rsquo;s armer, the human who last created, enabled
+            or edited it, or as the fallback the page names once that person has left; an agent&rsquo;s edit disarms
+            it.
+          </p>
+        ),
+      },
+      {
+        eyebrow: 'Steering it',
+        title: 'Run now, pause, and the clock',
+        body: (
+          <p>
+            <strong>Run now</strong> fires the loop at once, beside its schedule, and answers with the run and the
+            session it started; while a run is still live it refuses, unless you choose to run anyway.{' '}
+            <strong>Pause</strong> holds the firings until an instant (an hour, tomorrow at 09:00, or a time you pick),
+            and a deadline that fell inside the pause fires once when it ends. Only the server writes the next run:
+            on create, on enable and whenever the schedule or its timezone changes, always counted from now, so a loop
+            disabled for a week does not fire the moment it is enabled again. The form&rsquo;s preview asks the server
+            too, in the loop&rsquo;s timezone, so what you read is what will happen.
           </p>
         ),
       },
@@ -216,34 +243,26 @@ export const LOOP_HELP: KindHelpModule = {
         title: 'Broken, never retired',
         body: (
           <p>
-            A spawn refusal or a schedule that will not parse is written to the loop&rsquo;s last error, and the loop
-            stays enabled. The server never switches off a schedule a person set up; fixing it is that person&rsquo;s
-            call. That is why the panel prints the error beside the switch. <em>Enabled</em> on its own is not a health
-            claim.
-          </p>
-        ),
-      },
-      {
-        eyebrow: 'The catch',
-        title: 'Only the server sets the clock',
-        body: (
-          <p>
-            The scheduler reads one column, the next run time, and only the server writes it: on create, on enable and
-            whenever the schedule or its timezone changes, counted from now. No form or command sends one. A schedule
-            that never matches (the 30th of February) is stored but parked, with that reason as its last error.{' '}
-            <strong>Run now</strong> starts a run at once, beside the schedule. <strong>Disable</strong> keeps the
-            stored deadline; enabling again counts a fresh one from now.
+            A launch that fails is written to the run and to the loop&rsquo;s last error, and the loop stays enabled;
+            with retries set, it tries again after the retry delay, up to that many times. A run that outlives its max
+            runtime is stopped and recorded as timed out. A schedule that never matches (the 30th of February) parks the
+            loop with that reason instead of failing quietly. The server never switches off a schedule a person set up;
+            fixing it is that person&rsquo;s call, which is why the page prints the last error beside the controls.{' '}
+            <em>Enabled</em> on its own is not a health claim.
           </p>
         ),
       },
     ],
 
     lifecycle: [
-      { name: 'Armed', note: 'Enabled, with a next run time. The only state the scheduler looks for.' },
-      { name: 'Due', note: 'That time has passed. The next scheduler pass, within about a minute, takes it.' },
-      { name: 'Fired', note: 'Task derived or reused, session spawned, receipts written, next deadline counted from now.' },
-      { name: 'Skipped', note: 'The last session is still live, or the firing failed. Last error says which; still enabled.' },
-      { name: 'Disabled', note: 'Kept whole, deadline preserved. Enable counts the next run from now.' },
+      { name: 'Enabled', note: 'Armed with a next run the server computed. The only state the scheduler looks for.' },
+      { name: 'Fired', note: 'A run is recorded and launched: a session, a dispatch or a tool run. The next deadline counts from it.' },
+      { name: 'Skipped', note: 'The previous run was still live and the loop is set to skip. Recorded as a skipped run.' },
+      { name: 'Waiting on previous run', note: 'Set to queue: it fires as soon as the live run settles.' },
+      { name: 'Paused', note: 'Holding until an instant. A deadline missed meanwhile fires once when the pause ends.' },
+      { name: 'Failed', note: 'The launch was refused or the run failed. Last error says which; retried if set; still enabled.' },
+      { name: 'Parked', note: 'No next run: the schedule never matches, or there is no one it can run as. The reason is the last error.' },
+      { name: 'Disabled', note: 'Kept whole and never fired. Enable counts the next run from now.' },
       { name: 'Deleted', note: 'Soft-deleted and never due again. Restore brings the appointment back.' },
     ],
   },

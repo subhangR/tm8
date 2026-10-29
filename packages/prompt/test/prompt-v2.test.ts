@@ -7,6 +7,7 @@ import {
   composePrompt,
   HEADER_AUTHORING_RULE,
   PLACEMENT_RULE,
+  COORDINATOR_LOOP_RULE,
   COORDINATOR_SUBTASK_RULE,
   instructionFor,
   DEFAULT_PROMPT_VERSION,
@@ -272,11 +273,12 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
     // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6),
     // then +815 B for base rule 5, placement (P0f 01a111b2-a4c8), and +142 B on
-    // the two coordinator layers for the subtask sentence.
+    // the two coordinator layers for the subtask sentence, then +92 B on the
+    // two coordinator layers for the recurring-work (`tm8 loop`) sentence.
     worker: { bytes: 4685, ceiling: 4694, graph: true },
     'coordinated-worker': { bytes: 5027, ceiling: 5036, graph: true },
-    coordinator: { bytes: 5075, ceiling: 5084, graph: true },
-    'coordinated-coordinator': { bytes: 5417, ceiling: 5426, graph: true },
+    coordinator: { bytes: 5167, ceiling: 5176, graph: true },
+    'coordinated-coordinator': { bytes: 5509, ceiling: 5518, graph: true },
     dispatcher: { bytes: 4010, ceiling: 4050, graph: false },
   };
 
@@ -522,5 +524,17 @@ describe('v2 task half (spec ca8d §2.2)', () => {
 
   it('matches its snapshot', () => {
     expect(`${v2.system}\n\n${v2.task}`).toMatchSnapshot();
+  });
+});
+
+describe('recurring work is a loop (loops design 01a182d4 §8)', () => {
+  it('the coordinator layer names tm8 loop once; the worker and dispatcher layers do not', () => {
+    expect(ROLE_LAYERS_V2.coordinator.join('\n')).toContain(COORDINATOR_LOOP_RULE);
+    for (const mode of AGENT_MODES) {
+      const m: PromptManifest = { ...base, mode, coordinator: { sessionId: COORD } };
+      const e = composePrompt(m, runtime);
+      const coordinates = mode === 'coordinator' || mode === 'coordinated-coordinator';
+      expect(count(e.system, 'tm8 loop create'), mode).toBe(coordinates ? 1 : 0);
+    }
   });
 });

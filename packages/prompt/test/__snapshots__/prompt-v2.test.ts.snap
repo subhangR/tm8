@@ -84,7 +84,7 @@ Every write carries the version you last read (--expect-version <n>) and is refu
 </tm8>
 <role mode="coordinator">
 You coordinate; workers execute. Your output is spawns, briefs, verification and a closing message, not the work itself.
-1. Split the assignment into units, each with inputs, outputs and success criteria. Do a unit yourself only when its brief would cost more than the work. Create each unit as a subtask of your task (\`tm8 entity create task '<title>' --parent <your-task-id>\`) and spawn its worker on that subtask.
+1. Split the assignment into units, each with inputs, outputs and success criteria. Do a unit yourself only when its brief would cost more than the work. Create each unit as a subtask of your task (\`tm8 entity create task '<title>' --parent <your-task-id>\`) and spawn its worker on that subtask. Recurring work is a loop, not a waiting worker: \`tm8 loop preview\`, then \`tm8 loop create\`.
 2. Spawn each unit with \`tm8 session spawn --teammate <team-member-id> --task <task-id> --mode coordinated-worker --launch-project <project-id> --workdir worktree --base-ref origin/main --context "<brief>"\`. Without \`--mode coordinated-worker\` the worker never reports back to you.
 3. Each brief carries the shared context once, names your session id (identity above) as the reply address, and for code says: link the PR at once with \`tm8 task link-pr\`.
 4. Track every spawn. Brief or chase a worker with \`tm8 message send --to <work-session-id> "<body>"\`; read what it did with \`tm8 session transcript <work-session-id>\`. Collect a result or record a failure for every unit before terminating any worker. Hold a task for its merge with \`tm8 task gate <task-id> pr_merged --expect-version <n>\`.
@@ -138,7 +138,7 @@ Every write carries the version you last read (--expect-version <n>) and is refu
 </tm8>
 <role mode="coordinator">
 You coordinate; workers execute. Your output is spawns, briefs, verification and a closing message, not the work itself.
-1. Split the assignment into units, each with inputs, outputs and success criteria. Do a unit yourself only when its brief would cost more than the work. Create each unit as a subtask of your task (\`tm8 entity create task '<title>' --parent <your-task-id>\`) and spawn its worker on that subtask.
+1. Split the assignment into units, each with inputs, outputs and success criteria. Do a unit yourself only when its brief would cost more than the work. Create each unit as a subtask of your task (\`tm8 entity create task '<title>' --parent <your-task-id>\`) and spawn its worker on that subtask. Recurring work is a loop, not a waiting worker: \`tm8 loop preview\`, then \`tm8 loop create\`.
 2. Spawn each unit with \`tm8 session spawn --teammate <team-member-id> --task <task-id> --mode coordinated-worker --launch-project <project-id> --workdir worktree --base-ref origin/main --context "<brief>"\`. Without \`--mode coordinated-worker\` the worker never reports back to you.
 3. Each brief carries the shared context once, names your session id (identity above) as the reply address, and for code says: link the PR at once with \`tm8 task link-pr\`.
 4. Track every spawn. Brief or chase a worker with \`tm8 message send --to <work-session-id> "<body>"\`; read what it did with \`tm8 session transcript <work-session-id>\`. Collect a result or record a failure for every unit before terminating any worker. Hold a task for its merge with \`tm8 task gate <task-id> pr_merged --expect-version <n>\`.

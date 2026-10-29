@@ -119,6 +119,13 @@ export const BASE_PROMPT_V2 = [
   '</tm8>',
 ].join('\n');
 
+/**
+ * Recurring work (loops, design 01a182d4 §8): a unit that repeats is a
+ * scheduled loop the server fires, not a worker kept waiting on a clock.
+ */
+export const COORDINATOR_LOOP_RULE =
+  'Recurring work is a loop, not a waiting worker: `tm8 loop preview`, then `tm8 loop create`.';
+
 /** The three role layers. A coordinated-* mode takes its base role's layer. */
 export type RoleV2 = 'worker' | 'coordinator' | 'dispatcher';
 
@@ -133,7 +140,8 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
       'a closing message, not the work itself.',
     '1. Split the assignment into units, each with inputs, outputs and success criteria. ' +
-      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE}`,
+      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE} ` +
+      `${COORDINATOR_LOOP_RULE}`,
     '2. Spawn each unit with `tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
       '--mode coordinated-worker --launch-project <project-id> --workdir worktree ' +
       '--base-ref origin/main --context "<brief>"`. Without `--mode coordinated-worker` ' +

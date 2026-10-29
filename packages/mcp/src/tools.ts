@@ -384,9 +384,83 @@ const MESSAGE_GUIDES = [
   }),
 ] as const satisfies readonly OperationGuide[];
 
+/**
+ * Loops (design 01a182d4 §8): scheduled work as its own `loops.*` surface,
+ * reads in `tm8_read` and commands in `tm8_act`. The server owns every next
+ * run, so these summaries teach the schedule grammar, the timezone and what
+ * each action does — that is the only text a model sees — and send a model
+ * to `loops.schedule.preview` before it writes a schedule.
+ */
+const LOOP_READ_GUIDES = [
+  guide('loops.list', 'List a Space\'s loops (recurring scheduled work): each row has the definition, the server\'s '
+    + 'schedule summary and the state (enabled, pausedUntil, nextRunAt, lastRunAt, lastError). Narrow with query '
+    + 'enabled=true|false, action=spawn|dispatch|tool, or words (title words).', {
+    params: { spaceId: '<space-id>' }, query: { limit: '50' },
+  }),
+  guide('loops.get', 'Read one loop: its definition (schedule, timezone, action, teammate or tool, prompt, spawn config, '
+    + 'concurrency, max runtime, retry), the server\'s preview with the next runs, its state, a runs summary and your '
+    + 'capabilities. Its version guards every change.', {
+    params: { loopId: '<loop-id>' },
+  }),
+  guide('loops.runs.list', 'Page a loop\'s runs, newest first: one per firing (by schedule or Run now) with status '
+    + 'running|completed|failed|skipped|stopped|timed_out, the task and session it made, its duration and error.', {
+    params: { loopId: '<loop-id>' }, query: { limit: '20' },
+  }),
+  guide('loops.runs.get', 'Read one run: status, trigger, attempt, the task and session it made, its output tail and usage.', {
+    params: { runId: '<run-id>' },
+  }),
+  guide('loops.schedule.preview', 'Check a schedule before writing it; nothing is stored. The server answers valid, the '
+    + 'problem, a summary in words and the next instants. Grammar: "every <n>m|h|d" (zone-free), or a five-field cron '
+    + '"minute hour day-of-month month day-of-week" read in timezone (an IANA name such as Europe/London; default UTC).', {
+    params: { spaceId: '<space-id>' }, body: { schedule: '0 9 * * 1-5', timezone: 'Europe/London', count: 5 },
+  }),
+] as const satisfies readonly OperationGuide[];
+
+const LOOP_ACT_GUIDES = [
+  guide('loops.create', 'Schedule recurring work. action spawn: a teammate (teamMemberId) runs each firing as a new '
+    + 'session; dispatch: the Dispatcher picks who; tool: run toolId with toolInputs, as the persona teamMemberId when '
+    + 'the tool reaches tm8. schedule is "every <n>m|h|d" or a five-field cron read in timezone (IANA, default UTC); '
+    + 'the server computes every next run. prompt is what each firing is told, subjectId what it is about; concurrency '
+    + 'skip|queue, maxRuntimeSeconds 60-86400, retry {attempts 0-5, delaySeconds 30-3600}. Preview the schedule first.', {
+    params: { spaceId: '<space-id>' },
+    body: {
+      definition: {
+        title: '<title>', schedule: '0 9 * * 1-5', timezone: 'Europe/London', action: 'spawn',
+        teamMemberId: '<team-member-id>', prompt: '<what each firing should do>',
+      },
+      enabled: true,
+    },
+  }),
+  guide('loops.update', 'Change a loop under its version, sending only the fields that change (config and toolInputs '
+    + 'are replaced whole). A schedule or timezone change recomputes the next run from now. Every firing also moves '
+    + 'the version, so a version_conflict on a busy loop usually means it just fired: read it again and retry.', {
+    params: { loopId: '<loop-id>' }, body: { expectedVersion: 1, definition: { schedule: 'every 30m' } },
+  }),
+  guide('loops.enable', 'Enable a loop under its version; the server counts the next run from now.', {
+    params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('loops.disable', 'Disable a loop under its version: nothing fires until it is enabled again; the definition is kept.', {
+    params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('loops.pause', 'Hold a loop\'s firings until an instant (ISO-8601 with an offset, at most 365 days ahead); a '
+    + 'deadline missed during the pause fires once when it ends.', {
+    params: { loopId: '<loop-id>' }, body: { expectedVersion: 1, until: '2026-11-02T09:00:00Z' },
+  }),
+  guide('loops.resume', 'End a loop\'s pause now, under its version.', {
+    params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
+  }),
+  guide('loops.runNow', 'Fire a loop once, now, beside its schedule (its next run is untouched); answers the run with '
+    + 'the task and session it made. A run still live refuses it (409 conflict, loop_run_overlap) unless force is true.', {
+    params: { loopId: '<loop-id>' }, body: { force: false },
+  }),
+  guide('loops.runs.stop', 'Stop a running run: its session is stopped and the run settles as stopped.', {
+    params: { runId: '<run-id>' }, body: {},
+  }),
+] as const satisfies readonly OperationGuide[];
+
 const GROUPS = {
-  tm8_read: READ_GUIDES,
-  tm8_act: [...ACT_GUIDES, ...CONTAINER_GUIDES],
+  tm8_read: [...READ_GUIDES, ...LOOP_READ_GUIDES],
+  tm8_act: [...ACT_GUIDES, ...CONTAINER_GUIDES, ...LOOP_ACT_GUIDES],
   tm8_delegate: DELEGATE_GUIDES,
   tm8_messages: MESSAGE_GUIDES,
 } as const;
@@ -395,6 +469,8 @@ export const MCP_MAPPED_OPERATIONS: readonly OperationName[] = [
   ...READ_GUIDES.map((item) => item.operation),
   ...ACT_GUIDES.map((item) => item.operation),
   ...CONTAINER_GUIDES.map((item) => item.operation),
+  ...LOOP_READ_GUIDES.map((item) => item.operation),
+  ...LOOP_ACT_GUIDES.map((item) => item.operation),
   ...DELEGATE_GUIDES.map((item) => item.operation),
   ...MESSAGE_GUIDES.map((item) => item.operation),
 ];
@@ -623,8 +699,8 @@ function overview(
   const args = objectOf(raw, 'tool arguments');
   const query = optionalString(args.query, 'query')?.toLowerCase();
   const groups = [
-    { tool: 'tm8_read', purpose: 'context, search, graph traversal, inbox and action discovery' },
-    { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations' },
+    { tool: 'tm8_read', purpose: 'context, search, graph traversal, inbox and action discovery, loops and their runs' },
+    { tool: 'tm8_act', purpose: 'entity, task, relationship, placement and attention mutations; loops (recurring scheduled work)' },
     {
       tool: 'tm8_delegate',
       purpose: "dispatching and lifecycle of durable worker sessions; spawn mode 'coordinated-worker'"
@@ -715,6 +791,15 @@ const REQUIRES_MUTATION_ID = new Set<OperationName>([
   'execution.spawn',
   'execution.dispatch',
   'execution.resume',
+  // Loops: every command carries a clientMutationId (the doors replay a recorded one).
+  'loops.create',
+  'loops.update',
+  'loops.enable',
+  'loops.disable',
+  'loops.pause',
+  'loops.resume',
+  'loops.runNow',
+  'loops.runs.stop',
   // Forms: every mutation is ledgered (clientMutationId is required).
   'forms.create',
   'forms.update',

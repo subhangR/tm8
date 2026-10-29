@@ -40,7 +40,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     summary: 'work with a status, assignees, acceptance criteria and an optional gate',
     createWith: ['entity create task'],
   },
-  loop: { group: 'work', summary: 'a recurring task', createWith: ['entity create loop'] },
+  loop: {
+    group: 'work',
+    summary: 'recurring scheduled work: a teammate, the Dispatcher or a tool fired on a schedule, with a run per firing',
+    createWith: ['loop create'],
+  },
   project: { group: 'work', summary: 'a codebase that sessions launch in', createWith: ['project create'] },
   collection: {
     group: 'work',
