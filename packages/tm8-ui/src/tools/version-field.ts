@@ -3,7 +3,7 @@ import type { ToolRun, ToolView } from '@tm8/contract';
 /**
  * Which number is "the tool version" wherever the tool page prints `v<N>`.
  *
- * It is the EXECUTION version (Tools PR-F ruling, migration 381): the entity
+ * It is the EXECUTION version (Tools PR-F ruling, migration 388): the entity
  * version at which what runs (source, runtime, inputs, tm8 access, timeout)
  * last changed. A run pins it as `toolVersion`, the launcher header prints it,
  * and an `entities.versions` row is a definition version iff its

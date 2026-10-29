@@ -5,13 +5,13 @@ import { snapshotVersionOf } from './version-field';
 /**
  * A tool's STORED versions, as `entities.versions` returns them: newest first.
  *
- * Since migration 381 every `tools.*` write stores a row, configuration and
+ * Since migration 388 every `tools.*` write stores a row, configuration and
  * secret writes included, and a change to what runs (source, runtime, inputs,
  * tm8 access, timeout) takes the new entity version as the tool's
  * `execution_version`: the number a run pins and the page prints. So a row is
  * a DEFINITION version iff `content.execution_version == version`; every other
  * row (help, description or name edits, configuration, secrets) runs as the
- * definition version before it. Rows stored before 381 numbered
+ * definition version before it. Rows stored before 388 numbered
  * `execution_version` on its own, so for them a row is a definition version
  * when what runs differs from the next older row. Rows from then may also be
  * missing where one author's quick edits folded into one snapshot, and runs
@@ -98,7 +98,7 @@ export interface ToolVersionRow {
   version: number;
   /** The definition version this row runs as: its own when it is one, else the nearest older one. */
   executionVersion: number;
-  /** `content.execution_version == version` (381); for older rows, what runs differs from the next older row. */
+  /** `content.execution_version == version` (388); for older rows, what runs differs from the next older row. */
   definition: boolean;
   /** What changed since the next older stored row; null while that row is not loaded. */
   changed: ToolVersionChange[] | null;
@@ -130,7 +130,7 @@ export function classifyVersions(items: readonly ToolVersionItem[], complete: bo
 export type VersionResolution =
   /** A stored row; `row.executionVersion` is the definition version it ran as. */
   | { kind: 'stored'; row: ToolVersionRow }
-  /** Pre-381: absorbed by the next stored snapshot above it; its own source is not kept. */
+  /** Pre-388: absorbed by the next stored snapshot above it; its own source is not kept. */
   | { kind: 'folded'; into: number }
   /** Newer than every stored snapshot. */
   | { kind: 'unstored' }
@@ -139,7 +139,7 @@ export type VersionResolution =
 
 /**
  * Resolve a version named from outside the list (a run's pin) against loaded,
- * newest-first rows. Any stored row counts: a run from before 381 pinned
+ * newest-first rows. Any stored row counts: a run from before 388 pinned
  * `entities.version`, which may name a configuration row whose definition is
  * still exactly what ran.
  */

@@ -19,7 +19,7 @@ export function fixtureVersion(tool: ToolView, at = '2026-10-10T12:00:00Z'): Too
       execution_version: tool.executionVersion, config_revision: tool.configRevision,
       config: structuredClone(tool.config), secretBindings: tool.secretBindings.map(({ inputName, credentialId }) => ({ inputName, credentialId })) } } };
 }
-/** The fields whose change makes a new definition version (migration 381): what a run executes. */
+/** The fields whose change makes a new definition version (migration 388): what a run executes. */
 const executes = (definition: ToolDefinition) => JSON.stringify([definition.source, definition.runtime, definition.inputs, definition.tm8Access, definition.timeoutSeconds]);
 /**
  * The node's answer for a tool header BEFORE migration 380 (PR-E) admits the kind:
@@ -32,7 +32,7 @@ export const HEADER_NOT_STORED = 'a tool cannot carry a selection header; nothin
  * Explicit simulation for UI checks while the tools handlers are built independently.
  * `create` refuses like the node: contract validation as `invalid_input` with
  * zod issues under `definition`, a taken name as `invariant_violation` 23505.
- * Versions follow migration 381: every write stores a row, and a change to what
+ * Versions follow migration 388: every write stores a row, and a change to what
  * runs takes the new entity version as the execution version runs pin.
  */
 export function createToolFixture(initial: ToolView = fixtureTool, permissions: Partial<ToolPermissions> = {}, options: { headerStored?: boolean } = {}) {
@@ -81,7 +81,7 @@ export function createToolFixture(initial: ToolView = fixtureTool, permissions: 
     async history() { return { items: structuredClone(runs), nextCursor: null }; },
     async sourceChange() { return null; },
     async run(input) {
-      // A run pins the execution version (381): the definition it executes, not the concurrency token.
+      // A run pins the execution version (388): the definition it executes, not the concurrency token.
       const run: ToolRun = { id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`, spaceId: tool.spaceId, toolId: tool.id, toolVersion: tool.executionVersion, sourceSha256: tool.sourceSha256,
         inputs: { ...tool.config, ...input.inputs }, state: 'running', keepOpen: input.keepOpen, exitCode: null, startedAt: '2026-10-10T12:00:00Z', exitedAt: null, outputTail: '', parentSessionId: null, invoker: fixtureAuthor, triggeredBy: null };
       runs.unshift(run); return { sessionId: run.id };
@@ -92,7 +92,7 @@ export function createToolFixture(initial: ToolView = fixtureTool, permissions: 
   return {
     port, created, headers,
     finish(id: string, state: ToolRun['state'], exitCode: number | null, outputTail = '') { const run = runs.find(item => item.id === id); if (run) Object.assign(run, { state, exitCode, exitedAt: '2026-10-10T12:00:03Z', outputTail }); },
-    /** Pre-381 history: one author's quick second edit folded into the open snapshot, so the earlier version left no row of its own. */
+    /** Pre-388 history: one author's quick second edit folded into the open snapshot, so the earlier version left no row of its own. */
     fold() {
       const [latest] = versions.splice(0, 1); const version = tool.version + 1;
       tool = { ...tool, version, executionVersion: tool.executionVersion === tool.version ? version : tool.executionVersion };

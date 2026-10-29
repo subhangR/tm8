@@ -19,7 +19,7 @@ const edit = async (port: Port, patch: Partial<typeof fixtureTool.definition>) =
 const select = (group: HTMLElement, name: string) => within(group).getByRole('combobox', { name }) as HTMLSelectElement;
 const rowsOf = (region: HTMLElement) => within(region).getAllByRole('row').slice(1);
 const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map(cell => cell.textContent?.trim() ?? '');
-/** A stored definition version, as 381 numbers them: execution version = entity version. */
+/** A stored definition version, as 388 numbers them: execution version = entity version. */
 const stored = (version: number, definition: Partial<typeof fixtureTool.definition> = {}, extra: Record<string, unknown> = {}): ToolVersionItem => {
   const item = fixtureVersion({ ...fixtureTool, version, executionVersion: version, definition: { ...fixtureTool.definition, ...definition } });
   return { ...item, snapshot: { ...item.snapshot, content: { ...(item.snapshot!['content'] as Record<string, unknown>), ...extra } } };
@@ -88,7 +88,7 @@ describe('versions section', () => {
     expect(select(compare, 'Compare from version').value).toBe('1');
     expect(compare.querySelector('.kit-diff__row--add')?.textContent).toContain('echo one');
   });
-  it('shows a pre-381 run that pinned a configuration write as the definition version it ran', async () => {
+  it('shows a pre-388 run that pinned a configuration write as the definition version it ran', async () => {
     const { port } = createToolFixture();
     await edit(port, { source: 'echo one\n' });
     await port.setConfig(await port.get(fixtureTool.id), 'limit', 7);
@@ -149,8 +149,8 @@ describe('versions section', () => {
 });
 
 describe('versions model', () => {
-  it('classifies rows as the CLI does: definition when the execution version is its own, with the pre-381 fallback', () => {
-    // 381 rows, each cumulative on the one before: v5 config (runs as v4), v4 source edit, v3 help edit (runs as v1), v2 config, v1 create.
+  it('classifies rows as the CLI does: definition when the execution version is its own, with the pre-388 fallback', () => {
+    // 388 rows, each cumulative on the one before: v5 config (runs as v4), v4 source edit, v3 help edit (runs as v1), v2 config, v1 create.
     const items = [
       stored(5, { help: 'Run it.', source: 'echo two\n' }, { execution_version: 4, config: { limit: 9 } }),
       stored(4, { help: 'Run it.', source: 'echo two\n' }, { config: { limit: 7 } }),
@@ -163,7 +163,7 @@ describe('versions model', () => {
       [5, 4, false, ['config']], [4, 4, true, ['source']], [3, 1, false, ['help']], [2, 1, false, ['config']], [1, 1, true, []],
     ]);
     expect(rows[1]!.sourceSha256).toBe(sourceSha256Of('echo two\n'));
-    // Pre-381 numbering: execution_version counted on its own, so a source edit at v3 carries execution_version 2.
+    // Pre-388 numbering: execution_version counted on its own, so a source edit at v3 carries execution_version 2.
     const older = [stored(3, { source: 'echo one\n' }, { execution_version: 2, config: { limit: 7 } }), stored(2, {}, { execution_version: 1, config: { limit: 7 } }), stored(1)];
     expect(classifyVersions(older, true).map(row => [row.version, row.executionVersion, row.definition])).toEqual([[3, 3, true], [2, 1, false], [1, 1, true]]);
     // The oldest loaded row of an incomplete list stays visible until the page behind it loads.
