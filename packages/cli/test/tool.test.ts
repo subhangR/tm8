@@ -53,7 +53,7 @@ const stored = (version: number, patch: Partial<ToolDefinition>, config: Record<
 });
 let history: ReturnType<typeof stored>[] = [], versionPageCap = 200;
 // Starter installs: the Space's tools (served two per page), and refusals by tool name.
-let spaceTools: ToolView[] | undefined, headerRefused = false;
+let spaceTools: ToolView[] | undefined, headerRefused = false, headerNotStored = false;
 let createRefusals: Record<string, { status: number; code: string; message: string }> = {};
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 const toolNamed = (name: string, id: string, source = toolStarterNamed(name)!.source): ToolView =>
@@ -136,7 +136,11 @@ beforeAll(async () => {
       else if (url.pathname.endsWith('/secrets/bind')) data = { inputName: 'auth', keyHint: '••••' };
       else if (url.pathname.endsWith('/header')) {
         if (headerRefused) { refuse(res, 403, 'forbidden', 'Header writes are not allowed here'); return; }
-        data = { entityId: url.pathname.split('/')[3], version: 1 };
+        // The node's answer: an authored header when stored; a node that does not admit the kind
+        // answers 200 with no header and a header_not_stored warning (before migration 380).
+        data = headerNotStored
+          ? { patches: [], warnings: [{ code: 'header_not_stored', message: 'a tool cannot carry a selection header; nothing was stored' }] }
+          : { patches: [], header: { whenToUse: body.whenToUse ?? null, summary: body.summary ?? null, keywords: [], version: 1, pinnedVersion: 1 } };
       }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data, requestId: 'test' }));
@@ -154,7 +158,7 @@ beforeEach(() => {
   requests = []; stdout = ''; stderr = ''; fast = false; completed = false; exitCode = 37; keepOpen = false; conflict = false; helpVersionMismatch = false; namePage = 0;
   TerminalSocket.instances = [];
   noReplay = false; statusDelay = 0; noTerminalEnd = false; versionPageCap = 200;
-  spaceTools = undefined; headerRefused = false; createRefusals = {};
+  spaceTools = undefined; headerRefused = false; headerNotStored = false; createRefusals = {};
   history = [
     // v6: an inputs edit after migration 381 (pin 6). v5: a configuration write before it (pin 2).
     // v4: a source edit before it whose v2 and v3 folded into it (pin 2). v1: created.
@@ -464,6 +468,18 @@ describe('starters', () => {
     expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--format', 'json'])).toBe(0);
     expect(JSON.parse(stdout).items).toEqual([{ name: 'url-check', status: 'created', toolId: createdId('url-check'), version: 1, header: 'failed' }]);
     expect(stderr).toContain('url-check was created but its selection header was not set: forbidden: Header writes are not allowed here');
+  });
+  it('reports a header the node answered without storing as not_stored, with a warning, for install and create', async () => {
+    spaceTools = []; headerNotStored = true;
+    expect(await run(['tool', 'starters', 'install', '--only', 'url-check', '--format', 'json'])).toBe(0);
+    expect(JSON.parse(stdout).items).toEqual([{ name: 'url-check', status: 'created', toolId: createdId('url-check'), version: 1, header: 'not_stored' }]);
+    expect(stderr).toContain('url-check was created but its selection header was not stored: header_not_stored: a tool cannot carry a selection header; nothing was stored');
+    stdout = ''; stderr = '';
+    expect(await run(['tool', 'starters', 'install', '--only', 'space-digest'])).toBe(0);
+    expect(stdout).toMatch(/created +space-digest +\S+ v1 \(selection header not set\)/);
+    stdout = ''; stderr = '';
+    expect(await run(['tool', 'create', '--from-starter', 'slack-notify'])).toBe(0);
+    expect(stderr).toContain('slack-notify was created but its selection header was not stored: header_not_stored');
   });
   it('creates from a starter, letting the name, options and spec fields override it', async () => {
     expect(await run(['tool', 'create', '--from-starter', 'url-check'])).toBe(0);

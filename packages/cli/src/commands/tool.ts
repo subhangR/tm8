@@ -1,4 +1,4 @@
-import { TOOL_DEFAULT_TIMEOUT_SECONDS, TOOL_STARTERS, ToolDefinitionSchema, toolStarterDefinition, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { TOOL_DEFAULT_TIMEOUT_SECONDS, TOOL_STARTERS, ToolDefinitionSchema, toolStarterDefinition, type EntityHeaderResult, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
 import { readJsonSource, readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { isAgentContext } from '../credentials.js';
@@ -24,6 +24,16 @@ const mutation = (cmd: CommandContext) => ({ clientMutationId: resolveMutationId
 const emit = (cmd: CommandContext, data: unknown): ExitCode => {
   cmd.out.data(data, value => JSON.stringify(value, null, 2)); return EXIT_OK;
 };
+/**
+ * `entities.header.set` on a tool. The node stored the header only when it answers with an
+ * AUTHORED one (version > 0): a node that does not admit the kind answers 200 with a
+ * `header_not_stored` warning and stores nothing, which must not read as success.
+ */
+async function setToolHeader(cmd: CommandContext, toolId: string, body: Record<string, unknown>): Promise<{ stored: true } | { stored: false; reason: string }> {
+  const result = await observedInvoke<EntityHeaderResult>(client(cmd), 'entities.header.set', { params: { id: toolId }, body });
+  if (result.header && result.header.version > 0) return { stored: true };
+  return { stored: false, reason: result.warnings?.map(warning => `${warning.code}: ${warning.message}`).join('; ') || 'the node answered without an authored header' };
+}
 function argumentsCount(cmd: CommandContext, min: number, max = min): void {
   if (cmd.args.length < min || cmd.args.length > max || (cmd.path[1] !== 'run' && cmd.passthrough.length)) {
     throw new CliError(`tm8 ${cmd.path.join(' ')} expects ${min === max ? min : `${min}–${max}`} arguments; see its help`, EXIT_USAGE);
@@ -102,9 +112,8 @@ async function toolCreate(cmd: CommandContext): Promise<ExitCode> {
   // strict tool-definition DTO. A stable mutation id makes retries safe.
   const header = { ...(starter ? { whenToUse: starter.whenToUse, summary: starter.summary } : {}), ...headerTextOptions(cmd) };
   if (Object.keys(header).length) {
-    await observedInvoke(client(cmd), 'entities.header.set', { params: { id: tool.id }, body: {
-      ...body, clientMutationId: `${body.clientMutationId}:header`, ...header,
-    } });
+    const outcome = await setToolHeader(cmd, tool.id, { ...body, clientMutationId: `${body.clientMutationId}:header`, ...header });
+    if (!outcome.stored) cmd.out.warn(`${tool.definition.name} was created but its selection header was not stored: ${outcome.reason}`);
     tool = await observedInvoke(client(cmd), 'tools.get', { params: { toolId: tool.id } });
   }
   return emit(cmd, tool);
@@ -329,11 +338,15 @@ async function toolStartersInstall(cmd: CommandContext): Promise<ExitCode> {
       if (exit === EXIT_OK) exit = exitCodeFor(error);
       continue;
     }
-    let header: 'set' | 'failed' = 'set';
+    let header: 'set' | 'not_stored' | 'failed' = 'set';
     try {
-      await observedInvoke(client(cmd), 'entities.header.set', { params: { id: tool.id }, body: {
+      const outcome = await setToolHeader(cmd, tool.id, {
         ...body, clientMutationId: `${clientMutationId}:header`, whenToUse: starter.whenToUse, summary: starter.summary,
-      } });
+      });
+      if (!outcome.stored) {
+        header = 'not_stored';
+        cmd.out.warn(`${starter.name} was created but its selection header was not stored: ${outcome.reason}`);
+      }
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       // The tool exists either way; a missing header is a notice, as in the UI.

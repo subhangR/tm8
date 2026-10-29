@@ -7,7 +7,8 @@ import { columns } from './tool-views.js';
 export interface ExistingTool { toolId: string; version: number; matchesStarter: boolean }
 export interface StarterListItem extends ToolStarter { existing: ExistingTool | null }
 export type StarterInstallItem =
-  | { name: string; status: 'created'; toolId: string; version: number; header: 'set' | 'failed' }
+  /** `header`: `not_stored` when the node answered without storing it (a kind it does not admit), `failed` when refused. */
+  | { name: string; status: 'created'; toolId: string; version: number; header: 'set' | 'not_stored' | 'failed' }
   | { name: string; status: 'skipped'; reason: 'exists'; toolId: string | null }
   | { name: string; status: 'failed'; error: { code: string; message: string } };
 
@@ -37,7 +38,7 @@ export function renderStarters(list: { items: StarterListItem[] }): string {
 export function renderInstall(result: { items: StarterInstallItem[] }): string {
   const count = (status: StarterInstallItem['status']): number => result.items.filter(item => item.status === status).length;
   return [columns(result.items.map(item => item.status === 'created'
-    ? ['created', item.name, `${item.toolId} v${item.version}${item.header === 'failed' ? ' (selection header not set)' : ''}`]
+    ? ['created', item.name, `${item.toolId} v${item.version}${item.header === 'set' ? '' : ' (selection header not set)'}`]
     : item.status === 'skipped' ? ['skipped', item.name, `already exists${item.toolId ? ` (${item.toolId})` : ''}`]
       : ['failed', item.name, `${item.error.code}: ${item.error.message}`])),
   `${count('created')} created, ${count('skipped')} skipped, ${count('failed')} failed`].join('\n');
