@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { searchHelp } from '../src/discovery/help.js';
+import { matchIntent } from '../src/discovery/search.js';
 import { DISCOVERY, aliasCommands } from '../src/discovery/operations.js';
 
 /** The ruling: a pure stop may lead any ending query; a detach only one that names what it ends. */
@@ -46,11 +47,15 @@ function wrongEnd(q: string): string {
   const m = first(q);
   if (m === undefined || (SIDE.get(m.operation) ?? 'durable') === 'none') return '';
   const v = verb(m), objects = objectWords(q);
-  const ok = !NEGATED.test(q) && (PURE_STOPS.has(v)
+  // A route is a curated mapping ("a recurring task IS a loop", "a run is a work session"), so its
+  // own stop or detach answers the object it names; the noun rule is the ranker's.
+  const routed = matchIntent(q)?.candidates[0]?.path.join(' ') === m.command;
+  const namesIts = routed || objects.some((w) => nouns(m).has(singular(w)));
+  const ok = !NEGATED.test(q) && ((PURE_STOPS.has(v) && (objects.length === 0 || namesIts))
     // Leaving ends only "quit the space" itself.
     || (v === 'leave' && /^quit\b/i.test(q) && ['space', 'spaces', 'workspace'].includes(objects[0] ?? ''))
     // A detach must name ITS OWN noun: "call off the deploy" is no token's revoke (lead ruling 01a1890c-a176).
-    || (DETACHES.has(v) && objects.some((w) => nouns(m).has(singular(w)))));
+    || (DETACHES.has(v) && namesIts));
   return ok ? '' : `${q} -> ${name(m)}`;
 }
 const wrongEnds = (qs: readonly string[]): string[] => qs.map(wrongEnd).filter((x) => x !== '');
@@ -92,6 +97,12 @@ describe('help --query: an ending query never gets a write that does not end som
     expect(name(first('call off the deploy'))).not.toBe('mcp tokens revoke');
     for (const q of ['stop sharing the space']) expect(['credential unshare', 'space leave'], q).not.toContain(name(first(q)));
     expect(name(first('stop sharing the credential'))).toBe('credential unshare');
+    // A pure stop of something else is held back too (lead ruling 01a18919-86ce): a read or nothing.
+    for (const q of ['stop sharing the space', 'cancel the claim', 'stop the merge', 'cancel the commit']) {
+      const m = first(q);
+      expect(m === undefined || (SIDE.get(m.operation) ?? 'durable') === 'none', `${q} -> ${name(m)}`).toBe(true);
+    }
+    expect(name(first('power off the container'))).toBe('container stop');
     expect(name(first('stop the token'))).toBe('mcp tokens revoke');
   });
 
@@ -141,11 +152,11 @@ describe('help --query: an ending query never gets a write that does not end som
 
   it("the Reviewer's 204: no first answer in the doc's flag classes that pre-Loops main a8858c2f9 did not give", () => {
     const DESTRUCTIVE = /delete|revoke|leave|purge|destroy/, CREATE = /(create|spawn|launch|invoke)$/, RUN = /run-now$|^tool run$|runNow$/;
-    const flagged = (a: string) => a !== '-' && (DESTRUCTIVE.test(a) || CREATE.test(a) || a === 'chat start' || RUN.test(a));
+    // The doc's classes go by name; a READ they would flag ('session launch': "Read what a session
+    // was TOLD at spawn") launches nothing, so the catalog's side effect decides.
+    const flagged = (m: First, a: string) => a !== '-' && (SIDE.get(m!.operation) ?? 'durable') !== 'none'
+      && (DESTRUCTIVE.test(a) || CREATE.test(a) || a === 'chat start' || RUN.test(a));
     const accepted: Record<string, string> = {
-      // A read the doc's name classes flag by its name: "Read what a session was TOLD at spawn".
-      'stop the tool session from spawning': 'session launch',
-      "don't spawn a session": 'session launch',
       // A delete phrasing answered by the recurring task's own loop delete.
       'drop the recurring task': 'entity delete',
       'remove the recurring task': 'entity delete',
@@ -153,8 +164,8 @@ describe('help --query: an ending query never gets a write that does not end som
     };
     expect(BASELINE_204.length).toBe(204);
     const introduced = BASELINE_204.flatMap(([q, pre]) => {
-      const a = name(first(q));
-      return flagged(a) && a !== pre && accepted[q] !== a ? [`${q} -> ${a} (a8858c2f9: ${pre})`] : [];
+      const m = first(q), a = name(m);
+      return flagged(m, a) && a !== pre && accepted[q] !== a ? [`${q} -> ${a} (a8858c2f9: ${pre})`] : [];
     });
     expect(introduced).toEqual([]);
   }, 60_000);

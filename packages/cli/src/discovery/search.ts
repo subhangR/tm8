@@ -247,9 +247,10 @@ function endingKind(tokens: readonly string[]): 'stop' | 'negation' | null {
 
 /**
  * Write verbs that END something without destroying it (lead rulings 01a188fa-6dfa, 01a188fd-4c7c,
- * 01a188ff-61a7, 01a1890c-a176). A pure stop may lead any ending query; the rest detach or close
- * something, so they lead only when the query names THEIR OWN noun ("stop the token" is a token's
- * revoke; "stop it" and "call off the deploy" are not), as `leave` leads only for a named space. Never discard, retire or resolve: they destroy or retire what persists,
+ * 01a188ff-61a7, 01a1890c-a176, 01a18919-86ce). A pure stop leads a bare stop or one that names
+ * its own noun; the rest detach or close something, so they lead only when the query names THEIR OWN
+ * noun ("stop the token" is a token's revoke; "stop it" and "call off the deploy" are not), as
+ * `leave` leads only for "quit the space". Never discard, retire or resolve: they destroy or retire what persists,
  * or answer a delete prompt.
  */
 const PURE_STOP_OP_VERBS: ReadonlySet<string> = new Set(['stop', 'terminate', 'disable', 'pause', 'interrupt', 'cancel']);
@@ -291,10 +292,14 @@ const singular = (word: string): string => {
 
 /** That verb ends what this query names. A detach must name ITS OWN noun ("call off the deploy" is not a token's revoke). */
 function endsItself(tokens: readonly string[], verb: string, nouns: ReadonlySet<string>): boolean {
-  if (PURE_STOP_OP_VERBS.has(verb)) return true;
+  const objects = objectWords(tokens);
+  const namesIts = objects.some((t) => nouns.has(singular(t)));
+  // A pure stop leads a bare stop ("stop it", "cancel all") or one naming what it stops; never a
+  // stop of something else ("stop sharing the space" is no loop's stop; lead ruling 01a18919-86ce).
+  if (PURE_STOP_OP_VERBS.has(verb)) return objects.length === 0 || namesIts;
   // Leaving is the end only of "quit the space" itself: never "stop sharing the space" or "quit it".
-  if (verb === 'leave') return queryVerb(tokens) === 'quit' && SPACE_WORDS.has(objectWords(tokens)[0] ?? '');
-  return DETACH_OP_VERBS.has(verb) && objectWords(tokens).some((t) => nouns.has(singular(t)));
+  if (verb === 'leave') return queryVerb(tokens) === 'quit' && SPACE_WORDS.has(objects[0] ?? '');
+  return DETACH_OP_VERBS.has(verb) && namesIts;
 }
 
 const SPACE_WORDS: ReadonlySet<string> = new Set(['space', 'spaces', 'workspace']);
