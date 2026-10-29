@@ -17,8 +17,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createServer, type Server } from 'node:http';
 import { run } from '../src/run.js';
 import { nounHelp, rootHelp, searchHelp } from '../src/discovery/help.js';
-import { INTENT_ROUTES, matchIntent } from '../src/discovery/search.js';
-import { commandDiscovery } from '../src/discovery/operations.js';
+import { INTENT_ROUTES, matchIntent, rankAll, rankedLast } from '../src/discovery/search.js';
+import { commandDiscovery, type CommandDiscovery, type OperationDiscovery } from '../src/discovery/operations.js';
 import { CONTENT_STRING_CAP, boundEntityDetail, isEntityDetail } from '../src/entity-bounded.js';
 
 const ID = '55555555-5555-7555-8555-555555555555';
@@ -289,6 +289,37 @@ describe('help --query: stopping a run never answers tool run; only a plain stop
 
   it('no stop, block, skip, prevent or negated run is answered by tool run first', () => {
     for (const q of NOT_RUNS) expect(searchHelp(q).matches[0]?.command, q).not.toBe('tool run');
+  });
+
+  it('in the combined answer, tool run is never ahead of another match for a stop, block, skip, prevent or negation', () => {
+    for (const q of NOT_RUNS) {
+      const commands = searchHelp(q).matches.map((m) => m.command);
+      const at = commands.indexOf('tool run');
+      expect(at === -1 || at === commands.length - 1, `${q}: ${commands.join(' | ')}`).toBe(true);
+    }
+  });
+
+  it('rankAll keeps a ranked-last operation out of first place even when it outscores every other row', () => {
+    // Synthetic rows: on today's catalog no negated query lets tool run outscore the rest, so the
+    // combined re-sort (operations + aliases by score) is pinned here, where it would.
+    const row = (operation: string, intentTags: string[]) =>
+      ({ operation, command: null, intentTags, summary: operation, notes: [], exposure: 'public' }) as unknown as OperationDiscovery;
+    const alias = (command: string, operation: string, intentTags: string[]) => ({
+      command: { command, operations: [operation], summary: command, notes: [], exposure: 'public' } as unknown as CommandDiscovery,
+      intentTags,
+    });
+    const runRow = row('tools.run', ['run', 'tool', 'script']);
+    const runsRow = row('tools.runs.list', ['run']);
+    const order = (q: string, ops: OperationDiscovery[], aliases: ReturnType<typeof alias>[] = []) =>
+      rankAll(q, ops, aliases, 5).map((e) => (e.kind === 'operation' ? e.entry.row.operation : e.entry.row.command));
+    expect(order("don't run the tool script", [runRow, runsRow])).toEqual(['tools.runs.list', 'tools.run']);
+    expect(order('run the tool script', [runRow, runsRow])[0]).toBe('tools.run');
+    // An alias over tools.run follows the same rule, and alone a ranked-last entry is dropped, never first.
+    expect(order('never run the tool script', [runsRow], [alias('tool go', 'tools.run', ['run', 'tool', 'script'])])).toEqual(['tools.runs.list', 'tool go']);
+    expect(order("don't run the tool script", [runRow])).toEqual([]);
+    expect(rankedLast(['abort', 'run'], 'tools.run')).toBe(true);
+    expect(rankedLast(['run', 'url-check', 'tool'], 'tools.run')).toBe(false);
+    expect(rankedLast(['abort', 'run'], 'tools.runs.list')).toBe(false);
   });
 
   it('running a tool still answers tool run first', () => {

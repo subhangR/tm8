@@ -186,21 +186,58 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
-  // A query that stops, prevents or negates a run ("abort the run", "skip the run now", "don't run
-  // it now") is never answered by `tool run`, which STARTS one: it ranks after every other row
-  // (task 01a187ed). "run the url-check tool" carries none of these words and still answers it.
-  const notRun = tokens.some((t) => NOT_RUN_WORDS.has(t));
-  const starts = (s: Scored) => (notRun && s.row.operation === 'tools.run' ? 1 : 0);
-  return rows
+  const scored = rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
-        starts(a) - starts(b) ||
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
-    )
-    .slice(0, limit);
+    );
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+}
+
+/**
+ * Operations the ranker never answers FIRST for this query: they rank after every other match
+ * and, when nothing else matched, are dropped rather than lead. ONE predicate for `rank()` and
+ * for `rankAll()`'s combined operation + alias ranking, so neither can undo the other. `tools.run`
+ * STARTS a run, so a query that stops, prevents or negates one ("abort the run", "skip the run
+ * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
+ */
+export function rankedLast(tokens: readonly string[], operation: string): boolean {
+  return operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t));
+}
+
+/** Stable: the entries `last` names go after every other one and never lead; alone, they are dropped. */
+function keepRankedLast<T>(items: readonly T[], last: (item: T) => boolean): T[] {
+  const lead = items.filter((item) => !last(item));
+  return lead.length === 0 ? [] : [...lead, ...items.filter(last)];
+}
+
+/** One entry of `rankAll()`: an operation row or an alias command, with its score. */
+export type RankedEntry =
+  | { kind: 'operation'; score: number; entry: Scored }
+  | { kind: 'alias'; score: number; entry: ScoredCommand };
+
+/**
+ * Operation rows and alias commands in one ranking, as `tm8 help --query` answers. The sort is
+ * stable, so an alias never displaces an operation it ties with and catalog order holds. The
+ * ranked-last rule applies to the combined list as well: re-sorting by score alone would put a
+ * `rankedLast` operation first again whenever it outscores the rest.
+ */
+export function rankAll(
+  query: string,
+  operations: readonly OperationDiscovery[],
+  aliases: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): RankedEntry[] {
+  const tokens = tokenize(query);
+  const combined: RankedEntry[] = [
+    ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
+    ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
+  ].sort((a, b) => b.score - a.score);
+  return keepRankedLast(combined, (e) =>
+    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
