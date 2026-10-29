@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -26,6 +27,7 @@ import type { SpaceId } from '@tm8/contract';
 import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
 import { launchTabValues } from '../runtime/launchTabs';
+import { subscribeDrafts } from '../runtime/draftStore';
 import { useLaunchRecord } from '../../launch-handoff';
 import { pinFileTab, useFileTabFacts } from '../adapters/projectFile';
 import { FileTypeBadge } from '../../project-file/FileTypeBadge';
@@ -90,7 +92,17 @@ export function useTabFacts(tab: TabRecord): {
   const file = useFileTabFacts(tab);
   /* A LAUNCH TAB (task 01a182d2) reads as its launch — the session's title,
      busy while it starts, an error once it fails — not as "New session". */
-  const launch = tab.type === 'draft' ? launchTabValues(runtime.drafts.get(tab.draftId)) : null;
+  /* Subscribed, like the launch tab's body: a failure stored by another
+     window flips this label too. */
+  const draftId = tab.type === 'draft' && tab.holds === 'launch' ? tab.draftId : null;
+  const draftVersion = useSyncExternalStore(
+    subscribeDrafts,
+    () => (draftId ? `${String(runtime.drafts.revisionOf(draftId))}:${String(runtime.drafts.remoteVersionOf(draftId))}` : ''),
+  );
+  const launch = useMemo(
+    () => (draftId ? launchTabValues(runtime.drafts.get(draftId)) : null),
+    [runtime, draftId, draftVersion],
+  );
   const launchState = useLaunchRecord(launch?.launchId)?.state ?? null;
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;

@@ -6,7 +6,7 @@
  *
  * CONTRACT: presentation only. In: a `LaunchPageModel` (`launch-handoff/page`,
  * the one place its state is decided) and, from context, the page's host
- * (`launch-handoff/actions`; absent ⇒ no buttons). Out: the verbs' calls.
+ * (`launch-handoff/page-host`; absent ⇒ no buttons). Out: the verbs' calls.
  *
  * ONE PAGE ON BOTH SIDES OF THE SWAP. Work's launch tab draws it before the
  * node has answered, and the session's work view draws it while the session

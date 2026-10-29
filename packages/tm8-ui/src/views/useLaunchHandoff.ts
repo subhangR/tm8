@@ -175,6 +175,21 @@ function closeSessionTab(runtime: WorkspaceRuntime, sessionId: string): void {
   if (tab) runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' });
 }
 
+/** Each launch's send in flight — shared by every host's hand-off, as the store is. */
+const sending = new Map<string, Promise<void>>();
+
+/**
+ * A launch's outcome as a promise: it settles as the launch did — rejecting
+ * with the failure the page already shows, so the (gone) popup records
+ * nothing for a refused launch.
+ */
+function outcomeOf(launchId: string): Promise<void> {
+  const settled = launchRecord(launchId);
+  return settled?.state === 'failed' && settled.failure
+    ? Promise.reject(Object.assign(new Error(settled.failure.message), { code: settled.failure.code }))
+    : Promise.resolve();
+}
+
 export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   const runtimeFor = deps.runtimeFor ?? getWorkspaceRuntime;
   const workPresence = deps.workPresence ?? defaultWorkPresence;
@@ -214,14 +229,16 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
 
   /**
    * The failure, on the record and on the tab — a reload draws it, never
-   * replays it. A launch tab the viewer closed meanwhile is answered by a
-   * toast whose Show re-opens the launch's page with the failure on it.
+   * replays it. EVERY failure lands somewhere: with no launch tab to draw it
+   * (closed by the viewer, or never opened — `none`), a toast whose Show
+   * opens the launch's page with the failure on it. A `queued` one is drawn
+   * by Work's drain.
    */
   const fail = (launchId: string, failure: LaunchFailure) => {
     const record = transition(launchId, { type: 'fail', failure });
     const runtime = runtimeOfPage(record?.page ?? null);
     if (!record || !runtime) return;
-    if (record.page?.at === 'tab' && !findLaunchTab(runtime, launchId)) {
+    if (record.page?.at !== 'queued' && !findLaunchTab(runtime, launchId)) {
       runtime.hooks.toast({
         text: `“${record.launch.title}” did not launch: ${failure.message}`,
         action: {
@@ -265,8 +282,10 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     try {
       const found = await deps.sessionsSince(record.launch.subjectId, new Date(record.startedAt).toISOString());
       if (found.length > 0) {
+        /* The node's own words when it gave any (never paraphrased); the
+           found sessions ride beside them to pick from. */
         fail(launchId, {
-          message: LAUNCH_TIMEOUT_WORDS.foundSince,
+          message: timedOut ? LAUNCH_TIMEOUT_WORDS.foundSince : launchFailureOf(replayError).message,
           code: timedOut ? 'upstream_unavailable' : launchFailureOf(replayError).code,
           uncertain: true,
           candidates: found.map((s) => ({ id: s.id as EntityId, title: s.title })),
@@ -340,8 +359,10 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     /* Work not on screen (or still mounting): the tab waits behind Work's
        restore, and the ONE navigation is a push into Work — unless Work's
        route is already the one showing. */
-    queueLaunchTab(viewerId, spaceId, valuesOf(record));
+    /* The record moves FIRST: queuing notifies Work's drain, which may land
+       the tab synchronously — a `queued` written after it would undo that. */
     transition(record.id, { type: 'land', page: { at: 'queued', viewerId, spaceId } });
+    queueLaunchTab(viewerId, spaceId, valuesOf(record));
     if (presence === 'elsewhere') navigateToWork();
     return true;
   };
@@ -356,19 +377,25 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       else await deps.spawnSession(input);
       return;
     }
-    /* Only the first send of a launch goes out; anything after it is the
-       same launch, already on its way (or settled). */
-    if (record.input !== null || record.state !== 'starting') return;
+    /* Only the first send of a launch goes out; a second send of the same
+       launch gets THAT attempt's outcome, never an early success (lane A
+       writes the remembered picks on resolution). */
+    if (record.input !== null) {
+      /* This launch was already sent: its attempt is in flight while the
+         record says so — an entry the record no longer backs (dropped, or a
+         restarted launch with no input yet) is never answered from. */
+      const inFlight = record.state === 'admitted' || record.state === 'failed' ? undefined : sending.get(record.id);
+      return inFlight ?? outcomeOf(record.id);
+    }
+    if (record.state !== 'starting') return outcomeOf(record.id);
     transition(record.id, { type: 'send', input });
     const runtime = runtimeOfPage(record.page);
     if (runtime && record.page.at === 'tab') storeLaunchFacts(runtime, record.id, { input });
-    await send(record.id, input);
-    /* The popup's promise settles as the launch did (lane A writes the
-       remembered picks only on success); the page already shows a failure. */
-    const settled = launchRecord(record.id);
-    if (settled?.state === 'failed' && settled.failure) {
-      throw Object.assign(new Error(settled.failure.message), { code: settled.failure.code });
-    }
+    const attempt = send(record.id, input)
+      .then(() => outcomeOf(record.id))
+      .finally(() => sending.delete(record.id));
+    sending.set(record.id, attempt);
+    return attempt;
   };
 
   const dismiss = (launchId: string) => {

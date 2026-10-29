@@ -92,7 +92,10 @@ export function launchTabValues(values: Record<string, unknown> | null | undefin
   if (!values || !isNonEmptyString(values.launchId)) return null;
   const launch = launchStartedOf(values.launch);
   if (!launch || launch.clientMutationId !== values.launchId) return null;
-  const startedAt = typeof values.startedAt === 'number' && Number.isFinite(values.startedAt) ? values.startedAt : Date.now();
+  /* The press time is a fact or nothing: a reader that invented one would
+     move the clock and the replay's grace on every read. */
+  if (typeof values.startedAt !== 'number' || !Number.isFinite(values.startedAt)) return null;
+  const startedAt = values.startedAt;
   const input = isRecord(values.input) && values.input.clientMutationId === values.launchId
     ? (values.input as unknown as ExecutionSpawnInput)
     : null;

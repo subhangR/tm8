@@ -16,10 +16,10 @@ import { landQueuedLaunches } from '../../views/useLaunchHandoff';
 import { LaunchPageHostProvider } from './LaunchPageHostProvider';
 import { getRailStore } from '../runtime/railStore';
 import { getWorkspaceListStore } from '../bridge/workspaceList';
-import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { isWorkspaceKind, type KindId } from '../runtime/types';
+import { noticeOfToast } from './toastNotice';
 import { Browser } from './Browser';
 import { Navigator } from './Navigator';
 import { browserBounds, isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
@@ -83,8 +83,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
         canCreate: canCreateKind,
         /* Spec C: tab/scope/layout commands from the bridge need this view. */
         viewMounted: () => true,
-        toast: (toast) =>
-          onNotice({ id: `tws-${Date.now()}`, tone: 'info', title: toast.text, body: '', ttlMs: NOTICE_TTL_MS }),
+        toast: (toast) => onNotice(noticeOfToast(toast)),
       }),
     [runtime, onNotice],
   );
@@ -260,3 +259,4 @@ function RestoreNavigation() {
     </div>
   );
 }
+

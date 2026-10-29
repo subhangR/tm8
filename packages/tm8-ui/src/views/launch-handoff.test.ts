@@ -19,6 +19,8 @@ import {
 import { launchForSession, launchPageModel, launchRecord, resetLaunches, retireLaunch } from '../launch-handoff';
 import type { LaunchStarted } from '../new-session/launch-started';
 import { createLaunchHandoff, landQueuedLaunches, RESUME_GRACE_MS, type LaunchHandoffDeps } from './useLaunchHandoff';
+import { noticeOfToast } from '../tab-workspace/view/toastNotice';
+import { onLaunchTabQueued } from '../tab-workspace/runtime/launchTabs';
 
 let n = 0;
 function workspace() {
@@ -647,5 +649,105 @@ describe('round 3', () => {
     retireLaunch('mut-1');
     expect(launchForSession('session-1')).toBeNull();
     expect(launchRecord('mut-1')).toBeNull();
+  });
+});
+
+describe('round 4', () => {
+  /** Work's own toast hook, as TabWorkspaceView installs it: toast → shell notice. */
+  function withNotices(ws: ReturnType<typeof workspace>) {
+    const notices: ReturnType<typeof noticeOfToast>[] = [];
+    ws.runtime.setHooks({ toast: (t) => void notices.push(noticeOfToast(t)) });
+    return notices;
+  }
+
+  it('closed tab, admitted: the shell notice carries Open, and Open shows the session', async () => {
+    const ws = workspace();
+    const notices = withNotices(ws);
+    const { handoff, spawnSession } = handoffFor(ws);
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValue(answer.promise);
+    handoff.onLaunchStarted(launchOf());
+    const sent = handoff.spawn(inputOf());
+    ws.runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: findLaunchTab(ws.runtime, 'mut-1')!.id }, source: 'click' });
+    answer.resolve('session-1' as EntityId);
+    await sent;
+
+    expect(notices[0]).toMatchObject({ title: 'Created Fix the flaky login test', action: { label: 'Open' } });
+    notices[0]!.action!.run();
+    expect(entityTabOf(ws.runtime, 'session-1')).not.toBeNull();
+  });
+
+  it('closed tab, refused: the shell notice carries Show, and Show draws the failure', async () => {
+    const ws = workspace();
+    const notices = withNotices(ws);
+    const { handoff, spawnSession } = handoffFor(ws);
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValue(answer.promise);
+    handoff.onLaunchStarted(launchOf());
+    const sent = handoff.spawn(inputOf());
+    ws.runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: findLaunchTab(ws.runtime, 'mut-1')!.id }, source: 'click' });
+    answer.reject(new Error('cap reached'));
+    await sent.catch(() => undefined);
+
+    expect(notices[0]).toMatchObject({ action: { label: 'Show' } });
+    notices[0]!.action!.run();
+    const tab = findLaunchTab(ws.runtime, 'mut-1')!;
+    expect(launchTabValues(ws.runtime.drafts.get(tab.draftId))?.failure?.message).toBe('cap reached');
+  });
+
+  it('a launch that never got a tab (landed `none`) still reports its refusal', async () => {
+    const ws = workspace();
+    const notices = withNotices(ws);
+    const { handoff, spawnSession } = handoffFor(ws, { workPresence: () => 'elsewhere' });
+    spawnSession.mockRejectedValue(new Error('cap reached'));
+    handoff.onLaunchStarted(launchOf());
+    /* Work refuses the tab at drain (a scope without sessions). */
+    ws.runtime.dispatch({ command: 'workspace.tabScope.set', args: { mode: 'byType', selectedTypeIds: ['task'] }, source: 'click' });
+    landQueuedLaunches(ws.runtime);
+    expect(launchRecord('mut-1')?.page?.at).toBe('none');
+    await handoff.spawn(inputOf()).catch(() => undefined);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.title).toContain('cap reached');
+  });
+
+  it('a synchronous drain on queue lands the tab, and the record stays landed in it', () => {
+    const ws = workspace();
+    const off = onLaunchTabQueued(() => landQueuedLaunches(ws.runtime));
+    const { handoff } = handoffFor(ws, { workPresence: () => 'mounting' });
+    handoff.onLaunchStarted(launchOf());
+    off();
+    expect(findLaunchTab(ws.runtime, 'mut-1')).not.toBeNull();
+    expect(launchRecord('mut-1')?.page?.at).toBe('tab');
+  });
+
+  it('a definitive refusal on the replay keeps the node’s words, with the found sessions beside them', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn().mockResolvedValue([{ id: 's-9', title: 'Run' }]) });
+    spawnSession.mockRejectedValueOnce(timeout()).mockRejectedValueOnce(Object.assign(new Error('task is archived'), { code: 'conflict' }));
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
+    expect(launchRecord('mut-1')).toMatchObject({ failure: { message: 'task is archived', code: 'conflict', candidates: [{ id: 's-9', title: 'Run' }] } });
+  });
+
+  it('a second send of a launch in flight settles as that launch does — no early success', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValue(answer.promise);
+    handoff.onLaunchStarted(launchOf());
+    const first = handoff.spawn(inputOf());
+    const second = handoff.spawn(inputOf());
+    let settled = false;
+    void second.then(() => { settled = true; }, () => { settled = true; });
+    await flush();
+    expect(settled).toBe(false);
+    answer.reject(new Error('cap reached'));
+    await expect(second).rejects.toThrow('cap reached');
+    await expect(first).rejects.toThrow('cap reached');
+    expect(spawnSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('a stored launch without its press time is unrestorable — no time is invented', () => {
+    expect(launchTabValues({ launchId: 'mut-1', launch: launchOf(), input: null } as unknown as Record<string, unknown>)).toBeNull();
   });
 });
