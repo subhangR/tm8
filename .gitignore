@@ -35,3 +35,6 @@ dist-2.0/
 # tm8 desktop: vendored Postgres and packaged app bundles are build outputs.
 apps/desktop/resources/pg/
 apps/desktop/release/
+
+# The tools pg e2e suite stages a stub `gh` here while it runs and removes it after.
+.tools-e2e-bin-*/

@@ -2,6 +2,8 @@ Tool UI uses the existing authenticated HTTP client and operation catalog. `Tool
 
 An open definition draft keeps the version it loaded. A conflict preserves it and offers a rebase or explicit overwrite. Rebase keeps local edits and newer untouched fields; overlapping edits require review before saving. Run is disabled until changes are saved or discarded.
 
+The tool page v2 pieces: `RunHistory` (the newest-first `tools.runs.list` table, with running rows polled through `tools.runs.get`), `OutputDrawer` (one run's redacted tail, read fresh), `LastRunChip` (the header's newest run, from `ToolView.lastRun` or the polled history row), and `Versions` with `versions-model.ts` (`entities.versions` rows classified as `tm8 tool versions --format json` does: definition versions by default, a Show-all-writes toggle, a source diff through `kit/DiffView` from `source-diff.ts`). `version-field.ts` is the one place that names which number is "the version" (the execution version). Refusals are shown as the server gave them through `toolErrorOf` in `errors.ts` (PR-A's module, PR-B's block at its end) and `ToolErrorAlert`.
+
 `ToolRunChip` reads the session's pinned `toolRun` outcome while `TerminalBody` continues to use PTY liveness. A tool exit therefore changes only the chip. `toolTabCloseEffect` terminates a live keep-open shell when the user explicitly removes its last tab; system navigation and other remaining tabs do not terminate it.
 
 `adapter.test.ts` uses the authenticated transport and final operation catalog to verify routes, strict request schemas, source attribution, human-only secret controls, and paged run history, including unreadable/deleted sessions. The adapter exposes only the session pointer from a launch response.
