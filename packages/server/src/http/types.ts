@@ -54,7 +54,7 @@ export interface RequestIdentity {
    */
   /** Verified immutable API scope on the auth session; absent preserves existing write scope. */
   apiScope?: 'read' | 'write';
-  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
+  authKind?: 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | 'link';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;
   /** Thread root recorded on a PRE-176 `agent_runtime` bearer row. */

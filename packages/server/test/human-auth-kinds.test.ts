@@ -1,11 +1,11 @@
 /**
  * One allow-list for "is this session human" (task 01a0e24d, doc 01a0e257 v2
- * correction A). `HUMAN_AUTH_KINDS` in @tm8/contract mirrors 083's
- * `internal.require_human_auth_kind()`; every server guard imports it. Three
- * pins keep it that way:
- *   1. the export equals the SQL literal in 083;
- *   2. no server source holds a private copy (an array/set literal of the two
- *      kinds, or an `authKind === 'browser' || … 'cli'` chain);
+ * correction A). `HUMAN_AUTH_KINDS` in @tm8/contract mirrors
+ * `internal.require_human_auth_kind()` (083, widened by the mobile auth kind
+ * migration); every server guard imports it. Three pins keep it that way:
+ *   1. the export equals the SQL literal in the function's latest definition;
+ *   2. no server source holds a private copy (an array/set literal of the
+ *      kinds, or an `authKind === 'browser' || …` / `!==` chain);
  *   3. a catalog binding is `humanOnly` iff its registration is wrapped in
  *      `requireHumanSession` / `requireHumanLinkSession`, per file.
  */
@@ -27,29 +27,38 @@ function sources(dir: string): string[] {
 }
 
 describe('HUMAN_AUTH_KINDS', () => {
-  it('equals the allow-list in 083 internal.require_human_auth_kind()', () => {
-    const sql = readFileSync(join(ROOT, 'db/migrations/083_credential_sessions.sql'), 'utf8');
-    const body = sql.slice(sql.indexOf('function internal.require_human_auth_kind'));
-    const literal = /not in \(([^)]*)\)/.exec(body)?.[1];
+  it('equals the allow-list in the latest internal.require_human_auth_kind()', () => {
+    // The last migration that defines it, by file order: 083, then whatever
+    // restated it (the mobile auth kind). Found by scanning, never by number.
+    const dir = join(ROOT, 'db/migrations');
+    let body: string | undefined;
+    for (const file of readdirSync(dir).filter((name) => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort()) {
+      const sql = readFileSync(join(dir, file), 'utf8');
+      const definitions = [...sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+internal\.require_human_auth_kind\s*\(/g)];
+      const last = definitions.at(-1);
+      if (last) body = sql.slice(last.index);
+    }
+    const literal = /not in \(([^)]*)\)/.exec(body ?? '')?.[1];
     expect(literal).toBeDefined();
     const kinds = literal!.split(',').map((part) => part.trim().replace(/^'|'$/g, ''));
     expect([...HUMAN_AUTH_KINDS].sort()).toEqual(kinds.sort());
   });
 
   it('fails closed and does not admit a link session', () => {
-    for (const kind of ['link', 'agent', 'agent_runtime', '', null, undefined, 'Browser']) {
+    for (const kind of ['link', 'agent', 'agent_runtime', '', null, undefined, 'Browser', 'Mobile']) {
       expect(isHumanAuthKind(kind)).toBe(false);
     }
     expect(isHumanAuthKind('browser')).toBe(true);
     expect(isHumanAuthKind('cli')).toBe(true);
+    expect(isHumanAuthKind('mobile')).toBe(true);
   });
 
   it('has no private copy anywhere in server src', () => {
     const copies: string[] = [];
     for (const file of sources(SERVER_SRC)) {
       const text = readFileSync(file, 'utf8');
-      if (/['"](browser|cli)['"]\s*,\s*['"](browser|cli)['"]/.test(text)
-        || /authKind\s*===\s*['"](browser|cli)['"]/.test(text)) {
+      if (/['"](browser|cli|mobile)['"]\s*,\s*['"](browser|cli|mobile)['"]/.test(text)
+        || /authKind\s*[!=]==\s*['"](browser|cli|mobile)['"]/.test(text)) {
         copies.push(file.slice(ROOT.length));
       }
     }

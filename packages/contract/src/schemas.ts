@@ -2253,7 +2253,7 @@ export const AuthSignupInputSchema: z.ZodType<AuthSignupInput> = z.object({
 export const AuthLoginInputSchema: z.ZodType<AuthLoginInput> = z.object({
   username: AuthUsernameSchema,
   password: z.string().min(1).max(1024),
-  kind: z.enum(['browser', 'cli']).optional(),
+  kind: z.enum(['browser', 'cli', 'mobile']).optional(),
   label: z.string().min(1).max(200).optional(),
 }).strict();
 
@@ -2272,7 +2272,7 @@ export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
 
 export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'link']),
+  kind: z.enum(['browser', 'cli', 'mobile', 'agent', 'agent_runtime', 'link']),
   actingAsTeamMemberId: z.string().uuid().nullable(),
   runtimeMemberId: z.string().uuid().nullable().optional(),
   runtimeThreadRootId: z.string().uuid().nullable().optional(),
@@ -2336,7 +2336,7 @@ export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.o
 
 export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'mobile', 'agent', 'agent_runtime']),
   createdAt: IsoTimestamp,
   lastUsedAt: IsoTimestamp.nullable(),
   expiresAt: IsoTimestamp,
@@ -2387,7 +2387,7 @@ export const AuthClaimInputSchema: z.ZodType<AuthClaimInput> = z.object({
   password: AuthPasswordSchema,
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
-  kind: z.enum(['browser', 'cli']).optional(),
+  kind: z.enum(['browser', 'cli', 'mobile']).optional(),
 }).strict();
 
 export const AuthClaimResultSchema: z.ZodType<AuthClaimResult> = z.object({
@@ -2440,7 +2440,7 @@ export const AuthInviteSignupInputSchema: z.ZodType<AuthInviteSignupInput> = z.o
   password: AuthPasswordSchema,
   displayName: z.string().min(1).max(200).optional(),
   email: z.string().min(3).max(320).optional(),
-  kind: z.enum(['browser', 'cli']).optional(),
+  kind: z.enum(['browser', 'cli', 'mobile']).optional(),
   spacePassword: AuthPasswordSchema.optional(),
 }).strict();
 

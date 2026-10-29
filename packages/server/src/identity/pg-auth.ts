@@ -51,11 +51,13 @@ const DAY = 24 * HOUR;
  * The ONE session TTL table. `link` is a member's stored session for a space
  * link's target (251, K10), minted by `DbSpaceLinkStore`; it used to be read
  * from `identity/service.ts`'s copy of this table, the only thing production
- * still imported from that unwired module.
+ * still imported from that unwired module. `mobile` (391) is the TM8 Mobile
+ * app's sign-in: a human bearer session that lives as long as `cli`.
  */
 export const SESSION_TTL_MS = {
   browser: 30 * DAY,
   cli: 90 * DAY,
+  mobile: 90 * DAY,
   agent: 7 * DAY,
   agent_runtime: DAY,
   link: 90 * DAY,
@@ -315,7 +317,7 @@ export async function sessionIssuedHere(db: Db, token: string): Promise<boolean>
 export interface LoginInput {
   username: string;
   password: string;
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
   label?: string | null;
 }
 
@@ -383,7 +385,7 @@ export async function enterSpace(
   input: {
     spaceId: string;
     parentSessionId: string | null;
-    kind: 'browser' | 'cli';
+    kind: 'browser' | 'cli' | 'mobile';
     label?: string | null;
     /** W5: the verifier `checkSpacePassword` accepted, or null. */
     spaceVerifier?: string | null;
@@ -640,7 +642,7 @@ export interface ClaimNodeInput {
   password: string;
   displayName?: string | null;
   email?: string | null;
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
 }
 
 /**
@@ -761,7 +763,7 @@ export interface SignupViaInviteInput {
   password: string;
   displayName?: string | null;
   email?: string | null;
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
   /** W5: the space password, when the invite's space requires one. */
   spacePassword?: string;
 }

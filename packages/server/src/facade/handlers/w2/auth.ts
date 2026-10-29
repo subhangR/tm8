@@ -27,7 +27,7 @@
  * short-circuit. The DTOs are strict and refuse `actorId` — authentication
  * has no authoring persona.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 import type {
   AuthAccountView,
   AuthClaimInput,
@@ -49,6 +49,7 @@ import type {
   AuthSignupResult,
   AuthSpaceEnterInput,
   AuthSpaceEnterResult,
+  HumanAuthKind,
   InvitePreview,
   ResolveInviteInput,
   SpacePasswordAdminResult,
@@ -354,14 +355,15 @@ function authSpaceEnter(deps: FacadeDeps): OperationHandler {
     if (identity.sessionSpaceId) {
       throw new CollabError('forbidden', 'a space-pinned session cannot enter a space; use the gate session');
     }
-    let kind: 'browser' | 'cli';
+    let kind: HumanAuthKind;
     let parentSessionId: string | null;
     if (identity.kind === 'bearer') {
-      if (identity.authKind !== 'browser' && identity.authKind !== 'cli') {
+      const authKind = identity.authKind;
+      if (!isHumanAuthKind(authKind)) {
         throw new CollabError('forbidden', 'only a human session can enter a space');
       }
       if (!identity.sessionId) throw new CollabError('unauthenticated', 'bearer session is unresolved');
-      kind = identity.authKind;
+      kind = authKind;
       parentSessionId = identity.sessionId;
     } else {
       // The loopback auto-owner: no session row, so no parent to inherit from.

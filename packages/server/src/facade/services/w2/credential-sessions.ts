@@ -55,7 +55,7 @@
  * ran out without one. Before both, every credential work session read
  * `spawning` forever.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, isHumanAuthKind } from '@tm8/contract';
 import type { CredentialProvider, CredentialSessionLauncher, Logger } from '@tm8/execution';
 import { CREDENTIAL_LOGIN_COMMANDS, CREDENTIAL_PROVIDERS } from '@tm8/execution';
 
@@ -1685,7 +1685,7 @@ export class W2CredentialSessionsService {
  * would end the human's login first and be refused after.
  */
 function assertHumanSpaceLogin(claims: DbClaims): void {
-  if (claims.authKind !== 'browser' && claims.authKind !== 'cli') {
+  if (!isHumanAuthKind(claims.authKind)) {
     throw new CollabError('forbidden', 'a space login is opened and closed by a human session only', {
       details: { reason: 'credentials_human_only' },
     });

@@ -2474,8 +2474,10 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
  * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
  * member's stored session for a linked space, minted by `spaceLinks.login`.
+ * `mobile` (391) is the TM8 Mobile app: a human bearer client like `cli`
+ * (90 days, never a cookie), admitted by every human-only door.
  */
-export type AuthSessionKindView = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
+export type AuthSessionKindView = 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | 'link';
 
 /** The session half of every auth response. The token itself appears exactly once, at issuance. */
 export interface AuthSessionView {
@@ -2536,7 +2538,7 @@ export interface AuthLoginInput {
   username: string;
   password: string;
   /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
   /** Free-form label shown in session listings (e.g. a device name). */
   label?: string;
 }
@@ -2750,7 +2752,7 @@ export interface AuthClaimInput {
   displayName?: string;
   email?: string;
   /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
 }
 
 export interface AuthClaimResult {
@@ -2828,7 +2830,7 @@ export interface AuthInviteSignupInput {
   displayName?: string;
   email?: string;
   /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
-  kind?: 'browser' | 'cli';
+  kind?: 'browser' | 'cli' | 'mobile';
   /**
    * W5 (K2): the space password for the space the invite joins. Required when
    * `auth.invite.resolve` answered `requiresSpacePassword: true`.
@@ -5076,7 +5078,7 @@ export interface ActionRows {
   capabilityEpoch: string;
   /**
    * Mirrors `internal.require_human_auth_kind()`: true iff the session's auth
-   * kind is in `HUMAN_AUTH_KINDS` (`browser` | `cli`). Fails closed. It is not
+   * kind is in `HUMAN_AUTH_KINDS` (`browser` | `cli` | `mobile`). Fails closed. It is not
    * "is this a person": a `link` session is `false`.
    */
   human: boolean;

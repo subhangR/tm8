@@ -160,6 +160,7 @@ const DAY = 24 * HOUR;
 export const DEFAULT_SESSION_TTL_MS: Record<AuthSessionKind, number> = {
   browser: 30 * DAY,
   cli: 90 * DAY,
+  mobile: 90 * DAY,
   agent: 7 * DAY,
   agent_runtime: DAY,
   // A member's stored session for a space link's target (251, K10): pinned to
