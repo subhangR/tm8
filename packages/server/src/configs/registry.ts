@@ -44,6 +44,7 @@ import {
 import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
+import { DEFAULT_MOBILE_APP_ID } from '../http/well-known.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
 
@@ -124,6 +125,9 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_STYLE_PREFS_MAX', group: 'Network & access', summary: 'Style preference writes per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute), definedIn: CONFIG },
   { name: 'TM8_STYLE_DEFAULT_MAX', group: 'Network & access', summary: 'Space default-style writes per space per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute), definedIn: CONFIG },
   { name: 'TM8_UI_DIR', group: 'Network & access', summary: 'Built web UI bundle served for non-/v2 paths. Unset in dev, where Vite serves the UI.', default: null, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_APP_ID', group: 'Network & access', summary: 'iOS bundle id and Android package name of the phone app that /.well-known/apple-app-site-association and assetlinks.json vouch for.', default: DEFAULT_MOBILE_APP_ID, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_APPLE_TEAM_ID', group: 'Network & access', summary: 'Apple Developer Team ID that signs the phone app. Unset: /.well-known/apple-app-site-association answers 404.', default: null, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_ANDROID_CERT_SHA256', group: 'Network & access', summary: 'SHA-256 fingerprints of the certificates that sign the Android app (comma-separated AA:BB:…). Unset: /.well-known/assetlinks.json answers 404.', default: null, definedIn: CONFIG },
 
   // ── Storage & database ───────────────────────────────────────────────
   { name: 'TM8_DATABASE_URL', group: 'Storage & database', summary: 'Postgres connection string for the graph.', default: null, definedIn: CONFIG, secret: true },
