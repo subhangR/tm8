@@ -258,6 +258,14 @@ const TERMINAL_STATUSES = new Set(['exited', 'failed']);
 /** The settle reason for a run whose session is gone from this node (a restart, a crash). */
 export const SESSION_LOST = 'session lost: it is no longer running on this node (the node may have restarted)';
 
+/**
+ * How long a session must have been missing from the PTY map, seen by an
+ * earlier sweep, before its run is lost: a PTY leaves the map the moment it
+ * exits and the row turns terminal a little later (handlePtyExit, retried), so
+ * one sweep in that gap must not record a clean exit as lost. Half a tick.
+ */
+const LOST_CONFIRM_MS = 30_000;
+
 /** The advanced instant for one loop, or the reason the schedule could not be evaluated. */
 export function advanceFor(loop: Pick<DueLoop, 'schedule' | 'timezone'>, firedAt: Date): { nextRunAt: Date | null; scheduleError: string | null } {
   try {
@@ -293,6 +301,8 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
   const { db, port } = opts;
   const maxPerTick = opts.maxPerTick ?? 25;
   const launchGraceMs = opts.launchGraceMs ?? LAUNCH_GRACE_MS;
+  /** run id → when a sweep first saw its session missing from the PTY map (the reaper's rule). */
+  const missingSince = new Map<string, number>();
 
   return {
     name: LOOPS_JOB_NAME,
@@ -412,7 +422,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         }
       }
 
-      const sweep = await sweepOpenRuns({ db, port, worker, now, live: port.liveSessionIds(), launchGraceMs, ctx });
+      const sweep = await sweepOpenRuns({ db, port, worker, now, live: port.liveSessionIds(), launchGraceMs, missingSince, ctx });
 
       if (due.length === 0 && parked.length === 0 && sweep.timedOut + sweep.settled + sweep.abandoned + sweep.lost === 0) {
         return { skipped: true, reason: 'no loops are due' };
@@ -459,11 +469,14 @@ async function sweepOpenRuns(input: {
   now: Date;
   live: readonly string[];
   launchGraceMs: number;
+  missingSince: Map<string, number>;
   ctx: JobContext;
 }): Promise<{ timedOut: number; settled: number; abandoned: number; lost: number }> {
-  const { db, port, worker, now, ctx } = input;
+  const { db, port, worker, now, ctx, missingSince } = input;
   const liveSet = new Set(input.live);
   const open = await db.query<OpenLoopRun>(worker, OPEN_RUNS_SQL, [now.toISOString()]);
+  const openIds = new Set(open.map((run) => run.runId));
+  for (const runId of [...missingSince.keys()]) if (!openIds.has(runId)) missingSince.delete(runId);
   let timedOut = 0;
   let settled = 0;
   let abandoned = 0;
@@ -486,7 +499,9 @@ async function sweepOpenRuns(input: {
     // A dispatch run is done at delivery and its session is the space's shared
     // dispatcher: one left open (both settle attempts failed) must not hold the
     // loop as an overlap, nor be "timed out" by stopping the dispatcher.
-    if (run.action === 'dispatch') {
+    // One with no session yet is still in flight (or died before delivery) and
+    // falls through to the launch rules below.
+    if (run.action === 'dispatch' && run.sessionId !== null) {
       if (await settle(run, 'completed', null)) settled += 1;
       continue;
     }
@@ -510,11 +525,20 @@ async function sweepOpenRuns(input: {
     // run is settled here once its launch grace has passed, so it never holds
     // its loop as an overlap or a queue forever (§3.2 restart).
     if (!liveSet.has(run.sessionId)) {
-      if (now.getTime() - firedAt >= input.launchGraceMs) {
-        if (await settle(run, 'failed', SESSION_LOST)) lost += 1;
+      const first = missingSince.get(run.runId);
+      if (first === undefined) {
+        missingSince.set(run.runId, now.getTime());
+        continue;
+      }
+      if (now.getTime() - first >= LOST_CONFIRM_MS && now.getTime() - firedAt >= input.launchGraceMs) {
+        if (await settle(run, 'failed', SESSION_LOST)) {
+          lost += 1;
+          missingSince.delete(run.runId);
+        }
       }
       continue;
     }
+    missingSince.delete(run.runId);
 
     if (run.maxRuntimeSeconds === null) continue;
     if (firedAt + run.maxRuntimeSeconds * 1000 > now.getTime()) continue;

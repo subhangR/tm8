@@ -40,6 +40,7 @@ export const LOOP_RUN_STATUS_SQL = `case
   when ws.status in ('spawning', 'running', 'idle') then 'running'
   when ws.status = 'failed' then 'failed'
   when ws.session_kind = 'tool' and ws.tool_exit_code is not null and ws.tool_exit_code <> 0 then 'failed'
+  when ws.outcome = 'stopped' then 'stopped'
   else 'completed'
 end`;
 

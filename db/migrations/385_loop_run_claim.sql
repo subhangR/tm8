@@ -302,7 +302,10 @@ begin
   -- deadlock with a human's save. A row someone else holds is skipped, not
   -- waited for: the holder is deciding this very deadline or editing it, and
   -- the next tick re-reads.
-  perform 1 from public.entities where id = p_loop_id for update skip locked;
+  -- NO KEY: still excludes a human's save (assert_version takes FOR UPDATE), but
+  -- not the FOR KEY SHARE an FK insert takes (a spawn's session -> loop edge),
+  -- which would turn a Run now during a firing into 'locked' instead of an overlap.
+  perform 1 from public.entities where id = p_loop_id for no key update skip locked;
   if not found then
     perform 1 from public.entities where id = p_loop_id;
     if not found then
