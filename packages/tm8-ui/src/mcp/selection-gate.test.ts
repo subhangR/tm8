@@ -99,3 +99,20 @@ describe('the launch gate', () => {
     expect(selectionGate(data, [{ serverId: 'off' }, { serverId: 'notion' }]).problem).toMatch(/^Off is disabled/);
   });
 });
+
+describe('round 2: what bind refuses that the gate used to pass', () => {
+  it('a pin on a connector that no longer takes an account is dead', () => {
+    expect(selectionGate(catalog(server({ auth: 'none' })), [{ serverId: 'notion', credentialId: 'old' }]))
+      .toEqual(blocked('Notion no longer uses an account. Switch it off and on again to drop the old one.'));
+  });
+  it('a local command with NO trust flag is untrusted, in the gate and on the row', () => {
+    const stdio = server({ transport: 'stdio', auth: 'none', source: {} as McpServer['source'] });
+    expect(selectionGate(catalog(stdio), [{ serverId: 'notion' }]).blocked).toBe(true);
+    expect(connectorRows(catalog(stdio), [], false)[0]?.status).toBe('stdio_not_trusted');
+  });
+  it('labels a connection shared WITH the viewer as theirs-to-borrow, not "Just me"', () => {
+    expect(connectorAccess(server({ accounts: [sharedWithMe] }), 'shared')).toBe('Shared with you');
+    expect(connectorAccess(server({ accounts: [mine] }))).toBe('Just me');
+    expect(connectorAccess(server({ accounts: [spaceOwned] }))).toBe('Shared');
+  });
+});

@@ -47,7 +47,14 @@ export const OPEN_GATE: SelectionGate = { blocked: false, problem: null };
  * never be sent.
  */
 export function accountProblem(server: McpServer, selection: McpSelection): string | null {
-  if (server.auth === 'none' || pickedAccount(server, selection.credentialId)) return null;
+  // A pin on a connector that no longer takes an account is as dead as a
+  // revoked one: bind refuses it (`credential_unavailable`).
+  if (server.auth === 'none') {
+    return selection.credentialId
+      ? `${server.title} no longer uses an account. Switch it off and on again to drop the old one.`
+      : null;
+  }
+  if (pickedAccount(server, selection.credentialId)) return null;
   const usable = server.accounts.some(a => a.canUse && a.status === 'connected');
   if (selection.credentialId) {
     return usable
@@ -64,7 +71,8 @@ function pickProblem(server: McpServer | undefined, selection: McpSelection): st
   if (!server) return 'A connector picked here no longer exists. Reset the connectors to drop it.';
   if (!server.approved) return `${server.title} is awaiting approval and would be refused. Switch it off.`;
   if (!server.enabled) return `${server.title} is disabled by an admin and would be refused. Switch it off.`;
-  if (server.transport === 'stdio' && server.source?.stdioTrusted === false) {
+  // bind refuses on `!stdioTrusted`, so an absent flag is untrusted too.
+  if (server.transport === 'stdio' && !server.source?.stdioTrusted) {
     return `${server.title} runs a local command this node does not trust and would be refused. Switch it off.`;
   }
   return accountProblem(server, selection);

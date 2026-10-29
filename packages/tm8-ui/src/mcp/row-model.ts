@@ -210,7 +210,8 @@ export function connectorStatus(server: McpServer): ConnectorStatus {
   if (!server.canAttach) return 'access_denied';
   if (!server.approved) return 'not_approved';
   if (!server.enabled) return 'disabled';
-  if (server.transport === 'stdio' && server.source?.stdioTrusted === false) return 'stdio_not_trusted';
+  // The server refuses on `!stdioTrusted`: an absent flag is untrusted too.
+  if (server.transport === 'stdio' && !server.source?.stdioTrusted) return 'stdio_not_trusted';
   if (server.auth !== 'none' && usableAccounts(server).length === 0) return credentialStatus(server);
   // The health record is the viewer's own last test of this connector
   // (`mcp_server_health` is keyed by member), so an unreachable server is
@@ -222,21 +223,27 @@ export function connectorStatus(server: McpServer): ConnectorStatus {
 }
 
 /**
- * "Just me" / "Shared" — WHOSE connection would carry this connector.
+ * "Just me" / "Shared" / "Shared with you" — WHOSE connection would carry
+ * this connector.
  *
  * Read off the account that would actually be used, not off the connector:
  * one connector can hold a personal connection and a Space-owned one at once
  * (§5.2), and which of them answers is §3's order, not a property of the row.
- * A Space-owned connection has `ownerId: null` by construction (G2).
+ * A Space-owned connection has `ownerId: null` by construction (G2), and a
+ * member's row is the viewer's own exactly when they manage it (`manageable`
+ * is "owner is me"); anyone else's is a connection shared WITH the viewer.
  */
 export function connectorAccess(server: McpServer, credentialId?: string): string {
-  if (server.auth === 'none') return '—';
   // The account the pick opens — the usable pin, else §3's own-then-shared
   // choice — and NOTHING for a dead pin: the row must not say "Shared" for a
   // pick the gate is holding because its account is gone.
-  const account = pickedAccount(server, credentialId);
-  if (!account) return '—';
-  return account.ownerId ? 'Just me' : 'Shared';
+  return accessOf(server, pickedAccount(server, credentialId));
+}
+
+function accessOf(server: McpServer, account: McpAccount | undefined): string {
+  if (server.auth === 'none' || !account) return '—';
+  if (account.ownerId === undefined) return 'Shared';
+  return account.canManage ? 'Just me' : 'Shared with you';
 }
 
 /**
@@ -257,6 +264,9 @@ export function connectorRows(
     const pick = selected.find(s => s.serverId === server.id);
     const status = connectorStatus(server);
     const copy = COPY[status];
+    // Resolved ONCE per row; access, account and the dead pin all read it.
+    const account = pickedAccount(server, pick?.credentialId);
+    const usable = usableAccounts(server);
     return {
       server,
       status,
@@ -265,14 +275,14 @@ export function connectorRows(
       // paraphrased into the generic line.
       text: status === 'access_denied' && server.unavailableReason ? server.unavailableReason : copy.text,
       short: copy.short,
-      access: connectorAccess(server, pick?.credentialId),
+      access: accessOf(server, account),
       toggle: status === 'ready' || status === 'server_unavailable' || Boolean(pick),
       on: Boolean(pick),
       fromDefault: Boolean(pick) && !explicit,
       credentialId: pick?.credentialId,
-      accounts: usableAccounts(server),
-      account: pickedAccount(server, pick?.credentialId),
-      deadPin: Boolean(pick?.credentialId) && !pickedAccount(server, pick?.credentialId),
+      accounts: usable,
+      account,
+      deadPin: Boolean(pick?.credentialId) && !account,
       action: ACTION[status],
       actionable: !ADMINS_TO_FIX.has(status),
     };

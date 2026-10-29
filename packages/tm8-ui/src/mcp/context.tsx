@@ -11,14 +11,21 @@
  *   revalidating  a catalog is shown — the previous revision's, or with
  *                 `lastKnown` the scope's previous read — while a read is in flight
  *   ready         the catalog is the latest read's answer
- *   failed        the latest read failed; whatever was shown STAYS shown,
- *                 with the error beside it (a picker whose re-read fails does
- *                 not collapse rows that were right a second ago)
+ *   failed        the latest read failed. A LAUNCH PICKER (`lastKnown`)
+ *                 keeps what it was showing, with the error beside it, so a
+ *                 re-read that fails does not collapse chips that were right
+ *                 a second ago. Every other surface gets no catalog, so its
+ *                 error is drawn and a management surface never acts on a
+ *                 stale `server.version`.
  *
- * Invariants: a catalog is never shown under another scope's key; `failed`
- * keeps the catalog it was showing and has none only when nothing was shown;
- * `loading` in the result is exactly `loading` or `revalidating`, the meaning
- * every existing reader of it already relies on.
+ * `seeded` is true while the catalog shown is the scope's LAST-KNOWN copy and
+ * this mount's own read has not answered yet: a photograph, which the launch
+ * gate will not judge an explicit pick against.
+ *
+ * Invariants: a catalog is never shown under another scope's key; only a
+ * `lastKnown` reader keeps a catalog under `failed`; an older read never
+ * overwrites a newer one's last-known copy; `loading` in the result is exactly
+ * `loading` or `revalidating`, the meaning every existing reader relies on.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { McpCatalog, McpPort } from './port';
@@ -33,24 +40,25 @@ export function McpProvider({ port, children }: { port: McpPort | null; children
 }
 
 export type CatalogPhase = 'unavailable' | 'loading' | 'revalidating' | 'ready' | 'failed';
-interface CatalogSnapshot { phase: CatalogPhase; catalog?: McpCatalog; error?: string }
+interface CatalogSnapshot { phase: CatalogPhase; catalog?: McpCatalog; error?: string; seeded?: boolean }
 type CatalogEvent =
   /** A read starts. `seed` is the scope's last-known catalog, used only when nothing is shown yet. */
   | { type: 'read'; seed?: McpCatalog | undefined }
   | { type: 'answered'; catalog: McpCatalog }
-  | { type: 'failed'; error: string };
+  /** `keepShown`: the reader is a launch picker, which keeps what it shows. */
+  | { type: 'failed'; error: string; keepShown: boolean };
 
 const NOTHING: CatalogSnapshot = { phase: 'loading' };
 
 function step(current: CatalogSnapshot, event: CatalogEvent): CatalogSnapshot {
   switch (event.type) {
     case 'read': {
-      const shown = current.catalog ?? event.seed;
-      return shown ? { phase: 'revalidating', catalog: shown } : { phase: 'loading' };
+      if (current.catalog) return { phase: 'revalidating', catalog: current.catalog, ...(current.seeded ? { seeded: true } : {}) };
+      return event.seed ? { phase: 'revalidating', catalog: event.seed, seeded: true } : { phase: 'loading' };
     }
     case 'answered': return { phase: 'ready', catalog: event.catalog };
-    case 'failed': return current.catalog
-      ? { phase: 'failed', catalog: current.catalog, error: event.error }
+    case 'failed': return event.keepShown && current.catalog
+      ? { phase: 'failed', catalog: current.catalog, error: event.error, ...(current.seeded ? { seeded: true } : {}) }
       : { phase: 'failed', error: event.error };
   }
 }
@@ -72,6 +80,15 @@ function step(current: CatalogSnapshot, event: CatalogEvent): CatalogSnapshot {
 const lastKnown = new WeakMap<McpPort, Map<string, McpCatalog>>();
 /** Scopes kept per port. A person opens a few tasks, not hundreds; the oldest goes first. */
 const LAST_KNOWN_SCOPES = 16;
+/** The newest read STARTED per port and scope: only its answer may become the last-known copy. */
+const readSeq = new WeakMap<McpPort, Map<string, number>>();
+function startRead(port: McpPort, scope: string): number {
+  let scopes = readSeq.get(port);
+  if (!scopes) { scopes = new Map(); readSeq.set(port, scopes); }
+  const n = (scopes.get(scope) ?? 0) + 1;
+  scopes.set(scope, n);
+  return n;
+}
 function remember(port: McpPort, scope: string, catalog: McpCatalog) {
   let scopes = lastKnown.get(port);
   if (!scopes) { scopes = new Map(); lastKnown.set(port, scopes); }
@@ -93,11 +110,13 @@ export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?
     const start = keep ? lastKnown.get(port)?.get(scope) : undefined;
     setState(previous => ({ port, scope, revision,
       snapshot: step(previous.port === port && previous.scope === scope ? previous.snapshot : NOTHING, { type: 'read', seed: start }) }));
+    const seq = keep ? startRead(port, scope) : 0;
     void port.catalog(targetId, teamMemberId).then(
       catalog => {
-        // Remembered even when this mount is gone: a card closed before its
-        // first read landed is exactly the one whose next open needs the seed.
-        if (keep) remember(port, scope, catalog);
+        // Remembered even when this mount is gone — a card closed before its
+        // first read landed is exactly the one whose next open needs the seed —
+        // but only if no newer read for the scope has started since.
+        if (keep && readSeq.get(port)?.get(scope) === seq) remember(port, scope, catalog);
         if (!active) return;
         setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'answered', catalog }) }));
       },
@@ -106,7 +125,7 @@ export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?
       // says so) or had none to forget.
       () => {
         if (!active) return;
-        setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'failed', error: 'Connectors could not be loaded. Try again.' }) }));
+        setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'failed', error: 'Connectors could not be loaded. Try again.', keepShown: keep }) }));
       },
     );
     return () => { active = false; };
@@ -123,6 +142,7 @@ export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?
     catalog: snapshot.catalog,
     error: snapshot.error,
     loading: snapshot.phase === 'loading' || snapshot.phase === 'revalidating',
+    seeded: snapshot.seeded === true,
     port,
     refresh,
   };

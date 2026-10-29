@@ -24,6 +24,8 @@ import { ConnectorToggleList } from './ConnectorToggleList';
 import { useMcpCatalog } from './context';
 import { OPEN_GATE, selectionGate, type SelectionGate } from './selection-gate';
 import type { McpSelection } from './port';
+
+const CHECKING: SelectionGate = { blocked: true, problem: 'Checking connectors…' };
 import './mcp.css';
 
 /**
@@ -90,9 +92,15 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   notice?: ReactNode;
   resetLabel?: string;
 }) {
-  const { phase, catalog, error, port, refresh } = useMcpCatalog(targetId, teamMemberId, { lastKnown: layout === 'compact' });
+  const { phase, catalog, error, port, refresh, seeded } = useMcpCatalog(targetId, teamMemberId, { lastKnown: layout === 'compact' });
   const id = useId();
-  const gate = catalog ? selectionGate(catalog, value) : OPEN_GATE;
+  // An EXPLICIT pick is never judged against the last-known photograph: until
+  // this mount's own read answers, it waits with a named reason, so a
+  // first-frame press cannot pass here and meet the server's raw refusal. An
+  // untouched selection is the server's to resolve and never waits.
+  const gate = !catalog ? OPEN_GATE
+    : seeded && value !== undefined ? CHECKING
+    : selectionGate(catalog, value);
   const attachable = catalog?.canAttach ? catalog.servers.filter(server => server.canAttach) : [];
   // What is drawn decides the count, never the other way round.
   const draws = !!port && !headless && !!catalog?.canAttach && (attachable.length > 0 || gate.problem !== null);
