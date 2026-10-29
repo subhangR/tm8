@@ -66,4 +66,4 @@ For the UI, point the dev UI at the same node (HOW-TO-TEST.md §3b). Then New lo
 
 ## What a green run does not prove
 
-Until loops PR3 (#1408) merges, a **tool** loop is accepted but refused at every firing (`TOOL_LOOP_NOT_RUNNABLE`), so there is nothing to verify for that action yet. A spawn also carries only model, agent tool and access mode until then (DESIGN.md, "As shipped").
+A **tool** loop fires its tool through `ToolRuntime.runScheduled` (loops PR3): `packages/server/test/loops/fire-tool.test.ts` pins the port's tool branch, and `packages/server/test/tools/scheduled-runs.pg.test.ts` the runtime and `start_tool_session`'s loop gate.

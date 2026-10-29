@@ -617,6 +617,11 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
     expect(outcomeOfExitedSession({ sessionStatus: 'exited', sessionKind: 'agent', toolExitCode: null, exitCode: 1 })?.outcome).toBe('completed');
     expect(outcomeOfExitedSession({ sessionStatus: 'failed', sessionKind: 'agent', toolExitCode: null, exitCode: null })?.outcome).toBe('failed');
     expect(outcomeOfExitedSession({ sessionStatus: 'exited', sessionKind: 'tool', toolExitCode: 3, exitCode: 3 })?.outcome).toBe('failed');
+    // The ORDER, which only a tool run exercises (loops PR3; PR2 review 18d): a stopped
+    // run is stopped even though its tool then exits non-zero, and runs.ts's
+    // LOOP_RUN_STATUS_SQL reads the same order.
+    expect(outcomeOfExitedSession({ sessionStatus: 'exited', sessionKind: 'tool', toolExitCode: 143, exitCode: 143, sessionOutcome: 'stopped' })?.outcome).toBe('stopped');
+    expect(outcomeOfExitedSession({ sessionStatus: 'failed', sessionKind: 'tool', toolExitCode: 3, exitCode: 3 })).toEqual({ outcome: 'failed', error: 'the session failed' });
   });
 });
 

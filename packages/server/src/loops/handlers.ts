@@ -11,6 +11,7 @@ import type { RequestContext } from '../http/types.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import { listLoopViews, loadLoopView } from './views.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite, type ScheduleState } from './write.js';
+import { assertLoopReferences } from './validate.js';
 import { registerLoopRunHandlers, type LoopRunHandlerDeps } from './run-handlers.js';
 
 /** What the composition root hands the loops family beyond FacadeDeps (PR2: the executor port). */
@@ -116,6 +117,8 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           d.retry?.attempts ?? 0, d.retry?.delaySeconds ?? 300, write.lastError ?? null,
         ]);
         await assertToolPersona(q, result.entity.id);
+        // PR3: referenced entities live in the space; tool inputs fit the current definition.
+        await assertLoopReferences(q, result.entity.id);
         return loadLoopView(q, result.entity.id);
       });
     },
@@ -140,6 +143,7 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           ...deadlinePatch(current, after),
         });
         await assertToolPersona(q, loopId);
+        await assertLoopReferences(q, loopId);
         return loadLoopView(q, loopId);
       });
     },
