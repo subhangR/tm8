@@ -52,7 +52,7 @@ function explicitG08Migrations(): string[] {
     if (!file) throw new Error(`missing baseline migration ${prefix}`);
     return file;
   });
-  return [...baseline, '023_w2_inbox.sql'];
+  return [...baseline, '023_w2_inbox.sql', '123_teammate_read_cursor.sql'];
 }
 
 async function seed(database: W1ScratchDatabase): Promise<Fixture> {
@@ -432,7 +432,7 @@ describe.sequential('W2.G08 inbox and read-mark PostgreSQL semantics', () => {
     expect((await notification(database, fixture.otherTeammateNotification)).read_at).toBeNull();
   });
 
-  it('advances only the Member cursor monotonically and marks compatible personal notifications', async () => {
+  it('keeps Member and acting-Teammate cursors disjoint and monotonic', async () => {
     const firstMutation = `g08-read-mark-${randomUUID()}`;
     const first = await asApp(database, fixture.identityA, null, async (client) => (
       await client.query<{ result: { anchorId: string; lastReadAt: string; patches: unknown[] } }>(
@@ -468,15 +468,44 @@ describe.sequential('W2.G08 inbox and read-mark PostgreSQL semantics', () => {
     const maxResult = Math.max(...raced.map((result) => Date.parse(result.lastReadAt)));
     expect(Date.parse(stored.last_read_at)).toBeGreaterThanOrEqual(maxResult);
 
-    await expect(asApp(database, fixture.identityA, fixture.teammateA, (client) => client.query(
-      `select public.mark_read($1, $2)`,
-      [fixture.otherAnchor, `g08-teammate-read-refused-${randomUUID()}`],
-    ))).rejects.toMatchObject({ code: '42501' });
-    const teammateMarks = await database.query<{ count: number }>(
-      `select count(*)::integer count from public.read_marks where anchor_id = $1`,
+    const teammateMutation = `g08-teammate-read-${randomUUID()}`;
+    const teammateResult = await asApp(database, fixture.identityA, fixture.teammateA, async (client) => (
+      await client.query<{ result: { anchorId: string; lastReadAt: string; patches: unknown[] } }>(
+        `select public.mark_read($1, $2) result`,
+        [fixture.otherAnchor, teammateMutation],
+      )
+    ).rows[0]!.result);
+    expect(teammateResult).toMatchObject({ anchorId: fixture.otherAnchor, patches: [] });
+    const teammateReplay = await asApp(database, fixture.identityA, fixture.teammateA, async (client) => (
+      await client.query<{ result: typeof teammateResult }>(
+        `select public.mark_read($1, $2) result`,
+        [fixture.otherAnchor, teammateMutation],
+      )
+    ).rows[0]!.result);
+    expect(teammateReplay).toEqual(teammateResult);
+
+    const teammateMarks = await database.query<{
+      member_marks: number;
+      teammate_id: string;
+      teammate_marks: number;
+    }>(
+      `select
+         (select count(*)::integer from public.read_marks where anchor_id = $1) member_marks,
+         (select min(team_member_id::text) from public.teammate_read_marks
+           where anchor_id = $1) teammate_id,
+         (select count(*)::integer from public.teammate_read_marks
+           where anchor_id = $1) teammate_marks`,
       [fixture.otherAnchor],
     );
-    expect(teammateMarks[0]!.count).toBe(0);
+    expect(teammateMarks[0]).toEqual({
+      member_marks: 0,
+      teammate_id: fixture.teammateA,
+      teammate_marks: 1,
+    });
+    await expect(asApp(database, fixture.identityA, null, (client) => client.query(
+      `select public.mark_read($1, $2)`,
+      [fixture.otherAnchor, teammateMutation],
+    ))).rejects.toMatchObject({ code: '23514' });
   });
 
   it('uses the same non-leaking absence for restricted, deleted, and fabricated anchors', async () => {
@@ -496,6 +525,10 @@ describe.sequential('W2.G08 inbox and read-mark PostgreSQL semantics', () => {
     await expect(asApp(database, fixture.identityA, null, (client) => client.query(
       `insert into public.read_marks(member_id, anchor_id) values ($1, $2)`,
       [fixture.memberA, fixture.otherAnchor],
+    ))).rejects.toMatchObject({ code: '42501' });
+    await expect(asApp(database, fixture.identityA, fixture.teammateA, (client) => client.query(
+      `insert into public.teammate_read_marks(team_member_id, anchor_id) values ($1, $2)`,
+      [fixture.teammateA, fixture.otherAnchor],
     ))).rejects.toMatchObject({ code: '42501' });
 
     const ledger = await database.query<{ operation: string; count: number }>(
