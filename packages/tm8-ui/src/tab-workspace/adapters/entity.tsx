@@ -32,6 +32,7 @@ import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useEntityVerbs } from '../../views/useEntityVerbs';
+import { ToolLaunchProvider } from '../../tools/context';
 import type { GateData } from '../../views/useGateData';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
 import { type EntityTabRecord, type TabId, type TabRecord, type TabSubview, type TabUi } from '../runtime/types';
@@ -521,6 +522,12 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
     [hostOpen, openTab],
   );
   const { host, verbs } = useWorkspacePanelHost(data, tab.entityId, openPlain);
+  /* A tool's Run (and its run-history rows) open the run's session exactly as
+     a launched session opens: its own tab. `ToolBody` reads this through
+     `useToolSessionOpen`; without a provider its Run was disabled in the real
+     app ("A terminal host is unavailable in this view") — only the e2e harness
+     ever mounted one. */
+  const openToolSession = useCallback((id: string) => openPlain('work_session', id), [openPlain]);
 
   const closeTab = useCallback(
     () => (hostClose ? hostClose() : dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' })),
@@ -661,22 +668,24 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
     >
       {/* Spec D1 §5.4/§5.5 — the session outcome dialogs (fixed-position). */}
       {host.primaries.dialog}
-      <AuxEntityPanel
-        host={host}
-        entityId={tab.entityId as EntityId}
-        panelHost={fullView ? 'z4' : 'stack'}
-        onOpenEntity={onOpenEntity}
-        onClose={closeTab}
-        {...(fullView
-          ? { story: { open: (id: EntityId) => onOpenEntity(id), selectedId: null, layout: 'full' as const } }
-          : {})}
-        extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
-        panelProps={{
-          activeTab: panelTabOf(tab.ui.subview),
-          onTabChange,
-          embeddedChrome,
-        }}
-      />
+      <ToolLaunchProvider open={openToolSession}>
+        <AuxEntityPanel
+          host={host}
+          entityId={tab.entityId as EntityId}
+          panelHost={fullView ? 'z4' : 'stack'}
+          onOpenEntity={onOpenEntity}
+          onClose={closeTab}
+          {...(fullView
+            ? { story: { open: (id: EntityId) => onOpenEntity(id), selectedId: null, layout: 'full' as const } }
+            : {})}
+          extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
+          panelProps={{
+            activeTab: panelTabOf(tab.ui.subview),
+            onTabChange,
+            embeddedChrome,
+          }}
+        />
+      </ToolLaunchProvider>
       {/* The edit sheet `useEntityVerbs` drives; fixed over a scrim, so it
           sits outside the panel's overflow (as FullViewScreen mounts it). */}
       <EditEntityDialog
@@ -737,13 +746,15 @@ export function EntityPeek({
   return (
     <div className="tws-peek-body" data-testid="tws-peek-body">
       {host.primaries.dialog}
-      <AuxEntityPanel
-        host={host}
-        entityId={entityId as EntityId}
-        onOpenEntity={(id) => onOpenEntity(id)}
-        onClose={onClose}
-        extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
-      />
+      <ToolLaunchProvider open={(id) => onOpenTab('work_session', id)}>
+        <AuxEntityPanel
+          host={host}
+          entityId={entityId as EntityId}
+          onOpenEntity={(id) => onOpenEntity(id)}
+          onClose={onClose}
+          extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
+        />
+      </ToolLaunchProvider>
       <EditEntityDialog
         flow={verbs.edit}
         fields={verbs.editFields}
