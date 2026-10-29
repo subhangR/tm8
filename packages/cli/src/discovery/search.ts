@@ -156,12 +156,13 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
-  // FIRING NEEDS EVIDENCE, so `loop run-now` is never the ranker's first answer, whatever the verb
-  // ("cancel the run now", "interrupt it now"; review of #1405, round 6). A query that names a loop is
-  // answered by a route before the ranker (the last loop routes catch every one), and only the run-now
-  // route, "run the loop" and nothing else, answers it first. Here it ranks after every other row.
-  const fires = (s: Scored) => (s.row.operation === 'loops.runNow' ? 1 : 0);
-  return rows
+  // FIRING OR ENDING NEEDS EVIDENCE, so `loop run-now` and `session terminate` are never the ranker's
+  // first answer, whatever the verb ("cancel the run now", "stop sharing the session", "end it"; review
+  // of #1405, rounds 6-7): they rank after every other match, and with no other match they are left
+  // out. Their routes answer them first: "run the loop" and nothing else; "stop the (running) session"
+  // and nothing else. (`--operation` suggestions still find them by name.)
+  const fires = (s: Scored) => (RANKED_LAST.has(s.row.operation) ? 1 : 0);
+  const ranked = rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
@@ -169,8 +170,8 @@ export function rank(
         fires(a) - fires(b) ||
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
-    )
-    .slice(0, limit);
+    );
+  return (ranked[0] !== undefined && fires(ranked[0]) === 1 ? [] : ranked).slice(0, limit);
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
@@ -300,6 +301,11 @@ function namesAPause(words: readonly string[]): boolean {
   return words.some((word, k) => word === 'pause' && ['the', 'its', 'this', 'that', 'loop'].includes(words[k - 1] ?? ''));
 }
 
+/** Operations the ranker never answers first: each fires or ends something, so only its route may. */
+const RANKED_LAST: ReadonlySet<string> = new Set(['loops.runNow', 'execution.terminate']);
+/** Besides the stop verb, the thing stopped and plain words, a stop guard's phrasing may say only these. */
+const STOP_ONLY = ['run', 'running', 'now', 'immediately', 'current', 'stuck', 'runaway'];
+
 /** Words that steer or read a loop that exists; any one keeps a query off `loop create`. */
 const LOOP_STEERING_WORDS = [
   'pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
@@ -388,22 +394,28 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
    */
   {
     // A STOP WITH NO LOOP NAMED ("cancel the run now", "stop it now"): stopping is never firing, and
-    // the ranker's 'run'/'now' tags would answer `loop run-now`. What is named stops by its own command.
+    // the ranker's 'run'/'now' tags would answer `loop run-now`. What is named stops by its own command,
+    // and, as for the loop's delete, only a phrasing that asks for nothing but that stop (`only`): never
+    // "end the session's task", "cancel the session invite" (round 7). Terminating cannot be undone.
     intent: 'stop a session',
     all: [LOOP_STOP_WORDS, ['session', 'sessions']],
     none: ['loop', 'loops'],
+    // "work": a work session is the entity's own name.
+    only: [...STOP_ONLY, 'work'],
     candidates: [{ path: ['session', 'terminate'], example: 'tm8 session terminate <work-session-id> --stop --yes' }],
   },
   {
     intent: 'stop a chat turn',
     all: [LOOP_STOP_WORDS, ['chat', 'chats', 'turn', 'turns']],
     none: ['loop', 'loops', 'session', 'sessions'],
+    only: STOP_ONLY,
     candidates: [{ path: ['chat', 'stop'], example: 'tm8 chat stop <chat-id>' }],
   },
   {
     intent: 'stop a container',
     all: [LOOP_STOP_WORDS, ['container', 'containers', 'machine', 'machines']],
     none: ['loop', 'loops', 'session', 'sessions', 'chat', 'chats'],
+    only: STOP_ONLY,
     candidates: [{ path: ['container', 'stop'], example: 'tm8 container stop <container-id> --expect-version <n>' }],
   },
   {
@@ -414,7 +426,7 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       'machines', 'upload', 'uploads', 'handoff', 'handoffs'],
     candidates: [{
       path: ['loop', 'stop'],
-      example: 'tm8 loop stop <run-id>   (a session: tm8 session terminate <work-session-id> --stop --yes; a chat turn: tm8 chat stop <chat-id>)',
+      example: 'tm8 loop stop <run-id>   (a session: tm8 session terminate <work-session-id>; a chat turn: tm8 chat stop <chat-id>)',
     }],
   },
   {

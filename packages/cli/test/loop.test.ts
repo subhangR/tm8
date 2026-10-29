@@ -519,6 +519,9 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['stop it now', 'loop stop'], ['cancel it now', 'loop stop'], ['halt it now', 'loop stop'], ['interrupt the run now', 'loop stop'],
   ['stop the session now', 'session terminate'], ['cancel the chat now', 'chat stop'], ['stop the container now', 'container stop'],
   ['cancel the upload now', 'file upload abort'],
+  // ending a session answers its terminate only when that is all the phrasing asks (round 7)
+  ['stop the session', 'session terminate'], ['end my session', 'session terminate'],
+  ['kill the running session', 'session terminate'], ['terminate the session now', 'session terminate'],
   // editing, including clearing a field
   ["set a loop's schedule", 'loop edit'], ["change the loop's timezone", 'loop edit'], ['add a teammate to the loop', 'loop edit'],
   ['remove the subject from the loop', 'loop edit'], ['remove the teammate from the loop', 'loop edit'],
@@ -541,6 +544,14 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['make the loop run hourly', 'loop show'], ['add the loop to a story', 'loop show'], ['check the new loop', 'loop show'],
   ['fix the loop', 'loop show'], ['view the schedule', 'loop list'], ['what is my schedule', 'loop list'],
   ['show the loop runs', 'loop runs'], ['list my loops', 'loop list'],
+];
+
+/** Phrasings whose first answer must never be one of these: a stop word beside a session is not a terminate (round 7). */
+const NEVER_ROWS: ReadonlyArray<readonly [query: string, never: readonly string[]]> = [
+  ["end the session's task", ['session terminate']], ['cancel the session invite', ['session terminate']],
+  ['quit the session tab', ['session terminate']], ['stop sharing the session', ['session terminate']],
+  ['stop following the session', ['session terminate']], ['stop watching the session', ['session terminate']],
+  ['stop the session from spawning', ['session terminate']], ['stop showing the session transcript', ['session terminate']],
 ];
 
 /**
@@ -575,6 +586,10 @@ const violations = (queries: readonly string[], bad: readonly string[], read: (q
 describe('tm8 help --query: the routing corpus', () => {
   it.each(ROUTING_CORPUS)('"%s" answers %s first', (query, top) => {
     expect(searchHelp(query).matches[0]?.command).toBe(top);
+  });
+  it.each(NEVER_ROWS)('"%s" never answers %j first', (query, never) => {
+    const top = searchHelp(query).matches[0]?.command;
+    for (const bad of [...never, 'loop run-now', 'loop create', 'entity delete']) expect(top, query).not.toBe(bad);
   });
   it('a destructive answer (entity delete) only ever answers a phrasing whose sole object is the loop itself', () => {
     for (const [query] of ROUTING_CORPUS) {
@@ -637,13 +652,28 @@ describe('tm8 help --query: generated loop phrasings never delete, create or fir
     expect(violations(queries, ['loop run-now', 'loop create', 'entity delete'],
       query => answer(query) ?? searchHelp(query).matches[0]?.command)).toEqual([]);
   }, GENERATED_TIMEOUT);
-  it('the ranker never answers loop run-now first: firing needs the run-now route (round 6)', () => {
+  it('the ranker never answers loop run-now or session terminate first: firing or ending needs its route (rounds 6-7)', () => {
     const rows = discovery();
     const queries = ['run it now', 'run now', 'fire it now', 'trigger it again', 'run the job now', 'run it again once',
-      ...SAMPLED_WORDS.filter((_, index) => index % 4 === 0).map(w => `run the ${w} now`)];
-    expect(queries.filter(query => rank(query, rows, 5)[0]?.row.operation === 'loops.runNow')).toEqual([]);
-    // The route still answers it, given a loop and nothing more.
+      'stop sharing the session', 'stop the session from spawning', 'kill it', 'end it', 'terminate', 'run',
+      ...SAMPLED_WORDS.filter((_, index) => index % 4 === 0).flatMap(w => [`run the ${w} now`, `stop the session ${w}`])];
+    expect(queries.filter(query => ['loops.runNow', 'execution.terminate'].includes(rank(query, rows, 5)[0]?.row.operation ?? '')))
+      .toEqual([]);
+    // The routes still answer them, given their evidence and nothing more.
     expect(searchHelp('run the nightly loop now').matches[0]?.command).toBe('loop run-now');
+    expect(searchHelp('terminate the work session').matches[0]?.command).toBe('session terminate');
+  }, GENERATED_TIMEOUT);
+  it('a stop word beside a session, chat or container answers that stop only when nothing else is asked (round 7)', () => {
+    const allowed = new Set([...ONLY_THE_LOOP, 'run', 'running', 'now', 'immediately', 'current', 'stuck', 'runaway', 'work',
+      'session', 'sessions', 'chat', 'chats', 'turn', 'turns', 'container', 'containers', 'machine', 'machines',
+      'stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'interrupt', 'quit', 'cease', 'shut', 'shutdown']);
+    const words = SAMPLED_WORDS.filter(w => !allowed.has(w));
+    const nouns: Array<[string, string]> = [['session', 'session terminate'], ['chat', 'chat stop'], ['container', 'container stop']];
+    const queries = ['stop', 'end', 'cancel', 'kill', 'quit'].flatMap(v => nouns.flatMap(([noun]) =>
+      words.flatMap(w => [`${v} the ${noun} ${w}`, `${v} the ${w} ${noun}`, `${v} ${w} the ${noun}`])));
+    // At the route: no guard claims a phrasing that names anything more (the ranker never leads with a terminate).
+    const claimed = queries.filter(query => nouns.some(([noun, stop]) => query.includes(noun) && answer(query) === stop));
+    expect(claimed).toEqual([]);
   }, GENERATED_TIMEOUT);
   it('any other verb on a loop reads it: never a create, a run or a delete', () => {
     const creating = new Set(['create', 'setup', 'build', 'automate', 'make', 'add', 'schedule', 'new']);
