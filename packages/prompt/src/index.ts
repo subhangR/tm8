@@ -48,7 +48,7 @@ import {
 } from './templates.js';
 import { LEGACY_PROMPT_VERSION, PROMPT_V2_MODES, PROMPT_VERSION_V2 } from './prompt-version.js';
 import {
-  composePromptV2, COORDINATOR_LOOP_RULE, COORDINATOR_SUBTASK_RULE, HEADER_AUTHORING_RULE, PLACEMENT_RULE, type TaskContextSnapshot,
+  composePromptV2, COORDINATOR_SUBTASK_RULE, HEADER_AUTHORING_RULE, PLACEMENT_RULE, type TaskContextSnapshot,
 } from './prompt-v2.js';
 import { WORKER_ROUTINE_V1 } from './worker-routine.js';
 
