@@ -17,7 +17,7 @@
  * undiscoverable, which is the failure this whole surface exists to prevent —
  * but recommending them first would be answering a question with a dead end.
  */
-import type { OperationDiscovery } from './operations.js';
+import type { CommandDiscovery, OperationDiscovery } from './operations.js';
 
 /**
  * Words that carry no intent. Without this list, "what can I do with all of
@@ -58,12 +58,17 @@ const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 /** "other space", "cross space", "linked spaces" → one hyphenated token. */
 const SPACE_PHRASE = /\b(other|another|cross|linked)[\s_]+spaces?\b/g;
 
-export function tokenize(query: string): string[] {
-  const base = query
+/** The query's words in order, stopwords KEPT: an `only` route reads every word, not just the intent ones. */
+export function queryWords(query: string): string[] {
+  return query
     .toLowerCase()
     .replace(SPACE_PHRASE, (_m, w: string) => `${w}-space`)
     .split(/[^a-z0-9-]+/)
-    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+    .filter((t) => t.length > 1);
+}
+
+export function tokenize(query: string): string[] {
+  const base = queryWords(query).filter((t) => !STOPWORDS.has(t));
   return [...new Set(base.flatMap((t) => [t, ...(SYNONYMS[t] ?? [])]))];
 }
 
@@ -86,18 +91,35 @@ export interface Scored {
   /** The tokens that actually matched — rendered as the match `reason`. */
   hits: string[];
 }
+/** An alias command scored by its own words: `rankCommands`. */
+export interface ScoredCommand {
+  row: CommandDiscovery;
+  score: number;
+  hits: string[];
+}
+/** What the scorer reads: an operation row, or an alias command with its tags. */
+export interface Searchable {
+  intentTags: readonly string[];
+  summary: string;
+  notes: readonly string[];
+  exposure: OperationDiscovery['exposure'];
+}
 
-function summaryWords(row: OperationDiscovery): Set<string> {
+function summaryWords(row: Searchable): Set<string> {
   return new Set(row.summary.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean));
 }
 
-function noteWords(row: OperationDiscovery): Set<string> {
+function noteWords(row: Searchable): Set<string> {
   return new Set(
     row.notes.flatMap((n) => n.toLowerCase().split(/[^a-z0-9-]+/)).filter(Boolean),
   );
 }
 
 export function score(tokens: readonly string[], row: OperationDiscovery): Scored {
+  return { row, ...scoreText(tokens, row) };
+}
+
+export function scoreText(tokens: readonly string[], row: Searchable): { score: number; hits: string[] } {
   const tags = new Set(row.intentTags);
   const words = summaryWords(row);
   const notes = noteWords(row);
@@ -129,7 +151,26 @@ export function score(tokens: readonly string[], row: OperationDiscovery): Score
   }
 
   if (row.exposure === 'internal' || row.exposure === 'reserved') total *= UNINVOCABLE_FACTOR;
-  return { row, score: total, hits };
+  return { score: total, hits };
+}
+
+/**
+ * Alias commands (`tool versions`, `task axis`, `message reply`) have no operation row of their
+ * own, so `rank` never sees their summary or notes. Score them by the same weights, with their
+ * path words and tags as intent tags; ties keep the catalog's command order.
+ */
+export function rankCommands(
+  query: string,
+  rows: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): ScoredCommand[] {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+  return rows
+    .map(({ command, intentTags }) => ({ row: command, ...scoreText(tokens, { intentTags, summary: command.summary, notes: command.notes, exposure: command.exposure }) }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 /**
@@ -145,19 +186,62 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
-  return rows
+  const scored = rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
-    )
-    .slice(0, limit);
+    );
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+}
+
+/**
+ * Operations the ranker never answers FIRST for this query: they rank after every other match
+ * and, when nothing else matched, are dropped rather than lead. ONE predicate for `rank()` and
+ * for `rankAll()`'s combined operation + alias ranking, so neither can undo the other. `tools.run`
+ * STARTS a run, so a query that stops, prevents or negates one ("abort the run", "skip the run
+ * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
+ */
+export function rankedLast(tokens: readonly string[], operation: string): boolean {
+  return operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t));
+}
+
+/** Stable: the entries `last` names go after every other one and never lead; alone, they are dropped. */
+function keepRankedLast<T>(items: readonly T[], last: (item: T) => boolean): T[] {
+  const lead = items.filter((item) => !last(item));
+  return lead.length === 0 ? [] : [...lead, ...items.filter(last)];
+}
+
+/** One entry of `rankAll()`: an operation row or an alias command, with its score. */
+export type RankedEntry =
+  | { kind: 'operation'; score: number; entry: Scored }
+  | { kind: 'alias'; score: number; entry: ScoredCommand };
+
+/**
+ * Operation rows and alias commands in one ranking, as `tm8 help --query` answers. The sort is
+ * stable, so an alias never displaces an operation it ties with and catalog order holds. The
+ * ranked-last rule applies to the combined list as well: re-sorting by score alone would put a
+ * `rankedLast` operation first again whenever it outscores the rest.
+ */
+export function rankAll(
+  query: string,
+  operations: readonly OperationDiscovery[],
+  aliases: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): RankedEntry[] {
+  const tokens = tokenize(query);
+  const combined: RankedEntry[] = [
+    ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
+    ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
+  ].sort((a, b) => b.score - a.score);
+  return keepRankedLast(combined, (e) =>
+    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
-export function matchReason(scored: Scored): string {
+export function matchReason(scored: Scored | ScoredCommand): string {
   const hits = [...new Set(scored.hits)].slice(0, 4);
   return hits.length > 0
     ? `matches ${hits.join(', ')} — ${scored.row.summary.toLowerCase()}`
@@ -186,10 +270,36 @@ export interface IntentRoute {
   all: readonly (readonly string[])[];
   /** Any shared token vetoes the route. */
   none?: readonly string[];
+  /**
+   * An allowlist over the query's WORDS, stopwords included: each must be in
+   * `all`, here, or a plain request word ("how do I", "the", "my"), or the route
+   * does not match. An answer that ends something live uses it, because a
+   * denylist of what a human might name can never be complete ("cancel the
+   * session invite" is not a stop).
+   */
+  only?: readonly string[];
   candidates: readonly { path: readonly string[]; example: string }[];
 }
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
+
+/** Stopping something live. */
+const STOP_WORDS = ['stop', 'stopping', 'cancel', 'cancelling', 'canceling', 'kill', 'killing', 'abort', 'aborting', 'halt', 'halting', 'terminate', 'terminating', 'interrupt'];
+/** What a stop may name for `session terminate`: a run, the tool running, or its session. */
+const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessions'];
+/**
+ * A query with any of these does not ask to START a run: the ranker never answers `tool run` first.
+ * `rankedLast` reads tokenize()'s tokens, so these must stay OUT of STOPWORDS ("don't" is `don`).
+ */
+const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
+  ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
+  'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
+]);
+/** The plain words a request carries that name nothing: an `only` route always allows them. */
+const PLAIN_WORDS: ReadonlySet<string> = new Set([
+  'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
+  'would', 'should', 'will', 'how', 'do', 'does', 'want', 'need', 'to', 'and', 'is', 'are', 'am', 'just', 'let', 'go', 'ahead',
+]);
 
 export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
@@ -278,16 +388,35 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       { path: ['link', 'list'], example: 'tm8 link list   then   tm8 --space <alias> entity query --kind task' },
     ],
   },
+  {
+    intent: 'stop a running tool or session',
+    // Scored, "abort the run" answered `tool run` first: `run` is one of its tags and nothing
+    // tags the stop verbs (task 01a187ed). A run is a work session, so stopping one is
+    // `session terminate`. That ends a live session, so the query may say nothing else: a stop
+    // verb, what runs, plain request words, and when ("cancel the session invite" falls through).
+    all: [STOP_WORDS, RUN_WORDS],
+    none: ['loop', 'loops', 'chat', 'chats', 'turn', 'turns'],
+    only: ['now', 'immediately', 'current', 'stuck', 'runaway'],
+    candidates: [
+      {
+        path: ['session', 'terminate'],
+        example: 'tm8 session terminate <session-id> --yes  (a tool run is a work session: `tm8 tool runs <tool>` lists its id; --stop --note <why> records why)',
+      },
+    ],
+  },
 ];
 
 /** The first route whose token groups all match the query, or undefined. */
 export function matchIntent(query: string): IntentRoute | undefined {
   const tokens = new Set(tokenize(query));
   if (tokens.size === 0) return undefined;
+  const words = queryWords(query);
   return INTENT_ROUTES.find(
     (r) =>
       r.all.every((group) => group.some((t) => tokens.has(t))) &&
-      !(r.none ?? []).some((t) => tokens.has(t)),
+      !(r.none ?? []).some((t) => tokens.has(t)) &&
+      (r.only === undefined ||
+        words.every((w) => PLAIN_WORDS.has(w) || r.only!.includes(w) || r.all.some((group) => group.includes(w)))),
   );
 }
 

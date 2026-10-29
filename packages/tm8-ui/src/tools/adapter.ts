@@ -2,6 +2,7 @@ import { isRefusedActionRow, type OperationName, type ToolRun, type ToolView } f
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
+import type { ToolVersionsPage } from './versions-model';
 
 /** A space holds a handful of tools; the bound only stops a cursor that never ends. */
 const LIST_PAGES = 50;
@@ -59,5 +60,6 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'> & {
       return { sessionId };
     },
     runGet: sessionId => call<ToolRun>('tools.runs.get', { params: { sessionId } }),
+    versions: (toolId, cursor) => call<ToolVersionsPage>('entities.versions', { params: { id: toolId }, query: { limit: 20, ...(cursor ? { cursor } : {}) } }),
   };
 }

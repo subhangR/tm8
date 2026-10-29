@@ -161,7 +161,7 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
-  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable' },
+  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]  |  tm8 tool create [<name>] --from-starter <starter> [--runtime bash|python] [--source <@file>] [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable', notes: ['--when-to-use / --summary / --keyword write the tool\'s selection header (`tm8 entity header set` semantics; a tool carries one like a doc or task): a later agent\'s launch context index lists the tool with that text and `tm8 tool help <name>` as its pointer, so say when to run it ("Open when checking that an endpoint answers"), not what it is named', '--from-starter <starter> starts from a starter in `tm8 tool starters list`: its definition and selection header; the name argument and every option given override the starter\'s value, and --spec fields replace the starter\'s one by one'] },
   'tools.update': { cmd: ['tool', 'edit'], syn: 'tm8 tool edit <name|id> [--source <@file>] [--spec <@file>] [--runtime bash|python] [--description <text>] --expect-version <n> [--mutation-id <id>]', sum: 'Update a stored tool definition', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
   'tools.get': { cmd: ['tool', 'show'], syn: 'tm8 tool show <name|id> [--source]', sum: 'Read a tool and its configured inputs', authz: 'entity', input: 'none', side: 'none' },
   'tools.list': { cmd: ['tool', 'list'], syn: 'tm8 tool list [--words <text>] [--limit <count>] [--cursor <cursor>]', sum: 'List stored tools in a Space', authz: 'space', input: 'none', side: 'none' },
@@ -171,7 +171,7 @@ const ROWS: Record<OperationName, Row> = {
   'tools.secrets.bind': { cmd: ['tool', 'secret', 'set'], syn: 'tm8 tool secret set <name|id> <input> [--value-stdin | --credential-id <id>] [--label <text>] [--expect-version <n>] [--mutation-id <id>]', sum: 'Bind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
   'tools.secrets.unbind': { cmd: ['tool', 'secret', 'unset'], syn: 'tm8 tool secret unset <name|id> <input> [--expect-version <n>] [--mutation-id <id>]', sum: 'Unbind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
   'tools.run': { cmd: ['tool', 'run'], syn: 'tm8 tool run [--detach] [--keep-open | --close] [--cwd <dir>] [--mutation-id <id>] <name|id> [tool arguments...]', sum: 'Run the stored tool source', authz: 'entity', input: 'bound', side: 'execution', ver: 'expectedVersion', notes: ['Run options precede the tool name; every subsequent token belongs to the declared tool inputs, including --help and short flags', 'Secrets use --<input>-from-env <VAR> or a hidden TTY prompt; literal values on argv are refused', 'Attached output uses human format and returns the tool process exit code; structured formats require --detach', 'The CLI pins the version just loaded and prints a source-change notice before execution; keepOpen defaults to false']},
-  'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool', authz: 'entity', input: 'none', side: 'none' },
+  'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool, newest first', authz: 'entity', input: 'none', side: 'none', notes: ['--cursor continues with older runs', 'Each run carries its invoker, and triggeredBy when a loop fired it'] },
   'tools.runs.get': { cmd: ['tool', 'run-show'], syn: 'tm8 tool run-show <session-id> [--output]', sum: 'Read a recorded tool run', authz: 'session', input: 'none', side: 'none' },
 
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
@@ -1630,7 +1630,7 @@ const ROWS: Record<OperationName, Row> = {
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       "craft content shape: {description} (title rides the envelope). A craft is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another craft): create the page, then `tm8 collection add <craft-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A craft never contains itself or a craft above it. Read the pages with `tm8 entity context <craft-id>`. DEPRECATED alias: the old kind name `design` is still accepted as input (never output) until 2027-01-08",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
-      'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
+      'a header applies to team_member, doc, artifact, drawing, file, task, collection, story and tool (a tool is created with `tm8 tool create`, whose --when-to-use/--summary/--keyword write it); on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
       'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
@@ -1672,7 +1672,7 @@ const ROWS: Record<OperationName, Row> = {
       'the WHOLE header is written: a field left out is removed, so pass every field you want to keep; every field is optional and nothing is refused for length — aim for --when-to-use ≤ 400 chars, --summary ≤ 600, --keyword ≤ 12 × ≤ 40; blank text is dropped',
       '--when-to-use is routing text, shown WHOLE to every later agent (never cut; past 400 chars the write warns header_long): the situation in which to open this, in one sentence — good: "Open when changing how balances are rounded"; bad: "Rounding policy doc" (restates the title) or "Always read first" (claims every step). --summary is what it holds, so a reader can skip it; it is cut at 600 and is the first thing a tight prompt leaves out',
       '--expect-version is the HEADER\'s version (`header.version` in `tm8 entity context <entity-id>`; none there means 0), never the entity\'s; omit it for last-writer-wins; a header write never moves the entity version',
-      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection, story; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
+      'kinds: team_member (its owner or a space admin), doc, artifact, drawing, file, task, collection, story, tool; on a skill, memory, session, chat or message it stores nothing and warns (skills use their description, memories their subject_scope)',
       're-saving unchanged text re-pins a stale header to the current body ("mark current")',
     ],
     examples: [
@@ -4605,6 +4605,8 @@ const COMMAND_ALIASES = new Map<string, {
   summary: string;
   notes: readonly string[];
   examples: readonly string[];
+  /** Extra intent words for `tm8 help --query`, beside the path words every alias is tagged with. */
+  tags?: readonly string[];
 }>([
   ['message reply', {
     path: ['message', 'reply'],
@@ -4950,6 +4952,65 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 style versions <space-ref> --limit <count>'],
   }],
+  // `tool versions|diff` read a tool's stored history through
+  // entities.versions, as `style versions` does: each snapshot's
+  // content.definition is the definition as of that version. No catalog rows.
+  ['tool versions', {
+    path: ['tool', 'versions'],
+    syntax: 'tm8 tool versions <name|id> [--all] [--limit <count>] [--cursor <cursor>]',
+    summary: 'The version history of a tool: its definition versions, or with --all every stored write',
+    tags: ['tools', 'version', 'history', 'definition', 'snapshot'],
+    notes: [
+      'sugar over entities.versions on the tool — it adds no catalog operation',
+      'by default the rows are DEFINITION versions, the numbers runs pin as toolVersion: stored writes whose content.execution_version equals their version, plus writes older than migration 388 whose executable fields (source, runtime, inputs, tm8Access, timeoutSeconds) differ from the next older write; the whole history is read, --limit caps the rows shown and --cursor is refused',
+      '--all pages every stored write through the Server (configuration, secret and name/description/help writes included), labelled by what changed and by the definition version it pins',
+      'each row names the fields that differ from the next older listed snapshot (name, description, runtime, source, inputs, help, tm8Access, timeoutSeconds, config, secrets) and the sha256 of its source, the digest `tm8 tool runs` pins per run',
+      'versions written before migration 388 may have been folded, so --all can skip numbers; a note says so',
+    ],
+    examples: ['tm8 tool versions <name>', 'tm8 tool versions <name> --all --limit 20'],
+  }],
+  ['tool diff', {
+    path: ['tool', 'diff'],
+    syntax: 'tm8 tool diff <name|id> [--from <version>] [--to <version>]',
+    summary: 'Unified diff of a tool\'s source between two stored versions',
+    tags: ['tools', 'source', 'compare', 'versions', 'changes'],
+    notes: [
+      'sugar over entities.versions — it adds no catalog operation',
+      'defaults: --to is the newest DEFINITION version (see `tm8 tool versions`), --from the definition version just before it; an explicit --from or --to may name any stored write, so a configuration write diffs as no source change',
+      'a version with no stored snapshot is refused by name with the nearest stored versions (exit 5), as is a tool with only one stored definition version',
+      'human output is `diff -u` text of the source; --format json adds both versions, every changed field and the diff as one string',
+    ],
+    examples: ['tm8 tool diff <name>', 'tm8 tool diff <name> --from 3 --to 7'],
+  }],
+  // `tool starters list|install` read the starter set shipped in @tm8/contract
+  // (TOOL_STARTERS, generated from examples/tools) and create through
+  // tools.create; the set is static data, so there is no starters operation.
+  ['tool starters list', {
+    path: ['tool', 'starters', 'list'],
+    syntax: 'tm8 tool starters list',
+    summary: 'The starter tools this CLI ships, and whether a tool of each name exists in this Space',
+    tags: ['tools', 'starter', 'examples'],
+    notes: [
+      'the starters are data in @tm8/contract, the set the UI offers too; the one call is tools.list, to mark names that already exist',
+      '`existing.matchesStarter` is false when the tool of that name has other source, such as an edited or older copy',
+      '--format json prints every starter in full: runtime, description, source, spec, whenToUse and summary',
+    ],
+    examples: ['tm8 --space <space-id> tool starters list', 'tm8 tool starters list --format <format>'],
+  }],
+  ['tool starters install', {
+    path: ['tool', 'starters', 'install'],
+    syntax: 'tm8 tool starters install [--only <name>...] [--mutation-id <id>]',
+    summary: 'Create the starter tools this Space does not have yet, with their selection headers',
+    tags: ['tools', 'starter', 'setup', 'examples'],
+    notes: [
+      'sugar over tools.list + tools.create + entities.header.set — it adds no catalog operation',
+      'a name that already exists is skipped, never overwritten; --only (repeatable or comma-separated) narrows the set and an unknown name is refused before any call',
+      'one created|skipped|failed row per starter: a refused create does not stop the others, and the exit code is the first refusal\'s',
+      'creates use <mutation-id>:<starter> and headers <mutation-id>:<starter>:header, so a retry with the same --mutation-id never duplicates',
+      'a header that could not be set is a warning on stderr: the tool exists without its when-to-use and summary',
+    ],
+    examples: ['tm8 --space <space-id> tool starters install', 'tm8 tool starters install --only <starter> --only <starter>'],
+  }],
   ['node mode', {
     path: ['node', 'mode'],
     syntax: 'tm8 node mode',
@@ -5182,6 +5243,17 @@ COMMAND_ORDER.splice(styleUpdateIndex < 0 ? COMMAND_ORDER.length : styleUpdateIn
 const styleCreateIndex = COMMAND_ORDER.indexOf('style create');
 COMMAND_ORDER.splice(styleCreateIndex < 0 ? COMMAND_ORDER.length : styleCreateIndex + 1, 0, 'style import');
 COMMAND_ORDER.push('style versions');
+// The tool history verbs read only entities.versions (after the tools.get or
+// tools.list that resolves the name) and close the tool noun.
+COMMAND_OPS.set('tool versions', ['entities.versions', 'tools.get', 'tools.list']);
+COMMAND_OPS.set('tool diff', ['entities.versions', 'tools.get', 'tools.list']);
+const toolRunShowIndex = COMMAND_ORDER.indexOf('tool run-show');
+// `tool starters install` leads with the create it exists for, so its help
+// header reports the durable side effect rather than the listing's.
+COMMAND_OPS.set('tool starters list', ['tools.list']);
+COMMAND_OPS.set('tool starters install', ['tools.create', 'tools.list', 'entities.header.set']);
+COMMAND_ORDER.splice(toolRunShowIndex < 0 ? COMMAND_ORDER.length : toolRunShowIndex + 1, 0,
+  'tool versions', 'tool diff', 'tool starters list', 'tool starters install');
 COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge', 'worktree cherry-pick', 'worktree branch', 'worktree stash');
 // Lane L1 aliases: each is exactly as available as the operation it spells.
 COMMAND_OPS.set('space-link list', ['spaceLinks.list']);
@@ -5377,6 +5449,17 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
   };
 }
 
+/**
+ * The commands no operation row describes — aliases and sugar such as `message reply`, `task axis`
+ * or `tool versions` — with the intent words `tm8 help --query` ranks them by: their path words and
+ * the alias's own tags. Operation-backed commands are searched through their operation rows.
+ */
+export function aliasCommands(from?: AvailabilityLedger): readonly { command: CommandDiscovery; intentTags: readonly string[] }[] {
+  return COMMAND_ORDER.filter((key) => COMMAND_ALIASES.has(key) && COMMAND_OPS.has(key)).map((key) => {
+    const alias = COMMAND_ALIASES.get(key) as NonNullable<ReturnType<typeof COMMAND_ALIASES.get>>;
+    return { command: commandFrom(key, from), intentTags: [...new Set([...alias.path, ...(alias.tags ?? [])])] };
+  });
+}
 export function commands(from?: AvailabilityLedger): readonly CommandDiscovery[] {
   return COMMAND_ORDER.map((key) => commandFrom(key, from));
 }
