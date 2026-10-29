@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
@@ -252,7 +253,11 @@ export function registerFacadeHandlers(
   // `/mcp` endpoint is not wired still lets a member revoke a token.
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
-  registerLoopHandlers(registry, facade, deps.loops);
+  registerLoopHandlers(registry, facade);
+  // PR2: loops.runNow and loops.runs.*, sharing the scheduler's executor port. Mounted
+  // HERE, not from inside registerLoopHandlers: the W1 conformance inventory reads only
+  // the seams this function calls, so a nested registration hides its handlers from it.
+  registerLoopRunHandlers(registry, facade, deps.loops);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);

@@ -11,9 +11,13 @@ import type { RequestContext } from '../http/types.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import { listLoopViews, loadLoopView } from './views.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite, type ScheduleState } from './write.js';
-import { registerLoopRunHandlers, type LoopRunHandlerDeps } from './run-handlers.js';
+import type { LoopRunHandlerDeps } from './run-handlers.js';
 
-/** What the composition root hands the loops family beyond FacadeDeps (PR2: the executor port). */
+/**
+ * What the composition root hands the loops family beyond FacadeDeps (PR2: the executor
+ * port). Only the run ops use it: `registerLoopRunHandlers`, mounted next to
+ * `registerLoopHandlers` in facade/index.ts.
+ */
 export type LoopHandlerDeps = LoopRunHandlerDeps;
 
 /** The route names the target; a repeated body ID must agree with it. */
@@ -78,7 +82,7 @@ function deadlinePatch(before: ScheduleState, after: ScheduleState): LoopPatch {
   };
 }
 
-export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps, loops: LoopHandlerDeps = {}): void {
+export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
   const command = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
     deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), work);
   const read = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
@@ -196,6 +200,4 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
       });
     },
   });
-  // PR2: runNow and runs.* (loops/run-handlers.ts), sharing the scheduler's executor port.
-  registerLoopRunHandlers(registry, deps, loops);
 }
