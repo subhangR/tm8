@@ -515,3 +515,91 @@ test('entity_tree walks the task hierarchy the composer renders', () => {
     'entity_tree must be RLS-filtered for a non-member',
   );
 });
+
+test('384 — runner invariants, the action backfill rule, loop_runs and loop headers', () => {
+  const dispatch = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Routed', null, 'every 1h',
+       p_client_mutation_id => ${literal(cmid('loop-384-dispatch'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  // A caller written against 091 names no action: no runner still means dispatch.
+  assert.equal(dispatch.content.action, 'dispatch');
+  assert.equal(dispatch.content.timezone, 'UTC');
+  assert.equal(dispatch.content.concurrency, 'skip');
+  assert.equal(dispatch.content.retry_attempts, 0);
+  assert.equal(dispatch.content.retry_delay_seconds, 300);
+
+  const spawn = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Spawned', null, '0 9 * * 1-5',
+       ${uuid(w.personaA)}, p_timezone => 'Europe/London', p_concurrency => 'queue',
+       p_max_runtime_seconds => 600, p_retry_attempts => 2, p_retry_delay_seconds => 60,
+       p_client_mutation_id => ${literal(cmid('loop-384-spawn'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(spawn.content.action, 'spawn');
+  assert.equal(spawn.content.timezone, 'Europe/London');
+  assert.equal(spawn.content.concurrency, 'queue');
+  assert.equal(spawn.content.max_runtime_seconds, 600);
+
+  denied('create_loop: spawn without a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No runner', null, 'every 1d', p_action => 'spawn')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: tool without a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No tool', null, 'every 1d', p_action => 'tool')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: a tool id that is not a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Not a tool', null, 'every 1d',
+       p_action => 'tool', p_tool_id => ${uuid(spawn.id)})`,
+    { claims: w.claimsA, expect: '23503' });
+  denied('create_loop: retry attempts out of range',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Retry', null, 'every 1d', p_retry_attempts => 9)`,
+    { claims: w.claimsA, expect: '23514' });
+  // The invariant is judged on the row a patch leaves: clearing the runner of a
+  // spawn loop is refused, not stored.
+  denied('update_loop: clearing the runner of a spawn loop',
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_clear_team_member => true)`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // Pause and resume are bookkeeping: they write paused_until and nothing else.
+  const until = '2030-01-01T09:00:00Z';
+  const paused = json(
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_paused_until => ${literal(until)},
+       p_client_mutation_id => ${literal(cmid('loop-384-pause'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(new Date(paused.content.paused_until).toISOString(), new Date(until).toISOString());
+
+  // A dispatch loop names no runner: the executors choose spawn from the runner,
+  // so one would fire as a spawn of it (review 3 of #1406).
+  denied('create_loop: a dispatch loop that names a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Dispatch with a runner', null, 'every 1d',
+       ${uuid(w.personaA)}, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('update_loop: switching a spawn loop to dispatch while it keeps its runner',
+    `select public.update_loop(${uuid(spawn.id)}, null, null, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // loop_runs: rows come from PR2's claim door, never a free-standing insert door
+  // (one would let any member forge run history). Settled once, never with a
+  // null outcome, invisible outside the space.
+  assert.equal(scalar(`select count(*)::text from pg_proc where proname = 'loop_run_record'`, { url: OWNER_URL }), '0');
+  const runId = scalar(
+    `insert into public.loop_runs(loop_id, space_id, fired_at, trigger, action, launch)
+       values (${uuid(spawn.id)}, ${uuid(w.spaceA)}, now(), 'manual', 'spawn', 'fired') returning id::text`,
+    { url: OWNER_URL });
+  denied('loop_run_settle: a null outcome',
+    `select public.loop_run_settle(${uuid(runId)}, null)`, { claims: w.claimsA, expect: '22023' });
+  const first = json(`select public.loop_run_settle(${uuid(runId)}, 'stopped')`, { claims: w.claimsA });
+  const second = json(`select public.loop_run_settle(${uuid(runId)}, 'completed')`, { claims: w.claimsA });
+  assert.equal(first.outcome, 'stopped');
+  assert.equal(second.outcome, 'stopped', 'a run settles once');
+  assert.deepEqual(
+    rows(`select id from public.loop_runs where id = ${uuid(runId)}`, { claims: w.claimsB }),
+    [], 'loop_runs is RLS-filtered for a non-member');
+  denied('loop_run_settle: a non-member',
+    `select public.loop_run_settle(${uuid(runId)}, 'completed')`,
+    { claims: w.claimsB, expect: '42501' });
+
+  assert.equal(scalar(`select internal.header_kind_allowed('loop')`, { url: OWNER_URL }), 't');
+  assert.equal(scalar(`select internal.header_kind_allowed('tool')`, { url: OWNER_URL }), 't');
+});

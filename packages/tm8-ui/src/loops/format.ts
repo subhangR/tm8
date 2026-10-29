@@ -1,3 +1,4 @@
+import { absTime, relTime, zonedTime } from '../kit/time';
 import type { LoopRunStatus, LoopView } from './api';
 
 /*
@@ -6,35 +7,15 @@ import type { LoopRunStatus, LoopView } from './api';
  * schedule fact.
  */
 
-const UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
-  ['day', 86_400_000],
-  ['hour', 3_600_000],
-  ['minute', 60_000],
-];
-
-/** "in 3 hours", "5 minutes ago", "now". */
-export function relativeTime(iso: string | null | undefined, now: Date = new Date()): string {
-  if (!iso) return '—';
-  const at = Date.parse(iso);
-  if (Number.isNaN(at)) return '—';
-  const delta = at - now.getTime();
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  for (const [unit, ms] of UNITS) {
-    if (Math.abs(delta) >= ms) return format.format(Math.round(delta / ms), unit);
-  }
-  return 'now';
+/** "in 3h", "5m ago" — the app's one relative label (kit/time). */
+export function relativeTime(iso: string | null | undefined): string {
+  return iso ? relTime(iso) || '—' : '—';
 }
 
-/** The absolute instant in the viewer's zone, for a hover title. */
+/** The absolute instant for a hover title: the viewer's zone, or a named zone (a loop's own). */
 export function absolute(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return '';
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return '';
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-    ...(timeZone ? { timeZone } : {}),
-  }).format(at);
+  return timeZone ? zonedTime(iso, timeZone) : absTime(iso);
 }
 
 export type ChipTone = 'ok' | 'bad' | 'warn' | 'live' | 'quiet';

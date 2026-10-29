@@ -109,12 +109,12 @@ describe('loop page header: status pill and facts', () => {
   it('Enabled, with next run relative + absolute in the loop timezone', () => {
     header(view());
     expect(screen.getByText('Enabled')).toBeTruthy();
-    expect(screen.getByTestId('loop-next-run').textContent).toBe('Next run in 3h (Wed 15:00 UTC)');
+    expect(screen.getByTestId('loop-next-run').textContent).toMatch(/^Next run in 3h \(Wed.*15:00 UTC\)$/);
   });
 
   it('Paused until …', () => {
     header(view({ state: { pausedUntil: '2026-10-29T09:00:00.000Z' } }));
-    expect(screen.getByText('Paused until Thu 09:00 UTC')).toBeTruthy();
+    expect(screen.getByText(/^Paused until Thu.*09:00 UTC$/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Change pause…' })).toBeTruthy();
   });
@@ -136,7 +136,7 @@ describe('loop page header: status pill and facts', () => {
   });
 
   it('the next run is drawn in the loop zone, not the browser zone', () => {
-    expect(zonedInstant('2026-10-28T15:00:00.000Z', 'Asia/Kolkata', NOW)).toBe('Wed 20:30 GMT+5:30');
+    expect(zonedInstant('2026-10-28T15:00:00.000Z', 'Asia/Kolkata')).toMatch(/20:30 GMT\+5:30$/);
   });
 
   it('last error banner, and the loop stays enabled', () => {
@@ -155,6 +155,22 @@ describe('loop page header: status pill and facts', () => {
     expect(armer).toContain('running as');
     expect(armer).toContain('Bob');
     expect(armer).toContain('(fallback)');
+    expect(armer).toContain('(no longer a member)');
+  });
+
+  it('an armer who is still the acting identity is not flagged', () => {
+    header(view());
+    expect(screen.getByTestId('loop-armer').textContent).not.toContain('no longer');
+  });
+
+  it('runs summary: never fired, then the 24 h tally', () => {
+    header(view());
+    expect(screen.getByTestId('loop-runs-summary').textContent).toBe('Never fired yet.');
+    cleanup();
+    const v = view();
+    v.runs = { ...v.runs, total: 12, last24h: { fired: 3, failed: 1, skipped: 2 } };
+    header(v);
+    expect(screen.getByTestId('loop-runs-summary').textContent).toBe('12 runs recorded · last 24 h: 3 fired, 1 failed, 2 skipped');
   });
 
   it('needs arming when there is no one to run as', () => {

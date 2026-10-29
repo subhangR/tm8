@@ -1,6 +1,6 @@
 import { isCollabError } from '@tm8/contract';
 import type { PillTone } from '../kit/Pill';
-import { parseInstant } from '../kit/time';
+import { parseInstant, zonedTime } from '../kit/time';
 import type { LoopRun, LoopRunSkipReason, LoopRunStatus, LoopView } from './page-port';
 
 /*
@@ -10,23 +10,12 @@ import type { LoopRun, LoopRunSkipReason, LoopRunStatus, LoopView } from './page
  * whatever zone the reader's browser is in.
  */
 
-/** 'Thu 09:00 UTC' within the coming week, 'Thu 5 Nov 09:00 UTC' past it. */
-export function zonedInstant(value: string | null | undefined, timeZone: string, now: number = Date.now()): string {
-  const t = parseInstant(value);
-  if (t === null) return '';
-  const near = Math.abs(t - now) < 6 * 24 * 60 * 60 * 1000;
-  const options: Intl.DateTimeFormatOptions = {
-    weekday: 'short',
-    ...(near ? {} : { day: 'numeric', month: 'short' }),
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    timeZoneName: 'short',
-  };
-  try {
-    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone }).format(new Date(t)).replace(',', '');
-  } catch {
-    // An unknown zone never blanks the label: fall back to UTC and say so.
-    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).format(new Date(t)).replace(',', '');
-  }
+/**
+ * An instant in the LOOP's zone ('Thu 29 Oct 09:00 UTC'), through the app's
+ * one formatter. An unknown zone falls back to UTC rather than blanking.
+ */
+export function zonedInstant(value: string | null | undefined, timeZone: string): string {
+  return zonedTime(value, timeZone) || zonedTime(value, 'UTC');
 }
 
 /** '45s' · '3m 12s' · '1h 4m' — null in, em dash out (unknown is not zero). */

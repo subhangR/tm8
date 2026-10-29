@@ -93,7 +93,7 @@ export function PauseDialog({
           <p className="loop-page__hint" role="status" data-testid="pause-resolved">
             {'problem' in resolved
               ? resolved.problem
-              : `Resumes ${zonedInstant(resolved.until.toISOString(), zone, now.getTime())}`}
+              : `Resumes ${zonedInstant(resolved.until.toISOString(), zone)}`}
           </p>
           {error ? <p role="alert" className="loop-page__error">{error}</p> : null}
           <div className="tool-actions">

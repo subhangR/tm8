@@ -1,5 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
-import type { EntityId, EntitySummary, LaunchCredentialSource, ProjectId, SpaceId, ToolInput, ToolView, WorkSessionWorkdirMode } from '@tm8/contract';
+import {
+  LOOP_MAX_RUNTIME_MAX_SECONDS,
+  LOOP_MAX_RUNTIME_MIN_SECONDS,
+  LOOP_MEMORY_IDS_MAX,
+  LOOP_PROMPT_MAX,
+  LOOP_RETRY_ATTEMPTS_MAX,
+  LOOP_RETRY_DELAY_DEFAULT_SECONDS,
+  LOOP_RETRY_DELAY_MAX_SECONDS,
+  LOOP_RETRY_DELAY_MIN_SECONDS,
+  LOOP_TITLE_MAX,
+  type EntityId,
+  type EntitySummary,
+  type LaunchCredentialSource,
+  type ProjectId,
+  type SpaceId,
+  type ToolInput,
+  type ToolJsonValue,
+  type ToolView,
+  type WorkSessionWorkdirMode,
+} from '@tm8/contract';
 import { ComposerSelect, type ComposerSelectOption } from '../chat-home/ComposerSelect';
 import { classifyFailure } from '../authoring/commands';
 import { RefusalCard } from '../authoring/RefusalCard';
@@ -15,6 +34,7 @@ import {
   type LoopConcurrency,
   type LoopCreateDefinition,
   type LoopDefinition,
+  type LoopDefinitionPatch,
   type LoopSessionMode,
   type LoopSpawnConfig,
   type LoopsClient,
@@ -73,16 +93,18 @@ export function loopFormSourcesOf(seam: Pick<Seam, 'query' | 'entity' | 'project
   };
 }
 
-export interface LoopFormProps {
-  mode: 'create' | 'edit';
+interface LoopFormCommon {
   spaceId: SpaceId;
   client: LoopsClient;
   sources: LoopFormSources;
-  /** Required in edit mode: the loop as last read (its version guards the update). */
-  view?: LoopView;
   onSaved(view: LoopView): void;
   onClose(): void;
+  /** In place (a workspace draft tab), not a modal: no backdrop, no dialog role, no window-level Escape. */
+  inline?: boolean;
 }
+
+/** Edit carries the loop as last read (its version guards the update), so a mis-wired edit can never create. */
+export type LoopFormProps = LoopFormCommon & ({ mode: 'create'; view?: undefined } | { mode: 'edit'; view: LoopView });
 
 interface Draft {
   title: string;
@@ -144,7 +166,7 @@ function draftOf(view: LoopView | undefined): Draft {
     concurrency: d?.concurrency ?? 'skip',
     maxRuntimeMinutes: d?.maxRuntimeSeconds ? String(Math.round(d.maxRuntimeSeconds / 60)) : '',
     retryAttempts: String(d?.retry.attempts ?? 0),
-    retryDelaySeconds: String(d?.retry.delaySeconds ?? 60),
+    retryDelaySeconds: String(d?.retry.delaySeconds ?? LOOP_RETRY_DELAY_DEFAULT_SECONDS),
     enabled: view?.state.enabled ?? true,
   };
 }
@@ -175,15 +197,16 @@ function configOf(draft: Draft): LoopSpawnConfig {
 }
 
 /** Local checks: only what a human could not mean (empty name, no runner). The server decides the rest. */
-function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErrors; inputs: Record<string, unknown> } {
+function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErrors; inputs: Record<string, ToolJsonValue> } {
   const errors: FieldErrors = {};
-  const inputs: Record<string, unknown> = {};
+  const inputs: Record<string, ToolJsonValue> = {};
   if (draft.title.trim() === '') errors.title = 'Give the loop a name.';
   if (expressionOf(draft.preset) === '') errors.schedule = 'Enter a cron expression.';
   if (draft.action === 'spawn' && !draft.teamMemberId) errors.teamMemberId = 'Pick the teammate who runs it.';
   if (draft.action === 'tool') {
     if (!draft.toolId) errors.toolId = 'Pick the tool to run.';
     else if (tool) {
+      if (personaRequired(tool) && !draft.teamMemberId) errors.teamMemberId = 'This tool works in tm8, so pick the teammate it runs as.';
       for (const input of tool.definition.inputs) {
         if (input.type === 'secret') continue;
         const text = draft.toolInputs[input.name] ?? '';
@@ -205,19 +228,20 @@ function localProblems(draft: Draft, tool: ToolView | null): { errors: FieldErro
     const n = Number(text);
     if (!Number.isInteger(n) || n < min || n > max) errors[key] = `${label} must be a whole number from ${min} to ${max}.`;
   };
-  integer('maxRuntimeSeconds', draft.maxRuntimeMinutes, 1, 1440, 'Max runtime (minutes)');
-  integer('retry.attempts', draft.retryAttempts, 0, 5, 'Retries');
-  integer('retry.delaySeconds', draft.retryDelaySeconds, 30, 3600, 'Retry delay');
+  integer('maxRuntimeSeconds', draft.maxRuntimeMinutes, LOOP_MAX_RUNTIME_MIN_SECONDS / 60, LOOP_MAX_RUNTIME_MAX_SECONDS / 60, 'Max runtime (minutes)');
+  integer('retry.attempts', draft.retryAttempts, 0, LOOP_RETRY_ATTEMPTS_MAX, 'Retries');
+  integer('retry.delaySeconds', draft.retryDelaySeconds, LOOP_RETRY_DELAY_MIN_SECONDS, LOOP_RETRY_DELAY_MAX_SECONDS, 'Retry delay');
   return { errors, inputs };
 }
 
-function definitionOf(draft: Draft, inputs: Record<string, unknown>): LoopDefinition {
+function definitionOf(draft: Draft, inputs: Record<string, ToolJsonValue>): LoopDefinition {
   return {
     title: draft.title.trim(),
     schedule: expressionOf(draft.preset),
     timezone: draft.timezone,
     action: draft.action,
-    teamMemberId: draft.action === 'spawn' ? draft.teamMemberId : null,
+    // For a tool, the persona it runs as (§2.1); the Dispatcher picks its own.
+    teamMemberId: draft.action === 'dispatch' ? null : draft.teamMemberId,
     toolId: draft.action === 'tool' ? draft.toolId : null,
     toolInputs: draft.action === 'tool' ? inputs : {},
     subjectId: draft.subject?.id ?? null,
@@ -227,18 +251,40 @@ function definitionOf(draft: Draft, inputs: Record<string, unknown>): LoopDefini
     maxRuntimeSeconds: draft.maxRuntimeMinutes.trim() === '' ? null : Number(draft.maxRuntimeMinutes) * 60,
     retry: {
       attempts: draft.retryAttempts.trim() === '' ? 0 : Number(draft.retryAttempts),
-      delaySeconds: draft.retryDelaySeconds.trim() === '' ? 60 : Number(draft.retryDelaySeconds),
+      delaySeconds: draft.retryDelaySeconds.trim() === '' ? LOOP_RETRY_DELAY_DEFAULT_SECONDS : Number(draft.retryDelaySeconds),
     },
   };
 }
 
-/** Only what changed, so an edit never rewrites a field the human did not touch. */
-function changedFields(before: LoopDefinition, after: LoopDefinition): Partial<LoopDefinition> {
-  const out: Partial<LoopDefinition> = {};
+/** A tool that reaches tm8 runs as a persona; the server refuses one without (§2.1). */
+function personaRequired(tool: ToolView): boolean {
+  return tool.definition.tm8Access === 'read' || tool.definition.tm8Access === 'write';
+}
+
+/**
+ * The edit's patch: only the fields the human changed, so an edit never
+ * rewrites a field they did not touch. "Changed" is judged against what the
+ * form would send for the loop untouched, not against the stored definition:
+ * the form shows some fields lossily (max runtime in whole minutes, a schedule
+ * re-spelled from its preset, tool inputs only once the tool is read), and an
+ * untouched one must keep its stored value exactly. `config` is overlaid key
+ * by key on the stored object, so keys the form does not show survive.
+ */
+function patchOf(stored: LoopDefinition, untouched: LoopDefinition, after: LoopDefinition): LoopDefinitionPatch {
+  const out: Record<string, unknown> = {};
   for (const key of Object.keys(after) as (keyof LoopDefinition)[]) {
-    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) (out as Record<string, unknown>)[key] = after[key];
+    if (key !== 'config' && JSON.stringify(untouched[key]) !== JSON.stringify(after[key])) out[key] = after[key];
   }
-  return out;
+  const config: Record<string, unknown> = { ...stored.config };
+  const before = untouched.config as Record<string, unknown>, next = after.config as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(before), ...Object.keys(next)])) {
+    if (JSON.stringify(before[key]) === JSON.stringify(next[key])) continue;
+    if (next[key] === undefined) delete config[key]; else config[key] = next[key];
+  }
+  if (JSON.stringify(config) !== JSON.stringify(stored.config)) out.config = config;
+  // A different tool (or action) must not inherit the old tool's stored inputs.
+  if (('toolId' in out || 'action' in out) && JSON.stringify(after.toolInputs) !== JSON.stringify(stored.toolInputs)) out.toolInputs = after.toolInputs;
+  return out as LoopDefinitionPatch;
 }
 
 /** Which form section a server path belongs to, so a refused advanced field opens Advanced. */
@@ -262,7 +308,8 @@ function useEntityOptions(sources: LoopFormSources, spaceId: SpaceId, kind: stri
   return state;
 }
 
-export function LoopForm({ mode, spaceId, client, sources, view, onSaved, onClose }: LoopFormProps) {
+export function LoopForm(props: LoopFormProps) {
+  const { mode, spaceId, client, sources, view, onSaved, onClose, inline = false } = props;
   const [draft, setDraft] = useState<Draft>(() => draftOf(view));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [phase, setPhase] = useState<Phase>({ phase: 'idle' });
@@ -327,11 +374,13 @@ export function LoopForm({ mode, spaceId, client, sources, view, onSaved, onClos
 
   const schedule = expressionOf(draft.preset);
   const preview = useSchedulePreview(client, spaceId, schedule, draft.timezone);
-  const previewInvalid = preview.phase === 'ready' && !preview.preview.valid;
+  const previewInvalid = preview.phase === 'ready' && !preview.stale && !preview.preview.valid;
+  const zones = useMemo(() => timeZoneOptions(draft.timezone), [draft.timezone]);
 
   const close = () => { if (!saving) onClose(); };
 
   useEffect(() => {
+    if (inline) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       event.stopPropagation();
@@ -339,7 +388,7 @@ export function LoopForm({ mode, spaceId, client, sources, view, onSaved, onClos
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [saving, onClose]);
+  }, [inline, saving, onClose]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -355,8 +404,10 @@ export function LoopForm({ mode, spaceId, client, sources, view, onSaved, onClos
     setPhase({ phase: 'saving' });
     try {
       let saved: LoopView;
-      if (mode === 'edit' && view) {
-        saved = await client.update(view, changedFields(view.definition, definition));
+      if (props.mode === 'edit') {
+        const stored = props.view;
+        const untouched = draftOf(stored);
+        saved = await client.update(stored, patchOf(stored.definition, definitionOf(untouched, localProblems(untouched, tool).inputs), definition));
       } else {
         const create: LoopCreateDefinition = definition;
         saved = await client.create(spaceId, create, draft.enabled);
@@ -385,192 +436,208 @@ export function LoopForm({ mode, spaceId, client, sources, view, onSaved, onClos
   const errorFor = (key: string) => errors[key] ?? Object.entries(errors).find(([path]) => path.startsWith(`${key}.`))?.[1] ?? null;
 
   const teammateOptions: ComposerSelectOption[] = teammates.options.map(t => ({ id: t.id, label: t.title, actor: { id: t.id } }));
+  const personaOptions: ComposerSelectOption[] = [{ id: DEFAULT, label: 'No teammate' }, ...teammateOptions];
   const toolOptions: ComposerSelectOption[] = tools.options.map(t => ({ id: t.id, label: t.title }));
   const stop = (event: MouseEvent) => event.stopPropagation();
   const title = mode === 'edit' ? 'Edit loop' : 'New loop';
+  const needsPersona = tool !== null && personaRequired(tool);
 
-  return (
-    <div className="au-dialog__backdrop" role="presentation" onMouseDown={close}>
-      <form
-        className="au-dialog loop-form"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        data-testid="loop-form"
-        onSubmit={event => void submit(event)}
-        onMouseDown={stop}
-        noValidate
-      >
-        <h2 className="au-dialog__title">{title}</h2>
+  const form = (
+    <form
+      className={inline ? 'loop-form loop-form--inline' : 'au-dialog loop-form'}
+      role={inline ? undefined : 'dialog'}
+      aria-modal={inline ? undefined : true}
+      aria-label={title}
+      data-testid="loop-form"
+      onSubmit={event => void submit(event)}
+      onMouseDown={inline ? undefined : stop}
+      noValidate
+    >
+      {inline ? null : <h2 className="au-dialog__title">{title}</h2>}
 
-        <Field label="Name" error={errorFor('title')}>
-          <input
-            ref={firstField}
-            className="au-dialog__input"
-            value={draft.title}
-            maxLength={200}
-            placeholder="Daily project sweep"
-            aria-label="Name"
-            onChange={event => set('title', event.target.value)}
-          />
-        </Field>
+      <Field label="Name" error={errorFor('title')}>
+        <input
+          ref={firstField}
+          className="au-dialog__input"
+          value={draft.title}
+          maxLength={LOOP_TITLE_MAX}
+          placeholder="Daily project sweep"
+          aria-label="Name"
+          onChange={event => set('title', event.target.value)}
+        />
+      </Field>
 
-        <fieldset className="loop-form__section">
-          <legend className="au-dialog__label">What should run?</legend>
-          <div className="loop-form__segmented" role="radiogroup" aria-label="What should run?">
-            {ACTIONS.map(option => (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={draft.action === option.id}
-                className={`loop-form__segment${draft.action === option.id ? ' loop-form__segment--on' : ''}`}
-                data-testid={`loop-action-${option.id}`}
-                onClick={() => set('action', option.id)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {draft.action === 'spawn' ? (
-            <Field label="Teammate" error={errorFor('teamMemberId')}>
+      <fieldset className="loop-form__section">
+        <legend className="au-dialog__label">What should run?</legend>
+        <div className="loop-form__segmented" role="radiogroup" aria-label="What should run?">
+          {ACTIONS.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={draft.action === option.id}
+              className={`loop-form__segment${draft.action === option.id ? ' loop-form__segment--on' : ''}`}
+              data-testid={`loop-action-${option.id}`}
+              onClick={() => set('action', option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {draft.action === 'spawn' ? (
+          <Field label="Teammate" error={errorFor('teamMemberId')}>
+            <ComposerSelect
+              label="Teammate"
+              options={teammateOptions}
+              value={draft.teamMemberId ?? ''}
+              onChange={id => set('teamMemberId', id)}
+              emptyNote={teammates.loaded ? 'No teammates in this space.' : 'Loading teammates…'}
+              note={draft.teamMemberId ? null : 'Pick who runs each firing.'}
+              variant="quiet"
+              tall
+              testId="loop-teammate"
+            />
+          </Field>
+        ) : null}
+        {draft.action === 'dispatch' ? (
+          <p className="loop-form__muted">Each firing goes to the Dispatcher, which picks the teammate.</p>
+        ) : null}
+        {draft.action === 'tool' ? (
+          <>
+            {/* Until the tool is read its inputs are not drawn, so a refused input shows here. */}
+            <Field label="Tool" error={errorFor('toolId') ?? toolProblem ?? (tool ? null : errorFor('toolInputs'))}>
               <ComposerSelect
-                label="Teammate"
-                options={teammateOptions}
-                value={draft.teamMemberId ?? ''}
-                onChange={id => set('teamMemberId', id)}
-                emptyNote={teammates.loaded ? 'No teammates in this space.' : 'Loading teammates…'}
-                note={draft.teamMemberId ? null : 'Pick who runs each firing.'}
+                label="Tool"
+                options={toolOptions}
+                value={draft.toolId ?? ''}
+                onChange={id => setDraft(current => ({ ...current, toolId: id, toolInputs: {} }))}
+                emptyNote={tools.loaded ? 'No tools in this space.' : 'Loading tools…'}
                 variant="quiet"
                 tall
-                testId="loop-teammate"
+                testId="loop-tool"
               />
             </Field>
-          ) : null}
-          {draft.action === 'dispatch' ? (
-            <p className="loop-form__muted">Each firing goes to the Dispatcher, which picks the teammate.</p>
-          ) : null}
-          {draft.action === 'tool' ? (
-            <>
-              <Field label="Tool" error={errorFor('toolId') ?? toolProblem}>
-                <ComposerSelect
-                  label="Tool"
-                  options={toolOptions}
-                  value={draft.toolId ?? ''}
-                  onChange={id => setDraft(current => ({ ...current, toolId: id, toolInputs: {} }))}
-                  emptyNote={tools.loaded ? 'No tools in this space.' : 'Loading tools…'}
-                  variant="quiet"
-                  tall
-                  testId="loop-tool"
-                />
-              </Field>
-              {tool ? <ToolInputs tool={tool} values={draft.toolInputs} errorFor={errorFor} disabled={saving}
-                onChange={(name, value) => setDraft(current => ({ ...current, toolInputs: { ...current.toolInputs, [name]: value } }))} /> : null}
-            </>
-          ) : null}
-        </fieldset>
+            <Field label="Runs as" optional={!needsPersona} error={errorFor('teamMemberId')}>
+              <ComposerSelect
+                label="Runs as"
+                options={personaOptions}
+                value={draft.teamMemberId ?? DEFAULT}
+                onChange={id => set('teamMemberId', id || null)}
+                emptyNote={teammates.loaded ? 'No teammates in this space.' : 'Loading teammates…'}
+                note={needsPersona ? 'This tool works in tm8, so it runs as a teammate.' : 'The teammate the tool acts as, if it reaches tm8.'}
+                variant="quiet"
+                tall
+                testId="loop-tool-persona"
+              />
+            </Field>
+            {tool ? <ToolInputs tool={tool} values={draft.toolInputs} errorFor={errorFor} disabled={saving}
+              onChange={(name, value) => setDraft(current => ({ ...current, toolInputs: { ...current.toolInputs, [name]: value } }))} /> : null}
+          </>
+        ) : null}
+      </fieldset>
 
-        <Field label="About" optional error={errorFor('subjectId')}>
-          {draft.subject ? (
-            <span className="loop-form__chip" data-testid="loop-subject">
-              {draft.subject.title || '…'}
-              <button type="button" aria-label="Clear subject" onClick={() => set('subject', null)}>×</button>
-            </span>
-          ) : (
-            <MembershipPicker
-              search={text => sources.query({ spaceId, ...(text.trim() ? { words: text.trim() } : {}), limit: 50 }).then(r => r.page.items)}
-              onPick={(id, pickedTitle) => set('subject', { id, title: pickedTitle })}
-              excludeIds={new Set(view ? [view.id] : [])}
-              addLabel="Choose what it is about…"
-            />
-          )}
-        </Field>
+      <Field label="About" optional error={errorFor('subjectId')}>
+        {draft.subject ? (
+          <span className="loop-form__chip" data-testid="loop-subject">
+            {draft.subject.title || '…'}
+            <button type="button" aria-label="Clear subject" onClick={() => set('subject', null)}>×</button>
+          </span>
+        ) : (
+          <MembershipPicker
+            search={text => sources.query({ spaceId, ...(text.trim() ? { words: text.trim() } : {}), limit: 50 }).then(r => r.page.items)}
+            onPick={(id, pickedTitle) => set('subject', { id, title: pickedTitle })}
+            excludeIds={new Set(view ? [view.id] : [])}
+            addLabel="Choose what it is about…"
+          />
+        )}
+      </Field>
 
-        <Field label="Instructions" optional error={errorFor('prompt')}>
-          <textarea
+      <Field label="Instructions" optional error={errorFor('prompt')}>
+        <textarea
+          className="au-dialog__input"
+          rows={3}
+          value={draft.prompt}
+          maxLength={LOOP_PROMPT_MAX}
+          aria-label="Instructions"
+          placeholder="What each firing should do"
+          onChange={event => set('prompt', event.target.value)}
+        />
+      </Field>
+
+      <fieldset className="loop-form__section">
+        <legend className="au-dialog__label">When</legend>
+        <ScheduleFields preset={draft.preset} onChange={preset => set('preset', preset)} />
+        <Field label="Timezone" error={errorFor('timezone')}>
+          <select
             className="au-dialog__input"
-            rows={3}
-            value={draft.prompt}
-            maxLength={20_000}
-            aria-label="Instructions"
-            placeholder="What each firing should do"
-            onChange={event => set('prompt', event.target.value)}
-          />
+            aria-label="Timezone"
+            value={draft.timezone}
+            onChange={event => set('timezone', event.target.value)}
+          >
+            {zones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+          </select>
         </Field>
+        {errorFor('schedule') ? <p className="au-dialog__missing" role="alert">{errorFor('schedule')}</p> : null}
+        <SchedulePreviewPanel state={preview} timezone={draft.timezone} />
+      </fieldset>
 
-        <fieldset className="loop-form__section">
-          <legend className="au-dialog__label">When</legend>
-          <ScheduleFields preset={draft.preset} onChange={preset => set('preset', preset)} />
-          <Field label="Timezone" error={errorFor('timezone')}>
-            <select
-              className="au-dialog__input"
-              aria-label="Timezone"
-              value={draft.timezone}
-              onChange={event => set('timezone', event.target.value)}
-            >
-              {timeZoneOptions(draft.timezone).map(zone => <option key={zone} value={zone}>{zone}</option>)}
-            </select>
-          </Field>
-          {errorFor('schedule') ? <p className="au-dialog__missing" role="alert">{errorFor('schedule')}</p> : null}
-          <SchedulePreviewPanel state={preview} timezone={draft.timezone} />
-        </fieldset>
-
-        <details className="loop-form__advanced" open={advancedOpen} onToggle={event => setAdvancedOpen((event.target as HTMLDetailsElement).open)}>
-          <summary>Advanced</summary>
-          {draft.action === 'spawn' ? (
-            <SpawnSettings draft={draft} set={set} projects={projects} profiles={profiles.options} sources={sources} spaceId={spaceId} errorFor={errorFor} />
-          ) : null}
-          <Field label="If the previous run is still going" error={errorFor('concurrency')}>
-            <select className="au-dialog__input" aria-label="Concurrency" value={draft.concurrency}
-              onChange={event => set('concurrency', event.target.value as LoopConcurrency)}>
-              <option value="skip">Skip this firing</option>
-              <option value="queue">Wait, then run</option>
-            </select>
-          </Field>
-          <Field label="Max runtime (minutes)" optional error={errorFor('maxRuntimeSeconds')}>
-            <input className="au-dialog__input" type="number" min={1} max={1440} aria-label="Max runtime (minutes)"
-              value={draft.maxRuntimeMinutes} onChange={event => set('maxRuntimeMinutes', event.target.value)} />
-          </Field>
-          <div className="loop-form__row">
-            <Field label="Retries" error={errorFor('retry.attempts')}>
-              <input className="au-dialog__input" type="number" min={0} max={5} aria-label="Retries"
-                value={draft.retryAttempts} onChange={event => set('retryAttempts', event.target.value)} />
-            </Field>
-            <Field label="Retry delay (seconds)" error={errorFor('retry.delaySeconds')}>
-              <input className="au-dialog__input" type="number" min={30} max={3600} aria-label="Retry delay (seconds)"
-                value={draft.retryDelaySeconds} onChange={event => set('retryDelaySeconds', event.target.value)} />
-            </Field>
-          </div>
-        </details>
-
-        {mode === 'create' ? (
-          <label className="loop-create__toggle">
-            <input type="checkbox" checked={draft.enabled} disabled={saving} onChange={event => set('enabled', event.target.checked)} />
-            <span>Enable now</span>
-          </label>
+      <details className="loop-form__advanced" open={advancedOpen} onToggle={event => setAdvancedOpen((event.target as HTMLDetailsElement).open)}>
+        <summary>Advanced</summary>
+        {draft.action === 'spawn' ? (
+          <SpawnSettings draft={draft} set={set} projects={projects} profiles={profiles.options} sources={sources} spaceId={spaceId} errorFor={errorFor} />
         ) : null}
-
-        {phase.phase === 'refused' ? (
-          <RefusalCard
-            word={phase.cause}
-            detail={phase.detail}
-            aftermath={phase.aftermath}
-            moves={[
-              ...(phase.retryable ? [{ label: 'retry', onSelect: () => void submit() }] : []),
-              { label: 'back to the form', onSelect: () => setPhase({ phase: 'idle' }) },
-            ]}
-          />
-        ) : null}
-
-        <div className="au-dialog__actions">
-          <button type="button" onClick={close} disabled={saving}>Cancel</button>
-          <button type="submit" className="au-dialog__primary" aria-busy={saving} disabled={saving || previewInvalid}>
-            {saving ? 'Saving…' : mode === 'edit' ? 'Save loop' : 'Create loop'}
-          </button>
+        <Field label="If the previous run is still going" error={errorFor('concurrency')}>
+          <select className="au-dialog__input" aria-label="Concurrency" value={draft.concurrency}
+            onChange={event => set('concurrency', event.target.value as LoopConcurrency)}>
+            <option value="skip">Skip this firing</option>
+            <option value="queue">Wait, then run</option>
+          </select>
+        </Field>
+        <Field label="Max runtime (minutes)" optional error={errorFor('maxRuntimeSeconds')}>
+          <input className="au-dialog__input" type="number" min={LOOP_MAX_RUNTIME_MIN_SECONDS / 60} max={LOOP_MAX_RUNTIME_MAX_SECONDS / 60} aria-label="Max runtime (minutes)"
+            value={draft.maxRuntimeMinutes} onChange={event => set('maxRuntimeMinutes', event.target.value)} />
+        </Field>
+        <div className="loop-form__row">
+          <Field label="Retries" error={errorFor('retry.attempts')}>
+            <input className="au-dialog__input" type="number" min={0} max={LOOP_RETRY_ATTEMPTS_MAX} aria-label="Retries"
+              value={draft.retryAttempts} onChange={event => set('retryAttempts', event.target.value)} />
+          </Field>
+          <Field label="Retry delay (seconds)" error={errorFor('retry.delaySeconds')}>
+            <input className="au-dialog__input" type="number" min={LOOP_RETRY_DELAY_MIN_SECONDS} max={LOOP_RETRY_DELAY_MAX_SECONDS} aria-label="Retry delay (seconds)"
+              value={draft.retryDelaySeconds} onChange={event => set('retryDelaySeconds', event.target.value)} />
+          </Field>
         </div>
-      </form>
-    </div>
+      </details>
+
+      {mode === 'create' ? (
+        <label className="loop-create__toggle">
+          <input type="checkbox" checked={draft.enabled} disabled={saving} onChange={event => set('enabled', event.target.checked)} />
+          <span>Enable now</span>
+        </label>
+      ) : null}
+
+      {phase.phase === 'refused' ? (
+        <RefusalCard
+          word={phase.cause}
+          detail={phase.detail}
+          aftermath={phase.aftermath}
+          moves={[
+            ...(phase.retryable ? [{ label: 'retry', onSelect: () => void submit() }] : []),
+            { label: 'back to the form', onSelect: () => setPhase({ phase: 'idle' }) },
+          ]}
+        />
+      ) : null}
+
+      <div className="au-dialog__actions">
+        <button type="button" onClick={close} disabled={saving}>Cancel</button>
+        <button type="submit" className="au-dialog__primary" aria-busy={saving} disabled={saving || previewInvalid}>
+          {saving ? 'Saving…' : mode === 'edit' ? 'Save loop' : 'Create loop'}
+        </button>
+      </div>
+    </form>
   );
+  if (inline) return form;
+  return <div className="au-dialog__backdrop" role="presentation" onMouseDown={close}>{form}</div>;
 }
 
 /** Paths a refusal can be drawn against; anything else is a whole-form refusal. */
@@ -754,7 +821,7 @@ function SpawnSettings({ draft, set, projects, profiles, sources, spaceId, error
                 onClick={() => set('memories', draft.memories.filter(m => m.id !== memory.id))}>×</button>
             </span>
           ))}
-          {draft.memories.length < 32 ? (
+          {draft.memories.length < LOOP_MEMORY_IDS_MAX ? (
             <MembershipPicker
               search={text => sources.query({ spaceId, kinds: ['memory' as never], ...(text.trim() ? { words: text.trim() } : {}), limit: 50 }).then(r => r.page.items)}
               onPick={(id, title) => set('memories', [...draft.memories, { id, title }])}

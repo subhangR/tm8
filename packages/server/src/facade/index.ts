@@ -1,4 +1,5 @@
 import { registerToolHandlers } from '../tools/handlers.js';
+import { registerLoopHandlers } from '../loops/handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
@@ -242,6 +243,7 @@ export function registerFacadeHandlers(
   // `/mcp` endpoint is not wired still lets a member revoke a token.
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
+  registerLoopHandlers(registry, facade);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);

@@ -10,15 +10,41 @@ export const fixtureTool: ToolView = {
     inputs: [{ name: 'url', type: 'string', required: true, description: 'URL to check' }, { name: 'limit', type: 'int', min: 1, max: 200, default: 20 }, { name: 'verbose', type: 'bool', default: false }, { name: 'state', type: 'enum', options: ['open', 'closed'], default: 'open' }, { name: 'token', type: 'secret' }],
   }, config: { url: 'https://example.test' }, secretBindings: [],
 };
-/** Explicit simulation for UI checks while the tools handlers are built independently. */
-export function createToolFixture(initial: ToolView = fixtureTool, permissions: Partial<ToolPermissions> = {}) {
+/**
+ * The node's answer for a tool header BEFORE migration 380 (PR-E) admits the kind:
+ * the write is skipped with a warning. Tests pass `headerStored: false` to exercise
+ * that fallback; the default simulates a node that stores it, as a node with 380 does.
+ */
+export const HEADER_NOT_STORED = 'a tool cannot carry a selection header; nothing was stored';
+
+/**
+ * Explicit simulation for UI checks while the tools handlers are built independently.
+ * `create` refuses like the node: contract validation as `invalid_input` with
+ * zod issues under `definition`, a taken name as `invariant_violation` 23505.
+ */
+export function createToolFixture(initial: ToolView = fixtureTool, permissions: Partial<ToolPermissions> = {}, options: { headerStored?: boolean } = {}) {
   let tool = structuredClone(initial);
+  const created: ToolView[] = [];
+  const headers = new Map<string, unknown>();
   const runs: ToolRun[] = [];
   let sequence = 10;
   const bump = (definition = false) => { tool = { ...tool, version: tool.version + 1, executionVersion: tool.executionVersion + Number(definition), configRevision: tool.configRevision + Number(!definition) }; };
   const current = (version: number) => { if (version !== tool.version) throw new CollabError('version_conflict', 'The tool changed. Reload before saving.'); };
   const port: ToolPort = {
-    async get() { return structuredClone(tool); },
+    async create(spaceId, definition) {
+      const parsed = ToolDefinitionSchema.safeParse(definition);
+      if (!parsed.success) throw new CollabError('invalid_input', 'request body failed contract validation', { details: { issues: parsed.error.issues.map(issue => ({ ...issue, path: ['definition', ...issue.path] })) } });
+      if ([tool, ...created].some(item => item.definition.name === parsed.data.name)) throw new CollabError('invariant_violation', 'a live tool already has this name', { details: { sqlstate: '23505' } });
+      const view: ToolView = { id: `00000000-0000-4000-9000-${String(++sequence).padStart(12, '0')}`, spaceId, version: 1, sourceSha256: 'b'.repeat(64),
+        executionVersion: 1, configRevision: 0, sourceChangedSinceViewerLastRun: null, definition: parsed.data, config: {}, secretBindings: [] };
+      created.push(view); return structuredClone(view);
+    },
+    async setHeader(toolId, header) {
+      if (options.headerStored === false) return { stored: false, reason: HEADER_NOT_STORED };
+      headers.set(toolId, structuredClone(header)); return { stored: true };
+    },
+    async list() { return structuredClone([tool, ...created]); },
+    async get(id) { return structuredClone(created.find(item => item.id === id) ?? tool); },
     async permissions() { return { edit: true, configure: true, setSecret: true, run: true, ...permissions }; },
     async update(view, definition) { current(view.version); tool.definition = ToolDefinitionSchema.parse(definition); bump(true); },
     async setConfig(view, name, value) { current(view.version); tool.config[name] = value; bump(); },
@@ -38,5 +64,5 @@ export function createToolFixture(initial: ToolView = fixtureTool, permissions: 
     },
     async runGet(id) { const run = runs.find(item => item.id === id); if (!run) throw new Error('Run not found'); return structuredClone(run); },
   };
-  return { port, finish(id: string, state: ToolRun['state'], exitCode: number | null) { const run = runs.find(item => item.id === id); if (run) Object.assign(run, { state, exitCode, exitedAt: '2026-10-10T12:00:03Z' }); } };
+  return { port, created, headers, finish(id: string, state: ToolRun['state'], exitCode: number | null) { const run = runs.find(item => item.id === id); if (run) Object.assign(run, { state, exitCode, exitedAt: '2026-10-10T12:00:03Z' }); } };
 }

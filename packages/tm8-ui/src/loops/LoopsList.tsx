@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { classifyFailure } from '../authoring/commands';
 import type { Seam } from '../data/seam';
 import type { LoopsClient, LoopView } from './api';
 import { absolute, relativeTime, runStatusChip } from './format';
 import { LoopCreateButton, type LoopFormSources } from './LoopForm';
+import { PREVIEW_DEBOUNCE_MS } from './SchedulePreview';
 import { entityRefLabel, useEntityRef } from './use-entity-ref';
 import './loops.css';
 
@@ -26,6 +27,7 @@ type ListState =
 
 /** Re-read so "in 3 minutes" and a fresh last run do not go stale on an open screen. */
 const REFRESH_MS = 60_000;
+const PAGE = 100;
 
 export function LoopsList({ spaceId, client, sources, onOpen }: {
   spaceId: SpaceId;
@@ -35,19 +37,41 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
 }) {
   const [state, setState] = useState<ListState>({ phase: 'loading' });
   const [words, setWords] = useState('');
+  // The filter the server is asked for: the typed words once typing pauses.
+  const [query, setQuery] = useState('');
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  // How many rows are on screen ("Show more" pages included), so a refresh re-reads them all.
+  const span = useRef(0);
+  const sequence = useRef(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(words.trim()), PREVIEW_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [words]);
 
   const load = useCallback(async () => {
     if (!client) return;
+    const mine = ++sequence.current;
     try {
-      const page = await client.list(spaceId, words.trim() ? { words: words.trim(), limit: 100 } : { limit: 100 });
-      setState({ phase: 'ready', items: page.items, nextCursor: page.nextCursor });
+      const filter = query ? { words: query } : {};
+      let page = await client.list(spaceId, { ...filter, limit: PAGE });
+      const items = [...page.items];
+      while (page.nextCursor && items.length < span.current) {
+        page = await client.list(spaceId, { ...filter, limit: PAGE, cursor: page.nextCursor });
+        items.push(...page.items);
+      }
+      if (mine !== sequence.current) return;
+      span.current = items.length;
+      setState({ phase: 'ready', items, nextCursor: page.nextCursor });
     } catch (error) {
+      if (mine !== sequence.current) return;
       setState({ phase: 'error', message: error instanceof Error ? error.message : 'The loops could not be read.' });
     }
-  }, [client, spaceId, words]);
+  }, [client, spaceId, query]);
 
   useEffect(() => {
+    span.current = 0;
     void load();
     const timer = setInterval(() => void load(), REFRESH_MS);
     return () => clearInterval(timer);
@@ -55,7 +79,8 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
 
   const more = async () => {
     if (!client || state.phase !== 'ready' || !state.nextCursor) return;
-    const page = await client.list(spaceId, { ...(words.trim() ? { words: words.trim() } : {}), limit: 100, cursor: state.nextCursor });
+    const page = await client.list(spaceId, { ...(query ? { words: query } : {}), limit: PAGE, cursor: state.nextCursor });
+    span.current = state.items.length + page.items.length;
     setState({ phase: 'ready', items: [...state.items, ...page.items], nextCursor: page.nextCursor });
   };
 
@@ -64,13 +89,17 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
     : current);
 
   const toggle = async (loop: LoopView) => {
-    if (!client) return;
+    // One request per row at a time: a second click would carry a stale version.
+    if (!client || pending.has(loop.id)) return;
     setRowError(null);
+    setPending(current => new Set(current).add(loop.id));
     try {
       replace(await (loop.state.enabled ? client.disable(loop) : client.enable(loop)));
     } catch (error) {
       setRowError({ id: loop.id, message: classifyFailure(error, 'save').cause });
       void load();
+    } finally {
+      setPending(current => { const next = new Set(current); next.delete(loop.id); return next; });
     }
   };
 
@@ -98,7 +127,7 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
       {state.phase === 'error' ? <p className="au-dialog__missing" role="alert">{state.message}</p> : null}
       {state.phase === 'ready' && state.items.length === 0 ? (
         <p className="loop-form__muted" data-testid="loops-empty">
-          {words.trim() ? 'No loop matches that name.' : 'No loops yet. A loop runs a teammate, the Dispatcher or a tool on a schedule.'}
+          {query ? 'No loop matches that name.' : 'No loops yet. A loop runs a teammate, the Dispatcher or a tool on a schedule.'}
         </p>
       ) : null}
       {state.phase === 'ready' && state.items.length > 0 ? (
@@ -120,6 +149,7 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
                 loop={loop}
                 sources={sources}
                 error={rowError?.id === loop.id ? rowError.message : null}
+                busy={pending.has(loop.id)}
                 onOpen={() => onOpen(loop.id)}
                 onToggle={() => void toggle(loop)}
               />
@@ -134,10 +164,11 @@ export function LoopsList({ spaceId, client, sources, onOpen }: {
   );
 }
 
-function LoopRow({ loop, sources, error, onOpen, onToggle }: {
+function LoopRow({ loop, sources, error, busy, onOpen, onToggle }: {
   loop: LoopView;
   sources: Partial<Pick<Seam, 'entity'>>;
   error: string | null;
+  busy: boolean;
   onOpen(): void;
   onToggle(): void;
 }) {
@@ -178,9 +209,10 @@ function LoopRow({ loop, sources, error, onOpen, onToggle }: {
           aria-checked={state.enabled}
           aria-label={`${state.enabled ? 'Disable' : 'Enable'} ${definition.title}`}
           className={`loop-switch${state.enabled ? ' loop-switch--on' : ''}`}
-          aria-disabled={capabilities.canControl ? undefined : true}
+          aria-disabled={capabilities.canControl && !busy ? undefined : true}
+          aria-busy={busy || undefined}
           title={capabilities.canControl ? undefined : 'You cannot enable or disable this loop.'}
-          onClick={() => { if (capabilities.canControl) onToggle(); }}
+          onClick={() => { if (capabilities.canControl && !busy) onToggle(); }}
         >
           <span className="loop-switch__knob" aria-hidden />
         </button>

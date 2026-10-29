@@ -50,10 +50,10 @@ describe('the loops list', () => {
     const ada = screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d001');
     await waitFor(() => expect(ada.textContent).toContain('Ada'));
     expect(ada.textContent).toContain('Every day at 09:00 Europe/London');
-    expect(ada.textContent).toMatch(/in 3 hours/);
+    expect(ada.textContent).toMatch(/in 3h/);
     expect(ada.querySelector('time')?.getAttribute('title')).toBeTruthy();
     expect(ada.textContent).toContain('Failed');
-    expect(ada.textContent).toMatch(/2 hours ago/);
+    expect(ada.textContent).toMatch(/2h ago/);
     const triage = screen.getByTestId('loop-row-019fe999-0000-7000-8000-00000000d002');
     expect(triage.textContent).toContain('Dispatcher');
     expect(triage.textContent).toContain('Disabled');
@@ -92,6 +92,32 @@ describe('the loops list', () => {
     expect(onOpen).toHaveBeenCalledWith('019fe999-0000-7000-8000-00000000d002');
     fireEvent.click(screen.getByTestId('loop-new'));
     expect(screen.getByRole('dialog', { name: 'New loop' })).toBeTruthy();
+  });
+
+  it('asks the server once the filter pauses, not on every keystroke', async () => {
+    const { client } = mount();
+    const list = vi.spyOn(client, 'list');
+    await screen.findByRole('table');
+    list.mockClear();
+    for (const text of ['n', 'ni', 'nig', 'night']) fireEvent.change(screen.getByLabelText('Filter loops'), { target: { value: text } });
+    expect(list).not.toHaveBeenCalled();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    expect(list.mock.calls[0]![1]).toMatchObject({ words: 'night' });
+  });
+
+  it('a second click while the switch is busy sends nothing', async () => {
+    const { client } = mount();
+    let finish: () => void = () => undefined;
+    const disable = vi.spyOn(client, 'disable').mockImplementation(loop => new Promise(resolve => {
+      finish = () => resolve({ ...(loop as never), state: { ...fixtureLoopView('x', SPACE).state, enabled: false } } as never);
+    }));
+    const toggle = await screen.findByRole('switch', { name: 'Disable Ada sweep' });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-busy')).toBe('true'));
+    fireEvent.click(toggle);
+    expect(disable).toHaveBeenCalledTimes(1);
+    finish();
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Enable Ada sweep' }).getAttribute('aria-busy')).toBeNull());
   });
 
   it('says an empty space has no loops yet', async () => {

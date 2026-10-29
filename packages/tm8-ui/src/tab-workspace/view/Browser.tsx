@@ -26,6 +26,7 @@ import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { requestLinkFocus } from '../../panels/list/linkFocus';
 import { projectRecordPort } from '../../projects/project-record';
+import { InstallStarters, installSummary } from '../../tools/InstallStarters';
 import { useProjectRowNote } from '../../projects/ProjectRowNote';
 import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
@@ -402,7 +403,7 @@ function workingDirOf(detail: string): string {
 }
 
 function EntityBrowser() {
-  const { dispatch, gate, store } = useWorkspace();
+  const { dispatch, gate, store, runtime } = useWorkspace();
   const { data } = gate;
   const kind = useWorkspaceState((s) => s.browsers.main.kind);
   const kindState = useWorkspaceState((s) => s.browsers.main.perKind[kind]) ?? EMPTY_BROWSER_KIND_STATE;
@@ -553,10 +554,25 @@ function EntityBrowser() {
         <ListState
           text={EMPTY_TEXT[kind] ?? `No ${nounPlural} yet`}
           {...(disabledReason === null ? { action: { label: `New ${noun}`, run: createDraft } } : {})}
-        />
+        >
+          {/* A kind made from a definition ships starters (Tools v2 §3.1): the
+              empty list offers them, and a finished install reloads the kind.
+              The reload unmounts the installer's report, so its summary
+              (refusals included) goes to a toast first. */}
+          {getKind(kind).createForm === 'tool-definition' && data.seam.commands.tools ? (
+            <InstallStarters
+              spaceId={data.spaceId}
+              port={data.seam.commands.tools}
+              onInstalled={(results) => {
+                runtime.hooks.toast({ text: installSummary(results) });
+                retry();
+              }}
+            />
+          ) : null}
+        </ListState>
       );
     },
-    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural],
+    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural, data, runtime],
   );
 
   const verbs = useRowVerbs(kind);
@@ -879,7 +895,7 @@ const EMPTY_TEXT: Partial<Record<string, string>> = {
     'No projects yet. A project is a folder on the node: its chats, sessions, worktrees and terminals start there.',
 };
 
-function ListState({ text, action }: { text: string; action?: { label: string; run: () => void } }) {
+function ListState({ text, action, children }: { text: string; action?: { label: string; run: () => void }; children?: ReactNode }) {
   return (
     <div className="tws-browser-state" role="status">
       <p className="tws-browser-state__text">{text}</p>
@@ -888,6 +904,7 @@ function ListState({ text, action }: { text: string; action?: { label: string; r
           {action.label}
         </button>
       ) : null}
+      {children}
     </div>
   );
 }

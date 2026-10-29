@@ -157,6 +157,7 @@ export function LoopHeader({
       ) : null}
 
       <Armer view={view} now={now} onOpenEntity={onOpenEntity} />
+      <RunsSummary view={view} />
 
       <div className="loop-page__actions" role="group" aria-label="Loop controls">
         {control(can.canRun, NO_RUN, 'Run now', (
@@ -227,7 +228,7 @@ export function LoopHeader({
 function StatusPill({ status, zone, now }: { status: ReturnType<typeof loopStatus>; zone: string; now: number }) {
   if (status.kind === 'disabled') return <Pill tone="idle">Disabled</Pill>;
   if (status.kind === 'paused') {
-    return <Pill tone="wait" title={absTime(status.until)}>{`Paused until ${zonedInstant(status.until, zone, now)}`}</Pill>;
+    return <Pill tone="wait" title={absTime(status.until)}>{`Paused until ${zonedInstant(status.until, zone)}`}</Pill>;
   }
   if (status.kind === 'waiting') return <Pill tone="wait" dot="pulse">Waiting on previous run</Pill>;
   return <Pill tone="run" dot="solid">Enabled</Pill>;
@@ -241,7 +242,7 @@ function NextRun({ view, zone, now }: { view: LoopView; zone: string; now: numbe
   else if (!state.nextRunAt) text = 'No next run scheduled';
   else {
     const rel = relTime(state.nextRunAt, now);
-    const abs = zonedInstant(state.nextRunAt, zone, now);
+    const abs = zonedInstant(state.nextRunAt, zone);
     const overdue = Date.parse(state.nextRunAt) <= now;
     text = overdue ? `Next run due now (${abs})` : `Next run ${rel} (${abs})`;
   }
@@ -255,7 +256,12 @@ function Armer({ view, now, onOpenEntity }: { view: LoopView; now: number; onOpe
   return (
     <p className="loop-page__line" data-testid="loop-armer">
       {armedBy ? (
-        <>Armed by <ActorRef actor={armedBy} onOpenSession={onOpenEntity} />{armedAt ? <span title={absTime(armedAt)}>{` ${relTime(armedAt, now)}`}</span> : null}</>
+        <>
+          Armed by <ActorRef actor={armedBy} onOpenSession={onOpenEntity} />
+          {armedAt ? <span title={absTime(armedAt)}>{` ${relTime(armedAt, now)}`}</span> : null}
+          {/* §7: the armer left, so the next firing runs as the fallback — say so, never hide it. */}
+          {actingAs?.via !== 'armer' ? <span className="loop-page__warn"> (no longer a member)</span> : null}
+        </>
       ) : (
         <>Not armed by a human</>
       )}
@@ -264,6 +270,17 @@ function Armer({ view, now, onOpenEntity }: { view: LoopView; now: number; onOpe
       ) : acting && !sameActor ? (
         <> · running as <ActorRef actor={acting} onOpenSession={onOpenEntity} />{actingAs.via === 'fallback' ? ' (fallback)' : ''}</>
       ) : null}
+    </p>
+  );
+}
+
+/** The view's own health tally: how much it has fired, and how much of the last day went wrong. */
+function RunsSummary({ view }: { view: LoopView }) {
+  const { total, last24h } = view.runs;
+  if (total === 0) return <p className="loop-page__hint" data-testid="loop-runs-summary">Never fired yet.</p>;
+  return (
+    <p className="loop-page__hint" data-testid="loop-runs-summary">
+      {`${total} ${total === 1 ? 'run' : 'runs'} recorded · last 24 h: ${last24h.fired} fired, ${last24h.failed} failed, ${last24h.skipped} skipped`}
     </p>
   );
 }

@@ -131,7 +131,7 @@ export function LoopRuns({
           {runs.map((run) => {
             const status = RUN_STATUS[run.status] ?? { label: run.status, tone: 'idle' as const };
             const running = run.status === 'running';
-            const note = rowError?.runId === run.id ? rowError.text : runNote(run);
+            const note = rowError && rowError.runId === run.id ? rowError.text : runNote(run);
             return (
               <tr key={run.id} data-testid="loop-run-row" data-status={run.status}>
                 <td title={absTime(run.firedAt)}>{relTime(run.firedAt, now)}</td>

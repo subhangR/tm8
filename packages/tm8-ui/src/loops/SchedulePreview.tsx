@@ -9,7 +9,8 @@ export const PREVIEW_DEBOUNCE_MS = 300;
 export type PreviewState =
   | { phase: 'idle' }
   | { phase: 'loading' }
-  | { phase: 'ready'; preview: LoopSchedulePreview }
+  /** `stale`: a newer expression is debouncing or loading; this answer is for the previous one. */
+  | { phase: 'ready'; preview: LoopSchedulePreview; stale: boolean }
   | { phase: 'error'; message: string };
 
 /**
@@ -26,10 +27,10 @@ export function useSchedulePreview(
   useEffect(() => {
     if (!client || schedule.trim() === '') { setState({ phase: 'idle' }); return; }
     let live = true;
-    setState(previous => (previous.phase === 'ready' ? previous : { phase: 'loading' }));
+    setState(previous => (previous.phase === 'ready' ? { ...previous, stale: true } : { phase: 'loading' }));
     const timer = setTimeout(() => {
       client.schedulePreview(spaceId, schedule, timezone, 5).then(
-        preview => { if (live) setState({ phase: 'ready', preview }); },
+        preview => { if (live) setState({ phase: 'ready', preview, stale: false }); },
         (error: unknown) => {
           if (live) setState({ phase: 'error', message: error instanceof Error ? error.message : 'The preview was refused.' });
         },
@@ -42,9 +43,10 @@ export function useSchedulePreview(
 
 export function SchedulePreviewPanel({ state, timezone }: { state: PreviewState; timezone: string }) {
   return (
-    <div className="loop-form__preview" data-testid="loop-schedule-preview" aria-live="polite">
+    <div className={`loop-form__preview${state.phase === 'ready' && state.stale ? ' loop-form__preview--stale' : ''}`}
+      data-testid="loop-schedule-preview" aria-live="polite" aria-busy={state.phase === 'loading' || (state.phase === 'ready' && state.stale)}>
       {state.phase === 'idle' ? <p className="loop-form__muted">Pick a schedule to see when it runs.</p> : null}
-      {state.phase === 'loading' ? <p className="loop-form__muted">Checking the schedule…</p> : null}
+      {state.phase === 'loading' || (state.phase === 'ready' && state.stale) ? <p className="loop-form__muted">Checking the schedule…</p> : null}
       {state.phase === 'error' ? <p className="au-dialog__missing" role="alert">{state.message}</p> : null}
       {state.phase === 'ready' && !state.preview.valid ? (
         <p className="au-dialog__missing" role="alert" data-testid="loop-schedule-problem">

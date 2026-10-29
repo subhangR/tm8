@@ -113,7 +113,7 @@ function Schedule({ view }: SectionProps) {
       ) : (
         <ol className="loop-page__next" aria-label="Next runs">
           {preview.next.slice(0, 5).map((at) => (
-            <li key={at} title={at}>{zonedInstant(at, zone, now)} <span className="loop-page__hint">({relTime(at, now)})</span></li>
+            <li key={at} title={at}>{zonedInstant(at, zone)} <span className="loop-page__hint">({relTime(at, now)})</span></li>
           ))}
         </ol>
       )}

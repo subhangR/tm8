@@ -30,7 +30,7 @@
    ── THIS IS THE SHARED `.au-dialog` VOCABULARY, NOT ONE COMPONENT ─────────
 
    Three components wear these classes: `EditEntityDialog` (every kind's
-   `editFields`), `LoopCreateControl` (the `scheduled-work` CREATE form) and
+   `editFields`), `LoopForm` (the `scheduled-work` create and edit form) and
    `MemoryComposer`. Styling the vocabulary rather than the component is what
    makes the ruling land on the create form as well as the edit form without
    this lane touching `loops/`, which is not its file. The alternative — a
