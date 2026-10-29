@@ -242,11 +242,30 @@ describe('loop page controls', () => {
     await waitFor(() => expect(props.onOpenEntity).toHaveBeenCalledWith('sess-live'));
   });
 
-  it('a lastError with no firing yet reads "Not scheduled", not "Last firing failed"', () => {
-    header(view({ state: { lastError: 'schedule never matches within a year', lastRunAt: null } }));
+  it('a parked loop (no next run, a reason) reads "Not scheduled", even if it fired before; a scheduled one keeps "Last firing failed"', () => {
+    header(view({ state: { lastError: 'schedule never matches within a year', nextRunAt: null, lastRunAt: '2026-10-27T09:00:00.000Z' } }));
     const banner = screen.getByTestId('loop-last-error');
     expect(banner.textContent).toContain('Not scheduled: schedule never matches within a year');
     expect(banner.textContent).not.toContain('Last firing failed');
+    cleanup();
+    header(view({ state: { lastError: 'spawn refused: session cap reached', lastRunAt: null } }));
+    expect(screen.getByTestId('loop-last-error').textContent).toContain('Last firing failed: spawn refused');
+  });
+
+  it('while a forced run may have started, a plain Run now re-sends THAT intent and reads it back (PR5b nit a)', async () => {
+    const runNow = vi.fn()
+      .mockRejectedValueOnce(new CollabError('conflict', 'live', { details: { reason: 'loop_run_overlap', runId: 'run-live' } }))
+      .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer'))
+      .mockResolvedValueOnce({ run: run({ id: 'run-forced', status: 'running' }) });
+    header(view(), port({ runNow, runsGet: vi.fn(async () => run({ id: 'run-live', status: 'running' })) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    fireEvent.click(within(await screen.findByTestId('loop-overlap')).getByRole('button', { name: 'Run anyway (starts a second run)' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('may have started');
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await screen.findByTestId('loop-run-started');
+    const [, forced, again] = runNow.mock.calls;
+    expect(again![1]).toBe(true);
+    expect((again![2] as { clientMutationId: string }).clientMutationId).toBe((forced![2] as { clientMutationId: string }).clientMutationId);
   });
 
   it('Run now holds ONE mutation id per intent: a retry after a timeout replays it, a new press after success does not', async () => {
@@ -611,6 +630,26 @@ describe('the runs table follows the loop', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'page.css'), 'utf8');
     expect(css).toContain(".cv2-root[data-shell='mobile'] .loop-runs thead { display: none; }");
     expect(css).toMatch(/\.cv2-root\[data-shell='mobile'\] \.loop-runs tr \{\s*display: flex; flex-wrap: wrap;/);
+  });
+
+  it('a running row that slid past page one is read on its own, settles, and the poll stops (PR5b #10)', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'skip-1', status: 'skipped' })], nextCursor: 'c1' })
+      .mockResolvedValueOnce({ items: [run({ id: 'long', status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
+      .mockResolvedValue({ items: [run({ id: 'skip-2', status: 'skipped' }), run({ id: 'skip-1', status: 'skipped' })], nextCursor: 'c1' });
+    const runsGet = vi.fn(async () => run({ id: 'long', status: 'completed' }));
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList, runsGet })} canControl epoch={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(2));
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    await waitFor(() => expect(runsGet).toHaveBeenCalledWith('long'));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')
+      .find((row) => row.getAttribute('data-run-id') === 'long')!.getAttribute('data-status')).toBe('completed'));
+    const calls = runsList.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS * 2); });
+    expect(runsList).toHaveBeenCalledTimes(calls);
   });
 
   it('a failed background refresh keeps the rows and says so beside them', async () => {
