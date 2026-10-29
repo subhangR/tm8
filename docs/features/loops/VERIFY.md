@@ -1,6 +1,6 @@
 # Verifying loops locally
 
-How to check, on your own machine or a dev slot, that loops do what [LOOPS.md](LOOPS.md) says and what [DESIGN.md](DESIGN.md) promises. Every command here was run for loops PR6. On the shared tm8 host, wrap each heavy step (a pg suite, a full vitest, a build or a browser run) in `flock /tmp/tm8-heavy.lock …`.
+How to check, on your own machine or a dev slot, that loops do what [LOOPS.md](LOOPS.md) says and what [DESIGN.md](DESIGN.md) promises. VERIFY_RUN_NOTE On the shared tm8 host, wrap each heavy step (a pg suite, a full vitest, a build or a browser run) in `flock /tmp/tm8-heavy.lock …`.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ export TM8_W4_ADMIN_DATABASE_URL=$TM8_W1_ADMIN_DATABASE_URL TM8_MIGRATION_DATABA
 `packages/server/test/loops/loops-e2e.pg.test.ts` boots the production server and its scheduler on a throwaway database, with real PTYs (the echo agent, so no model or key is needed). It then drives the built CLI as a subprocess, exactly as a terminal would:
 
 1. `tm8 loop preview` in Asia/Kolkata answers weekdays at 03:30 UTC (09:00 IST) and stores nothing, and an invalid expression exits 2.
-2. A loop created with `--schedule '* * * * *'` **fires on the node's own 60 s tick**, unprompted. The run has a task and a session, both point back at the loop through `triggered_by`, and the next run is counted from the firing.
+2. A loop created with `--schedule '* * * * *'` **fires on the node's own 60 s tick**, unprompted. The run has a task and a session, both point back at the loop through `triggered_by`, and the next run is after the firing. Skip-never-backfill (counting from the firing, not from a missed deadline) is pinned by the executor's unit tests in `test/scheduler/loops-job.test.ts`.
 3. Run now refuses while that run is live (exit 6, `loop_run_overlap`), fires at once with `--force` and answers the session. `tm8 loop stop` settles it, and stopping it again is answered as it is.
 4. A loop is walked through preview, create, enable, run-now, runs, stop, pause, resume, edit, a stale-version edit (exit 6), disable, show and list. Set `LOOPS_E2E_TRANSCRIPT=<file>` and the run writes what each command printed. That file is the transcript in [LOOPS.md](LOOPS.md).
 
@@ -46,7 +46,7 @@ The suite takes about two minutes, because it waits for a real tick.
 3. Create. The row shows the schedule words, the teammate and the Enabled switch.
 4. The loop's page opens. Run now shows "Run started", and the run appears in RUNS as running.
 
-It saves two screenshots under its output directory. `src/loops/loop-create-flow.test.tsx` runs the same flow in jsdom through the real `createLoopsClient`, and holds the create body to the contract's strict `LoopCreateInputSchema`.
+It saves two screenshots under its output directory. **It cannot run on the shared tm8 host:** no Playwright browser there has its system libraries. Chromium's headless shell (1208, the revision @playwright/test 1.58.2 uses) fails with `error while loading shared libraries: libatk-1.0.so.0: cannot open shared object file`. The 1234, 1243 and 1248 builds each lack nine libraries, and Firefox lacks X11, cairo and atk. Run it on a machine with the browser libraries (`bunx playwright install-deps chromium`). `src/loops/loop-create-flow.test.tsx` runs the same flow in jsdom through the real `createLoopsClient`, and holds the create body to the contract's strict `LoopCreateInputSchema`.
 
 ## By hand, on a dev slot
 

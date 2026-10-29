@@ -394,7 +394,7 @@ const MESSAGE_GUIDES = [
 const LOOP_READ_GUIDES = [
   guide('loops.list', 'List a Space\'s loops (recurring scheduled work): each row has the definition, the server\'s '
     + 'schedule summary and the state (enabled, pausedUntil, nextRunAt, lastRunAt, lastError). Narrow with query '
-    + 'enabled=true|false, action=spawn|dispatch|tool, or words (title words).', {
+    + 'enabled=true|false, action=spawn|dispatch|tool, or words (matched as text in the title and the prompt).', {
     params: { spaceId: '<space-id>' }, query: { limit: '50' },
   }),
   guide('loops.get', 'Read one loop: its definition (schedule, timezone, action, teammate or tool, prompt, spawn config, '
@@ -421,7 +421,9 @@ const LOOP_ACT_GUIDES = [
     + 'session; dispatch: the Dispatcher picks who; tool: run toolId with toolInputs, as the persona teamMemberId when '
     + 'the tool reaches tm8. schedule is "every <n>m|h|d" or a five-field cron read in timezone (IANA, default UTC); '
     + 'the server computes every next run. prompt is what each firing is told, subjectId what it is about; concurrency '
-    + 'skip|queue, maxRuntimeSeconds 60-86400, retry {attempts 0-5, delaySeconds 30-3600}. Preview the schedule first.', {
+    + 'skip|queue, maxRuntimeSeconds 60-86400, retry {attempts 0-5, delaySeconds 30-3600} (retries cover a refused '
+    + 'launch only). Preview the schedule first. Until loops PR3 ships, a tool loop is refused at every firing and a '
+    + 'spawn carries only config.model, agentTool and accessMode.', {
     params: { spaceId: '<space-id>' },
     body: {
       definition: {
@@ -439,7 +441,8 @@ const LOOP_ACT_GUIDES = [
   guide('loops.enable', 'Enable a loop under its version; the server counts the next run from now.', {
     params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
   }),
-  guide('loops.disable', 'Disable a loop under its version: nothing fires until it is enabled again; the definition is kept.', {
+  guide('loops.disable', 'Disable a loop under its version: the schedule fires nothing until it is enabled again (Run now '
+    + 'still can), and the definition is kept. A run already live keeps going until loops.runs.stop ends it.', {
     params: { loopId: '<loop-id>' }, body: { expectedVersion: 1 },
   }),
   guide('loops.pause', 'Hold a loop\'s firings until an instant (ISO-8601 with an offset, at most 365 days ahead); a '

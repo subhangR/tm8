@@ -219,8 +219,10 @@ export const LOOP_HELP: KindHelpModule = {
             as the teammate you name under <em>Runs as</em>. A teammate&rsquo;s task is derived from what the loop is
             about, or from the loop itself, and an open derived task is reused, so successive firings gather on one
             task until someone closes it. A firing acts as the loop&rsquo;s armer, the human who last created, enabled
-            or edited it, or as the fallback the page names once that person has left; an agent&rsquo;s edit disarms
-            it.
+            or edited it. Once that person has left the space, or an agent&rsquo;s edit has disarmed the loop, it acts
+            as the space&rsquo;s owner, and the page says so; with no owner either, it is parked as{' '}
+            <em>needs arming</em> until someone can run it. (Until loops PR3 ships, a tool loop is refused when it
+            fires, and a teammate&rsquo;s launch carries only its model, agent tool and access mode.)
           </p>
         ),
       },
@@ -244,12 +246,13 @@ export const LOOP_HELP: KindHelpModule = {
         title: 'Broken, never retired',
         body: (
           <p>
-            A launch that fails is written to the run and to the loop&rsquo;s last error, and the loop stays enabled;
-            with retries set, it tries again after the retry delay, up to that many times. A run that outlives its max
-            runtime is stopped and recorded as timed out. A schedule that never matches (the 30th of February) parks the
-            loop with that reason instead of failing quietly. The server never switches off a schedule a person set up;
-            fixing it is that person&rsquo;s call, which is why the page prints the last error beside the controls.{' '}
-            <em>Enabled</em> on its own is not a health claim.
+            A launch that fails (the session could not start) is written to the run and to the loop&rsquo;s last
+            error, and the loop stays enabled; with retries set, the launch is tried again after the retry delay, up to
+            that many times. A run that starts and then fails, or outlives its max runtime and is stopped as timed out,
+            shows on its own row in RUNS; it is not retried and leaves no last error. A schedule that never matches (the
+            30th of February) parks the loop with that reason instead of failing quietly. The server never switches off
+            a schedule a person set up; fixing it is that person&rsquo;s call, which is why the page prints the last
+            error beside the controls. <em>Enabled</em> on its own is not a health claim: read RUNS.
           </p>
         ),
       },
@@ -261,9 +264,9 @@ export const LOOP_HELP: KindHelpModule = {
       { name: 'Skipped', note: 'The previous run was still live and the loop is set to skip. Recorded as a skipped run.' },
       { name: 'Waiting on previous run', note: 'Set to queue: it fires as soon as the live run settles.' },
       { name: 'Paused', note: 'Holding until an instant. A deadline missed meanwhile fires once when the pause ends.' },
-      { name: 'Failed', note: 'The launch was refused or the run failed. Last error says which; retried if set; still enabled.' },
-      { name: 'Parked', note: 'No next run: the schedule never matches, or there is no one it can run as. The reason is the last error.' },
-      { name: 'Disabled', note: 'Kept whole and never fired. Enable counts the next run from now.' },
+      { name: 'Failed', note: 'A launch refused: the last error says why, it is retried if set, and the loop stays enabled. A run that failed after it started shows on its row only.' },
+      { name: 'Parked', note: 'The schedule never matches (no next run), or there is no one it can run as (needs arming: it fires once someone can). The reason is the last error.' },
+      { name: 'Disabled', note: 'Kept whole, deadline preserved; the schedule never fires it (Run now still can). Enable counts the next run from now.' },
       { name: 'Deleted', note: 'Soft-deleted and never due again. Restore brings the appointment back.' },
     ],
   },
