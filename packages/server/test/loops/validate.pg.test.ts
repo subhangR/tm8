@@ -221,9 +221,10 @@ describe('config references must be live entities of the right kind in the space
     // An action change judges every reference, since what the loop launches then reads them all.
     const viaLoops = refused(await patch(view.id, version, { action: 'dispatch', teamMemberId: null }), 'definition.config.memoryIds');
     expect(viaLoops.details.ids).toEqual([doomedMemory]);
-    const viaEntities = await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: version, content: { action: 'dispatch', teamMemberId: null } });
+    // The entities.* arm takes no content.action: clearing a spawn loop's runner is its action change (091).
+    const viaEntities = await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: version, content: { teamMemberId: null } });
     expect(viaEntities.status, JSON.stringify(viaEntities.json)).toBe(400);
-    expect(viaEntities.json.error.details).toMatchObject({ path: 'definition.config.memoryIds', ids: [doomedMemory] });
+    expect(viaEntities.json.error.details, JSON.stringify(viaEntities.json)).toMatchObject({ path: 'definition.config.memoryIds', ids: [doomedMemory] });
     expect(await stored(view.id)).toMatchObject({ version, config: { memoryIds: [doomedMemory] } });
   });
 
