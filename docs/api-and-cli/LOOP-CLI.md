@@ -50,7 +50,8 @@ The server requires one when the tool reaches tm8 (`tm8Access` read or write) an
 refuses the write at `definition.teamMemberId` without it. On `edit` of a tool
 loop, `--teammate` alone changes the persona and keeps the action. `--teammate`
 with `--clear-tool` turns the loop into a spawn loop. `--dispatch` takes neither
-flag.
+flag. It clears the loop's teammate and tool, because the Dispatcher picks the
+runner and the server refuses a dispatch loop that names one.
 
 `edit` sends only the fields its flags name, and the server keeps the rest.
 Header flags (`--when-to-use`, `--summary`, repeatable `--keyword`) are

@@ -149,6 +149,8 @@ describe('tm8 loop edit and controls', () => {
     expect(await run(['loop', 'edit', LOOP, '--teammate', MEMBER, '--clear-tool', '--expect-version', '4'])).toBe(0);
     expect(last().body.definition).toEqual({ action: 'spawn', teamMemberId: MEMBER, toolId: null });
     expect(await run(['loop', 'edit', LOOP, '--model', 'm', '--expect-version', '4'])).toBe(2);
+    expect(await run(['loop', 'edit', LOOP, '--dispatch', '--expect-version', '4'])).toBe(0);
+    expect(last().body.definition).toEqual({ action: 'dispatch', teamMemberId: null, toolId: null });
     expect(await run(['loop', 'show', LOOP])).toBe(0);
     expect(stdout).toContain(`action: tool ${TOOL} · concurrency`);
   });

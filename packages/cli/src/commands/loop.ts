@@ -141,7 +141,8 @@ async function definitionFlags(cmd: CommandContext, current: LoopView | null): P
   if (o.has('tool')) { def.action = 'tool'; def.toolId = await resolveTool(cmd, o.value('tool')!); }
   else if (o.has('teammate') && !keepsTool) def.action = 'spawn';
   if (o.has('teammate')) def.teamMemberId = await resolveTeammate(cmd, o.value('teammate')!);
-  if (o.bool('dispatch')) def.action = 'dispatch';
+  // The Dispatcher picks the runner: a dispatch loop names no teammate and no tool (the door refuses one).
+  if (o.bool('dispatch')) Object.assign(def, { action: 'dispatch', teamMemberId: null, toolId: null });
   const action = def.action ?? current?.definition.action;
   if (o.has('input')) {
     if (action !== undefined && action !== 'tool') throw new CliError('--input applies to --tool loops only', EXIT_USAGE);
