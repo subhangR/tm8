@@ -582,6 +582,10 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   'tools.create', 'tools.update', 'tools.get', 'tools.list', 'tools.help',
   'tools.config.set', 'tools.config.unset', 'tools.secrets.bind', 'tools.secrets.unbind',
   'tools.run', 'tools.runs.list', 'tools.runs.get', 'entities.markSeen', 'chat.setCredentials',
+  // Loops PR1 (01a182d5): every loops.* row is registered; runNow/runs.* answer 501 until PR2.
+  'loops.create', 'loops.update', 'loops.get', 'loops.list', 'loops.enable', 'loops.disable',
+  'loops.pause', 'loops.resume', 'loops.runNow', 'loops.runs.list', 'loops.runs.get',
+  'loops.runs.stop', 'loops.schedule.preview',
   // Spec D1 (301): `tm8 task release` joins the entities-commands module.
   'entities.commands.release',
   // Chat turn management: the composer's Stop finally has an operation.
@@ -738,7 +742,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // The facade baseline is 263 including tools, read markers and credential selection. MCP handlers add only when the
     // runtime bridge is mounted in this fixture.
     // Spec D1 (301): +1 entities.commands.release. MEASURED.
-    expect(registry.size).toBe(267 /* 357's three token ops are UNCHANGED here on purpose: they are in MCP_NET_NEW_OPERATIONS, so they arrive through the `mountedMcpOperations` term and adding them to the base as well would double-count them. MEASURED: 267 + 13 = registry.size 280. */ /* +1 chat.setMcpSelections (G4, 345): a chat registration, so it is not in the mcp tranche term. MEASURED. */ /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ + mountedMcpOperations); // -5 the request noun (325). MEASURED.
+    expect(registry.size).toBe(280 /* +13 loops.* (loops PR1, 01a182d5): registered by registerLoopHandlers, outside the mcp tranche term. MEASURED. */ /* 357's three token ops are UNCHANGED here on purpose: they are in MCP_NET_NEW_OPERATIONS, so they arrive through the `mountedMcpOperations` term and adding them to the base as well would double-count them. MEASURED: 267 + 13 = registry.size 280. */ /* +1 chat.setMcpSelections (G4, 345): a chat registration, so it is not in the mcp tranche term. MEASURED. */ /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ + mountedMcpOperations); // -5 the request noun (325). MEASURED.
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
   });

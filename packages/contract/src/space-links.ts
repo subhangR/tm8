@@ -376,6 +376,12 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'tools.run', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'tools.runs.', kinds: 'all', reason: 'session_body' },
+  // Loops (01a182d5): a loop is a standing grant to start processes in B on a
+  // timer. A link caller's write leaves no human armer (343), so the firing
+  // would run as B's fallback owner; every loops command is refused, runs are
+  // session bodies, and get/list/schedule.preview stay open.
+  { prefix: 'loops.runs.', kinds: 'all', reason: 'session_body' },
+  { prefix: 'loops.', kinds: 'command', reason: 'process_start' },
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setCredentials', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },

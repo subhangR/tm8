@@ -1,0 +1,5 @@
+{
+  "description": "Summarise this space's event feed since an event sequence: event counts, task updates and merged pull requests.",
+  "whenToUse": "Open when you need a digest of what happened in this space since an event sequence, for a status report or to catch up",
+  "summary": "Python with tm8 read access: walks the space event feed with its run-scoped token and prints event counts, task updates and merged PR events as markdown or JSON"
+}

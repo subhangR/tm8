@@ -57,6 +57,7 @@ describe('Workspace bindings', () => {
     ['n h', 'work.create', 'channel'],
     ['n k', 'work.create', 'skill'],
     ['n m', 'work.create', 'team_member'],
+    ['n u', 'work.create', 'tool'],
     ['n n', 'work.newTab', undefined],
     ['l l', 'work.browser.focus', undefined],
     ['l t', 'work.browser.focus', 'task'],
