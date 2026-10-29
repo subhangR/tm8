@@ -188,7 +188,7 @@ describe('loop page controls', () => {
     const props = header(view(), p);
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
     const started = await screen.findByTestId('loop-run-started');
-    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID, false);
+    expect(p.runNow).toHaveBeenCalledWith(LOOP_ID, false, { clientMutationId: expect.any(String) });
     expect(within(started).getByText('Running')).toBeTruthy();
     fireEvent.click(within(started).getByRole('button', { name: 'Open session' }));
     expect(props.onOpenEntity).toHaveBeenCalledWith(SESSION_ID);
@@ -205,7 +205,25 @@ describe('loop page controls', () => {
     expect(overlap.textContent).toContain('still live');
     fireEvent.click(within(overlap).getByRole('button', { name: 'Run anyway' }));
     await screen.findByTestId('loop-run-started');
-    expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true);
+    expect(runNow).toHaveBeenLastCalledWith(LOOP_ID, true, { clientMutationId: expect.any(String) });
+  });
+
+  it('Run now holds ONE mutation id per intent: a retry after a timeout replays it, a new press after success does not', async () => {
+    const runNow = vi.fn()
+      .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer within 180000ms'))
+      .mockResolvedValueOnce({ run: run({ id: 'run-new', status: 'running' }) })
+      .mockResolvedValueOnce({ run: run({ id: 'run-next', status: 'running' }) });
+    const props = header(view(), port({ runNow }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('may have started');
+    expect(props.onRunsChanged).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await screen.findByTestId('loop-run-started');
+    const [first, second] = runNow.mock.calls.map(call => (call[2] as { clientMutationId: string }).clientMutationId);
+    expect(second).toBe(first);
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(runNow).toHaveBeenCalledTimes(3));
+    expect((runNow.mock.calls[2]![2] as { clientMutationId: string }).clientMutationId).not.toBe(first);
   });
 
   it('Run now refusal (501 until PR2) is named, not swallowed', async () => {

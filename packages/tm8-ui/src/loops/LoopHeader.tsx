@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { isCollabError, type CommandContext, type CommandResult, type EntityId } from '@tm8/contract';
 import { nextMutationId } from '../authoring/commands';
 import { Pill } from '../kit/Pill';
@@ -56,6 +56,11 @@ const NO_EDIT: UnavailableReason = { cause: 'You cannot edit this loop', remedy:
 const NO_DELETE: UnavailableReason = { cause: 'You cannot delete this loop', remedy: 'the server reports canDelete: false for you' };
 const GONE: UnavailableReason = { cause: 'This loop was deleted', remedy: 'restore it to act on it again' };
 
+/** A failure after which the request may still have done its work: the node did not answer, or said retry. */
+function mayHaveStarted(failure: unknown): boolean {
+  return isCollabError(failure) && (failure.code === 'upstream_unavailable' || failure.retryable);
+}
+
 export function LoopHeader({
   view, port, onView, onReload, onRunsChanged, onOpenEntity, deleteEntity, onDeleted, renderEditor,
 }: LoopHeaderProps) {
@@ -67,6 +72,11 @@ export function LoopHeader({
   const [pausing, setPausing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ONE clientMutationId per Run now intent. After a failure that may have started the run (a timeout, a
+  // lost answer, the server's "retry to record it"), pressing Run now again re-sends the SAME id, which the
+  // server replays as the run it started; a new id would be refused as an overlap. Success or a definite
+  // refusal ends the intent; Run anyway (force) is an intent of its own.
+  const runIntent = useRef<{ loopId: string; force: boolean; clientMutationId: string } | null>(null);
   const { state, capabilities: can, definition } = view;
   const zone = definition.timezone || 'UTC';
   const status = loopStatus(view, now);
@@ -99,13 +109,27 @@ export function LoopHeader({
 
   const runNow = async (force: boolean) => {
     if (busy) return;
+    const held = runIntent.current;
+    const intent = held && held.loopId === view.id && held.force === force
+      ? held : { loopId: view.id, force, clientMutationId: nextMutationId() };
+    runIntent.current = intent;
     setBusy('run'); setNotice({ kind: 'none' });
     try {
-      const { run } = await port.runNow(view.id, force);
+      const { run } = await port.runNow(view.id, force, { clientMutationId: intent.clientMutationId });
+      runIntent.current = null;
       setNotice({ kind: 'run', run });
       onRunsChanged();
       void onReload();
     } catch (failure) {
+      if (mayHaveStarted(failure)) {
+        // Keep the intent: the run may be launching. The table is re-read so a run that did start shows.
+        setNotice({ kind: 'error', text: 'Run now did not answer, so the run may have started. The runs table is refreshed; '
+          + 'press Run now again to read it back (it will not start a second run).' });
+        onRunsChanged();
+        void onReload();
+        return;
+      }
+      runIntent.current = null;
       if (isOverlap(failure)) {
         setNotice({
           kind: 'overlap',
