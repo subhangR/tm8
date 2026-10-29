@@ -5,9 +5,9 @@
  * The doors (384) keep the loop consistent with itself — action vs runner,
  * same-space teammate and tool. What they cannot judge is whether the things
  * the definition points at are what the firing will need: a project that is
- * not a project, a memory that is not a memory, an interaction profile from
- * another space, a stored tool input that no longer fits the tool's current
- * definition. Left unchecked, each of those surfaces only at fire time as a
+ * not a project, or one no loop may launch in (untrusted), a memory that is not
+ * a memory, an interaction profile from another space, a stored tool input that
+ * no longer fits the tool's current definition. Left unchecked, each of those surfaces only at fire time as a
  * `last_error` — hours after the human who typed it has gone. This module makes
  * them an `invalid_input` at `loops.create`/`loops.update`, naming the field.
  *
@@ -101,14 +101,26 @@ async function assertReferencedEntities(q: Querier, spaceId: string, refs: reado
  * entity or its folder id, zero rows for anything the caller may not launch
  * in). The same resolver at write time means a project the firing could not
  * open is refused when it is typed, with no existence oracle for other spaces.
+ *
+ * So is an untrusted project. `execution_spawn` (348) refuses one unless the
+ * spawn confirms it, and that consent is per spawn (S12): a human confirms each
+ * launch, while a loop's firing has no one to ask (`spawnRequestForLoop` never
+ * sets `confirmUntrusted`). Accepting it here would only move the refusal to
+ * every firing, as the run's error and the loop's `last_error`.
  */
 async function assertProjectRef(q: Querier, spaceId: string, projectId: string): Promise<void> {
   const path = 'definition.config.projectId';
   if (!UUID_RE.test(projectId)) throw refused(path, `config.projectId must be a project id: ${projectId}`, { ids: [projectId] });
-  const rows = await q.query<{ folder_id: string }>(
-    'select folder_id from public.resolve_project_ref($1::uuid, $2::uuid)', [projectId, spaceId],
+  const rows = await q.query<{ folder_id: string; trust: string | null }>(
+    'select folder_id, trust from public.resolve_project_ref($1::uuid, $2::uuid)', [projectId, spaceId],
   );
   if (rows.length === 0) throw refused(path, `config.projectId must name a project of this space: ${projectId}`, { ids: [projectId] });
+  // execution_spawn's own test (348): only 'untrusted' needs the confirmation.
+  if (rows[0]!.trust === 'untrusted') {
+    throw refused(path,
+      `config.projectId names an untrusted project, and a loop cannot confirm an untrusted spawn: mark the project trusted, or run the loop without a project: ${projectId}`,
+      { ids: [projectId], trust: 'untrusted' });
+  }
 }
 
 /**

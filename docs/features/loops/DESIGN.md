@@ -178,7 +178,7 @@ export interface LoopSpawnConfig {
   reasoningEffort?: LaunchReasoningEffort | null;
   accessMode?: LaunchAccessMode | null;
   mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | null;
-  projectId?: ProjectId | null;
+  projectId?: ProjectId | null;     // a TRUSTED project of the space: no firing can confirm an untrusted spawn (S12)
   workdir?: { mode: WorkSessionWorkdirMode; baseRef?: string | null } | null;
   memoryIds?: EntityId[];           // max 32
   credentialSource?: LaunchCredentialSource | null;
@@ -247,7 +247,7 @@ loops.list → { items: LoopView[]; nextCursor: string | null }   loops.runs.lis
 Every command returns the updated `LoopView` (like `tools.update` returns the tool), so a CLI or UI never needs a second read.
 
 ### 4.3 Errors
-`invalid_input` (schedule unparseable / timezone unknown / action–runner mismatch / tool inputs invalid, with a field path), `conflict` (`version_conflict`; `loop_run_overlap` on runNow), `not_found`, `forbidden` (capabilities), `invariant_violation` (tool deleted since configured).
+`invalid_input` (schedule unparseable / timezone unknown / action–runner mismatch / tool inputs invalid / a config reference that is not a live entity of its kind in the space, or an untrusted project, with a field path), `conflict` (`version_conflict`; `loop_run_overlap` on runNow), `not_found`, `forbidden` (capabilities), `invariant_violation` (tool deleted since configured).
 
 ## 5. CLI — `tm8 loop` (packages/cli/src/commands/loop.ts; help via the CommandModule metadata like `tool.ts`)
 ```

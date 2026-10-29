@@ -8,9 +8,11 @@
  * names the field (details.path) and the offending ids; an update is judged on
  * the references it SETS, on the row the write leaves, so a refused update rolls
  * the door's write back and a reference that went stale under the loop never
- * blocks an unrelated edit (loops PR1 review B2); tool inputs are judged against
- * the tool's CURRENT definition whenever a write sets them; and 394's gate
- * refuses a loop-triggered run of a tool the loop does not name.
+ * blocks an unrelated edit (loops PR1 review B2), while an action change judges
+ * every reference; an untrusted project is refused, since no firing can confirm
+ * it (348); tool inputs are judged against the tool's CURRENT definition
+ * whenever a write sets them; and 394's gate refuses a loop-triggered run of a
+ * tool the loop does not name.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -31,7 +33,8 @@ let database: W1ScratchDatabase, db: Db, server: FacadeServer, base: string;
 const space = randomUUID(), member = randomUUID(), account = randomUUID(), authSession = randomUUID(), persona = randomUUID();
 const otherSpace = randomUUID(), otherMember = randomUUID(), otherPersona = randomUUID();
 const project = randomUUID(), projectEntity = randomUUID(), profile = randomUUID(), farProfile = randomUUID();
-let memory: string;
+const freshProject = randomUUID(), freshEntity = randomUUID();
+let memory: string, doomedMemory: string;
 const identityId = 'loops-validate-owner', secret = generateSecret(), token = formatToken(authSession, secret);
 const owner = async () => ({ identityId, accountId: account, username: identityId, isNodeAdmin: false, isOwner: false });
 /** `claimsForLoop`'s shape (375): the firing member, no bearer. */
@@ -52,13 +55,14 @@ beforeAll(async () => {
     await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [identityId]);
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'team_member',0,$3),($4,$5,'team_member',0,$6)", [persona, space, member, otherPersona, otherSpace, otherMember]);
     await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity) values($1,$2,'Runner','','persona'),($3,$4,'Stranger','','persona')", [persona, member, otherPersona, otherMember]);
-    // A project projection in the space (021's shape), and an interaction profile in each space.
-    await c.query("insert into public.projects(id,name,working_dir) values($1,'Lane project','/srv/lane')", [project]);
+    // Two project projections in the space (021's shape): one marked trusted, and one left at the
+    // default trust ('untrusted', 001), which no loop can launch in. And an interaction profile in each space.
+    await c.query("insert into public.projects(id,name,working_dir,trust) values($1,'Lane project','/srv/lane','trusted'),($2,'Fresh clone','/srv/fresh',default)", [project, freshProject]);
     await c.query("select internal.w1_set_writer('project_materializer')");
-    await c.query("insert into public.entities(id,space_id,kind,parent_id,position,visibility,created_by) values($1,$2,'project',null,null,'restricted',$3)", [projectEntity, space, member]);
-    await c.query("insert into public.project_projection_details(entity_id,project_id,materialized_version,name,repo_url) values($1,$2,1,'Lane project',null)", [projectEntity, project]);
-    await c.query('insert into public.project_links(space_id,project_id,project_entity_id) values($1,$2,$3)', [space, project, projectEntity]);
-    await c.query('insert into public.space_projects(space_id,project_id,linked_by) values($1,$2,$3)', [space, project, member]);
+    await c.query("insert into public.entities(id,space_id,kind,parent_id,position,visibility,created_by) values($1,$2,'project',null,null,'restricted',$3),($4,$2,'project',null,null,'restricted',$3)", [projectEntity, space, member, freshEntity]);
+    await c.query("insert into public.project_projection_details(entity_id,project_id,materialized_version,name,repo_url) values($1,$2,1,'Lane project',null),($3,$4,1,'Fresh clone',null)", [projectEntity, project, freshEntity, freshProject]);
+    await c.query('insert into public.project_links(space_id,project_id,project_entity_id) values($1,$2,$3),($1,$4,$5)', [space, project, projectEntity, freshProject, freshEntity]);
+    await c.query('insert into public.space_projects(space_id,project_id,linked_by) values($1,$2,$3),($1,$4,$3)', [space, project, member, freshProject]);
     await c.query('select internal.w1_set_writer(null)');
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'interaction_profile',0,$3),($4,$5,'interaction_profile',0,$6)", [profile, space, member, farProfile, otherSpace, otherMember]);
     await c.query('insert into public.interaction_profiles(entity_id) values($1),($2)', [profile, farProfile]);
@@ -66,6 +70,8 @@ beforeAll(async () => {
   const human: DbClaims = { identityId, nodeAdmin: false, authKind: 'cli', requestId: 'seed' };
   memory = (await db.rpc<{ entity: { id: string } }>(human, 'create_memory',
     [space, 'The lane runs on the prod node', 'measured', 'this node', 'other nodes', null, null, null, null, randomUUID()])).entity.id;
+  doomedMemory = (await db.rpc<{ entity: { id: string } }>(human, 'create_memory',
+    [space, 'The lane keeps its scratch on /srv', 'measured', 'this node', 'other nodes', null, null, null, null, randomUUID()])).entity.id;
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
   const deps = { db, config, owner };
@@ -177,6 +183,50 @@ describe('config references must be live entities of the right kind in the space
     refused(await spawn({ config: { projectId: 'not-an-id' } }), 'definition.config.projectId');
   });
 
+  it('projectId: an untrusted project is refused on create and update, saying what to do; a loop cannot give the per-spawn confirmation it needs (348, S12)', async () => {
+    for (const ref of [freshEntity, freshProject]) {
+      const error = refused(await spawn({ config: { projectId: ref } }), 'definition.config.projectId');
+      expect(error.message).toContain('mark the project trusted, or run the loop without a project');
+      expect(error.details).toMatchObject({ ids: [ref], trust: 'untrusted' });
+    }
+    // Setting it on an existing loop is refused too, and the refusal rolls the door's write back.
+    const view = ok(await spawn({ config: { projectId: projectEntity } }));
+    refused(await patch(view.id, view.version, { config: { projectId: freshEntity } }), 'definition.config.projectId');
+    expect(await stored(view.id)).toMatchObject({ version: view.version, config: { projectId: projectEntity } });
+    // Marking the project trusted is the way through.
+    const trust = (level: string) => database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('update public.projects set trust = $2 where id = $1', [freshProject, level]);
+    });
+    await trust('trusted');
+    try {
+      ok(await patch(view.id, view.version, { config: { projectId: freshEntity } }));
+    } finally {
+      await trust('untrusted');
+    }
+  });
+
+  it('a memory deleted under a spawn loop blocks a rename through neither door; an action change judges every reference, through both (review of a648dea0b)', async () => {
+    const view = ok(await spawn({ config: { memoryIds: [doomedMemory] } }));
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('update public.entities set deleted_at = now() where id = $1', [doomedMemory]);
+    });
+    // A rename sets no reference, so the stale memory blocks it at neither door (loops PR1 review B2).
+    ok(await patch(view.id, view.version, { title: 'Stale memory, renamed' }));
+    const renamed = (await stored(view.id))!.version;
+    ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: renamed, title: 'Stale memory, renamed again' }));
+    const version = (await stored(view.id))!.version;
+    expect(version).toBeGreaterThan(renamed);
+    // An action change judges every reference, since what the loop launches then reads them all.
+    const viaLoops = refused(await patch(view.id, version, { action: 'dispatch', teamMemberId: null }), 'definition.config.memoryIds');
+    expect(viaLoops.details.ids).toEqual([doomedMemory]);
+    const viaEntities = await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: version, content: { action: 'dispatch', teamMemberId: null } });
+    expect(viaEntities.status, JSON.stringify(viaEntities.json)).toBe(400);
+    expect(viaEntities.json.error.details).toMatchObject({ path: 'definition.config.memoryIds', ids: [doomedMemory] });
+    expect(await stored(view.id)).toMatchObject({ version, config: { memoryIds: [doomedMemory] } });
+  });
+
   it('memoryIds: live memories pass; the refusal lists exactly the ids that are not', async () => {
     ok(await spawn({ config: { memoryIds: [memory] } }));
     const missing = randomUUID();
@@ -219,6 +269,9 @@ describe('config references must be live entities of the right kind in the space
     const bad = await request('PATCH', `/v2/entities/${id}`, { expectedVersion: 1, content: { config: { projectId: missing } } });
     expect(bad.status, JSON.stringify(bad.json)).toBe(400);
     expect(bad.json.error.details.path).toBe('definition.config.projectId');
+    const untrusted = await request('PATCH', `/v2/entities/${id}`, { expectedVersion: 1, content: { config: { projectId: freshEntity } } });
+    expect(untrusted.status, JSON.stringify(untrusted.json)).toBe(400);
+    expect(untrusted.json.error.details).toMatchObject({ path: 'definition.config.projectId', trust: 'untrusted' });
     expect((await stored(id))!.config).toEqual({ memoryIds: [memory] });
   });
 });
