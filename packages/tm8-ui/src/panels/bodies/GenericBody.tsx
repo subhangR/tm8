@@ -248,6 +248,7 @@ function ContentBlock({
             sources={commands?.loopForm}
             onOpenEntity={onOpenEntity}
             deleteEntity={commands?.deleteEntity}
+            onDeleted={onSaved}
           />
         );
       case 'loop-definition':

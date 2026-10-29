@@ -50,6 +50,7 @@ function ViewState({ slot, children }: { slot: ReturnType<typeof useView>; child
 
 export function LoopHeaderBlock(props: BlockProps & {
   deleteEntity?: (id: EntityId, ctx?: CommandContext) => Promise<CommandResult>;
+  onDeleted?: (result: CommandResult) => void;
 }) {
   const slot = useView(props);
   const { port, sources } = props;
@@ -72,6 +73,7 @@ export function LoopHeaderBlock(props: BlockProps & {
           onRunsChanged={slot.bumpRuns}
           onOpenEntity={props.onOpenEntity}
           deleteEntity={props.deleteEntity}
+          onDeleted={props.onDeleted}
           renderEditor={renderEditor}
         />
       ) : null}
@@ -96,7 +98,8 @@ export function LoopRunsBlock(props: BlockProps) {
       loopId={props.detail.id}
       port={props.port}
       canControl={slot.view?.capabilities.canControl ?? false}
-      epoch={slot.runsEpoch}
+      // Run now and Stop bump runsEpoch; a scheduled firing moves lastRunAt and the run count.
+      epoch={`${slot.runsEpoch}:${slot.view?.state.lastRunAt ?? ''}:${slot.view?.runs.total ?? 0}`}
       onOpenEntity={props.onOpenEntity}
       onChanged={() => void slot.reload()}
     />
