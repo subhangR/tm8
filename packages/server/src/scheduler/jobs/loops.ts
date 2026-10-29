@@ -50,6 +50,7 @@ import {
   errorText,
   recordLoopLaunch,
   recordLoopLaunchFailure,
+  retryOnce,
   settleLoopRun,
   type LoopRunOutcome,
 } from '../../loops/bookkeeping.js';
@@ -242,7 +243,6 @@ const OPEN_RUNS_SQL = `
          o.act_as_identity           "actAsIdentity"
     from public.loop_runs_open_for_executor($1) o`;
 
-const LIVE_STATUSES = new Set(['spawning', 'running', 'idle']);
 const TERMINAL_STATUSES = new Set(['exited', 'failed']);
 
 /** The advanced instant for one loop, or the reason the schedule could not be evaluated. */
@@ -351,14 +351,9 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           continue;
         }
         const loopClaims = port.claimsForLoop(loop, loop.actAsIdentity);
+        let launched: { taskId: string | null; sessionId: string };
         try {
-          const launched = await port.fire(loop, loopClaims, now, runId);
-          await recordLoopLaunch(db, worker, runId, launched);
-          // A dispatch firing is DONE when the request is delivered: the
-          // dispatcher session is long-lived and shared by the whole space, so
-          // it must never count as this run's liveness (it would overlap forever).
-          if (loop.action === 'dispatch') await settleLoopRun(db, worker, runId, 'completed', null);
-          fired += 1;
+          launched = await port.fire(loop, loopClaims, now, runId);
         } catch (error) {
           const message = errorText(error);
           ctx.logger.debug(`loop ${loop.entityId} failed to fire: ${message}`);
@@ -372,6 +367,23 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
             ctx.logger.warn(`loop ${loop.entityId} failed to fire AND its failure could not be recorded on run ${runId}: ${errorText(cause)}`);
           });
           failed += 1;
+          continue;
+        }
+        fired += 1;
+        /**
+         * The fire SUCCEEDED, so nothing below may record a launch failure: that
+         * re-arms a retry and fires this deadline a second time while the first
+         * session runs. A bookkeeping write that fails is retried once, then
+         * logged; the run stays open, and the sweep settles it.
+         */
+        try {
+          await retryOnce(() => recordLoopLaunch(db, worker, runId, launched));
+          // A dispatch firing is DONE when the request is delivered: the
+          // dispatcher session is long-lived and shared by the whole space, so
+          // it must never count as this run's liveness (it would overlap forever).
+          if (loop.action === 'dispatch') await retryOnce(() => settleLoopRun(db, worker, runId, 'completed', null));
+        } catch (cause) {
+          ctx.logger.warn(`loop ${loop.entityId} fired session ${launched.sessionId} but run ${runId} could not record it: ${errorText(cause)}`);
         }
       }
 
@@ -457,7 +469,11 @@ async function sweepOpenRuns(input: {
 
     if (run.maxRuntimeSeconds === null) continue;
     if (firedAt + run.maxRuntimeSeconds * 1000 > now.getTime()) continue;
-    if (!liveSet.has(run.sessionId) && !(run.sessionStatus !== null && LIVE_STATUSES.has(run.sessionStatus))) continue;
+    // Live is the PTY map, as for overlap: a session whose row still says
+    // running but has no PTY died with the node, and ghost reconciliation (171)
+    // settles it through the exited branch above; stopping it would record a
+    // death as a timeout.
+    if (!liveSet.has(run.sessionId)) continue;
     if (run.actAsIdentity === null) {
       ctx.logger.warn(`loop run ${run.runId} exceeded its max runtime but its space has no active member to stop it as`);
       continue;

@@ -324,6 +324,26 @@ describe('failure handling', () => {
 });
 
 describe('actions', () => {
+  it('a bookkeeping write that fails AFTER a successful fire is retried once, logged, and never recorded as a launch failure', async () => {
+    // Recording it as a failure would re-arm a retry and fire this deadline again while the first session runs.
+    const warnings: string[] = [];
+    const { db, port, rec } = harness({ due: [dueLoop()] });
+    const original = db.rpc.bind(db);
+    (db as { rpc: Db['rpc'] }).rpc = async (c, fn, args) => {
+      if (fn === 'loop_run_launched') {
+        rec.rpcs.push({ fn, args: args ?? [] });
+        throw new Error('statement timeout');
+      }
+      return original(c, fn, args);
+    };
+    const outcome = await createLoopsJob({ db, port }).run(ctx(AT, warnings));
+    expect(rec.fired).toHaveLength(1);
+    expect(rpcsNamed(rec, 'loop_run_launched')).toHaveLength(2);
+    expect(rpcsNamed(rec, 'loop_run_launch_failed')).toHaveLength(0);
+    expect(outcome).toMatchObject({ detail: { fired: 1, failed: 0 } });
+    expect(warnings.some((w) => w.includes('could not record it'))).toBe(true);
+  });
+
   it('settles a dispatch firing completed at once: the dispatcher session is not the run', async () => {
     const { db, port, rec } = harness({ due: [dueLoop({ action: 'dispatch', teamMemberId: null })] });
     await createLoopsJob({ db, port }).run(ctx());
@@ -369,6 +389,17 @@ describe('the max-runtime and settle sweep (§3.3)', () => {
     expect(rec.stopped).toEqual([{ sessionId: 'session-open', reason: 'loop max runtime of 60s exceeded', identity: 'identity-space-1-owner' }]);
     expect(rpcsNamed(rec, 'loop_run_settle').map((r) => r.args)).toEqual([['run-open', 'timed_out', 'exceeded the maximum runtime of 60 seconds']]);
     expect(outcome).toMatchObject({ detail: { timedOut: 1 } });
+  });
+
+  it('never stops a ghost past its max runtime: liveness is the PTY map, not the row', async () => {
+    // Status still says running but no PTY: the session died with the node; ghost reconciliation settles it.
+    const { db, port, rec } = harness({
+      open: [openRun({ maxRuntimeSeconds: 60, firedAt: new Date(AT.getTime() - 120_000).toISOString(), sessionStatus: 'running' })],
+      live: [],
+    });
+    await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.stopped).toHaveLength(0);
+    expect(rpcsNamed(rec, 'loop_run_settle')).toHaveLength(0);
   });
 
   it('leaves a live run within its max runtime alone', async () => {

@@ -282,6 +282,43 @@ describePg('loops PR2: runs on a real node', () => {
     live.delete(recovered.runs.last!.sessionId!);
   });
 
+  it('a replayed Run now whose launch failed answers the failed run and starts no session', async () => {
+    const loop = await createLoop({ title: 'Replay after a failed launch' });
+    const clientMutationId = cmid();
+    await sql('update public.entities set deleted_at = now() where id = $1', [persona]);
+    try {
+      const first = await request<{ run: LoopRun }>('POST', `/v2/loops/${loop.id}/run`, { clientMutationId });
+      expect(first.status, JSON.stringify(first)).toBeGreaterThanOrEqual(400);
+    } finally {
+      await sql('update public.entities set deleted_at = null where id = $1', [persona]);
+    }
+    // The persona is back, so firing again WOULD start a session that no run records.
+    const replay = ok(await request<{ run: LoopRun }>('POST', `/v2/loops/${loop.id}/run`, { clientMutationId }));
+    expect(replay.run).toMatchObject({ status: 'failed', sessionId: null });
+    expect((await listRuns(loop.id)).items).toHaveLength(1);
+  });
+
+  it("a dispatch run is timed by its own firing, never by the shared dispatcher session", async () => {
+    const loop = await createLoop({ title: 'Dispatcher stand-in' });
+    const { run } = ok(await runNow(loop.id));
+    live.add(run.sessionId!);
+    try {
+      // A request delivered into that long-lived session an hour later, settled at delivery.
+      const [row] = await sql(
+        `insert into public.loop_runs(loop_id, space_id, fired_at, trigger, action, launch, session_id, outcome, ended_at)
+         values ($1, $2, now() + interval '1 hour', 'schedule', 'dispatch', 'fired', $3, 'completed', now() + interval '1 hour')
+         returning id`, [loop.id, spaceId, run.sessionId]);
+      const dispatched = await getRun(String(row!['id']));
+      expect(dispatched.startedAt).toBe(dispatched.firedAt);
+      expect(dispatched.endedAt).toBe(dispatched.firedAt);
+      expect(dispatched.durationMs).toBe(0);
+      expect(dispatched.usage).toBeNull();
+    } finally {
+      ok(await request('POST', `/v2/loop-runs/${run.id}/stop`, {}));
+      live.delete(run.sessionId!);
+    }
+  });
+
   it('max runtime: the sweep stops a live run past its limit through the port and settles timed_out', async () => {
     const loop = await createLoop({ title: 'Bounded', maxRuntimeSeconds: 60 });
     const run = LoopRunSchema.parse(ok(await runNow(loop.id)).run);

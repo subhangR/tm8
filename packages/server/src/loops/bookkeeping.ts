@@ -105,6 +105,15 @@ export async function settleLoopRun(
   return result.outcome;
 }
 
+/** One retry for a bookkeeping write after a successful fire: a pool blip must not lose the record. */
+export async function retryOnce<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch {
+    return write();
+  }
+}
+
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

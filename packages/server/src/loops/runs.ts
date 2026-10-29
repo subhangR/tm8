@@ -101,7 +101,10 @@ export function loopRunRowsSql(withOutputTail: boolean): string {
          (ws.usage #>> '{harness,costUsd}')::double precision as usage_cost_usd,
          am.entity_id as acted_as_member_id
     from public.loop_runs r
-    left join public.work_sessions ws on ws.entity_id = r.session_id
+    -- A dispatch run's session is the space's long-lived dispatcher, shared by
+    -- every request: its start, end and usage are not the run's. The run is
+    -- settled at delivery, so it is timed by fired_at/ended_at and has no usage.
+    left join public.work_sessions ws on ws.entity_id = r.session_id and r.action <> 'dispatch'
     left join public.members am on am.space_id = r.space_id and am.identity_id = r.acted_as_identity_id`;
 }
 
@@ -208,71 +211,6 @@ export async function listLoopRuns(q: Querier, input: LoopRunListInput): Promise
   };
 }
 
-/**
- * `LoopView.runs` (§4.2): total, the newest run, the last 24 hours' health and
- * the usage roll-up. `fired` counts launches; `failed` counts the derived
- * status, so a launch refusal and a session that died both count.
- */
-export async function loopRunsSummary(q: Querier, loopId: string): Promise<LoopRunsSummary> {
-  const [agg] = await q.query<{
-    total: number; fired24: number; failed24: number; skipped24: number;
-    input_tokens: string | null; output_tokens: string | null; cost_usd: number | null; usage_runs: number;
-  }>(
-    `select count(*)::int total,
-            count(*) filter (where x.launch = 'fired' and x.fired_at > now() - interval '24 hours')::int fired24,
-            count(*) filter (where x.status = 'failed' and x.fired_at > now() - interval '24 hours')::int failed24,
-            count(*) filter (where x.launch = 'skipped' and x.fired_at > now() - interval '24 hours')::int skipped24,
-            sum(x.usage_input_tokens::bigint)::text input_tokens,
-            sum(x.usage_output_tokens::bigint)::text output_tokens,
-            sum(x.usage_cost_usd)::double precision cost_usd,
-            count(*) filter (where x.usage_present)::int usage_runs
-       from (${loopRunRowsSql(false)} where r.loop_id = $1) x`,
-    [loopId],
-  );
-  const [lastRow] = await q.query<LoopRunRow>(
-    `${loopRunRowsSql(false)} where r.loop_id = $1 order by r.fired_at desc, r.id desc limit 1`,
-    [loopId],
-  );
-  const last = lastRow ? projectLoopRun(lastRow, await loadActors(q, loopRunActorIds([lastRow])), false) : null;
-  const usageKnown = (agg?.usage_runs ?? 0) > 0;
-  return {
-    total: agg?.total ?? 0,
-    last,
-    last24h: { fired: agg?.fired24 ?? 0, failed: agg?.failed24 ?? 0, skipped: agg?.skipped24 ?? 0 },
-    usage: {
-      inputTokens: usageKnown ? count(agg?.input_tokens ?? null) : null,
-      outputTokens: usageKnown ? count(agg?.output_tokens ?? null) : null,
-      costUsd: usageKnown && agg?.cost_usd !== null && agg?.cost_usd !== undefined ? Number(agg.cost_usd) : null,
-    },
-  };
-}
-
-/**
- * `LoopView.state.waitingOnRunId` (§3.3): a queue-concurrency loop that is due
- * but held back by a previous run that is still live. Null otherwise. Liveness
- * here is the session's recorded status (a read has no PTY map); the executor
- * decides the actual claim against the PTY map.
- */
-export async function loopWaitingOnRunId(
-  q: Querier,
-  loop: { id: string; concurrency: string; enabled: boolean; nextRunAt: string | Date | null; pausedUntil: string | Date | null },
-  now: Date = new Date(),
-): Promise<string | null> {
-  if (loop.concurrency !== 'queue' || !loop.enabled || loop.nextRunAt === null) return null;
-  if (new Date(loop.nextRunAt).getTime() > now.getTime()) return null;
-  if (loop.pausedUntil !== null && new Date(loop.pausedUntil).getTime() > now.getTime()) return null;
-  const [row] = await q.query<{ id: string }>(
-    `select r.id from public.loop_runs r
-       left join public.work_sessions ws on ws.entity_id = r.session_id
-      where r.loop_id = $1 and r.launch = 'fired' and r.outcome is null
-        and ((r.session_id is null and r.fired_at > $2::timestamptz - interval '10 minutes')
-             or ws.status in ('spawning', 'running', 'idle'))
-      order by r.fired_at desc limit 1`,
-    [loop.id, now.toISOString()],
-  );
-  return row?.id ?? null;
-}
-
 /** The loop facts `loopRunsFacts` needs to decide "waiting on a previous run". */
 export interface LoopRunsFactsInput {
   id: string;
@@ -282,11 +220,21 @@ export interface LoopRunsFactsInput {
   pausedUntil: string | Date | null;
 }
 
+/** A loop with no runs: zeros and nulls (usage unknown, never zero). */
+export function emptyLoopRuns(): LoopRunsSummary {
+  return {
+    total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 },
+    usage: { inputTokens: null, outputTokens: null, costUsd: null },
+  };
+}
+
 /**
- * `LoopView.runs` and `state.waitingOnRunId` for a SET of loops in three
+ * `LoopView.runs` (§4.2) and `state.waitingOnRunId` for a SET of loops in three
  * queries, however many rows a list carries: the per-loop aggregate, the newest
  * run per loop (`distinct on`), and the open live run per queue-concurrency
- * loop that is due. A loop with no runs gets zeros and nulls.
+ * loop that is due. A loop with no runs gets `emptyLoopRuns()`. `fired` counts
+ * launches; `failed` counts the derived status, so a launch refusal and a
+ * session that died both count.
  */
 export async function loopRunsFacts(
   q: Querier,
@@ -294,11 +242,7 @@ export async function loopRunsFacts(
   now: Date = new Date(),
 ): Promise<Map<string, { runs: LoopRunsSummary; waitingOnRunId: string | null }>> {
   const out = new Map<string, { runs: LoopRunsSummary; waitingOnRunId: string | null }>();
-  const empty = (): LoopRunsSummary => ({
-    total: 0, last: null, last24h: { fired: 0, failed: 0, skipped: 0 },
-    usage: { inputTokens: null, outputTokens: null, costUsd: null },
-  });
-  for (const loop of loops) out.set(loop.id, { runs: empty(), waitingOnRunId: null });
+  for (const loop of loops) out.set(loop.id, { runs: emptyLoopRuns(), waitingOnRunId: null });
   if (loops.length === 0) return out;
   const ids = loops.map((loop) => loop.id);
 

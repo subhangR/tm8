@@ -165,6 +165,13 @@ set search_path = public, internal, pg_temp as $$
      and l.next_run_at <= p_now
      and (l.paused_until is null or l.paused_until <= p_now)
      and a.act_as is not null
+     -- A queue loop held back by an open firing stays due (§3.3) but is not
+     -- claimable: it would take one of the tick's slots every tick and starve
+     -- the loops behind it. It returns once the sweep settles that run (a
+     -- session that died with the node settles through ghost reconciliation).
+     and not (l.concurrency = 'queue' and exists (
+           select 1 from public.loop_runs r
+            where r.loop_id = l.entity_id and r.launch = 'fired' and r.outcome is null))
    order by l.next_run_at
    limit greatest(coalesce(p_limit, 25), 0)
 $$;
@@ -428,10 +435,14 @@ begin
      set task_id = coalesce(p_task_id, task_id), session_id = coalesce(p_session_id, session_id)
    where id = p_run_id
    returning * into r;
+  -- A parked loop (no deadline) keeps the reason it is parked: a Run now that
+  -- launched does not make its schedule evaluable (§3.3, never silently never-due).
   update public.loops
-     set retry_attempt = 0, last_error = null, updated_at = now()
+     set retry_attempt = 0,
+         last_error = case when next_run_at is null then last_error end,
+         updated_at = now()
    where entity_id = r.loop_id
-     and (retry_attempt <> 0 or last_error is not null);
+     and (retry_attempt <> 0 or (last_error is not null and next_run_at is not null));
   return jsonb_build_object('runId', r.id, 'taskId', r.task_id, 'sessionId', r.session_id, 'attempt', r.attempt);
 end
 $$;
@@ -464,8 +475,12 @@ begin
    returning * into r;
 
   select * into l from public.loops where entity_id = r.loop_id for update;
-  if r.trigger = 'schedule' and l.retry_attempt < l.retry_attempts then
-    v_retry_at := p_now + make_interval(secs => l.retry_delay_seconds);
+  -- Re-armed only while the loop is as the claim left it: the claim stamped
+  -- updated_at in the run's own transaction, so a later stamp is a write made
+  -- during the firing (a human's edit, a disable), and that write wins. The
+  -- retry never pushes a sooner deadline later.
+  if r.trigger = 'schedule' and l.retry_attempt < l.retry_attempts and l.updated_at <= r.created_at then
+    v_retry_at := least(l.next_run_at, p_now + make_interval(secs => l.retry_delay_seconds));
     update public.loops
        set retry_attempt = l.retry_attempt + 1,
            next_run_at = v_retry_at,
