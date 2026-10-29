@@ -123,6 +123,15 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'tools.update',
   'tools.config.set',
   'tools.config.unset',
+  // Loops — ledgered commands; enable, disable, pause, resume and runNow carry no regex verb.
+  'loops.create',
+  'loops.update',
+  'loops.enable',
+  'loops.disable',
+  'loops.pause',
+  'loops.resume',
+  'loops.runNow',
+  'loops.runs.stop',
 ]);
 
 /** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */
