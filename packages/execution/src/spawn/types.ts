@@ -89,6 +89,11 @@ export interface NodeEndingSweepReport {
   errors: Array<{ message: string }>;
 }
 
+/** A pass that ended nothing: a node with no id, or a candidate read that failed. */
+export function emptySweep(errors: Array<{ message: string }> = []): NodeEndingSweepReport {
+  return { candidates: 0, retired: 0, notRecorded: 0, errors };
+}
+
 /**
  * The endings a node may record itself (378): failed with what it can infer
  * about a process that is gone, or exited_clean for a completed session's idle
@@ -1302,9 +1307,11 @@ export interface GraphPort {
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**
    * The ghost candidates IN EVERY SPACE (`public.node_live_work_sessions`,
-   * 378): this node's sessions that are live by the same definition the
-   * concurrency cap counts (`internal.work_session_is_live`). Read by boot
-   * reconciliation and the lost-session reaper only.
+   * 378): this node's sessions of ANY kind whose record says a process runs
+   * (`internal.work_session_process_recorded_live`) — a superset of what the
+   * concurrency cap counts (`internal.work_session_counts_against_cap`: agents
+   * whose work is not completed). Read by boot reconciliation and the
+   * lost-session reaper only.
    *
    * Node admin, NOT filtered by space membership: the node's background
    * identity is not a member of every space, and the RLS-scoped read this
@@ -1320,9 +1327,10 @@ export interface GraphPort {
    * `public.node_record_work_session_ending`). The ONE write every node job
    * uses — boot reconciliation, the lost-session reaper, the completed
    * auto-close — in any space: status and ending, never the outcome or the
-   * claims, plus an `execution.node_ending` ledger row with the node identity
-   * and the reason. Node admin. `recorded: false` when the process is no
-   * longer recorded live on this node (its own exit won the race).
+   * claims. The durable record is the row's `session.process_changed` event,
+   * which carries the ending kind and reason and names `endedByNode`. Node
+   * admin. `recorded: false` when the process is no longer recorded live on
+   * this node (its own exit won the race).
    */
   recordNodeSessionEnding(
     auth: GraphAuth,

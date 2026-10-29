@@ -69,6 +69,7 @@ import {
   type WorkSessionUsage,
   type WorkSessionUsageSource,
   WorktreeManager,
+  emptySweep,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
   type NodeEndingSweepReport,
@@ -2000,11 +2001,6 @@ export interface ExecutionRuntime {
   ): Promise<{ reclaimed: number; errors: Array<{ message: string }> }>;
 }
 
-/** A node job that could not start (no owner, no graph): one error, nothing counted. */
-function failedSweep(message: string): NodeEndingSweepReport {
-  return { candidates: 0, retired: 0, notRecorded: 0, errors: [{ message }] };
-}
-
 /**
  * Build the execution block. THIS is the wiring main.ts should use:
  *
@@ -2147,7 +2143,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         // not.
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
-        return failedSweep(message);
+        return emptySweep([{ message }]);
       }
     },
     closeIdleCompleted: async () => {
@@ -2157,7 +2153,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return failedSweep(error instanceof Error ? error.message : String(error));
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2183,7 +2179,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { staleAfterMs },
         );
       } catch (error) {
-        return failedSweep(error instanceof Error ? error.message : String(error));
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     recordShutdown: async (signal: string) => {
@@ -2359,7 +2355,7 @@ export function registerExecutionHandlers(
           requestId: 'startup-reconcile',
         });
       } catch (error) {
-        return failedSweep(error instanceof Error ? error.message : String(error));
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     closeIdleCompleted: async () => {
@@ -2369,7 +2365,7 @@ export function registerExecutionHandlers(
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return failedSweep(error instanceof Error ? error.message : String(error));
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2395,7 +2391,7 @@ export function registerExecutionHandlers(
           { staleAfterMs },
         );
       } catch (error) {
-        return failedSweep(error instanceof Error ? error.message : String(error));
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     recordShutdown: async (signal: string) => {

@@ -44,8 +44,11 @@
 -- node job reads and writes through them, so none uses a member door again:
 --
 --   * `node_live_work_sessions(node)` — ghost candidates: ids and statuses;
---   * `node_completed_sessions_to_close(node)` — the auto-close candidates,
---     318's rule without the membership filter;
+--   * `node_completed_sessions_to_close(node)` — the auto-close candidates:
+--     the one rule (`internal.completed_sessions_due`, 330's launched_by
+--     guard) without the membership filter. `completed_sessions_to_close`
+--     stays, as a member-filtered wrapper over the same rule, for a pre-378
+--     server during the deploy window; a later migration drops it;
 --   * `node_record_work_session_ending(node, session, status, kind, reason,
 --     error)` — the PROCESS fact only (status, ended_kind, ended_reason, error,
 --     exited_at), never the outcome or the claims. Endings a node may record:
@@ -138,38 +141,46 @@ $$;
 revoke all on function public.node_live_work_sessions(text) from public;
 grant execute on function public.node_live_work_sessions(text) to tm8_app;
 
--- 318's `completed_sessions_to_close` rule, node-wide. Tool sessions stay out
--- (318: "No idle autoclose for the retained shell").
+-- The auto-close RULE (301 Q3, 318, 330), once. Not a door: the node door and
+-- the deploy-window wrapper below both read it. Tool sessions stay out (318:
+-- "No idle autoclose for the retained shell"), and a session that still has
+-- running sessions it LAUNCHED is never closed (330: lineage is the
+-- `launched_by` edge, never parent_id).
+create or replace function internal.completed_sessions_due(p_node_id text)
+returns table(session_id uuid, minutes integer, space_id uuid)
+language sql stable set search_path = public, internal, pg_temp as $$
+  select ws.entity_id, sp.session_autoclose_minutes, e.space_id
+    from public.work_sessions ws
+    join public.entities e on e.id = ws.entity_id
+    join public.spaces sp on sp.id = e.space_id
+   where ws.node_id = p_node_id
+     and ws.session_kind <> 'tool'
+     and ws.outcome = 'completed'
+     and internal.work_session_process_recorded_live(ws.status, e.deleted_at)
+     and sp.session_autoclose_minutes > 0
+     and greatest(ws.outcome_at, e.activity_at) < now() - make_interval(mins => sp.session_autoclose_minutes)
+     and not exists (
+       select 1 from public.edges lb
+         join public.entities ce on ce.id = lb.src_id
+         join public.work_sessions cws on cws.entity_id = ce.id
+        where lb.dst_id = ws.entity_id and lb.type = 'launched_by'
+          and internal.work_session_process_recorded_live(cws.status, ce.deleted_at))
+   order by ws.entity_id
+$$;
+
+revoke all on function internal.completed_sessions_due(text) from public;
+
 create or replace function public.node_completed_sessions_to_close(p_node_id text)
 returns table(session_id uuid, minutes integer)
 language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 begin
   perform internal.require_node_door(p_node_id);
-  return query
-    select ws.entity_id, sp.session_autoclose_minutes
-      from public.work_sessions ws
-      join public.entities e on e.id = ws.entity_id
-      join public.spaces sp on sp.id = e.space_id
-     where ws.node_id = p_node_id
-       and ws.session_kind <> 'tool'
-       and ws.outcome = 'completed'
-       and internal.work_session_process_recorded_live(ws.status, e.deleted_at)
-       and sp.session_autoclose_minutes > 0
-       and greatest(ws.outcome_at, e.activity_at) < now() - make_interval(mins => sp.session_autoclose_minutes)
-       -- D2 follow-on (6 Oct): never close a session that still has running children.
-       and not exists (
-         select 1 from public.entities ce join public.work_sessions cws on cws.entity_id = ce.id
-          where ce.parent_id = ws.entity_id
-            and internal.work_session_process_recorded_live(cws.status, ce.deleted_at))
-     order by ws.entity_id;
+  return query select d.session_id, d.minutes from internal.completed_sessions_due(p_node_id) d;
 end
 $$;
 
 revoke all on function public.node_completed_sessions_to_close(text) from public;
 grant execute on function public.node_completed_sessions_to_close(text) to tm8_app;
-
--- Its member-filtered predecessor has no caller left.
-drop function if exists public.completed_sessions_to_close(text);
 
 -- `recorded` false, not an error, for a row whose process is no longer recorded
 -- live on this node: its own exit may have been written between the read and
@@ -312,3 +323,15 @@ end
 $$;
 
 revoke all on function internal.emit_work_session_events() from public;
+
+-- DEPLOY WINDOW. A pre-378 server keeps calling `completed_sessions_to_close`
+-- between this migration and its own replacement, and after a rolled-back
+-- deploy. Kept, with its old member filter, as a thin wrapper over the one
+-- rule; nothing in this tree calls it. Drop it in a later migration.
+-- Outside the tm8_graph_owner block: its earlier migrations' role owns it.
+create or replace function public.completed_sessions_to_close(p_node_id text)
+returns table(session_id uuid, minutes integer)
+language sql stable security definer set search_path = public, internal, pg_temp as $$
+  select d.session_id, d.minutes from internal.completed_sessions_due(p_node_id) d
+   where internal.is_space_member(d.space_id)
+$$;

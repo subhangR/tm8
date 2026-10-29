@@ -49,9 +49,9 @@ describe('startup ghost reconciliation', () => {
 
     expect(retired).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
-    // 378: through the node door, in any space. The door itself writes the
-    // `execution.node_ending` ledger row with the node identity and the reason
-    // (pinned in node-ghost-sessions-378.pg.test.ts); no member-door
+    // 378: through the node door, in any space. Its durable record is the
+    // `session.process_changed` event naming `endedByNode` (pinned in
+    // node-ghost-sessions-378.pg.test.ts); no member-door
     // `execution.terminate` command is asked for.
     expect(graph.nodeEndings).toMatchObject([
       { sessionId: 'ghost-1', status: 'failed', error: expect.stringMatching(/retired at node startup/) },

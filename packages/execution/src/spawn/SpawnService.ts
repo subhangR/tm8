@@ -154,7 +154,7 @@ import type {
   WorkSessionStatus,
   WorktreeAllocationRow,
 } from './types.js';
-import { SpawnError } from './types.js';
+import { emptySweep, SpawnError } from './types.js';
 import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema, type SpawnSelection } from '@tm8/contract';
 
 /**
@@ -473,6 +473,14 @@ const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
  * resolves whether it was recorded. `killThenRecordEnding` calls it after the
  * kill, so every ending — operator, containment, node job — has one path.
  */
+/** One ending a node job records: what `sweepNodeEndings` hands to the node door. */
+type NodeEnding = {
+  status: 'exited' | 'failed';
+  error: string;
+  endedKind: NodeEndedKind;
+  endedReason: string;
+};
+
 type EndingWriter<K extends WorkSessionEndedKind> = (ending: {
   status: 'exited' | 'failed';
   error: string;
@@ -3812,23 +3820,16 @@ export class SpawnService {
    * @returns how many sessions were retired.
    */
   async reconcileNodeGhosts(auth: GraphAuth): Promise<NodeEndingSweepReport> {
-    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
+    if (!this.nodeId) return emptySweep();
+    const nodeId = this.nodeId;
 
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeLiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
-        nodeId: this.nodeId,
-        error: message,
-      });
-      return {
-        candidates: 0,
-        retired: 0,
-        notRecorded: 0,
-        errors: [{ message: `could not list this node's sessions: ${message}` }],
-      };
+      this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', { nodeId, error: message });
+      return emptySweep([{ message: `could not list this node's sessions: ${message}` }]);
     }
 
     // WAS THE KERNEL INVOLVED? Asked ONCE, before the sweep, because it is a
@@ -3858,87 +3859,105 @@ export class SpawnService {
     // only at boot: a session with a LIVE PTY on this node is not a ghost. The
     // attribution rule below counts THESE, not the raw list.
     const ghosts = candidates.filter(({ sessionId }) => !this.pty.hasSession(sessionId));
-    const nodeId = this.nodeId;
 
-    let retired = 0;
-    let notRecorded = 0;
-    const errors: Array<{ message: string }> = [];
-    for (const { sessionId, status } of ghosts) {
-      try {
-        // 'failed', not 'exited': this agent did not finish, it was killed with
-        // its host. 'exited' here is indistinguishable from a clean finish to
-        // every client, because the contract projects neither exit_code nor
-        // error (see the `terminalStatus` docstring on terminate()).
-        const reason =
+    // Attribution rule, per the honesty bound above: assert `out_of_memory`
+    // ONLY when a memory kill happened AND this is the single ghost, because
+    // only then does the per-cgroup counter point at exactly one session. With
+    // several ghosts we know a memory kill occurred but not to whom, so the
+    // kind drops to 'unknown' and the sentence says both halves out loud
+    // rather than picking a victim.
+    const kind: Pick<NodeEnding, 'endedKind' | 'endedReason'> = memoryKillHappened
+      ? ghosts.length === 1
+        ? {
+            endedKind: 'out_of_memory',
+            endedReason:
+              'Stopped because the machine ran out of memory. This session was using ' +
+              'too much, and the system shut it down to stay alive.',
+          }
+        : {
+            endedKind: 'unknown',
+            endedReason:
+              'Stopped when the server restarted. The machine also ran out of memory ' +
+              'around that time, so this session may have been shut down for memory ' +
+              'rather than by the restart — there is no way to tell which.',
+          }
+      : {
+          endedKind: 'server_restart',
+          endedReason:
+            'Stopped when the server restarted. Nothing was wrong with this session — ' +
+            'it can be resumed to pick up where it left off.',
+        };
+
+    // 'failed', not 'exited': this agent did not finish, it was killed with
+    // its host. 'exited' here is indistinguishable from a clean finish to
+    // every client, because the contract projects neither exit_code nor error
+    // (see the `terminalStatus` docstring on terminate()).
+    const report = await this.sweepNodeEndings(auth, nodeId, 'ghost reconciliation', ghosts.map(({ sessionId, status }) => ({
+      sessionId,
+      ending: {
+        status: 'failed' as const,
+        error:
           `retired at node startup: this node still recorded status '${status}' with no live ` +
           'PTY for it — the process almost certainly died with a prior instance of this node ' +
-          '(crash or restart) before it could record its own exit';
-        const { recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
+          '(crash or restart) before it could record its own exit',
+        ...kind,
+      },
+    })));
+    if (report.retired > 0) {
+      this.logger?.info('SpawnService: ghost reconciliation complete', { nodeId, retired: report.retired });
+    }
+    return report;
+  }
+
+  /**
+   * THE ONE LOOP every node job ends sessions with (378): each item through
+   * `killThenRecordEnding` and the node door, tallied into one report.
+   *
+   * - recorded → `retired`;
+   * - the door answered `recorded: false` (the row was no longer recorded
+   *   live on this node) → `notRecorded`;
+   * - the kill itself failed (`outcome: 'error'`, not ESRCH) → an ERROR: the
+   *   process may still be running, so it is never counted as benign;
+   * - anything thrown → an error, COLLECTED and logged. Before 378 a door
+   *   refusal fired here for every row outside the owner's spaces and the
+   *   caller saw only `0`, indistinguishable from a clean pass.
+   *
+   * `onAnswered` runs for every item the door answered (recorded or not), so
+   * the reaper can forget its first sighting. `candidates` is the item count;
+   * a job that saw more than it ends this pass overrides it.
+   */
+  private async sweepNodeEndings(
+    auth: GraphAuth,
+    nodeId: string,
+    job: string,
+    items: ReadonlyArray<{ sessionId: string; ending: NodeEnding }>,
+    onAnswered?: (sessionId: string) => void,
+  ): Promise<NodeEndingSweepReport> {
+    const report = emptySweep();
+    report.candidates = items.length;
+    for (const { sessionId, ending } of items) {
+      try {
+        const { outcome, recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
           onNotFound: 'record',
-          status: 'failed',
-          error: () => reason,
-          // Attribution rule, per the honesty bound above: assert
-          // `out_of_memory` ONLY when a memory kill happened AND this is the
-          // single ghost, because only then does the per-cgroup counter point
-          // at exactly one session. With several ghosts we know a memory kill
-          // occurred but not to whom, so the kind drops to 'unknown' and the
-          // sentence says both halves out loud rather than picking a victim.
-          ...(memoryKillHappened
-            ? ghosts.length === 1
-              ? {
-                  endedKind: 'out_of_memory' as const,
-                  endedReason:
-                    'Stopped because the machine ran out of memory. This session was using ' +
-                    'too much, and the system shut it down to stay alive.',
-                }
-              : {
-                  endedKind: 'unknown' as const,
-                  endedReason:
-                    'Stopped when the server restarted. The machine also ran out of memory ' +
-                    'around that time, so this session may have been shut down for memory ' +
-                    'rather than by the restart — there is no way to tell which.',
-                }
-            : {
-                endedKind: 'server_restart' as const,
-                endedReason:
-                  'Stopped when the server restarted. Nothing was wrong with this session — ' +
-                  'it can be resumed to pick up where it left off.',
-              }),
+          status: ending.status,
+          error: () => ending.error,
+          endedKind: ending.endedKind,
+          endedReason: ending.endedReason,
         });
-        if (!recorded) {
-          notRecorded += 1;
+        if (outcome === 'error') {
+          report.errors.push({ message: `session ${sessionId}: the kill signal failed; its process may still be running` });
           continue;
         }
-        retired += 1;
-        this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
+        onAnswered?.(sessionId);
+        if (recorded) report.retired += 1;
+        else report.notRecorded += 1;
       } catch (error) {
-        // COLLECTED, not merely logged. Before 378 this caught the member
-        // door's refusal for every ghost in a space the owner is not a member
-        // of, and nothing else said so. Reported only to an
-        // optional logger, a total failure is indistinguishable from a clean
-        // boot with nothing to do, and the caller's `retired: 0` says the same
-        // thing either way.
-        //
-        // Measured on a live node 2026-08-22: reconciliation had been refused on
-        // every boot since the space was created, silently, while its worktree
-        // sibling printed the identical refusal at startup — because that one
-        // returns its errors and this one dropped them.
         const message = error instanceof Error ? error.message : String(error);
-        errors.push({ message: `session ${sessionId} (${status}): ${message}` });
-        this.logger?.warn?.('SpawnService: failed to retire ghost session', {
-          sessionId,
-          error: message,
-        });
+        report.errors.push({ message: `session ${sessionId}: ${message}` });
+        this.logger?.warn?.(`SpawnService: ${job} could not end a session`, { sessionId, error: message });
       }
     }
-
-    if (retired > 0) {
-      this.logger?.info('SpawnService: ghost reconciliation complete', {
-        nodeId: this.nodeId,
-        retired,
-      });
-    }
-    return { candidates: ghosts.length, retired, notRecorded, errors };
+    return report;
   }
 
   /**
@@ -3960,21 +3979,16 @@ export class SpawnService {
     auth: GraphAuth,
     opts: { staleAfterMs: number; now?: number },
   ): Promise<NodeEndingSweepReport> {
-    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
+    if (!this.nodeId) return emptySweep();
+    const nodeId = this.nodeId;
     const now = opts.now ?? Date.now();
     let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
     try {
-      candidates = await this.graph.listNodeLiveSessions(auth, this.nodeId);
+      candidates = await this.graph.listNodeLiveSessions(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return {
-        candidates: 0,
-        retired: 0,
-        notRecorded: 0,
-        errors: [{ message: `could not list this node's sessions: ${message}` }],
-      };
+      return emptySweep([{ message: `could not list this node's sessions: ${message}` }]);
     }
-    const nodeId = this.nodeId;
     const ghosts = new Set<string>();
     for (const { sessionId } of candidates) {
       if (!this.pty.hasSession(sessionId)) ghosts.add(sessionId);
@@ -3982,9 +3996,7 @@ export class SpawnService {
     for (const id of [...this.ghostFirstSeen.keys()]) {
       if (!ghosts.has(id)) this.ghostFirstSeen.delete(id);
     }
-    let retired = 0;
-    let notRecorded = 0;
-    const errors: Array<{ message: string }> = [];
+    const due: Array<{ sessionId: string; ending: NodeEnding }> = [];
     for (const sessionId of ghosts) {
       const first = this.ghostFirstSeen.get(sessionId);
       if (first === undefined) {
@@ -3992,26 +4004,21 @@ export class SpawnService {
         continue;
       }
       if (now - first < opts.staleAfterMs) continue;
-      // Re-asked at the write: a resume may have brought it back since the
-      // read, and a session with a live PTY here is not lost.
-      if (this.pty.hasSession(sessionId)) continue;
-      try {
-        const lost = lostEnding(now - first);
-        const { recorded } = await this.killThenRecordEnding(sessionId, this.nodeEnding(auth, nodeId, sessionId), {
-          onNotFound: 'record',
-          status: 'failed',
-          error: () => lost.reason,
-          endedKind: lost.endedKind,
-          endedReason: lost.endedReason,
-        });
-        this.ghostFirstSeen.delete(sessionId);
-        if (recorded) retired += 1;
-        else notRecorded += 1;
-      } catch (error) {
-        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
-      }
+      const lost = lostEnding(now - first);
+      due.push({ sessionId, ending: { status: 'failed', error: lost.reason, endedKind: lost.endedKind, endedReason: lost.endedReason } });
     }
-    return { candidates: ghosts.size, retired, notRecorded, errors };
+    // Re-asked just before the writes: a resume may have brought a session
+    // back since the read, and a session with a live PTY here is not lost.
+    const report = await this.sweepNodeEndings(
+      auth,
+      nodeId,
+      'the lost-session reaper',
+      due.filter(({ sessionId }) => !this.pty.hasSession(sessionId)),
+      (sessionId) => { this.ghostFirstSeen.delete(sessionId); },
+    );
+    // `candidates` is every ghost seen on this look, including those still
+    // inside the window: a tick that sees ghosts and ends none says so.
+    return { ...report, candidates: ghosts.size };
   }
 
   /**
@@ -4041,50 +4048,25 @@ export class SpawnService {
    * listing is node-wide, and the member door refused the node's identity
    * for every completed session outside its own spaces, every tick.
    */
-  async closeIdleCompletedSessions(
-    auth: GraphAuth,
-  ): Promise<NodeEndingSweepReport> {
-    if (!this.nodeId) return { candidates: 0, retired: 0, notRecorded: 0, errors: [] };
+  async closeIdleCompletedSessions(auth: GraphAuth): Promise<NodeEndingSweepReport> {
+    if (!this.nodeId) return emptySweep();
     const nodeId = this.nodeId;
     let due: Array<{ sessionId: string; minutes: number }>;
     try {
       due = await this.graph.listCompletedSessionsToClose(auth, nodeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return {
-        candidates: 0,
-        retired: 0,
-        notRecorded: 0,
-        errors: [{ message: `could not list completed sessions to close: ${message}` }],
-      };
+      return emptySweep([{ message: `could not list completed sessions to close: ${message}` }]);
     }
-    let retired = 0;
-    let notRecorded = 0;
-    const errors: Array<{ message: string }> = [];
-    for (const { sessionId, minutes } of due) {
-      try {
-        const { outcome, recorded } = await this.killThenRecordEnding(
-          sessionId,
-          this.nodeEnding(auth, nodeId, sessionId),
-          {
-            onNotFound: 'record',
-            status: 'exited',
-            error: () => `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
-            endedKind: 'exited_clean',
-            endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
-          },
-        );
-        if (outcome === 'error') {
-          errors.push({ message: `session ${sessionId}: the kill signal itself failed` });
-          continue;
-        }
-        if (recorded) retired += 1;
-        else notRecorded += 1;
-      } catch (error) {
-        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
-      }
-    }
-    return { candidates: due.length, retired, notRecorded, errors };
+    return this.sweepNodeEndings(auth, nodeId, 'the completed auto-close', due.map(({ sessionId, minutes }) => ({
+      sessionId,
+      ending: {
+        status: 'exited' as const,
+        error: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+        endedKind: 'exited_clean' as const,
+        endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+      },
+    })));
   }
 
   /** First time the reaper saw each live-recorded session with no PTY here. */

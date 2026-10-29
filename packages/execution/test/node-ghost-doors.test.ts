@@ -73,7 +73,7 @@ describe('node ghost doors (378)', () => {
       expect(w.endedKind).toBe('server_restart');
       expect(w.error).toMatch(/retired at node startup/);
     }
-    // The member door's command row was not asked for; the node door writes its own.
+    // The member door's command row was not asked for; the node ending is on its event.
     expect(graph.commands).toEqual([]);
   });
 
@@ -156,5 +156,22 @@ describe('node ghost doors (378)', () => {
     ]);
     // The member door, which refuses `ghost-b`'s space, was never asked.
     expect(graph.commands).toEqual([]);
+  });
+
+  it('every node job counts a failed kill as an ERROR, never as not recorded', async () => {
+    // A live PTY whose kill fails (not ESRCH): its process may still be running.
+    pty.spawn({ sessionId: 'stuck', command: 'sleep 5', cwd: '/tmp', env: {} });
+    const kill = vi.spyOn(pty, 'kill').mockImplementation(() => 'error');
+    graph.completedToClose = [{ sessionId: 'stuck', minutes: 30 }];
+    const closed = await service.closeIdleCompletedSessions(AUTH);
+    expect(closed).toMatchObject({ candidates: 1, retired: 0, notRecorded: 0 });
+    expect(closed.errors[0]?.message).toMatch(/stuck: the kill signal failed/);
+
+    // The ghost sweeps hand ghosts to the same loop: a kill error there is an error too.
+    const recon = await service.reconcileNodeGhosts(AUTH);
+    expect(recon).toMatchObject({ candidates: 2, retired: 0, notRecorded: 0 });
+    expect(recon.errors).toHaveLength(2);
+    expect(graph.nodeEndings).toEqual([]);
+    kill.mockRestore();
   });
 });

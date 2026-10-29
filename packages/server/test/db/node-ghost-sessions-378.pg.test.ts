@@ -353,11 +353,15 @@ describe('378 — node ghost sessions', () => {
     await expect(
       asApp((q) => q(`select * from public.node_completed_sessions_to_close($1)`, [NODE]), theirs.identityId, false),
     ).rejects.toMatchObject({ code: '42501' });
+    // Deploy window: the pre-378 read survives as a wrapper over the same rule,
+    // still member-filtered — the space's member sees it, the node owner does not.
+    const old = (identity: string) =>
+      asApp((q) => q(`select session_id from public.completed_sessions_to_close($1)`, [NODE]), identity, false)
+        .then((rows) => rows.map((r) => String(r.session_id)));
+    expect(await old(theirs.identityId)).toContain(done);
+    expect(await old(mine.identityId)).not.toContain(done);
     // Every candidate is endable: the door's precondition is the read's.
     expect((await recordEnding(done, 'exited_clean', 'exited')).recorded).toBe(true);
-    // The member-filtered predecessor is gone.
-    const left = await asGraphOwner(`select 1 from pg_proc where proname = 'completed_sessions_to_close'`);
-    expect(left).toEqual([]);
   });
   it('writes usage for a session this node ran, in a space the node owner is not in', async () => {
     const foreign = await spawnRunning(theirs);
