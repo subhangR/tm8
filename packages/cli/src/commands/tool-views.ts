@@ -1,4 +1,4 @@
-import type { ActorSummary, ToolRun, ToolView } from '@tm8/contract';
+import type { ActorSummary, ToolLastRun, ToolRun, ToolView } from '@tm8/contract';
 
 /**
  * Human views of the tool noun's pages. `--format json` always emits the DTO
@@ -6,10 +6,8 @@ import type { ActorSummary, ToolRun, ToolView } from '@tm8/contract';
  * terminal is not paid in context for every tool's full source.
  */
 
-/** The newest run, as `tools.list` items carry it once the server projects one; older servers omit the field. */
-export interface ToolLastRun { sessionId: string; state: string; exitCode: number | null; startedAt: string | null; exitedAt: string | null }
-export type ToolListItem = ToolView & { lastRun?: ToolLastRun | null };
-export interface ToolListPage { items: ToolListItem[]; nextCursor: string | null }
+/** `tools.list` items carry `lastRun` (the newest run) once the server projects it; older servers omit the field. */
+export interface ToolListPage { items: ToolView[]; nextCursor: string | null }
 export interface ToolRunsPage { items: ToolRun[]; nextCursor: string | null }
 
 /** Rows padded into aligned columns; the last cell of a row stays ragged. */

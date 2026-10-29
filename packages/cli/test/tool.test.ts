@@ -10,7 +10,7 @@ import { PTY_WS_PROTOCOL, PTY_GRANT_PROTOCOL_PREFIX, TOOL_STARTERS, toolStarterD
 import { parseInvocation } from '../src/args.js';
 import { run } from '../src/run.js';
 import { parseToolArgs, parseToolValue, renderToolHelp, type ToolHelp } from '../src/commands/tool-args.js';
-import { duration, type ToolListItem } from '../src/commands/tool-views.js';
+import { duration } from '../src/commands/tool-views.js';
 import { toolRunExitCode } from '../src/commands/tool-terminal.js';
 import * as secretReader from '../src/commands/tool-secret.js';
 import { nounHelp } from '../src/discovery/help.js';
@@ -261,7 +261,7 @@ describe('catalog commands and version pin', () => {
   });
   it('renders tool list and runs as tables for a human, while --format json stays the DTO', async () => {
     const URL_CHECK = '77777777-7777-7777-8777-777777777777', OTHER = '66666666-6666-7666-8666-666666666666';
-    const listed = (name: string, id: string, lastRun?: ToolListItem['lastRun']): ToolListItem =>
+    const listed = (name: string, id: string, lastRun?: ToolView['lastRun']): ToolView =>
       ({ ...tool, id, version: 3, executionVersion: 2, definition: { ...definition, name, tm8Access: name === 'space-digest' ? 'read' : 'none' }, ...(lastRun === undefined ? {} : { lastRun }) });
     spaceTools = [listed('demo', TOOL, { sessionId: SESSION, state: 'exited', exitCode: 1, startedAt: '2026-10-28T18:36:37.415Z', exitedAt: '2026-10-28T18:36:38.340Z' }),
       listed('space-digest', URL_CHECK, null), listed('gh-pr-status', OTHER)];
