@@ -27,3 +27,18 @@
 @media (max-width: 500px) { .cv2-root .tool-body { padding: 12px; } .cv2-root .tool-config-row form { align-items: stretch; flex-direction: column; } }
 
 .cv2-root .tool-source .cm-content { caret-color: var(--pn-ink); }
+
+/* The create form (New tab, list header dialog) and field-placed refusals. */
+.cv2-root .tool-create { display: flex; flex-direction: column; gap: 12px; }
+.cv2-root .tool-create fieldset { display: flex; flex-direction: column; gap: 6px; }
+.cv2-root .tool-create-dialog { width: min(960px, 100%); max-height: 90dvh; overflow: auto; }
+.cv2-root .tool-create-header .pn-header__fields { display: flex; flex-direction: column; gap: 8px; }
+.cv2-root .tool-starter-note { font-size: 0.9em; opacity: 0.8; }
+.cv2-root .tool-field-error { display: block; color: var(--pn-block); font-size: 0.9em; }
+.cv2-root .tool-form-problem { margin: 0; padding: 10px; border-left: 3px solid var(--pn-block); }
+.cv2-root .tool-input-problem td { padding-top: 0; border-bottom: 0; }
+.cv2-root .tool-install { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.cv2-root .tool-install__report { font-size: 0.9em; }
+.cv2-root .tool-install__report p { margin: 0 0 4px; }
+.cv2-root .tool-install__report ul { margin: 0; padding-left: 18px; }
+.cv2-root .tool-install__error { margin: 0; color: var(--pn-block); }

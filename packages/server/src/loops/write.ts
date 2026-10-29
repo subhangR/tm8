@@ -33,30 +33,59 @@ export function requireSpawnConfig(config: unknown): LoopSpawnConfig {
 export interface ScheduleWrite {
   /** undefined leaves next_run_at as it is; null clears it. */
   nextRunAt: string | null | undefined;
-  /** Set when the deadline was recomputed: the never-matches reason, or null to clear a stale one. */
+  /**
+   * Set when the deadline was recomputed: the never-matches reason, or null to
+   * clear the reason a parked loop carried. undefined leaves last_error alone.
+   */
   lastError: string | null | undefined;
 }
 
-function recompute(schedule: string, timezone: string, now: Date): ScheduleWrite {
-  const next = nextRunAt(schedule, now, timezone);
-  return next === null
-    ? { nextRunAt: null, lastError: SCHEDULE_NEVER_MATCHES }
-    : { nextRunAt: next.toISOString(), lastError: undefined };
+export interface ScheduleState {
+  schedule: string; timezone: string; enabled: boolean;
+  /**
+   * The stored deadline and error, when the caller read them. A loop with no
+   * deadline and an error is PARKED (§3.3): its schedule could not be evaluated,
+   * and that error is the reason. Omitted means unknown, and nothing is cleared.
+   */
+  nextRunAt?: Date | string | null; lastError?: string | null;
 }
 
-export interface ScheduleState { schedule: string; timezone: string; enabled: boolean }
+function recompute(before: ScheduleState | null, after: ScheduleState, now: Date): ScheduleWrite {
+  // Validated here as well as on the write: a stored schedule that predates
+  // validation reaches this through enable, and must be refused, not thrown.
+  requireValidSchedule(after.schedule, after.timezone);
+  const next = nextRunAt(after.schedule, now, after.timezone);
+  if (next === null) return { nextRunAt: null, lastError: SCHEDULE_NEVER_MATCHES };
+  // A run's failure stays until a run succeeds; only a parked loop's reason is stale here.
+  const parked = before !== null && before.nextRunAt === null && (before.lastError ?? null) !== null;
+  return { nextRunAt: next.toISOString(), lastError: parked ? null : undefined };
+}
 
 /**
  * The one rule for when the server writes next_run_at (§3.1): on create
- * (enabled), on a schedule or timezone change, and on enable, always from now.
- * Disable leaves it alone; the due read ignores a disabled loop. No client value
- * is ever consulted.
+ * (enabled), on enable, and on any schedule or timezone change (enabled or not,
+ * so a disabled loop's view stays honest), always from now. Disabling leaves it
+ * alone; the due read ignores a disabled loop. No client value is ever consulted.
  */
 export function scheduleWrite(before: ScheduleState | null, after: ScheduleState, now: Date = new Date()): ScheduleWrite {
-  if (!after.enabled) return { nextRunAt: undefined, lastError: undefined };
-  const changed = before === null || !before.enabled
-    || before.schedule.trim() !== after.schedule.trim() || before.timezone !== after.timezone;
-  return changed ? recompute(after.schedule, after.timezone, now) : { nextRunAt: undefined, lastError: undefined };
+  const rescheduled = before !== null
+    && (before.schedule.trim() !== after.schedule.trim() || before.timezone !== after.timezone);
+  const armed = after.enabled && (before === null || !before.enabled);
+  return rescheduled || armed ? recompute(before, after, now) : { nextRunAt: undefined, lastError: undefined };
+}
+
+/** How far ahead of the server's clock a Run now's "now" may be (client clock skew). */
+const RUN_NOW_SKEW_MS = 30_000;
+
+/**
+ * The loop panel's Run now on the entities.patch path (LoopControls): a client
+ * nextRunAt at or before now. A later instant is a client computing a schedule,
+ * which is the server's job (§3.1), so the caller ignores it.
+ */
+export function isRunNowRequest(value: unknown, now: number = Date.now()): boolean {
+  if (typeof value !== 'string') return false;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && at <= now + RUN_NOW_SKEW_MS;
 }
 
 function messageOf(error: unknown): string {

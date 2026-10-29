@@ -1401,6 +1401,8 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.validate',
   // MCP callback/proxy request validation is handler-authored after the
   // request schema admits the sweep body.
+  // Loops PR1: the generated body is schema-valid but names no runner/valid schedule; the handler refuses. MEASURED.
+  'loops.create',
   'mcp.oauth.callback',
   'mcp.proxy.request',
   // SC-3: node policy set reads `:provider` off the PATH (see space above).

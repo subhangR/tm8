@@ -1,0 +1,5 @@
+{
+  "description": "Post a message to a Slack incoming webhook.",
+  "whenToUse": "Open when a run or an agent needs to post a message to Slack",
+  "summary": "Bash + curl + python3: sends text, with an optional channel override, to the Slack incoming webhook bound as the slack_webhook_url secret"
+}
