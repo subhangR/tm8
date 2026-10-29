@@ -180,7 +180,7 @@ export function launchPageModel(
     admitted: record?.state === 'admitted' || session !== null,
     status,
     bootPhase,
-    failed,
+    failed: recordFailed && !session,
     lastStep,
     workdir: workdirOf(record, session),
   });

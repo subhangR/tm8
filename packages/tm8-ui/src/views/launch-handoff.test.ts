@@ -168,13 +168,13 @@ describe('the press, inside Work', () => {
 });
 
 describe('a refusal and a timeout', () => {
-  it('a refusal stays on the page with the node’s own words, and the popup’s promise does not reject', async () => {
+  it('a refusal stays on the page with the node’s own words, and the popup’s promise rejects with them (no picks recorded)', async () => {
     const ws = workspace();
     const { handoff, spawnSession } = handoffFor(ws);
     spawnSession.mockRejectedValue(Object.assign(new Error('session concurrency cap reached (64/64)'), { code: 'conflict' }));
     handoff.onLaunchStarted(launchOf());
 
-    await expect(handoff.spawn(inputOf())).resolves.toBeUndefined();
+    await expect(handoff.spawn(inputOf())).rejects.toThrow('session concurrency cap reached (64/64)');
 
     expect(launchRecord('mut-1')).toMatchObject({
       state: 'failed',
@@ -213,7 +213,7 @@ describe('a refusal and a timeout', () => {
     spawnSession.mockRejectedValue(timeout());
     handoff.onLaunchStarted(launchOf());
 
-    await handoff.spawn(inputOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
 
     expect(sessionsSince).toHaveBeenCalledWith('task-1', expect.any(String));
     expect(launchRecord('mut-1')).toMatchObject({
@@ -233,13 +233,13 @@ describe('a refusal and a timeout', () => {
     const none = handoffFor(ws, { sessionsSince: vi.fn().mockResolvedValue([]) });
     none.spawnSession.mockRejectedValue(timeout());
     none.handoff.onLaunchStarted(launchOf('mut-a'));
-    await none.handoff.spawn(inputOf('mut-a'));
+    await none.handoff.spawn(inputOf('mut-a')).catch(() => undefined);
     expect(launchRecord('mut-a')).toMatchObject({ state: 'failed', failure: { uncertain: false } });
 
     const broken = handoffFor(ws, { sessionsSince: vi.fn().mockRejectedValue(new Error('offline')) });
     broken.spawnSession.mockRejectedValue(timeout());
     broken.handoff.onLaunchStarted(launchOf('mut-b'));
-    await broken.handoff.spawn(inputOf('mut-b'));
+    await broken.handoff.spawn(inputOf('mut-b')).catch(() => undefined);
     expect(launchRecord('mut-b')).toMatchObject({ state: 'failed', failure: { uncertain: true } });
   });
 
@@ -248,7 +248,7 @@ describe('a refusal and a timeout', () => {
     const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn() });
     spawnSession.mockRejectedValueOnce(timeout()).mockRejectedValueOnce(new Error('task is archived'));
     handoff.onLaunchStarted(launchOf());
-    await handoff.spawn(inputOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
     expect(launchRecord('mut-1')).toMatchObject({ state: 'failed', failure: { message: 'task is archived' } });
   });
 });
@@ -346,7 +346,7 @@ describe('Dismiss and Edit and retry', () => {
     const { handoff, spawnSession } = handoffFor(ws);
     spawnSession.mockRejectedValueOnce(new Error('cap reached'));
     handoff.onLaunchStarted(launchOf('mut-1'));
-    await handoff.spawn(inputOf('mut-1'));
+    await handoff.spawn(inputOf('mut-1')).catch(() => undefined);
     const failedTab = findLaunchTab(ws.runtime, 'mut-1')!;
     const count = ws.runtime.store.getState().orderedTabIds.length;
 
@@ -410,7 +410,7 @@ describe('re-attach: a page that finds a launch this window holds no record of',
     const { handoff, spawnSession } = handoffFor(ws);
     spawnSession.mockRejectedValue(Object.assign(new Error('cap reached'), { code: 'conflict' }));
     handoff.onLaunchStarted(launchOf());
-    await handoff.spawn(inputOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
     const tab = findLaunchTab(ws.runtime, 'mut-1')!;
     expect(launchTabValues(ws.runtime.drafts.get(tab.draftId))?.failure).toMatchObject({ message: 'cap reached', code: 'conflict' });
   });
@@ -518,5 +518,52 @@ describe('one navigation, decided on the nav view', () => {
     expect(navigateToWork).not.toHaveBeenCalled();
     landQueuedLaunches(ws.runtime);
     expect(findLaunchTab(ws.runtime, 'mut-1')).not.toBeNull();
+  });
+});
+
+describe('what is a spawn error and what is not', () => {
+  it('a client-side throw while landing an admitted session is logged, not turned into a launch failure', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    spawnSession.mockResolvedValue('session-1' as EntityId);
+    handoff.onLaunchStarted(launchOf());
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const dispatch = ws.runtime.dispatch;
+    ws.runtime.dispatch = ((env: Parameters<typeof dispatch>[0]) => {
+      if ((env as { command: string }).command === 'workspace.drafts.bind') throw new Error('bind blew up');
+      return dispatch(env);
+    }) as typeof dispatch;
+
+    await expect(handoff.spawn(inputOf())).resolves.toBeUndefined();
+    expect(launchRecord('mut-1')).toMatchObject({ state: 'admitted', sessionId: 'session-1' });
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not be bound'), expect.anything());
+    logged.mockRestore();
+    ws.runtime.dispatch = dispatch;
+  });
+});
+
+describe('what a launch tab stores survives the trip', () => {
+  it('a timed-out check’s candidates are stored with the failure', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn().mockResolvedValue([{ id: 's-7', title: 'Run' }]) });
+    spawnSession.mockRejectedValue(timeout());
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
+    const tab = findLaunchTab(ws.runtime, 'mut-1')!;
+    expect(launchTabValues(ws.runtime.drafts.get(tab.draftId))?.failure?.candidates).toEqual([{ id: 's-7', title: 'Run' }]);
+  });
+
+  it('a stored launch missing any field the page reads is not a launch at all', () => {
+    const base = { launchId: 'mut-1', launch: launchOf(), input: null, startedAt: 1, failure: null };
+    expect(launchTabValues(base as unknown as Record<string, unknown>)).not.toBeNull();
+    for (const broken of [
+      { ...launchOf(), workdir: { kind: 'project' } },
+      { ...launchOf(), workdir: null },
+      { ...launchOf(), verb: 'wizard' },
+      { ...launchOf(), teammate: { id: 1 } },
+      { ...launchOf(), notes: undefined },
+    ]) {
+      expect(launchTabValues({ ...base, launch: broken } as unknown as Record<string, unknown>)).toBeNull();
+    }
   });
 });

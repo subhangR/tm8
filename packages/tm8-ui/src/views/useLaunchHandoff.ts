@@ -48,7 +48,7 @@ import {
   type LaunchRecord,
 } from '../launch-handoff/store';
 import { getWorkspaceRuntime, type WorkspaceRuntime } from '../tab-workspace/runtime/dispatch';
-import { kindInScope } from '../tab-workspace/runtime/selectors';
+import { findEntityTab, kindInScope } from '../tab-workspace/runtime/selectors';
 import { workspaceTabView } from '../tab-workspace/runtime/url';
 import {
   bindLaunchTab,
@@ -110,9 +110,10 @@ export interface LaunchHandoff {
   onLaunchStarted(launch: LaunchStarted, replaces?: string): boolean;
   /**
    * The host's spawn verb, composed. A launch this hand-off took over is
-   * tracked on its page and the promise never rejects — the popup is gone and
-   * the page shows the outcome. Any other launch runs `fallback` (else a bare
-   * spawn) exactly as before.
+   * tracked on its page; the promise settles as the launch did — it rejects
+   * with the failure the page already shows, so the popup (gone) records
+   * nothing for a refused launch. Any other launch runs `fallback` (else a
+   * bare spawn) exactly as before.
    */
   spawn(input: ExecutionSpawnInput, fallback?: (input: ExecutionSpawnInput) => void | Promise<void>): Promise<void>;
   /** Dismiss: forget the launch and close its page's tab. A session that started keeps running. */
@@ -170,12 +171,8 @@ function openSessionTab(runtime: WorkspaceRuntime, sessionId: string): void {
 
 /** Close the session's tab — Dismiss on a boot that failed after the swap. */
 function closeSessionTab(runtime: WorkspaceRuntime, sessionId: string): void {
-  const state = runtime.store.getState();
-  const tabId = state.orderedTabIds.find((id) => {
-    const tab = state.tabs[id];
-    return tab?.type === 'entity' && tab.entityId === sessionId;
-  });
-  if (tabId) runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId }, source: 'click' });
+  const tab = findEntityTab(runtime.store.getState(), LAUNCH_TAB_KIND, sessionId);
+  if (tab) runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' });
 }
 
 export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
@@ -197,8 +194,19 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     /* `queued`: Work's drain opens it as the session's tab. A launch tab the
        viewer closed meanwhile stays closed — the session runs on regardless. */
   };
-  const admit = (launchId: string, sessionId: EntityId) =>
-    land(transition(launchId, { type: 'admit', sessionId, at: now() }), sessionId);
+  /**
+   * Record the answer, then land it. Landing is this window's own work (a tab
+   * bind), so a throw there is a CLIENT error: logged as one, never mistaken
+   * for the node refusing a launch it already admitted.
+   */
+  const admit = (launchId: string, sessionId: EntityId) => {
+    const record = transition(launchId, { type: 'admit', sessionId, at: now() });
+    try {
+      land(record, sessionId);
+    } catch (error) {
+      console.error('[launch-handoff] the session was admitted but its tab could not be bound', { launchId, sessionId, error });
+    }
+  };
 
   /** The failure, on the record and on the tab — a reload draws it, never replays it. */
   const fail = (launchId: string, failure: LaunchFailure) => {
@@ -210,14 +218,18 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   /** "Did it start?" — the replay first; the subject's sessions, offered, second. */
   const check = async (launchId: string, input: ExecutionSpawnInput) => {
     if (!transition(launchId, { type: 'check' })) return;
+    let replayed: EntityId | null = null;
     try {
-      admit(launchId, await deps.spawnSession(input));
-      return;
+      replayed = await deps.spawnSession(input);
     } catch (again) {
       if (!isLaunchTimeout(again)) {
         fail(launchId, launchFailureOf(again));
         return;
       }
+    }
+    if (replayed !== null) {
+      admit(launchId, replayed);
+      return;
     }
     const record = launchRecord(launchId);
     if (!record) return;
@@ -241,12 +253,15 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   };
 
   const send = async (launchId: string, input: ExecutionSpawnInput) => {
+    let sessionId: EntityId;
     try {
-      admit(launchId, await deps.spawnSession(input));
+      sessionId = await deps.spawnSession(input);
     } catch (error) {
       if (isLaunchTimeout(error)) await check(launchId, input);
       else fail(launchId, launchFailureOf(error));
+      return;
     }
+    admit(launchId, sessionId);
   };
 
   const onLaunchStarted = (launch: LaunchStarted, replaces?: string): boolean => {
@@ -311,6 +326,12 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     const runtime = runtimeOfPage(record.page);
     if (runtime && record.page.at === 'tab') storeLaunchFacts(runtime, record.id, { input });
     await send(record.id, input);
+    /* The popup's promise settles as the launch did (lane A writes the
+       remembered picks only on success); the page already shows a failure. */
+    const settled = launchRecord(record.id);
+    if (settled?.state === 'failed' && settled.failure) {
+      throw Object.assign(new Error(settled.failure.message), { code: settled.failure.code });
+    }
   };
 
   const dismiss = (launchId: string) => {

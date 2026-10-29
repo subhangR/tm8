@@ -111,6 +111,13 @@ describe('the boot phases', () => {
     expect(launchPhases({ ...base, failed: true })[0]?.detail).toBe('The node did not take the launch');
   });
 
+  it('a session that failed with no recorded phase blames no step', () => {
+    const rows = launchPhases({ ...base, admitted: true, status: 'failed', bootPhase: null });
+    expect(marks(rows)).toEqual(['done', 'pending', 'pending', 'pending', 'pending']);
+    expect(marks(launchPhases({ ...base, admitted: true, status: 'failed', bootPhase: 'failed', lastStep: null })))
+      .toEqual(['done', 'pending', 'pending', 'pending', 'pending']);
+  });
+
   it('name the lane by the launch’s working directory', () => {
     expect(launchPhases({ ...base, workdir: 'scratch' })[1]).toMatchObject({ label: 'Lane', detail: 'Scratch directory ready' });
     expect(launchPhases({ ...base, workdir: 'worktree' })[1]?.detail).toBe('Worktree checked out');

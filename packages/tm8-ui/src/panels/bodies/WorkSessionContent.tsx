@@ -290,9 +290,12 @@ export function WorkSessionContent({
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
   /* Told to the chrome outside this body (panel frame, title bar, action
      strip): only the terminal surface stands in the always-dark scope. */
+  /* While the launching page stands in, no surface is shown: reporting the
+     terminal then would paint the chrome dark around a light page. */
+  const bootPageShown = launching !== null;
   useEffect(() => {
-    reportShownSurface(sessionId, surface);
-  }, [sessionId, surface]);
+    reportShownSurface(sessionId, bootPageShown ? null : surface);
+  }, [sessionId, surface, bootPageShown]);
   useEffect(() => () => reportShownSurface(sessionId, null), [sessionId]);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [transcriptMounted, setTranscriptMounted] = useState(

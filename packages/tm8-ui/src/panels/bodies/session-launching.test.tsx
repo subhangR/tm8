@@ -7,7 +7,7 @@
  * boots and hands over to the surfaces, in place, once it runs.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import {
   beginLaunch,
@@ -175,6 +175,22 @@ describe('the session’s work view while it boots', () => {
     expect(screen.queryByTestId('session-launching')).toBeNull();
     expect(screen.getByTestId('the-terminal')).toBeTruthy();
     expect(screen.getByTestId('work-session-never-started')).toBeTruthy();
+  });
+
+  it('a boot on screen when it crosses the lost-session window gives way to its surfaces by itself', () => {
+    vi.useFakeTimers();
+    try {
+      const nearlyStale = new Date(Date.now() - (10 * 60_000 - 1_000)).toISOString();
+      render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting({ createdAt: nearlyStale })} />);
+      expect(screen.getByTestId('session-launching')).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      expect(screen.queryByTestId('session-launching')).toBeNull();
+      expect(screen.getByTestId('work-session-never-started')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a recent phase change keeps an old session’s boot on the page', () => {

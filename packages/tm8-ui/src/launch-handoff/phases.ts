@@ -61,8 +61,8 @@ export interface PhaseInputs {
   /** The node's recorded phase; null when it records none. */
   bootPhase: WorkSessionBootPhase | null;
   /**
-   * The launch failed on this window's side (refused, or timed out with no
-   * session found). A `failed` status or phase says the same from the node's.
+   * The launch failed on THIS window's side (refused, or timed out with no
+   * session found): nothing was admitted, so the failure is Admitted's.
    */
   failed: boolean;
   /**
@@ -123,9 +123,16 @@ export function stepsDone(inputs: Pick<PhaseInputs, 'admitted' | 'status' | 'boo
 
 export function launchPhases(inputs: PhaseInputs): PhaseRow[] {
   const done = stepsDone(inputs);
-  const failed = inputs.failed || inputs.status === 'failed' || inputs.bootPhase === 'failed';
+  /* A row is marked failed only where the failing step is KNOWN: the
+     window's own refusal (nothing admitted), or a recorded boot that failed
+     after a step this page saw. A session that failed with no recorded phase
+     says where nothing — no row is blamed; the page shows the node's reason. */
+  const failedRow = inputs.failed || (inputs.bootPhase === 'failed' && Boolean(inputs.lastStep));
+  const stopped = inputs.status === 'failed' || inputs.bootPhase === 'failed';
   return BOOT_PHASES.map((id, index) => {
-    const mark: PhaseMark = index < done ? 'done' : index === done ? (failed ? 'failed' : 'active') : 'pending';
+    const mark: PhaseMark = index < done
+      ? 'done'
+      : index === done ? (failedRow ? 'failed' : stopped ? 'pending' : 'active') : 'pending';
     const row = labelled(id, inputs.workdir);
     return { ...row, ...(mark === 'failed' ? { detail: FAILED_DETAIL[id] } : {}), mark };
   });

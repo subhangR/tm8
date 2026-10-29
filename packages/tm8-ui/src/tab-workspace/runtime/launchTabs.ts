@@ -55,20 +55,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * a ＋ New → Session draft holds the screen's own fields instead. Shape-checked
  * because the values travel through storage and the node.
  */
+const str = (v: unknown): v is string => typeof v === 'string';
+const strOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string';
+const VERBS: ReadonlySet<string> = new Set(['worker', 'coordinator', 'dispatcher']);
+
+/**
+ * The stored launch, validated WHOLE — every field the page model reads. A
+ * launch tab persists, so a malformed one that slipped through would throw in
+ * render on every reload; it reads as null instead, and the tab says it could
+ * not be restored.
+ */
+function launchStartedOf(raw: unknown): LaunchStarted | null {
+  if (!isRecord(raw)) return null;
+  const { clientMutationId, subjectId, title, verb, teammate, model, effort, accessMode, workdir, notes } = raw;
+  if (!str(clientMutationId) || !str(subjectId) || !str(title) || !str(verb) || !VERBS.has(verb) || !str(notes)) return null;
+  if (!strOrNull(model) || !strOrNull(effort) || !strOrNull(accessMode)) return null;
+  if (teammate !== null && !(isRecord(teammate) && str(teammate.id) && str(teammate.name))) return null;
+  if (!isRecord(workdir)) return null;
+  const okWorkdir = workdir.kind === 'scratch'
+    || (workdir.kind === 'project' && str(workdir.projectId)
+      && (workdir.mode === 'project' || workdir.mode === 'worktree') && strOrNull(workdir.baseRef));
+  return okWorkdir ? (raw as unknown as LaunchStarted) : null;
+}
+
+function failureOf(raw: unknown): LaunchFailure | null {
+  if (!isRecord(raw) || !str(raw.message)) return null;
+  const candidates = Array.isArray(raw.candidates)
+    ? raw.candidates.filter((c): c is { id: EntityId; title: string } => isRecord(c) && str(c.id) && str(c.title))
+    : [];
+  return {
+    message: raw.message,
+    code: str(raw.code) ? raw.code : null,
+    uncertain: raw.uncertain === true,
+    ...(candidates.length > 0 ? { candidates } : {}),
+  };
+}
+
 export function launchTabValues(values: Record<string, unknown> | null | undefined): LaunchTabValues | null {
-  if (!values || typeof values.launchId !== 'string' || values.launchId.length === 0) return null;
-  const launch = values.launch;
-  if (!isRecord(launch) || launch.clientMutationId !== values.launchId || typeof launch.title !== 'string') return null;
-  if (typeof launch.subjectId !== 'string') return null;
+  if (!values || !str(values.launchId) || values.launchId.length === 0) return null;
+  const launch = launchStartedOf(values.launch);
+  if (!launch || launch.clientMutationId !== values.launchId) return null;
   const startedAt = typeof values.startedAt === 'number' && Number.isFinite(values.startedAt) ? values.startedAt : Date.now();
   const input = isRecord(values.input) && values.input.clientMutationId === values.launchId
     ? (values.input as unknown as ExecutionSpawnInput)
     : null;
-  const f = values.failure;
-  const failure: LaunchFailure | null = isRecord(f) && typeof f.message === 'string'
-    ? { message: f.message, code: typeof f.code === 'string' ? f.code : null, uncertain: f.uncertain === true }
-    : null;
-  return { launchId: values.launchId, launch: launch as unknown as LaunchStarted, input, startedAt, failure };
+  return { launchId: values.launchId, launch, input, startedAt, failure: failureOf(values.failure) };
 }
 
 /** The open launch tab for `launchId`, if any. */

@@ -20,7 +20,7 @@
  *       is a real session, with its own record of what went wrong;
  *     - Dismiss, choose and resume are the hand-off's own (`views/useLaunchHandoff`).
  */
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { launchRecord, LaunchPageHostContext, type LaunchPageHost, type LaunchRecord } from '../../launch-handoff';
 import { LaunchComposerPopup } from '../../new-session';
@@ -73,9 +73,16 @@ function RetryPopup({ record, onDismiss }: { record: LaunchRecord; onDismiss: ()
     [gate.data, runtime],
   );
   const port = useLaunchPort(gate.data, { onSpawn });
-  const { subjectId, title, verb } = record.launch;
+  const { subjectId, verb } = record.launch;
+  /* The SUBJECT's own title and kind, from its detail — the launch carries
+     only the session's title. Read it if no surface has yet; the popup opens
+     when it lands. */
   const detail = gate.data.detailOf(subjectId);
-  const subject = detail ? { id: detail.id, title: detail.title, kind: detail.kind } : { id: subjectId, title };
+  useEffect(() => {
+    if (!detail) gate.data.refetchDetail(subjectId);
+  }, [detail, gate.data, subjectId]);
+  if (!detail) return null;
+  const subject = { id: detail.id, title: detail.title, kind: detail.kind };
   return (
     <LaunchComposerPopup
       subject={subject}

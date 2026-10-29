@@ -49,7 +49,6 @@ import type { DraftTabRecord, KindId } from '../runtime/types';
 import { useWorkspace } from '../view/context';
 import { getKindAdapter } from './registry';
 import { LaunchTabBody } from './LaunchTabBody';
-import { launchTabValues } from '../runtime/launchTabs';
 import '../view/creation.css';
 
 export interface DraftHostProps {
@@ -591,8 +590,7 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
  * launch until its session exists (task 01a182d2, `runtime/launchTabs.ts`).
  */
 function LaunchDraftBody(props: DraftHostProps) {
-  const launch = launchTabValues(props.values);
-  return launch ? <LaunchTabBody values={launch} /> : <NewSessionDraftBody {...props} />;
+  return props.tab.holds === 'launch' ? <LaunchTabBody tab={props.tab} /> : <NewSessionDraftBody {...props} />;
 }
 
 function NewSessionDraftBody({ values, onValues, onCreated, onCancel, onSubmitting, tab }: DraftHostProps) {

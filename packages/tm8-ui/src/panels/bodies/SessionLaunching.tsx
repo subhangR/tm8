@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import {
+  BOOT_STALE_MS,
   bootIsFresh,
   formatElapsed,
   launchPageModel,
@@ -86,6 +87,20 @@ export function useSessionLaunching(boot: BootingSession | null): { page: Launch
     if (step) setLastStep(step);
   }, [step]);
   const model = boot ? launchPageModel(record, boot, step ?? lastStep) : null;
+  /* Freshness is a fact about the CLOCK, so the view re-asks at the moment it
+     would change: a boot on screen when it crosses the lost-session window
+     gives way to its surfaces without anything else re-rendering it. */
+  const [, setCrossed] = useState(0);
+  const freshUntil = boot && model?.state === 'booting' && !record
+    ? Date.parse(boot.bootPhaseAt ?? boot.createdAt) + BOOT_STALE_MS
+    : Number.NaN;
+  useEffect(() => {
+    if (!Number.isFinite(freshUntil)) return;
+    const wait = freshUntil - Date.now();
+    if (wait <= 0) return;
+    const timer = setTimeout(() => setCrossed((n) => n + 1), wait + 50);
+    return () => clearTimeout(timer);
+  }, [freshUntil]);
   if (model?.state === 'booting') {
     return record || bootIsFresh(boot!, Date.now()) ? { page: model, stale: false } : { page: null, stale: true };
   }

@@ -3,7 +3,8 @@
  * launch whose session does not exist yet, in the Work draft tab that holds it.
  *
  * CONTRACT
- *   in   the tab's stored launch values (`runtime/launchTabs.ts`).
+ *   in   the launch tab; its stored values (`runtime/launchTabs.ts`) are read
+ *        live, so a retry rewriting them in place is drawn at once.
  *   out  the page (`panels/bodies/SessionLaunching.tsx`), drawn from this
  *        window's launch record, else from the stored values while the record
  *        is being re-adopted.
@@ -18,12 +19,44 @@
  * that bound on mount would leave a background launch unbound. The hand-off
  * binds through the runtime when the node answers, wherever the viewer is.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { launchPageModel, launchRecord, startingRecord, useLaunchPageHost, useLaunchRecord } from '../../launch-handoff';
 import { SessionLaunching } from '../../panels/bodies/SessionLaunching';
-import type { LaunchTabValues } from '../runtime/launchTabs';
+import { subscribeDrafts } from '../runtime/draftStore';
+import { launchTabValues } from '../runtime/launchTabs';
+import type { DraftTabRecord } from '../runtime/types';
+import { useWorkspace } from '../view/context';
 
-export function LaunchTabBody({ values }: { values: LaunchTabValues }) {
+export function LaunchTabBody({ tab }: { tab: DraftTabRecord }) {
+  const { runtime } = useWorkspace();
+  /* The values are read LIVE, not once per mount: a retry rewrites them in
+     place (a local write, which bumps the revision but not the remote
+     version DraftHost keys its body on), and the page must follow. */
+  const version = useSyncExternalStore(
+    subscribeDrafts,
+    () => `${String(runtime.drafts.revisionOf(tab.draftId))}:${String(runtime.drafts.remoteVersionOf(tab.draftId))}`,
+  );
+  const values = useMemo(() => launchTabValues(runtime.drafts.get(tab.draftId)), [runtime, tab.draftId, version]);
+  if (!values) {
+    return (
+      <div className="tws-launch-tab" data-testid="tws-launch-tab">
+        <p className="tws-draft-note" role="status" data-testid="tws-launch-tab-unrestorable">
+          This launch could not be restored.{' '}
+          <button
+            type="button"
+            className="pn-btn"
+            onClick={() => runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: tab.id }, source: 'click' })}
+          >
+            Dismiss
+          </button>
+        </p>
+      </div>
+    );
+  }
+  return <LaunchTabPage values={values} />;
+}
+
+function LaunchTabPage({ values }: { values: NonNullable<ReturnType<typeof launchTabValues>> }) {
   const host = useLaunchPageHost();
   const record = useLaunchRecord(values.launchId);
   const stored = useRef(values);
