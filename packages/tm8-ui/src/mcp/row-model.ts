@@ -106,18 +106,17 @@ export function usableAccounts(server: McpServer): McpAccount[] {
  * and a shared one is theirs when they manage it (`manageable` is "owner is
  * me" for a member's row).
  */
-export function resolvedAccount(server: McpServer): McpAccount | undefined {
-  const usable = usableAccounts(server);
+export function resolvedAccount(server: McpServer, usable: readonly McpAccount[] = usableAccounts(server)): McpAccount | undefined {
   return usable.find(a => a.sharing === 'private' || (a.ownerId !== undefined && a.canManage))
     ?? usable.find(a => a.sharing === 'space' && a.ownerId === undefined)
     ?? usable.find(a => a.sharing === 'space');
 }
 
 /** The account a pick opens: the usable pin, or §3's choice when there is no pin. */
-export function pickedAccount(server: McpServer, credentialId: string | undefined): McpAccount | undefined {
+export function pickedAccount(server: McpServer, credentialId: string | undefined, usable: readonly McpAccount[] = usableAccounts(server)): McpAccount | undefined {
   if (server.auth === 'none') return undefined;
-  if (credentialId) return usableAccounts(server).find(a => a.id === credentialId);
-  return resolvedAccount(server);
+  if (credentialId) return usable.find(a => a.id === credentialId);
+  return resolvedAccount(server, usable);
 }
 
 /**
@@ -206,13 +205,24 @@ export function connectorAction(server: McpServer): ConnectorAction {
   return ACTION[connectorStatus(server)];
 }
 
+/**
+ * What `bind` refuses about the connector's DEFINITION, whoever asks: not
+ * approved, disabled, or a local command the node does not trust (an absent
+ * flag is untrusted: the server refuses on `!stdioTrusted`). Shared by the row
+ * status and the launch gate, which must refuse exactly what the row shows.
+ */
+export function definitionRefusal(server: McpServer): 'not_approved' | 'disabled' | 'stdio_not_trusted' | null {
+  if (!server.approved) return 'not_approved';
+  if (!server.enabled) return 'disabled';
+  if (server.transport === 'stdio' && !server.source?.stdioTrusted) return 'stdio_not_trusted';
+  return null;
+}
+
 /** The §10.0 status of one connector, for this viewer. */
 export function connectorStatus(server: McpServer): ConnectorStatus {
   if (!server.canAttach) return 'access_denied';
-  if (!server.approved) return 'not_approved';
-  if (!server.enabled) return 'disabled';
-  // The server refuses on `!stdioTrusted`: an absent flag is untrusted too.
-  if (server.transport === 'stdio' && !server.source?.stdioTrusted) return 'stdio_not_trusted';
+  const refused = definitionRefusal(server);
+  if (refused) return refused;
   if (server.auth !== 'none' && usableAccounts(server).length === 0) return credentialStatus(server);
   // The health record is the viewer's own last test of this connector
   // (`mcp_server_health` is keyed by member), so an unreachable server is
@@ -256,8 +266,8 @@ export function connectorRows(
     const status = connectorStatus(server);
     const copy = COPY[status];
     // Resolved ONCE per row; access, account and the dead pin all read it.
-    const account = pickedAccount(server, pick?.credentialId);
     const usable = usableAccounts(server);
+    const account = pickedAccount(server, pick?.credentialId, usable);
     return {
       server,
       status,

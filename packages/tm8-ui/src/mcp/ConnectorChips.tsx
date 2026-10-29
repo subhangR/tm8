@@ -36,6 +36,8 @@ export interface ConnectorChipsProps {
   disabled?: boolean;
   /** The selection gate's sentence (`selectionGate`), drawn under the row. */
   problem?: string | null;
+  /** A wait, not a refusal ("Checking connectors…"): a quiet status line, never an alert. */
+  pending?: string | null;
   /** The catalog's last read failed while these chips are still shown: one line, with its retry. */
   readError?: ReactNode;
   /** §10.5's harness note, drawn in the full list. */
@@ -43,7 +45,7 @@ export interface ConnectorChipsProps {
   resetLabel?: string;
 }
 
-export function ConnectorChips({ catalog, value, onChange, disabled = false, problem, readError, notice, resetLabel }: ConnectorChipsProps) {
+export function ConnectorChips({ catalog, value, onChange, disabled = false, problem, pending, readError, notice, resetLabel }: ConnectorChipsProps) {
   // The full list's one state: shut (the row alone) or open (the list on its own line under it).
   const [full, setFull] = useState(false);
   const listId = useId();
@@ -74,6 +76,7 @@ export function ConnectorChips({ catalog, value, onChange, disabled = false, pro
       </button>
     ) : null}
     {problem ? <p className="mcp-error mcp-compact__line" role="alert">{problem}</p> : null}
+    {pending ? <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-checking">{pending}</p> : null}
     {readError}
     {full ? (
       <div id={listId} className="mcp-compact__full">
@@ -121,7 +124,7 @@ function Chip({ row, disabled, onToggle, onPin }: {
     {row.toggle
       ? <button type="button" className="mcp-chip__toggle" aria-pressed={row.on} disabled={disabled} title={title}
           data-testid={`mcp-chip-toggle-${server.id}`} onClick={() => onToggle(!row.on)}>{body}</button>
-      : <ConnectorsLink label={`${row.action === 'reconnect' ? 'Reconnect' : 'Connect'} ${server.title}`} title={row.text}>{body}</ConnectorsLink>}
+      : <ConnectorsLink disabled={disabled} label={`${row.action === 'reconnect' ? 'Reconnect' : 'Connect'} ${server.title}`} title={row.text}>{body}</ConnectorsLink>}
     {choose ? <AccountSelect row={row} disabled={disabled} testId={`mcp-chip-account-${server.id}`} className="mcp-chip__account" onPin={onPin} /> : null}
   </li>;
 }

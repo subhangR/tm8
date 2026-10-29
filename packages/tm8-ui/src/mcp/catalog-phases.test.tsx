@@ -7,8 +7,9 @@
  * one's last-known copy.
  */
 import { useState } from 'react';
+import { CollabError } from '@tm8/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { ChatConnectorsSheet } from '../chat-home/composer/ChatConnectors';
 import { McpProvider } from './context';
 import { McpEquipment } from './McpEquipment';
@@ -122,7 +123,7 @@ describe('round 3: failures over a seed, and what they forget', () => {
   });
 
   it('forgets a copy no mount confirmed when its read fails, so a dead target stops seeding', async () => {
-    const port = scripted(() => Promise.reject(new Error('refused')));
+    const port = scripted(() => Promise.reject(new CollabError('forbidden', 'MCP defaults target is unavailable')));
     const first = render(<Launch port={port} />);
     await screen.findByTestId('mcp-chip-toggle-docs');
     first.unmount();
@@ -156,5 +157,65 @@ describe('round 3: failures over a seed, and what they forget', () => {
     await refocus();
     await screen.findByTestId('mcp-picker-error');
     expect(onCount).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe('round 4', () => {
+  function Launch({ port, initial, onReady = vi.fn(), disabled = false }: { port: McpPort; initial?: McpSelection[]; onReady?(ready: boolean, problem: string | null): void; disabled?: boolean }) {
+    const [value, setValue] = useState<McpSelection[] | undefined>(initial);
+    return <McpProvider port={port}><McpPicker layout="compact" targetId="task" value={value} onChange={setValue} onReady={onReady} disabled={disabled} /></McpProvider>;
+  }
+  function seededPort(after: () => Promise<McpCatalog>, first: McpCatalog = catalog()): McpPort {
+    let reads = 0;
+    return { catalog: vi.fn(() => (++reads === 1 ? Promise.resolve(first) : after())) } as unknown as McpPort;
+  }
+  async function seed(port: McpPort) {
+    const first = render(<Launch port={port} />);
+    await waitFor(() => expect(port.catalog).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    first.unmount();
+  }
+
+  it('keeps an earlier mount’s copy when a reopen’s read only blips (5xx, network)', async () => {
+    const port = seededPort(() => Promise.reject(new Error('502')));
+    await seed(port);
+    const second = render(<Launch port={port} />);
+    await screen.findByTestId('mcp-picker-error');
+    second.unmount();
+    render(<Launch port={port} />);
+    expect(screen.getByTestId('mcp-chip-toggle-docs')).toBeTruthy();
+  });
+
+  it('never holds [] on Checking — bind cannot refuse "no connectors"', async () => {
+    const port = seededPort(() => new Promise<McpCatalog>(() => {}));
+    await seed(port);
+    const onReady = vi.fn();
+    render(<Launch port={port} initial={[]} onReady={onReady} />);
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
+  });
+
+  it('says Checking as a quiet status, never as an alert', async () => {
+    const port = seededPort(() => new Promise<McpCatalog>(() => {}));
+    await seed(port);
+    render(<Launch port={port} initial={[{ serverId: 'docs' }]} />);
+    expect(screen.getByTestId('mcp-compact-checking').getAttribute('role')).toBe('status');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('opens the gate for a viewer who may not attach — there is no switch to name', async () => {
+    const closed = catalog(); closed.canAttach = false;
+    const onReady = vi.fn();
+    render(<Launch port={{ catalog: vi.fn(async () => closed) } as unknown as McpPort} initial={[{ serverId: 'gone' }]} onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenCalled());
+    await act(async () => {});
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
+  });
+
+  it('does not navigate away from a launch in flight through a Connect chip', async () => {
+    const data = catalog(); data.servers.push(server({ id: 'figma', title: 'Figma', auth: 'oauth' }));
+    render(<Launch port={{ catalog: vi.fn(async () => data) } as unknown as McpPort} disabled />);
+    const chip = await screen.findByTestId('mcp-chip-figma');
+    expect(within(chip).queryByRole('link')).toBeNull();
+    expect(within(chip).getByLabelText('Connect Figma').getAttribute('aria-disabled')).toBe('true');
   });
 });

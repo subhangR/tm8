@@ -43,7 +43,7 @@ export function AccountSelect({ row, disabled, testId, className, onPin }: {
       <option value="">{resolvedAccount(server) ? 'Choose for me' : 'Choose an account'}</option>
       {row.deadPin ? (
         <option value={row.credentialId} disabled>
-          {dead ? `${dead.label} (needs reconnect)` : 'Removed account'}
+          {!dead ? 'Removed account' : dead.status === 'connected' ? `${dead.label} (no longer shared with you)` : `${dead.label} (needs reconnect)`}
         </option>
       ) : null}
       {row.accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}

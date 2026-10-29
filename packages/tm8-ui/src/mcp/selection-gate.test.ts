@@ -120,3 +120,11 @@ describe('round 2: what bind refuses that the gate used to pass', () => {
     expect(accessFor(server({ accounts: [spaceOwned] }))).toBe('Shared');
   });
 });
+
+describe('round 4: a pin the viewer merely lost', () => {
+  it('says the share is gone, not "reconnect", when the account is still connected', () => {
+    const withdrawn = { ...sharedWithMe, canUse: false };
+    expect(accountProblem(server({ accounts: [withdrawn] }), { serverId: 'notion', credentialId: 'shared' }))
+      .toBe('You can no longer use the account picked for Notion. Switch Notion off.');
+  });
+});

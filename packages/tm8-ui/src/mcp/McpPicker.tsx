@@ -22,6 +22,7 @@ import { useCallback, useLayoutEffect, useId, useState, type ReactNode } from 'r
 import { ConnectorChips } from './ConnectorChips';
 import { ConnectorToggleList } from './ConnectorToggleList';
 import { useMcpCatalog } from './context';
+import { connectorRows } from './row-model';
 import { OPEN_GATE, selectionGate, type SelectionGate } from './selection-gate';
 import type { McpSelection } from './port';
 
@@ -100,9 +101,11 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   // first-frame press cannot pass here and meet the server's raw refusal. An
   // untouched selection is the server's to resolve and never waits.
   const gate = !catalog ? OPEN_GATE
-    : seeded && phase === 'revalidating' && value !== undefined ? CHECKING
+    : seeded && phase === 'revalidating' && (value?.length ?? 0) > 0 ? CHECKING
     : selectionGate(catalog, value);
-  const attachable = catalog?.canAttach ? catalog.servers.filter(server => server.canAttach) : [];
+  // `[]` is never judged: bind cannot refuse "no connectors".
+  const rows = catalog?.canAttach ? connectorRows(catalog, value ?? catalog.defaults, value !== undefined) : [];
+  const attachable = rows.map(row => row.server);
   // What is drawn decides the count, never the other way round.
   const draws = !!port && !headless && !!catalog?.canAttach && (attachable.length > 0 || gate.problem !== null);
   // The one error line counts too: a failed read is drawn, and the host must
@@ -119,7 +122,9 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
     if (phase === 'loading') return <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-loading">Loading connectors…</p>;
     if (!catalog || !draws) return readError;
     // A failed RE-read keeps the chips it was showing, with one line saying so.
-    return <ConnectorChips catalog={catalog} value={value} onChange={onChange} disabled={disabled} problem={gate.problem}
+    const checking = gate === CHECKING;
+    return <ConnectorChips catalog={catalog} value={value} onChange={onChange} disabled={disabled}
+      problem={checking ? null : gate.problem} pending={checking ? gate.problem : null}
       readError={readError} {...(notice ? { notice } : {})} {...(resetLabel ? { resetLabel } : {})} />;
   }
   if (!catalog) return readError;

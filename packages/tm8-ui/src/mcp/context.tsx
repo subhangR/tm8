@@ -24,11 +24,12 @@
  *
  * Invariants: a catalog is never shown under another scope's key; only a
  * `lastKnown` reader keeps a catalog under `failed`; an older read never
- * overwrites a newer one's last-known copy; a failed read forgets a copy this
- * mount never confirmed and keeps one it did; `loading` in the result is exactly
+ * overwrites a newer one's last-known copy; a failed read forgets only a copy the
+ * server now refuses (forbidden / not found) that this mount never confirmed; `loading` in the result is exactly
  * `loading` or `revalidating`, the meaning every existing reader relies on.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { CollabError } from '@tm8/contract';
 import type { McpCatalog, McpPort } from './port';
 const Context = createContext<{ port: McpPort | null; revision: number; refresh(): void }>({ port: null, revision: 0, refresh() {} });
 export const useMcpPort = () => useContext(Context).port;
@@ -115,6 +116,10 @@ function settle(port: McpPort, scope: string, seq: number, catalog: McpCatalog |
   entry.catalog = catalog;
 }
 
+function refusedOutright(failure: unknown): boolean {
+  return failure instanceof CollabError && (failure.code === 'forbidden' || failure.code === 'not_found');
+}
+
 export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?: { lastKnown?: boolean }) {
   const { port, revision, refresh } = useContext(Context);
   const scope = JSON.stringify([targetId, teamMemberId]);
@@ -141,12 +146,12 @@ export function useMcpCatalog(targetId?: string, teamMemberId?: string, options?
         answered.current = scope;
         setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'answered', catalog }) }));
       },
-      // A failure keeps the copy only when this mount confirmed it: a re-read
-      // that fails after this mount's own answer keeps showing (and keeping)
-      // it. A copy this mount never confirmed is forgotten, so a target the
-      // server now refuses stops seeding reopen after reopen.
-      () => {
-        if (keep && answered.current !== scope) settle(port, scope, seq, undefined);
+      // A failure keeps the last-known copy, except one the server now
+      // REFUSES (forbidden / not found) that this mount never confirmed: a
+      // dead target stops seeding reopen after reopen, while a 5xx blip or a
+      // dropped connection never throws away a copy an earlier mount confirmed.
+      (failure: unknown) => {
+        if (keep && answered.current !== scope && refusedOutright(failure)) settle(port, scope, seq, undefined);
         if (!active) return;
         setState(previous => ({ ...previous, snapshot: step(previous.snapshot, { type: 'failed', error: 'Connectors could not be loaded. Try again.', keepShown: keep }) }));
       },

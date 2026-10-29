@@ -25,7 +25,7 @@
  *  - A hint computed from what the viewer can read. The server's resolver is
  *    the authority; nothing here is sent.
  */
-import { connectorAction, pickedAccount, usableAccounts } from './row-model';
+import { connectorAction, definitionRefusal, pickedAccount, usableAccounts } from './row-model';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 
 export interface SelectionGate {
@@ -57,8 +57,12 @@ export function accountProblem(server: McpServer, selection: McpSelection): stri
   if (pickedAccount(server, selection.credentialId)) return null;
   const usable = usableAccounts(server).length > 0;
   if (selection.credentialId) {
-    return usable
-      ? `Choose a connected account for ${server.title}.`
+    if (usable) return `Choose a connected account for ${server.title}.`;
+    // Still connected but no longer the viewer's to use (a share withdrawn):
+    // reconnecting is not a remedy they can perform.
+    const pinned = server.accounts.find(a => a.id === selection.credentialId);
+    return pinned && pinned.status === 'connected'
+      ? `You can no longer use the account picked for ${server.title}. Switch ${server.title} off.`
       : `The account picked for ${server.title} needs reconnecting. Reconnect it, or switch ${server.title} off.`;
   }
   if (usable) return `Choose an account for ${server.title}: a connection shared with you is used only when you pick it.`;
@@ -67,19 +71,24 @@ export function accountProblem(server: McpServer, selection: McpSelection): stri
     : `Connect an account for ${server.title}, or switch it off.`;
 }
 
+const REFUSAL = {
+  not_approved: 'is awaiting approval',
+  disabled: 'is disabled by an admin',
+  stdio_not_trusted: 'runs a local command this node does not trust',
+} as const;
+
 function pickProblem(server: McpServer | undefined, selection: McpSelection): string | null {
   if (!server) return 'A connector picked here no longer exists. Reset the connectors to drop it.';
-  if (!server.approved) return `${server.title} is awaiting approval and would be refused. Switch it off.`;
-  if (!server.enabled) return `${server.title} is disabled by an admin and would be refused. Switch it off.`;
-  // bind refuses on `!stdioTrusted`, so an absent flag is untrusted too.
-  if (server.transport === 'stdio' && !server.source?.stdioTrusted) {
-    return `${server.title} runs a local command this node does not trust and would be refused. Switch it off.`;
-  }
+  const refused = definitionRefusal(server);
+  if (refused) return `${server.title} ${REFUSAL[refused]} and would be refused. Switch it off.`;
   return accountProblem(server, selection);
 }
 
 /** The gate for one selection: the first pick `bind` would refuse, named. */
 export function selectionGate(catalog: McpCatalog, value: readonly McpSelection[] | undefined): SelectionGate {
+  // A viewer who may not attach here is shown no picker, so there is no
+  // switch a refusal could name.
+  if (!catalog.canAttach) return OPEN_GATE;
   for (const selected of value ?? []) {
     const problem = pickProblem(catalog.servers.find(s => s.id === selected.serverId), selected);
     if (problem) return { blocked: true, problem };

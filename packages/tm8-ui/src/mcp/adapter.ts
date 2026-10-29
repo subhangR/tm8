@@ -279,9 +279,6 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       // asked only of a viewer who may ATTACH here — for anyone else they are
       // refused and discarded, two logged failures per read. The list is the
       // authority on that, so a scope seen for the first time asks it first.
-      //
-      // SETTLED, NOT RACED: the list's refusal is the one reported, whatever
-      // landed first.
       const key = JSON.stringify([targetId, teamMemberId]);
       const known = attachKnown.get(key);
       const optional = () => Promise.allSettled([
@@ -290,9 +287,7 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       ] as const);
       const listing = allServers(targetId, teamMemberId);
       const early = known ? optional() : null;
-      const [listed] = await Promise.allSettled([listing]);
-      if (listed.status === 'rejected') throw listed.reason;
-      const items = listed.value;
+      const items = await listing;
       const attach = items.allowed.attach;
       attachKnown.set(key, attach);
       const [resolving, attaching] = attach ? await (early ?? optional()) : [undefined, undefined];
