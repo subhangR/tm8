@@ -287,7 +287,10 @@ const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'che
 const STOP_WORDS = ['stop', 'stopping', 'cancel', 'cancelling', 'canceling', 'kill', 'killing', 'abort', 'aborting', 'halt', 'halting', 'terminate', 'terminating', 'interrupt'];
 /** What a stop may name for `session terminate`: a run, the tool running, or its session. */
 const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessions'];
-/** A query with any of these does not ask to START a run: the ranker never answers `tool run` first. */
+/**
+ * A query with any of these does not ask to START a run: the ranker never answers `tool run` first.
+ * `rankedLast` reads tokenize()'s tokens, so these must stay OUT of STOPWORDS ("don't" is `don`).
+ */
 const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
   ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
   'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
