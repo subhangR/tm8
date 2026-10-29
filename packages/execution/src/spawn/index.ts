@@ -11,6 +11,7 @@ export {
 } from './secret-redaction.js';
 export {
   SpawnService,
+  type AdmitOptions,
   type CredentialContainmentCause,
   type CredentialContainmentResult,
   type SessionLiveCause,

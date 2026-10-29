@@ -33,6 +33,8 @@ import type { RequestContext } from '../src/http/types.js';
 vi.mock('../src/facade/handlers/entities.js', async (original) => ({
   ...(await original<typeof import('../src/facade/handlers/entities.js')>()),
   toCommandResult: async (_q: unknown, raw: { entity?: unknown }) => ({ entity: raw.entity, patches: [] }),
+  // The handler builds the entity's detail beside the rest (379).
+  buildDetail: async (_q: unknown, id: string) => ({ id }),
 }));
 
 const SPACE = '11111111-1111-4111-8111-111111111111';

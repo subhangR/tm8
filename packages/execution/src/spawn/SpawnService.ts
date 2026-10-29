@@ -399,6 +399,19 @@ function settledValue<T>(result: PromiseSettledResult<T>): T {
   return result.value;
 }
 
+/** How `admit` schedules the boot it starts. */
+export interface AdmitOptions {
+  /**
+   * The boot starts once this settles, whichever way it settles, and at the
+   * latest two seconds after admission. The `execution.spawn` handler passes
+   * the assembly of its answer: measured on the dev slot at load ~54, that
+   * assembly took 747 ms p50 while the session's own boot competed with it
+   * for the database pool and the event loop, against 221 ms when nothing else
+   * of the launch ran beside it. Absent, the boot starts at once.
+   */
+  bootAfter?: Promise<unknown>;
+}
+
 /** Stop the boot when a phase report found its session already stopped. */
 function throwIfStopped(stopped: SpawnError | null): void {
   if (stopped) throw stopped;
@@ -406,6 +419,9 @@ function throwIfStopped(stopped: SpawnError | null): void {
 
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
+
+/** The longest a boot waits for its caller's answer (`AdmitOptions.bootAfter`) before it starts anyway. */
+const BOOT_AFTER_MAX_WAIT_MS = 2_000;
 
 /** How long a v2 launch waits for its task's context render before degrading. */
 const TASK_CONTEXT_RENDER_TIMEOUT_MS = 5_000;
@@ -1735,7 +1751,12 @@ export class SpawnService {
    * A ledger replay of an admitted launch — the same `clientMutationId`, in any
    * phase — answers with the original session and boots nothing.
    */
-  async admit(auth: GraphAuth, request: SpawnRequest, server?: SpawnServerFacts): Promise<AdmittedSpawn> {
+  async admit(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    server?: SpawnServerFacts,
+    options: AdmitOptions = {},
+  ): Promise<AdmittedSpawn> {
     const timer = new SpawnPhaseTimer();
     let admitted: AdmittedLaunch;
     try {
@@ -1759,7 +1780,7 @@ export class SpawnService {
         boot: Promise.resolve({ ok: true, result: { ...this.replayedResult(request, admitted), timings } }),
       };
     }
-    return { admission, boot: this.boot(auth, request, admitted, timer) };
+    return { admission, boot: this.boot(auth, request, admitted, timer, options.bootAfter) };
   }
 
   /**
@@ -2079,6 +2100,7 @@ export class SpawnService {
     request: SpawnRequest,
     admitted: AdmittedLaunch,
     timer: SpawnPhaseTimer,
+    bootAfter: Promise<unknown> | undefined,
   ): Promise<SpawnBootOutcome> {
     const { sessionId, context, launch, worktree, cwd, workdir } = admitted;
     let bootExit: PtyExitInfo | undefined;
@@ -2088,6 +2110,16 @@ export class SpawnService {
     let spaceCredentialIds: string[] = [];
 
     try {
+      // Let the caller finish its answer first (see AdmitOptions.bootAfter):
+      // the boot's own reads would otherwise compete with it for the same
+      // pool and event loop. Settled either way, and bounded, because a boot
+      // that waited on its caller forever would be a launch that never ran.
+      if (bootAfter) {
+        await timer.time('awaitAdmissionAnswer', () => Promise.race([
+          bootAfter.then(() => undefined, () => undefined),
+          new Promise<void>((resolve) => { setTimeout(resolve, BOOT_AFTER_MAX_WAIT_MS).unref?.(); }),
+        ]));
+      }
       // --- lane ---------------------------------------------------------------
       const [, , interactionProfile, agentToken] = await allOrFirstFailure([
         timer.time('lane', () => this.prepareLane(auth, admitted, () => { leased = true; })),

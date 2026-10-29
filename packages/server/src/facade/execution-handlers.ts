@@ -131,7 +131,7 @@ import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { loadDesignContextForTask } from './spawn-design.js';
-import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
+import { buildDetail, toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
@@ -2479,10 +2479,11 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
  * returns snake_case, so fixing only `entity` would have left the same bug one
  * field deeper.
  *
- * It runs in its own transaction AFTER the flow completes rather than inside
- * the RPC's: holding a transaction open across a process spawn is its own
- * problem, and re-reading afterwards means the client sees the session as it
- * finally IS (status `running`) rather than mid-flight (`spawning`).
+ * It runs in its own transactions AFTER the command rather than inside the
+ * RPC's: holding a transaction open across a process spawn is its own
+ * problem. For `execution.spawn` that is after ADMISSION (379), so the client
+ * sees the session as it then is — `spawning`, its boot phase — and follows
+ * the rest of the boot through the ordinary entity events.
  */
 /**
  * The spawn receipt's posture rows (`ExecutionSpawnLaunch`), rebuilt from a
@@ -2528,7 +2529,21 @@ async function assembleCommandResult(
   raw: unknown,
   viewerIdentityId: string,
 ): Promise<unknown> {
-  return db.tx(claims, (q) => toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId));
+  // The entity's DETAIL and the rest (patches, edge, undo) are independent
+  // reads of rows the command already committed, so they run on two pooled
+  // clients at once instead of one after the other on one. Measured on a
+  // spawn (379, load ~80): the detail — row, summary, hierarchy, connections —
+  // was 400-700 ms and the patch summaries another 40-175 ms of the same
+  // single-client chain; side by side the answer costs the larger of the two.
+  const command = (raw ?? {}) as RpcCommandResult;
+  const entityId = command.entity?.id;
+  if (!entityId) return db.tx(claims, (q) => toCommandResult(q, command, viewerIdentityId));
+  const { entity: _entity, ...rest } = command;
+  const [entity, result] = await Promise.all([
+    db.tx(claims, (q) => buildDetail(q, entityId, viewerIdentityId)),
+    db.tx(claims, (q) => toCommandResult(q, rest, viewerIdentityId)),
+  ]);
+  return { entity, ...result };
 }
 
 /**
@@ -3914,92 +3929,100 @@ function registerHandlers(
     // `admitted`) and the boot runs on in this process, recording each phase
     // on the row, which is how the caller follows it from here (379). A boot
     // that fails says so on the row, not in this response.
-    const { admission, boot } = await rethrowing(() => spawnService.admit({ ...claims, mcpSource: {
-      authSessionId: ctx.identity.sessionId,
-      sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
-    } }, request));
-    for (const [phase, ms] of Object.entries(admission.timings.phases)) timer.record(phase, ms);
-    const { sessionId } = admission;
+    // The boot starts once this answer is assembled (`answered`, settled in
+    // the finally below), so the two do not compete for the pool.
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => { answer = resolve; });
+    try {
+      const { admission, boot } = await rethrowing(() => spawnService.admit({ ...claims, mcpSource: {
+        authSessionId: ctx.identity.sessionId,
+        sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+      } }, request, undefined, { bootAfter: answered }));
+      for (const [phase, ms] of Object.entries(admission.timings.phases)) timer.record(phase, ms);
+      const { sessionId } = admission;
 
-    // 327: a session records the chat or session that launched it (its
-    // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
-    // "created here" is one edge for every kind. Never at the spawn's expense.
-    // A fact about the launch, so it is true from admission.
-    const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
-    if (spawnOrigin && parentSessionId === spawnOrigin) {
-      try {
-        await timer.time('handler.recordAuthoredFrom', () =>
-          db.tx(claims, (q) => q.rpc('record_authored_from', [sessionId, spawnOrigin])));
-      } catch (error) {
-        console.warn(`[tm8:spawn] authored_from not recorded for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-
-    // The Ask Jev run this launch came from (§6: per-launch cost). Linked once
-    // the launch is admitted — the cost is the launch's whether or not its boot
-    // succeeds — and never at its expense: a run that is absent, in another
-    // space or someone else's is logged, not turned into a failed launch.
-    if (input.jevRunId) {
-      const runId = input.jevRunId;
-      try {
-        const linked = await timer.time('handler.linkJevRun', () =>
-          db.tx(claims, (q) => linkSession(q, runId, sessionId, input.spaceId)));
-        if (!linked) {
-          console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: no such run of this caller in space ${input.spaceId}`);
+      // 327: a session records the chat or session that launched it (its
+      // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
+      // "created here" is one edge for every kind. Never at the spawn's expense.
+      // A fact about the launch, so it is true from admission.
+      const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
+      if (spawnOrigin && parentSessionId === spawnOrigin) {
+        try {
+          await timer.time('handler.recordAuthoredFrom', () =>
+            db.tx(claims, (q) => q.rpc('record_authored_from', [sessionId, spawnOrigin])));
+        } catch (error) {
+          console.warn(`[tm8:spawn] authored_from not recorded for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
         }
-      } catch (error) {
-        console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    }
 
-    // Launched-by is the `launched_by` edge execution_spawn writes (330) from
-    // the parent resolved above (it defaults to the calling session or chat).
-    // The session gets no parentId: a chat is not a session's parent.
-
-    // A dispatcher launched on tasks was told to route them in its first
-    // turn; the durable request is stored on each task once the boot has
-    // delivered that turn (store only — the turn carries the request), so a
-    // dispatcher whose boot failed is never named on a task. This continuation
-    // cannot reject — `boot` never does, and each store is caught — so it needs
-    // no handler of its own; the boot's own failures are on the row already.
-    const routedTaskIds = admission.routedTaskIds ?? [];
-    if (routedTaskIds.length > 0) {
-      void boot.then(async (outcome) => {
-        if (!outcome.ok) return;
-        for (const routedTaskId of routedTaskIds) {
-          try {
-            await sendDispatchRequest({
-              db,
-              claims,
-              taskId: routedTaskId,
-              subjectId: routedTaskId,
-              dispatcherSessionId: sessionId,
-              note: null,
-              requesterActorId: envelope.actorId ?? null,
-              requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
-              requestId: ctx.requestId,
-              clientMutationId: `${envelope.clientMutationId ?? sessionId}:route:${routedTaskId}`,
-            });
-          } catch (error) {
-            console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+      // The Ask Jev run this launch came from (§6: per-launch cost). Linked once
+      // the launch is admitted — the cost is the launch's whether or not its boot
+      // succeeds — and never at its expense: a run that is absent, in another
+      // space or someone else's is logged, not turned into a failed launch.
+      if (input.jevRunId) {
+        const runId = input.jevRunId;
+        try {
+          const linked = await timer.time('handler.linkJevRun', () =>
+            db.tx(claims, (q) => linkSession(q, runId, sessionId, input.spaceId)));
+          if (!linked) {
+            console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: no such run of this caller in space ${input.spaceId}`);
           }
+        } catch (error) {
+          console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
         }
-      });
-    }
+      }
 
-    // 201: a spawn creates a work_session. The entity is read as it stands at
-    // admission — `spawning`, its boot phase — not as it will be once running.
-    const commandResult = await timer.time('handler.assembleCommandResult', () =>
-      assembleCommandResult(db, claims, admission.commandResult, owner.identityId));
-    const spawnResult: ExecutionSpawnResult = {
-      ...(commandResult as CommandResult),
-      ...(admission.createdTaskId ? { createdTaskId: admission.createdTaskId } : {}),
-      // `launch` — the resolved posture receipt — exists only once the boot has
-      // resolved the credentials, so an admitted answer carries none; a caller
-      // reads it from the session's launch record once it is running.
-      timings: timer.snapshot(),
-    };
-    return json(spawnResult, { status: 201 });
+      // Launched-by is the `launched_by` edge execution_spawn writes (330) from
+      // the parent resolved above (it defaults to the calling session or chat).
+      // The session gets no parentId: a chat is not a session's parent.
+
+      // A dispatcher launched on tasks was told to route them in its first
+      // turn; the durable request is stored on each task once the boot has
+      // delivered that turn (store only — the turn carries the request), so a
+      // dispatcher whose boot failed is never named on a task. This continuation
+      // cannot reject — `boot` never does, and each store is caught — so it needs
+      // no handler of its own; the boot's own failures are on the row already.
+      const routedTaskIds = admission.routedTaskIds ?? [];
+      if (routedTaskIds.length > 0) {
+        void boot.then(async (outcome) => {
+          if (!outcome.ok) return;
+          for (const routedTaskId of routedTaskIds) {
+            try {
+              await sendDispatchRequest({
+                db,
+                claims,
+                taskId: routedTaskId,
+                subjectId: routedTaskId,
+                dispatcherSessionId: sessionId,
+                note: null,
+                requesterActorId: envelope.actorId ?? null,
+                requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+                requestId: ctx.requestId,
+                clientMutationId: `${envelope.clientMutationId ?? sessionId}:route:${routedTaskId}`,
+              });
+            } catch (error) {
+              console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+        });
+      }
+
+      // 201: a spawn creates a work_session. The entity is read as it stands at
+      // admission — `spawning`, its boot phase — not as it will be once running.
+      const commandResult = await timer.time('handler.assembleCommandResult', () =>
+        assembleCommandResult(db, claims, admission.commandResult, owner.identityId));
+      const spawnResult: ExecutionSpawnResult = {
+        ...(commandResult as CommandResult),
+        ...(admission.createdTaskId ? { createdTaskId: admission.createdTaskId } : {}),
+        // `launch` — the resolved posture receipt — exists only once the boot has
+        // resolved the credentials, so an admitted answer carries none; a caller
+        // reads it from the session's launch record once it is running.
+        timings: timer.snapshot(),
+      };
+      return json(spawnResult, { status: 201 });
+    } finally {
+      answer();
+    }
   };
 
   /**
