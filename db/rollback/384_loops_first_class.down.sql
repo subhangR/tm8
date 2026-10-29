@@ -14,6 +14,16 @@
 -- kinds unless 380 (Tools PR-E) is applied: its list is 384's, and it stays.
 -- =============================================================================
 
+-- Whether 380 is applied, read BEFORE the role switch: the runner ledger is the
+-- migration owner's, and tm8_graph_owner cannot read it. Session-scoped, so the
+-- answer survives a run without -1 too.
+do $ledger$
+begin
+  perform set_config('tm8.rollback_384_after_380',
+    (exists (select 1 from public.applied_migrations where filename like '380\_%'))::text, false);
+end
+$ledger$;
+
 set role tm8_graph_owner;
 
 drop function if exists public.loop_run_settle(uuid,text,text);
@@ -370,7 +380,7 @@ grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 -- same converged list as 384, and tool headers depend on it.
 do $rollback$
 begin
-  if not exists (select 1 from public.applied_migrations where filename like '380\_%') then
+  if current_setting('tm8.rollback_384_after_380') <> 'true' then
     create or replace function internal.header_kind_allowed(p_kind text)
     returns boolean language sql immutable set search_path = public, internal, pg_temp as $f$
       select p_kind in ('team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story')

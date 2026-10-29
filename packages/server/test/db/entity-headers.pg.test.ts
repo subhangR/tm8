@@ -222,6 +222,8 @@ beforeAll(async () => {
     ids.story = await entity(c, ids.space!, 'story');
     await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Story header', 'Story description')`, [ids.story]);
     ids.tool = await entity(c, ids.space!, 'tool');
+    // 318's tools_guard requires a space member, so the tool row needs the owner's identity bound.
+    await c.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.auth_kind', 'browser', true)`, [OWNER]);
     await c.query(`insert into public.tools(entity_id, space_id, title, definition) values ($1, $2, 'url-probe', $3)`, [ids.tool, ids.space,
       { name: 'url-probe', description: 'Probe a URL', help: '', runtime: 'bash', source: 'exit 0', inputs: [], tm8Access: 'none', timeoutSeconds: 60 }]);
     ids.loop = await entity(c, ids.space!, 'loop');
