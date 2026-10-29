@@ -4,11 +4,11 @@ import { Markdown, MARKDOWN_COMPONENTS, type MarkdownComponents } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ExplanationToolCard } from './ExplanationToolCard';
 import { LedgerTree } from './ledger-tree';
-import { buildChatLedger, foldChatLedger, kindWord, readCountPairs, type ChatLedger } from './ledger';
-import { isEntityIdLike } from './payload-walk';
-import { buildTurnReceipt, type TurnReceipt as TurnReceiptModel } from './turn-receipt';
+import { buildChatLedger, foldChatLedger, kindWord, readCountPairs, type ChatLedger } from '@tm8/client-core/chat';
+import { isEntityIdLike } from '@tm8/client-core/chat';
+import { buildTurnReceipt, type TurnReceipt as TurnReceiptModel } from '@tm8/client-core/chat';
 import { TurnReceipt } from './TurnReceipt';
-import { projectTurnParts } from './turn-model';
+import { projectTurnParts } from '@tm8/client-core/chat';
 import {
   buildStepLines,
   buildStepViews,
@@ -18,10 +18,10 @@ import {
   summarizeRun,
   type RunItem,
   type StepView,
-} from './turn-step-lines';
-import { toolStepState, turnEndSeq, type ToolStepPart, type ToolStepState } from './turn-steps';
+} from '@tm8/client-core/chat';
+import { toolStepState, turnEndSeq, type ToolStepPart, type ToolStepState } from '@tm8/client-core/chat';
 import { StepErrorLine, TurnSteps } from './TurnSteps';
-import type { ChatTurn, ChatTurnPart, ChatUsage } from './types';
+import type { ChatTurn, ChatTurnPart, ChatUsage } from '@tm8/client-core/chat';
 
 export interface TurnPartsProps {
   parts: readonly ChatTurnPart[];

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { RibbonMark } from '../kit';
 import { announcementKey, isTicking, liveTurnView } from './live-turn-status-model';
 import type { TurnInProgress } from './turn-in-progress';
-import type { StepLabels } from './turn-steps';
-import type { ChatTurnPart } from './types';
+import type { StepLabels } from '@tm8/client-core/chat';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 import './live-turn-status.css';
 
 /**

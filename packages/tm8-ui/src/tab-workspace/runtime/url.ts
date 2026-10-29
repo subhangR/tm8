@@ -25,8 +25,8 @@
  * (`routeFile`): IN focuses its open tab, or opens it as a kept tab.
  */
 import type { SpaceId, EntityId } from '@tm8/contract';
-import { build, defaultRoute } from '../../routes/codec';
-import type { NavView } from '../../routes/types';
+import { build, defaultRoute } from '@tm8/client-core/routes';
+import type { NavView } from '@tm8/client-core/routes';
 import { navStore } from '../../stores/navStore';
 import type { WorkspaceRuntime } from './dispatch';
 import type { WorkspaceInitContext } from './persistence';

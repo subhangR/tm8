@@ -48,7 +48,7 @@ import {
 } from '@tm8/contract';
 
 import type { Seam } from '../data/seam';
-import { relTime } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { applyDraft, getStyleState, hasDraft, subscribeStyle, type StyleEntry } from './style-store';
 import {
   chooseStyle,

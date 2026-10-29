@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { createBrowserTarget, hashOfPathLink } from './transport';
-import { redirect } from './redirects';
+import { redirect } from '@tm8/client-core/routes';
 
 describe('hashOfPathLink', () => {
   it('respells /e/{id} and /s/{space}/e/{id} as their hash routes', () => {

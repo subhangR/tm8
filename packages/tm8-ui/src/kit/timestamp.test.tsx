@@ -13,7 +13,7 @@ import { dirname, join, relative } from 'node:path';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Timestamp } from './Timestamp';
-import { RELATIVE_WINDOW_MS, absTime, dayLabel, elapsed, relTime } from './time';
+import { RELATIVE_WINDOW_MS, absTime, dayLabel, elapsed, relTime } from '@tm8/client-core/time';
 
 const NOW = Date.parse('2026-08-12T12:00:00.000Z');
 

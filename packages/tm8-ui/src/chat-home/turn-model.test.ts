@@ -10,8 +10,8 @@ import {
   projectTurnParts,
   reconcileDetails,
   settleOptimisticTurn,
-} from './turn-model';
-import type { ChatThreadDetail, ChatTurn } from './types';
+} from '@tm8/client-core/chat';
+import type { ChatThreadDetail, ChatTurn } from '@tm8/client-core/chat';
 
 describe('rich turn projection', () => {
   it('replaces a native item snapshot after deltas and ignores stale revisions', () => {

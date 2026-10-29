@@ -22,7 +22,7 @@
  * without rendering anything.
  */
 import type { SessionTranscriptStats } from '@tm8/contract';
-import { relTime, shortDate } from '../kit/time';
+import { relTime, shortDate } from '@tm8/client-core/time';
 
 /**
  * The mark for "we were not told". One constant, because the difference

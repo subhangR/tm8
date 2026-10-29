@@ -94,6 +94,16 @@ export default defineConfig({
   optimizeDeps: {
     entries: ['index.html', '*-dev.html', 'mobile-audit.html'],
   },
+  /**
+   * `tm8-source` reads @tm8/client-core from its TypeScript source (that
+   * package's `exports`), so this build, the dev server and the suite need no
+   * build of it first, and neither do check.sh or the deploy scripts
+   * (t-p0-client-core). The phone app does not set the condition and gets the
+   * package's dist. `ssr` carries it too: vitest runs `environment: node` suites
+   * through Vite's SSR environment, which reads its own conditions.
+   */
+  resolve: { conditions: ['tm8-source'] },
+  ssr: { resolve: { conditions: ['tm8-source'] } },
   server: {
     port: 4612,
     strictPort: true,

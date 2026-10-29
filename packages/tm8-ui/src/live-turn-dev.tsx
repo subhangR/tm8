@@ -14,7 +14,8 @@ import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
 import { TranscriptDock } from './chat-home/LiveTurnStatus';
 import type { TurnInProgress } from './chat-home/live-turn-status-model';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './chat-home/fixtures';
-import type { ChatModelOption, ChatThreadDetail, ChatTurnItem, ChatTurnPart } from './chat-home/types';
+import type { ChatModelOption } from './chat-home/types';
+import type { ChatThreadDetail, ChatTurnItem, ChatTurnPart } from '@tm8/client-core/chat';
 
 /**
  * LIVE STATUS ROW SCRATCH HARNESS (lane 2) — chat-dev.tsx's spirit, one

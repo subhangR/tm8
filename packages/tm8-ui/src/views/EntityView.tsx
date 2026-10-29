@@ -76,7 +76,7 @@ import { EntityFab, MessagesDoorProvider, MobileSheet, useMobileSurface, type Me
 import { PhoneEntityList, openedFromList } from '../mobile-lists';
 import { MESSAGES_ON_PAGE, PhoneEntityPage, PhoneMessages, hasPhoneScreen } from '../mobile-pages';
 import type { SortKey } from '../domain';
-import type { ListPick } from '../routes/types';
+import type { ListPick } from '@tm8/client-core/routes';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';

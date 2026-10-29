@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { projectTurnParts } from './turn-model';
-import type { ChatThreadDetail, ChatTurn } from './types';
+import { projectTurnParts } from '@tm8/client-core/chat';
+import type { ChatThreadDetail, ChatTurn } from '@tm8/client-core/chat';
 
 /**
  * ── THE TURN IN PROGRESS, AS ONE VALUE ─────────────────────────────────────

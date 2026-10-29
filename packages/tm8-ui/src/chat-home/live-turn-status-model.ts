@@ -26,8 +26,8 @@
  * TOOL NAMES NEVER REACH THE SURFACE (R8). Nothing here reads a tool name;
  * that is the classifier's job, and it returns human words.
  */
-import { ageAgo } from '../kit/time';
-import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
+import { ageAgo } from '@tm8/client-core/time';
+import { projectTurnParts, type ProjectedTurnPart } from '@tm8/client-core/chat';
 import {
   describeToolStep,
   groupDone,
@@ -35,9 +35,9 @@ import {
   turnEndSeq,
   type StepLabels,
   type ToolStepWords,
-} from './turn-steps';
+} from '@tm8/client-core/chat';
 import type { TurnInProgress } from './turn-in-progress';
-import type { ChatTurnPart } from './types';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 /* The turn's phase and clock are lane 1's contract; re-exported so this
    module's callers name one type from one place. */

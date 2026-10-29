@@ -50,7 +50,7 @@ import {
   isChatTurnFrame,
   type ChatContextFrame,
   type ChatTurnFrame,
-} from '../../chat-home/types';
+} from '@tm8/client-core/chat';
 
 /** The one message field this client reads off an inbound event. */
 export interface WebSocketMessage {

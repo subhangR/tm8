@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphEdgeView } from '@tm8/contract';
 import { resolveGraphEdges } from './graph-edges.js';
-import { ingestEdges, initialDomainState } from './reducers.js';
-import { summary } from './test-support.js';
+import { ingestEdges, initialDomainState } from '@tm8/client-core/project';
+import { summary } from '@tm8/client-core/project/test-support';
 
 const ACTOR = summary('a1').createdBy;
 

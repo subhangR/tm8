@@ -24,7 +24,7 @@
  * wrapper: the tail read's loading, failure and delay states around it.
  */
 import type { SessionTranscriptContext, SessionTranscriptPage } from '@tm8/contract';
-import { absTime, ageAgo, ageLabel } from '../kit/time';
+import { absTime, ageAgo, ageLabel } from '@tm8/client-core/time';
 import type { TailSnapshot } from './tail-resource';
 
 export type ContextTone = 'loading' | 'unknown' | 'ok' | 'delayed';

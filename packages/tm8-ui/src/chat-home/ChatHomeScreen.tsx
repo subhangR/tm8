@@ -25,7 +25,7 @@ import {
   type TriggerOption,
 } from '../rich-input';
 import type { ConnectionsReader } from '../session-graph/load';
-import type { CockpitStage } from '../routes/types';
+import type { CockpitStage } from '@tm8/client-core/routes';
 import {
   CLAIMED_TURN_BODY,
   appendOptimisticTurn,
@@ -37,7 +37,7 @@ import {
   prependOlderTurns,
   reconcileDetails,
   settleOptimisticTurn,
-} from './turn-model';
+} from '@tm8/client-core/chat';
 import { clockFromRead, inFlightAgentTurn, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
 import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
@@ -90,7 +90,7 @@ import { CreatedHereStrip } from './created-here/CreatedHereStrip';
 import type { CreatedHereReader } from './created-here/reader';
 import { TranscriptDock } from './LiveTurnStatus';
 import { useTranscriptFollow } from './live-turn-status-follow';
-import { foldChatLedger } from './ledger';
+import { foldChatLedger } from '@tm8/client-core/chat';
 import { type TurnPartsProps } from './TurnParts';
 import { ChatTurn } from './ChatTurn';
 import { composeThreadColumn } from './thread-column';
@@ -99,13 +99,15 @@ import type {
   ChatModelOption,
   ChatProjectOption,
   ChatTeammateOption,
-  ChatThreadDetail,
-  ChatThreadConfig,
   ChatSetModelResult,
-  ChatThreadSummary,
-  ChatTurnFrame,
   NewChatSeed,
 } from './types';
+import type {
+  ChatThreadDetail,
+  ChatThreadConfig,
+  ChatThreadSummary,
+  ChatTurnFrame,
+} from '@tm8/client-core/chat';
 /* THE REFUSAL VOCABULARY'S STYLESHEET, IMPORTED WHERE ITS COMPONENTS ARE USED.
    This screen renders `DisabledIconControl` (the refused attach) but reached it
    by DEEP PATH — `../panels/honesty/DisabledWithReason` — which pulls the

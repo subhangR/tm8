@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { MAX_GRAPH_SEEDS, foldGraphSeeds } from './graph-seeds';
-import type { ChatTurn, ChatTurnPart } from './types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 const id = (n: number): string => `01900000-00cc-7000-8000-${String(n).padStart(12, '0')}`;
 const TASK = id(1);

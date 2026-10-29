@@ -19,7 +19,7 @@ import {
 import {
   SPACE, deliveryRecord, detail, edge, event, handoff, menu, message,
   notification, summary,
-} from './test-support.js';
+} from '@tm8/client-core/project/test-support';
 
 /** Minimal fake of the seam's onEvent surface (LLD C-3: one event stream). */
 function fakeSeam() {

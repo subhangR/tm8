@@ -10,7 +10,8 @@
  * There is deliberately no format prop. A surface that wants a different date
  * format wants a change in `kit/time`, where every surface gets it.
  */
-import { absTime, parseInstant, relTime, useNow } from './time';
+import { useNow } from './time';
+import { absTime, parseInstant, relTime } from '@tm8/client-core/time';
 
 export interface TimestampProps {
   /** ISO string (or epoch ms) from the entity. */

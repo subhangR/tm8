@@ -10,30 +10,11 @@
  * subscribers only on back/forward, so a test double could not drive the sync
  * loop through a push. This one notifies on every hash change, which is what
  * the browser target does.
+ *
+ * SPLIT (t-p0-client-core, 2026-10-29): `RouterTarget` and the memory target
+ * moved to `@tm8/client-core/routes`; this file keeps what reads `window`.
  */
-
-export interface RouterTarget {
-  getHash(): string;
-  setHash(hash: string, opts?: { replace?: boolean }): void;
-  subscribe(cb: (hash: string) => void): () => void;
-  /**
-   * How many entries are behind this one, so a caller can tell a COLD ENTRY
-   * (someone arrived here by pasting a link — depth 1, nothing to go back to)
-   * from a walk that reached the same address.
-   *
-   * That distinction is R15, and it cannot be derived from the hash: the two
-   * cases produce identical addresses and opposite meanings for the back
-   * affordance. Optional so a bare `RouterTarget` still satisfies the shape;
-   * both real implementations provide it.
-   */
-  historyDepth?(): number;
-  /**
-   * Walk one entry back — the phone's ‹ when the entry below is one this tab
-   * wrote (CONTRACT §5 ruling 1: Back is real history, `history.back()`).
-   * Optional for the same reason as `historyDepth`.
-   */
-  back?(): void;
-}
+import type { RouterTarget } from '@tm8/client-core/routes';
 
 /**
  * THE OVERLAY MARKER (CONTRACT §5, task t-layers, 2026-10-18).
@@ -118,56 +99,4 @@ export function createBrowserTarget(win: Window = window): RouterTarget {
     historyDepth: () => win.history.length,
     back: () => win.history.back(),
   };
-}
-
-export interface MemoryTarget extends RouterTarget {
-  entries: string[];
-  index: number;
-  back(): void;
-  forward(): void;
-  canGoBack(): boolean;
-  canGoForward(): boolean;
-}
-
-/** In-memory history stack — the test double for back/forward walks. */
-export function createMemoryTarget(initial = '#/'): MemoryTarget {
-  const listeners = new Set<(hash: string) => void>();
-  const notify = () => {
-    for (const cb of listeners) cb(target.getHash());
-  };
-  const target: MemoryTarget = {
-    entries: [initial],
-    index: 0,
-    getHash: () => target.entries[target.index],
-    setHash: (hash, opts = {}) => {
-      if (target.entries[target.index] === hash) return;
-      if (opts.replace) {
-        target.entries[target.index] = hash;
-      } else {
-        target.entries = [...target.entries.slice(0, target.index + 1), hash];
-        target.index += 1;
-      }
-      notify();
-    },
-    subscribe: (cb) => {
-      listeners.add(cb);
-      return () => {
-        listeners.delete(cb);
-      };
-    },
-    historyDepth: () => target.entries.length,
-    canGoBack: () => target.index > 0,
-    canGoForward: () => target.index < target.entries.length - 1,
-    back: () => {
-      if (!target.canGoBack()) return;
-      target.index -= 1;
-      notify();
-    },
-    forward: () => {
-      if (!target.canGoForward()) return;
-      target.index += 1;
-      notify();
-    },
-  };
-  return target;
 }

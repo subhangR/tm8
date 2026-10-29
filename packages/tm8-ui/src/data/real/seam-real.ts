@@ -86,7 +86,7 @@ import {
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
-import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
+import { chatTurnFrameFromWire, type WireChatTurnFrame } from '@tm8/client-core/chat';
 import { createOps } from './ops';
 import {
   createConnectionManager,

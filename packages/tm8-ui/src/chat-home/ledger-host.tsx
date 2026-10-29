@@ -26,7 +26,7 @@ import { getKind } from '../domain/registry';
 import { sessionOutcomeOf } from '../domain/session-outcome';
 import { useChatEntityRef, type ChatEntityResolver } from './EntityChip';
 import { useFleetEntities, type FleetEntityReader } from './fleet/use-fleet-entities';
-import type { ChatLedger } from './ledger';
+import type { ChatLedger } from '@tm8/client-core/chat';
 import type { ChatModelOption } from './types';
 
 /* ── the host's capabilities ─────────────────────────────────────────────── */

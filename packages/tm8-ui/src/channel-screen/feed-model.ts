@@ -479,4 +479,4 @@ export function participantNames(actors: readonly ActorSummary[]): string {
  * comment ("flagged, not solved"). They are solved: `clockTime` is re-exported
  * unchanged for the callers that mount it, and the relative form is `relTime`.
  */
-export { absTime as accessibleDateTime, clockTime } from '../kit/time';
+export { absTime as accessibleDateTime, clockTime } from '@tm8/client-core/time';

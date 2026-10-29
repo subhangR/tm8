@@ -48,8 +48,8 @@ import {
   initialDomainState,
   mergeSummary,
   reduceEvents,
-} from './reducers.js';
-import { createJournal, type Journal } from './journal.js';
+} from '@tm8/client-core/project';
+import { createJournal, type Journal } from '@tm8/client-core/project';
 
 /** The slice of the seam the store consumes — the durable event stream only. */
 export type DomainEventSource = Pick<Seam, 'onEvent'>;

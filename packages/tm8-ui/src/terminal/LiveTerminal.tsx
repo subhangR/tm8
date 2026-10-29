@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 
 import { isTerminalBlurChord, isTerminalPasteChord } from '../keyboard/contract';
-import { ctrlByte } from './mobileKeys.js';
+import { ctrlByte } from '@tm8/client-core/keys';
 import { dataTransferHasFiles } from '../rich-input/clipboardFiles';
 import { dispatchClipboardData } from './clipboardPaste.js';
 import { uploadClipboardFile } from './clipboardUpload.js';

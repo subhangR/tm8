@@ -16,7 +16,7 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import { StageExit } from './StageExit';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatModelOption } from './types';
-import type { CockpitStage } from '../routes/types';
+import type { CockpitStage } from '@tm8/client-core/routes';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [

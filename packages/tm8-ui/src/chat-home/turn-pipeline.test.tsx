@@ -4,14 +4,16 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import { mergeChatTurnFrame } from './turn-model';
+import { mergeChatTurnFrame } from '@tm8/client-core/chat';
 import type {
   ChatHomePort,
   ChatModelOption,
   ChatPostResult,
+} from './types';
+import type {
   ChatThreadDetail,
   ChatTurnFrame,
-} from './types';
+} from '@tm8/client-core/chat';
 
 /**
  * LANE 1 — THE TURN PIPELINE. Send → echo → delta / done → render, and every

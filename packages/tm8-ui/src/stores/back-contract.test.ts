@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { applyScreenStackIntent, intentOfRoute, reconcileScreenStacks } from './backContract';
 import { screenKeyOf, screenStackStore, stackOf } from './screenStackStore';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 
 const A = 'task-4f8c2a9e' as EntityId;
 const B = 'task-blocked' as EntityId;

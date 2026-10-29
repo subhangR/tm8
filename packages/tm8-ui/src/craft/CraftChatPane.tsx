@@ -13,7 +13,7 @@ import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 import type { TriggerOption } from '../rich-input';
 import { VIEW_ART } from '../domain';
 import { VectorIcon } from '../kit';

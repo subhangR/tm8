@@ -4,7 +4,7 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { EntityChip, resetChatEntityResolutionCache, type ChatEntityResolver } from './EntityChip';
-import { extractEntityRefs, truncateEntityId } from './entity-refs';
+import { extractEntityRefs, truncateEntityId } from '@tm8/client-core/chat';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import { getKind } from '../domain/registry';
 import { CUSTOM_KIND_FALLBACK } from '../domain/types';

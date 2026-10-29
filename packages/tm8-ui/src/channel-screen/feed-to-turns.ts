@@ -10,8 +10,8 @@
  * chrome.
  */
 import type { MessageView } from '@tm8/contract';
-import type { ChatTurn } from '../chat-home/types';
-import { turnPartFromMessagePart } from '../chat-home/wire';
+import type { ChatTurn } from '@tm8/client-core/chat';
+import { turnPartFromMessagePart } from '@tm8/client-core/chat';
 
 export function chatTurnFromMessage(message: MessageView): ChatTurn {
   const author = message.state.author ?? message.createdBy ?? null;

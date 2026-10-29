@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Connections, EntityDetail, EntitySummary } from '@tm8/contract';
 import { EDGE_FAMILY_LABEL, EDGE_FAMILY_ORDER, KindIcon, getKind, type EdgeFamily } from '../../domain';
 import { peerStatus } from '../../domain/peer-state';
-import { absTime, relTime } from '../../kit/time';
+import { absTime, relTime } from '@tm8/client-core/time';
 import { groupByPeer, newestRelationInstant } from '../../panels/detail/linksModel';
 import { useLinksCursor } from '../../panels/detail/linksCursor';
 import { takeLinkFocus, useLinkFocus } from '../../panels/list/linkFocus';

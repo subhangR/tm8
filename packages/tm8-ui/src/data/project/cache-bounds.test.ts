@@ -35,7 +35,7 @@ import {
   initialDomainState,
   reduceEvent,
   reduceEvents,
-} from './reducers';
+} from '@tm8/client-core/project';
 import { createDomainStore } from './domain-store';
 import {
   activity,
@@ -46,7 +46,7 @@ import {
   message,
   notification,
   summary,
-} from './test-support';
+} from '@tm8/client-core/project/test-support';
 
 /** A state with `count` entities, ids `e0…`, oldest first. */
 function stateWithEntities(count: number, over: Partial<DomainState> = {}): DomainState {

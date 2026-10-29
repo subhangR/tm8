@@ -14,7 +14,7 @@ import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels
  * deleted. See docs/chat-and-messaging/UNIFIED-FEED-HOOK-DESIGN.md §7.
  */
 import { TurnParts } from '../chat-home/TurnParts';
-import { turnPartFromMessagePart } from '../chat-home/wire';
+import { turnPartFromMessagePart } from '@tm8/client-core/chat';
 import { ChatTurn } from '../chat-home/ChatTurn';
 import { chatTurnFromMessage } from './feed-to-turns';
 import { MessageAttachments } from '../files/MessageAttachments';

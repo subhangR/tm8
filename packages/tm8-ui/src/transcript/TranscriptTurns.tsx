@@ -34,7 +34,7 @@
 import { useMemo, type ReactNode } from 'react';
 import type { ActorSummary, EntityId, SessionTranscriptEntry } from '@tm8/contract';
 import { ChatTurn } from '../chat-home/ChatTurn';
-import type { ChatTurn as ChatTurnModel } from '../chat-home/types';
+import type { ChatTurn as ChatTurnModel } from '@tm8/client-core/chat';
 import { transcriptRoleLabel } from './transcript-model';
 import './transcript.css';
 

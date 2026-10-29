@@ -8,7 +8,7 @@
  * say one thing in one view and another in the other.
  */
 import type { ActorSummary, EdgeGroup, EntitySummary } from '@tm8/contract';
-import { dayLabel, dayStart } from '../../kit/time';
+import { dayLabel, dayStart } from '@tm8/client-core/time';
 import {
   EDGE_FAMILY_ORDER,
   edgeFamily,

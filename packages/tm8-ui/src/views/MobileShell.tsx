@@ -62,7 +62,7 @@ import { useEdgeSwipe } from '../mobile/useEdgeSwipe';
 import { backStepOf, phoneHistory, resetToChatFloor, topEntry, usePhoneHistory } from '../stores/phoneHistory';
 import { ChatHomeSurface } from '../chat-home';
 import { HelpScreen } from '../help';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
 import { usePresence } from '../mobile/layerMotion';

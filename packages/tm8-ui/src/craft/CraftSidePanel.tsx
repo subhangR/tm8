@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 import type { TriggerOption } from '../rich-input';
 import { KindIcon } from '../domain';
 import { Timestamp } from '../kit';

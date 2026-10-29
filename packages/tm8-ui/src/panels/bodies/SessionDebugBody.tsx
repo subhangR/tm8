@@ -8,7 +8,7 @@ import type {
 } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { describeLaunchManifest, launchSpaceCredentialIds } from '../../domain';
-import { absTime, clockTime } from '../../kit/time';
+import { absTime, clockTime } from '@tm8/client-core/time';
 import { ConnectorsSection } from './SessionConnectorsSection';
 import { DisabledAction } from '../honesty/DisabledWithReason';
 import { TranscriptTurns } from '../../transcript/TranscriptTurns';

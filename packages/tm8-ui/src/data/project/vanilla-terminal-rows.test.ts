@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntitySummary } from '@tm8/contract';
 import { projectRows } from './domain-store.js';
-import { SPACE, summary } from './test-support.js';
+import { SPACE, summary } from '@tm8/client-core/project/test-support';
 
 function session(id: string, state: Record<string, unknown>): EntitySummary {
   return summary(id, {

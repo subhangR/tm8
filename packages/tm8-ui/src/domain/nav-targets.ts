@@ -42,11 +42,12 @@
  * rather than silently falling through to the workspace.
  */
 import type { EntityId, MenuViewRef } from '@tm8/contract';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 /* Type-only, and deliberately so: `shell/` already imports `domain/`, so a
    value import here would close a cycle. `import type` is erased entirely. */
 import type { MenuTarget } from '../shell';
 import { kindOfSlug, slugOfKind } from './registry';
+import { VIEW_REF_ROUTE } from '@tm8/client-core/kinds';
 
 /**
  * The kind whose collection screen IS the Channels destination.
@@ -86,45 +87,9 @@ export const CHANNEL_KIND = 'channel';
  */
 const VOICE_KIND = 'voice_channel';
 
-/**
- * `MenuViewRef` → the `NavView` tag that addresses it.
- *
- * Total over the closed `MenuViewRef` enum by construction: `Record<MenuViewRef, …>`
- * makes a missing row a type error, which is the whole point of writing it as a
- * table instead of a switch.
- *
- * `channels` is deliberately absent from the value side — it is not a view of
- * its own but an alias for the channel collection, resolved in `landingOfRoute`
- * and `routeViewOf` so that both directions agree. Everything else is either a
- * one-to-one route line or one of the four refs that had no route until the
- * §2.1/§2.2 amendment.
- */
-export const VIEW_REF_ROUTE = {
-  dashboard: 'home',
-  feed: 'feed',
-  inbox: 'inbox',
-  workspace: 'workspace',
-  settings: 'settings',
-  /* Added by the 2026-08-14 amendment. These four rendered from the rail with
-     no route line, so their screens could not be reloaded, shared, or reached
-     by the back button. The contract's `MenuViewRef` already carried all four;
-     it was WLT §2.3's "CLOSED v1 union" of six that was stale. */
-  graph: 'graph',
-  files: 'files',
-  git: 'git',
-  messages: 'messages',
-  /* The task Board tab (2026-08-16) — same flat-segment posture. */
-  board: 'board',
-  /* The Craft studio (2026-08-16) — same flat-segment posture. */
-  craft: 'craft',
-  /* The Help shelf (2026-08-19) — same flat-segment posture. Help has a route
-     of its own even though it is not in the default spine: its door is a bar
-     control, and a reference screen with no address could not be linked to. */
-  help: 'help',
-  /* Alias, not a view — see CHANNEL_KIND. Present so the record stays total
-     over MenuViewRef; `routeViewOf` never emits it. */
-  channels: 'channels',
-} as const satisfies Record<MenuViewRef, string>;
+/* `VIEW_REF_ROUTE` moved to `@tm8/client-core/kinds` (t-p0-client-core): the
+   route codec reads it in both apps. Re-exported for `domain`'s readers. */
+export { VIEW_REF_ROUTE };
 
 /** Reverse of `VIEW_REF_ROUTE`, minus the `channels` alias. */
 const ROUTE_VIEW_REF: Partial<Record<string, MenuViewRef>> = Object.fromEntries(

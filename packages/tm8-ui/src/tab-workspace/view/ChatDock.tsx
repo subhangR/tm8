@@ -36,7 +36,7 @@ import { getKind, KindIcon } from '../../domain';
 import { EntityAttentionChip } from '../../attention';
 import { EntityChatPanel, NewChatSettings, useChatsAbout, type ChatAboutRow } from '../../entity-chat';
 import { PanelResizer } from '../../kit/PanelResizer';
-import { relTime, absTime } from '../../kit/time';
+import { relTime, absTime } from '@tm8/client-core/time';
 import { countMessages } from '../../panels';
 import { entityChatSurfaceFor, type EntityChatSurfaceHost } from '../../views/conversationSurface';
 import { EntityPeek } from '../adapters/entity';

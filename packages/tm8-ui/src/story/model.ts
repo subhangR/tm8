@@ -13,7 +13,7 @@
  * components — §15.2's scanner forbids kind literals in components, so every
  * kind-keyed table lives in this file.
  */
-import { shortDate } from '../kit/time';
+import { shortDate } from '@tm8/client-core/time';
 import {
   storyCallSign,
   storyEdgeFamily,

@@ -28,7 +28,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import { TurnParts } from './TurnParts';
-import type { ChatTurnPart } from './types';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 const TASK_ID = '019f0000-0000-7000-8000-000000000021';
 const DOC_ID = '019f0000-0000-7000-8000-000000000022';

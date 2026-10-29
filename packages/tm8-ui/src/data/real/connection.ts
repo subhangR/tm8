@@ -55,7 +55,7 @@ import {
   type WorkspaceBridgeCommandFrame,
 } from '@tm8/contract';
 import type { ConnectionState, Unsubscribe } from '../seam';
-import type { ChatContextFrame, ChatTurnFrame } from '../../chat-home/types';
+import type { ChatContextFrame, ChatTurnFrame } from '@tm8/client-core/chat';
 import type { DurableEventPage } from './ops';
 import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame, type WorkspaceSyncFrame, type CraftWorkspacePushFrame } from './socket';
 

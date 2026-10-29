@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TurnParts } from '../src/chat-home/TurnParts';
-import type { ChatTurnPart } from '../src/chat-home/types';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 import { blueprintView } from '../src/craft/blueprint-model';
 import { diffBlueprintViews } from '../src/craft/blueprint-diff';
 import { BlueprintTurnNote, graphWriteOf } from '../src/craft/turn-notes';

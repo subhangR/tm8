@@ -7,7 +7,7 @@ import type { EntitySummary, SpaceInviteView, SpaceSummary, TaskAxis, TaskWorkfl
 import type { IdentityView } from '../data/seam';
 import type { ResolvedMenu } from '../shell/menu-resolve';
 import type { SettingsPort } from './port';
-import type { NodeAdminRouteSection } from '../routes/types';
+import type { NodeAdminRouteSection } from '@tm8/client-core/routes';
 
 /**
  * The eight destinations the oracle's section nav names (T2-1, L33–L43), in

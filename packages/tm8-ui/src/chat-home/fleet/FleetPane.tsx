@@ -32,7 +32,7 @@ import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../../domain/KindIcon';
 import { Pill } from '../../kit';
 import { LinkedPullRequestChips } from '../../pull-requests';
-import type { ChatTurn } from '../types';
+import type { ChatTurn } from '@tm8/client-core/chat';
 import { foldFleet } from './fleet-model';
 import { fleetRowsOf, groupFleetRows, type FleetRow } from './fleet-rows';
 import { useFleetEntities, type FleetEntityReader } from './use-fleet-entities';

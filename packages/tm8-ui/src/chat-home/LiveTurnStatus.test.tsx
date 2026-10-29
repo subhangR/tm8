@@ -14,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ANNOUNCE_MIN_MS, LiveTurnStatus, TranscriptDock } from './LiveTurnStatus';
 import type { TurnInProgress } from './live-turn-status-model';
-import { describeToolStep } from './turn-steps';
-import type { ChatTurnPart } from './types';
+import { describeToolStep } from '@tm8/client-core/chat';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 const T0 = Date.parse('2026-09-26T07:00:00.000Z');
 const S = 1000;

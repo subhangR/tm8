@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 
 import { MobileThreadsSheet } from './MobileThreadsSheet';
 import { MobileSurfaceProvider } from './surface';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 import type { EntityId } from '@tm8/contract';
 
 /**

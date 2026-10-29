@@ -34,7 +34,7 @@ import {
   type SeamHarness,
   type SpaceFixture,
 } from './node-fixture';
-import { createJournal } from '../project/journal';
+import { createJournal } from '@tm8/client-core/project';
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 240_000 });
 

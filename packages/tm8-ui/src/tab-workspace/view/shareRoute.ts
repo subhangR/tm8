@@ -7,7 +7,7 @@
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import type { EntityId } from '@tm8/contract';
-import type { NavView } from '../../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 import { activeEntityId } from '../runtime/selectors';
 import { getWorkspaceStore } from '../runtime/store';
 import type { WorkspaceState } from '../runtime/types';

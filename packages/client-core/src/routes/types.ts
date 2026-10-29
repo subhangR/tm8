@@ -6,7 +6,7 @@
  * SPEC-FINAL C-7) and is never imported, adapted, or consulted for shape.
  */
 import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
-import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain';
+import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../kinds';
 
 /**
  * The Settings sections an address can open directly (`/settings/{section}`).

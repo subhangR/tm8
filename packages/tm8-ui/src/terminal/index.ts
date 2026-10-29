@@ -38,7 +38,7 @@ export {
   type ArrowName,
   type MobileFontSize,
   type WidthVerdict,
-} from './mobileKeys';
+} from '@tm8/client-core/keys';
 export { TERMINAL_FONT_SIZE } from './terminalTheme';
 export { isLiveTerminalEnabled } from './liveTerminalFlag';
 export { ExitedFallback, StaleFallback, UnverifiedFallback } from './SessionFallback';

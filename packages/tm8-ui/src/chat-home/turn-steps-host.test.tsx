@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatModelOption, ChatThreadDetail } from './types';
+import type { ChatModelOption } from './types';
+import type { ChatThreadDetail } from '@tm8/client-core/chat';
 
 afterEach(cleanup);
 

@@ -1,0 +1,17 @@
+{
+  "//": "The modules here moved verbatim out of packages/tm8-ui, so they compile with tm8-ui's strictness (strict only) and its bundler resolution (extensionless relative imports), not the base config's NodeNext and noUncheckedIndexedAccess. lib is ES2022 with no DOM and types is empty: window, document, history and localStorage do not compile here. src/platform.d.ts declares the five web-platform globals both runtimes provide. Tests are compiled and run by vitest and stay out of dist.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noUncheckedIndexedAccess": false,
+    "noFallthroughCasesInSwitch": false,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

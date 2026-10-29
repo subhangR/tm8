@@ -14,7 +14,7 @@ import { TurnGraph } from './LiveToolGraph';
 import { segmentTurnGraphs, type TurnSegment } from './live-graph-model';
 import { ThreadPane } from './ThreadPane';
 import { TranscriptDock } from '../chat-home/LiveTurnStatus';
-import { dayLabel as formatDay, dayStart } from '../kit/time';
+import { dayLabel as formatDay, dayStart } from '@tm8/client-core/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import { isUnresolvedFeedPage } from './chat-mutations';
 /* The refusal vocabulary's stylesheet — see the note over the same import in

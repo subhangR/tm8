@@ -330,7 +330,7 @@ import type {
   EntityHeaderResult,
   EntityHeaderView,
 } from '@tm8/contract';
-import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
+import type { ChatContextFrame, ChatTurnFrame } from '@tm8/client-core/chat';
 
 export type Unsubscribe = () => void;
 

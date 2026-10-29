@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { MenuTarget } from '../shell';
 import { routeViewOf } from '../domain/nav-targets';
-import { build, normalize } from '../routes/codec';
-import { emptyPanels, type NavView } from '../routes/types';
+import { build, normalize } from '@tm8/client-core/routes';
+import { emptyPanels, type NavView } from '@tm8/client-core/routes';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import './copy-link.css';
 

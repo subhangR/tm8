@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { deriveTurnInProgress, startTurnClock, type TurnClock } from './turn-in-progress';
-import type { ChatThreadDetail, ChatTurn } from './types';
+import type { ChatThreadDetail, ChatTurn } from '@tm8/client-core/chat';
 
 const CHAT = '019f0000-0000-7000-8000-000000000301' as EntityId;
 const USER_MSG = '019f0000-0000-7000-8000-000000000302' as EntityId;

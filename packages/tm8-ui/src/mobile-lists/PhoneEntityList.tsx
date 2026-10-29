@@ -33,7 +33,7 @@ import { VectorIcon } from '../kit';
 import { MobileSheet } from '../mobile';
 import { entityLinkUrl } from '../share';
 import { afterOverlayBack } from '../stores/overlayHistory';
-import type { ListPick } from '../routes/types';
+import type { ListPick } from '@tm8/client-core/routes';
 import {
   CAT_ALL,
   activeLabels,

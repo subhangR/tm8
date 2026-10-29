@@ -21,7 +21,7 @@ import { useLayoutEffect } from 'react';
 import { describe, expect, it } from 'vitest';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { useSpaceScopedChat } from './MobileShell';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 
 const SPACE_A = '019f0000-0000-7000-8000-0000000000a0' as SpaceId;
 const SPACE_B = '019f0000-0000-7000-8000-0000000000b0' as SpaceId;

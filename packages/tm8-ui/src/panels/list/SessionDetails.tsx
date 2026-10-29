@@ -1,7 +1,7 @@
 import type { EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import type { SessionWord } from '../../domain';
-import { ageAgo, ageLabel } from '../../kit/time';
+import { ageAgo, ageLabel } from '@tm8/client-core/time';
 import { copyToClipboard } from '../../terminal/domUtils';
 
 /**

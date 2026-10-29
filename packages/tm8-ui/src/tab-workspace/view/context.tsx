@@ -6,7 +6,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { MenuTarget, Notice, ShellTab } from '../../shell';
 import type { DetailReasons } from '../../panels';
-import type { NavView } from '../../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 import type { GateData } from '../../views/useGateData';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
 import { getBrowserSourceStore } from '../runtime/browserSourceStore';

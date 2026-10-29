@@ -26,7 +26,8 @@
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { McpTokenCreateResult, McpTokenView } from '@tm8/contract';
-import { relTime, useNow } from '../kit/time';
+import { useNow } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import { clientSnippets, type McpClientSnippet } from './snippets';
 import { expiryLabel, spacesLabel, tokenState, tokenWarnings } from './rows';

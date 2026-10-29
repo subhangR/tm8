@@ -53,10 +53,22 @@ export {
 } from './ZoomableFigure';
 export { Timestamp, type TimestampProps } from './Timestamp';
 export {
-  CLOCK_TICK_MS, RELATIVE_WINDOW_MS,
-  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime,
-  listTime, shortDate, useNow, weekdayDate,
+  CLOCK_TICK_MS,
+  useNow,
 } from './time';
+export {
+  RELATIVE_WINDOW_MS,
+  absTime,
+  clockTime,
+  dayLabel,
+  dayStart,
+  elapsed,
+  parseInstant,
+  relTime,
+  listTime,
+  shortDate,
+  weekdayDate,
+} from '@tm8/client-core/time';
 export {
   PanelResizer,
   RESIZE_STEP,

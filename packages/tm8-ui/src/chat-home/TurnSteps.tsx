@@ -4,7 +4,7 @@ import {
   type RunSummary,
   type StepLine,
   type StepView,
-} from './turn-step-lines';
+} from '@tm8/client-core/chat';
 import './turn-steps.css';
 
 /** D15 §2: a live run shows its latest five lines; the rest wait behind one

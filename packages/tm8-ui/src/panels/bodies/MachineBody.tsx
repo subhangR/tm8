@@ -4,7 +4,7 @@ import type { SessionLiveness } from '../../data/seam';
 import { Eyebrow, Pill, VectorIcon } from '../../kit';
 import type { PillTone } from '../../kit';
 import { SURFACE_ART, SURFACE_LABEL, getKind } from '../../domain';
-import type { ContentSurface } from '../../routes/types';
+import type { ContentSurface } from '@tm8/client-core/routes';
 import { HollowInline } from '../honesty/HollowValue';
 import './machine-body.css';
 

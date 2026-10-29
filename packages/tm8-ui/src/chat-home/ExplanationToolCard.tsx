@@ -7,8 +7,8 @@ import {
   explanationToolName,
   type CodePresentation,
   type GraphPresentation,
-} from './explanation-tools';
-import type { ProjectedTurnPart } from './turn-model';
+} from '@tm8/client-core/chat';
+import type { ProjectedTurnPart } from '@tm8/client-core/chat';
 
 type ToolPart = Extract<ProjectedTurnPart, { kind: 'tool' }>;
 

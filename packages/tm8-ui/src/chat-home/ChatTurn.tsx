@@ -21,10 +21,10 @@ import { Avatar, Markdown, Timestamp, type MarkdownComponents } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { MessageAttachments } from '../files/MessageAttachments';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
-import type { ChatLedger } from './ledger';
+import type { ChatLedger } from '@tm8/client-core/chat';
 import { TurnParts, type TurnPartsProps } from './TurnParts';
-import { projectTurnParts } from './turn-model';
-import type { ChatTurn as ChatTurnModel } from './types';
+import { projectTurnParts } from '@tm8/client-core/chat';
+import type { ChatTurn as ChatTurnModel } from '@tm8/client-core/chat';
 import './chat-home.css';
 
 export function ChatTurn({

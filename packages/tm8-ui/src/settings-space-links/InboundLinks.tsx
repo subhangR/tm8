@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { SpaceLinkInboundAuditEntry, SpaceLinkInboundView, SpaceLinkStatus } from '@tm8/contract';
-import { shortDate } from '../kit/time';
+import { shortDate } from '@tm8/client-core/time';
 import type { SpaceLinksInboundPort } from './port';
 
 const HOLDER_STATUS: Record<SpaceLinkStatus, string> = {

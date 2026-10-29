@@ -18,7 +18,7 @@
  * runs the law and hands the store the settled RESULT via `applyNormalization`.
  */
 import type { EntityId } from '@tm8/contract';
-import type { ContentSurface, PanelTab } from '../routes/types';
+import type { ContentSurface, PanelTab } from '@tm8/client-core/routes';
 
 /**
  * RE-EXPORTED, NOT RE-DECLARED. Each of these was a second literal copy of the

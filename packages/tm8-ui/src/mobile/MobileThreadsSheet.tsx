@@ -50,7 +50,7 @@
  */
 import { VectorIcon } from '../kit';
 import { MobileSheet } from './MobileSheet';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 import type { EntityId } from '@tm8/contract';
 import './mobile-threads.css';
 

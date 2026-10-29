@@ -14,10 +14,10 @@
  * this change still owes — see the PR body, which says UNVERIFIED and means it.
  */
 import { describe, expect, it } from 'vitest';
-import { build, parse } from './codec';
+import { build, parse } from '@tm8/client-core/routes';
 import { landingOfRoute, routeViewOf } from '../domain/nav-targets';
-import { emptyPanels } from './types';
-import type { NavView } from './types';
+import { emptyPanels } from '@tm8/client-core/routes';
+import type { NavView } from '@tm8/client-core/routes';
 
 const SPACE = 'sp-atelier';
 const ENTITY = 'task-4f8c2a9e';

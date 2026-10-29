@@ -19,8 +19,8 @@
  */
 import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
 import { isFileTabPath, isFileTabProjectId } from '@tm8/contract/workspace';
-import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../domain';
-import type { CollectionMode } from '../domain';
+import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../kinds';
+import type { CollectionMode } from '../kinds';
 import { decodeQ, encodeQ } from './q';
 import type {
   BuildOutcome,

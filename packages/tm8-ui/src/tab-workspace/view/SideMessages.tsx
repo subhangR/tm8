@@ -14,7 +14,7 @@ import { useAnchorFeed } from '../../channel-screen/useAnchorFeed';
 import type { GateData } from '../../views/useGateData';
 import { Avatar } from '../../kit/Avatar';
 import { Markdown } from '../../kit/Markdown';
-import { absTime, relTime } from '../../kit/time';
+import { absTime, relTime } from '@tm8/client-core/time';
 
 type MessageItem = Extract<FeedItem, { itemKind: 'message' }>;
 

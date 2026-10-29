@@ -23,7 +23,7 @@
  * handlers, so the phone draws nothing here — the 01a01c91 revert holds with
  * no device special-case.
  */
-import type { CockpitStage } from '../routes/types';
+import type { CockpitStage } from '@tm8/client-core/routes';
 
 export function EntityTray({
   onStage,

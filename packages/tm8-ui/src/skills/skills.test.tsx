@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { EntityDetail, EntitySummary, SkillPreviewResult } from '@tm8/contract';
-import { detail, summary } from '../data/project/test-support';
+import { detail, summary } from '@tm8/client-core/project/test-support';
 import { SkillBody } from './SkillBody';
 import { SkillEquipment } from './SkillEquipment';
 import { SkillPreview } from './SkillPreview';

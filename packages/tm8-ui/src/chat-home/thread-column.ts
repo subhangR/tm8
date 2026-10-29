@@ -14,7 +14,7 @@
  * copies of "what counts as Today" drift, and they drift silently, because
  * nothing renders both lists side by side.
  */
-import type { ChatThreadSummary } from './types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 
 export interface ThreadGroup<T> {
   label: string;

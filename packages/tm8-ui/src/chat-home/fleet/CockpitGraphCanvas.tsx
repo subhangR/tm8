@@ -27,7 +27,7 @@ import type { KeyboardEvent } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { getKind } from '../../domain';
 import { HUB_DEGREE } from '../../session-graph/model';
-import type { ChatEntityRef } from '../entity-refs';
+import type { ChatEntityRef } from '@tm8/client-core/chat';
 import type { InducedNode } from '../induced-graph';
 import { CARD_H, CARD_W, type InducedPlacement, type PlacedLine } from '../induced-layout';
 

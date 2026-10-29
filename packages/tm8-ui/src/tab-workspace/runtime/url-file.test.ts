@@ -6,8 +6,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SpaceId } from '@tm8/contract';
-import { build, defaultRoute, parse } from '../../routes/codec';
-import type { NavView } from '../../routes/types';
+import { build, defaultRoute, parse } from '@tm8/client-core/routes';
+import type { NavView } from '@tm8/client-core/routes';
 import { navStore } from '../../stores/navStore';
 import { createWorkspaceRuntime } from './dispatch';
 import { activeTab } from './selectors';

@@ -1,0 +1,58 @@
+{
+  "name": "@tm8/client-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "//exports": "`tm8-source` comes first and names the TypeScript source: tm8-ui (Vite and its tsconfig's customConditions) reads it, so the web UI, check.sh and the prod deploy need no build of this package. Everything else (Metro, the app's tsc, jest, Node) does not know the condition and gets dist/, built by `tsc -b packages/client-core` (LLD deltas: tm8-ui reads source, the app reads dist).",
+  "exports": {
+    "./routes": {
+      "tm8-source": "./src/routes/index.ts",
+      "types": "./dist/routes/index.d.ts",
+      "default": "./dist/routes/index.js"
+    },
+    "./kinds": {
+      "tm8-source": "./src/kinds/index.ts",
+      "types": "./dist/kinds/index.d.ts",
+      "default": "./dist/kinds/index.js"
+    },
+    "./chat": {
+      "tm8-source": "./src/chat/index.ts",
+      "types": "./dist/chat/index.d.ts",
+      "default": "./dist/chat/index.js"
+    },
+    "./project": {
+      "tm8-source": "./src/project/index.ts",
+      "types": "./dist/project/index.d.ts",
+      "default": "./dist/project/index.js"
+    },
+    "./project/test-support": {
+      "tm8-source": "./src/project/test-support.ts",
+      "types": "./dist/project/test-support.d.ts",
+      "default": "./dist/project/test-support.js"
+    },
+    "./keys": {
+      "tm8-source": "./src/keys/index.ts",
+      "types": "./dist/keys/index.d.ts",
+      "default": "./dist/keys/index.js"
+    },
+    "./time": {
+      "tm8-source": "./src/time/index.ts",
+      "types": "./dist/time/index.d.ts",
+      "default": "./dist/time/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@tm8/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.1.11"
+  }
+}

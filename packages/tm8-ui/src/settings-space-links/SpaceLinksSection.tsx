@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { SpaceLinkStatus, SpaceLinkView } from '@tm8/contract';
-import { shortDate } from '../kit/time';
+import { shortDate } from '@tm8/client-core/time';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import { InboundLinks } from './InboundLinks';
 import type { SpaceLinkCandidate, SpaceLinksPort } from './port';

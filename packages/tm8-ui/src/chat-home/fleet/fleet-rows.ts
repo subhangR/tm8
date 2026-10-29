@@ -28,7 +28,7 @@ import type { SessionLiveness } from '../../data/seam';
 import { homeRowOf, type HomeDot } from '../../home/home-model';
 import type { PillTone } from '../../kit';
 import { badgePullRequestFactsOf, type LinkedPullRequestFacts } from '../../pull-requests';
-import { truncateEntityId } from '../entity-refs';
+import { truncateEntityId } from '@tm8/client-core/chat';
 import type { FleetRef } from './fleet-model';
 import { originSentence } from './fleet-model';
 import type { FleetEntityRead } from './use-fleet-entities';

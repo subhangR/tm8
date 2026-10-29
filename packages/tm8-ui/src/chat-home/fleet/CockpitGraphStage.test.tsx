@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail, EntityId } from '@tm8/contract';
 import { CockpitGraphStage } from './CockpitGraphStage';
 import { resetFleetEntityCache } from './use-fleet-entities';
-import type { ChatTurn, ChatTurnPart } from '../types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 const id = (n: number): string => `01a01400-00cc-7000-8000-${String(n).padStart(12, '0')}`;
 const A = id(1);

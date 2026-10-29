@@ -9,7 +9,7 @@ import {
   columnsFor,
   widthVerdict,
   type ArrowName,
-} from './mobileKeys';
+} from '@tm8/client-core/keys';
 import type { LiveTerminalHandle } from './LiveTerminal';
 
 /**

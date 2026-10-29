@@ -31,7 +31,7 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 
 export const PHONE_STACK_CAP = 12;
 

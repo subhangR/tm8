@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 import {
   PHONE_STACK_CAP,
   backStepOf,

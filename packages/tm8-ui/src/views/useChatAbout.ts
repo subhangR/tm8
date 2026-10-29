@@ -26,7 +26,7 @@
 import { useCallback, useMemo } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { ActionRef } from '../domain';
-import type { Route } from '../routes/types';
+import type { Route } from '@tm8/client-core/routes';
 
 /**
  * Exactly what this dispatcher performs, exported as a CONSTANT for the same

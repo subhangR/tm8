@@ -1,5 +1,5 @@
 {
-  "//": "Derived from the deleted packages/ui browser config, minus the react-mentions pin this package does not need. Tests are compiled and run by Vitest, not tsc — test-only imports of node builtins (node:fs for the tokens byte-equality test) must not leak into the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node.",
+  "//": "Derived from the deleted packages/ui browser config, minus the react-mentions pin this package does not need. Tests are compiled and run by Vitest, not tsc — test-only imports of node builtins (node:fs for the tokens byte-equality test) must not leak into the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node. customConditions tm8-source reads @tm8/client-core from its TypeScript source (its package.json exports), so this app needs no build of that package; the phone app and Node resolve the same subpaths to dist (t-p0-client-core).",
   "compilerOptions": {
     "target": "ES2021",
     "useDefineForClassFields": true,
@@ -7,6 +7,7 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
+    "customConditions": ["tm8-source"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

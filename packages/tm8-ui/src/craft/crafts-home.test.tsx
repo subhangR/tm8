@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { routeViewOf } from '../domain';
-import { build, defaultRoute } from '../routes/codec';
+import { build, defaultRoute } from '@tm8/client-core/routes';
 import { CARD_PAGE_MARKS, CraftsHome } from './CraftsHome';
 import { craftsSourceFromSeam, fixtureCraftsSource, type CraftsSource } from './crafts-source';
 

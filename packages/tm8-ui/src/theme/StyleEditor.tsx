@@ -51,7 +51,7 @@ import {
 } from '@tm8/contract';
 
 import type { Seam, StyleVersionsPage } from '../data/seam';
-import { relTime } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { applyDraft, getStyleState, subscribeStyle } from './style-store';
 import { chooseStyle, knownStylePrefs, setStyleCssTrust, setStyleFollowOs, stylePrefsWritable } from './style-sync';
 import { ANSI_KEY, AnsiGrid, ContrastStrip, VarWidget, XtermSample, type SetVar } from './style-widgets';

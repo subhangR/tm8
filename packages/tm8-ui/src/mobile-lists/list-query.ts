@@ -15,7 +15,7 @@
 import type { KindConfig, QueryFilter, SortKey } from '../domain';
 import { needsViewer } from '../domain';
 import { narrow } from '../panels/EntityListPanel';
-import type { ListPick } from '../routes/types';
+import type { ListPick } from '@tm8/client-core/routes';
 
 export const VIEWER = '@me';
 export const CAT_ALL = 'all';

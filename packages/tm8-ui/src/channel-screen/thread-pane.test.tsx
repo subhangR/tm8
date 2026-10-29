@@ -6,7 +6,7 @@ import { ChannelScreen } from './ChannelScreen';
 import { ChannelChatSurface } from './ChannelChatSurface';
 import type { ChannelFeedPort } from './useChannelFeed';
 import { participantNames } from './feed-model';
-import { relTime } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 
 /**
  * SLICE 2 — the thread pane and the thread footer.

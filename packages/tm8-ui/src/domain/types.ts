@@ -26,19 +26,21 @@ import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
 import type { KindArt } from './kind-art';
 import type { LaunchMode } from './launch';
+import type {
+  CollectionMode,
+  CustomKindFallback,
+  GroupByKey,
+  KindCore,
+  QueryFilter,
+  RouteStrategy,
+  SortKey,
+} from '@tm8/client-core/kinds';
 
-// ---------------------------------------------------------------------------
-// Contract-derived vocabulary (cite the member, never an invented type)
-// ---------------------------------------------------------------------------
-
-/** The contract's anonymous `CollectionQuery['filters']` member. */
-export type QueryFilter = NonNullable<CollectionQuery['filters']>;
-/** The contract's `CollectionQuery['sort']` union. */
-export type SortKey = NonNullable<CollectionQuery['sort']>;
-/** The six collection layouts — the contract's `CollectionQuery['layout']` union. */
-export type CollectionMode = NonNullable<CollectionQuery['layout']>;
-/** The contract's `CollectionQuery['groupBy']` union (board axis picker, D2). */
-export type GroupByKey = NonNullable<CollectionQuery['groupBy']>;
+/* The contract-derived vocabulary, the route strategies and the fallback
+   row's kind moved to `@tm8/client-core/kinds` (t-p0-client-core), which both
+   apps' registries extend. `domain` re-exports them, so its readers are unchanged. */
+export type { CollectionMode, CustomKindFallback, GroupByKey, QueryFilter, RouteStrategy, SortKey };
+export { CUSTOM_KIND_FALLBACK } from '@tm8/client-core/kinds';
 
 /**
  * A serialized route hash (`#/s/{spaceId}/…`). Declared here rather than in
@@ -1554,13 +1556,6 @@ export interface AttachPaletteRow {
 // The registry row (§2.1)
 // ---------------------------------------------------------------------------
 
-/** WLT §2.1 route strategies. */
-export type RouteStrategy = 'collection' | 'special' | 'anchored';
-
-/** The single custom-kind fallback row. */
-export const CUSTOM_KIND_FALLBACK = 'c:*' as const;
-export type CustomKindFallback = typeof CUSTOM_KIND_FALLBACK;
-
 /**
  * ONE FIELD IN THE `edit` DIALOG.
  *
@@ -1635,7 +1630,7 @@ export interface SettingsHome {
   label: string;
 }
 
-export interface KindConfig {
+export interface KindConfig extends KindCore {
   /** This kind supports direct MCP catalog equipment editing. Server permissions still decide access. */
   mcpEquipment?: boolean;
   /** A core kind, the `c:*` fallback row, or a registered custom kind (`registerCustomKinds`). */

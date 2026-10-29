@@ -10,8 +10,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/react';
 import { TurnParts } from './TurnParts';
-import { toolStepError } from './turn-steps';
-import type { ChatTurnPart } from './types';
+import { toolStepError } from '@tm8/client-core/chat';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 afterEach(cleanup);
 

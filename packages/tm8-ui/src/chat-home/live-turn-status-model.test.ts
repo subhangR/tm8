@@ -8,7 +8,7 @@ import {
   liveTurnView,
   type TurnInProgress,
 } from './live-turn-status-model';
-import type { ChatTurnPart } from './types';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 /*
  * THE CLASSIFIER IS LANE 3's, AND ITS WORDS ARE ITS OWN TESTS' BUSINESS.
@@ -17,7 +17,10 @@ import type { ChatTurnPart } from './types';
  * red on a wording change in `turn-steps.ts`. The unmocked seam is covered by
  * `live-turn-row.test.tsx`, through the real screen.
  */
-vi.mock('./turn-steps', () => ({
+vi.mock('@tm8/client-core/chat', async (importOriginal) => ({
+  /* `turn-steps.ts` moved into `@tm8/client-core/chat` (t-p0-client-core), the
+     module this one imports it from; the rest of that barrel stays real. */
+  ...(await importOriginal<typeof import('@tm8/client-core/chat')>()),
   /* `read.*` operations fold into a counted run (the classifier's `merges`);
      anything else stays its own line. `args.detail` stands in for the one
      human fact the real classifier extracts (a title, a basename). */

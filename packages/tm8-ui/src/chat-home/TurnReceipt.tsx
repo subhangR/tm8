@@ -23,7 +23,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
-import { kindWord, type ChatLedger, type LedgerCreate, type LedgerPreview } from './ledger';
+import { kindWord, type ChatLedger, type LedgerCreate, type LedgerPreview } from '@tm8/client-core/chat';
 import {
   kindLabel,
   statusWord,
@@ -34,7 +34,7 @@ import {
   useStatusNow,
   type SessionVerdict,
 } from './ledger-host';
-import { flattenReceipt, type ReceiptMark, type ReceiptRow, type TurnReceipt as Receipt } from './turn-receipt';
+import { flattenReceipt, type ReceiptMark, type ReceiptRow, type TurnReceipt as Receipt } from '@tm8/client-core/chat';
 import './turn-receipt.css';
 
 /** Past this many rows the receipt shows `RECEIPT_HEAD` and a "+N more". */

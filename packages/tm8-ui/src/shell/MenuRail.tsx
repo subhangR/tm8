@@ -22,7 +22,7 @@ import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract'
 import { REASONS } from '../domain';
 import { VectorIcon, ancestorPath, useTreeDisclosure, type TreeDisclosure } from '../kit';
 import type { CollectionMode, GroupByKey, SortKey } from '../domain';
-import type { ListPick } from '../routes/types';
+import type { ListPick } from '@tm8/client-core/routes';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
 

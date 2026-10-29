@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntitySummary } from '@tm8/contract';
 import { taskGuideLines } from '../../fixtures';
-import { mergeSummary } from './reducers';
+import { mergeSummary } from '@tm8/client-core/project';
 
 /**
  * Task 01a14b92: `childCount` rides list reads only. An event's summary has

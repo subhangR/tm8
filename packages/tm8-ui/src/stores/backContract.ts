@@ -89,7 +89,7 @@
  */
 import type { EntityId } from '@tm8/contract';
 import { landingOfRoute } from '../domain';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 import { screenKeyOf, screenStackStore, type ScreenKey } from './screenStackStore';
 
 /**

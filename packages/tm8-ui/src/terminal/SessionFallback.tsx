@@ -16,7 +16,8 @@
  *     which cannot work.
  */
 import type { ReactNode } from 'react';
-import { ageAgo, ageLabel, useNow } from '../kit/time';
+import { useNow } from '../kit/time';
+import { ageAgo, ageLabel } from '@tm8/client-core/time';
 import { exitFactsLine, outcomeTitle } from '../transcript/session-stats';
 import {
   endedPhraseOf,

@@ -34,11 +34,11 @@
  * truncated set reports 18 tasks when the thread referenced 30 — so the
  * overflow now carries its seeds and a per-kind breakdown, never silence.
  */
-import { extractEntityRefs } from './entity-refs';
-import { isWriteCall } from './write-classifier';
+import { extractEntityRefs } from '@tm8/client-core/chat';
+import { isWriteCall } from '@tm8/client-core/chat';
 import type { GraphSeed } from './induced-graph';
-import { projectTurnParts } from './turn-model';
-import type { ChatTurn } from './types';
+import { projectTurnParts } from '@tm8/client-core/chat';
+import type { ChatTurn } from '@tm8/client-core/chat';
 
 export const MAX_GRAPH_SEEDS = 64;
 

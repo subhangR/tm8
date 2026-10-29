@@ -19,7 +19,7 @@ export type {
   QValue,
   ListPick,
   Route,
-} from './types';
+} from '@tm8/client-core/routes';
 
 export {
   CONTENT_SURFACES,
@@ -29,12 +29,13 @@ export {
   UNADDRESSED_HASH,
   dropNoticeText,
   emptyPanels,
-} from './types';
+} from '@tm8/client-core/routes';
 
-export { build, defaultRoute, homeAsTabs, normalize, parse, workRedirectOf } from './codec';
-export type { WorkRedirect } from './codec';
-export { decodeQ, encodeQ } from './q';
-export { redirect } from './redirects';
-export type { DeferredFeature, RedirectOutcome } from './redirects';
-export { OVERLAY_STATE_KEY, createBrowserTarget, createMemoryTarget, hashOfPathLink, overlayIdOf } from './transport';
-export type { MemoryTarget, RouterTarget } from './transport';
+export { build, defaultRoute, homeAsTabs, normalize, parse, workRedirectOf } from '@tm8/client-core/routes';
+export type { WorkRedirect } from '@tm8/client-core/routes';
+export { decodeQ, encodeQ } from '@tm8/client-core/routes';
+export { redirect } from '@tm8/client-core/routes';
+export type { DeferredFeature, RedirectOutcome } from '@tm8/client-core/routes';
+export { OVERLAY_STATE_KEY, createBrowserTarget, hashOfPathLink, overlayIdOf } from './transport';
+export { createMemoryTarget } from '@tm8/client-core/routes';
+export type { MemoryTarget, RouterTarget } from '@tm8/client-core/routes';

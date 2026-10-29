@@ -19,10 +19,10 @@ import type { EntityDetail, EntityId } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import { resetChatEntityResolutionCache } from './EntityChip';
 import { resetFleetEntityCache } from './fleet/use-fleet-entities';
-import { buildChatLedger } from './ledger';
+import { buildChatLedger } from '@tm8/client-core/chat';
 import { LedgerHostProvider, SESSION_VERDICT_TICK_MS, STATUS_NOW_TICK_MS, type LedgerHost } from './ledger-host';
 import { TurnParts } from './TurnParts';
-import type { ChatTurn, ChatTurnPart } from './types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 const id = (n: number): string => `01a0dc90-0000-7000-8000-${String(n).padStart(12, '0')}`;
 

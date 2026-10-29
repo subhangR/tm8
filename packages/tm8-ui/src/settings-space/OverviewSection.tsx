@@ -15,7 +15,7 @@
  * asks the seam anything, which is why they are on `LIVE_VERBS`.
  */
 import { useId, useMemo, useState } from 'react';
-import type { NodeAdminRouteSection } from '../routes/types';
+import type { NodeAdminRouteSection } from '@tm8/client-core/routes';
 import { SectionFrame } from './SectionFrame';
 import { stateOf } from './InviteFrames';
 import {

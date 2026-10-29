@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
-import { kindWord } from './ledger';
+import { kindWord } from '@tm8/client-core/chat';
 import { LedgerTree, type LedgerTreeModel } from './ledger-tree';
 
 const TASK_1 = '019f0000-0000-7000-8000-000000000101';

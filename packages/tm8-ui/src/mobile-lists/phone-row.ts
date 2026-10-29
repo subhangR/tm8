@@ -12,7 +12,7 @@
  * component only draws it.
  */
 import type { EntitySummary, WorkSessionStatus } from '@tm8/contract';
-import { listTime } from '../kit/time';
+import { listTime } from '@tm8/client-core/time';
 
 /** The pill's colour family — mapped onto `--pn-run/wait/block/idle/info`. */
 export type PhoneTone = 'run' | 'wait' | 'block' | 'idle' | 'info' | 'review';

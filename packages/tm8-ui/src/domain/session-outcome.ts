@@ -21,7 +21,7 @@
  */
 import type { EntityState, StatusCategory } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
-import { ageAgo, ageLabel } from '../kit/time';
+import { ageAgo, ageLabel } from '@tm8/client-core/time';
 import type { QueryFilter, StatusCategoryTab } from './types';
 
 export type SessionOutcome = 'open' | 'completed' | 'stopped';

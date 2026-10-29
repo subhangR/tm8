@@ -44,6 +44,7 @@
     "@tiptap/react": "3.31.4",
     "@tiptap/starter-kit": "3.31.4",
     "@tm8/cli": "workspace:*",
+    "@tm8/client-core": "workspace:*",
     "@tm8/contract": "workspace:*",
     "@tm8/prompt": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",

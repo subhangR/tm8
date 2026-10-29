@@ -24,7 +24,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityDetail, EntityId } from '@tm8/contract';
-import type { ChatEntityRef } from '../entity-refs';
+import type { ChatEntityRef } from '@tm8/client-core/chat';
 
 /** One id's read, as a state a row can render rather than a value or a throw. */
 export type FleetEntityRead =

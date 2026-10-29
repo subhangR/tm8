@@ -23,10 +23,12 @@ import { ChatHomeScreen } from './ChatHomeScreen';
 import type {
   ChatHomePort,
   ChatModelOption,
+} from './types';
+import type {
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnFrame,
-} from './types';
+} from '@tm8/client-core/chat';
 
 const SPACE_A = '019f0000-0000-7000-8000-0000000000a0' as SpaceId;
 const SPACE_B = '019f0000-0000-7000-8000-0000000000b0' as SpaceId;

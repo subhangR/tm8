@@ -13,7 +13,8 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen, NO_TEAMMATE_REFUSAL } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
+import type { ChatHomePort, ChatModelOption } from './types';
+import type { ChatThreadDetail } from '@tm8/client-core/chat';
 import { fakeCreatedHereReader, madeSummary } from './created-here/created-here.test-support';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';

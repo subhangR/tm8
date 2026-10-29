@@ -5,10 +5,10 @@ import './kit/kit.css';
 import './chat-home/chat-home.css';
 import type { EntityDetail, EntityId } from '@tm8/contract';
 import type { SessionLiveness } from './data/seam';
-import { buildChatLedger } from './chat-home/ledger';
+import { buildChatLedger } from '@tm8/client-core/chat';
 import { LedgerHostProvider, type LedgerHost } from './chat-home/ledger-host';
 import { TurnParts } from './chat-home/TurnParts';
-import type { ChatTurn, ChatTurnPart } from './chat-home/types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 /**
  * CHAT TURN RECEIPT SCRATCH HARNESS — a gate-free mount of the transcript's

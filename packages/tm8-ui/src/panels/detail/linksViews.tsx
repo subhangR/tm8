@@ -17,7 +17,7 @@
 import { Fragment, useState } from 'react';
 import { isPullRequest, messageCountLabel } from '../../domain/peer-state';
 import { Avatar, Chip } from '../../kit';
-import { absTime, clockTime, relTime } from '../../kit/time';
+import { absTime, clockTime, relTime } from '@tm8/client-core/time';
 import { EDGE_FAMILY_LABEL, EDGE_FAMILY_ORDER, KindIcon, getKind, type EdgeFamily } from '../../domain';
 import {
   forgeFact,

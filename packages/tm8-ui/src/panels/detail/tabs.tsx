@@ -8,7 +8,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { Connections, EdgeGroup, EntityDetail } from '@tm8/contract';
 import { Chip, Eyebrow } from '../../kit';
-import { relTime } from '../../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { CONVERSATION_KIND, KindIcon, edgeVerb } from '../../domain';
 import { EmptyBody } from './PanelStates';
 import { useLinksCursor } from './linksCursor';

@@ -2,7 +2,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TurnParts } from './TurnParts';
-import type { ChatTurnPart } from './types';
+import type { ChatTurnPart } from '@tm8/client-core/chat';
 
 const SOURCE_ID = '019f0000-0000-7000-8000-000000000101';
 const TARGET_ID = '019f0000-0000-7000-8000-000000000102';

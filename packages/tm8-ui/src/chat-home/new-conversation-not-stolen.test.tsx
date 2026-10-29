@@ -21,7 +21,8 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
-import type { ChatHomePort, ChatModelOption, ChatThreadSummary } from './types';
+import type { ChatHomePort, ChatModelOption } from './types';
+import type { ChatThreadSummary } from '@tm8/client-core/chat';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [

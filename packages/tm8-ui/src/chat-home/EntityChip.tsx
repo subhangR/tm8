@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
-import { truncateEntityId, type ChatEntityRef } from './entity-refs';
+import { truncateEntityId, type ChatEntityRef } from '@tm8/client-core/chat';
 
 /** Resolves a bare entity id to its kind/title — ChatHomeSurface builds this
  *  from `seam.entity`; fixture hosts may omit it entirely. */

@@ -33,8 +33,8 @@ import type { DurableWorkspaceEvent, EntityId, EntitySummary } from '@tm8/contra
 import { KindIcon } from '../../domain/KindIcon';
 import { getKind } from '../../domain/registry';
 import { treeParentOf } from '../../domain/launched-by';
-import { foldChatLedger, kindWord } from '../ledger';
-import type { ChatTurn } from '../types';
+import { foldChatLedger, kindWord } from '@tm8/client-core/chat';
+import type { ChatTurn } from '@tm8/client-core/chat';
 import {
   ageOf,
   kindsOf,

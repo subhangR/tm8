@@ -48,10 +48,10 @@
  * PURE. No React, no seam, no clock — the fold is a function of the turns, so
  * it is testable without a host and cheap to re-run under streaming.
  */
-import { extractEntityRefs } from '../entity-refs';
-import { bareToolName, isWriteCall, operationOf } from '../write-classifier';
-import { projectTurnParts } from '../turn-model';
-import type { ChatTurn } from '../types';
+import { extractEntityRefs } from '@tm8/client-core/chat';
+import { bareToolName, isWriteCall, operationOf } from '@tm8/client-core/chat';
+import { projectTurnParts } from '@tm8/client-core/chat';
+import type { ChatTurn } from '@tm8/client-core/chat';
 
 /**
  * How this conversation came to name an entity, strongest first.

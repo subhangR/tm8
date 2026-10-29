@@ -8,7 +8,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTranscriptContext, SessionTranscriptPage } from '@tm8/contract';
-import { ageLabel } from '../kit/time';
+import { ageLabel } from '@tm8/client-core/time';
 import { compactTokens, readContext } from './context-reading';
 import { SessionContextNumber } from './SessionContextNumber';
 import { useSessionTranscript } from './useSessionTranscript';

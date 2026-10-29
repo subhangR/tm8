@@ -44,14 +44,14 @@ import type { EntityId } from '@tm8/contract';
 import { useMenuAnchor } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import type { ChatEntityResolver } from './EntityChip';
-import { truncateEntityId } from './entity-refs';
+import { truncateEntityId } from '@tm8/client-core/chat';
 import { foldFleet } from './fleet/fleet-model';
 import { fleetRowsOf, groupFleetRows, type FleetRow } from './fleet/fleet-rows';
 import { useFleetEntities, type FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
-import { foldChatLedger, kindWord } from './ledger';
+import { foldChatLedger, kindWord } from '@tm8/client-core/chat';
 import { LedgerDot, LedgerTree, type LedgerNodeStatus } from './ledger-tree';
-import type { ChatTurn } from './types';
+import type { ChatTurn } from '@tm8/client-core/chat';
 
 const MENU_WIDTH = 220;
 const MENU_HEIGHT = 264;

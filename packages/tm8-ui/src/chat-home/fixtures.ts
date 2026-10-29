@@ -1,16 +1,18 @@
 import type { ActorSummary, EntityId } from '@tm8/contract';
-import { mergeChatTurnFrame } from './turn-model';
+import { mergeChatTurnFrame } from '@tm8/client-core/chat';
 import type {
   ChatHomePort,
   ChatPostInput,
   ChatCreateInput,
   ChatSetModelInput,
+} from './types';
+import type {
   ChatThreadConfig,
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurn,
   ChatTurnFrame,
-} from './types';
+} from '@tm8/client-core/chat';
 
 const HUMAN: ActorSummary = {
   id: '019f0000-0000-7000-8000-000000000001',

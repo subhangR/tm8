@@ -3,7 +3,7 @@ import type { EntityId, SessionCheckout, SessionCheckoutDiff, SessionCheckoutFil
 import type { Seam } from '../data/seam';
 import { DiffView, Pill } from '../kit';
 import { useMobileSurface } from '../mobile';
-import { relTime } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { buildChangeTree, visibleChangeRows } from './change-paths';
 import { ChangeDirRow, ChangesViewToggle, useCollapsedFolders, type ChangesView } from './ChangesTree';
 import { SessionTranscriptChanges } from './SessionTranscriptChanges';

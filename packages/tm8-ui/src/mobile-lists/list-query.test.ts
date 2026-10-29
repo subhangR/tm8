@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getKind } from '../domain';
 import { landingOfRoute, routeViewOf } from '../domain/nav-targets';
-import { decodeQ, encodeQ } from '../routes/q';
+import { decodeQ, encodeQ } from '@tm8/client-core/routes';
 import {
   CAT_ALL,
   CAT_OPEN,

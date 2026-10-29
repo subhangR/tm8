@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { MenuViewRefSchema } from '@tm8/contract';
 import type { EntityId } from '@tm8/contract';
-import type { NavView } from '../routes/types';
+import type { NavView } from '@tm8/client-core/routes';
 import type { MenuTarget } from '../shell';
 import { VIEW_REF_ROUTE, landingOfRoute, routeViewOf } from './nav-targets';
 import { collectionKinds, kindOfSlug, slugOfKind } from './registry';

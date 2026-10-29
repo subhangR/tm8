@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_ROUTE_SECTIONS, NODE_ADMIN_ROUTE_SECTIONS } from '../routes/types';
+import { SETTINGS_ROUTE_SECTIONS, NODE_ADMIN_ROUTE_SECTIONS } from '@tm8/client-core/routes';
 import { SETTINGS_SECTIONS } from './types';
 import {
   SETTINGS_NAV_GROUPS,

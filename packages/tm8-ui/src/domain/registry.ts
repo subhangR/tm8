@@ -21,12 +21,17 @@
  * on a 16×16 grid (`kind-art.ts`), rendered by `KindIcon`. The text `icon`
  * stays as the fallback a string-only surface can print. No component changed
  * shape to receive it, exactly as promised.
+ *
+ * KIND_CORE (t-p0-client-core, 2026-10-29). A row's label, plural, slug, route
+ * strategy, group and drawn mark are not written here any more: every row
+ * spreads `KIND_CORE[kind]` from `@tm8/client-core/kinds`, the table the phone
+ * app's registry spreads too, so both apps say the same words (L-A).
+ * `kind-core.test.ts` holds every row equal to it.
  */
 import { normalizeKindAlias, type CoreEntityKind, type CustomEntityKind, type EntityKind } from '@tm8/contract';
 import type {
   ActionRef,
   AssignControl,
-  CollectionMode,
   ContentBlockRef,
   DateControl,
   FilterSpec,
@@ -42,7 +47,7 @@ import type {
   ValueControl,
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
-import { KIND_ART } from './kind-art';
+import { KIND_CORE } from '@tm8/client-core/kinds';
 import { CRAFT_KIND } from './craft';
 /* The container refusals live with the verbs that raise them, so the sentence
    a button refuses with and the sentence this row declares are one string. */
@@ -65,7 +70,9 @@ export const RESERVED_SLUGS: readonly string[] = [
   'k',
 ];
 
-export const ALL_MODES: readonly CollectionMode[] = ['list', 'board', 'tree', 'feed', 'gallery', 'graph'];
+/* The layouts moved to `@tm8/client-core/kinds` (t-p0-client-core): the route
+   codec validates `?mode=` against them in both apps. */
+export { ALL_MODES } from '@tm8/client-core/kinds';
 
 // ---------------------------------------------------------------------------
 // Shared filter / sort vocabulary (contract-shaped — the seam executes these
@@ -669,12 +676,10 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
+    ...KIND_CORE.task,
     mcpEquipment: true,
-    label: 'Task',
-    labelPlural: 'Tasks',
     createInstant: 'title',
     icon: '◻',
-    iconArt: KIND_ART.task,
     /*
      * NO `editFields`, AND SO NO EDIT DIALOG (task 01a1163a, owner ruling in
      * form 01a1164f: "no Edit dialog"). The dialog was the first write surface
@@ -685,8 +690,6 @@ const ROWS: readonly KindConfig[] = [
      * split-half `readFrom: 'state'` bookkeeping for nothing. §15.1 pins the
      * `edit` verb to this list, so dropping it drops the verb by derivation.
      */
-    slug: 'tasks',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: [],
     chip: {
@@ -861,12 +864,8 @@ const ROWS: readonly KindConfig[] = [
   // -- work_session ---------------------------------------------------------
   {
     kind: 'work_session',
-    label: 'Session',
-    labelPlural: 'Sessions',
+    ...KIND_CORE.work_session,
     icon: '▸',
-    iconArt: KIND_ART.work_session,
-    slug: 'sessions',
-    strategy: 'collection',
     defaultMode: 'list',
     // 'board' joined the moment board mode rendered (doc 06 §1.6): server
     // grouping guards on `state.kind === 'task'` (collections.ts groupItems),
@@ -1045,13 +1044,9 @@ const ROWS: readonly KindConfig[] = [
   // -- doc ------------------------------------------------------------------
   {
     kind: 'doc',
-    label: 'Doc',
-    labelPlural: 'Docs',
+    ...KIND_CORE.doc,
     createInstant: 'editor',
     icon: '▤',
-    iconArt: KIND_ART.doc,
-    slug: 'docs',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board'],
     chip: { glyph: '▤', tintBy: 'none' },
@@ -1089,11 +1084,9 @@ const ROWS: readonly KindConfig[] = [
   // the collection got a home.
   {
     kind: 'channel',
-    label: 'Channel',
-    labelPlural: 'Channels',
+    ...KIND_CORE.channel,
     createInstant: 'title',
     icon: '#',
-    iconArt: KIND_ART.channel,
     titleGrammar: 'slug',
     /**
      * NAME AND TOPIC, AND DELIBERATELY NOTHING ELSE (user ruling 2026-08-07,
@@ -1142,8 +1135,6 @@ const ROWS: readonly KindConfig[] = [
         multiline: true,
       },
     ],
-    slug: 'channels',
-    strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
     defaultMode: 'list',
     hiddenModes: ['board', 'gallery'],
@@ -1195,16 +1186,12 @@ const ROWS: readonly KindConfig[] = [
   // source here and are absent instead of rendering empty.
   {
     kind: 'voice_channel',
-    label: 'Voice channel',
-    labelPlural: 'Voice channels',
+    ...KIND_CORE.voice_channel,
     // A placeholder in the canvases' own monochrome text idiom (see the module
     // header): a speaker glyph from the pictograph block tofus in the system
     // font, so the audio note stands in until the canvas-extracted set lands.
     icon: '♪',
-    iconArt: KIND_ART.voice_channel,
     titleGrammar: 'slug',
-    slug: null,
-    strategy: 'special',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,
     defaultMode: 'list',
     hiddenModes: ['board', 'gallery'],
@@ -1224,12 +1211,8 @@ const ROWS: readonly KindConfig[] = [
   // -- message (anchored strategy — no k/ view) -----------------------------
   {
     kind: 'message',
-    label: 'Message',
-    labelPlural: 'Messages',
+    ...KIND_CORE.message,
     icon: '✉',
-    iconArt: KIND_ART.message,
-    slug: null,
-    strategy: 'anchored',
     // Canonical route = the containing channel + ?msg=. Parent missing ⇒
     // e/{messageId} with a tombstone banner and NO companion (WLT §2.1).
     defaultMode: 'feed',
@@ -1250,12 +1233,8 @@ const ROWS: readonly KindConfig[] = [
   // -- member ---------------------------------------------------------------
   {
     kind: 'member',
-    label: 'Member',
-    labelPlural: 'Members',
+    ...KIND_CORE.member,
     icon: '◍',
-    iconArt: KIND_ART.member,
-    slug: 'members',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: {
@@ -1292,13 +1271,9 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
+    ...KIND_CORE.team_member,
     mcpEquipment: true,
-    label: 'Teammate',
-    labelPlural: 'Teammates',
     icon: '◆',
-    iconArt: KIND_ART.team_member,
-    slug: 'teammates',
-    strategy: 'collection',
     defaultMode: 'list',
     /* `tree` is NOT hidden: db/migrations/002_identity.sql:110 rules that the
        org tree IS the entity hierarchy (leader = parent), so the generic
@@ -1370,12 +1345,8 @@ const ROWS: readonly KindConfig[] = [
   // -- pull_request ---------------------------------------------------------
   {
     kind: 'pull_request',
-    label: 'Pull request',
-    labelPlural: 'Pull requests',
+    ...KIND_CORE.pull_request,
     icon: '⑂',
-    iconArt: KIND_ART.pull_request,
-    slug: 'pulls',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['tree', 'gallery'],
     chip: {
@@ -1414,12 +1385,8 @@ const ROWS: readonly KindConfig[] = [
   // -- commit ---------------------------------------------------------------
   {
     kind: 'commit',
-    label: 'Commit',
-    labelPlural: 'Commits',
+    ...KIND_CORE.commit,
     icon: '◉',
-    iconArt: KIND_ART.commit,
-    slug: 'commits',
-    strategy: 'collection',
     defaultMode: 'feed',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◉', tintBy: 'none' },
@@ -1445,12 +1412,8 @@ const ROWS: readonly KindConfig[] = [
   // -- file -----------------------------------------------------------------
   {
     kind: 'file',
-    label: 'File',
-    labelPlural: 'Files',
+    ...KIND_CORE.file,
     icon: '▣',
-    iconArt: KIND_ART.file,
-    slug: 'files',
-    strategy: 'collection',
     defaultMode: 'gallery',
     hiddenModes: ['board'],
     chip: { glyph: '▣', tintBy: 'none' },
@@ -1484,12 +1447,8 @@ const ROWS: readonly KindConfig[] = [
   // -- spell ----------------------------------------------------------------
   {
     kind: 'spell',
-    label: 'Spell',
-    labelPlural: 'Spells',
+    ...KIND_CORE.spell,
     icon: '✧',
-    iconArt: KIND_ART.spell,
-    slug: 'spells',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: { glyph: '✧', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
@@ -1512,12 +1471,8 @@ const ROWS: readonly KindConfig[] = [
   // -- skill ----------------------------------------------------------------
   {
     kind: 'skill',
-    label: 'Skill',
-    labelPlural: 'Skills',
+    ...KIND_CORE.skill,
     icon: '✦',
-    iconArt: KIND_ART.skill,
-    slug: 'skills',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: { glyph: '✦', tintBy: 'equipped', tones: { true: 'run', false: 'idle' } },
@@ -1555,13 +1510,9 @@ const ROWS: readonly KindConfig[] = [
   // -- collection -----------------------------------------------------------
   {
     kind: 'collection',
-    label: 'Collection',
-    labelPlural: 'Collections',
+    ...KIND_CORE.collection,
     createInstant: 'title',
     icon: '▦',
-    iconArt: KIND_ART.collection,
-    slug: 'collections',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board'],
     chip: { glyph: '▦', tintBy: 'none' },
@@ -1592,12 +1543,8 @@ const ROWS: readonly KindConfig[] = [
   // -- project (restricted: generic create/patch/delete/move refused) -------
   {
     kind: 'project',
-    label: 'Project',
-    labelPlural: 'Projects',
+    ...KIND_CORE.project,
     icon: '⬢',
-    iconArt: KIND_ART.project,
-    slug: 'projects',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⬢', tintBy: 'none' },
@@ -1635,12 +1582,8 @@ const ROWS: readonly KindConfig[] = [
   // -- interaction_profile (restricted lifecycle family) -------------------
   {
     kind: 'interaction_profile',
-    label: 'Interaction profile',
-    labelPlural: 'Interaction profiles',
+    ...KIND_CORE.interaction_profile,
     icon: '⌬',
-    iconArt: KIND_ART.interaction_profile,
-    slug: 'interaction-profiles',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: {
@@ -1683,12 +1626,8 @@ const ROWS: readonly KindConfig[] = [
   // -- memory (scope-carrying claims; staleness derived server-side) --------
   {
     kind: 'memory',
-    label: 'Memory',
-    labelPlural: 'Memories',
+    ...KIND_CORE.memory,
     icon: '◈',
-    iconArt: KIND_ART.memory,
-    slug: 'memories',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◈', tintBy: 'none' },
@@ -1771,12 +1710,8 @@ const ROWS: readonly KindConfig[] = [
   // -- graph (Craft P1: ONE ROW holds vertices AND edges — the blueprint) --
   {
     kind: 'graph',
-    label: 'Graph',
-    labelPlural: 'Graphs',
+    ...KIND_CORE.graph,
     icon: '⬡',
-    iconArt: KIND_ART.graph,
-    slug: 'graphs',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⬡', tintBy: 'none' },
@@ -1847,13 +1782,9 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'drawing',
-    label: 'Drawing',
-    labelPlural: 'Drawings',
+    ...KIND_CORE.drawing,
     createInstant: 'title',
     icon: '✎',
-    iconArt: KIND_ART.drawing,
-    slug: 'drawings',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: { glyph: '✎', tintBy: 'none' },
@@ -1904,13 +1835,9 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'story',
-    label: 'Story',
-    labelPlural: 'Stories',
+    ...KIND_CORE.story,
     createInstant: 'title',
     icon: '❧',
-    iconArt: KIND_ART.story,
-    slug: 'stories',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'gallery'],
     chip: { glyph: '❧', tintBy: 'none' },
@@ -1971,12 +1898,8 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'craft',
-    label: 'Craft',
-    labelPlural: 'Crafts',
+    ...KIND_CORE.craft,
     icon: '❐',
-    iconArt: KIND_ART.craft,
-    slug: 'crafts',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: { glyph: '❐', tintBy: 'none' },
@@ -2024,12 +1947,8 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'form',
-    label: 'Form',
-    labelPlural: 'Forms',
+    ...KIND_CORE.form,
     icon: '☑',
-    iconArt: KIND_ART.form,
-    slug: 'forms',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
     chip: { glyph: '☑', tintBy: 'none' },
@@ -2045,8 +1964,10 @@ const ROWS: readonly KindConfig[] = [
   },
 
   {
-    kind: 'tool', label: 'Tool', labelPlural: 'Tools', icon: '⌘', iconArt: KIND_ART.tool,
-    slug: 'tools', strategy: 'collection', defaultMode: 'list',
+    kind: 'tool',
+    ...KIND_CORE.tool,
+    icon: '⌘',
+    defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
     /* A tool is born from its DEFINITION (`tools.create`: name, runtime,
@@ -2062,12 +1983,8 @@ const ROWS: readonly KindConfig[] = [
   // Catalog definitions are managed separately from their private accounts.
   {
     kind: 'mcp_server',
-    label: 'Connector',
-    labelPlural: 'Connectors',
+    ...KIND_CORE.mcp_server,
     icon: '⚿',
-    iconArt: KIND_ART.mcp_server,
-    slug: 'connectors',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⚿', tintBy: 'none' },
@@ -2094,12 +2011,8 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'credential',
-    label: 'Credential',
-    labelPlural: 'Credentials',
+    ...KIND_CORE.credential,
     icon: '⚿',
-    iconArt: KIND_ART.credential,
-    slug: 'credentials',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⚿', tintBy: 'none' },
@@ -2213,12 +2126,8 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'chat',
-    label: 'Chat',
-    labelPlural: 'Chats',
+    ...KIND_CORE.chat,
     icon: '❝',
-    iconArt: KIND_ART.chat,
-    slug: 'chats',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '❝', tintBy: 'none' },
@@ -2277,8 +2186,7 @@ const ROWS: readonly KindConfig[] = [
   // branch in a component.
   {
     kind: 'container',
-    label: 'Container',
-    labelPlural: 'Containers',
+    ...KIND_CORE.container,
     /*
      * `◫`, NOT the `▣` Design §13.1 names. That glyph is already `file`'s
      * (registry.ts:1376), and while the artwork test only guards the DRAWN
@@ -2288,9 +2196,6 @@ const ROWS: readonly KindConfig[] = [
      * draws, so the fallback and the artwork say the same thing.
      */
     icon: '◫',
-    iconArt: KIND_ART.container,
-    slug: 'containers',
-    strategy: 'collection',
     defaultMode: 'list',
     // Board is hidden for work_session's reason, and it applies twice over
     // here: server grouping guards on `state.kind === 'task'`, and a
@@ -2438,10 +2343,8 @@ const ROWS: readonly KindConfig[] = [
   // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
   {
     kind: 'loop',
-    label: 'Loop',
-    labelPlural: 'Loops',
+    ...KIND_CORE.loop,
     icon: '↻',
-    iconArt: KIND_ART.loop,
     createForm: 'scheduled-work',
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Daily project sweep' },
@@ -2467,8 +2370,6 @@ const ROWS: readonly KindConfig[] = [
         valueType: 'json-object',
       },
     ],
-    slug: 'loops',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '↻', tintBy: 'none' },
@@ -2525,12 +2426,8 @@ const ROWS: readonly KindConfig[] = [
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',
-    label: 'Artifact',
-    labelPlural: 'Artifacts',
+    ...KIND_CORE.artifact,
     icon: '❖',
-    iconArt: KIND_ART.artifact,
-    slug: 'artifacts',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '❖', tintBy: 'none' },
@@ -2581,12 +2478,8 @@ const ROWS: readonly KindConfig[] = [
   // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
   {
     kind: 'worktree',
-    label: 'Worktree',
-    labelPlural: 'Worktrees',
+    ...KIND_CORE.worktree,
     icon: '⎇',
-    iconArt: KIND_ART.worktree,
-    slug: 'worktrees',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⎇', tintBy: 'none' },
@@ -2616,12 +2509,8 @@ const ROWS: readonly KindConfig[] = [
   // -- space_link (250, W6: managed from Space settings, not browsed) --------
   {
     kind: 'space_link',
-    label: 'Space link',
-    labelPlural: 'Space links',
+    ...KIND_CORE.space_link,
     icon: '⛓',
-    iconArt: KIND_ART.space_link,
-    slug: 'space-links',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '⛓', tintBy: 'none' },
@@ -2677,12 +2566,8 @@ const ROWS: readonly KindConfig[] = [
   // -- server (250 registers it; W8 gives it a detail row) ------------------
   {
     kind: 'server',
-    label: 'Server',
-    labelPlural: 'Servers',
+    ...KIND_CORE.server,
     icon: '◎',
-    iconArt: KIND_ART.server,
-    slug: 'servers',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◎', tintBy: 'none' },
@@ -2732,12 +2617,8 @@ const ROWS: readonly KindConfig[] = [
    */
   {
     kind: 'style',
-    label: 'Style',
-    labelPlural: 'Styles',
+    ...KIND_CORE.style,
     icon: '◐',
-    iconArt: KIND_ART.style,
-    slug: 'styles',
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '◐', tintBy: 'none' },
@@ -2752,14 +2633,8 @@ const ROWS: readonly KindConfig[] = [
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,
-    label: 'Item',
-    labelPlural: 'Items',
+    ...KIND_CORE[CUSTOM_KIND_FALLBACK],
     icon: '◇',
-    iconArt: KIND_ART.custom,
-    // Slug is computed per custom kind (`c:{name}` → `c-{name}`); the fallback
-    // row itself has none.
-    slug: null,
-    strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: [],
     chip: { glyph: '◇', tintBy: 'none' },

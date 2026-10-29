@@ -11,7 +11,7 @@ import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityDetail, EntityId } from '@tm8/contract';
 import { resetFleetEntityCache } from './fleet/use-fleet-entities';
 import { LedgerPanel } from './LedgerPanel';
-import type { ChatTurn, ChatTurnPart } from './types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 const id = (n: number): string => `01a00000-00aa-7000-8000-${String(n).padStart(12, '0')}`;
 const TASK = id(1);

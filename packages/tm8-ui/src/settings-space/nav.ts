@@ -17,7 +17,7 @@
  * open — their writes are already gated inside the section.
  */
 import type { FrameNavGroup } from '../shell/FrameNav';
-import type { NodeAdminRouteSection, SettingsRouteSection } from '../routes/types';
+import type { NodeAdminRouteSection, SettingsRouteSection } from '@tm8/client-core/routes';
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './types';
 
 export type SettingsNavTarget =

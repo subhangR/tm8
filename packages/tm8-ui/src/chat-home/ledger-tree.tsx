@@ -34,8 +34,8 @@ import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../domain/KindIcon';
 import type { PillTone } from '../kit';
 import { resolveChatEntity, type ChatEntityResolver } from './EntityChip';
-import { truncateEntityId } from './entity-refs';
-import { kindWord, type ChatLedger } from './ledger';
+import { truncateEntityId } from '@tm8/client-core/chat';
+import { kindWord, type ChatLedger } from '@tm8/client-core/chat';
 
 /** `model` IS S2's ChatLedger — the committed export, one fold for every
  *  surface. The alias keeps the props' vocabulary. */

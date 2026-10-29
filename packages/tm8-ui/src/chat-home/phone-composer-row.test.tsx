@@ -36,7 +36,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { MobileSurfaceProvider } from '../mobile';
 import { EntityTray } from './EntityTray';
-import type { ChatTurn, ChatTurnPart } from './types';
+import type { ChatTurn, ChatTurnPart } from '@tm8/client-core/chat';
 
 /* FROM THE CWD, not from `import.meta.url` — in a jsdom environment that URL
    resolves against the DOCUMENT base, not this directory. Same note as

@@ -21,7 +21,7 @@ import {
   measuredConnections,
   measuredSeeds,
 } from './induced-graph.fixture';
-import { truncateEntityId } from './entity-refs';
+import { truncateEntityId } from '@tm8/client-core/chat';
 
 const graph = () => buildInducedGraph(measuredSeeds(), measuredConnections());
 

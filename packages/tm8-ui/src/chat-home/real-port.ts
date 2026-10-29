@@ -5,15 +5,17 @@ import {
   ENTITY_CHAT_THREADS,
   createChatHomeFixturePort,
 } from './fixtures';
-import { turnPartFromMessagePart } from './wire';
+import { turnPartFromMessagePart } from '@tm8/client-core/chat';
 import type {
   ChatCreateInput,
   ChatHomePort,
   ChatStartResult,
+} from './types';
+import type {
   ChatThreadDetail,
   ChatThreadSummary,
   ChatTurnPart,
-} from './types';
+} from '@tm8/client-core/chat';
 
 /**
  * The chat facts this port needs off a listed row.

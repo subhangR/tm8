@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import { entityPatchInput, type AuthoringCommands } from '../authoring/commands';
-import { absTime } from '../kit/time';
+import { absTime } from '@tm8/client-core/time';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import { loopScheduleProblem, nextLoopRunAt } from './schedule';
 

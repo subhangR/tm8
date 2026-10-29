@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { KindIcon } from '../domain';
-import { relTime } from '../kit/time';
+import { relTime } from '@tm8/client-core/time';
 import { CraftNameField } from './CraftNameField';
 import type { CraftCard, CraftsSource } from './crafts-source';
 import './crafts-home.css';

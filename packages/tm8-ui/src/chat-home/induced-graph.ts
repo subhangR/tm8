@@ -30,7 +30,7 @@
  */
 import type { EdgeView } from '@tm8/contract';
 import { humanize } from '../session-graph/model';
-import { truncateEntityId } from './entity-refs';
+import { truncateEntityId } from '@tm8/client-core/chat';
 
 /** One entity the conversation referenced — produced by the seed fold. */
 export interface GraphSeed {
