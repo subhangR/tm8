@@ -248,7 +248,7 @@ function Harness() {
       if (older.entity) await source.placePage(CRAFT, older.entity.id as EntityId, 2);
       const doc = await seam.query({ spaceId: SPACE, kinds: ['doc'], limit: 1 });
       if (doc.page.items[0]) await source.placePage(CRAFT, doc.page.items[0].id, 3);
-      const nested = await source.createPage(CRAFT, 'design', 4);
+      const nested = await source.createPage(CRAFT, 'craft', 4);
       source.crafts.get(nested)!.title = 'Backend';
       if (older.entity) await source.placePage(nested, older.entity.id as EntityId, 1);
       if (alive) setSeeded(true);
