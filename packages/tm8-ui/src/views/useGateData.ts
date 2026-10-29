@@ -2473,18 +2473,21 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
      defaults loader is the cached one (data/launch-defaults-cache.ts): its
      `peek` lets the card draw its strip on the first frame. */
   const launchNodeKey = nodeKeyOf(options.serverBaseUrl);
-  const launchViewerId = viewerActor?.id ?? null;
+  /* Read through a getter: the loader keeps one identity while the viewer
+     resolves, so an open card is never re-read just because boot finished. */
+  const launchViewerId = useRef<string | null>(null);
+  launchViewerId.current = viewerActor?.id ?? null;
   const launchLoaders = useMemo(() => {
     const defaultsPort = seam.commands.launchDefaults;
     const skills = seam.commands.skills;
     return {
       ...(seam.commands.jev ? { jev: seam.commands.jev } : {}),
       ...(defaultsPort
-        ? { loadLaunchDefaults: launchDefaultsLoader((input) => defaultsPort.defaults(spaceId, input), launchNodeKey, spaceId, launchViewerId) }
+        ? { loadLaunchDefaults: launchDefaultsLoader((input) => defaultsPort.defaults(spaceId, input), launchNodeKey, spaceId, () => launchViewerId.current) }
         : {}),
       ...(skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => skills.preview(spaceId, input) } : {}),
     };
-  }, [seam, spaceId, launchNodeKey, launchViewerId]);
+  }, [seam, spaceId, launchNodeKey]);
 
   const launch = useMemo<GateData['launch']>(() => {
     const summaries = Object.values(entities).filter((row) => row.spaceId === spaceId && row.deletedAt === null);

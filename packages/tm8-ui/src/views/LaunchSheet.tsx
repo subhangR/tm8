@@ -175,7 +175,8 @@ export interface LaunchSheetProps {
    * unreadable ⇒ no sentence.
    */
   loadSpaceReadiness?(spaceId: string): Promise<CredentialsSpaceReadinessView>;
-  onLaunch(config: LaunchSelection): void;
+  /** May return the launch's settlement; the sheet releases what its press held when it settles. */
+  onLaunch(config: LaunchSelection): void | Promise<unknown>;
   /**
    * D5 — route the subject through the space's resident dispatcher instead of
    * configuring the launch here. Takes ONLY the subject, mirroring
@@ -307,15 +308,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
     interactionProfileId: profileId || null,
   });
   /* THE PRESS HOLDS JEV (lane E): an answer landing while the launch is on its
-     way is held. The host unmounts the sheet when the launch goes through, so
-     the sheet still standing once `launching` falls back means it did not:
-     the held answers are shown after all. */
+     way is held, and released on the press's OWN outcome — never on a prop
+     edge a host may not produce. A sheet the launch closed is gone by then. */
   const jevUnseal = useRef<(() => void) | null>(null);
-  const wasLaunching = useRef(launching);
-  useEffect(() => {
-    if (wasLaunching.current && !launching) { jevUnseal.current?.(); jevUnseal.current = null; }
-    wasLaunching.current = launching;
-  }, [launching]);
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),
     skills: props.skillCandidates,
@@ -1103,11 +1098,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
       {/* One line about the defaults the groups draw, said once for the sheet —
           not when the block above already says it — and Retry whenever the
           read failed, blocking or not. */}
-      {(selection.defaultsNote && !(selection.launchBlock && selection.canRetryDefaults)) || selection.canRetryDefaults ? (
+      {selection.defaultsLine ? (
         <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-defaults-note">
-          {selection.launchBlock && selection.canRetryDefaults ? null : selection.defaultsNote ?? 'Couldn’t read this launch’s defaults from the node.'}
-          {selection.canRetryDefaults ? (
-            <button type="button" className="ls__cancel" data-testid="launch-selection-retry" onClick={selection.retryDefaults}>Retry</button>
+          {selection.defaultsLine.text}
+          {selection.defaultsLine.retry ? (
+            <button type="button" className="ls__cancel" data-testid="launch-selection-retry" onClick={selection.defaultsLine.retry}>Retry</button>
           ) : null}
         </div>
       ) : null}
@@ -1188,11 +1183,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
                edited group, by hand or by an applied Jev pick, is its exact
                set. No group edited ⇒ no `selection`, so the launch loads
                exactly what it always has. */
+            /* One press at a time: a second one in the same tick is ignored. */
+            if (jevUnseal.current) return;
             const sealed = jev.seal();
             jevUnseal.current = sealed.unseal;
             const jevFields = sealed.fields;
             const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
-            props.onLaunch({
+            const settled = props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
               agentToolId: agentToolId || null,
@@ -1208,6 +1205,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
               ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
               ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
             });
+            const release = () => { const unseal = jevUnseal.current; jevUnseal.current = null; unseal?.(); };
+            /* A host that returns no settlement has no flight to hold through. */
+            if (settled && typeof (settled as Promise<unknown>).then === 'function') void (settled as Promise<unknown>).then(release, release);
+            else release();
           }}
         >
           {launching ? 'Launching…' : 'Launch ▸'}

@@ -161,6 +161,17 @@ describe('one read per launch key', () => {
     expect(rebuilt.read).toHaveBeenCalledTimes(1);
   });
 
+  it('a new loader recovers a card whose read FAILED: it reads through it and the answer is taken', async () => {
+    const failing = vi.fn(() => Promise.reject(new Error('503')));
+    const { rerender, result } = renderHook(({ load }) => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }), { initialProps: { load: failing as LoadLaunchDefaults } });
+    await waitFor(() => expect(result.current.canRetryDefaults).toBe(true));
+    const handed = loader();
+    rerender({ load: handed.load });
+    await handed.answer(LAUNCH_DEFAULTS);
+    expect(result.current.defaults.skills.status).toBe('ready');
+    expect(result.current.canRetryDefaults).toBe(false);
+  });
+
   it('an EDITED group whose re-read failed with nothing to show blocks Launch, named, until a retry — the teammate-switch case', async () => {
     const { load, answer } = loader();
     const failing: Array<() => void> = [];

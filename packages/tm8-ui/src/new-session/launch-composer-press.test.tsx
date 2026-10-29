@@ -68,6 +68,25 @@ describe('Jev at the press', () => {
   });
 });
 
+describe('Jev after a timeout that found the session', () => {
+  it('the card stays up and ✦ keeps working: the held answer is shown', async () => {
+    const port = pendingPort();
+    const spawn = deferred();
+    const view = renderPopup({
+      jev: port,
+      onSpawn: () => spawn.promise,
+      sessionsSince: async () => [{ id: 's-1', title: 'Wire the launch flow' }],
+    });
+    await view.ready();
+    await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await act(async () => { fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input, { memories: JEV_MEMORIES })); });
+    await act(async () => { spawn.reject(Object.assign(new Error('the node did not answer within 30s'), { code: 'upstream_unavailable' })); });
+    await waitFor(() => expect(view.getByTestId('lcd3-group-memory').textContent).toMatch(/✦ 2/));
+  });
+});
+
 describe('defaults the node could not confirm', () => {
   it('the card offers the Retry it asks for: refusal → Retry → unblocked, the edit intact', async () => {
     const pending: Array<{ resolve(r: LaunchDefaultsResult): void; reject(e: unknown): void }> = [];

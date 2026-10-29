@@ -25,7 +25,9 @@
  * TRANSITIONS — `nextDefaultsRead` is the only place a read changes state:
  *   close(reason)       any → idle
  *   open(key, cached)   any → cached (an earlier answer) | loading (none)
- *   answered(key, r)    loading | cached → confirmed
+ *   answered(key, r)    loading | cached | failed | confirmed → confirmed
+ *                       (a later answer — a re-read through a new loader —
+ *                       replaces an earlier one only when the set differs)
  *   failed(key)         loading | cached → failed
  *   retry(key)          failed → cached (its kept answer) | loading (none)
  * An answer or failure for a key that is not the open one changes nothing,
@@ -113,12 +115,18 @@ export function nextDefaultsRead(read: LaunchDefaultsRead, event: LaunchDefaults
       return event.cached
         ? { phase: 'cached', key: event.key, cached: event.cached }
         : { phase: 'loading', key: event.key };
-    case 'answered':
+    case 'answered': {
       if (read.key !== event.key) return read;
-      if (read.phase === 'cached') {
-        return { phase: 'confirmed', key: event.key, result: event.result, changed: defaultsChanges(read.cached, event.result) };
-      }
-      return read.phase === 'loading' ? { phase: 'confirmed', key: event.key, result: event.result, changed: [] } : read;
+      /* Whatever was on the card is what the answer is compared with: the
+         cached rows, the rows a failed read kept, or an earlier confirmation
+         (a re-read through a new loader). An identical later answer changes
+         nothing, not even the object. */
+      const before = read.phase === 'cached' ? read.cached
+        : read.phase === 'failed' ? read.shown
+          : read.phase === 'confirmed' ? read.result : null;
+      if (read.phase === 'confirmed' && defaultsChanges(read.result, event.result).length === 0) return read;
+      return { phase: 'confirmed', key: event.key, result: event.result, changed: before ? defaultsChanges(before, event.result) : [] };
+    }
     case 'retry':
       if (read.phase !== 'failed' || read.key !== event.key) return read;
       return read.shown ? { phase: 'cached', key: event.key, cached: read.shown } : { phase: 'loading', key: event.key };
@@ -136,7 +144,7 @@ export function selectionDefaultsOf(read: LaunchDefaultsRead): LaunchSelectionDe
     case 'loading': return loadingDefaults();
     case 'cached': return groupsOf(read.cached, (g) => unconfirmedDefaults(g, 'pending'));
     case 'confirmed': return groupsOf(read.result, readyDefaults);
-    case 'failed': return read.shown ? groupsOf(read.shown, (g) => unconfirmedDefaults(g, 'failed')) : unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
+    case 'failed': return read.shown ? groupsOf(read.shown, (g) => unconfirmedDefaults(g, 'failed')) : unknownDefaults(UNKNOWN_DEFAULTS_NOTE, { readFailed: true });
   }
 }
 

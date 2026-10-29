@@ -65,7 +65,8 @@ export interface LaunchContextRow {
 export type LaunchGroupDefaults =
   | { readonly status: 'loading' }
   /** No defaults read (no port, a failed read, no teammate yet): the group cannot be edited. */
-  | { readonly status: 'unknown'; readonly reason: string }
+  /** `readFailed`: the node was asked and the read failed — a retry can fix it, unlike no loader or no teammate. */
+  | { readonly status: 'unknown'; readonly reason: string; readonly readFailed?: true }
   | {
     readonly status: 'ready';
     readonly rows: readonly LaunchContextRow[];
@@ -104,8 +105,8 @@ export function loadingDefaults(): LaunchSelectionDefaults {
   return { memories: { status: 'loading' }, skills: { status: 'loading' }, references: { status: 'loading' } };
 }
 
-export function unknownDefaults(reason: string): LaunchSelectionDefaults {
-  const group = { status: 'unknown', reason } as const;
+export function unknownDefaults(reason: string, why: { readFailed?: true } = {}): LaunchSelectionDefaults {
+  const group = { status: 'unknown', reason, ...why } as const;
   return { memories: group, skills: group, references: group };
 }
 
@@ -213,8 +214,11 @@ export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSele
   const where = (test: (d: LaunchGroupDefaults) => boolean) => LAUNCH_SELECTION_GROUPS.filter((g) => edited(g) && test(defaults[g]));
   /* Unknown counts too: an edited group whose re-read failed with nothing to
      show (a teammate switch) would otherwise be omitted, its removals dropped. */
-  const failed = where((d) => d.status === 'unknown' || (d.status === 'ready' && d.confirmation === 'failed'));
+  const failed = where((d) => (d.status === 'unknown' && d.readFailed === true) || (d.status === 'ready' && d.confirmation === 'failed'));
   if (failed.length > 0) return unconfirmedReason(failed);
+  /* Unknown for a reason no retry fixes (no teammate, no loader): its own words. */
+  const idle = LAUNCH_SELECTION_GROUPS.map((g) => defaults[g]).find((d, i) => d.status === 'unknown' && edited(LAUNCH_SELECTION_GROUPS[i]!));
+  if (idle && idle.status === 'unknown') return idle.reason;
   const waiting = where((d) => d.status === 'loading' || (d.status === 'ready' && d.confirmation === 'pending'));
   return waiting.length > 0 ? defaultsWaitReason(waiting) : null;
 }

@@ -19,35 +19,51 @@ const MEMORIES: EntitySuggestion = {
 };
 const OK = { status: 'ok' as const, value: MEMORIES, cost: { calls: 1, inputTokens: 1, outputTokens: 0, usd: 0, latencyMs: 1 } };
 
+function deferred() {
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<void>((_res, rej) => { reject = rej; });
+  return { promise, reject };
+}
+
+function setup() {
+  const port = pendingPort();
+  const outcome = deferred();
+  const onLaunch = vi.fn<(config: LaunchSelection) => Promise<void>>(() => outcome.promise);
+  const view = render(
+    <div className="cv2-root">
+      <LaunchSheet
+        subjectId={'task-1' as EntityId} spaceId="sp-1" fromChip="◔ Run ▸" fromCaption="task pre-associated"
+        teammates={LAUNCH_TEAMMATES} projects={LAUNCH_PROJECTS} profiles={LAUNCH_PROFILES} capacity={LAUNCH_CAPACITY}
+        memories={LAUNCH_MEMORIES} jev={port} loadLaunchDefaults={async () => LAUNCH_DEFAULTS}
+        onLaunch={onLaunch} onDispatch={() => {}} onCancel={() => {}}
+      />
+    </div>,
+  );
+  return { port, outcome, onLaunch, view };
+}
+
 describe('the sheet’s press', () => {
-  it('holds an answer landing during the launch, and shows it when the launch did not go through', async () => {
-    const port = pendingPort();
-    const onLaunch = vi.fn<(config: LaunchSelection) => void>();
-    const sheet = (launching: boolean) => (
-      <div className="cv2-root">
-        <LaunchSheet
-          subjectId={'task-1' as EntityId} spaceId="sp-1" fromChip="◔ Run ▸" fromCaption="task pre-associated"
-          teammates={LAUNCH_TEAMMATES} projects={LAUNCH_PROJECTS} profiles={LAUNCH_PROFILES} capacity={LAUNCH_CAPACITY}
-          memories={LAUNCH_MEMORIES} jev={port} loadLaunchDefaults={async () => LAUNCH_DEFAULTS}
-          onLaunch={onLaunch} onDispatch={() => {}} onCancel={() => {}} launching={launching}
-        />
-      </div>
-    );
-    const view = render(sheet(false));
+  it('holds an answer landing during the launch, and shows it when the press’s own outcome is a refusal', async () => {
+    const { port, outcome, onLaunch, view } = setup();
     await waitFor(() => expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default/));
     await act(async () => { fireEvent.click(view.getByTestId('jev-entry-button')); });
-    expect(port.calls).toHaveLength(1);
-
     fireEvent.click(view.getByRole('button', { name: /Launch ▸/ }));
     expect(onLaunch).toHaveBeenCalledTimes(1);
-    view.rerender(sheet(true));
 
     await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input, { memories: OK })); });
     expect(view.queryByText('A memory Jev picked')).toBeNull();
 
-    // The host clears `launching` and the sheet is still up: the launch was refused.
-    view.rerender(sheet(false));
+    await act(async () => { outcome.reject(new Error('No session slots free.')); });
     await waitFor(() => expect(view.getAllByText('A memory Jev picked').length).toBeGreaterThan(0));
     expect(port.calls).toHaveLength(1);
+  });
+
+  it('a second press in the same tick is ignored — one launch, one held queue', async () => {
+    const { onLaunch, view } = setup();
+    await waitFor(() => expect(view.getByTestId('lsel-toggle-memories').textContent).toMatch(/1 default/));
+    const launch = view.getByRole('button', { name: /Launch ▸/ });
+    fireEvent.click(launch);
+    fireEvent.click(launch);
+    expect(onLaunch).toHaveBeenCalledTimes(1);
   });
 });

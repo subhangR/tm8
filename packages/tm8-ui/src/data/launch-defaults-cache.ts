@@ -9,34 +9,34 @@
  * which is rarely between two opens.
  *
  * CONTRACT
- *  - `launchDefaultsLoader(read, nodeKey, spaceId)` returns a
+ *  - `launchDefaultsLoader(read, nodeKey, spaceId, viewerOf)` returns a
  *    `LoadLaunchDefaults`: a `sharedRead` (data/shared-read.ts) over
  *    `launch.defaults`, never fresh, so every call asks the node — joining a
  *    read already in flight — and resolves with the NODE'S answer. `peek`
  *    answers synchronously: the answer this loader kept, else the one this
- *    browser stored (the reader's `seed`), so a reload keeps the first frame
- *    warm too.
- *  - Stored per node, space and VIEWER, and keyed by `launchDefaultsKey(input)` — exactly what the
- *    answer is a function of, so a hit answers THIS question, never a
- *    neighbour's (another subject's references are not this launch's).
+ *    browser stored for the viewer (the reader's `seed`), so a reload keeps
+ *    the first frame warm too.
+ *  - Stored per node, space and VIEWER (`viewerOf()`, read at each use, so the
+ *    loader keeps one identity while the viewer resolves; no viewer yet means
+ *    nothing is stored), and keyed by `launchDefaultsKey(input)` — exactly
+ *    what the answer is a function of, so a hit answers THIS question.
  *  - Only an answer the node gave is stored. A failed read stores nothing and
  *    leaves the last answer where it was; the reader reports the failure.
- *  - The store is bounded: MAX_REMEMBERED launches per space, least recently
- *    answered out, and a payload past MAX_STORED_CHARS sheds its oldest
- *    launches before it is written — localStorage is one 5MB origin budget.
- *    Every stored row is checked field by field before it is drawn.
- *  - `clearLaunchDefaultsCache(nodeKey)` forgets every space's answers for a
- *    node. Every session end calls it (auth/session-reset.ts): the rows are
- *    graph content — titles, header text — from one viewer's spaces, keyed by
- *    node and space, never account. An answer still in flight then is never
- *    stored, and a loader built before the sweep forgets what it kept the next
- *    time it is used.
+ *  - The store is bounded and recency wins: the newest answer first, older
+ *    launches while they fit MAX_STORED_CHARS (localStorage is one 5MB origin
+ *    budget), at most MAX_REMEMBERED. Every stored row is checked against
+ *    every field its readers use before it is drawn.
+ *  - `clearLaunchDefaultsCache(nodeKey)` forgets every space's and viewer's
+ *    answers for a node. An explicit sign-out calls it (auth/session-reset.ts);
+ *    an expired pass does not — the store is viewer-keyed, so the next person
+ *    reads their own key, and the same person keeps a warm first frame. An
+ *    answer still in flight at a sweep is never stored, and a loader built
+ *    before it forgets what it kept the next time it is used.
  *
  * THE HONEST LIMIT. A remembered answer is a photograph. Its reader draws it
- * as `confirming` until the node's answer confirms it, and Launch waits on any
- * group the person edits meanwhile (`domain/launch-defaults-read.ts`,
- * `launchBlock`), so a stale photograph is never what a launch SENDS unless
- * the node could not be asked — and then the card says so. Two tabs share
+ * unconfirmed until the node's answer confirms it, and an EDITED group never
+ * launches on it (`domain/launch-defaults-read.ts`, `launchBlock`): an
+ * untouched group is omitted and the node loads its own. Two tabs share
  * storage, not memory; the last to write wins.
  */
 import type { LaunchDefaultsInput, LaunchDefaultsResult } from '@tm8/contract';
@@ -46,8 +46,12 @@ import type { LoadLaunchDefaults } from '../launch-selection/port';
 import { browserStorage, forgetKeysWithPrefix } from './browser-store';
 import { sharedRead } from './shared-read';
 
-/** Bumped whenever the stored shape changes: a miss on this prefix ignores the old payload, never coerces it. */
-const CACHE_VERSION = 'v1';
+/**
+ * Bumped whenever the stored shape changes: a miss on this prefix ignores the
+ * old payload, never coerces it. v2: entries are stored as their own JSON
+ * strings, so reading them never re-serialises.
+ */
+const CACHE_VERSION = 'v2';
 const KEY_PREFIX = `tm8.launch-defaults.${CACHE_VERSION}`;
 
 /** Launches remembered per space — well past the teammate × task pairs one person opens in a sitting. */
@@ -55,13 +59,14 @@ const MAX_REMEMBERED = 24;
 /** The stored payload's ceiling, in characters. */
 const MAX_STORED_CHARS = 200_000;
 
-/** One stored launch: its key, its answer, and the exact JSON written for it (dedup compares strings). */
+/** One stored launch: its key, its answer, and the exact JSON string stored for it. */
 interface StoredEntry {
   key: string;
   result: LaunchDefaultsResult;
   json: string;
 }
 
+/** Node, space AND viewer: two people on one browser never seed each other's first frame. */
 function storageKeyFor(nodeKey: string, spaceId: string, viewerId: string): string {
   return `${KEY_PREFIX}.${nodeKey}.${spaceId}.${viewerId}`;
 }
@@ -75,24 +80,34 @@ function storageKeyFor(nodeKey: string, spaceId: string, viewerId: string): stri
 const sweeps = new Map<string, number>();
 const sweepOf = (nodeKey: string): number => sweeps.get(nodeKey) ?? 0;
 
-const isText = (value: unknown) => typeof value === 'string';
+const isText = (value: unknown): value is string => typeof value === 'string';
 const isTextOrNull = (value: unknown) => value === null || typeof value === 'string';
+const isNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
+/** Absent is allowed where an older node may omit the field; present must be the right type. */
+const optional = (test: (value: unknown) => boolean) => (value: unknown) => value === undefined || test(value);
 
-/** Every field `defaultRow` reads, checked — a row missing one would draw as derived text that is not there. */
+/**
+ * Every field a reader of an answer uses, checked: `defaultRow` (entityId,
+ * kind, title, via, headerText, headerSource), the meter (promptBytes, budget,
+ * total) and the strip — so a stored row with `budget: "12k"` is not drawn.
+ */
 function isGroup(value: unknown): boolean {
-  const group = value as { items?: unknown; total?: unknown } | null;
-  return !!group && typeof group.total === 'number' && Array.isArray(group.items) && group.items.every((item) => {
-    const row = item as Partial<Record<'entityId' | 'kind' | 'title' | 'via' | 'headerText' | 'headerSource', unknown>> | null;
-    return !!row && isText(row.entityId) && isText(row.kind) && isText(row.title) && isText(row.via)
-      && isTextOrNull(row.headerText) && isTextOrNull(row.headerSource);
-  });
+  const group = value as Partial<Record<'items' | 'total' | 'budget' | 'floor', unknown>> | null;
+  return !!group && isNumber(group.total) && optional((b) => b === null || isNumber(b))(group.budget)
+    && optional(isNumber)(group.floor) && Array.isArray(group.items) && group.items.every((item) => {
+      const row = item as Partial<Record<'entityId' | 'kind' | 'title' | 'via' | 'headerText' | 'headerSource' | 'promptBytes', unknown>> | null;
+      return !!row && isText(row.entityId) && isText(row.kind) && isText(row.title) && isText(row.via)
+        && isTextOrNull(row.headerText) && isTextOrNull(row.headerSource) && optional(isNumber)(row.promptBytes);
+    });
 }
 
 /** A structural check, not a cast. */
 function isAnswer(value: unknown): value is LaunchDefaultsResult {
   const answer = value as Partial<Record<keyof LaunchDefaultsResult, unknown>> | null;
   return !!answer && isGroup(answer.memories) && isGroup(answer.skills) && isGroup(answer.references)
-    && isGroup(answer.teammates) && Array.isArray(answer.warnings) && answer.warnings.every(isText);
+    && isGroup(answer.teammates) && Array.isArray(answer.warnings) && answer.warnings.every(isText)
+    && optional(isTextOrNull)(answer.taskId)
+    && optional((c) => c === 'on' || c === 'off')(answer.contextIndex);
 }
 
 /** The stored answers, most recently answered first; [] when none, none readable, or none well-formed. */
@@ -104,11 +119,15 @@ function readStored(storageKey: string): StoredEntry[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { entries?: unknown } | null;
     if (!parsed || !Array.isArray(parsed.entries)) return [];
-    return (parsed.entries as Array<{ key?: unknown; result?: unknown } | null>).flatMap((entry) => (
-      entry && isText(entry.key) && isAnswer(entry.result)
-        ? [{ key: entry.key as string, result: entry.result, json: JSON.stringify({ key: entry.key, result: entry.result }) }]
-        : []
-    ));
+    return parsed.entries.flatMap((json): StoredEntry[] => {
+      if (!isText(json)) return [];
+      try {
+        const entry = JSON.parse(json) as { key?: unknown; result?: unknown } | null;
+        return entry && isText(entry.key) && isAnswer(entry.result) ? [{ key: entry.key, result: entry.result, json }] : [];
+      } catch {
+        return [];
+      }
+    });
   } catch {
     // Corrupt payload: drop it rather than fail every later open.
     try { browser.removeItem(storageKey); } catch { /* nothing further to do */ }
@@ -136,7 +155,7 @@ function nextStored(stored: readonly StoredEntry[], fresh: StoredEntry): StoredE
   return out;
 }
 
-/** The store for one loader: parsed once, kept in memory until a write or a sweep. */
+/** The store for one viewer: parsed once, kept in memory until a write or a sweep. */
 function storeFor(storageKey: string) {
   let entries: StoredEntry[] | null = null;
   const current = () => (entries ??= readStored(storageKey));
@@ -149,15 +168,17 @@ function storeFor(storageKey: string) {
       const stored = current();
       /* The same answer already newest: nothing to write (the common reopen). */
       if (stored[0]?.json === fresh.json) return;
-      entries = nextStored(stored, fresh);
+      const next = nextStored(stored, fresh);
+      /* Nothing changed (the answer could not fit, and the rest stands): no write. */
+      if (next.length === stored.length && next.every((entry, i) => entry.json === stored[i]!.json)) return;
+      entries = next;
       try {
-        browserStorage()?.setItem(storageKey, `{"entries":[${entries.map((entry) => entry.json).join(',')}]}`);
+        browserStorage()?.setItem(storageKey, JSON.stringify({ entries: next.map((entry) => entry.json) }));
       } catch {
         // Quota or a storage policy. The loader still keeps it for this tab; the
         // next reload just opens cold. Nothing the viewer could act on.
       }
     },
-    forget(): void { entries = null; },
   };
 }
 
@@ -165,19 +186,26 @@ export function launchDefaultsLoader(
   read: (input: LaunchDefaultsInput) => Promise<LaunchDefaultsResult>,
   nodeKey: string,
   spaceId: string,
-  /** Null while the viewer is not known yet: answers are then kept for this tab only, never stored. */
-  viewerId: string | null,
+  /** Who is viewing, read at each use; null while not known yet — answers are then kept for this tab only. */
+  viewerOf: () => string | null,
 ): LoadLaunchDefaults {
-  const stored = viewerId ? storeFor(storageKeyFor(nodeKey, spaceId, viewerId)) : null;
+  let stores = new Map<string, ReturnType<typeof storeFor>>();
+  const storeOf = (): ReturnType<typeof storeFor> | null => {
+    const viewerId = viewerOf();
+    if (!viewerId) return null;
+    let store = stores.get(viewerId);
+    if (!store) { store = storeFor(storageKeyFor(nodeKey, spaceId, viewerId)); stores.set(viewerId, store); }
+    return store;
+  };
   const reader = sharedRead(read, launchDefaultsKey, {
-    seed: (input) => stored?.find(launchDefaultsKey(input)) ?? null,
+    seed: (input) => storeOf()?.find(launchDefaultsKey(input)) ?? null,
     maxKept: MAX_REMEMBERED,
   });
   /* A sweep since this loader was last used: what it kept, in memory and as
-     its parsed copy of the store, is the previous viewer's. */
+     its parsed copies of the store, is the previous viewer's. */
   let sweptAt = sweepOf(nodeKey);
   const current = () => {
-    if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); stored?.forget(); sweptAt = sweepOf(nodeKey); }
+    if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); stores = new Map(); sweptAt = sweepOf(nodeKey); }
     return reader;
   };
   /* The sweep a call is asked under is taken AT the call: an answer that lands
@@ -185,7 +213,7 @@ export function launchDefaultsLoader(
   const call = (input: LaunchDefaultsInput) => {
     const asked = sweepOf(nodeKey);
     return current()(input).then((result) => {
-      if (stored && asked === sweepOf(nodeKey)) stored.write(launchDefaultsKey(input), result);
+      if (asked === sweepOf(nodeKey)) storeOf()?.write(launchDefaultsKey(input), result);
       return result;
     });
   };

@@ -492,7 +492,8 @@ export function LaunchComposerPopup({
   const succeed = () => {
     committed.current = true;
     clearDraft(subject.id);
-    onDismiss?.();
+    /* A host with no dismissal keeps the card up and interactive. */
+    if (onDismiss) onDismiss(); else releaseJev();
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
@@ -511,6 +512,8 @@ export function LaunchComposerPopup({
     sessionsSince(subject.id, openedAt.current).then(
       (found) => {
         if (found.length > 0) {
+          /* The launch went through, but the card stays up and ✦ still works. */
+          releaseJev();
           setTimedOut('found');
           setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
         } else {
@@ -928,10 +931,10 @@ export function LaunchComposerPopup({
         connectors={(<>
           {/* THE DEFAULTS COULD NOT BE READ: what the card asks for, it offers
               here (lane E). Moves into the card's notice slot with lane A. */}
-          {selection.canRetryDefaults ? (
+          {selection.defaultsLine?.retry ? (
             <p className="lcd-note" role="status" data-testid="launch-defaults-retry-line">
-              {selection.launchBlock ? null : selection.defaultsNote ?? 'Couldn’t read this launch’s defaults from the node.'}{' '}
-              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.retryDefaults}>Retry</button>
+              {selection.defaultsLine.text}{' '}
+              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
             </p>
           ) : null}
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
@@ -1021,7 +1024,7 @@ export function LaunchComposerPopup({
         onSubmit={onLaunch}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal ?? (selection.canRetryDefaults ? null : selection.defaultsNote)}
+        notice={preview ? null : nodeRefusal ?? (selection.defaultsLine?.retry ? null : selection.defaultsLine?.text ?? null)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}

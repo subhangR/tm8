@@ -184,9 +184,9 @@ afterEach(() => {
 /** The launch card's stored defaults for one viewer, as a fresh page would seed them. */
 const DEFAULTS_INPUT = { teamMemberId: 'tm-1' as never, subjectId: OPEN as never };
 async function storeDefaults(): Promise<void> {
-  await launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, 'viewer-1')(DEFAULTS_INPUT);
+  await launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, () => 'viewer-1')(DEFAULTS_INPUT);
 }
-const storedDefaults = () => launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, 'viewer-1').peek?.(DEFAULTS_INPUT) ?? null;
+const storedDefaults = () => launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, () => 'viewer-1').peek?.(DEFAULTS_INPUT) ?? null;
 
 describe('an explicit sign-out', () => {
   it('leaves the next viewer nothing: no panels, no pins, no session, no screen stacks', () => {

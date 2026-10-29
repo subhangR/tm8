@@ -75,6 +75,13 @@ export interface LaunchSelection {
   retryDefaults(): void;
   /** The read failed and can be asked again (`retryDefaults`). */
   canRetryDefaults: boolean;
+  /**
+   * THE ONE LINE both launch surfaces draw about their defaults, or null.
+   * `text` is the note (changed since last time / could not be confirmed /
+   * could not be read) — null when Launch's own block already says it;
+   * `retry` is there whenever the read failed, blocking or not.
+   */
+  defaultsLine: { text: string | null; retry: (() => void) | null } | null;
   /** Rows the person added, so an added row keeps its title while it is ticked. */
   added: Readonly<Record<SpawnSelectionGroup, readonly LaunchContextRow[]>>;
   /** Returns the refusal when the tick is refused; the row shows it too. */
@@ -106,6 +113,15 @@ const NOTHING_ADDED: LaunchSelection['added'] = { memories: [], skills: [], refe
 type ReadTarget =
   | { readonly key: string; readonly input: LaunchDefaultsInput }
   | { readonly key: null; readonly reason: string };
+
+const READ_FAILED_LINE = 'Couldn’t read this launch’s defaults from the node.';
+
+function lineOf(read: LaunchDefaultsRead, block: string | null, retry: () => void): LaunchSelection['defaultsLine'] {
+  const note = defaultsNote(read);
+  if (read.phase !== 'failed') return note ? { text: note, retry: null } : null;
+  /* While failed, any block is the unconfirmed one — it says it already. */
+  return { text: block ? null : note ?? READ_FAILED_LINE, retry };
+}
 
 function defaultsInput(teammateId: string, subjectId: string | null | undefined, agentTool: 'claude-code' | 'codex' | null, profileId: string | null): LaunchDefaultsInput {
   return {
@@ -253,6 +269,7 @@ export function useLaunchSelection(args: {
     defaultsNote: defaultsNote(read),
     retryDefaults,
     canRetryDefaults: read.phase === 'failed',
+    defaultsLine: lineOf(read, launchBlock(defaults, edits), retryDefaults),
     added,
     toggle,
     setEdit,

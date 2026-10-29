@@ -93,9 +93,17 @@ describe('the node answers', () => {
     expect(nextDefaultsRead(now, { type: 'failed', key: 'k1' })).toBe(now);
   });
 
-  it('a second answer for a confirmed key changes nothing', () => {
+  it('a later answer for a confirmed key: the same set changes nothing, a different one replaces it and is named', () => {
     const confirmed = nextDefaultsRead(nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: null }), { type: 'answered', key: 'k1', result: LAUNCH_DEFAULTS });
-    expect(nextDefaultsRead(confirmed, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL })).toBe(confirmed);
+    expect(nextDefaultsRead(confirmed, { type: 'answered', key: 'k1', result: LAUNCH_DEFAULTS })).toBe(confirmed);
+    expect(nextDefaultsRead(confirmed, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL }))
+      .toMatchObject({ phase: 'confirmed', result: WITH_EXTRA_SKILL, changed: [{ group: 'skills', added: 1, removed: 0 }] });
+  });
+
+  it('an answer recovers a FAILED read (a re-read through a new loader, not a retry) — compared with what was shown', () => {
+    const failed = nextDefaultsRead(nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS }), { type: 'failed', key: 'k1' });
+    expect(nextDefaultsRead(failed, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL }))
+      .toMatchObject({ phase: 'confirmed', changed: [{ group: 'skills', added: 1, removed: 0 }] });
   });
 
   it('a failure over a cached answer KEEPS it on the card, marked failed, and says so', () => {
@@ -124,7 +132,7 @@ describe('the node answers', () => {
     const loading = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: null });
     const read = nextDefaultsRead(loading, { type: 'failed', key: 'k1' });
     expect(read).toEqual({ phase: 'failed', key: 'k1', shown: null });
-    expect(selectionDefaultsOf(read).skills).toEqual({ status: 'unknown', reason: UNKNOWN_DEFAULTS_NOTE });
+    expect(selectionDefaultsOf(read).skills).toEqual({ status: 'unknown', reason: UNKNOWN_DEFAULTS_NOTE, readFailed: true });
     expect(shownAnswer(read)).toBeNull();
     expect(defaultsNote(read)).toBeNull();
   });
