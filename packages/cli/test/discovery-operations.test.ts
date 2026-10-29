@@ -329,20 +329,6 @@ const COMMANDLESS_OPERATIONS = [
       'spaces.members.spacePassword.lock',
       'spaces.members.spacePassword.reset',
       'spaces.spacePassword.setRequired',
-      // Loops PR1: the API lands first; `tm8 loop` (PR4) gives these their commands.
-      'loops.create',
-      'loops.update',
-      'loops.get',
-      'loops.list',
-      'loops.enable',
-      'loops.disable',
-      'loops.pause',
-      'loops.resume',
-      'loops.runNow',
-      'loops.runs.list',
-      'loops.runs.get',
-      'loops.runs.stop',
-      'loops.schedule.preview',
 ];
 
 describe('the CLI command projection', () => {
@@ -684,7 +670,7 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'tools.secrets.bind': 'ToolSecretBindInputSchema',
   'tools.secrets.unbind': 'ToolSecretUnbindInputSchema',
   'tools.run': 'ToolRunInputSchema',
-  // Loops PR1: commandless until PR4's `tm8 loop`; the DTOs guard the API.
+  // Loops: `tm8 loop edit|enable|disable|pause|resume --expect-version`.
   'loops.update': 'LoopUpdateInputSchema',
   'loops.enable': 'LoopEnableInputSchema',
   'loops.disable': 'LoopDisableInputSchema',
@@ -918,7 +904,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // writes, lenient headers / migration 223), so they are not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(46 /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
+    expect(swept).toBe(51 /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -966,6 +952,11 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
    */
   const GUARD_PIN: ReadonlyArray<readonly [OperationName, string, string]> = [
     ['tools.update', '--expect-version', 'expectedVersion'],
+    ['loops.update', '--expect-version', 'expectedVersion'],
+    ['loops.enable', '--expect-version', 'expectedVersion'],
+    ['loops.disable', '--expect-version', 'expectedVersion'],
+    ['loops.pause', '--expect-version', 'expectedVersion'],
+    ['loops.resume', '--expect-version', 'expectedVersion'],
     ['tools.config.set', '--expect-version', 'expectedVersion'],
     ['tools.config.unset', '--expect-version', 'expectedVersion'],
     ['tools.secrets.bind', '--expect-version', 'expectedVersion'],
@@ -1076,7 +1067,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(53 /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
+    expect(actual.length).toBe(58 /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

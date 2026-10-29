@@ -264,6 +264,23 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     ],
   },
   {
+    // Before `list teammates`: "schedule a teammate" is a loop, not a roster read.
+    // Only SETTING UP recurring work routes here: a cadence word AND a set-up
+    // verb ("schedule" is both). Steering or reading an existing loop (pause,
+    // list, stop, preview, ...) falls through to the ranker, which finds that
+    // verb's own row; a one-off "send a daily report" has no set-up verb.
+    intent: 'schedule recurring work (a loop)',
+    all: [
+      ['schedule', 'scheduled', 'recurring', 'recur', 'cron', 'loop', 'periodically', 'nightly', 'hourly', 'daily', 'weekly'],
+      ['schedule', 'create', 'set', 'setup', 'make', 'add', 'new', 'run', 'start', 'automate', 'repeat'],
+    ],
+    none: ['pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
+      'runs', 'history', 'cancel', 'archive', 'loops', 'schedules', 'status'],
+    candidates: [
+      { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
+    ],
+  },
+  {
     intent: 'list teammates',
     all: [['teammate', 'agents', 'personas']],
     none: ['chat', 'skill', 'skills', 'equip', 'profile', 'interaction-profile', 'spawn', 'launch'],
