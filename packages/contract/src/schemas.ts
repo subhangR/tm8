@@ -6279,7 +6279,8 @@ export const DevicesRegisterInputSchema: z.ZodType<DevicesRegisterInput> = z.obj
   locale: DeviceLocaleSchema,
   previews: z.enum(DEVICE_PREVIEWS).optional(),
   label: DeviceLabelSchema,
-  quietUntil: DeviceQuietUntilSchema.optional(),
+  // A time sets it. Absent keeps a refreshed row's window; devices.update clears one.
+  quietUntil: z.string().datetime({ offset: true }).optional(),
 }).strict();
 
 export const DevicesUpdateInputSchema: z.ZodType<DevicesUpdateInput> = z.object({

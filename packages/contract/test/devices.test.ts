@@ -60,7 +60,8 @@ describe('devices.register input', () => {
     expect(DevicesRegisterInputSchema.parse(REGISTER)).toEqual(REGISTER);
     const { previews: _p, quietUntil: _q, ...minimal } = REGISTER;
     expect(DevicesRegisterInputSchema.safeParse(minimal).success).toBe(true);
-    expect(DevicesRegisterInputSchema.safeParse({ ...REGISTER, quietUntil: null }).success).toBe(true);
+    // Register only SETS a quiet window; clearing one is devices.update's.
+    expect(DevicesRegisterInputSchema.safeParse({ ...REGISTER, quietUntil: null }).success).toBe(false);
   });
 
   it('refuses any field that names an owner, a session or an actor', () => {

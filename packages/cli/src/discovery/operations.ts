@@ -447,7 +447,7 @@ const ROWS: Record<OperationName, Row> = {
       'one device per sign-in: registering again from the same sign-in updates it in place and keeps its device id',
       'the token is a credential: <token-source> is - (stdin) or @<file>, never the token itself, and no answer, list or log ever shows it',
       'the relay is expo, the only one in v1, and the default',
-      'previews defaults to sender (full = title and text, sender = who only, none = nothing on the lock screen)',
+      'a new device\'s previews default to sender (full = title and text, sender = who only, none = nothing on the lock screen); registering again keeps previews and --quiet-until unless you pass them',
       'signing out (auth logout) or revoking the sign-in deletes the device; nothing more is pushed to it',
     ],
     examples: ['tm8 device register --platform ios --token @<token-file> --app-version <version> --locale <tag> --label <label>'],

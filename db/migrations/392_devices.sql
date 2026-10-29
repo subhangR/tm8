@@ -176,7 +176,10 @@ revoke all on function internal.device_sign_in(text) from public;
 
 -- -----------------------------------------------------------------------------
 -- devices.register. Creates the calling sign-in's row, or refreshes it in
--- place (same deviceId, version + 1). The token arrives sealed.
+-- place (same deviceId, version + 1). The token arrives sealed. On a refresh,
+-- previews and quiet_until KEEP their stored values when the call leaves them
+-- out: an app that re-registers on launch must not reset the person's choice
+-- or end a quiet window early (devices.update clears quiet_until).
 -- -----------------------------------------------------------------------------
 create or replace function public.register_device(
   p_platform text, p_relay text,
@@ -236,9 +239,9 @@ begin
          token_nonce = excluded.token_nonce,
          app_version = excluded.app_version,
          locale = excluded.locale,
-         previews = excluded.previews,
+         previews = coalesce(p_previews, cur.previews),
          label = excluded.label,
-         quiet_until = excluded.quiet_until,
+         quiet_until = coalesce(p_quiet_until, cur.quiet_until),
          version = cur.version + 1
   returning * into d;
 

@@ -256,6 +256,8 @@ describe('one row per sign-in, bound to its root session', () => {
     const viaPin = await register(identity, pinned, newToken());
     expect(viaPin.deviceId).toBe(first.deviceId);
     expect(viaPin.device.version).toBe(3);
+    // A refresh that leaves previews out keeps the person's choice.
+    expect(viaPin.device.previews).toBe('none');
     const rows = await storedRows(identity);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.auth_session_id).toBe(gate);
@@ -264,6 +266,15 @@ describe('one row per sign-in, bound to its root session', () => {
   it('previews default to sender when the body leaves them out', async () => {
     const result = await register(DAN, await mintSession(DAN), newToken());
     expect(result.device.previews).toBe('sender');
+  });
+
+  it('a re-registration that leaves quietUntil out keeps the quiet window (control: a new time replaces it)', async () => {
+    const gate = await mintSession(DAN);
+    const quiet = await register(DAN, gate, newToken(), { quietUntil: '2026-10-30T07:00:00Z' });
+    const relaunch = await register(DAN, gate, newToken());
+    expect(relaunch.device.quietUntil).toBe(quiet.device.quietUntil);
+    const moved = await register(DAN, gate, newToken(), { quietUntil: '2026-10-31T07:00:00Z' });
+    expect(moved.device.quietUntil).not.toBe(quiet.device.quietUntil);
   });
 
   it('the same phone token from a newer sign-in of the same person replaces the older row', async () => {

@@ -9145,11 +9145,12 @@ export interface DevicesRegisterInput {
   token: string;
   appVersion: string;
   locale: string;
-  /** Defaults to `sender` when absent. */
+  /** `sender` for a new device when absent; a refresh keeps the stored value. */
   previews?: DevicePreviews;
   /** What `auth.sessions.list` and the person read, e.g. "TM8 Mobile · iPhone". */
   label: string;
-  quietUntil?: string | null;
+  /** Sets the quiet window's end. Absent keeps a refreshed device's window; `devices.update` clears it. */
+  quietUntil?: string;
 }
 
 /** Every field but the version is optional; at least one must change. */
