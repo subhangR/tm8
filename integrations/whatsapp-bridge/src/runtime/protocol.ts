@@ -145,8 +145,10 @@ export type RuntimeFrames = {
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * A connection's allowlist: its live, unpaused bridges' conversation ids. Replaces the previous list whole; a frame
- * with a version not above the one held is stale and ignored. An empty list means nothing is read or sent.
+ * A connection's allowlist: its live, unpaused bridges' conversation ids (groups, or the number's own self chat).
+ * Replaces the previous list whole. A version below the one held is stale and ignored on every path (push, `hello`
+ * reply, `connect`), so `version` must only ever grow for a connection, across server restarts too (derive it from
+ * the database, never from process memory). An empty list means nothing is read or sent.
  */
 export type AllowlistFrame = { type: 'allowlist'; connectionId: string; version: number; conversationIds: string[] }
 

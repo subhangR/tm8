@@ -40,8 +40,19 @@ export async function useSealedAuthState(dir: string, key: Buffer): Promise<{ st
     return next
   }
   const fileOf = (name: string) => path.join(dir, name.replace(/\//g, '__').replace(/:/g, '-') + '.seal')
+  // Write a temp file and rename it over the old one: a crash mid-write leaves the previous file whole, never a torn
+  // creds.seal that would force the number to be linked again.
   const write = (name: string, data: unknown) =>
-    serial(fileOf(name), () => fs.writeFile(fileOf(name), seal(key, Buffer.from(JSON.stringify(data, BufferJSON.replacer))), { mode: 0o600 }))
+    serial(fileOf(name), async () => {
+      const tmp = `${fileOf(name)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
+      try {
+        await fs.writeFile(tmp, seal(key, Buffer.from(JSON.stringify(data, BufferJSON.replacer))), { mode: 0o600 })
+        await fs.rename(tmp, fileOf(name))
+      } catch (e) {
+        await fs.rm(tmp, { force: true })
+        throw e
+      }
+    })
   const read = (name: string) =>
     serial(fileOf(name), async () => {
       const raw = await fs.readFile(fileOf(name)).catch(() => null)
@@ -49,6 +60,8 @@ export async function useSealedAuthState(dir: string, key: Buffer): Promise<{ st
     })
   const remove = (name: string) => serial(fileOf(name), () => fs.rm(fileOf(name), { force: true }))
 
+  // A crash between a temp write and its rename leaves the temp behind; the renamed-over file is still whole.
+  for (const f of await fs.readdir(dir)) if (f.endsWith('.tmp')) await fs.rm(path.join(dir, f), { force: true })
   const creds = (await read('creds')) ?? initAuthCreds()
   return {
     state: {

@@ -59,7 +59,9 @@ export class RuntimeConnection {
   private open = false
   private failures = 0
   private linkAttempts = 0
+  /** Set once by stop(); a stopped connection never comes back (the runtime makes a new one). */
   private stopped = false
+  private restartTimer: NodeJS.Timeout | null = null
   private sent = new Map<string, proto.IMessage>()
   private logger: pino.Logger
 
@@ -75,7 +77,9 @@ export class RuntimeConnection {
       logLevel?: string
     },
   ) {
-    this.logger = pino({ level: o.logLevel ?? 'warn' })
+    // Baileys logs stanza attributes, nodes and whole group lists at info and below, off-list JIDs included, before
+    // shouldIgnoreJid runs. Never below warn, so nothing from an unconnected chat reaches a log (D28).
+    this.logger = pino({ level: baileysLogLevel(o.logLevel) })
   }
 
   connected() {
@@ -89,15 +93,28 @@ export class RuntimeConnection {
   }
 
   /** Server-pushed allowlist. Groups that joined the list get their posting ability checked. */
-  applyAllowlist(frame: { version: number; conversationIds: string[] }, force = false) {
-    const r = this.allowlist.apply(frame, force)
+  applyAllowlist(frame: { version: number; conversationIds: string[] }) {
+    const r = this.allowlist.apply(frame)
     if (r.applied && this.connected()) for (const id of r.added) void this.refreshCanSend(id)
     return r
   }
 
+  /** Restarts after a drop, unless stop() came first; stop() also cancels a restart already waiting. */
+  private restartIn(ms: number) {
+    if (this.stopped) return
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+      if (!this.stopped) void this.start().catch((e) => this.o.log(`[wa ${this.connectionId}] start failed: ${e.message}`))
+    }, ms)
+  }
+
   async start(): Promise<void> {
-    this.stopped = false
+    if (this.stopped) return
     const { state, saveCreds, wipe } = await useSealedAuthState(this.o.authDir, this.o.stateKey)
+    if (this.stopped) return
+    // The device's own JIDs are known from its keys before the socket opens: the app-state key share right after
+    // pairing rides them and must not be ignored.
+    for (const j of [state.creds.me?.id, state.creds.me?.lid]) if (j) this.allowlist.own.add(bareJid(jidNormalizedUser(j)))
     if (!state.creds.registered && !this.o.authFlow) {
       this.setStatus('logged_out', 'not linked')
       return
@@ -156,12 +173,13 @@ export class RuntimeConnection {
         if (!state.creds.registered) {
           // Linking timed out before the phone finished. Start over with fresh keys, a bounded number of times.
           await wipe()
+          if (this.stopped) return
           if (++this.linkAttempts >= LINK_ATTEMPTS || !this.o.authFlow) {
             this.o.authFlow = undefined
             this.setStatus('logged_out', 'linking timed out')
             return
           }
-          setTimeout(() => void this.start().catch((e) => this.o.log(`[wa ${this.connectionId}] start failed: ${e.message}`)), 1000)
+          this.restartIn(1000)
           return
         }
         if (code === DisconnectReason.loggedOut) {
@@ -172,7 +190,7 @@ export class RuntimeConnection {
         this.failures++
         const delay = code === DisconnectReason.restartRequired ? 0 : Math.min(60_000, 3000 * this.failures)
         this.setStatus('offline', `reconnecting in ${Math.round(delay / 1000)} s`)
-        setTimeout(() => void this.start().catch((e) => this.o.log(`[wa ${this.connectionId}] start failed: ${e.message}`)), delay)
+        this.restartIn(delay)
       }
     })
 
@@ -193,17 +211,19 @@ export class RuntimeConnection {
 
   async stop(o: { logout?: boolean } = {}) {
     this.stopped = true
+    if (this.restartTimer) clearTimeout(this.restartTimer)
+    this.restartTimer = null
     const sock = this.sock
     this.open = false
     this.sock = null
-    if (!sock) return
     if (o.logout) {
-      await sock.logout().catch(() => {})
+      // Removed: the keys go even if the socket is down (mid-backoff), so nothing of the number outlives it (D38).
+      await sock?.logout().catch(() => {})
       const { wipe } = await useSealedAuthState(this.o.authDir, this.o.stateKey)
       await wipe()
       this.setStatus('logged_out', 'removed')
     } else {
-      sock.end(undefined)
+      sock?.end(undefined)
       this.setStatus('offline', 'disconnected by the server')
     }
   }
@@ -361,7 +381,8 @@ export class RuntimeConnection {
     this.guard(f.conversationId, 'media.fetch')
     const parsed = JSON.parse(Buffer.from(f.handle, 'base64url').toString('utf8'), BufferJSON.reviver) as WAMessage
     // A handle names its own chat; one forged to point elsewhere is refused like any other off-list frame.
-    if (!parsed.key?.remoteJid || !this.allowlist.allows(parsed.key.remoteJid) || bareJid(jidNormalizedUser(parsed.key.remoteJid)) !== bareJid(f.conversationId)) {
+    const handleChat = this.allowlist.match(parsed.key?.remoteJid, parsed.key?.remoteJidAlt)
+    if (!handleChat || handleChat !== this.allowlist.match(f.conversationId)) {
       this.allowlist.dropped.outboundRefused++
       throw new OutboundRefused('not_connected', parsed.key?.remoteJid ?? '?', 'media.fetch')
     }
@@ -420,6 +441,11 @@ export class RuntimeConnection {
       this.o.log(`[wa ${this.connectionId}] group metadata for a connected group failed: ${(e as Error).message}`)
     }
   }
+}
+
+/** Baileys' log level: warn, error, fatal or silent; anything chattier is clamped to warn. */
+export function baileysLogLevel(asked: string | undefined): string {
+  return ['warn', 'error', 'fatal', 'silent'].includes(asked ?? '') ? asked! : 'warn'
 }
 
 /** A self-contained media fetch handle: the message key and content (media keys as base64), base64url. */

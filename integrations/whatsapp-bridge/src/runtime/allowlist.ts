@@ -34,12 +34,14 @@ export class Allowlist {
   readonly dropped: DropCounters = emptyCounters()
 
   /**
-   * Replaces the list whole. A frame whose version is not above the one held is stale and ignored, unless `force`
-   * (the `hello` reply, which is the server's whole truth after a reconnect). Returns the ids that left the list.
+   * Replaces the list whole, unless the frame is older than the list held: a version below it is stale and ignored,
+   * from whichever path it came (a push, a `hello` reply, a `connect`), so a late snapshot can never undo a pause. An
+   * equal version is applied (the `hello` reply after a reconnect repeats it). Ids that are neither a group nor the
+   * number's own self chat are never honoured, whatever the server sends.
    */
-  apply(frame: Pick<AllowlistFrame, 'version' | 'conversationIds'>, force = false): { applied: boolean; added: string[]; removed: string[] } {
-    if (!force && this.version !== null && frame.version <= this.version) return { applied: false, added: [], removed: [] }
-    const next = new Set(frame.conversationIds.map(bareJid))
+  apply(frame: Pick<AllowlistFrame, 'version' | 'conversationIds'>): { applied: boolean; added: string[]; removed: string[] } {
+    if (this.version !== null && frame.version < this.version) return { applied: false, added: [], removed: [] }
+    const next = new Set(frame.conversationIds.map(bareJid).filter((id) => id.endsWith('@g.us') || id.endsWith('@s.whatsapp.net') || id.endsWith('@lid')))
     const added = [...next].filter((id) => !this.ids.has(id))
     const removed = [...this.ids].filter((id) => !next.has(id))
     this.ids = next
@@ -58,8 +60,12 @@ export class Allowlist {
     for (const j of jids) {
       if (!j) continue
       const id = bareJid(j)
-      if (this.ids.has(id)) return id
-      if (this.own.has(id)) for (const o of this.own) if (this.ids.has(o)) return o
+      // Only a group, or the number's own self chat, can be connected: a listed DM is never honoured (D28).
+      if (id.endsWith('@g.us')) {
+        if (this.ids.has(id)) return id
+      } else if (this.own.has(id)) {
+        for (const o of this.own) if (this.ids.has(o)) return o
+      }
     }
     return null
   }

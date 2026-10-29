@@ -4,7 +4,7 @@ import path from 'node:path'
 import { TooLargeError } from '../media.js'
 import { OutboundRefused } from './allowlist.js'
 import { RuntimeConnection, type Emit, type SocketFactory } from './connection.js'
-import { PROTOCOL_VERSION, WHATSAPP_CAPABILITIES, type HeartbeatFrame, type HelloReply, type RuntimeFrames, type RuntimeRoute, type ServerFrame } from './protocol.js'
+import { PROTOCOL_VERSION, WHATSAPP_CAPABILITIES, type HeartbeatFrame, type AllowlistFrame, type HelloReply, type RuntimeFrames, type RuntimeRoute, type ServerFrame } from './protocol.js'
 import { parseStateKey } from './sealed-auth.js'
 
 /** How the runtime reaches the server; `post` answers with the server's JSON reply. */
@@ -17,6 +17,11 @@ const CONNECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 export class Runtime {
   readonly connections = new Map<string, RuntimeConnection>()
+  /**
+   * The newest allowlist pushed for a connection not running yet (its `connect` still queued behind a slow frame).
+   * Allowlists jump the queue, so this is held and applied when the connection is made, and the newer list wins.
+   */
+  private pendingAllowlists = new Map<string, AllowlistFrame>()
 
   constructor(
     private o: { runtimeId: string; dataDir: string; link: ServerLink; log: (m: string) => void; socketFactory?: SocketFactory; logLevel?: string },
@@ -38,6 +43,9 @@ export class Runtime {
         logLevel: this.o.logLevel,
       })
       this.connections.set(connectionId, c)
+      const pending = this.pendingAllowlists.get(connectionId)
+      this.pendingAllowlists.delete(connectionId)
+      if (pending) c.applyAllowlist(pending)
     }
     return c
   }
@@ -53,7 +61,7 @@ export class Runtime {
       wanted.add(r.connectionId)
       const fresh = !this.connections.has(r.connectionId)
       const c = this.connection(r.connectionId, r.stateKey)
-      c.applyAllowlist(r.allowlist, true)
+      c.applyAllowlist(r.allowlist)
       if (fresh) await c.start().catch((e) => this.o.log(`[wa ${r.connectionId}] start failed: ${(e as Error).message}`))
     }
     for (const [id, c] of this.connections) {
@@ -72,12 +80,21 @@ export class Runtime {
         this.connections.delete(f.connectionId)
       }
       const c = this.connection(f.connectionId, f.stateKey, f.authFlow)
-      if (f.allowlist) c.applyAllowlist(f.allowlist, true)
+      if (f.allowlist) c.applyAllowlist(f.allowlist)
       if (!existing || f.authFlow) await c.start()
       return
     }
     const c = this.connections.get(f.connectionId)
     if (!c) {
+      if (f.type === 'allowlist') {
+        const held = this.pendingAllowlists.get(f.connectionId)
+        if (CONNECTION_ID.test(f.connectionId) && (!held || f.version >= held.version)) {
+          this.pendingAllowlists.delete(f.connectionId)
+          this.pendingAllowlists.set(f.connectionId, f)
+          while (this.pendingAllowlists.size > 100) this.pendingAllowlists.delete(this.pendingAllowlists.keys().next().value!)
+        }
+        return
+      }
       if (f.type === 'send' || f.type === 'react') await this.settle(f.outboxId, f.connectionId, { reason: 'unknown_connection', retryable: false })
       else if (f.type === 'conversation.list') await this.emit('conversations', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       else if (f.type === 'media.fetch') await this.emit('media', { requestId: f.requestId, error: 'unknown_connection' })

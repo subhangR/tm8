@@ -9,7 +9,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 import type { UserFacingSocketConfig, WAMessage } from '@whiskeysockets/baileys'
 import { Allowlist, OutboundRefused, bareJid } from '../src/runtime/allowlist.js'
-import { RuntimeConnection, mediaHandle, type WaSocketLike } from '../src/runtime/connection.js'
+import { RuntimeConnection, baileysLogLevel, mediaHandle, type WaSocketLike } from '../src/runtime/connection.js'
 import type { RuntimeFrames, RuntimeRoute, ServerFrame } from '../src/runtime/protocol.js'
 import { Runtime, failure } from '../src/runtime/runtime.js'
 import { seal, unseal, useSealedAuthState } from '../src/runtime/sealed-auth.js'
@@ -115,7 +115,7 @@ describe('allowlist', () => {
     assert.equal(a.allows(null, undefined), false)
   })
 
-  test('a stale version is ignored; hello forces; removal is reported', () => {
+  test('an older version is ignored on every path, an equal one applies, removal is reported', () => {
     const a = new Allowlist()
     a.apply({ version: 5, conversationIds: [G1, G2] })
     assert.equal(a.apply({ version: 4, conversationIds: [] }).applied, false)
@@ -123,8 +123,29 @@ describe('allowlist', () => {
     const r = a.apply({ version: 6, conversationIds: [G1] })
     assert.deepEqual(r.removed, [G2])
     assert.equal(a.allows(G2), false)
-    assert.equal(a.apply({ version: 1, conversationIds: [] }, true).applied, true)
+    assert.equal(a.apply({ version: 1, conversationIds: [G1, G2] }).applied, false)
+    assert.equal(a.allows(G2), false)
+    assert.equal(a.apply({ version: 6, conversationIds: [] }).applied, true)
     assert.equal(a.allows(G1), false)
+  })
+
+  test('a DM on the list is never honoured; only groups and the number\'s own self chat', () => {
+    const a = new Allowlist()
+    a.own.add(ME)
+    a.apply({ version: 1, conversationIds: [ALICE, 'status@broadcast', G1] })
+    assert.equal(a.allows(ALICE), false)
+    assert.equal(a.allows('status@broadcast'), false)
+    assert.equal(a.allows(G1), true)
+    assert.throws(() => a.check(ALICE, 'text'), OutboundRefused)
+    assert.equal(a.shouldIgnore(ALICE), true)
+  })
+
+  test('a connected self chat never makes an unconnected group match', () => {
+    const a = new Allowlist()
+    a.own.add(ME).add(ME_LID)
+    a.apply({ version: 1, conversationIds: [ME] })
+    assert.equal(a.match(G2), null)
+    assert.equal(a.match(G2, ME_LID), ME)
   })
 
   test('device parts are stripped; a connected self chat matches under PN or LID', () => {
@@ -508,5 +529,125 @@ describe('server link', () => {
     } finally {
       server.close()
     }
+  })
+})
+
+/** A connection whose number is already linked (sealed creds with registered + me), started on a fake socket. */
+async function linked(o: { allow?: string[]; open?: boolean } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rt-'))
+  const seed = await useSealedAuthState(dir, KEY)
+  seed.state.creds.registered = true
+  seed.state.creds.me = { id: '911111111111:7@s.whatsapp.net', lid: '55555555555555:7@lid' }
+  await seed.saveCreds()
+  const socks: FakeSocket[] = []
+  const conn = new RuntimeConnection(CONN, {
+    authDir: dir, stateKey: KEY, log: () => {}, emit: async () => {},
+    socketFactory: (c) => {
+      const s = new FakeSocket()
+      s.config = c
+      socks.push(s)
+      return s as unknown as WaSocketLike
+    },
+  })
+  conn.applyAllowlist({ version: 1, conversationIds: o.allow ?? [G1] })
+  await conn.start()
+  if (o.open !== false) socks[0]!.open()
+  await tick()
+  return { conn, socks, dir }
+}
+
+describe('review round 1', () => {
+  test('a connection stopped during its reconnect backoff never comes back', async () => {
+    const { conn, socks } = await linked()
+    socks[0]!.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 515 } } } })
+    await conn.stop()
+    await new Promise((r) => setTimeout(r, 50))
+    assert.equal(socks.length, 1, 'no socket after stop')
+    await conn.start()
+    assert.equal(socks.length, 1, 'start() on a stopped connection does nothing')
+  })
+
+  test('a connection stopped during the relink wait never comes back', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rt-'))
+    const socks: FakeSocket[] = []
+    const conn = new RuntimeConnection(CONN, {
+      authDir: dir, stateKey: KEY, authFlow: { kind: 'qr' }, log: () => {}, emit: async () => {},
+      socketFactory: () => (socks.push(new FakeSocket()), socks.at(-1) as unknown as WaSocketLike),
+    })
+    await conn.start()
+    // Linking timed out (never registered): the next attempt is 1 s away.
+    socks[0]!.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } })
+    await new Promise((r) => setTimeout(r, 50))
+    await conn.stop()
+    await new Promise((r) => setTimeout(r, 1200))
+    assert.equal(socks.length, 1)
+  })
+
+  test('removing a number with its socket down still wipes its sealed keys', async () => {
+    const { conn, socks, dir } = await linked()
+    socks[0]!.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 500 } } } })
+    await tick()
+    assert.ok(fs.readdirSync(dir).length > 0)
+    await conn.stop({ logout: true })
+    assert.deepEqual(fs.readdirSync(dir), [])
+  })
+
+  test('the number\'s own JIDs are open from its keys, before the socket opens', async () => {
+    const { socks } = await linked({ open: false })
+    assert.equal(socks[0]!.config!.shouldIgnoreJid!(ME), false)
+    assert.equal(socks[0]!.config!.shouldIgnoreJid!(ME_LID), false)
+    assert.equal(socks[0]!.config!.shouldIgnoreJid!(ALICE), true)
+  })
+
+  test('a self-chat media handle under the LID is fetchable when the bridge lists the PN', async () => {
+    const { conn } = await linked({ allow: [ME] })
+    const handle = mediaHandle({ remoteJid: ME_LID, id: 'M1' }, { imageMessage: {} })
+    // Past the guard; the fake has no media to download, so it fails there and not with a refusal.
+    await assert.rejects(conn.fetchMedia({ type: 'media.fetch', requestId: 'r', connectionId: CONN, conversationId: ME, handle, maxBytes: 1000 }), (e) => !(e instanceof OutboundRefused))
+  })
+
+  test('a late hello reply cannot undo a pause pushed meanwhile', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rtm-'))
+    let rt!: Runtime
+    const link = {
+      post: async (route: RuntimeRoute) => {
+        if (route !== 'hello') return null
+        // The pause (v6) arrives on the socket while the v5 snapshot is in flight.
+        await rt.onFrame({ type: 'allowlist', connectionId: CONN, version: 6, conversationIds: [] })
+        return { connections: [{ connectionId: CONN, stateKey: KEY.toString('base64'), allowlist: { type: 'allowlist', connectionId: CONN, version: 5, conversationIds: [G1] } }] }
+      },
+    }
+    rt = new Runtime({ runtimeId: 't', dataDir: dir, log: () => {}, link: link as any, socketFactory: () => new FakeSocket() as unknown as WaSocketLike })
+    await rt.hello()
+    const c = rt.connections.get(CONN)!
+    assert.equal(c.allowlist.allows(G1), false)
+    assert.equal(c.allowlist.version, 6)
+  })
+
+  test('an allowlist pushed before its connect is held and wins over the older list inside connect', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-rtm-'))
+    const rt = new Runtime({ runtimeId: 't', dataDir: dir, log: () => {}, link: { post: async () => null }, socketFactory: () => new FakeSocket() as unknown as WaSocketLike })
+    await rt.onFrame({ type: 'allowlist', connectionId: CONN, version: 8, conversationIds: [G2] })
+    await rt.onFrame({ type: 'connect', connectionId: CONN, stateKey: KEY.toString('base64'), authFlow: { kind: 'qr' }, allowlist: { type: 'allowlist', connectionId: CONN, version: 7, conversationIds: [G1] } })
+    const c = rt.connections.get(CONN)!
+    assert.equal(c.allowlist.version, 8)
+    assert.equal(c.allowlist.allows(G1), false)
+    assert.equal(c.allowlist.allows(G2), true)
+  })
+
+  test('Baileys never logs below warn', () => {
+    for (const l of [undefined, 'trace', 'debug', 'info', 'nonsense']) assert.equal(baileysLogLevel(l), 'warn')
+    assert.equal(baileysLogLevel('error'), 'error')
+    assert.equal(baileysLogLevel('silent'), 'silent')
+  })
+
+  test('sealed writes are atomic: no temp files left, a stale temp is cleared on open', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-seal-'))
+    const a = await useSealedAuthState(dir, KEY)
+    await Promise.all([a.saveCreds(), a.saveCreds(), a.saveCreds()])
+    assert.deepEqual(fs.readdirSync(dir), ['creds.seal'])
+    fs.writeFileSync(path.join(dir, 'creds.seal.1.ab.tmp'), 'torn')
+    await useSealedAuthState(dir, KEY)
+    assert.deepEqual(fs.readdirSync(dir), ['creds.seal'])
   })
 })
