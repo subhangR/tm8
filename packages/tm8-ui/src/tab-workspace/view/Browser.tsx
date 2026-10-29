@@ -26,7 +26,7 @@ import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { requestLinkFocus } from '../../panels/list/linkFocus';
 import { projectRecordPort } from '../../projects/project-record';
-import { InstallStarters } from '../../tools/InstallStarters';
+import { InstallStarters, installSummary } from '../../tools/InstallStarters';
 import { useProjectRowNote } from '../../projects/ProjectRowNote';
 import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
@@ -403,7 +403,7 @@ function workingDirOf(detail: string): string {
 }
 
 function EntityBrowser() {
-  const { dispatch, gate, store } = useWorkspace();
+  const { dispatch, gate, store, runtime } = useWorkspace();
   const { data } = gate;
   const kind = useWorkspaceState((s) => s.browsers.main.kind);
   const kindState = useWorkspaceState((s) => s.browsers.main.perKind[kind]) ?? EMPTY_BROWSER_KIND_STATE;
@@ -556,14 +556,23 @@ function EntityBrowser() {
           {...(disabledReason === null ? { action: { label: `New ${noun}`, run: createDraft } } : {})}
         >
           {/* A kind made from a definition ships starters (Tools v2 §3.1): the
-              empty list offers them, and a finished install reloads the kind. */}
+              empty list offers them, and a finished install reloads the kind.
+              The reload unmounts the installer's report, so its summary
+              (refusals included) goes to a toast first. */}
           {getKind(kind).createForm === 'tool-definition' && data.seam.commands.tools ? (
-            <InstallStarters spaceId={data.spaceId} port={data.seam.commands.tools} onInstalled={retry} />
+            <InstallStarters
+              spaceId={data.spaceId}
+              port={data.seam.commands.tools}
+              onInstalled={(results) => {
+                runtime.hooks.toast({ text: installSummary(results) });
+                retry();
+              }}
+            />
           ) : null}
         </ListState>
       );
     },
-    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural, data],
+    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural, data, runtime],
   );
 
   const verbs = useRowVerbs(kind);

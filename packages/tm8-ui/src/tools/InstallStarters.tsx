@@ -41,6 +41,21 @@ export async function installStarters(port: ToolPort, spaceId: string, onProgres
   return results;
 }
 
+/**
+ * The install in one sentence, for a host that unmounts the report: the empty
+ * Tools list reloads into the new tools, so a refusal or a header the node did
+ * not store would otherwise vanish with it.
+ */
+export function installSummary(results: readonly StarterInstall[]): string {
+  const created = results.filter(result => result.status === 'created');
+  const parts = [created.length ? `Installed ${created.length} of ${results.length} starter tools.`
+    : results.every(result => result.status === 'skipped') ? 'Every starter tool is already in this space.' : 'No starter tool was installed.'];
+  for (const result of results) if (result.status === 'failed') parts.push(`${result.name} was not created: ${result.message}`);
+  const notStored = [...new Set(created.flatMap(result => result.headerNotStored ? [result.headerNotStored] : []))];
+  if (notStored.length) parts.push(`Selection headers were not stored: ${notStored.join('; ')}`);
+  return parts.join(' ');
+}
+
 function resultLine(result: StarterInstall): string {
   switch (result.status) {
     case 'skipped': return `${result.name}: already in this space, skipped`;
