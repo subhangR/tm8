@@ -53,23 +53,46 @@ export function LoopRuns({
   const [stopping, setStopping] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ runId: string; text: string } | null>(null);
 
-  // Only the latest read may write: a slow answer for an earlier read (or another loop) is dropped.
+  // Only the latest page-one read may write: a slow answer for an earlier read (or another loop) is dropped.
   const seq = useRef(0);
+  // Page one has landed for this loop, and how many pages are on screen. After the first read, a page-one
+  // read (a firing, Run now, the live-run poll) MERGES into what is shown instead of replacing it, so the
+  // older pages someone opened stay while they watch a live run (review of PR5b, #3).
+  const loaded = useRef(false);
+  const pages = useRef(0);
+  const shownLoop = useRef(loopId);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   // Another loop starts empty, so its table never shows the previous loop's runs.
   useEffect(() => {
-    setRuns([]); setCursor(null); setLoad({ phase: 'loading' }); setRowError(null);
+    shownLoop.current = loopId; loaded.current = false; pages.current = 0;
+    setRuns([]); setCursor(null); setLoad({ phase: 'loading' }); setRowError(null); setRefreshError(null);
   }, [loopId]);
 
   const first = useCallback(async () => {
     const mine = ++seq.current;
-    setLoad({ phase: 'loading' });
+    const refresh = loaded.current;
+    if (!refresh) setLoad({ phase: 'loading' });
     try {
       const page = await port.runsList(loopId, { limit: PAGE });
       if (mine !== seq.current) return;
-      setRuns(page.items); setCursor(page.nextCursor); setLoad({ phase: 'ready' });
+      if (!refresh) {
+        setRuns(page.items); setCursor(page.nextCursor); pages.current = 1;
+      } else {
+        // A row on page one replaces its old copy, a new one goes on top, and the older pages stay.
+        setRuns((prev) => {
+          const fresh = new Map(page.items.map((r) => [r.id, r]));
+          const added = page.items.filter((r) => !prev.some((p) => p.id === r.id));
+          return [...added, ...prev.map((r) => fresh.get(r.id) ?? r)];
+        });
+        // Past page one, the cursor already points after the last page shown.
+        if (pages.current <= 1) setCursor(page.nextCursor);
+      }
+      loaded.current = true; setRefreshError(null); setLoad({ phase: 'ready' });
     } catch (failure) {
       if (mine !== seq.current) return;
+      // A failed background refresh keeps the table and says so beside it.
+      if (refresh) { setRefreshError(errorText(failure, 'The run history could not be refreshed.')); return; }
       setLoad({
         phase: 'error',
         unsupported: isNotImplemented(failure),
@@ -92,14 +115,14 @@ export function LoopRuns({
 
   const next = async () => {
     if (!cursor || more) return;
-    // A page-one read started meanwhile owns the list; this older page must not land on it.
-    const mine = seq.current;
+    // A page-one refresh merges, so an older page still lands; another loop's table never takes it.
+    const mine = loopId;
     setMore(true);
     try {
       const page = await port.runsList(loopId, { limit: PAGE, cursor });
-      if (mine !== seq.current) return;
+      if (shownLoop.current !== mine) return;
       setRuns((prev) => [...prev, ...page.items.filter((r) => !prev.some((p) => p.id === r.id))]);
-      setCursor(page.nextCursor);
+      setCursor(page.nextCursor); pages.current += 1;
     } catch (failure) {
       setRowError({ runId: '', text: errorText(failure, 'The next page could not be loaded.') });
     } finally {
@@ -142,6 +165,12 @@ export function LoopRuns({
 
   return (
     <div className="loop-page__runs" data-testid="loop-runs">
+      {refreshError ? (
+        <p className="loop-page__error" role="alert" data-testid="loop-runs-refresh-error">
+          {refreshError}{' '}
+          <button type="button" className="pn-btn pn-btn--quiet" onClick={() => void first()}>Retry</button>
+        </p>
+      ) : null}
       <table className="loop-runs">
         <thead>
           <tr>
@@ -161,7 +190,7 @@ export function LoopRuns({
             const running = run.status === 'running';
             const note = rowError && rowError.runId === run.id ? rowError.text : runNote(run);
             return (
-              <tr key={run.id} data-testid="loop-run-row" data-status={run.status}>
+              <tr key={run.id} data-testid="loop-run-row" data-run-id={run.id} data-status={run.status}>
                 <td title={absTime(run.firedAt)}>{relTime(run.firedAt, now)}</td>
                 <td>{run.trigger === 'manual' ? 'Run now' : 'Schedule'}{run.attempt > 1 ? ` · retry ${run.attempt - 1}` : ''}</td>
                 <td><Pill tone={status.tone} dot={running ? 'pulse' : undefined}>{status.label}</Pill></td>

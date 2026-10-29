@@ -580,6 +580,43 @@ describe('the runs table follows the loop', () => {
     expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
   });
 
+  it('a page-one refresh MERGES: older pages and their cursor stay while a live run is polled (PR5b #3)', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: 'c1' })
+      .mockResolvedValueOnce({ items: [run({ id: 'old-1' }), run({ id: 'old-2' })], nextCursor: 'c2' })
+      .mockResolvedValue({ items: [run({ id: 'new', status: 'running', endedAt: null, durationMs: null }), run({ id: 'live', status: 'completed' })], nextCursor: 'c1-later' });
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(3));
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    await waitFor(() => expect(screen.getAllByTestId('loop-run-row')).toHaveLength(4));
+    expect(screen.getAllByTestId('loop-run-row').map((row) => row.getAttribute('data-run-id'))).toEqual(['new', 'live', 'old-1', 'old-2']);
+    expect(screen.getAllByTestId('loop-run-row')[1]!.getAttribute('data-status')).toBe('completed');
+    // The cursor still points after the older page, not after page one.
+    fireEvent.click(screen.getByRole('button', { name: 'Older runs' }));
+    await waitFor(() => expect(runsList).toHaveBeenLastCalledWith(LOOP_ID, { limit: 20, cursor: 'c2' }));
+  });
+
+  it('a failed background refresh keeps the rows and says so beside them', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    const runsList = vi.fn()
+      .mockResolvedValueOnce({ items: [run({ id: 'live', status: 'running', endedAt: null, durationMs: null })], nextCursor: null })
+      .mockRejectedValueOnce(new CollabError('upstream_unavailable', 'the tm8 node did not answer'))
+      .mockResolvedValue({ items: [run({ id: 'live', status: 'completed' })], nextCursor: null });
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList })} canControl epoch={0} />);
+    await screen.findByTestId('loop-run-row');
+    await act(async () => { vi.advanceTimersByTime(RUNNING_POLL_MS); });
+    const banner = await screen.findByTestId('loop-runs-refresh-error');
+    expect(screen.getAllByTestId('loop-run-row')).toHaveLength(1);
+    expect(screen.queryByTestId('loop-runs-error')).toBeNull();
+    fireEvent.click(within(banner).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByTestId('loop-runs-refresh-error')).toBeNull());
+    expect(screen.getByTestId('loop-run-row').getAttribute('data-status')).toBe('completed');
+  });
+
   it('re-reads page one while a run is live, until it settles', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(NOW);
