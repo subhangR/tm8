@@ -79,6 +79,7 @@ import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { firingKeyFor } from '../loops/firing.js';
+import type { ToolRuntime } from '../tools/runtime.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -3057,6 +3058,11 @@ export function createLoopExecutorPort(deps: {
   dispatchDelivery?: DispatchDelivery;
   /** The execution runtime's `nodeId`: the node whose sessions `pty` speaks for. */
   nodeId?: string;
+  /**
+   * Tools v2 PR-C: how a firing runs a tool (docs/features/tools/SCHEDULED-RUNS.md).
+   * Called with `claimsForLoop`; absent on a node with no execution block.
+   */
+  tools?: Pick<ToolRuntime, 'runScheduled'>;
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
