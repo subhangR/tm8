@@ -3,17 +3,20 @@ import type { ToolInput, ToolView } from '@tm8/contract';
 import type { ToolPermissions, ToolPort } from './port';
 import { initialValues, parseValue } from './values';
 import { InputValue } from './InputValue';
+import { toolErrorOf, type ToolErrorView } from './errors';
+import { ToolErrorAlert } from './ToolErrorAlert';
 
 function ConfigInput({ tool, input, port, permissions, refresh }: { tool: ToolView; input: ToolInput; port: ToolPort; permissions: ToolPermissions; refresh(): Promise<void> }) {
   const [value, setValue] = useState(initialValues(tool)[input.name] ?? '');
   const [settingSecret, setSettingSecret] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ToolErrorView | null>(null);
   const binding = tool.secretBindings.find(item => item.inputName === input.name);
-  async function mutate(action: () => Promise<unknown>, secret = false) {
-    setBusy(true); setError('');
+  /** `secret` marks a secret write; its typed value is redacted from any message shown. */
+  async function mutate(action: () => Promise<unknown>, secret?: { value: string }) {
+    setBusy(true); setError(null);
     try { await action(); setSettingSecret(false); await refresh(); }
-    catch (failure) { setError(secret ? 'The secret could not be saved. Check your permissions and try again.' : failure instanceof Error ? failure.message : 'Configuration could not be saved.'); }
+    catch (failure) { setError(secret ? toolErrorOf(failure, 'secret', secret.value) : toolErrorOf(failure, 'config')); }
     finally { setBusy(false); }
   }
   return <article className="tool-config-row"><div><strong>{input.name}</strong>{input.required && <span> · required</span>}{input.description && <p>{input.description}</p>}</div>
@@ -23,18 +26,18 @@ function ConfigInput({ tool, input, port, permissions, refresh }: { tool: ToolVi
         {!settingSecret && <button type="button" className="pn-btn" disabled={busy} onClick={() => setSettingSecret(true)}>Set secret for {input.name}</button>}
         {settingSecret && <form onSubmit={event => {
           event.preventDefault(); const form = event.currentTarget; const secret = String(new FormData(form).get('secret') ?? ''); form.reset();
-          void mutate(() => port.setSecret(tool, input.name, secret), true);
+          void mutate(() => port.setSecret(tool, input.name, secret), { value: secret });
         }}><label>Secret for {input.name}<input name="secret" type="password" autoComplete="off" required disabled={busy} /></label>
           <button className="pn-btn pn-btn--primary" disabled={busy}>Save secret</button><button type="button" className="pn-btn" disabled={busy} onClick={() => setSettingSecret(false)}>Cancel</button>
         </form>}
-        {binding && <button type="button" className="pn-btn" disabled={busy} onClick={() => void mutate(() => port.unsetSecret(tool, input.name), true)}>Unset secret for {input.name}</button>}
+        {binding && <button type="button" className="pn-btn" disabled={busy} onClick={() => void mutate(() => port.unsetSecret(tool, input.name), { value: '' })}>Unset secret for {input.name}</button>}
       </> : <p>Only a human can set secrets.</p>}
     </> : <form onSubmit={event => { event.preventDefault(); void mutate(() => port.setConfig(tool, input.name, parseValue(input, value))); }}>
       <InputValue input={input} value={value} onChange={setValue} disabled={busy || !permissions.configure} label={`Configured ${input.name}`} />
       <button className="pn-btn" disabled={busy || !permissions.configure}>Save {input.name}</button>
       {Object.prototype.hasOwnProperty.call(tool.config, input.name) && <button type="button" className="pn-btn" disabled={busy || !permissions.configure} onClick={() => void mutate(() => port.unsetConfig(tool, input.name))}>Unset {input.name}</button>}
     </form>}
-    {error && <p role="alert">{error}</p>}
+    <ToolErrorAlert error={error} />
   </article>;
 }
 export function ToolConfig(props: { tool: ToolView; port: ToolPort; permissions: ToolPermissions; refresh(): Promise<void> }) {

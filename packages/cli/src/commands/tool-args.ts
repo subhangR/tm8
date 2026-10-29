@@ -37,8 +37,21 @@ export function parseToolValue(input: ToolInput, raw: string): ToolJsonValue {
       catch { return usage(`${input.name} expects valid JSON`); }
       break;
   }
-  if (!validateToolInputValue(input, value)) return usage(`Invalid ${input.type} value for ${input.name}${input.type === 'enum' ? `; choose ${input.options.join('|')}` : ''}`);
+  if (!validateToolInputValue(input, value)) return usage(invalidValueMessage(input, value));
   return value;
+}
+/** Names the declared constraint (an integer, the min/max range) rather than the caller's value. */
+function invalidValueMessage(input: ToolInput, value: ToolJsonValue): string {
+  if (input.type === 'enum') return `Invalid enum value for ${input.name}; choose ${input.options.join('|')}`;
+  if (input.type !== 'int' && input.type !== 'number') return `Invalid ${input.type} value for ${input.name}`;
+  if (typeof value !== 'number' || !Number.isFinite(value) || (input.type === 'int' && !Number.isSafeInteger(value))) {
+    return `${input.name} expects ${input.type === 'int' ? 'an integer' : 'a number'}`;
+  }
+  const { min, max } = input;
+  if (min !== undefined && max !== undefined) return `${input.name} must be between ${min} and ${max}`;
+  if (min !== undefined) return `${input.name} must be at least ${min}`;
+  if (max !== undefined) return `${input.name} must be at most ${max}`;
+  return `Invalid ${input.type} value for ${input.name}`;
 }
 
 /** The dynamic grammar starts AFTER the name, so global names are ordinary inputs here. */
