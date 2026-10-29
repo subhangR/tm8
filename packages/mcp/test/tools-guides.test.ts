@@ -125,8 +125,12 @@ describe('tools.* on the MCP surface (Tools v2 PR-E, design doc 01a182cb §5)', 
     for (const [operation, consequence] of Object.entries(blindRetry)) {
       const row = act.find((g) => g.operation === operation)!;
       expect(row.summary, operation).toContain(TOOLS_RETRY_RULE);
-      expect(row.summary, operation).toContain('send it again with the same clientMutationId');
+      expect(row.summary, operation).toContain('Put your own clientMutationId in the body');
+      expect(row.summary, operation).toContain('send the identical body again');
       expect(row.summary, operation).toContain(consequence);
+      // No placeholder id in the template: a model copying it verbatim would give
+      // different calls one id, and every call after the first would replay it.
+      expect(row.request.body, operation).not.toHaveProperty('clientMutationId');
     }
     // Why it has to be said: without an id the router mints a fresh one per
     // call, so only an id the caller keeps makes the second call a replay.

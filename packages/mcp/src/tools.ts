@@ -157,8 +157,8 @@ const READ_GUIDES = [
  * `invokeOptions`), so only an id the caller keeps makes a retry a replay of the
  * first call. Each row ends this sentence with what a blind retry does.
  */
-export const TOOLS_RETRY_RULE = 'To retry this call (a timeout, a lost answer), send it again with the same clientMutationId, '
-  + 'so it returns the first call\'s result instead of acting twice: choose your own id for the first call. '
+export const TOOLS_RETRY_RULE = 'Put your own clientMutationId in the body (any unique string, e.g. a new UUID for each call you intend), '
+  + 'and to retry this call (a timeout, a lost answer) send the identical body again: the retry returns the first call\'s result instead of acting twice. '
   + 'Left out, every call gets a fresh one';
 
 const ACT_GUIDES = [
