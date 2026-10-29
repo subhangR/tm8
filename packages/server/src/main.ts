@@ -323,6 +323,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
+  // One node id for every row this process records against itself: its work
+  // sessions, worktree allocations and ghost candidates, and its tool runs
+  // (ToolRuntime below). `<host>:<port>` is the default, but the desktop app's
+  // ephemeral port would change it on every launch, orphaning all of them. See
+  // `desktopNodeId`.
+  const nodeId = isDesktopProfile() && dataDir ? desktopNodeId(dataDir) : `${config.host}:${config.port}`;
+
   /**
    * The execution block builds its OWN PtyHostService and hands it back.
    *
@@ -343,10 +350,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         config,
         dataDir,
         owner,
-        // The default is `<host>:<port>`, which the desktop app's ephemeral
-        // port would change on every launch — orphaning its own worktree
-        // allocations and its own ghost sessions. See `desktopNodeId`.
-        ...(isDesktopProfile() && dataDir ? { nodeId: desktopNodeId(dataDir) } : {}),
+        nodeId,
       })
     : undefined;
 
@@ -537,7 +541,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
     tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
-      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
+      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId }) : undefined;
     if (tools && owner) {
       const o = await owner();
       await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });

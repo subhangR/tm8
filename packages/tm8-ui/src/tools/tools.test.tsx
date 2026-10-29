@@ -30,7 +30,9 @@ describe('tool definition and configuration', () => {
     const limit = await screen.findByRole('spinbutton', { name: 'Configured limit' });
     fireEvent.change(limit, { target: { value: '7' } }); fireEvent.click(screen.getByRole('button', { name: 'Save limit' }));
     await waitFor(() => expect(port.setConfig).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }), 'limit', 7));
-    await waitFor(() => expect(screen.getByText('Version 2')).toBeTruthy());
+    // A configuration write moves the concurrency token, not the version runs pin: the header still says v1.
+    await waitFor(async () => expect((await port.get(fixtureTool.id)).version).toBe(2));
+    expect(screen.getByText('Version 1')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Set secret for token' }));
     const secret = 'private-token-abcd'; fireEvent.change(screen.getByLabelText('Secret for token'), { target: { value: secret } });
     fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));

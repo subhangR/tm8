@@ -18,8 +18,31 @@
 .cv2-root .tool-input-details label { display: flex; flex-direction: column; gap: 4px; }
 .cv2-root .tool-config-row { border-bottom: 1px solid var(--pn-line); padding-block: 12px; }
 .cv2-root .tool-config-row form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.cv2-root .tool-runs { padding: 0; list-style: none; }
-.cv2-root .tool-runs li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-block: 8px; }
+.cv2-root .tool-runs-table td, .cv2-root .tool-versions-table td { vertical-align: middle; white-space: nowrap; }
+.cv2-root .tool-runs-table .tool-actions { flex-wrap: nowrap; }
+.cv2-root .tool-run-version code, .cv2-root .tool-sha { font-family: var(--pn-mono, monospace); font-size: 0.92em; }
+.cv2-root .tool-sha { overflow-wrap: anywhere; white-space: normal; }
+.cv2-root .tool-run-version__note { display: block; color: var(--pn-ink-2, inherit); }
+.cv2-root .tool-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.cv2-root .tool-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cv2-root .tool-note { margin: 0 0 10px; color: var(--pn-ink-2, inherit); }
+.cv2-root .tool-error code { font-family: var(--pn-mono, monospace); }
+.cv2-root .tool-last-run { display: inline-flex; align-items: center; gap: 6px; }
+.cv2-root .tool-last-run__label { color: var(--pn-ink-2, inherit); }
+.cv2-root .tool-versions-table tr[aria-current='true'] td { font-weight: 600; }
+.cv2-root .tool-versions__toggle { display: inline-flex; align-items: center; gap: 6px; }
+.cv2-root .tool-compare { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; min-width: 0; }
+.cv2-root .tool-compare label { display: inline-flex; align-items: center; gap: 6px; }
+.cv2-root .tool-drawer-backdrop { position: fixed; inset: 0; z-index: 150; background: rgb(0 0 0 / 30%); display: flex; justify-content: flex-end; }
+.cv2-root .tool-drawer { width: min(640px, 100%); height: 100%; overflow: auto; background: var(--pn-paper); color: var(--pn-ink); border-left: 1px solid var(--pn-line); padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.cv2-root .tool-drawer:focus { outline: none; }
+.cv2-root .tool-drawer__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cv2-root .tool-drawer__head h2 { margin: 0; }
+.cv2-root .tool-drawer__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.cv2-root .tool-drawer__facts dt { color: var(--pn-ink-2, inherit); }
+.cv2-root .tool-drawer__facts dd { margin: 0; min-width: 0; }
+.cv2-root .tool-drawer__inputs { margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
+.cv2-root .tool-output { margin: 0; padding: 10px; border: 1px solid var(--pn-line); border-radius: 4px; max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--pn-mono, monospace); font-size: 12px; }
 .cv2-root .tool-run-status { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 14px; flex: 0 0 auto; }
 .cv2-root .tool-dialog-backdrop { position: fixed; inset: 0; z-index: 150; background: rgb(0 0 0 / 45%); display: grid; place-items: center; padding: 16px; }
 .cv2-root .tool-dialog { width: min(560px, 100%); max-height: 85dvh; overflow: auto; background: var(--pn-paper); color: var(--pn-ink); border: 1px solid var(--pn-line); border-radius: 8px; padding: 20px; box-sizing: border-box; }

@@ -17,7 +17,7 @@
  * undiscoverable, which is the failure this whole surface exists to prevent —
  * but recommending them first would be answering a question with a dead end.
  */
-import type { OperationDiscovery } from './operations.js';
+import type { CommandDiscovery, OperationDiscovery } from './operations.js';
 
 /**
  * Words that carry no intent. Without this list, "what can I do with all of
@@ -86,18 +86,35 @@ export interface Scored {
   /** The tokens that actually matched — rendered as the match `reason`. */
   hits: string[];
 }
+/** An alias command scored by its own words: `rankCommands`. */
+export interface ScoredCommand {
+  row: CommandDiscovery;
+  score: number;
+  hits: string[];
+}
+/** What the scorer reads: an operation row, or an alias command with its tags. */
+export interface Searchable {
+  intentTags: readonly string[];
+  summary: string;
+  notes: readonly string[];
+  exposure: OperationDiscovery['exposure'];
+}
 
-function summaryWords(row: OperationDiscovery): Set<string> {
+function summaryWords(row: Searchable): Set<string> {
   return new Set(row.summary.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean));
 }
 
-function noteWords(row: OperationDiscovery): Set<string> {
+function noteWords(row: Searchable): Set<string> {
   return new Set(
     row.notes.flatMap((n) => n.toLowerCase().split(/[^a-z0-9-]+/)).filter(Boolean),
   );
 }
 
 export function score(tokens: readonly string[], row: OperationDiscovery): Scored {
+  return { row, ...scoreText(tokens, row) };
+}
+
+export function scoreText(tokens: readonly string[], row: Searchable): { score: number; hits: string[] } {
   const tags = new Set(row.intentTags);
   const words = summaryWords(row);
   const notes = noteWords(row);
@@ -129,7 +146,26 @@ export function score(tokens: readonly string[], row: OperationDiscovery): Score
   }
 
   if (row.exposure === 'internal' || row.exposure === 'reserved') total *= UNINVOCABLE_FACTOR;
-  return { row, score: total, hits };
+  return { score: total, hits };
+}
+
+/**
+ * Alias commands (`tool versions`, `task axis`, `message reply`) have no operation row of their
+ * own, so `rank` never sees their summary or notes. Score them by the same weights, with their
+ * path words and tags as intent tags; ties keep the catalog's command order.
+ */
+export function rankCommands(
+  query: string,
+  rows: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): ScoredCommand[] {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+  return rows
+    .map(({ command, intentTags }) => ({ row: command, ...scoreText(tokens, { intentTags, summary: command.summary, notes: command.notes, exposure: command.exposure }) }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 /**
@@ -157,7 +193,7 @@ export function rank(
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
-export function matchReason(scored: Scored): string {
+export function matchReason(scored: Scored | ScoredCommand): string {
   const hits = [...new Set(scored.hits)].slice(0, 4);
   return hits.length > 0
     ? `matches ${hits.join(', ')} — ${scored.row.summary.toLowerCase()}`
