@@ -189,6 +189,8 @@ shell open on the server; the CLI still returns when the tool itself finishes.
 These two options are mutually exclusive. Inspect a run with `tool run-show`
 and its output with `--output`. Close an open shell with
 `tm8 session terminate <session-id> --yes`.
+`tool runs` lists a tool's runs newest first; `--cursor` continues with older
+runs. Each run names its invoker, and a run fired by a loop also names that loop.
 
 `--cwd` must lie inside the invoking session's working directory or a path
 grant. A human with no invoking session (the UI, or the CLI as the loopback
