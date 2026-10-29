@@ -31,16 +31,21 @@ import type { Querier } from '../db/types.js';
 import { cursorInstant, cursorUuid } from '../facade/context.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
 
-/** Aliases: `r` = public.loop_runs, `ws` = the (left-joined) work_sessions row. */
+/**
+ * Aliases: `r` = public.loop_runs, `ws` = the (left-joined) work_sessions row.
+ * An unsettled run with a terminal session reads what the sweep will settle
+ * it as (`outcomeOfExitedSession`, in the same order): stopped first, so a
+ * stopped tool run's non-zero exit is not read as a failure.
+ */
 export const LOOP_RUN_STATUS_SQL = `case
   when r.launch = 'skipped' then 'skipped'
   when r.launch = 'failed' then 'failed'
   when r.outcome is not null then r.outcome
   when r.session_id is null then 'running'
   when ws.status in ('spawning', 'running', 'idle') then 'running'
+  when ws.outcome = 'stopped' then 'stopped'
   when ws.status = 'failed' then 'failed'
   when ws.session_kind = 'tool' and ws.tool_exit_code is not null and ws.tool_exit_code <> 0 then 'failed'
-  when ws.outcome = 'stopped' then 'stopped'
   else 'completed'
 end`;
 

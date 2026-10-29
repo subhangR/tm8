@@ -364,4 +364,17 @@ describePg('loops PR2: runs on a real node', () => {
     const unknown = await request('GET', `/v2/loop-runs/${randomUUID()}`);
     expect(unknown.status).toBe(404);
   });
+
+  it('a session stopped outside the loop reads stopped before any sweep, and the sweep settles it stopped (review 1398 nit 10, item 18)', async () => {
+    const loop = await createLoop({ title: 'Stopped by an operator' });
+    const run = LoopRunSchema.parse(ok(await runNow(loop.id)).run);
+    // execution.terminate, not loops.runs.stop: the loop learns of it only from the session.
+    ok(await request('POST', `/v2/entities/${run.sessionId}/commands/terminate`, {}));
+    await vi.waitFor(() => expect(node.production.execution!.pty.hasSession(run.sessionId!)).toBe(false), { timeout: 15_000 });
+    const stopped = await waitForStatus(run.id, 'stopped');
+    expect(stopped.endedAt).not.toBeNull();
+    await tick();
+    const [row] = await node.database.query<{ outcome: string | null }>('select outcome from public.loop_runs where id = $1', [run.id]);
+    expect(row!.outcome).toBe('stopped');
+  });
 });
