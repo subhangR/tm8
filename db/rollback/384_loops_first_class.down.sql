@@ -11,16 +11,19 @@
 -- tool loop and every dispatch loop naming a runner is DISABLED first, with
 -- last_error saying why; nothing fires as something it was not. Restores the
 -- 091 doors, 343's trigger body and 375's due read verbatim, and 292's header
--- kinds unless 380 (Tools PR-E) is applied: its list is 384's, and it stays.
+-- kinds unless Tools PR-E's tool_selection_headers migration is applied: its
+-- list is 384's, and it stays.
 -- =============================================================================
 
--- Whether 380 is applied, read BEFORE the role switch: the runner ledger is the
--- migration owner's, and tm8_graph_owner cannot read it. Session-scoped, so the
--- answer survives a run without -1 too.
+-- Whether PR-E is applied, read BEFORE the role switch: the runner ledger is
+-- the migration owner's, and tm8_graph_owner cannot read it. Matched by name,
+-- not number, because the Tools lane renumbers on merge (380 on its branch
+-- today). Session-scoped, so the answer survives a run without -1 too.
 do $ledger$
 begin
-  perform set_config('tm8.rollback_384_after_380',
-    (exists (select 1 from public.applied_migrations where filename like '380\_%'))::text, false);
+  perform set_config('tm8.rollback_384_keeps_tool_headers',
+    (exists (select 1 from public.applied_migrations
+              where filename like '%\_tool\_selection\_headers.sql'))::text, false);
 end
 $ledger$;
 
@@ -376,11 +379,11 @@ comment on function public.loops_due_for_executor(integer) is
 revoke all on function public.loops_due_for_executor(integer) from public;
 grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 
--- 292's header kinds, verbatim, unless 380 (Tools PR-E) is applied: it set the
--- same converged list as 384, and tool headers depend on it.
+-- 292's header kinds, verbatim, unless Tools PR-E is applied: it set the same
+-- converged list as 384, and tool headers depend on it.
 do $rollback$
 begin
-  if current_setting('tm8.rollback_384_after_380') <> 'true' then
+  if current_setting('tm8.rollback_384_keeps_tool_headers') <> 'true' then
     create or replace function internal.header_kind_allowed(p_kind text)
     returns boolean language sql immutable set search_path = public, internal, pg_temp as $f$
       select p_kind in ('team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story')
