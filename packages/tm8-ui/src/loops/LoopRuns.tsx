@@ -191,16 +191,16 @@ export function LoopRuns({
             const note = rowError && rowError.runId === run.id ? rowError.text : runNote(run);
             return (
               <tr key={run.id} data-testid="loop-run-row" data-run-id={run.id} data-status={run.status}>
-                <td title={absTime(run.firedAt)}>{relTime(run.firedAt, now)}</td>
-                <td>{run.trigger === 'manual' ? 'Run now' : 'Schedule'}{run.attempt > 1 ? ` · retry ${run.attempt - 1}` : ''}</td>
-                <td><Pill tone={status.tone} dot={running ? 'pulse' : undefined}>{status.label}</Pill></td>
-                <td>{running ? `${elapsed(run.startedAt ?? run.firedAt, now)} so far` : durationLabel(run.durationMs)}</td>
-                <td>
+                <td className="loop-runs__fired" title={absTime(run.firedAt)}>{relTime(run.firedAt, now)}</td>
+                <td className="loop-runs__trigger">{run.trigger === 'manual' ? 'Run now' : 'Schedule'}{run.attempt > 1 ? ` · retry ${run.attempt - 1}` : ''}</td>
+                <td className="loop-runs__status"><Pill tone={status.tone} dot={running ? 'pulse' : undefined}>{status.label}</Pill></td>
+                <td className="loop-runs__duration">{running ? `${elapsed(run.startedAt ?? run.firedAt, now)} so far` : durationLabel(run.durationMs)}</td>
+                <td className={run.taskId ? 'loop-runs__task' : 'loop-runs__task loop-runs__none'}>
                   {run.taskId ? (
                     <button type="button" className="pn-btn pn-btn--quiet" onClick={() => onOpenEntity?.(run.taskId!)} disabled={!onOpenEntity}>Task</button>
                   ) : '—'}
                 </td>
-                <td>
+                <td className={run.sessionId ? 'loop-runs__session' : 'loop-runs__session loop-runs__none'}>
                   {run.sessionId ? (
                     <button type="button" className="pn-btn pn-btn--quiet" onClick={() => onOpenEntity?.(run.sessionId!)} disabled={!onOpenEntity}
                       aria-label={`Open the session of the run fired ${absTime(run.firedAt)}`}>
@@ -208,8 +208,8 @@ export function LoopRuns({
                     </button>
                   ) : '—'}
                 </td>
-                <td className={rowError?.runId === run.id || run.status === 'failed' ? 'loop-page__error' : undefined}>{note || ''}</td>
-                <td>
+                <td className={rowError?.runId === run.id || run.status === 'failed' ? 'loop-runs__note loop-page__error' : 'loop-runs__note'}>{note || ''}</td>
+                <td className="loop-runs__actions">
                   {running ? (canControl ? (
                     <button type="button" className="pn-btn" disabled={stopping !== null} onClick={() => void stop(run)}>
                       {stopping === run.id ? 'Stopping…' : 'Stop'}

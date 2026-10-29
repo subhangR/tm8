@@ -11,6 +11,9 @@ import type { LoopFormSources } from './sources';
 import type { LoopPagePort, LoopRun, LoopView } from './page-port';
 import { durationLabel, loopStatus, zonedInstant } from './page-format';
 import { resetLoopPageStore, useLoopView } from './useLoopView';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RUNNING_POLL_MS } from './LoopRuns';
 
 const LOOP_ID = '019fe999-0000-7000-8000-000000000002';
@@ -597,6 +600,17 @@ describe('the runs table follows the loop', () => {
     // The cursor still points after the older page, not after page one.
     fireEvent.click(screen.getByRole('button', { name: 'Older runs' }));
     await waitFor(() => expect(runsList).toHaveBeenLastCalledWith(LOOP_ID, { limit: 20, cursor: 'c2' }));
+  });
+
+  it('each RUNS cell carries its column, so the phone can stack a run instead of eight 37 px columns (PR5b #4)', async () => {
+    render(<LoopRuns loopId={LOOP_ID} port={port({ runsList: vi.fn(async () => ({ items: [run({ id: 'r1', taskId: null })], nextCursor: null })) })} canControl epoch={0} />);
+    const row = await screen.findByTestId('loop-run-row');
+    const classes = [...row.querySelectorAll('td')].map((cell) => cell.className);
+    expect(classes).toEqual(['loop-runs__fired', 'loop-runs__trigger', 'loop-runs__status', 'loop-runs__duration',
+      'loop-runs__task loop-runs__none', 'loop-runs__session', expect.stringContaining('loop-runs__note'), 'loop-runs__actions']);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'page.css'), 'utf8');
+    expect(css).toContain(".cv2-root[data-shell='mobile'] .loop-runs thead { display: none; }");
+    expect(css).toMatch(/\.cv2-root\[data-shell='mobile'\] \.loop-runs tr \{\s*display: flex; flex-wrap: wrap;/);
   });
 
   it('a failed background refresh keeps the rows and says so beside them', async () => {
