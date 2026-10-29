@@ -6,7 +6,7 @@ import { run } from '../src/run.js';
 import { loopState, pauseUntil, renderLoop } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
 import { discovery } from '../src/discovery/operations.js';
-import { matchIntent, queryWords, rank } from '../src/discovery/search.js';
+import { matchIntent, queryWords, rank, rankedLast } from '../src/discovery/search.js';
 import { searchHelp } from '../src/discovery/help.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
@@ -538,9 +538,10 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['suspend the loop now', 'loop pause'], ['freeze the running loop', 'loop pause'], ["clear the loop's trigger", 'loop edit'],
   ["wipe the loop's trigger", 'loop edit'], ["clear the loop's task", 'loop edit'], ["clear the loop's session", 'loop edit'],
   ['remove the pause from the loop', 'loop resume'], ['end the pause on the loop', 'loop resume'],
-  // stopping with no loop named (round 6): a stop answers a stop, never run-now
-  ['cancel the run now', 'loop stop'], ['stop running now', 'loop stop'], ['kill the run now', 'loop stop'],
-  ['stop it now', 'loop stop'], ['cancel it now', 'loop stop'], ['halt it now', 'loop stop'], ['interrupt the run now', 'loop stop'],
+  // stopping with no loop named (round 6): a stop answers a stop, never run-now. A run and nothing
+  // else is a work session's, as main's stop route answers it (Tools #1414, task 01a187ed).
+  ['cancel the run now', 'session terminate'], ['stop running now', 'session terminate'], ['kill the run now', 'session terminate'],
+  ['stop it now', 'loop stop'], ['cancel it now', 'loop stop'], ['halt it now', 'loop stop'], ['interrupt the run now', 'session terminate'],
   ['stop the session now', 'session terminate'], ['cancel the chat now', 'chat stop'], ['stop the container now', 'container stop'],
   ['cancel the upload now', 'file upload abort'],
   // ending a session answers its terminate only when that is all the phrasing asks (round 7)
@@ -690,11 +691,18 @@ describe('tm8 help --query: generated loop phrasings never delete, create or fir
     // The routes still answer them, given their evidence and nothing more.
     expect(searchHelp('run the nightly loop now').matches[0]?.command).toBe('loop run-now');
     expect(searchHelp('terminate the work session').matches[0]?.command).toBe('session terminate');
+    // One predicate (Tools #1414's rankedLast): these two hold for every query, whatever its words.
+    for (const tokens of [[], ['run', 'nightly', 'loop', 'now'], ['terminate', 'work', 'session']]) {
+      expect(rankedLast(tokens, 'loops.runNow'), tokens.join(' ')).toBe(true);
+      expect(rankedLast(tokens, 'execution.terminate'), tokens.join(' ')).toBe(true);
+    }
   }, GENERATED_TIMEOUT);
   it('a stop word beside a session, chat or container answers that stop only when nothing else is asked (round 7)', () => {
     const allowed = new Set([...ONLY_THE_LOOP, 'run', 'running', 'now', 'immediately', 'current', 'stuck', 'runaway', 'work',
       'session', 'sessions', 'chat', 'chats', 'turn', 'turns', 'container', 'containers', 'machine', 'machines',
-      'stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'interrupt', 'quit', 'cease', 'shut', 'shutdown']);
+      'stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'interrupt', 'quit', 'cease', 'shut', 'shutdown',
+      // main's stop route (Tools #1414) also lets a stop name the tool running or its runs, in either verb form
+      'runs', 'tool', 'tools', 'stopping', 'cancelling', 'canceling', 'killing', 'aborting', 'halting', 'terminating']);
     const words = SAMPLED_WORDS.filter(w => !allowed.has(w));
     const nouns: Array<[string, string]> = [['session', 'session terminate'], ['chat', 'chat stop'], ['container', 'container stop']];
     const queries = ['stop', 'end', 'cancel', 'kill', 'quit'].flatMap(v => nouns.flatMap(([noun]) =>

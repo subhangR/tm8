@@ -62,7 +62,7 @@ const SET_UP_PHRASE = /\bset[\s_-]+up\b/g;
 /** "get rid of" is one verb, removing: neither "get" nor "of" rides along into what is removed. */
 const GET_RID_PHRASE = /\bget[\s_-]+rid(?:[\s_-]+of)?\b/g;
 
-/** The query's words in order, stopwords KEPT: "remove me from the loop" is not "remove the loop". */
+/** The query's words in order, stopwords KEPT: an `only` route reads every word ("remove me FROM the loop" is not "remove the loop"). */
 export function queryWords(query: string): string[] {
   return query
     .toLowerCase()
@@ -192,22 +192,67 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
-  // FIRING OR ENDING NEEDS EVIDENCE, so `loop run-now` and `session terminate` are never the ranker's
-  // first answer, whatever the verb ("cancel the run now", "stop sharing the session", "end it"; review
-  // of #1405, rounds 6-7): they rank after every other match, and with no other match they are left
-  // out. Their routes answer them first: "run the loop" and nothing else; "stop the (running) session"
-  // and nothing else. (`--operation` suggestions still find them by name.)
-  const fires = (s: Scored) => (isRankedLast(s.row.operation) ? 1 : 0);
-  const ranked = rows
+  const scored = rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
-        fires(a) - fires(b) ||
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
     );
-  return (ranked[0] !== undefined && fires(ranked[0]) === 1 ? [] : ranked).slice(0, limit);
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+}
+
+/**
+ * Operations the ranker never answers FIRST for this query: they rank after every other match
+ * and, when nothing else matched, are dropped rather than lead. ONE predicate for `rank()` and
+ * for `rankAll()`'s combined operation + alias ranking, so neither can undo the other. `tools.run`
+ * STARTS a run, so a query that stops, prevents or negates one ("abort the run", "skip the run
+ * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
+ * RANKED_LAST holds for every query.
+ */
+export function rankedLast(tokens: readonly string[], operation: string): boolean {
+  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)));
+}
+
+/**
+ * `loop run-now` and `session terminate` fire or end something whatever the verb ("cancel the run
+ * now", "stop sharing the session", "end it"), so they are never the ranker's first answer: only their
+ * routes ("run the nightly loop now", "terminate the work session") answer them first (review of #1405,
+ * rounds 6-7). `--operation` suggestions still find them by name.
+ */
+const RANKED_LAST: ReadonlySet<string> = new Set(['loops.runNow', 'execution.terminate']);
+
+/** Stable: the entries `last` names go after every other one and never lead; alone, they are dropped. */
+function keepRankedLast<T>(items: readonly T[], last: (item: T) => boolean): T[] {
+  const lead = items.filter((item) => !last(item));
+  return lead.length === 0 ? [] : [...lead, ...items.filter(last)];
+}
+
+/** One entry of `rankAll()`: an operation row or an alias command, with its score. */
+export type RankedEntry =
+  | { kind: 'operation'; score: number; entry: Scored }
+  | { kind: 'alias'; score: number; entry: ScoredCommand };
+
+/**
+ * Operation rows and alias commands in one ranking, as `tm8 help --query` answers. The sort is
+ * stable, so an alias never displaces an operation it ties with and catalog order holds. The
+ * ranked-last rule applies to the combined list as well: re-sorting by score alone would put a
+ * `rankedLast` operation first again whenever it outscores the rest.
+ */
+export function rankAll(
+  query: string,
+  operations: readonly OperationDiscovery[],
+  aliases: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): RankedEntry[] {
+  const tokens = tokenize(query);
+  const combined: RankedEntry[] = [
+    ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
+    ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
+  ].sort((a, b) => b.score - a.score);
+  return keepRankedLast(combined, (e) =>
+    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
@@ -243,9 +288,10 @@ export interface IntentRoute {
   /**
    * An allowlist over the query's WORDS, stopwords included: each must be in
    * `all`, here, or a plain request word ("how do I", "the", "my"), or the route
-   * does not match. The answers that delete or fire use it, because a denylist
-   * of what a human might name can never be complete, and "remove me FROM the
-   * loop" differs from "remove the loop" only in its stopwords (#1405, round 5).
+   * does not match. An answer that deletes, fires or ends something live uses
+   * it, because a denylist of what a human might name can never be complete:
+   * "remove me FROM the loop" differs from "remove the loop" only in its
+   * stopwords (#1405, round 5), and "cancel the session invite" is not a stop.
    */
   only?: readonly string[];
   /** Positive evidence over the query's words, for an answer a word list cannot decide alone. */
@@ -272,6 +318,18 @@ const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'aga
 /** Stopping a live run. */
 const LOOP_STOP_WORDS = ['stop', 'cancel', 'kill', 'abort', 'end', 'terminate', 'halt', 'interrupt', 'quit', 'cease', 'shut', 'shutdown'];
 
+/** Stopping something live. */
+const STOP_WORDS = ['stop', 'stopping', 'cancel', 'cancelling', 'canceling', 'kill', 'killing', 'abort', 'aborting', 'halt', 'halting', 'terminate', 'terminating', 'interrupt'];
+/** What a stop may name for `session terminate`: a run, the tool running, or its session. */
+const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessions'];
+/**
+ * A query with any of these does not ask to START a run: the ranker never answers `tool run` first.
+ * `rankedLast` reads tokenize()'s tokens, so these must stay OUT of STOPWORDS ("don't" is `don`).
+ */
+const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
+  ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
+  'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
+]);
 /** The plain words a request carries that name nothing: an `only` route always allows them. */
 const PLAIN_WORDS: ReadonlySet<string> = new Set([
   'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
@@ -337,15 +395,6 @@ function namesAPause(words: readonly string[]): boolean {
   return words.some((word, k) => word === 'pause' && ['the', 'its', 'this', 'that', 'loop'].includes(words[k - 1] ?? ''));
 }
 
-/** Operations the ranker never answers first: each fires or ends something, so only its route may. */
-const RANKED_LAST: ReadonlySet<string> = new Set(['loops.runNow', 'execution.terminate']);
-/**
- * THE ONE never-first predicate: `rank()` and `searchHelp`'s combined sort (operations plus alias
- * commands) both order by it before score, and drop its rows when they would still come first.
- */
-export function isRankedLast(operation: string): boolean {
-  return RANKED_LAST.has(operation);
-}
 /** Besides the stop verb, the thing stopped and plain words, a stop guard's phrasing may say only these. */
 const STOP_ONLY = ['run', 'running', 'now', 'immediately', 'current', 'stuck', 'runaway'];
 
@@ -428,6 +477,20 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       { path: ['entity', 'create'], example: 'tm8 entity create task "<title>" --parent <task-id>' },
     ],
   },
+  {
+    intent: 'stop a running tool or session',
+    // Scored, "abort the run" answered `tool run` first: `run` is one of its tags and nothing
+    // tags the stop verbs (task 01a187ed). A run is a work session, so stopping one is
+    // `session terminate`. That ends a live session, so the query may say nothing else: a stop
+    // verb, what runs, plain request words, and when ("cancel the session invite" falls through).
+    all: [STOP_WORDS, RUN_WORDS],
+    none: ['loop', 'loops', 'chat', 'chats', 'turn', 'turns'],
+    only: ['now', 'immediately', 'current', 'stuck', 'runaway'],
+    candidates: [
+      {
+        path: ['session', 'terminate'],
+        example: 'tm8 session terminate <session-id> --yes  (a tool run is a work session: `tm8 tool runs <tool>` lists its id; --stop --note <why> records why)',
+      },
   /*
    * LOOPS, steering before setting up. A query that names a loop with a
    * steering verb is that verb's command (run-now, enable, edit) — never
@@ -435,6 +498,8 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
    * #1405). These come first because the set-up routes below match on words
    * a steering query also has ("run", "set", "schedule").
    */
+    ],
+  },
   {
     // A STOP WITH NO LOOP NAMED ("cancel the run now", "stop it now"): stopping is never firing, and
     // the ranker's 'run'/'now' tags would answer `loop run-now`. What is named stops by its own command,
