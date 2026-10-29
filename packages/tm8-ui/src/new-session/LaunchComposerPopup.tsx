@@ -500,6 +500,10 @@ export function LaunchComposerPopup({
     subjectSeen.current = subject.id;
     generation.current += 1;
     moveTo('idle');
+    /* The old press's words and its timeout check belong to it: a check left
+       at 'checking' refused every launch of the new subject. */
+    setTimedOut(null);
+    setNodeRefusal(null);
   }, [subject.id]);
   /** `act`, run only while the press made in generation `gen` is still this card's. */
   const ifCurrent = <A extends unknown[]>(gen: number, act: (...args: A) => void) => (...args: A) => {
@@ -565,13 +569,16 @@ export function LaunchComposerPopup({
          F's gate sentence replaces both after its picker swap. */
       : (!mcpReady
         ? (mcpCount === 0 ? 'Reading connectors…' : 'Connectors: choose a connected account for each connector you picked.')
-        : null) ?? selection.launchBlock
+        : null) ?? more.pluginsBlock ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
   const committed = useRef(false);
   const draftNow = useRef({ notes, edits: selection.edits, added: selection.added });
   draftNow.current = { notes, edits: selection.edits, added: selection.added };
+  /* AN EDIT AFTER A COMMIT is a new draft: a host that keeps the card
+     mounted after a handoff got no draft for what was typed after it. */
+  useEffect(() => { committed.current = false; }, [notes, selection.edits, selection.added]);
   useEffect(() => () => {
     if (committed.current) return;
     const d = draftNow.current;
@@ -997,7 +1004,9 @@ export function LaunchComposerPopup({
   const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
   /* THE LAUNCHING LINE: the card collapses to what was pressed, not a greyed form. */
   const teammateWord = teammates.find((t) => t.id === config.teamMemberId)?.label ?? null;
-  const launchingLine = phase === 'idle' || phase === 'detached'
+  /* DETACHED is still a flight: a host that keeps the popup mounted sees the
+     line (with no ✕) until the press settles and the card returns to idle. */
+  const launchingLine = phase === 'idle'
     ? null
     : phase === 'dispatching'
       ? `Dispatching ${subject.title}`

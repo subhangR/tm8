@@ -71,6 +71,12 @@ export interface LaunchComposerState {
     /** Null is Auto; GitHub's credential is chosen independently of the tool's. */
     githubCredential: LaunchCredentialSource | null;
     onGithubCredentialChange(next: LaunchCredentialSource | null): void;
+    /**
+     * Why Launch must wait: a plugin is ticked and its facts (which route the
+     * pick through its skills, F3) are still being read. Null otherwise — an
+     * untouched plugin row never holds a launch.
+     */
+    pluginsBlock: string | null;
   };
 }
 
@@ -251,15 +257,18 @@ export function useLaunchComposerState(args: {
   /* Keyed on teammate AND tasks: the facts carry the launch's skill defaults,
      which a plugin tick must keep (F3). */
   const factsKey = teammateKey ? `${teammateKey}|${taskKey}` : null;
+  /* A TICKED plugin wants its facts too, drawer open or not. */
+  const pluginTicked = (plugins?.length ?? 0) > 0;
+  const factsWanted = pluginsWanted || pluginTicked;
   useEffect(() => {
     const load = loadPluginsRef.current;
-    if (!pluginsWanted || !harnessApplies || !teammateKey || !factsKey || !load) return;
+    if (!factsWanted || !harnessApplies || !teammateKey || !factsKey || !load) return;
     let live = true;
     load(teammateKey, taskKey ? taskKey.split(',') : [])
       .then((facts) => { if (live) setInstalled({ forId: factsKey, facts }); })
       .catch(() => { if (live) setInstalled({ forId: factsKey, facts: null }); });
     return () => { live = false; };
-  }, [pluginsWanted, harnessApplies, teammateKey, taskKey, factsKey, canLoadPlugins]);
+  }, [factsWanted, harnessApplies, teammateKey, taskKey, factsKey, canLoadPlugins]);
   const facts = installed && installed.forId === factsKey ? installed.facts : null;
   const installedPlugins = facts?.installed ?? null;
   const pluginSkills = facts?.pluginSkills ?? null;
@@ -278,6 +287,12 @@ export function useLaunchComposerState(args: {
         : installed.facts.installed.length === 0
           ? 'No Claude plugins are installed for this launch.'
           : null;
+  /* A plugin ticked before its facts are in would be sent WHOLE instead of
+     routed through its skills (F3): hold Launch until they land (or fail). */
+  const pluginsBlock = canLoadPlugins && harnessApplies && pluginTicked && factsKey !== null
+    && (installed === null || installed.forId !== factsKey)
+    ? 'Reading plugins…'
+    : null;
 
   const pickTeammate = useCallback((id: string | null) => {
     setTeammateId(id);
@@ -359,6 +374,7 @@ export function useLaunchComposerState(args: {
       onWorktreeBaseRefChange: setWorktreeBaseRef,
       githubCredential,
       onGithubCredentialChange: setGithubCredential,
+      pluginsBlock,
     },
   };
 }

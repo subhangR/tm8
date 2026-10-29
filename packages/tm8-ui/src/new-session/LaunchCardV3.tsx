@@ -678,12 +678,15 @@ function Strip(props: LaunchCardV3Props) {
      rows are back in Attach. One whose menu is open stays until it closes,
      so unticking its last row doesn't pull the menu out from under you. */
   const shownGroups = strip.filter((g) => g.yours + g.jev > 0 || g.def.kind === openGroup);
-  /* SUGGESTED BUT UNTICKED — a default or a Jev pick that is unticked —
-     stays ONE click from the launch: listed first in Attach, counted on its
-     chip (coordinator's guard on present-only). A row Jev deliberately left
-     out is not a suggestion; teammates can't be sent yet. */
+  /* SUGGESTED BUT UNTICKED stays ONE click from the launch: listed first in
+     Attach, counted on its chip (coordinator's guard on present-only). That
+     is every default that is unticked for ANY reason — Jev leaving it out
+     included (its reason is the row's tooltip), or its group would vanish
+     with no way back — plus Jev's own picks that are unticked. Only a row
+     the person attached and then unticked is not a suggestion; teammates
+     can't be sent yet. */
   const suggested = strip.flatMap((g) => g.rows)
-    .filter((r) => !r.ticked && !r.unsent && r.jev !== 'left-out' && (r.source === 'default' || r.jev === 'picked'));
+    .filter((r) => !r.ticked && !r.unsent && (r.source === 'default' || r.jev === 'picked'));
   const suggestedIds = new Set<string>(suggested.map((r) => r.id));
 
   const pool = candidates ?? [];

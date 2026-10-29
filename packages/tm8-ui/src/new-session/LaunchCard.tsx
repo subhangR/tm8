@@ -358,8 +358,8 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
   /** Tab cycles inside the card, and focus returns to the opener when it closes. */
   trapFocus?: boolean;
   /**
-   * Drawn INSTEAD of the bands and the stage (v3's launching line). The
-   * shell stays mounted, so its state (drawer, picks) survives a refusal.
+   * Drawn in place of the bands and the stage (v3's launching line), which
+   * are hidden — not unmounted — so their state survives a refusal.
    */
   collapsed?: ReactNode;
   /**
@@ -453,6 +453,8 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         return;
       }
       if (mod && event.key === '.') {
+        /* Nothing to open while collapsed: the drawer is hidden with the rest. */
+        if (k.isCollapsed) { event.preventDefault(); event.stopPropagation(); return; }
         setOpen(null);
         setDrawer((d) => !d);
       } else if (mod && event.key === 'Enter') {
@@ -574,9 +576,12 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         files(event.dataTransfer.files);
       }}
     >
-      {collapsed ?? <>
+      {collapsed}
       {/* ============ TOP BAND: who · where · more ============ */}
-      <header className="lcd-band lcd-band--top">
+      {/* COLLAPSED, the bands and the stage are HIDDEN, not unmounted: the
+          picker, the strip and every menu keep their state (and the picker
+          its catalog) for when a refusal brings the card back. */}
+      <header className="lcd-band lcd-band--top" hidden={isCollapsed}>
         {verb}
 
         <div className="lcd-anchor lcd-a-tm">
@@ -830,7 +835,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
       </header>
 
       {/* ============ CENTER: the version's own ============ */}
-      <div className="lcd-stage">
+      <div className="lcd-stage" hidden={isCollapsed}>
         {center}
         {/* REFUSAL floats over the bottom of the center: no permanent row. */}
         {(refusal ?? notice) ? (
@@ -943,7 +948,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         </aside>
       </div>
       {/* ============ BOTTOM BAND: how it runs · go ============ */}
-      <footer className="lcd-band lcd-band--bot">
+      <footer className="lcd-band lcd-band--bot" hidden={isCollapsed}>
         <div className="lcd-anchor lcd-a-first">
           <button
             type="button"
@@ -1085,7 +1090,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
         <span className="lcd-spacer" />
         {actions}
       </footer>
-      </>}
+
     </div>
     </LaunchCardMenuContext.Provider>
   );

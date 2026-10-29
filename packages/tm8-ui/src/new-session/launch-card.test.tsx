@@ -797,3 +797,76 @@ describe('round 3: connectors', () => {
     expect(view.getByTestId('lcd3-connectors').hidden).toBe(true);
   });
 });
+
+describe('round 4', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  const timeout = () => Promise.reject(Object.assign(new Error('the tm8 node did not answer within 180000ms'), { code: 'upstream_unavailable' }));
+
+  it('a subject change during the timeout check clears it: the new subject can launch', async () => {
+    const onSpawn = vi.fn().mockImplementationOnce(timeout).mockImplementation(() => new Promise<void>(() => {}));
+    const view = renderPopup({ onSpawn, sessionsSince: () => new Promise(() => {}) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('title')).toMatch(/Checking whether the launch that timed out started/));
+    view.rerender(<div className="cv2-root"><LaunchComposerPopup {...view.props} subject={{ id: 'task-10', title: 'Another task' }} /></div>);
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    expect(view.queryByRole('alert')).toBeNull();
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalledTimes(2));
+  });
+
+  it('a refusal brings back the SAME card: the picker is not remounted, so connectors are not read again', async () => {
+    /* A failed read leaves the picker ready (the server resolves defaults), so Launch can be pressed. */
+    const catalog = vi.fn(() => Promise.reject(new Error('down')));
+    const port = { catalog } as unknown as McpPort;
+    const view = renderPopup({ onSpawn: vi.fn(() => Promise.reject(new Error('teammate is paused'))) }, (card) => <McpProvider port={port}>{card}</McpProvider>);
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    const reads = catalog.mock.calls.length;
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(view.getByTestId('launch-card').textContent).toContain('teammate is paused'));
+    expect(catalog.mock.calls.length).toBe(reads);
+  });
+
+  it('⌘. does nothing while the card is collapsed', async () => {
+    const loadInstalledPlugins = vi.fn(async () => ({ installed: ['sales@synced'] }));
+    const view = renderPopup({ loadInstalledPlugins, onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await view.findByTestId('lcd3-launching');
+    fireEvent.keyDown(document, { key: '.', metaKey: true });
+    await act(async () => { await Promise.resolve(); });
+    expect(loadInstalledPlugins).not.toHaveBeenCalled();
+    expect(view.getByTestId('lcd-drawer').getAttribute('data-open')).toBeNull();
+  });
+
+  it('after a handoff to a host that keeps the card mounted, what is typed next is kept as a draft', async () => {
+    const view = renderPopup({ onLaunchStarted: () => true, onDismiss: () => {}, onSpawn: vi.fn(() => new Promise<void>(() => {})) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    fireEvent.change(view.getByTestId('lcd3-notes'), { target: { value: 'typed after the handoff' } });
+    view.unmount();
+    const again = renderPopup();
+    expect((again.getByTestId('lcd3-notes') as HTMLTextAreaElement).value).toBe('typed after the handoff');
+  });
+
+  it('detached under a host that keeps it mounted: the line stays (no ✕) until the press settles, then the card is idle', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let reject: ((e: Error) => void) | null = null;
+    const view = renderPopup({ onDismiss: () => {}, onSpawn: vi.fn(() => new Promise<void>((_, no) => { reject = no; })) });
+    await view.ready();
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    fireEvent.click(view.getByTestId('nsx-send'));
+    await waitFor(() => expect(reject).not.toBeNull());
+    act(() => { vi.advanceTimersByTime(DETACH_AFTER_MS); });
+    fireEvent.click(view.getByTestId('lcd3-detach'));
+    expect(view.getByTestId('lcd3-launching')).toBeTruthy();
+    expect(view.queryByTestId('lcd3-detach')).toBeNull();
+    reject!(new Error('no'));
+    await waitFor(() => expect(view.queryByTestId('lcd3-launching')).toBeNull());
+    expect(view.getByTestId('nsx-send')).toBeTruthy();
+  });
+});
