@@ -32,9 +32,10 @@ const LOOP_SELECT = `
          l.tool_inputs, l.prompt, l.config, l.concurrency, l.max_runtime_seconds,
          l.retry_attempts, l.retry_delay_seconds, l.enabled, l.paused_until,
          l.next_run_at, l.last_run_at, l.last_error, l.armed_by_member_id, l.armed_at, l.updated_at,
-         exists (select 1 from public.members m where m.entity_id = l.armed_by_member_id
-                   and m.identity_id = l.armed_by_identity_id and m.space_id = e.space_id
-                   and m.status = 'active') as armer_active,
+         -- By identity alone, as the due read decides it (384 §5): after a re-join
+         -- the armer has a new member row, and the firing still runs as them.
+         exists (select 1 from public.members m where m.identity_id = l.armed_by_identity_id
+                   and m.space_id = e.space_id and m.status = 'active') as armer_active,
          (select m.entity_id from public.members m where m.space_id = e.space_id
              and m.role = 'owner' and m.status = 'active' order by m.entity_id limit 1) as fallback_member_id,
          internal.current_member_id(e.space_id) as viewer_member_id

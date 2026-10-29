@@ -86,6 +86,16 @@ import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-vi
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The loop members entities.patch accepts (PATCH_CONTENT_MEMBERS.loop), each with the type its door parameter has. */
+const LOOP_PATCH_TYPES: ReadonlyArray<readonly [string, (value: unknown) => boolean, string]> = [
+  ['schedule', (v) => typeof v === 'string', 'must be a string'],
+  ['enabled', (v) => typeof v === 'boolean', 'must be true or false'],
+  ['teamMemberId', (v) => v === null || (typeof v === 'string' && UUID_RE.test(v)), 'must be an id or null'],
+  ['subjectId', (v) => v === null || (typeof v === 'string' && UUID_RE.test(v)), 'must be an id or null'],
+  ['prompt', (v) => typeof v === 'string', 'must be a string'],
+  ['nextRunAt', (v) => v === null || typeof v === 'string', 'must be an ISO instant or null'],
+];
 const REACTION_TYPES = new Set(['likes', 'dislikes', 'stars']);
 export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'member',
@@ -1717,6 +1727,14 @@ export class W2EntitiesCommandsTrackingService {
               }>(`select schedule, timezone, enabled, action, next_run_at as "nextRunAt", last_error as "lastError"
                     from public.loops where entity_id = $1`, [id]))[0];
               if (!current) throw new CollabError('not_found', `loop ${id} not found`);
+              // A member is forwarded to the door only with its parameter's type:
+              // Postgres would coerce anything else (15 -> '15', 'true' -> true),
+              // around validation and the §3.1 recompute (review 4 of #1406).
+              const mistyped = LOOP_PATCH_TYPES.find(([key, ok]) => content[key] !== undefined && !ok(content[key]));
+              if (mistyped) {
+                throw new CollabError('invalid_input', `content.${mistyped[0]}: ${mistyped[2]}`,
+                  { details: { path: `content.${mistyped[0]}` } });
+              }
               const after = {
                 schedule: typeof content.schedule === 'string' ? content.schedule : current.schedule,
                 timezone: typeof content.timezone === 'string' ? content.timezone : current.timezone,
@@ -1734,7 +1752,7 @@ export class W2EntitiesCommandsTrackingService {
               const action = content.action
                 ?? (current.action === 'spawn' && content.teamMemberId === null ? 'dispatch'
                   : current.action === 'dispatch' && typeof content.teamMemberId === 'string' ? 'spawn' : null);
-              const runNow = isRunNowRequest(content.nextRunAt);
+              const runNow = isRunNowRequest(content.nextRunAt, { viaLink: Boolean(ctx.identity?.viaLinkId) });
               if (content.nextRunAt !== undefined && !runNow) {
                 console.warn(`[tm8:loops] entities.patch ignored a client nextRunAt for loop ${id}`);
               }

@@ -9,8 +9,8 @@
 -- list; §3 replaces create_loop/update_loop (091) with signatures carrying
 -- every new field (new parameters trail the old ones, so positional callers
 -- written against 091 keep resolving); §4 adds the `loop_runs` projection of
--- §2.2 and its two writer doors; §5 teaches 375's due read about pauses; §6
--- lets loops carry selection headers.
+-- §2.2 and its settle door (PR2's claim door writes the rows); §5 teaches 375's
+-- due read about pauses; §6 lets loops carry selection headers.
 --
 -- Scheduling stays server-owned: the doors store the `next_run_at` they are
 -- handed and never compute one. The TypeScript handlers own the grammar
@@ -159,6 +159,11 @@ begin
   end if;
   if p_action = 'spawn' and p_team_member_id is null then
     raise exception 'a spawn loop requires team_member_id' using errcode = '22023';
+  end if;
+  -- The executors choose spawn or dispatch from the runner (091), so a runner
+  -- on a dispatch loop would make it fire as a spawn of that runner.
+  if p_action = 'dispatch' and p_team_member_id is not null then
+    raise exception 'a dispatch loop names no runner (team_member_id must be null)' using errcode = '22023';
   end if;
   if p_action = 'tool' then
     if p_tool_id is null then
@@ -375,8 +380,15 @@ begin
    returning * into l;
 
   -- Judged on the row the edit leaves, so a patch cannot strand a spawn loop
-  -- without its runner by clearing one field at a time.
-  perform internal.assert_loop_runner(e.space_id, l.action, l.team_member_id, l.tool_id, l.timezone);
+  -- without its runner by clearing one field at a time; and only when the patch
+  -- touches the runner. Bookkeeping, enable/disable, pause and renames must
+  -- never re-judge it: a tool deleted since the loop was configured would make
+  -- every one of them fail, and the executor's write that advances next_run_at
+  -- with them (the loop would be re-selected every tick, holding a slot).
+  if p_action is not null or p_team_member_id is not null or p_clear_team_member
+     or p_tool_id is not null or p_clear_tool then
+    perform internal.assert_loop_runner(e.space_id, l.action, l.team_member_id, l.tool_id, l.timezone);
+  end if;
 
   return internal.ledger_record(p_client_mutation_id, 'entities.patch',
            internal.command_result(p_entity_id, null,
@@ -427,44 +439,10 @@ create policy loop_runs_select on public.loop_runs for select to tm8_app
   using ((exists (select 1 from public.entities readable_entity where readable_entity.id = loop_runs.loop_id and readable_entity.deleted_at is null offset 0)));
 grant select on public.loop_runs to tm8_app;
 
--- Writers: the in-process executor (375's worker claim) or a member of the
--- loop's space (Run now, stop). Keyed on the run id, never the entity version.
-create or replace function public.loop_run_record(
-  p_loop_id uuid, p_fired_at timestamptz, p_trigger text, p_launch text,
-  p_attempt integer default 1, p_skip_reason text default null, p_error text default null,
-  p_task_id uuid default null, p_session_id uuid default null,
-  p_acted_as_identity_id text default null, p_requested_by uuid default null,
-  p_client_mutation_id text default null
-) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare
-  replay jsonb;
-  v_space uuid;
-  v_action text;
-  v_run uuid;
-begin
-  replay := internal.ledger_replay(p_client_mutation_id, 'loops.runs.record');
-  if replay is not null then return replay; end if;
-  select e.space_id, l.action into v_space, v_action
-    from public.loops l join public.entities e on e.id = l.entity_id
-   where l.entity_id = p_loop_id and e.deleted_at is null;
-  if v_space is null then
-    raise exception 'loop % not found', p_loop_id using errcode = 'P0002';
-  end if;
-  if not internal.is_loops_worker() then
-    perform internal.require_space_member(v_space);
-  end if;
-  insert into public.loop_runs(loop_id, space_id, fired_at, trigger, requested_by, action,
-                               attempt, acted_as_identity_id, launch, skip_reason, error,
-                               task_id, session_id)
-  values (p_loop_id, v_space, p_fired_at, p_trigger, p_requested_by, v_action,
-          coalesce(p_attempt, 1), p_acted_as_identity_id, p_launch, p_skip_reason, p_error,
-          p_task_id, p_session_id)
-  returning id into v_run;
-  return internal.ledger_record(p_client_mutation_id, 'loops.runs.record',
-           jsonb_build_object('runId', v_run));
-end
-$$;
-
+-- Rows are written by PR2's claim door (one transaction with the claim), never
+-- by a free-standing insert door: a member could forge run history with one.
+-- The one door here settles a run's outcome, keyed on the run id, never the
+-- entity version.
 -- Settles once: a second settle of the same run is a no-op that reports the
 -- outcome already recorded, so the stop handler and the executor cannot race
 -- one outcome over another.
@@ -473,6 +451,10 @@ create or replace function public.loop_run_settle(
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare r public.loop_runs;
 begin
+  -- A null outcome would stamp ended_at and leave the run open to a second settle.
+  if p_outcome is null then
+    raise exception 'a loop run settles with an outcome' using errcode = '22023';
+  end if;
   select * into r from public.loop_runs where id = p_run_id for update;
   if r.id is null then
     raise exception 'loop run % not found', p_run_id using errcode = 'P0002';
@@ -490,8 +472,6 @@ begin
 end
 $$;
 
-revoke all on function public.loop_run_record(uuid,timestamptz,text,text,integer,text,text,uuid,uuid,text,uuid,text) from public;
-grant execute on function public.loop_run_record(uuid,timestamptz,text,text,integer,text,text,uuid,uuid,text,uuid,text) to tm8_app;
 revoke all on function public.loop_run_settle(uuid,text,text) from public;
 grant execute on function public.loop_run_settle(uuid,text,text) to tm8_app;
 
