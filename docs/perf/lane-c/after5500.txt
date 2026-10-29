@@ -1,0 +1,65 @@
+measure-spawn [after5500] → http://127.0.0.1:4691 · run mvt2zkybw0ar · n=5 per mode · modes worktree
+node load (1/5/15 min) at start: 36.6 / 38.2 / 41.9
+space 01a1860d-9bd5-7630-bff6-69e1b6bc687e · project 01a1860d-b985-72c0-b7fa-630ab9c236bb (5500 files at /tmp/tm8-measure-mvt2zkybw0ar-LyQGbb) · teammate 01a1860d-ba11-7ea1-a89f-56dd5d8f9bb8
+  worktree #1: running · response 585 ms · running 4484 ms · 01a1860d-bd38-79c7-aff4-1805200062ca
+  worktree #2: running · response 423 ms · running 2675 ms · 01a1860d-d229-784c-9260-d9476e20e17a
+  worktree #3: running · response 640 ms · running 2164 ms · 01a1860d-e024-740e-bab4-e97f2f0cb12f
+  worktree #4: running · response 584 ms · running 3268 ms · 01a1860d-ed28-7eaf-b795-6ead58a42bf8
+  worktree #5: running · response 261 ms · running 2614 ms · 01a1860d-fbaf-7230-92a8-515269efdfd3
+
+[after5500] mode=worktree  n=5  outcomes {"running":5}  load 35.9 / 38.0 / 41.9 → 33.7 / 37.4 / 41.6  (ms)
+  metric                                              p50       p90       max   n
+  request→response                                  584.5     639.8     639.8   5
+  request→running                                  2675.0    4484.0    4484.0   5
+  request→bootPhase admitted                        235.0     269.0     269.0   5
+  request→bootPhase lane                           2199.0    3764.0    3764.0   2
+  request→bootPhase briefing                       1995.0    1995.0    1995.0   1
+  request→bootPhase live                           2675.0    4484.0    4484.0   5
+  response: handler.resolveOwner                      0.0       0.0       0.0   5
+  response: handler.resolveAssignmentAnchors          2.5       4.8       4.8   5
+  response: handler.putDerivedTasksInStories          0.0       0.2       0.2   5
+  response: handler.inheritedSpawnProjectId           0.0       0.1       0.1   5
+  response: inheritedPosture                          0.0       0.2       0.2   5
+  response: resolveInteractionProfile                10.7      56.6      56.6   5
+  response: loadSpawnContext                         24.5     103.1     103.1   5
+  response: resolveLaunchConfig                       0.1       0.9       0.9   5
+  response: loadIndexHeaders                          0.9       4.6       4.6   5
+  response: reserveWorktree                         111.3     233.1     233.1   5
+  response: createWorkSession                        67.8      82.1      82.1   5
+  response: handler.assembleCommandResult           251.8     292.5     292.5   5
+  log: inheritedPosture                               0.0       0.2       0.2   5
+  log: resolveInteractionProfile                     10.7      56.6      56.6   5
+  log: loadSpawnContext                              24.5     103.1     103.1   5
+  log: resolveLaunchConfig                            0.1       0.9       0.9   5
+  log: loadIndexHeaders                               0.9       4.6       4.6   5
+  log: reserveWorktree                              111.3     233.1     233.1   5
+  log: createWorkSession                             67.8      82.1      82.1   5
+  log: awaitAdmissionAnswer                         269.4     297.4     297.4   5
+  log: readOomKillCount                              45.0     116.4     116.4   5
+  log: recordInteractionProfilePin                   43.2      95.6      95.6   5
+  log: refreshStartedTasks                            8.3      17.2      17.2   5
+  log: issueWorkSessionAgentToken                    69.0     100.0     100.0   5
+  log: recordNativeSessionId                         73.5      94.9      94.9   5
+  log: lane                                        1941.0    3182.3    3182.3   5
+  log: resolveSandboxPosture                          0.0       3.1       3.1   5
+  log: mcpBind                                       57.8      76.8      76.8   5
+  log: resolveSessionCredentials                     65.6      94.2      94.2   5
+  log: harnessSurfaceReads                            0.2       0.7       0.7   5
+  log: composeManifest                                1.5      15.3      15.3   5
+  log: designContext                                 13.8      22.4      22.4   5
+  log: storyContext                                  13.9      34.0      34.0   5
+  log: assertAgentRuntime                             0.0       0.3       0.3   5
+  log: writeManifestFile                             72.3     233.4     233.4   5
+  log: seedClaudeTrust                              100.1     240.1     240.1   5
+  log: promptV2Runtime                              118.9     326.3     326.3   5
+  log: composeLaunchPrompt                            0.2       1.6       1.6   5
+  log: recordManifest                                10.9      33.3      33.3   5
+  log: credentialRecheckBeforePty                     0.0       0.2       0.2   5
+  log: ptySpawn                                       2.5      49.4      49.4   5
+  log: credentialRecheckAfterPty                      0.0       0.0       0.0   5
+  log: bootAndFirstPromptSettlement                 149.9     157.4     157.4   5
+  log: transitionRunning                             13.6      25.5      25.5   5
+  log: totalMs                                     2683.4    4485.5    4485.5   5
+
+node load (1/5/15 min) at end: 33.7 / 37.4 / 41.6
+wrote /tmp/laneC-after5500.json

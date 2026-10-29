@@ -48,7 +48,10 @@ const SERVER_LOG = flag('server-log', null);
 const JSON_OUT = flag('json', null);
 const LABEL = flag('label', 'run');
 const RUNNING_TIMEOUT_MS = 180_000;
-const POLL_MS = 20;
+// Gentle on purpose: every poll is a full entity read on the server being
+// measured, and a tight loop slows the very boot it times. The instants come
+// from the row (startedAt, bootPhaseAt), not from when a poll noticed them.
+const POLL_MS = 500;
 const BOOT_PHASES = ['admitted', 'lane', 'briefing', 'agent', 'live'];
 
 if (/:(7777|17777|17778)(\/|$)/.test(BASE)) {
@@ -110,23 +113,32 @@ function makeRepo() {
 /** The fields this script reads off a work-session read, whatever the server's age. */
 function sessionState(entity) {
   const state = entity?.state ?? entity?.entity?.state ?? {};
-  return { status: state.status ?? null, bootPhase: state.bootPhase ?? null };
+  return {
+    status: state.status ?? null,
+    bootPhase: state.bootPhase ?? null,
+    bootPhaseAt: state.bootPhaseAt ?? null,
+    startedAt: state.startedAt ?? null,
+  };
 }
 
-async function waitUntilSettled(sessionId, t0) {
+/** ms from the request to a row timestamp, on the same clock (dev slot: one machine). */
+const sinceRequest = (iso, wall0) => (iso ? Date.parse(iso) - wall0 : NaN);
+
+async function waitUntilSettled(sessionId, t0, wall0) {
   const reached = {};
   for (;;) {
     const entity = await call('GET', `/v2/entities/${sessionId}`);
     const now = performance.now() - t0;
-    const { status, bootPhase } = sessionState(entity);
+    const { status, bootPhase, bootPhaseAt, startedAt } = sessionState(entity);
     if (bootPhase && reached[bootPhase] === undefined) {
-      // A phase first seen now was reached at or before now; earlier phases
-      // that were skipped between two polls are stamped at the same instant.
-      for (const phase of BOOT_PHASES.slice(0, BOOT_PHASES.indexOf(bootPhase) + 1)) {
-        reached[phase] ??= now;
-      }
+      // The row stamps when it reached a phase; a phase skipped between two
+      // polls is never stamped and stays absent.
+      reached[bootPhase] = Number.isFinite(sinceRequest(bootPhaseAt, wall0)) ? sinceRequest(bootPhaseAt, wall0) : now;
     }
-    if (status === 'running' || status === 'idle') return { outcome: 'running', runningMs: now, reached };
+    if (status === 'running' || status === 'idle') {
+      const at = sinceRequest(startedAt, wall0);
+      return { outcome: 'running', runningMs: Number.isFinite(at) ? at : now, reached };
+    }
     if (status === 'failed' || status === 'exited' || bootPhase === 'failed') {
       return { outcome: 'failed', runningMs: NaN, reached, entity };
     }
@@ -210,6 +222,7 @@ for (const mode of MODES) {
       ...(mode === 'scratch' ? { workdir: { mode: 'scratch' } } : { projectId, workdir: { mode } }),
     };
     const t0 = performance.now();
+    const wall0 = Date.now();
     let spawned;
     try {
       spawned = await call('POST', '/v2/execution/spawn', body);
@@ -220,7 +233,7 @@ for (const mode of MODES) {
     }
     const responseMs = performance.now() - t0;
     const sessionId = spawned?.entity?.id;
-    const settled = await waitUntilSettled(sessionId, t0);
+    const settled = await waitUntilSettled(sessionId, t0, wall0);
     samples.push({ sessionId, responseMs, ...settled, timings: spawned?.timings ?? null });
     console.log(
       `  ${mode} #${i + 1}: ${settled.outcome} · response ${responseMs.toFixed(0)} ms · running ${
