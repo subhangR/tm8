@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import type { CommandContext, CommandResult, EntityDetail, EntityId } from '@tm8/contract';
 import { LoopDefinitionBlock, type LoopDefinitionSection } from './LoopDefinition';
-import { LoopFormDialog, type LoopFormSources } from './LoopForm';
+import { LoopForm } from './LoopForm';
 import { LoopHeader, type LoopHeaderProps } from './LoopHeader';
 import { LoopRuns } from './LoopRuns';
 import type { LoopPagePort } from './page-port';
+import type { LoopFormSources } from './sources';
 import { errorText, isNotImplemented } from './page-format';
 import { useLoopView } from './useLoopView';
 import './page.css';
@@ -57,7 +58,7 @@ export function LoopHeaderBlock(props: BlockProps & {
      version it guards is the one the header is showing. */
   const renderEditor: LoopHeaderProps['renderEditor'] = sources
     ? ({ view, onClose, onSaved }) => (
-      <LoopFormDialog mode="edit" spaceId={view.spaceId} client={port} sources={sources} view={view} onSaved={onSaved} onClose={onClose} />
+      <LoopForm mode="edit" spaceId={view.spaceId} client={port} sources={sources} view={view} onSaved={onSaved} onClose={onClose} />
     )
     : undefined;
   return (

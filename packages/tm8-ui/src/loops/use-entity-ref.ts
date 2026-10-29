@@ -17,19 +17,22 @@ export type LoopEntityRefState =
   | { status: 'missing'; id: EntityId; reason: string };
 
 type EntityReader = Pick<Seam, 'entity'>;
-const caches = new WeakMap<EntityReader, Map<string, Promise<LoopEntityRef>>>();
 
-/** The cached read behind the hook; a failed read is dropped so a later render may retry. */
-export function readEntityRef(seam: EntityReader, id: EntityId): Promise<LoopEntityRef> {
+/** How long a read title is trusted: long enough for one screen's rows to share it, short enough that a rename shows. */
+export const ENTITY_REF_TTL_MS = 60_000;
+
+const caches = new WeakMap<EntityReader, Map<string, { ref: Promise<LoopEntityRef>; at: number }>>();
+
+/** The cached read behind the hook; a failed read is dropped so a later render may retry, and a stale one is read again. */
+export function readEntityRef(seam: EntityReader, id: EntityId, now = Date.now()): Promise<LoopEntityRef> {
   let cache = caches.get(seam);
   if (!cache) caches.set(seam, cache = new Map());
-  let ref = cache.get(id);
-  if (!ref) {
-    ref = seam.entity(id).then(detail => ({ id, kind: detail.state.kind, title: detail.title }));
-    const owned = ref;
-    ref.catch(() => { if (cache!.get(id) === owned) cache!.delete(id); });
-    cache.set(id, ref);
-  }
+  const held = cache.get(id);
+  if (held && now - held.at < ENTITY_REF_TTL_MS) return held.ref;
+  const ref = seam.entity(id).then(detail => ({ id, kind: detail.state.kind, title: detail.title }));
+  const entry = { ref, at: now };
+  ref.catch(() => { if (cache!.get(id) === entry) cache!.delete(id); });
+  cache.set(id, entry);
   return ref;
 }
 

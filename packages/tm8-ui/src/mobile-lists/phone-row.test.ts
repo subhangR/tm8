@@ -155,3 +155,26 @@ describe('matchesSearch', () => {
     expect(matchesSearch(r, '  ')).toBe(true);
   });
 });
+
+describe('phoneRowOf — a loop', () => {
+  const loop = (over: Partial<Extract<EntitySummary['state'], { kind: 'loop' }>> = {}) => summary({
+    id: 'l1', kind: 'loop', title: 'Nightly', activityAt: ago(HOUR), updatedAt: ago(HOUR),
+    state: {
+      kind: 'loop', action: 'dispatch', schedule: '0 9 * * *', timezone: 'Europe/London', enabled: true, pausedUntil: null,
+      teamMemberId: null, toolId: null, subjectId: null, nextRunAt: new Date(NOW + 3 * HOUR).toISOString(), lastRunAt: null, lastError: null,
+      ...over,
+    },
+  });
+
+  it('carries its schedule, zone and the server\'s next run on the meta line', () => {
+    expect(phoneRowOf(loop(), NOW)).toMatchObject({ meta: '0 9 * * * · Europe/London · next in 3h' });
+    expect(phoneRowOf(loop(), NOW).pill).toBeUndefined();
+  });
+
+  it('says disabled, paused and failing with a pill', () => {
+    expect(phoneRowOf(loop({ enabled: false }), NOW)).toMatchObject({ meta: '0 9 * * * · Europe/London · disabled', pill: { label: 'disabled' } });
+    expect(phoneRowOf(loop({ pausedUntil: new Date(NOW + 2 * HOUR).toISOString() }), NOW))
+      .toMatchObject({ meta: '0 9 * * * · Europe/London · paused, resumes in 2h', pill: { label: 'paused' } });
+    expect(phoneRowOf(loop({ lastError: 'spawn refused' }), NOW).pill).toEqual({ label: 'failing', tone: 'block' });
+  });
+});

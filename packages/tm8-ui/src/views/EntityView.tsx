@@ -1237,6 +1237,7 @@ export function EntityView(props: EntityViewProps) {
             client={data.seam.commands.loops ?? null}
             sources={data.seam.commands.loopForm ?? data.seam}
             onOpen={selectFromList}
+            selectedId={selectedId}
           />
         ) : (
         <EntityListPanel

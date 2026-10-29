@@ -17,7 +17,7 @@ import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
 import { LoopDefinitionHost, LoopHeaderBlock, LoopRunsBlock, definitionSection } from '../../loops/LoopPageBlocks';
 import type { LoopsClient } from '../../loops/api';
-import type { LoopFormSources } from '../../loops/LoopForm';
+import type { LoopFormSources } from '../../loops/sources';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';

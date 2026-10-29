@@ -26,10 +26,15 @@ export interface SchedulePreset {
   hour: number;
   /** Day of week, 0 = Sunday (weekly). */
   weekday: number;
-  /** Interval count and unit (interval). */
+  /** Interval count and unit (interval). NaN while the field is empty or not a whole number. */
   every: number;
   unit: IntervalUnit;
-  /** The raw expression (custom). */
+  /**
+   * The custom expression as the human typed it (or a stored custom one).
+   * Empty until then, so switching to Custom starts from what the current
+   * preset writes, and a typed expression survives a round trip through
+   * another preset.
+   */
   cron: string;
 }
 
@@ -48,15 +53,22 @@ export const DEFAULT_PRESET: SchedulePreset = {
   kind: 'daily', minute: 0, hour: 9, weekday: 1, every: 15, unit: 'm', cron: '',
 };
 
-/** The expression a preset writes. Custom passes the typed text through trimmed. */
+const wholeIn = (n: number, min: number, max: number) => Number.isInteger(n) && n >= min && n <= max;
+
+/**
+ * The expression a preset writes, or '' when a number field is empty or not
+ * a whole number (nothing is clamped into a value the human did not type).
+ * Custom passes the typed text through trimmed. Whether the expression is a
+ * valid schedule is the server's answer, not this function's.
+ */
 export function expressionOf(preset: SchedulePreset): string {
   const { minute, hour } = preset;
   switch (preset.kind) {
-    case 'hourly': return `${minute} * * * *`;
+    case 'hourly': return wholeIn(minute, 0, 59) ? `${minute} * * * *` : '';
     case 'daily': return `${minute} ${hour} * * *`;
     case 'weekdays': return `${minute} ${hour} * * 1-5`;
     case 'weekly': return `${minute} ${hour} * * ${preset.weekday}`;
-    case 'interval': return `every ${preset.every}${preset.unit}`;
+    case 'interval': return Number.isInteger(preset.every) && preset.every >= 1 ? `every ${preset.every}${preset.unit}` : '';
     case 'custom': return preset.cron.trim();
   }
 }
@@ -66,10 +78,24 @@ const HOURLY = new RegExp(`^${INT} \\* \\* \\* \\*$`);
 const AT = new RegExp(`^${INT} ${INT} \\* \\* (\\*|1-5|[0-6])$`);
 const EVERY = /^every (\d+)([mh])$/;
 
+/** Why a preset writes no expression, in the words of the field that is missing. */
+export function presetProblem(preset: SchedulePreset): string | null {
+  if (expressionOf(preset) !== '') return null;
+  if (preset.kind === 'interval') return 'Enter how often, as a whole number.';
+  if (preset.kind === 'hourly') return 'Enter the minute past the hour, 0 to 59.';
+  return 'Enter a cron expression.';
+}
+
+/** A whole number typed into a preset field, or NaN for an empty or partial one (so nothing snaps). */
+export function wholeNumberOf(text: string): number {
+  const trimmed = text.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : NaN;
+}
+
 /** The preset an expression was written by, or Custom with the expression as typed. */
 export function presetOf(expression: string): SchedulePreset {
   const text = expression.trim().replace(/\s+/g, ' ');
-  const base = { ...DEFAULT_PRESET, cron: expression.trim() };
+  const base = { ...DEFAULT_PRESET };
   const every = EVERY.exec(text);
   if (every) return { ...base, kind: 'interval', every: Number(every[1]), unit: every[2] as IntervalUnit };
   const hourly = HOURLY.exec(text);
@@ -82,7 +108,7 @@ export function presetOf(expression: string): SchedulePreset {
     if (at[3] === '1-5') return { ...base, kind: 'weekdays', minute, hour };
     return { ...base, kind: 'weekly', minute, hour, weekday: Number(at[3]) };
   }
-  return { ...base, kind: 'custom' };
+  return { ...base, kind: 'custom', cron: expression.trim() };
 }
 
 /** "09:05" for a time input. */
@@ -103,6 +129,14 @@ export function parseTime(value: string, previous: Pick<SchedulePreset, 'hour' |
  * are always present so an older runtime or a stored zone still shows.
  */
 export function timeZoneOptions(current: string): string[] {
+  const zones = supportedZones();
+  return !current || zones.includes(current) ? zones : [...zones, current];
+}
+
+/** The runtime's zone list, read once: it does not change while the page lives. */
+let zoneList: string[] | null = null;
+function supportedZones(): string[] {
+  if (zoneList) return zoneList;
   let zones: string[] = [];
   try {
     const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
@@ -110,7 +144,6 @@ export function timeZoneOptions(current: string): string[] {
   } catch {
     zones = [];
   }
-  const all = new Set(['UTC', ...zones]);
-  if (current) all.add(current);
-  return [...all];
+  zoneList = [...new Set(['UTC', ...zones])];
+  return zoneList;
 }
