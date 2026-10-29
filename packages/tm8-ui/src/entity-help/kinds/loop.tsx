@@ -2,8 +2,9 @@
  * LOOP — Entity Help, wave 5; rewritten for first-class loops (loops PR6).
  *
  * Fact-checked against the merged code: the loops table and its doors
- * (db/migrations/384_loops_first_class.sql, 385_loop_runs.sql: loop_run_claim,
- * loop_run_settle), packages/server/src/scheduler/schedule.ts (`every
+ * (db/migrations/384_loops_first_class.sql: loop_runs, loop_run_settle;
+ * 385_loop_run_claim.sql: loop_run_claim, loops_park_orphans),
+ * packages/server/src/scheduler/schedule.ts (`every
  * <n>{m|h|d}` or a five-field cron read in the loop's IANA timezone;
  * describeSchedule; previewSchedule), packages/server/src/loops/write.ts
  * (scheduleWrite: the server sets every next run; a schedule that never

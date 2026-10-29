@@ -130,3 +130,45 @@ it('Run now refuses while a run is live, then fires at once when forced; stop se
     expect((JSON.parse(disabled.stdout) as LoopView).state.enabled).toBe(false);
   }, { timeout: 30_000, interval: 500 });
 });
+
+/*
+ * A human at a terminal, in the CLI's own words — the transcript LOOPS.md
+ * quotes. Every step is asserted; with LOOPS_E2E_TRANSCRIPT=<file> set, what
+ * each command printed is also written there, verbatim, so the docs show real
+ * output from this build rather than prose about it.
+ */
+it('walks a loop through its life the way LOOPS.md tells it', async () => {
+  const lines: string[] = [];
+  const step = async (args: string[], expectCode = 0) => {
+    const result = await cli(args);
+    expect(result.code, `tm8 ${args.join(' ')}: ${result.stderr}`).toBe(expectCode);
+    const shown = args.map(arg => (/\s/.test(arg) ? `'${arg}'` : arg)).join(' ');
+    lines.push(`$ tm8 ${shown}`, (result.stdout + result.stderr).trimEnd(), `[exit ${result.code}]`, '');
+    return result.stdout;
+  };
+  await step(['loop', 'preview', '--schedule', '0 9 * * 1-5', '--timezone', 'Europe/London', '--count', '3']);
+  const created = await step(['loop', 'create', 'Morning triage', '--schedule', '0 9 * * 1-5', '--timezone', 'Europe/London',
+    '--teammate', runner, '--prompt', 'Triage the inbox and file follow-ups', '--concurrency', 'skip', '--retry', '1', '--disabled']);
+  const id = /^loop ([0-9a-f-]{36})/m.exec(created)?.[1];
+  expect(id, created).toBeTruthy();
+  await step(['loop', 'enable', id!, '--expect-version', '1']);
+  const fired = await step(['loop', 'run-now', id!]);
+  const runId = /^run ([0-9a-f-]{36})/m.exec(fired)?.[1];
+  const session = /^session: ([0-9a-f-]{36})/m.exec(fired)?.[1];
+  expect(runId, fired).toBeTruthy();
+  if (session) sessions.add(session);
+  await step(['loop', 'run-now', id!], 6);
+  await step(['loop', 'runs', id!]);
+  await step(['loop', 'stop', runId!]);
+  // Each versioned command carries the version read just before it, as a human copies it from `loop show`.
+  const version = async () => String((await json<LoopView>(['loop', 'show', id!])).version);
+  await step(['loop', 'pause', id!, '--until', '+2h', '--expect-version', await version()]);
+  await step(['loop', 'resume', id!, '--expect-version', await version()]);
+  await step(['loop', 'edit', id!, '--schedule', 'every 6h', '--expect-version', await version()]);
+  await step(['loop', 'edit', id!, '--title', 'Stale', '--expect-version', '1'], 6);
+  await step(['loop', 'disable', id!, '--expect-version', await version()]);
+  await step(['loop', 'show', id!]);
+  await step(['loop', 'list']);
+  const target = process.env['LOOPS_E2E_TRANSCRIPT'];
+  if (target) await (await import('node:fs/promises')).writeFile(target, lines.join('\n'));
+});
