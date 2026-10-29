@@ -44,6 +44,10 @@ const PARENT_SESSION = '55555555-5555-4555-8555-555555555555';
 const AUTH_SESSION = '77777777-7777-4777-8777-777777777777';
 
 class SpawnDb implements Db {
+  /** `execution_spawn` calls — one per session the handler actually created. */
+  spawnCalls = 0;
+  /** How long `execution_spawn` takes, to hold an admission open. */
+  admissionDelayMs = 0;
   /** The manifest the boot recorded (`record_session_manifest`), once it has. */
   private recorded: Record<string, unknown> | null = null;
   private markRunning!: () => void;
@@ -105,6 +109,8 @@ class SpawnDb implements Db {
       return {} as T;
     }
     if (fn === 'public.execution_spawn') {
+      this.spawnCalls += 1;
+      if (this.admissionDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.admissionDelayMs));
       return { entity: { id: SESSION }, patches: [], __tm8_replayed: false } as T;
     }
     if (fn === 'internal.w2_resolve_interaction_profile_for_launch') {
@@ -229,5 +235,55 @@ describe('execution.spawn — the resolved launch facts', () => {
     const root = await spawn({ credentialSources: { github: 'node' } });
     expect(root.launch).toMatchObject({ accessMode: 'safe', accessModeSource: 'persona', parentSessionId: null });
     expect(root.launch?.credentials).toContainEqual({ provider: 'github', source: 'node' });
+  });
+
+  it('a replay of the same clientMutationId 50 ms into a slow admission joins it: one session', async () => {
+    const binDir = await mkdtemp(join(tmpdir(), 'tm8-launchfacts-bin-'));
+    await writeFile(join(binDir, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    vi.stubEnv('PATH', `${binDir}:${process.env['PATH'] ?? ''}`);
+    const dataDir = await mkdtemp(join(tmpdir(), 'tm8-launchfacts-data-'));
+    dirs.push(binDir, dataDir);
+    const db = new SpawnDb(null, null);
+    db.admissionDelayMs = 300;
+    const registry = new HandlerRegistry();
+    registerExecutionHandlers(registry, {
+      db,
+      pty: {
+        beginPromptHandoff: vi.fn(),
+        spawnIfAbsent: vi.fn(() => ({ reused: false })),
+        waitForBootSettlement: vi.fn(async () => null),
+        liveSessionIds: () => [],
+      } as never,
+      dataDir,
+      config: { host: '127.0.0.1', port: 4617 } as never,
+      owner: async () => ({
+        identityId: 'owner-identity', accountId: 'owner-account', username: 'owner',
+        isNodeAdmin: true, isOwner: true,
+      }),
+    });
+    const ctx = (): RequestContext => ({
+      op: {} as never,
+      opName: 'execution.spawn' as OperationName,
+      params: {},
+      query: new URLSearchParams(),
+      body: { spaceId: SPACE, teamMemberId: TEAMMATE, model: 'opus', agentTool: 'claude-code', clientMutationId: 'same-launch' },
+      requestId: 'req-replay-join',
+      identity: { kind: 'cli', identityId: 'owner-identity' } as never,
+      headers: {},
+      method: 'POST',
+      path: '/v2/execution/spawn',
+    });
+    const handler = registry.get('execution.spawn' as OperationName)!;
+
+    const first = handler(ctx());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const replay = handler(ctx());
+    const [a, b] = await Promise.all([first, replay]);
+
+    // The replay joined the attempt in flight (keyed at request entry, before
+    // any read or write): one row, one answer, and the boot it started.
+    expect(db.spawnCalls).toBe(1);
+    expect(b).toBe(a);
+    await db.running;
   });
 });
