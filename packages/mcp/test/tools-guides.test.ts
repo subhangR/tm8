@@ -15,7 +15,7 @@ import {
   type OperationName,
 } from '@tm8/contract';
 import type { CatalogInvokeOptions, CatalogTransport } from '../src/catalog-client.js';
-import { MCP_MAPPED_OPERATIONS, Tm8ToolRouter } from '../src/tools.js';
+import { MCP_MAPPED_OPERATIONS, TOOLS_RETRY_RULE, Tm8ToolRouter } from '../src/tools.js';
 
 class RecordingTransport implements CatalogTransport {
   readonly calls: Array<{ operation: OperationName; options: CatalogInvokeOptions }> = [];
@@ -113,6 +113,32 @@ describe('tools.* on the MCP surface (Tools v2 PR-E, design doc 01a182cb §5)', 
       expect(row.summary, operation).toMatch(/secret/);
       expect(JSON.stringify(row.request.body), operation).not.toMatch(/"type":"secret"/);
     }
+  });
+
+  it('the run, create and update rows say to retry with the same clientMutationId, and what a blind retry does', async () => {
+    const act = await directory('tm8_act');
+    const blindRetry = {
+      'tools.run': 'a blind retry runs the script again',
+      'tools.create': 'a blind retry is refused as a name already taken',
+      'tools.update': 'a blind retry is refused as a version conflict',
+    } as const;
+    for (const [operation, consequence] of Object.entries(blindRetry)) {
+      const row = act.find((g) => g.operation === operation)!;
+      expect(row.summary, operation).toContain(TOOLS_RETRY_RULE);
+      expect(row.summary, operation).toContain('send it again with the same clientMutationId');
+      expect(row.summary, operation).toContain(consequence);
+    }
+    // Why it has to be said: without an id the router mints a fresh one per
+    // call, so only an id the caller keeps makes the second call a replay.
+    const run = act.find((g) => g.operation === 'tools.run')!;
+    const transport = new RecordingTransport();
+    const router = new Tm8ToolRouter(transport, { mode: 'build' });
+    for (const body of [run.request.body, run.request.body, { ...run.request.body, clientMutationId: 'retry-1' }, { ...run.request.body, clientMutationId: 'retry-1' }]) {
+      await router.call('tm8_act', { operation: 'tools.run', params: filled(run.request.params), body });
+    }
+    const ids = transport.calls.map((c) => (c.options.body as { clientMutationId: string }).clientMutationId);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids.slice(2)).toEqual(['retry-1', 'retry-1']);
   });
 
   it('every act example body, sent through the router as shown, parses against the contract input schema', async () => {
