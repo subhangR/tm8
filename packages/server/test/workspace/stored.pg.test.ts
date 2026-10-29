@@ -227,20 +227,30 @@ describeIfPg('stored workspaces over real Postgres (Spec D)', () => {
     expect(aliceFrames.filter((f) => f.type === 'workspace.state').every((f) => (f['revision'] as number) !== 1 || f['cause'] === undefined)).toBe(true);
   });
 
-  it('holds the hard tab limit', async () => {
-    let last: { status: string; reason?: string } = { status: '' };
-    for (let i = 0; i < 52; i += 1) {
-      last = await service.apply(claims(alice), spaceId, {
+  it('holds the hard tab limit by closing the least recently used tabs', async () => {
+    const start = (await service.get(claims(alice), spaceId)).state as { orderedTabIds: string[]; presentation: { tabId?: string } };
+    const before = start.orderedTabIds;
+    const opened: string[] = [];
+    const evicted: string[] = [];
+    for (let i = 0; opened.length < 52; i += 1) {
+      const id = randomUUID();
+      const last = await service.apply(claims(alice), spaceId, {
         env: { command: 'workspace.tabs.open', args: { kind: 'doc', entityId: randomUUID(), activate: false }, source: 'click' },
-        ids: [randomUUID()],
+        ids: [id],
         requestId: `cap-${i}`,
         origin: { kind: 'window', instanceId: 'alice-win' },
       });
-      if (last.status !== 'applied') break;
+      expect(last).toMatchObject({ status: 'applied', tabId: id });
+      opened.push(id);
+      evicted.push(...(((last as { evictedTabIds?: string[] }).evictedTabIds) ?? []));
     }
-    expect(last).toMatchObject({ status: 'rejected', reason: 'tab_limit' });
-    expect(((await service.get(claims(alice), spaceId)).state['orderedTabIds'] as unknown[]).length).toBe(50);
-  });
+    const order = (await service.get(claims(alice), spaceId)).state['orderedTabIds'] as string[];
+    expect(order).toHaveLength(50);
+    // The active tab stays; what goes is the rest of what was here, then the oldest of these opens.
+    const evictable = [...before.filter((id) => id !== start.presentation.tabId), ...opened];
+    expect(new Set(evicted)).toEqual(new Set(evictable.slice(0, before.length + 52 - 50)));
+    expect(order).toEqual(expect.arrayContaining(opened.slice(-48)));
+  }, 60_000);
 
   it('refuses an oversized row in the database itself', async () => {
     const huge = { blob: 'x'.repeat(140_000) };

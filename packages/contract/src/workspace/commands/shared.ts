@@ -212,3 +212,52 @@ export function afterActive(state: WorkspaceState, tabId: TabId): TabId[] {
   if (at < 0) return [...rest, tabId];
   return [...rest.slice(0, at + 1), tabId, ...rest.slice(at + 1)];
 }
+
+/**
+ * Where a tab opened in the background joins `recency`: just behind the
+ * active tab, or first when none is, because opening it is a use. At the tail
+ * it would rank as the least recently used tab and be the first
+ * `evictLeastRecent` closes.
+ */
+export function openedInBackground(state: WorkspaceState, tabId: TabId): TabId[] {
+  const rest = state.recency.filter((id) => id !== tabId);
+  const active = state.presentation.surface === 'tab' ? state.presentation.tabId : null;
+  const at = active === null ? -1 : rest.indexOf(active);
+  return [...rest.slice(0, at + 1), tabId, ...rest.slice(at + 1)];
+}
+
+/**
+ * Keep the tab list at `cap` by closing the least recently used tabs (task
+ * 01a185ec), instead of refusing the open with `tab_limit`. Runs only when a
+ * commit GREW the list past the cap. Never closes a tab `prev` did not have
+ * (what this commit opened), the active tab, a draft with unsaved or
+ * submitting values, or a tab a pending prompt names. Least recent is the
+ * tail of `recency`; a tab missing from it counts as older still. Returns
+ * `next` unchanged when nothing needs to go; the list may stay over the cap
+ * when too few tabs may go, and the caller decides what that means.
+ */
+export function evictLeastRecent(
+  prev: WorkspaceState,
+  next: WorkspaceState,
+  cap: number,
+  hooks: WorkspaceHooks,
+): { next: WorkspaceState; after: (() => void)[]; evicted: TabId[] } {
+  const grew = next.orderedTabIds.length > prev.orderedTabIds.length;
+  if (!grew || next.orderedTabIds.length <= cap) return { next, after: [], evicted: [] };
+  const excess = next.orderedTabIds.length - cap;
+  const active = next.presentation.surface === 'tab' ? next.presentation.tabId : null;
+  const held = new Set([...(next.pending?.tabIds ?? []), ...(next.pending?.closeTabIds ?? [])]);
+  const ranked = new Set(next.recency);
+  const oldestFirst = [...next.orderedTabIds.filter((id) => !ranked.has(id)), ...[...next.recency].reverse()];
+  const evicted: TabId[] = [];
+  for (const id of oldestFirst) {
+    if (evicted.length >= excess) break;
+    const tab = next.tabs[id];
+    if (!tab || !prev.tabs[id] || id === active || held.has(id)) continue;
+    if (tab.type === 'draft' && (tab.dirty || tab.submitting)) continue;
+    evicted.push(id);
+  }
+  if (evicted.length === 0) return { next, after: [], evicted };
+  const removed = removeTabs(next, evicted, hooks);
+  return { next: removed.next, after: removed.after, evicted };
+}

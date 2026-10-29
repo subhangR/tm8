@@ -473,7 +473,7 @@ describeIfPg('workspace safety over real Postgres (pins, D7, batch, prompts)', (
     expect(await inSolo({ command: 'workspace.tabs.closeVisible', args: {} })).toMatchObject({ status: 'applied' });
   });
 
-  it('a batch open is all or nothing: entity_unavailable names the unreadable, tab_limit past 50; it activates the first', async () => {
+  it('a batch open is all or nothing: entity_unavailable names the unreadable; past 50 it evicts the least recently used, tab_limit when none may go; it activates the first', async () => {
     const before = await row(main);
     const unreadable = randomUUID();
     expect(await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[0] }, { kind: 'task', entityId: unreadable }] })).toMatchObject({
@@ -484,9 +484,21 @@ describeIfPg('workspace safety over real Postgres (pins, D7, batch, prompts)', (
     expect((await stored(main)).orderedTabIds).toHaveLength(50);
     const full = await row(main);
     expect(Number(full.revision)).toBe(Number(before.revision) + 1);
-    expect(await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[0] }, { kind: 'task', entityId: tasks[50] }] }))
-      .toMatchObject({ status: 'rejected', reason: 'tab_limit' });
-    expect((await row(main)).revision).toBe(full.revision);
+    // tasks[0] is focused, tasks[50] opens; one of the other 49 makes room.
+    const evicting = await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[0] }, { kind: 'task', entityId: tasks[50] }] });
+    expect(evicting).toMatchObject({ status: 'applied', outcomes: ['focused', 'created'] });
+    expect(evicting['evictedTabIds']).toHaveLength(1);
+    const evicted = await stored(main);
+    expect(evicted.orderedTabIds).toHaveLength(50);
+    expect(Number((await row(main)).revision)).toBe(Number(full.revision) + 1);
+    await command('workspace.tabs.closeVisible', {}, { expectedWorkspaceId: main });
+
+    // Only the active tab and the batch's own: nothing may go, so the batch is refused whole.
+    await command('workspace.tabs.open', { kind: 'task', entityId: tasks[0] });
+    const lone = await row(main);
+    const fiftyMore = tasks.slice(1, 51).map((entityId) => ({ kind: 'task', entityId }));
+    expect(await command('workspace.tabs.open', { entities: fiftyMore, activate: false })).toMatchObject({ status: 'rejected', reason: 'tab_limit' });
+    expect((await row(main)).revision).toBe(lone.revision);
     await command('workspace.tabs.closeVisible', {}, { expectedWorkspaceId: main });
 
     const batch = await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[50] }, { kind: 'task', entityId: tasks[51] }] });
@@ -496,7 +508,7 @@ describeIfPg('workspace safety over real Postgres (pins, D7, batch, prompts)', (
     expect((await stored(main)).recency[0]).toBe(tabIds[0]);
     await expect(command('workspace.tabs.open', { kind: 'task', entityId: tasks[0], entities: [{ kind: 'task', entityId: tasks[0] }] }))
       .resolves.toMatchObject({ status: 'rejected', reason: 'invalid_arguments' });
-  });
+  }, 60_000);
 
   it('an agent files.open keeps a file tab in the stored workspace and asks a live window to show it, like tabs.open', async () => {
     const file = { projectId: randomUUID(), path: 'src/remote-open.ts' };

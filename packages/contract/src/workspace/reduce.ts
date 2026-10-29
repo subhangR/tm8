@@ -13,8 +13,9 @@
  * node mints the same ones.
  */
 import { browser, drafts, external, files, interactions, layout, panels, rail, scope, tabs } from './commands/index.js';
-import type { Plan, Planner } from './commands/shared.js';
+import { evictLeastRecent, type Plan, type Planner } from './commands/shared.js';
 import { inspect } from './selectors.js';
+import { WORKSPACE_TAB_HARD_CAP } from './stored.js';
 import { ACCEPTED_SOURCES, COMMAND_NAMES, UI_SOURCES } from './types.js';
 import type { CommandEnvelope, CommandName, Result, WorkspaceHooks, WorkspaceState } from './types.js';
 
@@ -118,6 +119,12 @@ export interface ReduceOptions {
   replay?: boolean;
   /** Called when a planner throws; the command is answered invalid_arguments. */
   onPlannerError?: (command: string, error: unknown) => void;
+  /**
+   * False leaves a commit past the hard cap as it is, for a caller that
+   * reduces several steps and evicts once after the last (the node's batch
+   * open). Default true: the least recently used tabs close (`evictLeastRecent`).
+   */
+  evict?: boolean;
 }
 
 function rejected(state: WorkspaceState, reason: Result['reason']): Reduction {
@@ -209,7 +216,17 @@ export function reduce(
     }
     case 'commit': {
       const { status = 'applied', ...rest } = plan.result ?? {};
-      const c = commit(state, plan.next, plan.significant !== false, { status, ...rest }, plan.after);
+      const evicted =
+        options.evict === false
+          ? { next: plan.next, after: [], evicted: [] }
+          : evictLeastRecent(state, plan.next, WORKSPACE_TAB_HARD_CAP, hooks);
+      const c = commit(
+        state,
+        evicted.next,
+        plan.significant !== false,
+        { status, ...rest, ...(evicted.evicted.length > 0 ? { evictedTabIds: evicted.evicted } : {}) },
+        [...(plan.after ?? []), ...evicted.after],
+      );
       return { state: c.state, result: c.result, commits: c.commit ? [c.commit] : [] };
     }
     case 'replay': {

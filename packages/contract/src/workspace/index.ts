@@ -11,5 +11,6 @@ export * from './types.js';
 export * from './selectors.js';
 export * from './reduce.js';
 export * as workspaceCommands from './commands/index.js';
+export { evictLeastRecent } from './commands/shared.js';
 export type { Plan, PlanContext, Planner } from './commands/shared.js';
 export * from './stored.js';

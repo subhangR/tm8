@@ -432,6 +432,11 @@ export type Result = {
   /** ADDITIVE (Spec C): `workspace.dialogs.*` only. */
   dialogId?: DialogId;
   dialogState?: 'open' | 'closed';
+  /**
+   * ADDITIVE (task 01a185ec): tabs closed, least recently used first, to keep
+   * the list at the hard cap. Absent when none were.
+   */
+  evictedTabIds?: TabId[];
 };
 
 /** What a dialog or view hook answers; the dispatcher adds the revision. */
