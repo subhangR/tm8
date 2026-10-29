@@ -608,7 +608,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'answers without any credential, on purpose: a client reads it before it signs in, to learn whether this Server serves its version',
       'a credential that is sent must still be valid: an expired or revoked token is refused like on every operation, so a signed-out client sends none',
-      'features lists every catalog operation with status v1 that this Server mounts; a reserved or unmounted operation is absent and answers 501 not_implemented',
+      'features lists every catalog operation with status v1 that this Server mounts; one that is not listed is never served here, and a listed one can still answer 501 with a reason while a switch it needs is off (TM8_CONTAINERS, for example)',
       'catalogSha256 is the digest `tm8 help` prints after `catalog sha256:`; when the two differ, this CLI and the Server were built from different catalogs',
     ],
   },

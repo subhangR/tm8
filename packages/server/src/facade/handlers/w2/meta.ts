@@ -19,11 +19,16 @@
  *    the catalog is static for the life of the process.
  *  - `eventSchemaVersion` — `WORKSPACE_EVENT_SCHEMA_VERSION`.
  *  - `features` — the catalog rows whose status is `v1` and that this node
- *    serves, re-read from the registry on every call. An HTTP row is served when
+ *    mounts, re-read from the registry on every call. An HTTP row is mounted when
  *    a handler is registered: without one it answers 501, so listing it would
  *    be a promise the node breaks. A socket row (`events.subscribe` and its alias
  *    `containers.stream`) is served by the server frame's upgrade path, which
  *    the composition root always mounts; the registry holds no socket handlers.
+ *    MOUNTED IS NOT AVAILABLE, and the contract says so: a few families mount
+ *    every row and answer 501 with a reason while a switch is off (containers
+ *    under TM8_CONTAINERS=off, tools with no runtime, voice with no LiveKit).
+ *    The registry cannot tell those apart without calling them, and a read may
+ *    not call a handler, so they stay listed and their 501 names the switch.
  *  - `minClients` — `MIN_CLIENT_VERSIONS`, below.
  */
 import { createHash } from 'node:crypto';

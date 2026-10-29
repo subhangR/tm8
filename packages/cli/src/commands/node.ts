@@ -54,7 +54,7 @@ async function nodeMeta(cmd: CommandContext): Promise<ExitCode> {
         ? `catalog: ${digest} (the catalog this CLI was built from)`
         : `catalog: ${digest} (this CLI was built from ${CATALOG_DIGEST})`,
       `event schema: ${r.eventSchemaVersion}`,
-      `features: ${r.features.length} operations (--format json lists them)`,
+      `features: ${r.features.length} operations mounted (--format json lists them)`,
       minimums.length === 0
         ? 'minimum clients: none'
         : `minimum clients: ${minimums.map(([client, version]) => `${client} ${version}`).join(', ')}`,

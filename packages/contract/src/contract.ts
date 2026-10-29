@@ -2754,20 +2754,29 @@ export interface MetaGetResult {
   /** `WORKSPACE_EVENT_SCHEMA_VERSION`: the `schemaVersion` this node's events carry. */
   eventSchemaVersion: number;
   /**
-   * The operations this node answers, in catalog order: every catalog row whose
-   * status is `v1` and that this node mounts. A `reserved` row is never listed,
-   * and neither is a `v1` row this node's composition did not mount: both answer
-   * 501 `not_implemented`. Derived from the catalog and the handler registry on
-   * every read, never kept by hand. Names, not `OperationName`s: a newer node
-   * lists operations an older reader's catalog does not know.
+   * The operations this node mounts, in catalog order: every catalog row whose
+   * status is `v1` and that has a handler here (a socket row: the server frame's
+   * upgrade path). A row that is not listed is never served here: a `reserved`
+   * or unmounted row answers 501 `not_implemented`, and a row this node's
+   * catalog lacks answers 404. A listed row can still refuse when called, 501
+   * included: a few families mount every row and answer `not_implemented`, with
+   * a reason, while a switch they need is off on this node (`TM8_CONTAINERS=off`,
+   * no tool runtime, no LiveKit), so a client keeps its per-operation 501 cache.
+   * Derived from the catalog and the handler registry on every read, never kept
+   * by hand. Names, not `OperationName`s: a newer node lists operations an older
+   * reader's catalog does not know.
    */
   features: string[];
   /**
-   * The oldest version of each client this node serves, keyed by the name an
-   * `x-tm8-client` header starts with (`tm8-mobile` in
-   * `tm8-mobile/1.0.0 (ios; build 42)`), valued `MAJOR.MINOR.PATCH`. A client
-   * the map does not name has no minimum here. A client older than its entry
-   * stops before it signs in and says why.
+   * The oldest version of each client this node serves. The key is the product
+   * token of the client's `x-tm8-client` value, the text before its first `/`
+   * (`tm8-mobile` in `tm8-mobile/1.2.3 (ios; build 42)`). The value is
+   * `MAJOR.MINOR.PATCH`, compared number by number with the version after that
+   * `/`. A client the map does not name has no minimum here.
+   *
+   * THE REFUSAL IS THE CLIENT'S. The node states the minimum here and nowhere
+   * else: it never parses `x-tm8-client` and refuses no request for its version.
+   * A client older than its entry stops before it signs in and says why.
    */
   minClients: Record<string, string>;
 }

@@ -107,7 +107,7 @@ describe('tm8 node meta', () => {
     expect(r.stdout).toContain('contract: 0.1.0');
     expect(r.stdout).toContain(`catalog: ${CATALOG_DIGEST} (the catalog this CLI was built from)`);
     expect(r.stdout).toContain('event schema: 1');
-    expect(r.stdout).toContain('features: 3 operations (--format json lists them)');
+    expect(r.stdout).toContain('features: 3 operations mounted (--format json lists them)');
     expect(r.stdout).toContain('minimum clients: none');
   });
 

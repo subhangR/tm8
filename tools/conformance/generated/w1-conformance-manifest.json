@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f",
+  "catalogDigest": "sha256:918e8cb4958676abc4ada9fa8488d5272abf4746781af3735bfd81623fcc746a",
   "catalog": {
-    "total": 383,
-    "v1": 381,
+    "total": 384,
+    "v1": 382,
     "reserved": 2,
-    "http": 381,
+    "http": 382,
     "ws": 1,
-    "registerableV1Http": 379,
+    "registerableV1Http": 380,
     "methods": {
-      "GET": 128,
+      "GET": 129,
       "POST": 187,
       "PATCH": 21,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 134,
+      "read": 135,
       "command": 247,
       "stream": 2
     },
-    "uniqueNames": 383,
-    "uniqueBindings": 382
+    "uniqueNames": 384,
+    "uniqueBindings": 383
   },
   "reservedOperations": [
     "search.query",
@@ -2448,6 +2448,13 @@
         "source": "server-router"
       },
       {
+        "operation": "meta.get",
+        "method": "GET",
+        "path": "/v2/meta",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -3085,7 +3092,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 351
+    "unimplementedV1Http": 352
   },
   "schemas": {
     "additive": {
@@ -8645,6 +8652,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "meta.get",
+        "noun": "node",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/meta.get",
+        "intentTags": [
+          "meta",
+          "get"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
