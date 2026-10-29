@@ -5,7 +5,7 @@ import type { LoopRun, LoopView, ToolView } from '@tm8/contract';
 import { run } from '../src/run.js';
 import { loopState, pauseUntil, renderLoop } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
-import { matchIntent } from '../src/discovery/search.js';
+import { matchIntent, tokenize } from '../src/discovery/search.js';
 import { searchHelp } from '../src/discovery/help.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
@@ -438,6 +438,21 @@ describe('tm8 loop discovery', () => {
     expect(matchIntent('enable the loop now')?.candidates[0]?.path).toEqual(['loop', 'enable']);
     expect(matchIntent('start the loop now')?.candidates[0]?.path).toEqual(['loop', 'enable']);
   });
+  it('removing a field or a run is never deleting the loop (nor a create or a run)', () => {
+    for (const query of ['remove the subject from the loop', 'remove the teammate from the loop', 'remove the tool from the loop',
+      'remove the prompt from the loop', 'remove the memory from the loop', 'remove the max runtime from the loop',
+      "delete the loop's schedule", 'clear the loop subject']) {
+      expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['loop', 'edit']);
+    }
+    for (const query of ['delete the loop run', 'delete the loop runs', 'remove a loop run', 'remove the subject from the loop',
+      "delete the loop's schedule", 'remove the memory from the loop']) {
+      const top = searchHelp(query).matches[0]?.command;
+      for (const bad of ['entity delete', 'loop create', 'loop run-now']) expect(top, query).not.toBe(bad);
+    }
+    expect(matchIntent('delete the loop run')?.candidates[0]?.path).toEqual(['loop', 'runs']);
+    // Deleting the loop itself still is.
+    expect(matchIntent('stop and delete the loop')?.candidates[0]?.path).toEqual(['entity', 'delete']);
+  });
   it('removing a loop is the entity delete, never a create or a run', () => {
     for (const query of ['delete a loop', 'delete the nightly loop', 'remove the loop', 'archive the loop', 'delete loops']) {
       expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['entity', 'delete']);
@@ -458,6 +473,65 @@ describe('tm8 loop discovery', () => {
     const text = JSON.stringify(nounHelp('loop'));
     for (const verb of ['create', 'list', 'show', 'edit', 'enable', 'disable', 'pause', 'resume', 'run-now', 'runs', 'run-show', 'stop', 'preview']) {
       expect(text).toContain(`"command":"loop ${verb}"`);
+    }
+  });
+});
+
+/*
+ * THE ROUTING CORPUS (review of #1405, rounds 1-4). Every phrasing a reviewer
+ * measured, with the command `tm8 help --query` must answer FIRST — route or
+ * ranker. Each round of review found a new misroute; this table is where the
+ * next one is added, so a fix for one row cannot quietly break another.
+ */
+const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
+  // setting up recurring work
+  ['schedule a teammate', 'loop create'], ['run a teammate nightly', 'loop create'], ['run a teammate weekly', 'loop create'],
+  ['create a loop', 'loop create'], ['set up a cron job', 'loop create'], ['schedule a loop', 'loop create'],
+  ['make a nightly loop', 'loop create'], ['add a new loop with a weekly schedule', 'loop create'], ['set up a loop', 'loop create'],
+  ['set up a nightly loop', 'loop create'], ['set up a loop for nightly triage', 'loop create'], ['set-up a loop', 'loop create'],
+  ['setup a loop', 'loop create'], ['make a loop that runs every day', 'loop create'],
+  // firing an existing loop
+  ['run a loop now', 'loop run-now'], ['run the nightly loop', 'loop run-now'], ['fire the loop now', 'loop run-now'],
+  ['trigger the loop again', 'loop run-now'],
+  // starting, enabling, resuming, pausing, disabling
+  ['start the loop', 'loop enable'], ['start the loop now', 'loop enable'], ['arm the loop now', 'loop enable'],
+  ['enable the loop now', 'loop enable'], ['resume the loop now', 'loop resume'], ['pause the loop now', 'loop pause'],
+  ['disable the loop now', 'loop disable'], ['disable a loop', 'loop disable'],
+  // stopping a run, or the loop
+  ['stop a loop run', 'loop stop'], ['stop the loop run', 'loop stop'], ['cancel the loop run', 'loop stop'],
+  ['kill the loop run', 'loop stop'], ['abort the loop run', 'loop stop'], ['end the loop run', 'loop stop'],
+  ['terminate the running loop', 'loop stop'], ['halt the loop runs', 'loop stop'], ['stop running the loop again', 'loop stop'],
+  ['stop the loop now', 'loop disable'], ['cancel the loop now', 'loop disable'], ['kill the loop', 'loop disable'],
+  ['abort the loop', 'loop disable'], ['halt the loop', 'loop disable'], ['stop the loop', 'loop disable'],
+  // editing, including clearing a field
+  ["set a loop's schedule", 'loop edit'], ["change the loop's timezone", 'loop edit'], ['add a teammate to the loop', 'loop edit'],
+  ['remove the subject from the loop', 'loop edit'], ['remove the teammate from the loop', 'loop edit'],
+  ['remove the tool from the loop', 'loop edit'], ['remove the prompt from the loop', 'loop edit'],
+  ['remove the memory from the loop', 'loop edit'], ['remove the max runtime from the loop', 'loop edit'],
+  ["delete the loop's schedule", 'loop edit'], ['clear the loop subject', 'loop edit'],
+  // runs: read them; a run is never deleted on its own
+  ['delete the loop run', 'loop runs'], ['delete the loop runs', 'loop runs'], ['remove a loop run', 'loop runs'],
+  // deleting the loop itself
+  ['delete a loop', 'entity delete'], ['delete the nightly loop', 'entity delete'], ['remove the loop', 'entity delete'],
+  ['archive the loop', 'entity delete'], ['trash the loop', 'entity delete'], ['delete loops', 'entity delete'],
+  ['stop and delete the loop', 'entity delete'],
+  // reading
+  ['list loops', 'loop list'], ['preview a cron schedule', 'loop preview'],
+];
+
+/** The only words a destructive answer may carry besides the loop: its verbs and plain descriptions of which loop. */
+const LOOP_ONLY_OBJECT = new Set(['loop', 'loops', 'delete', 'remove', 'archive', 'destroy', 'trash', 'stop',
+  'nightly', 'daily', 'weekly', 'hourly', 'old', 'stale', 'unused']);
+
+describe('tm8 help --query: the routing corpus', () => {
+  it.each(ROUTING_CORPUS)('"%s" answers %s first', (query, top) => {
+    expect(searchHelp(query).matches[0]?.command).toBe(top);
+  });
+  it('a destructive answer (entity delete) only ever answers a phrasing whose sole object is the loop itself', () => {
+    for (const [query] of ROUTING_CORPUS) {
+      if (searchHelp(query).matches[0]?.command !== 'entity delete') continue;
+      const others = tokenize(query).filter(token => !LOOP_ONLY_OBJECT.has(token));
+      expect(others, `"${query}" deletes the loop but names more than the loop`).toEqual([]);
     }
   });
 });

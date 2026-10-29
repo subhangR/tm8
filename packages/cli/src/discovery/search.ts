@@ -194,6 +194,13 @@ export interface IntentRoute {
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
 
+/** A loop's fields, as a human names them: with an editing verb they are `loop edit`, never a delete. */
+const LOOP_ATTRIBUTE_WORDS = [
+  'schedule', 'timezone', 'time', 'cadence', 'prompt', 'instructions', 'title', 'name', 'teammate', 'runner',
+  'tool', 'inputs', 'model', 'retry', 'retries', 'runtime', 'concurrency', 'subject', 'memory', 'memories',
+  'config', 'workdir', 'project', 'profile', 'credential',
+];
+
 /** "Run it now" — the run-now route's words. */
 const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
 /** Stopping a live run. */
@@ -289,9 +296,9 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     intent: 'change a loop (its schedule, timezone, instructions or runner)',
     all: [
       ['loop'],
-      ['set', 'change', 'edit', 'update', 'retime', 'reschedule', 'add'],
-      ['schedule', 'timezone', 'time', 'cadence', 'prompt', 'instructions', 'title', 'name', 'teammate', 'runner',
-        'tool', 'inputs', 'model', 'retry', 'retries', 'runtime', 'concurrency'],
+      // Clearing a field is an edit too ("remove the subject from the loop"): never the whole loop's delete.
+      ['set', 'change', 'edit', 'update', 'retime', 'reschedule', 'add', 'remove', 'clear', 'drop', 'unset', 'delete'],
+      LOOP_ATTRIBUTE_WORDS,
     ],
     // "add a teammate to the loop" edits it; "add a new loop" makes one.
     none: ['new', 'create', 'make', 'another'],
@@ -305,11 +312,19 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     candidates: [{ path: ['loop', 'stop'], example: 'tm8 loop stop <run-id>   (the run ids: tm8 loop runs <id|title>)' }],
   },
   {
+    // A run is kept with its loop and cannot be deleted on its own: deleting "the loop run" must never
+    // delete the loop. The non-destructive answer is the run list (a live run ends with loop stop).
+    intent: "delete a loop's run (not possible: read them)",
+    all: [['loop', 'loops'], ['delete', 'remove', 'clear', 'drop', 'archive', 'destroy', 'trash'], ['run', 'runs', 'running']],
+    candidates: [{ path: ['loop', 'runs'], example: 'tm8 loop runs <id|title>   (a run stays with its loop; tm8 loop stop <run-id> ends a live one)' }],
+  },
+  {
     // Removing a loop is the ordinary entity delete (its runs go with it; its tasks and sessions stay).
     // Without this route the 13 loop rows tie on the 'loop' tag and catalog order answers `loop create`.
+    // A field or a run named with the verb is the routes' above: never the whole loop's delete.
     intent: 'delete a loop',
     all: [['loop', 'loops'], ['delete', 'remove', 'archive', 'destroy', 'trash']],
-    none: ['new', 'create', 'make'],
+    none: ['new', 'create', 'make', 'run', 'runs', 'running', ...LOOP_ATTRIBUTE_WORDS],
     candidates: [{ path: ['entity', 'delete'], example: 'tm8 entity delete <loop-id>' }],
   },
   {
