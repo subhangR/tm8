@@ -8,7 +8,7 @@
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
  *      outside the envelope: it is infrastructure, not an operation. So are
  *      the phone's two `/.well-known/` app-association files (./well-known.ts),
- *      answered here, before the static handler can
+ *      answered here so that the static handler's SPA fallback never does
  *   4. narrowly matched support transports (the `/p/` artifact-preview
  *      route — capability-token auth, never cookie identity — and the raw
  *      FileUploadGrant PUT)
