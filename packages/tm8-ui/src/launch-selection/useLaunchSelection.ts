@@ -145,7 +145,7 @@ function isOpenFor(read: LaunchDefaultsRead, target: ReadTarget): boolean {
  * the call that confirms it starts in the effect.
  *
  * THE READ IS KEYED ON THE LOADER TOO. Hosts build it once per seam, space
- * and viewer (views/useGateData.ts), never per graph event, so a new loader is
+ * and node (views/useGateData.ts), never per graph event, so a new loader is
  * a new reader — the open card reads through it rather than leave its answer
  * with one nobody holds.
  *
@@ -182,7 +182,7 @@ export function useLaunchSelection(args: {
   if (!isOpenFor(read, target)) dispatch(openEvent(target, load));
 
   /* The read for the open key — again on every retry, and again when the host
-     hands over a new loader (it rebuilds one when the viewer becomes known),
+     hands over a new loader (a new seam, space or node),
      so an answer is never left to a reader nobody holds. The input is the
      open target's, taken from the render that opened it. */
   const openKey = target.key;
