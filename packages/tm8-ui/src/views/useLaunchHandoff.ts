@@ -190,6 +190,26 @@ function outcomeOf(launchId: string): Promise<void> {
     : Promise.resolve();
 }
 
+/**
+ * A failure with no launch tab to draw it — the tab was closed, or never
+ * opened (`none`) — is a toast whose Show opens the launch's page with the
+ * failure on it: a refusal is never silent.
+ */
+function toastUnshownFailure(runtime: WorkspaceRuntime, record: LaunchRecord, failure: LaunchFailure): void {
+  runtime.hooks.toast({
+    text: `“${record.launch.title}” did not launch: ${failure.message}`,
+    action: {
+      label: 'Show',
+      run: () => {
+        const tabId = openLaunchTab(runtime, valuesOf(record), 'click');
+        if (tabId) {
+          transition(record.id, { type: 'land', page: { at: 'tab', viewerId: runtime.viewerId, spaceId: runtime.spaceId, tabId } });
+        }
+      },
+    },
+  });
+}
+
 export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   const runtimeFor = deps.runtimeFor ?? getWorkspaceRuntime;
   const workPresence = deps.workPresence ?? defaultWorkPresence;
@@ -239,16 +259,7 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     const runtime = runtimeOfPage(record?.page ?? null);
     if (!record || !runtime) return;
     if (record.page?.at !== 'queued' && !findLaunchTab(runtime, launchId)) {
-      runtime.hooks.toast({
-        text: `“${record.launch.title}” did not launch: ${failure.message}`,
-        action: {
-          label: 'Show',
-          run: () => {
-            const tabId = openLaunchTab(runtime, valuesOf(record), 'click');
-            if (tabId) transition(launchId, { type: 'land', page: { ...record.page!, tabId } });
-          },
-        },
-      });
+      toastUnshownFailure(runtime, record, failure);
       return;
     }
     storeLaunchFacts(runtime, launchId, { failure });
@@ -463,6 +474,9 @@ export function landQueuedLaunches(runtime: WorkspaceRuntime): void {
       ? openLaunchTab(runtime, valuesOf(record), 'system')
       : null;
     transition(record.id, { type: 'land', page: tabId ? { ...page('tab'), tabId } : page('none') });
+    /* A launch that failed while queued was left for this drain to draw; with
+       no tab to draw it in, it is reported here or nowhere. */
+    if (!tabId && record.state === 'failed' && record.failure) toastUnshownFailure(runtime, record, record.failure);
   });
 }
 

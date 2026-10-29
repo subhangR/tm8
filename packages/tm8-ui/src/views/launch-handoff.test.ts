@@ -710,6 +710,26 @@ describe('round 4', () => {
     expect(notices[0]!.title).toContain('cap reached');
   });
 
+  it('a launch refused while queued, then refused a tab at drain, still reports it — and Show lands it in a tab', async () => {
+    const ws = workspace();
+    const notices = withNotices(ws);
+    const { handoff, spawnSession } = handoffFor(ws, { workPresence: () => 'elsewhere' });
+    spawnSession.mockRejectedValue(new Error('cap reached'));
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
+    /* Queued: the drain is left to draw it. */
+    expect(notices).toHaveLength(0);
+    ws.runtime.dispatch({ command: 'workspace.tabScope.set', args: { mode: 'byType', selectedTypeIds: ['task'] }, source: 'click' });
+    landQueuedLaunches(ws.runtime);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ action: { label: 'Show' } });
+    expect(notices[0]!.title).toContain('cap reached');
+    ws.runtime.dispatch({ command: 'workspace.tabScope.set', args: { mode: 'mixed', lastByTypeIds: [] }, source: 'click' });
+    notices[0]!.action!.run();
+    expect(findLaunchTab(ws.runtime, 'mut-1')).not.toBeNull();
+    expect(launchRecord('mut-1')?.page?.at).toBe('tab');
+  });
+
   it('a synchronous drain on queue lands the tab, and the record stays landed in it', () => {
     const ws = workspace();
     const off = onLaunchTabQueued(() => landQueuedLaunches(ws.runtime));
