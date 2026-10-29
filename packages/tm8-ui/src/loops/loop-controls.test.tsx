@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { CommandResult, EntityDetail, PatchEntityInput } from '@tm8/contract';
+import type { EntityDetail } from '@tm8/contract';
 import { getKind } from '../domain';
 import { fixtureDetails, loopDreamer, loopFailing, taskGuideLines } from '../fixtures';
 import { GenericBody } from '../panels/bodies/GenericBody';
 import { LoopControls } from './LoopControls';
+import { createFixtureLoopsClient, fixtureLoopView } from './fixture';
 
 afterEach(cleanup);
-
-const OK = { patches: [] } as unknown as CommandResult;
 
 function loopDetail(over: Record<string, unknown> = {}): EntityDetail {
   const content = {
@@ -50,21 +49,24 @@ function loopDetail(over: Record<string, unknown> = {}): EntityDetail {
 }
 
 function mount(detail = loopDetail(), wired = true) {
-  const patchEntity = vi.fn(async () => OK);
+  const loops = createFixtureLoopsClient([fixtureLoopView(detail.id, 'space' as never, {}, { version: detail.version })]);
+  const enable = vi.spyOn(loops, 'enable');
+  const disable = vi.spyOn(loops, 'disable');
+  const runNow = vi.spyOn(loops, 'runNow');
   const onSaved = vi.fn();
   render(
     <div className="cv2-root">
       <LoopControls
         detail={detail}
-        commands={wired ? { patchEntity } : null}
+        loops={wired ? loops : null}
         onSaved={onSaved}
       />
     </div>,
   );
-  return { patchEntity, onSaved };
+  return { enable, disable, runNow, onSaved };
 }
 
-describe('loop lifecycle controls stay on entities.patch', () => {
+describe('loop lifecycle controls go through the loops.* doors', () => {
   it('mounts from the generic body block declared by the registry', () => {
     const detail = loopDetail();
     const config = getKind('loop');
@@ -77,48 +79,36 @@ describe('loop lifecycle controls stay on entities.patch', () => {
     expect(screen.getByTestId('loop-controls')).toBeTruthy();
   });
 
-  it('disables without erasing the stored deadline', async () => {
-    const { patchEntity, onSaved } = mount();
+  it('disables through loops.disable under the version guard', async () => {
+    const { disable, onSaved } = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
-    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
-    const [id, input] = patchEntity.mock.calls[0] as unknown as [string, PatchEntityInput];
-    expect(id).toContain('019fe999');
-    expect(input.expectedVersion).toBe(7);
-    expect(input.content).toEqual({ enabled: false });
-    expect(onSaved).toHaveBeenCalledWith(OK);
+    await waitFor(() => expect(disable).toHaveBeenCalledTimes(1));
+    expect(disable.mock.calls[0]![0]).toEqual({ id: '019fe999-0000-7000-8000-000000000002', version: 7 });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
 
-  it('queues Run now by making nextRunAt due, without claiming synchronous execution', async () => {
-    const before = Date.now();
-    const { patchEntity } = mount();
+  it('fires Run now through loops.runNow', async () => {
+    const { runNow } = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
-    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
-    const [, input] = patchEntity.mock.calls[0] as unknown as [string, PatchEntityInput];
-    const due = Date.parse(String(input.content?.nextRunAt));
-    expect(due).toBeGreaterThanOrEqual(before);
-    expect(due).toBeLessThanOrEqual(Date.now());
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('next scheduler tick'));
+    await waitFor(() => expect(runNow).toHaveBeenCalledWith('019fe999-0000-7000-8000-000000000002'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Fired now'));
   });
 
-  it('enabling an unscheduled loop restores a deadline from its schedule', async () => {
-    const before = Date.now();
-    const { patchEntity } = mount(loopDetail({ enabled: false, nextRunAt: null }));
+  it('enables through loops.enable and computes no deadline in the browser', async () => {
+    const { enable } = mount(loopDetail({ enabled: false, nextRunAt: null }));
     fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
-    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
-    const [, input] = patchEntity.mock.calls[0] as unknown as [string, PatchEntityInput];
-    expect(input.content?.enabled).toBe(true);
-    const next = Date.parse(String(input.content?.nextRunAt));
-    expect(next).toBeGreaterThanOrEqual(before + 24 * 60 * 60_000);
+    await waitFor(() => expect(enable).toHaveBeenCalledTimes(1));
+    expect(enable.mock.calls[0]).toHaveLength(1);
   });
 
-  it('does not advertise Run now while disabled or when the command is unwired', () => {
-    const { patchEntity } = mount(loopDetail({ enabled: false }));
+  it('does not advertise Run now while disabled or when the client is unwired', () => {
+    const { runNow } = mount(loopDetail({ enabled: false }));
     expect(screen.getByRole('button', { name: 'Run now' }).getAttribute('aria-disabled')).toBe('true');
-    expect(patchEntity).not.toHaveBeenCalled();
+    expect(runNow).not.toHaveBeenCalled();
     cleanup();
     mount(loopDetail(), false);
     expect(screen.getAllByTestId('disabled-with-reason')).toHaveLength(2);
-    expect(screen.getAllByText(/no patch executor/)).toHaveLength(2);
+    expect(screen.getAllByText(/no loops client/)).toHaveLength(2);
   });
 });
 

@@ -16,6 +16,7 @@ import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
 import type { AuthoringCommands } from '../../authoring';
 import { LoopControls } from '../../loops/LoopControls';
+import type { LoopsClient } from '../../loops/api';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';
@@ -43,7 +44,7 @@ export interface ArtifactPreviewCommands {
 }
 
 type GenericBodyCommands = Partial<
-  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort }
+  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort; loops: LoopsClient }
 >;
 
 /**
@@ -238,6 +239,7 @@ function ContentBlock({
           <LoopControls
             detail={detail}
             commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
+            loops={commands?.loops ?? null}
             onSaved={onSaved}
           />
         );

@@ -43,6 +43,7 @@ import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
 import { FRESH_DOC_TITLE, markFreshDoc } from '../../doc-edit';
+import { LoopForm } from '../../loops/LoopForm';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
 import { ToolCreateControl, toolCreateValuesOf } from '../../tools/ToolCreateControl';
 import { onDraftFocusRequest } from '../runtime/draftFocus';
@@ -581,6 +582,41 @@ function SkillDraftBody({ tab, onValues, onCreated, onCancel, onCreatedUnbound }
 }
 
 // ---------------------------------------------------------------------------
+// loop: the loop form (the generic header form cannot create one — a loop
+// needs a schedule and a runner), drawn in the tab like the skill form
+// ---------------------------------------------------------------------------
+
+function LoopDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmitting }: DraftHostProps) {
+  const { gate, spaceId } = useWorkspace();
+  const { loops, loopForm } = gate.data.seam.commands;
+  return (
+    <div className="tws-draft-form" data-testid="tws-draft-loop">
+      <DraftHeading kind={tab.kind} />
+      {loops && loopForm ? (
+        <LoopForm
+          inline
+          mode="create"
+          spaceId={spaceId as SpaceId}
+          client={loops}
+          sources={loopForm}
+          // The tab restores what was typed: a reload or a tab switch must not lose a half-made loop.
+          initialValues={values}
+          onDraftChange={onValues}
+          onBusy={onSubmitting}
+          onClose={onCancel}
+          onSaved={(view) => onCreated(view.id, view.definition.title)}
+        />
+      ) : (
+        <>
+          <p className="tws-draft-note">This node does not offer loops here.</p>
+          <DraftActions onCancel={onCancel} submitting={false} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // tool: the tool-definition door
 // ---------------------------------------------------------------------------
 
@@ -708,6 +744,7 @@ export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | unde
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;
+  if (form === 'scheduled-work') return LoopDraftBody;
   if (form === 'tool-definition') return ToolDraftBody;
   return undefined;
 }
