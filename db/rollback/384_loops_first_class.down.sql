@@ -17,8 +17,8 @@
 
 -- Whether PR-E is applied, read BEFORE the role switch: the runner ledger is
 -- the migration owner's, and tm8_graph_owner cannot read it. Matched by name,
--- not number, because the Tools lane renumbers on merge (380 on its branch
--- today). Session-scoped, so the answer survives a run without -1 too.
+-- not number, because the Tools lane renumbers on merge (380 on its branch,
+-- 390 on main). Session-scoped, so the answer survives a run without -1 too.
 do $ledger$
 begin
   perform set_config('tm8.rollback_384_keeps_tool_headers',
