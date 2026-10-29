@@ -4,16 +4,18 @@
 -- Predecessor: the highest on main at open, 377_mcp_refresh_failures_and_revoke_all.sql;
 -- 378 belongs to PR #1389 (coordinator arbitration, 2026-10-28).
 --
--- KEPT AT 384 BELOW MAIN'S TOP AT MERGE (387, 388): a deliberate exception to the
+-- KEPT AT 384 BELOW MAIN'S TOP AT MERGE (387-389): a deliberate exception to the
 -- PR-cleanup ordinal rule (Loops lead ruling, 2026-10-29). An upgraded database
--- applies this file after 388 and a fresh one applies it before 387; both end in
+-- applies this file after 389 and a fresh one applies it before 387; both end in
 -- the same schema. Checked: 384 creates, replaces or drops no object that 387
 -- (claim_text, header_text, rename_work_session), 388 (snapshot_entity_version,
 -- start_tool_session, tools_snapshot) or 389 (Tools PR-C: start_tool_session,
--- issue_tool_session_loop_session) touches. The one object it shares with 390
--- (Tools PR-E) is internal.header_kind_allowed, whose body there is §6's list
--- verbatim. §1 and §2 disable loops_w2_snapshot_version around their backfills,
--- so whichever snapshot_entity_version is live never sees them.
+-- issue_tool_session_loop_session) touches, and none of the three adds or drops
+-- a column. Of the helpers 384's bodies call, only internal.claim_text is
+-- replaced (387), and they call whichever body is live. The one object 384
+-- shares with 390 (Tools PR-E) is internal.header_kind_allowed, whose body there
+-- is §6's list verbatim. §1 and §2 disable loops_w2_snapshot_version around
+-- their backfills, so whichever snapshot_entity_version is live never sees them.
 --
 -- §1 adds the definition and policy columns of §2.1 with the action backfill;
 -- §2 extends 343's armer trigger with `armed_at` and the widened bookkeeping
