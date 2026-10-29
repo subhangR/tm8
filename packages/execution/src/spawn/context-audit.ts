@@ -99,7 +99,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
   const selectedGroups = new Set<SpawnSelectionGroup>(audit?.selectedGroups ?? selectionGroupsOf(input.requestSelection));
   const entries: ContextEntryRecord[] = [];
   const dropped: ContextDrop[] = [...(audit?.dropped ?? [])];
-  const ranks: Record<ContextGroupName, number> = { memories: 0, skills: 0, references: 0, teammates: 0 };
+  const ranks: Record<ContextGroupName, number> = { memories: 0, skills: 0, references: 0, teammates: 0, tools: 0 };
   const add = (entry: Omit<ContextEntryRecord, 'rank'>): void => {
     ranks[entry.group] += 1;
     entries.push({ ...entry, rank: ranks[entry.group] });
@@ -200,7 +200,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
     // reference set (its byte caps, not the snapshot's count cap, bound it),
     // so its groups are the record.
     for (const group of input.index.index.groups) {
-      if (group.name !== 'references' && group.name !== 'teammates') continue;
+      if (group.name !== 'references' && group.name !== 'teammates' && group.name !== 'tools') continue;
       for (const entry of group.entries) {
         const key = `${group.name}:${entry.id}`;
         if (seen.has(key)) continue;
@@ -313,7 +313,7 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
         mode: 'default',
         reason: input.selectionReplayInvalid ? 'replay-invalid' : input.selectionReasons?.[group] ?? 'no-selection',
       };
-  const groups: Record<ContextGroupName, ContextGroupAudit> = {
+  const groups: NonNullable<ManifestContext['groups']> = {
     memories: {
       ...selectable('memories'),
       ...(audit?.legacyMemoriesDropped ? { legacyDropped: audit.legacyMemoriesDropped } : {}),
@@ -336,6 +336,15 @@ export function buildManifestContext(input: ManifestContextInput): Required<Omit
         ? { unread: context.roster.total - context.roster.members.length }
         : {}),
     },
+    // The space's tools (Tools v2 PR-E), when the launch read them: never
+    // selected, and the tools past the read are counted as unread links are.
+    ...(context.tools ? {
+      tools: {
+        mode: 'default' as const,
+        reason: 'not-selectable' as const,
+        ...(context.tools.total > context.tools.tools.length ? { unread: context.tools.total - context.tools.tools.length } : {}),
+      },
+    } : {}),
   };
   return { groups, entries, dropped };
 }
