@@ -8,6 +8,8 @@
  * facade/execution-handlers.ts (derive task → triggered_by → spawn or
  * dispatch → triggered_by), loops/LoopControls.tsx (Run now, Disable keeps
  * the deadline) and bootstrap/default-teammates.ts (the Dreamer's seeded loop).
+ * The toolkit's verbs are the `tm8 loop` noun (packages/cli/src/commands/loop.ts,
+ * docs/api-and-cli/LOOP-CLI.md).
  *
  * SIGNATURE MOMENT: the metronome. Eight due moments play left to right, one
  * beat at a time: fired, fired, skipped because the last session is still
@@ -247,11 +249,10 @@ export const LOOP_HELP: KindHelpModule = {
   toolkit: {
     intro: (
       <p>
-        There is no <code>loop</code> noun, and that is deliberate: a loop is an ordinary entity with a sharp content
-        shape (<code>schedule</code>, <code>teamMemberId</code>, <code>subjectId</code>, <code>prompt</code>,{' '}
-        <code>config</code>, <code>enabled</code>, <code>nextRunAt</code>). You make it with the generic create, steer it
-        with versioned updates, and read its life as edges. The scheduler itself writes through the same update door, so
-        its advances land in the ledger beside yours.
+        <code>tm8 loop</code> is the loop&rsquo;s own noun, and every verb is one <code>loops.*</code> operation: the
+        server owns the next run, the schedule preview and who a firing acts as, so nothing here computes them or
+        writes loop fields through the generic entity doors. Create and edit carry the definition; enable, disable,
+        pause and resume steer it; run-now fires it once; runs reads what each firing did.
       </p>
     ),
 
@@ -260,43 +261,46 @@ export const LOOP_HELP: KindHelpModule = {
         title: 'Set the appointment',
         narrative: (
           <p>
-            Create it with its schedule and, unless you want it parked, a first <code>nextRunAt</code>. A runner or
-            subject from another space is refused at the door: a loop cannot fire across a space boundary.
+            Preview the schedule first: the server answers with a summary and the next instants in the loop&rsquo;s
+            timezone. Then create it with a runner. A runner or subject from another space is refused at the door: a
+            loop cannot fire across a space boundary.
           </p>
         ),
-        commands: ['entity create'],
+        commands: ['loop preview', 'loop create'],
         demo: [
-          '# a triage pass at 09:00 UTC, armed from the start',
-          'tm8 entity create loop "Morning triage" --content @loop.json',
-          '# loop.json: schedule "0 9 * * *", a runner, a prompt, a nextRunAt',
+          '# a triage pass at 09:00 London time on weekdays, armed from the start',
+          "tm8 loop preview --schedule '0 9 * * 1-5' --timezone Europe/London",
+          "tm8 loop create 'Morning triage' --schedule '0 9 * * 1-5' --timezone Europe/London --teammate <name|id> --prompt @triage.md",
         ],
       },
       {
         title: 'Pause, retime, fire now',
         narrative: (
           <p>
-            Every change carries the version you read. <code>enabled: false</code> pauses it with the deadline kept; a{' '}
-            <code>nextRunAt</code> of now is the panel&rsquo;s Run now. Because each firing also bumps the version, a
-            conflict on a busy loop usually means it just fired: read it again and decide again.
+            Every change carries the version you read. A pause holds the firings until an instant, and a deadline
+            missed while paused fires once when it ends; run-now fires it immediately. Because each firing also bumps
+            the version, a conflict on a busy loop usually means it just fired: read it again and decide again.
           </p>
         ),
-        commands: ['entity update', 'entity context'],
+        commands: ['loop show', 'loop pause', 'loop edit', 'loop run-now'],
         demo: [
-          '# read the version, then pause',
-          'tm8 entity context <loop-id>',
-          'tm8 entity update <loop-id> --expect-version 7 --content \'{"enabled":false}\'',
+          '# read the version, then pause for two hours',
+          'tm8 loop show <loop-id>',
+          'tm8 loop pause <loop-id> --until +2h --expect-version 7',
+          "tm8 loop edit <loop-id> --schedule 'every 30m' --expect-version 8",
+          'tm8 loop run-now <loop-id>',
         ],
       },
       {
         title: 'Read the run history',
         narrative: (
           <p>
-            Ask for the inbound <code>triggered_by</code> edges and you have every firing: each source is a task or a
-            session you can open, and each edge carries when it fired.
+            Every firing is a run with its status, its task and its session. The task and session also point back at
+            the loop through inbound <code>triggered_by</code> edges, each carrying when it fired.
           </p>
         ),
-        commands: ['edge list', 'entity connections'],
-        demo: ['tm8 edge list --target <loop-id> --type triggered_by'],
+        commands: ['loop runs', 'loop run-show', 'edge list'],
+        demo: ['tm8 loop runs <loop-id> --status failed', 'tm8 loop run-show <run-id>', 'tm8 edge list --target <loop-id> --type triggered_by'],
       },
       {
         title: 'The hands behind a firing',
