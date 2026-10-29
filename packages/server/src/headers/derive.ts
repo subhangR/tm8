@@ -68,6 +68,8 @@ export type HeaderFacts =
   | { kind: 'story'; description: string | null; bytes: number | null }
   | { kind: 'task'; description: string | null; bytes: number | null }
   | { kind: 'tool'; description: string | null; bytes: number | null }
+  /** A loop's derived summary is its schedule and action, then its instruction. */
+  | { kind: 'loop'; description: string | null; bytes: number | null }
   | { kind: 'collection'; description: Backstopped; members: Record<string, number> };
 
 interface Fields {
@@ -155,6 +157,7 @@ function kindFields(facts: HeaderFacts): Fields {
     case 'story':
     case 'task':
     case 'tool':
+    case 'loop':
       return { whenToUse: null, whenCut: false, summary: blankToNull(facts.description) ? clip(facts.description) : null, native: false, bytes: facts.bytes };
     case 'collection': {
       const counts = Object.entries(facts.members)

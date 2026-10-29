@@ -18,8 +18,9 @@ import { changedFields, FOLDED_VERSIONS_NOTE, isDefinitionVersion, renderDiff, r
 import { renderToolList, renderToolRuns, type ToolListPage, type ToolRunsPage } from './tool-views.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const client = (cmd: CommandContext) => clientFor({ ...cmd.ctx, fresh: true });
-const mutation = (cmd: CommandContext) => ({ clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+/** A fresh client and a command's mutation envelope; `tm8 loop` shares both. */
+export const client = (cmd: CommandContext) => clientFor({ ...cmd.ctx, fresh: true });
+export const mutation = (cmd: CommandContext) => ({ clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   ...(cmd.ctx.actor ? { actorId: cmd.ctx.actor.value } : {}) });
 const emit = (cmd: CommandContext, data: unknown): ExitCode => {
   cmd.out.data(data, value => JSON.stringify(value, null, 2)); return EXIT_OK;

@@ -20,6 +20,7 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { McpSelection, McpServerEntity } from './mcp.js';
 import type { ToolEntity, ToolRun } from './tools.js';
+import type { LoopAction, LoopConcurrency } from './loops.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { RelevanceLevel } from './launch-suggest.js';
@@ -600,7 +601,8 @@ export type CoreEntityState =
    * without a second read. `teamMemberId: null` is MEANINGFUL — it means the
    * firing routes through the dispatcher rather than naming a runner.
    */
-  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+  | { kind: 'loop'; action: LoopAction; schedule: string; timezone: string; enabled: boolean;
+      pausedUntil: string | null; teamMemberId: EntityId | null; toolId: EntityId | null;
       subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
       lastError: string | null }
   /**
@@ -1083,8 +1085,12 @@ export type CoreEntityContent =
   | { kind: 'worktree'; projectId: ProjectId; path: string; branch: string;
       baseRef: string; baseCommitOid: string; status: WorktreeStatus;
       statusChangedAt: string | null }
-  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+  /** Loops design §2.3: the state arm plus everything a firing is configured with. */
+  | { kind: 'loop'; action: LoopAction; schedule: string; timezone: string; enabled: boolean;
+      pausedUntil: string | null; teamMemberId: EntityId | null; toolId: EntityId | null;
       subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
+      toolInputs: Record<string, unknown>; concurrency: LoopConcurrency;
+      maxRuntimeSeconds: number | null; retry: { attempts: number; delaySeconds: number };
       nextRunAt: string | null; lastRunAt: string | null; lastError: string | null }
   /**
    * Craft P1: the whole graph in one row (R1). `graphType` discriminates
@@ -3783,7 +3789,7 @@ export interface CreateEntityInput extends CommandContext {
   /**
    * An authored selection header, written in the same transaction as the
    * entity (`entities.header.set` semantics). Only kinds that can carry one
-   * (team_member, doc, artifact, drawing, file, task, collection, story, tool) accept it.
+   * (team_member, doc, artifact, drawing, file, task, collection, story, tool, loop) accept it.
    */
   header?: HeaderTextInput;
 }

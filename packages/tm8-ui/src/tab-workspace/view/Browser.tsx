@@ -27,6 +27,7 @@ import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../.
 import { requestLinkFocus } from '../../panels/list/linkFocus';
 import { projectRecordPort } from '../../projects/project-record';
 import { InstallStarters, installSummary } from '../../tools/InstallStarters';
+import { loopRowNoteOf } from '../../loops/LoopRowNote';
 import { useProjectRowNote } from '../../projects/ProjectRowNote';
 import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
@@ -577,7 +578,11 @@ function EntityBrowser() {
 
   const verbs = useRowVerbs(kind);
   /* A project row's second line is its folder and trust (task 01a15a00). */
-  const rowNoteOf = useProjectRowNote(kind === 'project' ? projectRecordPort(data.seam, data.spaceId) : null);
+  const projectRowNoteOf = useProjectRowNote(kind === 'project' ? projectRecordPort(data.seam, data.spaceId) : null);
+  /* A kind whose desktop list is the loops table gets its row facts here as
+     the row's second line, from the summary (design 01a182d4 §6), so this
+     list keeps its kind menu, cursor and verbs. */
+  const rowNoteOf = getKind(kind).list.surface === 'loops' ? loopRowNoteOf : projectRowNoteOf;
 
   const source = needsMeListSource(attentionApi, kind, data, {
     rowsFor: data.rowsFor(kind),

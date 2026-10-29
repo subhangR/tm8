@@ -215,12 +215,17 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  * agent is booting fine, and there is nothing in the error to tell the two
  * apart. Measured live 2026-08-24 spawning onto a scratch-workdir entity.
  *
+ * `loops.runNow` (`tm8 loop run-now`) fires a teammate loop through the same
+ * spawn and answers only once that session has settled, so it takes the same
+ * floor: at 15s it reported a failure while the launch went on.
+ *
  * These are per-operation FLOORS on the default only: an explicit `--timeout`
  * still wins, so an operator can always impose a shorter deadline.
  */
 const SLOW_OPERATION_TIMEOUT_MS: Partial<Record<OperationName, number>> = {
   'execution.spawn': 180_000,
   'execution.resume': 180_000,
+  'loops.runNow': 180_000,
 };
 
 /**

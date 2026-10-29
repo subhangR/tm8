@@ -109,12 +109,9 @@ export abstract class HarnessSessionBase implements HarnessSession {
       throw harnessFailure('invalid_config', 'submit', 'A harness attempt is already active');
     if (this.submitted.has(command.attempt.attemptId))
       throw harnessFailure('invalid_config', 'submit', 'Attempt was already dispatched');
-    if (command.attachmentRefs.length)
-      throw harnessFailure(
-        'unsupported_capability',
-        'submit',
-        'This chat cannot take file attachments yet. Paste the content as text instead.',
-      );
+    // Attachment refs are tm8 file ids the turn text already names; the agent
+    // opens them with its tm8 tools, and a harness that takes file contents
+    // gets them as `content`. Refusing refs here failed every attached turn.
     if (!command.text.trim())
       throw harnessFailure('unsupported_capability', 'submit', 'Only nonempty text input is supported');
     if (command.attempt.configRevision !== command.config.revision)

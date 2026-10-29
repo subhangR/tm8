@@ -30,7 +30,7 @@
    ── THIS IS THE SHARED `.au-dialog` VOCABULARY, NOT ONE COMPONENT ─────────
 
    Three components wear these classes: `EditEntityDialog` (every kind's
-   `editFields`), `LoopCreateControl` (the `scheduled-work` CREATE form) and
+   `editFields`), `LoopForm` (the `scheduled-work` create and edit form) and
    `MemoryComposer`. Styling the vocabulary rather than the component is what
    makes the ruling land on the create form as well as the edit form without
    this lane touching `loops/`, which is not its file. The alternative — a
@@ -238,4 +238,14 @@
   min-height: 44px;
   padding: 0 12px;
   font-size: 12px;
+}
+
+/* --- THE LOOP FORM SITS IN THE SHEET HOST ON THE PHONE --------------------
+   `loops/LoopForm.tsx` portals its backdrop into the frame's sheet host, where
+   its pickers' sheets (`ComposerSelect` → `MobileSheet`) also land. At the
+   desktop's z-index 60 the backdrop would still out-rank a sheet opened FROM
+   it; z-index 0 keeps its own layers (the sticky action row) inside it and
+   lets the later sheet win on DOM order, so the picker is drawn on top. */
+.cv2-root[data-shell='mobile'] .msheet-host > .au-dialog__backdrop {
+  z-index: 0;
 }

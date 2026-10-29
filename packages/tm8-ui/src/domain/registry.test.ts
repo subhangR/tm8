@@ -100,28 +100,28 @@ describe('loop management is registry-declared and fully wired', () => {
     const loop = getKind('loop');
     expect(loop.list.quickCreate).toBe(true);
     expect(loop.createForm).toBe('scheduled-work');
-    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual([
-      'title', 'schedule', 'teamMemberId', 'subjectId', 'prompt', 'config',
-    ]);
-    expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
-    expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
+    // Title only: the Edit verb opens the loop form (pickers, server preview),
+    // never raw id or JSON fields (design 01a182d4 §6).
+    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual(['title']);
+    // The loops table, not the generic tile list.
+    expect(loop.list.surface).toBe('loops');
     // `run` LEADS since launching became a denylist (owner ruling 2026-08-17
     // launches `loop`). It does NOT mean "fire this loop now" — that is
-    // `loop-controls`, the first panel block, and it stays the loop's own verb.
+    // Run now in `loop-header`, the first panel block, the loop's own verb.
     // Run means what it means everywhere: point an agent at this row.
     // `chat-about` sits beside Run in every header (entity chat §3.2).
     expect(loop.panel.primaries).toEqual(['run', 'chat-about', 'edit']);
-    // RUNS is the third block on purpose: a loop's firing history IS its
-    // inbound `triggered_by` edges, so a panel without it hides the only
-    // record of what the loop has done. `membership` follows (2026-08-12) —
-    // the COLLECTIONS section every generic body gained with migration 101.
+    // The loop page (design 01a182d4 §6): the header with its verbs, the
+    // definition read back in words, then RUNS from `loops.runs.list` — which
+    // replaced the `peer-rows` RUNS block (edges cannot say skipped or timed
+    // out; `triggered_by` still shows under connections). `membership` follows
+    // (2026-08-12) — the COLLECTIONS section every generic body gained.
     expect(loop.panel.blocks?.map((block) => block.block)).toEqual([
-      'loop-controls', 'fields', 'peer-rows', 'membership',
+      'loop-header', 'loop-definition', 'loop-definition', 'loop-definition', 'loop-runs', 'membership',
     ]);
-    expect(loop.panel.blocks?.find((block) => block.block === 'peer-rows')?.params).toMatchObject({
-      edgeType: 'triggered_by',
-      direction: 'incoming',
-    });
+    expect(loop.panel.blocks?.filter((block) => block.block === 'loop-definition').map((block) => block.params?.section))
+      .toEqual(['what', 'schedule', 'settings']);
+    expect(loop.panel.blocks?.some((block) => block.block === 'peer-rows' || block.block === 'fields')).toBe(false);
   });
 });
 
@@ -603,6 +603,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('uses only the CLOSED §2.2 field vocabulary', () => {
     const CLOSED: readonly (keyof ListConfig)[] = [
+      /* Opened 2026-10-28 (loops, design 01a182d4 §6): a kind whose list is
+         its own table, because an entity summary has no columns. */
+      'surface',
       'sections',
       'categories',
       'tree',

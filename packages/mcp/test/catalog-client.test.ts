@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CatalogHttpError, HttpCatalogClient } from '../src/catalog-client.js';
+import { CatalogHttpError, HttpCatalogClient, SLOW_OPERATION_TIMEOUT_MS } from '../src/catalog-client.js';
 
 describe('catalog-backed HTTP client', () => {
   it('binds method/path/query from the catalog and carries the runtime bearer', async () => {
@@ -75,5 +75,34 @@ describe('catalog-backed HTTP client', () => {
     await expect(client.invoke('entities.get', { params: { id: 'slow' } })).rejects.toMatchObject({
       code: 'upstream_unavailable', retryable: true,
     });
+  });
+
+  it('gives a launch the same floor as the UI and the CLI: loops.runNow waits for its session (review of #1410, F13)', async () => {
+    expect(SLOW_OPERATION_TIMEOUT_MS).toEqual({ 'execution.spawn': 180_000, 'execution.resume': 180_000, 'loops.runNow': 180_000 });
+    vi.useFakeTimers();
+    try {
+      const hang: typeof fetch = (_url, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+      // The DEFAULT deadline, which the floor raises.
+      const client = new HttpCatalogClient({ baseUrl: 'http://127.0.0.1:4610', token: 'secret', fetchImpl: hang });
+      const read = client.invoke('entities.get', { params: { id: 'x' } }).catch((e: unknown) => e);
+      const run = client.invoke('loops.runNow', { params: { loopId: 'l1' }, body: {} }).catch((e: unknown) => e);
+      let settled = false;
+      void run.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(await read).toMatchObject({ code: 'upstream_unavailable' });
+      await vi.advanceTimersByTimeAsync(160_000);
+      expect(settled, 'Run now is still waiting at 175 s').toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await run).toMatchObject({ code: 'upstream_unavailable', retryable: true });
+      // An explicit deadline still wins.
+      const strict = new HttpCatalogClient({ baseUrl: 'http://127.0.0.1:4610', token: 'secret', fetchImpl: hang, timeoutMs: 50 });
+      const quick = strict.invoke('loops.runNow', { params: { loopId: 'l1' }, body: {} }).catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(51);
+      expect(await quick).toMatchObject({ code: 'upstream_unavailable' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

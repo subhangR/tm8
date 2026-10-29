@@ -4,15 +4,15 @@ import { ProseField, type TriggerOption } from '../rich-input';
 import { RefusalCard } from './RefusalCard';
 import type { EntityEditHandle } from './useEntityEdit';
 import type { EntityEdits } from './commands';
-import { loopScheduleProblem, nextLoopRunAt } from '../loops/schedule';
+import { LoopEditDialog } from '../loops/LoopEditDialog';
 /**
  * THE PHONE ARRANGEMENT, IMPORTED BY THE COMPONENT AND NOT BY `index.ts`.
  *
  * `authoring.css` is imported by `authoring/index.ts`, on the stated reasoning
  * that a host taking one symbol gets the whole vocabulary. That reasoning has a
  * hole a lane has already fallen down (#455): a DEEP-PATH import bypasses the
- * barrel entirely, and `loops/LoopCreateControl.tsx` — which wears `.au-dialog`
- * for the whole `scheduled-work` create form — imports `../authoring/commands`
+ * barrel entirely, and `loops/LoopForm.tsx` — which wears `.au-dialog`
+ * for the whole `scheduled-work` create and edit form — imports `../authoring/commands`
  * and `../authoring/RefusalCard` directly. It has never pulled the barrel.
  *
  * It renders styled today only because something ELSE in the bundle imported
@@ -60,7 +60,7 @@ export interface DialogField {
   multiline?: boolean;
   /** Resolved by the HOST from `grammar` — this lane may not name a kind. */
   normalize?: (raw: string) => string;
-  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'date';
 }
 
 /** `YYYY-MM-DD` — the wire shape of a `date` field, and of `<input type="date">`. */
@@ -81,8 +81,6 @@ export function fieldKey(field: DialogField): string {
 export function editsFrom(
   fields: readonly DialogField[],
   values: Readonly<Record<string, string>>,
-  initialValues?: Readonly<Record<string, string>>,
-  now = new Date(),
 ): EntityEdits {
   const edits: EntityEdits = {};
   for (const field of fields) {
@@ -96,15 +94,6 @@ export function editsFrom(
       ...(edits.content ?? {}),
       [field.source]: valueForWire(field, value),
     };
-    if (
-      field.valueType === 'schedule'
-      && initialValues !== undefined
-      && value !== (initialValues[fieldKey(field)] ?? '')
-    ) {
-      const next = nextLoopRunAt(value, now);
-      if (next === null) throw new Error('schedule does not match any time in the next year');
-      edits.content.nextRunAt = next.toISOString();
-    }
   }
   return edits;
 }
@@ -153,7 +142,6 @@ export function draftValueFor(field: DialogField, raw: unknown): string {
 
 /** A field-level refusal stated before the command spends a round trip. */
 export function fieldProblem(field: DialogField, value: string): string | null {
-  if (field.valueType === 'schedule') return loopScheduleProblem(value);
   if (field.valueType === 'date') return dateProblem(field, value);
   if (field.valueType !== 'json-object') return null;
   try {
@@ -228,7 +216,9 @@ export function EditEntityDialog({
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (!flow.open) return;
+    /* The loop form owns Escape (and refuses it while its save is in flight,
+       which this dialog's `saving` cannot see). */
+    if (!flow.open || flow.loopEditor) return;
     const close = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !saving) {
         event.stopPropagation();
@@ -243,6 +233,19 @@ export function EditEntityDialog({
     if (flow.open) firstField.current?.focus();
   }, [flow.open]);
 
+  /* A loop is edited by its own form (design 01a182d4 §6): pickers, presets
+     and the server's schedule preview, through `loops.update`. */
+  if (flow.open && flow.loopEditor) {
+    return (
+      <LoopEditDialog
+        editor={flow.loopEditor}
+        onClose={flow.cancel}
+        {...(skillOptions ? { skillOptions } : {})}
+        {...(attach ? { attach } : {})}
+        {...(onAttached ? { onAttached } : {})}
+      />
+    );
+  }
   if (!flow.open || fields.length === 0) return null;
 
   const missing = missingRequired(fields, flow.values);
@@ -253,7 +256,7 @@ export function EditEntityDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (saving || missing.length > 0 || problems.length > 0 || flow.unavailable) return;
-    void flow.save(editsFrom(fields, flow.values, flow.initialValues));
+    void flow.save(editsFrom(fields, flow.values));
   };
 
   const stop = (event: MouseEvent) => event.stopPropagation();
