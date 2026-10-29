@@ -3677,8 +3677,8 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     tags: ['artifact', 'preview', 'view', 'run'],
     notes: [
-      'this prints exactly what the Server returns (session id, token, expiry); it never opens a browser',
-      'a usable preview URL does not exist until the preview-origin isolation decision lands (design §9.1-§9.3); until then only the session fields are returned',
+      'this prints exactly what the Server returns (session id, token, expiry, and `previewUrl` when the node serves previews); it never opens a browser',
+      '`previewUrl` is the app origin `/p/` route on a default loopback node, or the node preview origin (TM8_PREVIEW_HOST/PORT, or TM8_PREVIEW_PUBLIC_ORIGIN when published) — design §9.2, §12.2; a node with TM8_PREVIEW_ENABLED=0 returns the session fields only',
     ],
   },
   'artifacts.export': {
