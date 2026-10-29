@@ -271,7 +271,7 @@ function LoopRow({ loop, sources, selected, error, busy, onOpen, onToggle }: {
       <td>
         {lastAt ? (
           <>
-            {chip ? <><Pill tone={chip.tone}>{chip.label}</Pill>{' '}</> : null}
+            {chip ? <><Pill tone={chip.tone} dot={last?.status === 'running' ? 'pulse' : undefined}>{chip.label}</Pill>{' '}</> : null}
             <Timestamp at={lastAt} />
           </>
         ) : <span className="loop-form__muted">Never</span>}

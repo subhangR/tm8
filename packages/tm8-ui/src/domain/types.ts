@@ -1274,9 +1274,14 @@ export type ContentBlockKind =
   | 'field-rows'
   | 'restrictions'
   | 'pin-provenance'
-  // Scheduled-work management. The block owns enable/disable and queue-now;
-  // its presence is registry data, so GenericBody never asks for a kind.
-  | 'loop-controls'
+  // The loop page (design 01a182d4 §6): the status header with its controls
+  // (Run now, Pause…, Enable|Disable, Edit, Delete), one section of the
+  // definition read back in words (`params.section`: what | schedule |
+  // settings), and the runs table over `loops.runs.list`. Registry data, so
+  // GenericBody never asks for a kind.
+  | 'loop-header'
+  | 'loop-definition'
+  | 'loop-runs'
   // Forms (209, FORMS-DESIGN §10): the questionnaire — Fill / Build /
   // Responses over the forms seam (`src/forms`). Named for what it draws, not
   // for the kind, for the same §15.2 reason `canvas` is.
