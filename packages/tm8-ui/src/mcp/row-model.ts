@@ -88,7 +88,8 @@ export interface ConnectorRow {
   actionable: boolean;
 }
 
-function usableAccounts(server: McpServer): McpAccount[] {
+/** Connected accounts the viewer may use. */
+export function usableAccounts(server: McpServer): McpAccount[] {
   return server.accounts.filter(a => a.canUse && a.status === 'connected');
 }
 
@@ -223,23 +224,13 @@ export function connectorStatus(server: McpServer): ConnectorStatus {
 }
 
 /**
- * "Just me" / "Shared" / "Shared with you" — WHOSE connection would carry
- * this connector.
- *
- * Read off the account that would actually be used, not off the connector:
- * one connector can hold a personal connection and a Space-owned one at once
- * (§5.2), and which of them answers is §3's order, not a property of the row.
- * A Space-owned connection has `ownerId: null` by construction (G2), and a
- * member's row is the viewer's own exactly when they manage it (`manageable`
- * is "owner is me"); anyone else's is a connection shared WITH the viewer.
+ * "Just me" / "Shared" / "Shared with you" — WHOSE connection a pick opens,
+ * read off the account it would actually use (the usable pin, else §3's
+ * choice; nothing for a dead pin). A Space-owned connection has `ownerId: null`
+ * by construction (G2), and a member's row is the viewer's own exactly when
+ * they manage it (`manageable` is "owner is me"); anyone else's is shared
+ * WITH the viewer.
  */
-export function connectorAccess(server: McpServer, credentialId?: string): string {
-  // The account the pick opens — the usable pin, else §3's own-then-shared
-  // choice — and NOTHING for a dead pin: the row must not say "Shared" for a
-  // pick the gate is holding because its account is gone.
-  return accessOf(server, pickedAccount(server, credentialId));
-}
-
 function accessOf(server: McpServer, account: McpAccount | undefined): string {
   if (server.auth === 'none' || !account) return '—';
   if (account.ownerId === undefined) return 'Shared';

@@ -264,6 +264,8 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     return Object.assign(items, { allowed });
   }
   const command = () => ({ clientMutationId: `mcp-${crypto.randomUUID()}` });
+  /** Per scope: the list's last answer to "may this viewer attach here" — decides whether the optional reads go out with it. */
+  const attachKnown = new Map<string, boolean>();
   /** B22/B25's ADOPT: approve the row that already exists, at the version it is at now. */
   async function approveById(serverId: string) {
     const current = await http.call<McpServerView>('mcp.servers.get', { params: { serverId } });
@@ -271,28 +273,33 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
   }
   return {
     async catalog(targetId, teamMemberId) {
-      // Two round trips, not four: the connector list, the defaults and the
-      // target's attachments are independent reads and go out together; only
-      // the accounts wait, because they are asked per connector. Every launch
-      // card opens on this read, so its depth is the card's.
+      // Two round trips, not four, for a scope this port has read before:
+      // the connector list, the defaults and the target's attachments go out
+      // together, then the per-connector accounts. The two optional reads are
+      // asked only of a viewer who may ATTACH here — for anyone else they are
+      // refused and discarded, two logged failures per read. The list is the
+      // authority on that, so a scope seen for the first time asks it first.
       //
-      // SETTLED, NOT RACED. The list is the authority on whether this viewer
-      // may read or attach here, so its refusal is the one reported, whatever
-      // landed first; and for a viewer the list says may NOT attach here, a
-      // refused defaults or attachments read is not an error — that viewer is
-      // shown no picker, so the target it refuses was never going to be used.
-      const [listed, resolving, attaching] = await Promise.allSettled([
-        allServers(targetId, teamMemberId),
+      // SETTLED, NOT RACED: the list's refusal is the one reported, whatever
+      // landed first.
+      const key = JSON.stringify([targetId, teamMemberId]);
+      const known = attachKnown.get(key);
+      const optional = () => Promise.allSettled([
         http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } }),
         targetId ? attachments(targetId) : Promise.resolve([]),
-      ]);
+      ] as const);
+      const listing = allServers(targetId, teamMemberId);
+      const early = known ? optional() : null;
+      const [listed] = await Promise.allSettled([listing]);
       if (listed.status === 'rejected') throw listed.reason;
       const items = listed.value;
       const attach = items.allowed.attach;
-      if (attach && resolving.status === 'rejected') throw resolving.reason;
-      if (attach && attaching.status === 'rejected') throw attaching.reason;
-      const resolved = resolving.status === 'fulfilled' ? resolving.value.selections : [];
-      const attached = attaching.status === 'fulfilled' ? attaching.value : [];
+      attachKnown.set(key, attach);
+      const [resolving, attaching] = attach ? await (early ?? optional()) : [undefined, undefined];
+      if (resolving?.status === 'rejected') throw resolving.reason;
+      if (attaching?.status === 'rejected') throw attaching.reason;
+      const resolved = resolving?.status === 'fulfilled' ? resolving.value.selections : [];
+      const attached = attaching?.status === 'fulfilled' ? attaching.value : [];
       const servers = await Promise.all(items.map(async server => {
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
         return viewOf(server, accounts);

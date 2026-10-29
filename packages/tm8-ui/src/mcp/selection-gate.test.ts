@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { accountProblem, OPEN_GATE, selectionGate } from './selection-gate';
-import { connectorAccess, connectorRows, resolvedAccount } from './row-model';
+import { connectorRows, resolvedAccount } from './row-model';
+import type { McpSelection } from './port';
 import type { McpAccount, McpCatalog, McpServer } from './port';
 
 const account = (over: Partial<McpAccount> & { id: string }): McpAccount => ({
@@ -12,6 +13,9 @@ const server = (over: Partial<McpServer> = {}): McpServer => ({
 });
 const catalog = (...servers: McpServer[]): McpCatalog => ({ servers, defaults: [], canRegister: false, canAttach: true });
 const blocked = (problem: string) => ({ blocked: true, problem });
+/** The access label the row draws for this connector, picked (and pinned) as given. */
+const accessFor = (s: McpServer, credentialId?: string) =>
+  connectorRows(catalog(s), [{ serverId: s.id, ...(credentialId ? { credentialId } : {}) } as McpSelection], true)[0]?.access;
 
 /** The three kinds of connection §3 tells apart, as the adapter builds them. */
 const mine = account({ id: 'mine', ownerId: 'me', canManage: true, sharing: 'private' });
@@ -41,8 +45,8 @@ describe('resolvedAccount — §3 below the pin, as resolve_mcp_account orders i
 describe('the row for a dead pin', () => {
   const revoked = { ...mine, status: 'revoked', canUse: false };
   it('says no access rather than the shared account the pick will NOT open', () => {
-    expect(connectorAccess(server({ accounts: [revoked, spaceOwned] }), 'mine')).toBe('—');
-    expect(connectorAccess(server({ accounts: [revoked, spaceOwned] }))).toBe('Shared');
+    expect(accessFor(server({ accounts: [revoked, spaceOwned] }), 'mine')).toBe('—');
+    expect(accessFor(server({ accounts: [revoked, spaceOwned] }))).toBe('Shared');
   });
   it('marks the pin dead and names no account', () => {
     const [row] = connectorRows(catalog(server({ accounts: [revoked, spaceOwned] })), [{ serverId: 'notion', credentialId: 'mine' }], true);
@@ -111,8 +115,8 @@ describe('round 2: what bind refuses that the gate used to pass', () => {
     expect(connectorRows(catalog(stdio), [], false)[0]?.status).toBe('stdio_not_trusted');
   });
   it('labels a connection shared WITH the viewer as theirs-to-borrow, not "Just me"', () => {
-    expect(connectorAccess(server({ accounts: [sharedWithMe] }), 'shared')).toBe('Shared with you');
-    expect(connectorAccess(server({ accounts: [mine] }))).toBe('Just me');
-    expect(connectorAccess(server({ accounts: [spaceOwned] }))).toBe('Shared');
+    expect(accessFor(server({ accounts: [sharedWithMe] }), 'shared')).toBe('Shared with you');
+    expect(accessFor(server({ accounts: [mine] }))).toBe('Just me');
+    expect(accessFor(server({ accounts: [spaceOwned] }))).toBe('Shared');
   });
 });

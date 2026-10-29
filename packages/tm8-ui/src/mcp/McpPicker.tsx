@@ -11,7 +11,7 @@
  *    never false while the catalog loads, refreshes or fails. A host shows
  *    `problem` as its refusal (`usePickerGate` keeps both for it).
  *  - `onCount(n)` — how many connectors it offers; 0 exactly when it draws
- *    nothing but, at most, its one loading or error line.
+ *    nothing but, at most, its one loading line.
  * Callers: the launch card (`compact`), the new-session screen (`grid`), the
  * chat composer (`headless`, the send gate only).
  *
@@ -71,9 +71,10 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   /**
    * How many connectors the picker offers: every one the viewer may attach
    * here, which is what the full list draws — or 1 when it draws only a
-   * selection problem (an explicit pick whose connector is gone), which still
-   * needs the host's chrome. 0 exactly when the picker draws nothing but, at
-   * most, its one loading or error line. A host hides its own chrome at 0 and
+   * selection problem (an explicit pick whose connector is gone) or only its
+   * read-failure line, either of which still needs the host's chrome. 0
+   * exactly when the picker draws nothing but, at most, its one loading line.
+   * A host hides its own chrome at 0 and
    * KEEPS THIS NODE MOUNTED: the count is reported from here, so an unmounted
    * picker can never announce the connectors that arrive later.
    */
@@ -99,12 +100,15 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   // first-frame press cannot pass here and meet the server's raw refusal. An
   // untouched selection is the server's to resolve and never waits.
   const gate = !catalog ? OPEN_GATE
-    : seeded && value !== undefined ? CHECKING
+    : seeded && phase === 'revalidating' && value !== undefined ? CHECKING
     : selectionGate(catalog, value);
   const attachable = catalog?.canAttach ? catalog.servers.filter(server => server.canAttach) : [];
   // What is drawn decides the count, never the other way round.
   const draws = !!port && !headless && !!catalog?.canAttach && (attachable.length > 0 || gate.problem !== null);
-  const count = draws ? Math.max(attachable.length, 1) : 0;
+  // The one error line counts too: a failed read is drawn, and the host must
+  // show the chrome around it rather than hide what explains the gap.
+  const failedLine = !!port && !headless && phase === 'failed';
+  const count = draws ? Math.max(attachable.length, 1) : failedLine ? 1 : 0;
   useLayoutEffect(() => { onReady?.(!gate.blocked, gate.problem); }, [gate.blocked, gate.problem, onReady]);
   useLayoutEffect(() => { onCount?.(count); }, [count, onCount]);
   if (!port || headless) return null;
@@ -113,14 +117,15 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
     : null;
   if (layout === 'compact') {
     if (phase === 'loading') return <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-loading">Loading connectors…</p>;
-    if (!catalog) return readError;
-    if (!draws) return null;
+    if (!catalog || !draws) return readError;
     // A failed RE-read keeps the chips it was showing, with one line saying so.
     return <ConnectorChips catalog={catalog} value={value} onChange={onChange} disabled={disabled} problem={gate.problem}
       readError={readError} {...(notice ? { notice } : {})} {...(resetLabel ? { resetLabel } : {})} />;
   }
   if (!catalog) return readError;
   if (!draws) return null;
+  // A list or grid never holds a catalog under `failed` (only `lastKnown`
+  // readers keep one), so no read error is drawn beside it.
   // §10.5: COLLAPSED BY DEFAULT to one summary line, which is also what keeps
   // the launch card's layout from being decided by how many connectors a Space
   // happens to hold. The summary names the connectors that are on and says
@@ -130,7 +135,6 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, on
   const summary = `Connectors: ${names.length > 0 ? names.join(', ') : 'none'}${value === undefined ? ' (Space defaults)' : ''}`;
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
-    {readError}
     <details>
       <summary data-testid="mcp-picker-summary">{summary}</summary>
       <p id={`${id}-help`}>Choose the connectors and account for this session.</p>

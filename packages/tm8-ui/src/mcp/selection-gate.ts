@@ -25,7 +25,7 @@
  *  - A hint computed from what the viewer can read. The server's resolver is
  *    the authority; nothing here is sent.
  */
-import { connectorAction, pickedAccount } from './row-model';
+import { connectorAction, pickedAccount, usableAccounts } from './row-model';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 
 export interface SelectionGate {
@@ -55,7 +55,7 @@ export function accountProblem(server: McpServer, selection: McpSelection): stri
       : null;
   }
   if (pickedAccount(server, selection.credentialId)) return null;
-  const usable = server.accounts.some(a => a.canUse && a.status === 'connected');
+  const usable = usableAccounts(server).length > 0;
   if (selection.credentialId) {
     return usable
       ? `Choose a connected account for ${server.title}.`

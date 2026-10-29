@@ -96,3 +96,65 @@ describe('a launch picker over the last-known photograph', () => {
     expect(screen.queryByTestId('mcp-chip-toggle-docs')).toBeNull();
   });
 });
+
+describe('round 3: failures over a seed, and what they forget', () => {
+  function Launch({ port, initial, onReady = vi.fn(), onCount = vi.fn() }: { port: McpPort; initial?: McpSelection[]; onReady?(ready: boolean, problem: string | null): void; onCount?(n: number): void }) {
+    const [value, setValue] = useState<McpSelection[] | undefined>(initial);
+    return <McpProvider port={port}><McpPicker layout="compact" targetId="task" value={value} onChange={setValue} onReady={onReady} onCount={onCount} /></McpProvider>;
+  }
+  /** Answers the first read, then does what `next` says for every read after. */
+  function scripted(next: () => Promise<McpCatalog>): McpPort {
+    let reads = 0;
+    return { catalog: vi.fn(() => (++reads === 1 ? Promise.resolve(catalog()) : next())) } as unknown as McpPort;
+  }
+
+  it('a seeded explicit pick whose read FAILS is judged on the kept catalog, with Retry — not stuck on Checking', async () => {
+    const port = scripted(() => Promise.reject(new Error('down')));
+    const first = render(<Launch port={port} />);
+    await screen.findByTestId('mcp-chip-toggle-docs');
+    first.unmount();
+    const onReady = vi.fn();
+    render(<Launch port={port} initial={[{ serverId: 'docs' }]} onReady={onReady} />);
+    expect(onReady).toHaveBeenLastCalledWith(false, 'Checking connectors…');
+    await screen.findByTestId('mcp-picker-error');
+    expect(onReady).toHaveBeenLastCalledWith(true, null);
+    expect(screen.getByRole('button', { name: 'Retry connectors' })).toBeTruthy();
+  });
+
+  it('forgets a copy no mount confirmed when its read fails, so a dead target stops seeding', async () => {
+    const port = scripted(() => Promise.reject(new Error('refused')));
+    const first = render(<Launch port={port} />);
+    await screen.findByTestId('mcp-chip-toggle-docs');
+    first.unmount();
+    const second = render(<Launch port={port} />);
+    expect(screen.getByTestId('mcp-chip-toggle-docs')).toBeTruthy();   // seeded
+    await screen.findByTestId('mcp-picker-error');                       // never confirmed: forgotten
+    second.unmount();
+    render(<Launch port={port} />);
+    expect(screen.getByTestId('mcp-compact-loading')).toBeTruthy();
+  });
+
+  it('keeps a copy this mount confirmed when a RE-read fails', async () => {
+    const port = scripted(() => Promise.reject(new Error('blip')));
+    const first = render(<Launch port={port} />);
+    await screen.findByTestId('mcp-chip-toggle-docs');
+    await refocus();
+    await screen.findByTestId('mcp-picker-error');
+    first.unmount();
+    render(<Launch port={port} />);
+    expect(screen.getByTestId('mcp-chip-toggle-docs')).toBeTruthy();
+  });
+
+  it('draws and counts the error line even when the kept catalog draws nothing', async () => {
+    let reads = 0;
+    const empty = catalog(); empty.servers = [];
+    const port = { catalog: vi.fn(() => (++reads === 1 ? Promise.resolve(empty) : Promise.reject(new Error('down')))) } as unknown as McpPort;
+    const onCount = vi.fn();
+    render(<Launch port={port} onCount={onCount} />);
+    await waitFor(() => expect(port.catalog).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onCount).toHaveBeenLastCalledWith(0));
+    await refocus();
+    await screen.findByTestId('mcp-picker-error');
+    expect(onCount).toHaveBeenLastCalledWith(1);
+  });
+});
