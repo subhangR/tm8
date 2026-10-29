@@ -38,6 +38,7 @@ import {
   commandDiscovery,
   commandlessForNoun,
   commandsForNoun,
+  aliasCommands,
   discovery,
   isNoun,
   lookupOperation,
@@ -53,7 +54,7 @@ import {
   type Versioning,
 } from './operations.js';
 import type { AvailabilityLedger } from './availability.js';
-import { matchIntent, matchReason, rank } from './search.js';
+import { isRankedLast, matchIntent, matchReason, rank, rankCommands } from './search.js';
 import { storyGuide } from './story-guide.js';
 import { routineGuide } from './routine-guide.js';
 import { workspaceGuide } from './workspace-guide.js';
@@ -538,18 +539,41 @@ function routedMatch(query: string, from?: AvailabilityLedger): SearchHelp['matc
 export function searchHelp(query: string, opts: ShardOptions = {}): SearchHelp {
   const cap = opts.cap ?? CAPS.search;
   const routed = routedMatch(query, opts.from);
-  const scored = rank(query, discovery(opts.from), MAX_MATCHES);
+  // Operation rows and alias commands in one ranking. The sort is stable, so an
+  // alias never displaces an operation it ties with, and catalog order holds.
+  // A firing or ending operation (isRankedLast) sorts after every other match,
+  // and with nothing else it is left out, as in rank(): only its route answers it first.
+  const last = (item: { kind: 'operation' | 'alias'; entry: { row: { operation?: string; operations?: readonly string[] } } }) =>
+    (item.kind === 'operation' ? isRankedLast(item.entry.row.operation ?? '') : (item.entry.row.operations ?? []).some(isRankedLast)) ? 1 : 0;
+  const ranked = [
+    ...rank(query, discovery(opts.from), MAX_MATCHES).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
+    ...rankCommands(query, aliasCommands(opts.from), MAX_MATCHES).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
+  ].sort((a, b) => last(a) - last(b) || b.score - a.score);
+  const scored = ranked[0] !== undefined && last(ranked[0]) === 1 ? [] : ranked;
   const matches: SearchHelp['matches'] = routed === undefined ? [] : [routed];
-  for (const s of scored) {
+  for (const item of scored) {
     if (matches.length >= MAX_MATCHES) break;
-    const command = s.row.command === null ? null : s.row.command.join(' ');
-    if (routed !== undefined && command === routed.command) continue;
+    if (item.kind === 'operation') {
+      const s = item.entry;
+      const command = s.row.command === null ? null : s.row.command.join(' ');
+      if (matches.some((m) => m.command !== null && m.command === command)) continue;
+      matches.push({
+        command,
+        operation: s.row.operation,
+        reason: matchReason(s),
+        availability: s.row.availability,
+        helpRef: s.row.helpRef,
+      });
+      continue;
+    }
+    const c = item.entry.row;
+    if (matches.some((m) => m.command === c.command)) continue;
     matches.push({
-      command,
-      operation: s.row.operation,
-      reason: matchReason(s),
-      availability: s.row.availability,
-      helpRef: s.row.helpRef,
+      command: c.command,
+      operation: c.operations[0] as OperationName,
+      reason: matchReason(item.entry),
+      availability: c.availability,
+      helpRef: c.helpRef,
     });
   }
 

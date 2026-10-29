@@ -14,6 +14,7 @@ let node: WsE2eNode, stub: Server, stubUrl: string, spaceId: string, fixtureBin:
 let persona: string, parent: string, parentAuth: string, agentToken: string;
 let revocationPersona: string, revocationParent: string;
 let revocationParentAuth: string, revocationAgentToken: string;
+let owner: { identityId: string; memberId: string };
 const tools = new Map<string, ToolView>(), shells = new Set<string>();
 const githubCalls: Array<{ token: string; args: string[] }> = [], slackCalls: Array<{ text: string; channel?: string }> = [];
 const apiCalls: Array<{ path: string; authorization?: string }> = [];
@@ -96,7 +97,7 @@ beforeAll(async () => {
   vi.stubEnv('PATH', fixtureBin + ':' + process.env['PATH']); vi.stubEnv('TM8_PUBLIC_ORIGIN', stubUrl);
   node = await startWsE2eNode('tools');
   const created = await node.request<{ space: { id: string } }>('POST', '/v2/spaces', { name: 'Tools e2e', clientMutationId: cmid() }); expect(created.status, JSON.stringify(created.error)).toBe(201); spaceId = created.data!.space.id;
-  const owner = await ownerOfSpace(node.database, spaceId); persona = cmid(); parent = cmid(); parentAuth = cmid();
+  owner = await ownerOfSpace(node.database, spaceId); persona = cmid(); parent = cmid(); parentAuth = cmid();
   revocationPersona = cmid(); revocationParent = cmid(); revocationParentAuth = cmid();
   const secret = generateSecret(); agentToken = formatToken(parentAuth, secret);
   const revocationSecret = generateSecret(); revocationAgentToken = formatToken(revocationParentAuth, revocationSecret);
@@ -225,4 +226,53 @@ it('records a launch failure once and revokes its token without a PTY exit trans
       'select revoked_at from public.auth_sessions where work_session_id=$1', [run!.entity_id]);
     expect(bearer!.revoked_at).toBeTruthy();
   } finally { spawn.mockRestore(); }
+});
+it('pages runs newest first with their invoker, names the newest as lastRun everywhere, and labels a loop firing only through the marked edge', async () => {
+  const tool = tools.get('url-check')!;
+  type Page = { items: ToolRun[]; nextCursor: string | null };
+  const first = await request<Page>('GET', `/v2/tools/${tool.id}/runs?limit=2`);
+  expect(first.status, JSON.stringify(first.error)).toBe(200);
+  const ids = first.data!.items.map(run => run.id);
+  expect(ids).toHaveLength(2);
+  // uuidv7 ids order by creation: the page starts at the newest run and the cursor walks back in time.
+  expect(ids).toEqual([...ids].sort().reverse());
+  expect(first.data!.nextCursor).toBeTruthy();
+  const older = await request<Page>('GET', `/v2/tools/${tool.id}/runs?limit=50&cursor=${encodeURIComponent(first.data!.nextCursor!)}`);
+  expect(older.status, JSON.stringify(older.error)).toBe(200);
+  expect(older.data!.items.length).toBeGreaterThan(0);
+  expect(older.data!.nextCursor).toBeNull();
+  for (const run of older.data!.items) expect(run.id < ids[1]!).toBe(true);
+  for (const run of [...first.data!.items, ...older.data!.items]) { expect(run.invoker?.displayName).toBeTruthy(); expect(run.triggeredBy).toBeNull(); }
+  const newest = first.data!.items[0]!;
+  const expected = { sessionId: newest.id, state: newest.state, exitCode: newest.exitCode, startedAt: newest.startedAt, exitedAt: newest.exitedAt };
+  const view = await request<ToolView>('GET', '/v2/tools/' + tool.id);
+  expect(view.data!.lastRun).toEqual(expected);
+  const listed = await request<{ items: ToolView[] }>('GET', `/v2/spaces/${spaceId}/tools?limit=50`);
+  expect(listed.status, JSON.stringify(listed.error)).toBe(200);
+  expect(listed.data!.items.find(item => item.id === tool.id)!.lastRun).toEqual(expected);
+  // The entity summary (entity-read's TOOL_CONTENT_SQL) carries the same fragment.
+  const entity = await request<{ state: Record<string, unknown> }>('GET', '/v2/entities/' + tool.id);
+  expect(entity.status, JSON.stringify(entity.error)).toBe(200);
+  expect(entity.data!.state).toMatchObject({ kind: 'tool', lastRun: expected });
+  // Any member can write a plain triggered_by edge: it is run history, never a label. Only the spawn writer's marked edge names the loop.
+  const loopId = cmid();
+  await node.database.transaction(async q => {
+    await q.query('set local role tm8_graph_owner');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [owner.identityId]);
+    await q.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'loop',0,$3)", [loopId, spaceId, owner.memberId]);
+    await q.query("insert into public.loops(entity_id,title,schedule) values($1,'Nightly url check','0 2 * * *')", [loopId]);
+    await q.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'triggered_by',$4)", [spaceId, newest.id, loopId, owner.memberId]);
+  });
+  const unmarked = await request<ToolRun>('GET', '/v2/tool-runs/' + newest.id);
+  expect(unmarked.status, JSON.stringify(unmarked.error)).toBe(200);
+  expect(unmarked.data!.triggeredBy).toBeNull();
+  await node.database.transaction(async q => {
+    await q.query('set local role tm8_graph_owner');
+    await q.query("select internal.w1_set_writer('spawn')");
+    await q.query("update public.edges set props=jsonb_build_object('provenance',true) where src_id=$1 and dst_id=$2 and type='triggered_by'", [newest.id, loopId]);
+  });
+  const marked = await request<ToolRun>('GET', '/v2/tool-runs/' + newest.id);
+  expect(marked.data!.triggeredBy).toEqual({ id: loopId, title: 'Nightly url check' });
+  const relisted = await request<Page>('GET', `/v2/tools/${tool.id}/runs?limit=1`);
+  expect(relisted.data!.items[0]!.triggeredBy).toEqual({ id: loopId, title: 'Nightly url check' });
 });

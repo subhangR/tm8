@@ -242,6 +242,19 @@ describe('help --query synonyms', () => {
     expect(searchHelp(query).matches[0]?.command).toBe(command);
   });
 
+  it.each([
+    ['tool starters install', 'tool starters install'],
+    ['install the starter tools', 'tool starters install'],
+    ['tool version history', 'tool versions'],
+    ['diff tool source between versions', 'tool diff'],
+    ['task axis', 'task axis'],
+  ])('alias commands surface by their own words: %s → %s first', (query, command) => {
+    const top = searchHelp(query).matches[0];
+    expect(top?.command).toBe(command);
+    expect(top?.reason).toMatch(/^matches /);
+    expect(top?.helpRef).toBe(`tm8://help/${command.replaceAll(' ', '/')}`);
+  });
+
   it('a PR or commit link keeps its own answer', () => {
     expect(matchIntent('link a pr to my task')).toBeUndefined();
     expect(searchHelp('link a pr to my task').matches[0]?.command).toBe('task link-pr');

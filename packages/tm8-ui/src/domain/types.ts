@@ -140,6 +140,14 @@ export type TileBadgeSource =
   // credential (W10a): who can use it — `public` or `private`. Off the
   // state's allow-list; the row carries no secret, hint or login to read.
   | 'visibility'
+  // tool (Tools v2): what it runs, what it asks for, how its last run went.
+  // Each has a `renderBadge` arm and a `HANDLED_SOURCES` entry.
+  | 'toolRuntime'
+  | 'toolInputs'
+  | 'toolSecrets'
+  | 'toolLastRun'
+  | 'toolLastRunAt'
+  | 'toolVersion'
   // counters, present on every summary
   | 'points'
   | 'messages';
