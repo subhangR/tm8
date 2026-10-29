@@ -57,11 +57,14 @@ const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 
 /** "other space", "cross space", "linked spaces" → one hyphenated token. */
 const SPACE_PHRASE = /\b(other|another|cross|linked)[\s_]+spaces?\b/g;
+/** "set up" is one verb; split, "up" is a stopword and "set" alone reads as editing (review of #1405). */
+const SET_UP_PHRASE = /\bset[\s_-]+up\b/g;
 
 export function tokenize(query: string): string[] {
   const base = query
     .toLowerCase()
     .replace(SPACE_PHRASE, (_m, w: string) => `${w}-space`)
+    .replace(SET_UP_PHRASE, 'setup')
     .split(/[^a-z0-9-]+/)
     .filter((t) => t.length > 1 && !STOPWORDS.has(t));
   return [...new Set(base.flatMap((t) => [t, ...(SYNONYMS[t] ?? [])]))];
@@ -191,6 +194,11 @@ export interface IntentRoute {
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
 
+/** "Run it now" — the run-now route's words. */
+const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
+/** Stopping a live run. */
+const LOOP_STOP_WORDS = ['stop', 'cancel', 'kill', 'abort', 'end', 'terminate', 'halt'];
+
 /** Words that steer or read a loop that exists; any one keeps a query off `loop create`. */
 const LOOP_STEERING_WORDS = [
   'pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
@@ -281,18 +289,34 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     intent: 'change a loop (its schedule, timezone, instructions or runner)',
     all: [
       ['loop'],
-      ['set', 'change', 'edit', 'update', 'retime', 'reschedule'],
+      ['set', 'change', 'edit', 'update', 'retime', 'reschedule', 'add'],
       ['schedule', 'timezone', 'time', 'cadence', 'prompt', 'instructions', 'title', 'name', 'teammate', 'runner',
         'tool', 'inputs', 'model', 'retry', 'retries', 'runtime', 'concurrency'],
     ],
-    none: ['new', 'create', 'make', 'add', 'another'],
+    // "add a teammate to the loop" edits it; "add a new loop" makes one.
+    none: ['new', 'create', 'make', 'another'],
     candidates: [{ path: ['loop', 'edit'], example: "tm8 loop edit <id|title> --schedule '<expr>' --expect-version <n>" }],
   },
   {
+    // Before run-now: stopping a run must never be answered with firing another one.
+    intent: 'stop a loop run',
+    all: [['loop'], LOOP_STOP_WORDS, ['run', 'running', 'runs']],
+    none: ['pause', 'disable', 'delete', 'remove', 'new', 'create'],
+    candidates: [{ path: ['loop', 'stop'], example: 'tm8 loop stop <run-id>   (the run ids: tm8 loop runs <id|title>)' }],
+  },
+  {
+    // Stopping the LOOP itself (no run named): nothing more fires. Never run-now.
+    intent: 'stop a loop firing (disable it)',
+    all: [['loop'], LOOP_STOP_WORDS],
+    none: ['run', 'running', 'runs', 'new', 'create'],
+    candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
+  },
+  {
     intent: 'run a loop now',
-    all: [['loop'], ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once']],
-    none: ['new', 'create', 'make', 'add', 'schedule', 'set', 'pause', 'stop', 'disable', 'delete', 'remove', 'list',
-      'show', 'preview', 'edit', 'runs', 'history', 'status'],
+    all: [['loop'], LOOP_RUN_NOW_WORDS],
+    // Every steering, stopping or creating word vetoes: only "run it now" is run-now.
+    none: [...LOOP_STEERING_WORDS.filter(word => !LOOP_RUN_NOW_WORDS.includes(word)), ...LOOP_STOP_WORDS,
+      'new', 'create', 'make', 'add', 'schedule', 'set', 'setup'],
     candidates: [{ path: ['loop', 'run-now'], example: 'tm8 loop run-now <id|title>' }],
   },
   {
@@ -322,7 +346,8 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     // verbs here: with a loop they steer one (the routes above).
     intent: 'create a loop',
     all: [['loop'], ['schedule', 'create', 'setup', 'make', 'add', 'new', 'automate', 'repeat']],
-    none: LOOP_STEERING_WORDS,
+    // "make a loop that runs every day" is a create: "runs" reads a loop's history only without a creating verb.
+    none: LOOP_STEERING_WORDS.filter(word => word !== 'runs'),
     candidates: [
       { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
     ],

@@ -6,6 +6,7 @@ import { run } from '../src/run.js';
 import { loopState, pauseUntil, renderLoop } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
 import { matchIntent } from '../src/discovery/search.js';
+import { searchHelp } from '../src/discovery/help.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
 const RUN = '22222222-2222-7222-8222-222222222222';
@@ -410,12 +411,31 @@ describe('tm8 loop discovery', () => {
       ['start the loop', ['loop', 'enable']],
       ["set a loop's schedule", ['loop', 'edit']],
       ["change the loop's timezone", ['loop', 'edit']],
+      ['add a teammate to the loop', ['loop', 'edit']],
     ];
     for (const [query, path] of routes) expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(path);
-    // Creating stays a create, with or without a cadence word.
-    for (const query of ['schedule a loop', 'make a nightly loop', 'add a new loop with a weekly schedule']) {
+    // Creating stays a create, with or without a cadence word, and "set up" is one verb.
+    for (const query of ['schedule a loop', 'make a nightly loop', 'add a new loop with a weekly schedule',
+      'set up a loop', 'set up a nightly loop', 'set up a loop for nightly triage', 'set-up a loop',
+      'make a loop that runs every day']) {
       expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['loop', 'create']);
     }
+  });
+  it('stopping a run is loop stop, and no stopping, resuming or enabling phrasing ever fires or creates a loop', () => {
+    for (const query of ['stop a loop run', 'stop the loop run', 'cancel the loop run', 'kill the loop run', 'abort the loop run',
+      'end the loop run', 'terminate the running loop', 'halt the loop runs']) {
+      expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['loop', 'stop']);
+    }
+    for (const query of ['cancel the loop run', 'kill the loop run', 'resume the loop now', 'enable the loop now', 'pause the loop now',
+      'disable the loop now', 'stop the loop now', 'cancel the loop now', 'abort the loop', 'stop running the loop again']) {
+      // The whole answer a caller reads first, route or ranker.
+      const path = searchHelp(query).matches[0]?.command;
+      expect(matchIntent(query)?.candidates[0]?.path, query).not.toEqual(['loop', 'run-now']);
+      expect(matchIntent(query)?.candidates[0]?.path, query).not.toEqual(['loop', 'create']);
+      expect(path, query).not.toBe('loop run-now');
+      expect(path, query).not.toBe('loop create');
+    }
+    expect(matchIntent('enable the loop now')?.candidates[0]?.path).toEqual(['loop', 'enable']);
   });
   it('leaves steering, reading and one-off work to the ranker', () => {
     for (const query of ['pause the nightly loop', 'list loops', 'stop a loop run', 'disable a loop', 'preview a cron schedule',
