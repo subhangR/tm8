@@ -21,6 +21,8 @@ describe('the loop executor port picks its branch by action', () => {
       pty: untouched as never,
       spawnService: untouched as never,
       resolveOwner: async () => { throw new Error('the port resolved the owner'); },
+      // As main.ts builds it: the port is handed the tool runtime, and must not use it yet.
+      tools: untouched as never,
     });
     const loop = {
       entityId: 'loop-1', spaceId: 'space-1', title: 'Probe hourly', schedule: 'every 1h', timezone: 'UTC',

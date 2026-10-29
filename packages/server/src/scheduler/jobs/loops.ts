@@ -60,11 +60,12 @@ import type { JobContext, JobOutcome, ScheduledJob } from '../types.js';
 export const LOOPS_JOB_NAME = 'loops.execute-due';
 
 /**
- * Why a tool loop is not fired: the tool action needs the scheduled tool
- * runtime (loops PR3). Firing it through spawn or dispatch would run the wrong
- * thing, so the port refuses and the run records this reason.
+ * Why a tool loop is not fired: the tool action (loops PR3) is what calls the
+ * scheduled tool runtime, which the port is already handed (Tools PR-C).
+ * Firing it through spawn or dispatch would run the wrong thing, so the port
+ * refuses and the run records this reason.
  */
-export const TOOL_LOOP_NOT_RUNNABLE = 'tool loops cannot run on this server yet: the scheduled tool runtime is not installed';
+export const TOOL_LOOP_NOT_RUNNABLE = 'tool loops cannot run yet: the tool action ships with loops PR3';
 
 /**
  * A claimed launch that has not recorded a session after this long is settled
