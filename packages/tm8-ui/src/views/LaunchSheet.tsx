@@ -1164,10 +1164,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
                asked but never applied says `jev-failed` / `jev-pending`); an
                edited group, by hand or by an applied Jev pick, is its exact
                set. No group edited ⇒ no `selection`, so the launch loads
-               exactly what it always has. The press SEALS Jev: an answer
-               still in flight is dropped, never landing under a launch
-               already on its way. */
-            const jevFields = jev.seal();
+               exactly what it always has. */
+            const jevFields = jev.toSpawnFields();
             const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
             props.onLaunch({
               subjectId: props.subjectId,

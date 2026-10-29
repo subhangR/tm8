@@ -9,13 +9,14 @@ import type { LaunchDefaultsResult } from '@tm8/contract';
 
 import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
 import {
-  changedDefaultsNote,
+  defaultsNote,
   defaultsChanges,
   launchDefaultsKey,
   nextDefaultsRead,
   NO_TEAMMATE_DEFAULTS_NOTE,
   selectionDefaultsOf,
   shownAnswer,
+  UNCONFIRMED_DEFAULTS_NOTE,
   type LaunchDefaultsRead,
 } from './launch-defaults-read';
 import { UNKNOWN_DEFAULTS_NOTE } from './launch-selection';
@@ -33,12 +34,12 @@ const WITH_EXTRA_SKILL: LaunchDefaultsResult = {
 };
 
 describe('the read opens on a launch key', () => {
-  it('with an earlier answer it is CACHED, and every group draws that answer as `cached`', () => {
+  it('with an earlier answer it is CACHED: every group draws that answer, ready and marked `confirming`', () => {
     const read = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
     expect(read.phase).toBe('cached');
     const groups = selectionDefaultsOf(read);
-    expect(groups.memories).toMatchObject({ status: 'cached', total: 1 });
-    expect(groups.references.status === 'cached' && groups.references.rows.map((r) => r.id)).toEqual(['ent-doc-spec', 'ent-file-log']);
+    expect(groups.memories).toMatchObject({ status: 'ready', confirming: true, total: 1 });
+    expect(groups.references.status === 'ready' && groups.references.rows.map((r) => r.id)).toEqual(['ent-doc-spec', 'ent-file-log']);
     expect(shownAnswer(read)).toBe(LAUNCH_DEFAULTS);
   });
 
@@ -67,22 +68,23 @@ describe('the node answers', () => {
     };
     const read = nextDefaultsRead(cached, { type: 'answered', key: 'k1', result: reordered });
     expect(read).toMatchObject({ phase: 'confirmed', changed: [] });
-    expect(selectionDefaultsOf(read).references.status).toBe('ready');
-    expect(changedDefaultsNote(read)).toBeNull();
+    const references = selectionDefaultsOf(read).references;
+    expect(references.status === 'ready' && references.confirming).toBeUndefined();
+    expect(defaultsNote(read)).toBeNull();
   });
 
   it('cached → CONFIRMED with a different set: the changed group is named, with how', () => {
     const cached = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
     const read = nextDefaultsRead(cached, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL });
     expect(read).toMatchObject({ phase: 'confirmed', changed: [{ group: 'skills', added: 1, removed: 0 }] });
-    expect(changedDefaultsNote(read)).toBe('This launch’s defaults changed since you last opened it: skills +1.');
+    expect(defaultsNote(read)).toBe('This launch’s defaults changed since you last opened it: skills +1.');
   });
 
   it('loading → CONFIRMED: a first answer is never reported as a change', () => {
     const loading = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: null });
     const read = nextDefaultsRead(loading, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL });
     expect(read).toMatchObject({ phase: 'confirmed', changed: [] });
-    expect(changedDefaultsNote(read)).toBeNull();
+    expect(defaultsNote(read)).toBeNull();
   });
 
   it('an answer for ANOTHER key changes nothing — a slow read for the previous teammate never lands', () => {
@@ -96,12 +98,25 @@ describe('the node answers', () => {
     expect(nextDefaultsRead(confirmed, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL })).toBe(confirmed);
   });
 
-  it('a failure is FAILED — every group unknown, the cached rows withdrawn rather than left standing unconfirmed', () => {
+  it('a failure over a cached answer KEEPS it as the basis — the rows the person saw and may have edited — and says so', () => {
     const cached = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
     const read = nextDefaultsRead(cached, { type: 'failed', key: 'k1' });
-    expect(read.phase).toBe('failed');
+    expect(read).toMatchObject({ phase: 'failed', shown: LAUNCH_DEFAULTS });
+    const skills = selectionDefaultsOf(read).skills;
+    // Ready, and no longer `confirming`: nothing is pending, so an edit is sent as the set shown.
+    expect(skills).toMatchObject({ status: 'ready', total: 1 });
+    expect(skills.status === 'ready' && skills.confirming).toBeUndefined();
+    expect(shownAnswer(read)).toBe(LAUNCH_DEFAULTS);
+    expect(defaultsNote(read)).toBe(UNCONFIRMED_DEFAULTS_NOTE);
+  });
+
+  it('a failure with nothing cached is FAILED — every group unknown, nothing said beyond the groups’ own reason', () => {
+    const loading = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: null });
+    const read = nextDefaultsRead(loading, { type: 'failed', key: 'k1' });
+    expect(read).toEqual({ phase: 'failed', key: 'k1', shown: null });
     expect(selectionDefaultsOf(read).skills).toEqual({ status: 'unknown', reason: UNKNOWN_DEFAULTS_NOTE });
     expect(shownAnswer(read)).toBeNull();
+    expect(defaultsNote(read)).toBeNull();
   });
 });
 

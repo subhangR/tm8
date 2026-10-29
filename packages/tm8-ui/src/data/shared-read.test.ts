@@ -126,4 +126,46 @@ describe('sharedRead', () => {
       expect(read).toHaveBeenCalledTimes(4);
     });
   });
+
+  describe('peek — the first-frame seed', () => {
+    it('answers the last kept answer whatever its age, without asking', async () => {
+      let clock = 0;
+      const read = vi.fn(async (key: string) => `answer ${key}`);
+      const shared = sharedRead(read, (key) => key, { now: () => clock });
+      expect(shared.peek('a')).toBeNull();
+      await shared('a');
+      clock = 10 * 60_000;
+      expect(shared.peek('a')).toBe('answer a');
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to the seed while nothing is kept, and prefers what was kept once there is', async () => {
+      const shared = sharedRead(async (key: string) => `fresh ${key}`, (key) => key, { seed: (key) => (key === 'a' ? 'stored a' : null) });
+      expect(shared.peek('a')).toBe('stored a');
+      expect(shared.peek('b')).toBeNull();
+      await shared('a');
+      expect(shared.peek('a')).toBe('fresh a');
+    });
+
+    it('never peeks an answer keep refused, and forget leaves only the seed', async () => {
+      const shared = sharedRead(async (key: string) => key, (key) => key, { keep: (a) => a !== 'b', seed: () => 'seed' });
+      await shared('a');
+      await shared('b');
+      expect(shared.peek('a')).toBe('a');
+      expect(shared.peek('b')).toBe('seed');
+      shared.forget('a');
+      expect(shared.peek('a')).toBe('seed');
+    });
+
+    it('keeps at most maxKept answers, the least recently answered going first', async () => {
+      const shared = sharedRead(async (key: string) => key, (key) => key, { maxKept: 2 });
+      await shared('a');
+      await shared('b');
+      await shared('a');
+      await shared('c');
+      expect(shared.peek('b')).toBeNull();
+      expect(shared.peek('a')).toBe('a');
+      expect(shared.peek('c')).toBe('c');
+    });
+  });
 });

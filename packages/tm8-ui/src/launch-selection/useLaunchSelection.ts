@@ -26,7 +26,7 @@ import {
   type LaunchSelectionEdits,
 } from '../domain/launch-selection';
 import {
-  changedDefaultsNote,
+  defaultsNote,
   launchDefaultsKey,
   nextDefaultsRead,
   NO_TEAMMATE_DEFAULTS_NOTE,
@@ -65,11 +65,12 @@ export interface LaunchSelection {
   /** The node's own words when a group came back emptier than asked. */
   warnings: readonly string[];
   /**
-   * One line when the defaults drawn from this browser's last answer turned
-   * out to differ from the node's (`changedDefaultsNote`); null otherwise —
-   * a confirmation that matches merges in without a word.
+   * One line about the defaults drawn from this browser's last answer: they
+   * turned out to differ from the node's, or the node could not confirm them
+   * (`defaultsNote`). Null otherwise — a confirmation that matches merges in
+   * without a word.
    */
-  updatedNote: string | null;
+  defaultsNote: string | null;
   /** Rows the person added, so an added row keeps its title while it is ticked. */
   added: Readonly<Record<SpawnSelectionGroup, readonly LaunchContextRow[]>>;
   /** Returns the refusal when the tick is refused; the row shows it too. */
@@ -232,7 +233,7 @@ export function useLaunchSelection(args: {
     defaults,
     edits,
     warnings: answer ? answer.warnings : [],
-    updatedNote: changedDefaultsNote(read),
+    defaultsNote: defaultsNote(read),
     added,
     toggle,
     setEdit,

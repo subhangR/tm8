@@ -7,8 +7,8 @@
  * pre-ticks the defaults (read from `launch.defaults`, the loaders spawn
  * itself runs), so an untouched group already shows what the launch will get.
  * Until that read answers, a group may be drawn from this browser's last
- * answer for the same launch (`cached`; the read's states live in
- * `launch-defaults-read.ts`).
+ * answer for the same launch (`ready` with `confirming`; the read's states
+ * live in `launch-defaults-read.ts`).
  *
  * AN EDIT IS A DIFF, NOT A SET. A group holds `removed` (defaults unticked)
  * and `added` (entities ticked from the space). The exact set is derived:
@@ -66,20 +66,19 @@ export type LaunchGroupDefaults =
   | { readonly status: 'loading' }
   /** No defaults read (no port, a failed read, no teammate yet): the group cannot be edited. */
   | { readonly status: 'unknown'; readonly reason: string }
-  /**
-   * This browser's last answer for the same launch, drawn while the node
-   * confirms it (`domain/launch-defaults-read.ts`). Shown and editable exactly
-   * like `ready`; the one difference is that an EDIT against it makes Launch
-   * wait (`launchBlock`), because an exact set built on an unconfirmed list
-   * could drop a default nobody saw.
-   */
-  | { readonly status: 'cached'; readonly rows: readonly LaunchContextRow[]; readonly total: number }
-  | { readonly status: 'ready'; readonly rows: readonly LaunchContextRow[]; readonly total: number };
-
-/** The default rows a group shows — confirmed or cached; null while none are known (loading, unknown). */
-export function shownDefaultRows(defaults: LaunchGroupDefaults): readonly LaunchContextRow[] | null {
-  return defaults.status === 'ready' || defaults.status === 'cached' ? defaults.rows : null;
-}
+  | {
+    readonly status: 'ready';
+    readonly rows: readonly LaunchContextRow[];
+    readonly total: number;
+    /**
+     * Drawn from this browser's last answer while the node's read confirms it
+     * (`domain/launch-defaults-read.ts`). Shown and editable like any ready
+     * group; the one difference is that an EDIT made now waits for the answer
+     * (`launchBlock`), because an exact set built on an unconfirmed list could
+     * drop a default nobody saw.
+     */
+    readonly confirming?: true;
+  };
 
 export type LaunchSelectionDefaults = Readonly<Record<SpawnSelectionGroup, LaunchGroupDefaults>>;
 
@@ -154,9 +153,9 @@ export function readyDefaults(group: LaunchDefaultsGroup): LaunchGroupDefaults {
   return { status: 'ready', rows: group.items.map(defaultRow), total: group.total };
 }
 
-/** A group drawn from this browser's last answer, awaiting the node's (see the `cached` state). */
-export function cachedDefaults(group: LaunchDefaultsGroup): LaunchGroupDefaults {
-  return { status: 'cached', rows: group.items.map(defaultRow), total: group.total };
+/** A group drawn from this browser's last answer while the node's read confirms it. */
+export function confirmingDefaults(group: LaunchDefaultsGroup): LaunchGroupDefaults {
+  return { status: 'ready', rows: group.items.map(defaultRow), total: group.total, confirming: true };
 }
 
 export const UNKNOWN_DEFAULTS_NOTE = 'The node didn’t say what this launch loads by default, so this group can’t be edited. It launches with its defaults.';
@@ -188,24 +187,26 @@ export function defaultsWaitReason(groups: readonly SpawnSelectionGroup[]): stri
 
 /**
  * Why Launch must wait; null when it need not. An EDITED group whose defaults
- * are not confirmed waits for the node's answer:
+ * the node has not answered for yet waits for that answer:
  *  - `loading` (a teammate change re-reads them): the group is locked, so it
  *    would be omitted and launch on its defaults — the person's removals
  *    silently dropped;
- *  - `cached`: its exact set would be built on this browser's last answer,
- *    and a default the node added since would be left out unseen.
+ *  - `confirming`: its exact set would be built on this browser's last
+ *    answer, and a default the node added since would be left out unseen.
  * An untouched group never blocks — it is omitted, and the node loads its own
- * defaults whatever the card drew — so neither does a cached one.
+ * defaults whatever the card drew.
  */
 export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSelectionEdits): string | null {
-  const waiting = LAUNCH_SELECTION_GROUPS.filter((group) =>
-    (defaults[group].status === 'loading' || defaults[group].status === 'cached')
-    && (edits[group].removed.length > 0 || edits[group].added.length > 0));
+  const waiting = LAUNCH_SELECTION_GROUPS.filter((group) => {
+    const d = defaults[group];
+    return (d.status === 'loading' || (d.status === 'ready' && d.confirming === true))
+      && (edits[group].removed.length > 0 || edits[group].added.length > 0);
+  });
   return waiting.length > 0 ? defaultsWaitReason(waiting) : null;
 }
 
 function defaultIds(defaults: LaunchGroupDefaults): readonly EntityId[] {
-  return shownDefaultRows(defaults)?.map((row) => row.id) ?? [];
+  return defaults.status === 'ready' ? defaults.rows.map((row) => row.id) : [];
 }
 
 /** The diff that actually applies to these defaults: stale removals and re-added defaults fall away. */
@@ -452,8 +453,7 @@ export function jevGroupEdit(
      change): trusting Jev's flag would drop a ticked non-default silently, or
      keep an unticked default silently. Jev's flag is the fallback only while
      the defaults are unread, when Apply is refused anyway (`jevApplyRefusal`). */
-  const shown = shownDefaultRows(defaults);
-  const loaded = shown ? new Set<string>(shown.map((row) => row.id)) : null;
+  const loaded = defaults.status === 'ready' ? new Set<string>(defaults.rows.map((row) => row.id)) : null;
   const decided = suggestion.items.map((item) => ({
     id: item.entityId as EntityId,
     isDefault: loaded ? loaded.has(item.entityId) : item.default,

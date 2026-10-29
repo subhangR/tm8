@@ -2,7 +2,6 @@ import type { EntityId, SpawnSelectionGroup } from '@tm8/contract';
 
 import {
   isTicked,
-  shownDefaultRows,
   type LaunchContextRow,
   type LaunchGroupEdit,
   type LaunchSelectionDefaults,
@@ -146,9 +145,8 @@ export function buildStrip(args: {
     const jevAdded = new Set<string>(carried.added);
     const jevRemoved = new Set<string>(carried.removed);
     const seen = new Set<string>();
-    const defaultRows = shownDefaultRows(d);
-    if (defaultRows) {
-      for (const row of defaultRows) {
+    if (d.status === 'ready') {
+      for (const row of d.rows) {
         seen.add(row.id);
         const ticked = isTicked(d, edit, row.id);
         rows.push({

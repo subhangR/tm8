@@ -477,7 +477,11 @@ export function LaunchComposerPopup({
     writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
   }, [subject.id]);
 
+  /** A launch that did not go through: Jev's held answers are shown after all. */
+  const jevUnseal = useRef<(() => void) | null>(null);
+  const releaseJev = () => { jevUnseal.current?.(); jevUnseal.current = null; };
   const fail = (error: unknown) => {
+    releaseJev();
     setPending(false);
     setNodeRefusal(
       String((error as { message?: string })?.message ?? error)
@@ -497,6 +501,7 @@ export function LaunchComposerPopup({
     setPending(false);
     setShaking(true);
     if (!sessionsSince) {
+      releaseJev();
       setTimedOut('unknown');
       setNodeRefusal('The node didn’t answer in time — the launch may have started. This surface can’t check, so look at the task’s sessions before launching again.');
       return;
@@ -509,11 +514,13 @@ export function LaunchComposerPopup({
           setTimedOut('found');
           setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
         } else {
+          releaseJev();
           setTimedOut('none');
           setNodeRefusal('No session started on this task. Launch again to retry.');
         }
       },
       () => {
+        releaseJev();
         setTimedOut('unknown');
         setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
       },
@@ -528,10 +535,11 @@ export function LaunchComposerPopup({
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
        omitted (its defaults load) with a reason; an edited group is its
        exact set. No group edited ⇒ no `selection`. */
-    /* THE PRESS SEALS JEV: an answer still in flight is dropped, never applied
-       under a launch already on its way (lane E). */
-    const jevFields = jev.seal();
-    setJevApplying(false);
+    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
+       is held, never applied under it; a refused launch shows it (lane E). */
+    const sealed = jev.seal();
+    jevUnseal.current = sealed.unseal;
+    const jevFields = sealed.fields;
     const promptExtra = notes.trim();
     const launchFields = {
       ...composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons),
@@ -969,7 +977,7 @@ export function LaunchComposerPopup({
         onNotesChange={setNotes}
         notesPlaceholder={notesPlaceholderFor(subject.kind, continuing)}
         strip={strip}
-        stripRefusal={stripLock ?? stripNotice ?? selection.updatedNote}
+        stripRefusal={stripLock ?? stripNotice ?? selection.defaultsNote}
         stripLoading={stripLoading}
         onTick={tickRow}
         onAddRows={addRows}

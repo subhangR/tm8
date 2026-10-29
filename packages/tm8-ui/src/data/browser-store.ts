@@ -1,7 +1,8 @@
 /**
- * THE BROWSER STORE — guarded access to this origin's localStorage, for the
- * per-browser launch accelerators: the launch-source cache, the launch
- * recents, the launch defaults cache and the remembered picks.
+ * THE BROWSER STORE — guarded access to this origin's localStorage, for every
+ * per-browser store that must never break the workspace: the launch-source
+ * cache, launch recents, launch defaults, remembered picks and launch drafts,
+ * the last place, and the open crafts.
  *
  * CONTRACT
  *  - `browserStorage()` returns the store, or null when there is none to use.

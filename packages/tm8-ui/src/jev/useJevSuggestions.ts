@@ -281,14 +281,16 @@ export interface JevSuggestions {
 
   toSpawnFields(): JevSpawnFields;
   /**
-   * THE PRESS. Returns what the spawn carries from this run (`toSpawnFields`)
-   * and drops every answer still in flight: Jev only ever SUGGESTS, and an
-   * answer that lands after Launch was pressed is for a launch already on its
-   * way — applying it would change the card under a launch that did not carry
-   * it. Groups still asking return to idle (their reason, `jev-pending`, is in
-   * the fields). Nothing else changes; the next `ask` answers as usual.
+   * THE PRESS. Returns what the spawn carries from this run (`toSpawnFields`;
+   * a group still asking says `jev-pending`) and HOLDS every answer that lands
+   * from now on — its groups, ticks and run cost alike: Jev only ever
+   * SUGGESTS, and an answer for a launch already on its way must not change
+   * the card under it. `unseal()` is for a launch that was refused or failed
+   * and leaves the card up: the held answers are shown as if they had just
+   * landed, so nobody pays for the ask twice. A launch that went through never
+   * unseals; what was held goes with the card.
    */
-  seal(): JevSpawnFields;
+  seal(): { fields: JevSpawnFields; unseal(): void };
 
 }
 
@@ -483,12 +485,15 @@ export function useJevSuggestions(args: {
   /* Which request each group's answer must come from. A slower, older answer
      that lands after a re-ask is dropped per group, never merged over the new. */
   const latest = useRef<Partial<Record<LaunchSuggestGroup, string>>>({});
+  /** Answers that landed while a press holds them (`seal`); null while nothing is held. */
+  const held = useRef<Array<() => void> | null>(null);
   const resetKey = args.resetKey;
   const lastReset = useRef(resetKey);
   useEffect(() => {
     if (lastReset.current === resetKey) return;
     lastReset.current = resetKey;
     latest.current = {};
+    held.current = null;
     setRunId(newJevId());
     setGroups(IDLE);
     setRun(null);
@@ -580,8 +585,14 @@ export function useJevSuggestions(args: {
       setTickRefusal(null);
     };
 
+    /* While the press holds answers (`seal`), a landing answer waits in
+       `held` — all of it, run cost included — until `unseal` or the card goes. */
+    const deliver = (show: () => void) => {
+      if (held.current) held.current.push(show);
+      else show();
+    };
     p.suggest(space, input).then(
-      (result) => {
+      (result) => deliver(() => {
         if (!mounted.current) return;
         // `run` is the server's running total; the larger answer is the later one.
         setRun((current) => (current && current.calls > result.run.calls ? current : result.run));
@@ -592,11 +603,11 @@ export function useJevSuggestions(args: {
             ? { ...answer, value: adjust(answer.value as ModelSuggestion) }
             : answer;
         }, result.contextIndex);
-      },
-      (error: unknown) => {
+      }),
+      (error: unknown) => deliver(() => {
         const reason = failureOf(error);
         settle(() => ({ status: 'failed', reason, cost: ZERO_COST }), null);
-      },
+      }),
     );
   }, [runId]);
 
@@ -905,18 +916,19 @@ export function useJevSuggestions(args: {
     return fields;
   }, [applied, groups, asked, runId]);
 
-  const seal = useCallback((): JevSpawnFields => {
+  const seal = useCallback(() => {
     const fields = toSpawnFields();
-    /* `settle` lands an answer only for the request each group last asked
-       with, so forgetting them drops every answer in flight, per group. */
-    latest.current = {};
-    setGroups((current) => {
-      if (!LAUNCH_SUGGEST_GROUPS.some((group) => current[group].status === 'asking')) return current;
-      const next = { ...current };
-      for (const group of LAUNCH_SUGGEST_GROUPS) if (next[group].status === 'asking') (next as Record<string, unknown>)[group] = { status: 'idle' };
-      return next;
-    });
-    return fields;
+    const queue: Array<() => void> = [];
+    held.current = queue;
+    return {
+      fields,
+      unseal: () => {
+        /* Only the press that held them releases them; a later press holds its own. */
+        if (held.current !== queue) return;
+        held.current = null;
+        for (const show of queue) show();
+      },
+    };
   }, [toSpawnFields]);
 
   return {

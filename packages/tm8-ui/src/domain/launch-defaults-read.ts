@@ -12,11 +12,14 @@
  *              `reason` says which, and every group is unknown with it
  *   loading    the read is in flight and this browser has no earlier answer
  *   cached     the read is in flight; the card draws this browser's last
- *              answer for the same key (`cached` groups: shown, editable)
+ *              answer for the same key (ready groups marked `confirming`)
  *   confirmed  the node answered; `changed` lists the groups whose defaults
  *              differ from the cached answer that was showing (none when they
  *              matched, or when nothing was cached)
- *   failed     the read failed: every group is unknown, as with no cache
+ *   failed     the read failed. With a cached answer showing, that answer
+ *              STAYS the groups' basis — the set the person saw and may have
+ *              edited — and the card says it could not be confirmed; with
+ *              none, every group is unknown
  *
  * TRANSITIONS — `nextDefaultsRead` is the only place a read changes state:
  *   close(reason)       any → idle
@@ -30,8 +33,11 @@
  *   - a cached answer is never `confirmed` by anything but this read's answer;
  *   - `changed` is computed once, at cached → confirmed, by id: an order or
  *     title change alone merges silently, a different set is named;
+ *   - an edit made on cached rows is never lost: while the read is in flight
+ *     it waits (`launchBlock`); if the read fails, the rows it was made on
+ *     stay, and the edited group is sent as the exact set the person saw;
  *   - what is SENT is decided elsewhere (`launchBlock`, `manualOutcome`): an
- *     edited group waits for `confirmed`, an untouched one is omitted.
+ *     untouched group is omitted, and the node loads its own defaults.
  *
  * Pure: no React, no I/O. `useLaunchSelection` holds the state and dispatches;
  * `data/launch-defaults-cache.ts` supplies the cached answer.
@@ -39,7 +45,7 @@
 import type { LaunchDefaultsInput, LaunchDefaultsResult, SpawnSelectionGroup } from '@tm8/contract';
 
 import {
-  cachedDefaults,
+  confirmingDefaults,
   LAUNCH_GROUP_LABEL,
   LAUNCH_SELECTION_GROUPS,
   loadingDefaults,
@@ -63,7 +69,8 @@ export type LaunchDefaultsRead =
   | { readonly phase: 'loading'; readonly key: string }
   | { readonly phase: 'cached'; readonly key: string; readonly cached: LaunchDefaultsResult }
   | { readonly phase: 'confirmed'; readonly key: string; readonly result: LaunchDefaultsResult; readonly changed: readonly DefaultsChange[] }
-  | { readonly phase: 'failed'; readonly key: string };
+  /** `shown`: the cached answer that was showing when the read failed, kept as the basis; null when none was. */
+  | { readonly phase: 'failed'; readonly key: string; readonly shown: LaunchDefaultsResult | null };
 
 export type LaunchDefaultsReadEvent =
   | { readonly type: 'close'; readonly reason: string }
@@ -110,7 +117,8 @@ export function nextDefaultsRead(read: LaunchDefaultsRead, event: LaunchDefaults
       return read.phase === 'loading' ? { phase: 'confirmed', key: event.key, result: event.result, changed: [] } : read;
     case 'failed':
       if (read.key !== event.key) return read;
-      return read.phase === 'loading' || read.phase === 'cached' ? { phase: 'failed', key: event.key } : read;
+      if (read.phase === 'cached') return { phase: 'failed', key: event.key, shown: read.cached };
+      return read.phase === 'loading' ? { phase: 'failed', key: event.key, shown: null } : read;
   }
 }
 
@@ -119,9 +127,11 @@ export function selectionDefaultsOf(read: LaunchDefaultsRead): LaunchSelectionDe
   switch (read.phase) {
     case 'idle': return unknownDefaults(read.reason);
     case 'loading': return loadingDefaults();
-    case 'cached': return groupsOf(read.cached, cachedDefaults);
+    case 'cached': return groupsOf(read.cached, confirmingDefaults);
     case 'confirmed': return groupsOf(read.result, readyDefaults);
-    case 'failed': return unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
+    /* Nothing is pending any more, so the rows the person saw are the basis
+       as they stand: an edited group is sent as that exact set. */
+    case 'failed': return read.shown ? groupsOf(read.shown, readyDefaults) : unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
   }
 }
 
@@ -131,16 +141,24 @@ function groupsOf(result: LaunchDefaultsResult, as: typeof readyDefaults): Launc
 
 /** The answer the card is drawing — the node's, else this browser's last — for its warnings, bytes and index. */
 export function shownAnswer(read: LaunchDefaultsRead): LaunchDefaultsResult | null {
-  return read.phase === 'confirmed' ? read.result : read.phase === 'cached' ? read.cached : null;
+  if (read.phase === 'confirmed') return read.result;
+  if (read.phase === 'cached') return read.cached;
+  return read.phase === 'failed' ? read.shown : null;
 }
 
+/** Said when the node could not confirm the cached defaults the card is drawing. */
+export const UNCONFIRMED_DEFAULTS_NOTE =
+  'Couldn’t confirm this launch’s defaults with the node. The ones shown are the last this browser read, and your edits apply to them.';
+
 /**
- * The one line said when the cached answer turned out to be out of date —
- * "This launch’s defaults changed since you last opened it: skills +1,
- * references −2." Null when nothing visible changed: a confirmation that
- * matches merges in silently.
+ * The one line the card says about its defaults, or null — a confirmation
+ * that matches what was drawn merges in silently. When the cached answer
+ * turned out to be out of date: "This launch’s defaults changed since you
+ * last opened it: skills +1, references −2." When the node could not confirm
+ * it: `UNCONFIRMED_DEFAULTS_NOTE`.
  */
-export function changedDefaultsNote(read: LaunchDefaultsRead): string | null {
+export function defaultsNote(read: LaunchDefaultsRead): string | null {
+  if (read.phase === 'failed') return read.shown ? UNCONFIRMED_DEFAULTS_NOTE : null;
   if (read.phase !== 'confirmed' || read.changed.length === 0) return null;
   const parts = read.changed.map((change) => [
     LAUNCH_GROUP_LABEL[change.group].toLowerCase(),

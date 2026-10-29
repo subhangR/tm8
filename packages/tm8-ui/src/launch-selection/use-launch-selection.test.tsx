@@ -74,10 +74,11 @@ describe('cached defaults on the first frame', () => {
     const statuses: string[] = [];
     renderHook(() => {
       const selection = useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' });
-      statuses.push(selection.defaults.references.status);
+      const references = selection.defaults.references;
+      statuses.push(references.status === 'ready' && references.confirming ? 'ready, confirming' : references.status);
       return selection;
     });
-    expect(statuses[0]).toBe('cached');
+    expect(statuses[0]).toBe('ready, confirming');
     expect(statuses).not.toContain('loading');
   });
 
@@ -85,8 +86,9 @@ describe('cached defaults on the first frame', () => {
     const { load, answer } = loader(LAUNCH_DEFAULTS);
     const { result } = renderHook(() => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }));
     await answer(LAUNCH_DEFAULTS);
-    expect(result.current.defaults.skills.status).toBe('ready');
-    expect(result.current.updatedNote).toBeNull();
+    const skills = result.current.defaults.skills;
+    expect(skills.status === 'ready' && skills.confirming).toBeUndefined();
+    expect(result.current.defaultsNote).toBeNull();
   });
 
   it('a different answer replaces the rows in place and says so in ONE line', async () => {
@@ -95,7 +97,7 @@ describe('cached defaults on the first frame', () => {
     await answer(WITH_EXTRA_SKILL);
     const skills = result.current.defaults.skills;
     expect(skills.status === 'ready' && skills.rows.map((r) => r.id)).toEqual(['ent-sk-review', 'ent-sk-new']);
-    expect(result.current.updatedNote).toBe('This launch’s defaults changed since you last opened it: skills +1.');
+    expect(result.current.defaultsNote).toBe('This launch’s defaults changed since you last opened it: skills +1.');
   });
 
   it('an edit made on cached rows survives the confirmation as the same diff', async () => {
@@ -107,6 +109,25 @@ describe('cached defaults on the first frame', () => {
     expect(result.current.launchBlock).toBeNull();
     // The removal stands; the default the node added since is KEPT, not dropped unseen.
     expect(result.current.outcomes().skills).toEqual({ send: ['ent-sk-new'] });
+  });
+});
+
+describe('an edit made on cached rows is never lost', () => {
+  it('when the confirming read FAILS, the edited group is sent as the exact set the person saw, and the card says it could not confirm', async () => {
+    const pending: Array<{ reject(error: unknown): void }> = [];
+    const read = vi.fn(() => new Promise<LaunchDefaultsResult>((_resolve, reject) => { pending.push({ reject }); }));
+    const load: LoadLaunchDefaults = Object.assign(read, { peek: () => LAUNCH_DEFAULTS });
+    const { result } = renderHook(() => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }));
+    // Untick the one cached reference default the person does not want.
+    act(() => { result.current.toggle('references', { id: 'ent-file-log' as EntityId, kind: 'file', title: 'boot.log', text: null, derived: false, via: null }); });
+    expect(result.current.launchBlock).toMatch(/references defaults/);
+    await act(async () => { pending.shift()!.reject(new Error('503')); });
+    // Nothing is pending any more: Launch goes, and it carries exactly what was shown minus the removal —
+    // never the node's defaults with the removal silently dropped.
+    expect(result.current.launchBlock).toBeNull();
+    expect(result.current.outcomes().references).toEqual({ send: ['ent-doc-spec'] });
+    expect(result.current.outcomes().memories).toEqual({ omit: 'not-asked' });
+    expect(result.current.defaultsNote).toMatch(/Couldn’t confirm this launch’s defaults/);
   });
 });
 

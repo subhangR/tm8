@@ -1,7 +1,7 @@
 import type { ContextBudgets, EntitySuggestion, RankedEntityReason, SpawnSelectionGroup } from '@tm8/contract';
 import { contextGroupFrameBytes } from '@tm8/prompt';
 
-import { groupIds, shownDefaultRows } from '../domain/launch-selection';
+import { groupIds } from '../domain/launch-selection';
 import type { LaunchSelection } from './useLaunchSelection';
 
 /** Jev's answer per group, when it answered ok — the rows' bytes, the group's budget, the reasons. */
@@ -42,7 +42,7 @@ export function groupMeter(
   budgets: ContextBudgets | undefined,
 ): GroupMeterFacts | null {
   const defaults = selection.defaults[group];
-  if (!shownDefaultRows(defaults) || selection.lock(group)) return null;
+  if (defaults.status !== 'ready' || selection.lock(group)) return null;
   const ids = groupIds(defaults, selection.edits[group]);
   const jevBytes = new Map((ranked?.items ?? []).map((item) => [item.entityId, item.promptBytes]));
   const known = selection.bytes[group].bytes;

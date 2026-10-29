@@ -804,43 +804,64 @@ describe('the fixture port models the server contract', () => {
   });
 });
 
-/* THE PRESS (lane E): Jev never holds Launch, and an answer that lands after
-   Launch was pressed is dropped — it was for a launch already on its way. */
+/* THE PRESS (lane E): Jev never holds Launch, and an answer that lands while
+   a launch is on its way is HELD — never applied under it — until the launch
+   is refused (unseal) or the card goes. */
 describe('seal — the press', () => {
-  it('returns the spawn fields as they stood, then drops the answer still in flight', async () => {
+  it('returns the spawn fields as they stood, and HOLDS an answer that lands after it — groups, ticks and run cost alike', async () => {
     const port = pendingPort();
     const { result } = mount({ port });
     act(() => { result.current.ask(); });
-    expect(result.current.groups.memories.status).toBe('asking');
 
-    let fields: ReturnType<typeof result.current.seal> | undefined;
-    act(() => { fields = result.current.seal(); });
+    let sealed: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { sealed = result.current.seal(); });
     // The groups still asking at the press say so on the spawn: `jev-pending`.
-    expect(fields?.defaultReasons).toEqual({ memories: 'jev-pending', skills: 'jev-pending', references: 'jev-pending' });
-    expect(fields?.jevRunId).toBe(result.current.runId);
-    // …and they stop asking: nothing is left waiting on an answer that cannot land.
-    expect(result.current.groups.memories.status).toBe('idle');
+    expect(sealed?.fields.defaultReasons).toEqual({ memories: 'jev-pending', skills: 'jev-pending', references: 'jev-pending' });
+    expect(sealed?.fields.jevRunId).toBe(result.current.runId);
 
     await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
-    expect(result.current.groups.memories.status).toBe('idle');
+    expect(result.current.groups.memories.status).toBe('asking');
     expect(result.current.entity.memories.rows).toEqual([]);
+    expect(result.current.run).toBeNull();
   });
 
-  it('answers again after the next ask — sealing ends one press, not the run', async () => {
+  it('unseal — a refused launch — shows the held answer as if it had just landed', async () => {
     const port = pendingPort();
     const { result } = mount({ port });
     act(() => { result.current.ask(); });
-    act(() => { result.current.seal(); });
+    let sealed: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { sealed = result.current.seal(); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+
+    act(() => { sealed!.unseal(); });
+    expect(result.current.groups.memories.status).toBe('ok');
+    expect(result.current.entity.memories.rows.length).toBeGreaterThan(0);
+    expect(result.current.run?.calls).toBe(7);
+    // Nobody asked twice.
+    expect(port.calls).toHaveLength(1);
+  });
+
+  it('after an unseal, answers land as usual; an unseal from an earlier press releases nothing a later press holds', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    let first: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { first = result.current.seal(); });
+    act(() => { first!.unseal(); });
     act(() => { result.current.ask(); });
-    await act(async () => { port.calls[1]!.resolve(answer(port.calls[1]!.input)); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
     await waitFor(() => expect(result.current.groups.memories.status).toBe('ok'));
-    expect(port.calls[1]!.input.runId).toBe(port.calls[0]!.input.runId);
+
+    act(() => { result.current.ask(['memories']); });
+    act(() => { result.current.seal(); });
+    await act(async () => { port.calls[1]!.resolve(answer(port.calls[1]!.input)); });
+    act(() => { first!.unseal(); });
+    expect(result.current.groups.memories.status).toBe('asking');
   });
 
   it('with nothing asked, the press carries no Jev fields at all', () => {
     const { result } = mount({ port: pendingPort() });
-    let fields: ReturnType<typeof result.current.seal> | undefined;
-    act(() => { fields = result.current.seal(); });
-    expect(fields).toEqual({});
+    let sealed: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { sealed = result.current.seal(); });
+    expect(sealed?.fields).toEqual({});
   });
 });

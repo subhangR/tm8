@@ -101,6 +101,19 @@ describe('across a reload', () => {
     expect(again.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1').peek?.(input('tm-a'))).toBeNull();
   });
 
+  it('checks every field a drawn row reads — a stored row without its `via` or header is not drawn', async () => {
+    const key = 'tm8.launch-defaults.v1.local.sp-1';
+    const { via: _via, ...withoutVia } = LAUNCH_DEFAULTS.memories.items[0]!;
+    const broken = { ...LAUNCH_DEFAULTS, memories: { ...LAUNCH_DEFAULTS.memories, items: [withoutVia] } };
+    localStorage.setItem(key, JSON.stringify({ entries: [{ key: 'tm-a|task-1|claude-code|', result: broken }] }));
+    expect((await reloadModule()).launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1').peek?.(input('tm-a'))).toBeNull();
+
+    const { headerText: _text, ...withoutHeader } = LAUNCH_DEFAULTS.skills.items[0]!;
+    const noHeader = { ...LAUNCH_DEFAULTS, skills: { ...LAUNCH_DEFAULTS.skills, items: [withoutHeader] } };
+    localStorage.setItem(key, JSON.stringify({ entries: [{ key: 'tm-a|task-1|claude-code|', result: noHeader }] }));
+    expect((await reloadModule()).launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1').peek?.(input('tm-a'))).toBeNull();
+  });
+
   it('stays bounded: past 24 launches the least recently answered is forgotten', async () => {
     const load = cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1');
     for (let i = 0; i < 25; i += 1) await load(input(`tm-${String(i)}`));
@@ -122,6 +135,14 @@ describe('an explicit sign-out', () => {
     await expect(asked).resolves.toBe(LAUNCH_DEFAULTS);
     expect(load.peek?.(input('tm-a'))).toBeNull();
     expect(localStorage.getItem('tm8.launch-defaults.v1.local.sp-1')).toBeNull();
+  });
+
+  it('a loader built before the sweep forgets what it kept the next time it is used', async () => {
+    const load = cache.launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1');
+    await load(input('tm-a'));
+    expect(load.peek?.(input('tm-a'))).toEqual(LAUNCH_DEFAULTS);
+    cache.clearLaunchDefaultsCache('local');
+    expect(load.peek?.(input('tm-a'))).toBeNull();
   });
 
   it('forgets every space of THAT node, in memory and in storage — and no other node', async () => {
