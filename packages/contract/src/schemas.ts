@@ -69,6 +69,7 @@ import type {
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
   AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  MetaGetResult,
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
@@ -2403,6 +2404,20 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   projectIsolation: z.enum(['shared', 'isolated']),
   tokenRequired: z.boolean().optional(),
 }).strict();
+
+/**
+ * `meta.get`. Deliberately NOT `.strict()` and lenient on version strings: an
+ * older reader must parse a newer node's answer (unknown fields are stripped,
+ * unknown operation names kept), because that answer is how it learns it is too
+ * old. The digest is the one field with a fixed form.
+ */
+export const MetaGetResultSchema: z.ZodType<MetaGetResult> = z.object({
+  contractVersion: z.string().min(1),
+  catalogSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  eventSchemaVersion: z.number().int().positive(),
+  features: z.array(z.string().min(1)),
+  minClients: z.record(z.string().min(1), z.string().min(1)),
+});
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
   token: z.string().min(1),

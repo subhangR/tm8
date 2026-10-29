@@ -2726,6 +2726,53 @@ export interface AuthClaimStatusResult {
 }
 
 /**
+ * `meta.get` (GET /v2/meta) — what this node speaks, so a client can learn it
+ * in one read instead of probing operation by operation (TM8 Mobile s-lld §4,
+ * version signals), and a node can tell a client it is too old, in words,
+ * before that client signs in.
+ *
+ * ANONYMOUS-READABLE BY DESIGN, like `auth.claim.status` and `/health`. A client
+ * asks while it adds a server, before it has sent a password, and the answer
+ * decides whether it may sign in at all ("This app is too old for <node>").
+ * Requiring a credential would put that check after the password it exists to
+ * stop. Every field is a fact about the build and how this node composed it,
+ * identical for every caller: no member, space, session or setting is in it.
+ *
+ * NOT `.strict()` on the wire (`MetaGetResultSchema`): the reader may be older
+ * than the node, and an old client must still parse a newer node's answer,
+ * because learning that it is too old is why it asks.
+ */
+export interface MetaGetResult {
+  /** `CONTRACT_VERSION`, the same value `/health` reports. */
+  contractVersion: string;
+  /**
+   * Lowercase hex SHA-256 of `JSON.stringify(OPERATIONS)`: the digest every
+   * `tm8 help` shard prints after `catalog sha256:`. Equal digests mean equal
+   * catalogs, row for row, flags included.
+   */
+  catalogSha256: string;
+  /** `WORKSPACE_EVENT_SCHEMA_VERSION`: the `schemaVersion` this node's events carry. */
+  eventSchemaVersion: number;
+  /**
+   * The operations this node answers, in catalog order: every catalog row whose
+   * status is `v1` and that this node mounts. A `reserved` row is never listed,
+   * and neither is a `v1` row this node's composition did not mount: both answer
+   * 501 `not_implemented`. Derived from the catalog and the handler registry on
+   * every read, never kept by hand. Names, not `OperationName`s: a newer node
+   * lists operations an older reader's catalog does not know.
+   */
+  features: string[];
+  /**
+   * The oldest version of each client this node serves, keyed by the name an
+   * `x-tm8-client` header starts with (`tm8-mobile` in
+   * `tm8-mobile/1.0.0 (ios; build 42)`), valued `MAJOR.MINOR.PATCH`. A client
+   * the map does not name has no minimum here. A client older than its entry
+   * stops before it signs in and says why.
+   */
+  minClients: Record<string, string>;
+}
+
+/**
  * `auth.claim` — the first-run ceremony. The TOKEN is the authorization, which
  * is what lets it work from a phone, over a tailnet, or through a reverse
  * proxy, none of which are loopback.

@@ -1,7 +1,11 @@
 /**
- * `tm8 node …` — read-only facts about the Server as a node.
+ * `tm8 node …` — facts about the Server as a node, and node administration.
  *
- * Today that is one verb, `node mode`, which is SUGAR over `auth.claim.status`:
+ * `node meta` reads `meta.get`: what the Server speaks (contract version,
+ * catalog digest, event schema version, the operations it answers, the oldest
+ * client versions it serves). The Server answers it without a credential.
+ *
+ * `node mode` is SUGAR over `auth.claim.status`:
  * that operation already reports the mode, and this is a second, purpose-named
  * spelling of the same read (the same relationship `worktree status` has to
  * `entities.get`). It adds no catalog operation.
@@ -18,6 +22,7 @@
 import type {
   AccountDisableResult,
   AuthClaimStatusResult,
+  MetaGetResult,
   NodeAccountListView,
   PathGrantListView,
   PathGrantView,
@@ -26,8 +31,37 @@ import type {
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
+import { CATALOG_DIGEST } from '../discovery/operations.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions } from './entity.js';
+
+/**
+ * `node meta` — `meta.get`. The human rendering compares the Server's catalog
+ * digest with the one this CLI was built from, which is the usual reason a
+ * command the help lists answers 501 or 404; `--format json` carries the whole
+ * answer, the feature list included.
+ */
+async function nodeMeta(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []);
+  if (cmd.args.length > 0) throw new CliError('usage: tm8 node meta', EXIT_USAGE);
+  const data = await observedInvoke<MetaGetResult>(clientFor(cmd.ctx), 'meta.get');
+  cmd.out.data(data, (r) => {
+    const digest = `sha256:${r.catalogSha256}`;
+    const minimums = Object.entries(r.minClients);
+    return [
+      `contract: ${r.contractVersion}`,
+      digest === CATALOG_DIGEST
+        ? `catalog: ${digest} (the catalog this CLI was built from)`
+        : `catalog: ${digest} (this CLI was built from ${CATALOG_DIGEST})`,
+      `event schema: ${r.eventSchemaVersion}`,
+      `features: ${r.features.length} operations (--format json lists them)`,
+      minimums.length === 0
+        ? 'minimum clients: none'
+        : `minimum clients: ${minimums.map(([client, version]) => `${client} ${version}`).join(', ')}`,
+    ].join('\n');
+  });
+  return EXIT_OK;
+}
 
 async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.args.length > 0) throw new CliError('usage: tm8 node mode', EXIT_USAGE);
@@ -187,6 +221,7 @@ async function pathGrantMine(cmd: CommandContext): Promise<ExitCode> {
 }
 
 export const NODE_COMMANDS: CommandModule[] = [
+  { path: ['node', 'meta'], run: nodeMeta },
   { path: ['node', 'mode'], run: nodeMode },
   { path: ['node', 'account', 'disable'], run: nodeAccountDisable },
   { path: ['node', 'account', 'list'], run: nodeAccountList },

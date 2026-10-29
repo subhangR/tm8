@@ -598,6 +598,20 @@ const ROWS: Record<OperationName, Row> = {
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
+  'meta.get': {
+    cmd: ['node', 'meta'],
+    syn: 'tm8 node meta',
+    sum: 'Report what this Server speaks: its contract version, catalog digest, event schema version, the operations it answers, and the oldest client versions it serves',
+    authz: 'server',
+    input: 'none',
+    tags: ['meta', 'version', 'contract', 'catalog', 'digest', 'features', 'capabilities', 'compatibility', 'minimum', 'client', 'node'],
+    notes: [
+      'answers without any credential, on purpose: a client reads it before it signs in, to learn whether this Server serves its version',
+      'a credential that is sent must still be valid: an expired or revoked token is refused like on every operation, so a signed-out client sends none',
+      'features lists every catalog operation with status v1 that this Server mounts; a reserved or unmounted operation is absent and answers 501 not_implemented',
+      'catalogSha256 is the digest `tm8 help` prints after `catalog sha256:`; when the two differ, this CLI and the Server were built from different catalogs',
+    ],
+  },
   // ── node accounts (G6, migration 232) ──────────────────────────────────
   'accounts.disable': {
     cmd: ['node', 'account', 'disable'],
@@ -4324,6 +4338,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `spaces.styleDefault.*` keep their family nouns; their commands are
   // `style use` and `style default`. generator.ts nounForOperation says the same.
   styles: 'style',
+  // `meta.get` (TM8 Mobile S2): the command is `tm8 node meta`, so the noun is
+  // `node`. generator.ts nounForOperation says the same.
+  meta: 'node',
 };
 
 function nounFor(operation: OperationName): string {
@@ -4452,7 +4469,8 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f';
+  // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
+  'sha256:918e8cb4958676abc4ada9fa8488d5272abf4746781af3735bfd81623fcc746a';
 
 export const GRAMMAR_VERSION = '2';
 

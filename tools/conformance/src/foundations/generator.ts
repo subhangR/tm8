@@ -266,6 +266,9 @@ function nounForOperation(operation: OperationName): string {
     // W11: `gate.folders.*` (the node's folders, gate admins only) group under
     // the project noun whose CLI verbs drive them; NOUN_BY_FAMILY says the same.
     case 'gate': return 'project';
+    // `meta.get` (TM8 Mobile S2): the CLI spells it `tm8 node meta`, so the noun
+    // is `node`. NOUN_BY_FAMILY says the same.
+    case 'meta': return 'node';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }
