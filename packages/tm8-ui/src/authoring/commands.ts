@@ -1,4 +1,5 @@
 import type { SkillPort } from '../skills/port';
+import type { ToolPort } from '../tools/port';
 /**
  * THE AUTHORING PORT — the narrow slice of the facade seam the create and save
  * flows need, plus the vocabulary for the ways they can fail.
@@ -50,6 +51,8 @@ import {
 
 export interface AuthoringCommands {
   skills?: SkillPort;
+  /** `tools.*` — the tool-definition create form's door; optional like `skills`. */
+  tools?: ToolPort;
   createEntity(input: CreateEntityInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
   /**

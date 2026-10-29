@@ -31,7 +31,8 @@ function loopRouteId(ctx: RequestContext, field: 'spaceId' | 'loopId'): string {
 
 async function currentSchedule(q: Querier, loopId: string): Promise<ScheduleState> {
   const [row] = await q.query<ScheduleState>(
-    `select l.schedule, l.timezone, l.enabled from public.loops l join public.entities e on e.id = l.entity_id
+    `select l.schedule, l.timezone, l.enabled, l.next_run_at as "nextRunAt", l.last_error as "lastError"
+       from public.loops l join public.entities e on e.id = l.entity_id
       where l.entity_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)`, [loopId]);
   if (!row) throw new CollabError('not_found', 'Loop is unavailable');
   return row;
@@ -76,7 +77,7 @@ function deadlinePatch(before: ScheduleState, after: ScheduleState): LoopPatch {
   if (write.nextRunAt === undefined) return {};
   return {
     nextRunAt: write.nextRunAt, clearNextRunAt: write.nextRunAt === null,
-    ...(write.lastError ? { lastError: write.lastError } : {}),
+    ...(write.lastError ? { lastError: write.lastError } : write.lastError === null ? { clearLastError: true } : {}),
   };
 }
 
@@ -115,7 +116,7 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           enabled, write.nextRunAt ?? null, null, null, input.clientMutationId,
           d.action, d.toolId ?? null, JSON.stringify(d.toolInputs ?? {}), timezone,
           d.concurrency ?? 'skip', d.maxRuntimeSeconds ?? null,
-          d.retry?.attempts ?? 0, d.retry?.delaySeconds ?? 300,
+          d.retry?.attempts ?? 0, d.retry?.delaySeconds ?? 300, write.lastError ?? null,
         ]);
         await assertToolPersona(q, result.entity.id);
         return loadLoopView(q, result.entity.id);
@@ -129,7 +130,8 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
       return command(ctx, async q => {
         const current = await currentSchedule(q, loopId);
         const after = { schedule: d.schedule ?? current.schedule, timezone: d.timezone ?? current.timezone, enabled: current.enabled };
-        requireValidSchedule(after.schedule, after.timezone);
+        // Only what this patch writes is validated: a title edit must not be refused for a stored schedule.
+        if (d.schedule !== undefined || d.timezone !== undefined) requireValidSchedule(after.schedule, after.timezone);
         await updateLoop(q, loopId, input.expectedVersion, input.actorId ?? null, input.clientMutationId, {
           title: d.title, schedule: d.schedule, timezone: d.timezone, action: d.action,
           teamMemberId: d.teamMemberId, clearTeamMember: d.teamMemberId === null,

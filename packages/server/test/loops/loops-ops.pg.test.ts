@@ -24,7 +24,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
 let database: W1ScratchDatabase, db: Db, server: FacadeServer, base: string;
 const space = randomUUID(), member = randomUUID(), account = randomUUID(), authSession = randomUUID(), persona = randomUUID();
-const otherSpace = randomUUID();
+const otherSpace = randomUUID(), writeTool = randomUUID();
 const identityId = 'loops-http-owner', secret = generateSecret(), token = formatToken(authSession, secret);
 const owner = async () => ({ identityId, accountId: account, username: identityId, isNodeAdmin: false, isOwner: false });
 
@@ -43,6 +43,10 @@ beforeAll(async () => {
     await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [identityId]);
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'team_member',0,$3)", [persona, space, member]);
     await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity) values($1,$2,'Sweeper','','persona')", [persona, member]);
+    // A tool that reaches tm8, so a loop running it needs a persona (coordinator ruling, §2.1).
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'tool',0,$3)", [writeTool, space, member]);
+    await c.query("insert into public.tools(entity_id,space_id,title,definition) values($1,$2,'probe',$3)", [writeTool, space,
+      { name: 'probe', description: 'Probe', help: '', runtime: 'bash', source: 'exit 0', inputs: [], tm8Access: 'write', timeoutSeconds: 60 }]);
   });
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
@@ -81,6 +85,15 @@ const create = (definition: Record<string, unknown>, extra: Record<string, unkno
   request('POST', `/v2/spaces/${space}/loops`, { definition, ...extra });
 const spawnLoop = (title: string, extra: Record<string, unknown> = {}) =>
   create({ title, schedule: '0 9 * * *', action: 'spawn', teamMemberId: persona, timezone: 'Europe/London', ...extra });
+/** A stored state no door would write today (a value that predates validation, a run's failure); the version is untouched. */
+async function rawLoopUpdate(loopId: string, assignments: string) {
+  await database.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query('alter table public.loops disable trigger loops_w2_snapshot_version');
+    await c.query(`update public.loops set ${assignments} where entity_id = $1`, [loopId]);
+    await c.query('alter table public.loops enable trigger loops_w2_snapshot_version');
+  });
+}
 
 describe('loops.schedule.preview', () => {
   it('summarises a valid schedule with the next instants', () => {
@@ -125,6 +138,18 @@ describe('loops.create / get / list', () => {
       .toMatch(/"definition","config"/);
     refused(await create({ title: 'No runner', schedule: 'every 1h', action: 'spawn' }), 400, 'invalid_input');
     refused(await create({ title: 'No tool', schedule: 'every 1h', action: 'tool' }), 400, 'invalid_input');
+  });
+
+  it('accepts an IANA zone the CLDR list leaves out (Asia/Kolkata)', async () => {
+    const before = new Date();
+    const view = ok(await spawnLoop('Kolkata', { timezone: 'Asia/Kolkata' }));
+    expect(view.definition.timezone).toBe('Asia/Kolkata');
+    expect(view.state.nextRunAt).toBe(nextRunAt('0 9 * * *', before, 'Asia/Kolkata')!.toISOString());
+  });
+
+  it('records a schedule that never matches on create instead of parking it silently', async () => {
+    const view = ok(await create({ title: 'Feb 30', schedule: '0 0 30 2 *', action: 'dispatch' }));
+    expect(view.state).toMatchObject({ enabled: true, nextRunAt: null, lastError: 'schedule never matches within a year' });
   });
 
   it('a disabled create stores no deadline', async () => {
@@ -179,6 +204,39 @@ describe('loops.update and the control ops', () => {
     expect(new Date(on.state.nextRunAt).getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
   });
 
+  it('a schedule change on a DISABLED loop still moves nextRunAt (lead ruling: show/list stay honest)', async () => {
+    const view = ok(await spawnLoop('Disabled edit'));
+    const off = ok(await request('POST', `/v2/loops/${view.id}/disable`, { expectedVersion: view.version }));
+    const edited = ok(await request('PATCH', `/v2/loops/${view.id}`, { expectedVersion: off.version, definition: { schedule: 'every 6h' } }));
+    expect(edited.state.enabled).toBe(false);
+    expect(edited.state.nextRunAt).not.toBe(view.state.nextRunAt);
+    const due = new Date(edited.state.nextRunAt).getTime() - Date.now();
+    expect(due).toBeGreaterThan(6 * 60 * 60_000 - 60_000);
+    expect(due).toBeLessThanOrEqual(6 * 60 * 60_000);
+  });
+
+  it("fixing a parked loop's schedule clears its reason; a run's failure survives a schedule edit", async () => {
+    const parked = ok(await create({ title: 'Parked', schedule: '0 0 30 2 *', action: 'dispatch' }));
+    const fixed = ok(await request('PATCH', `/v2/loops/${parked.id}`, { expectedVersion: parked.version, definition: { schedule: 'every 1h' } }));
+    expect(fixed.state.nextRunAt).not.toBeNull();
+    expect(fixed.state.lastError).toBeNull();
+
+    const failing = ok(await create({ title: 'Failing', schedule: 'every 1h', action: 'dispatch' }));
+    await rawLoopUpdate(failing.id, "last_error = 'spawn refused: capacity'");
+    const edited = ok(await request('PATCH', `/v2/loops/${failing.id}`, { expectedVersion: failing.version, definition: { schedule: 'every 2h' } }));
+    expect(edited.state.lastError).toBe('spawn refused: capacity');
+  });
+
+  it('a stored schedule that predates validation blocks neither a rename nor a disable; enabling it is a 400', async () => {
+    const view = ok(await create({ title: 'Legacy', schedule: 'every 1h', action: 'dispatch' }));
+    await rawLoopUpdate(view.id, "schedule = 'sometimes'");
+    const renamed = ok(await request('PATCH', `/v2/loops/${view.id}`, { expectedVersion: view.version, definition: { title: 'Legacy, renamed' } }));
+    const off = ok(await request('POST', `/v2/loops/${view.id}/disable`, { expectedVersion: renamed.version }));
+    expect(off.state.enabled).toBe(false);
+    expect(refused(await request('POST', `/v2/loops/${view.id}/enable`, { expectedVersion: off.version }), 400, 'invalid_input').message)
+      .toMatch(/^schedule:/);
+  });
+
   it('pause until a future instant, refuse a past one, resume clears it', async () => {
     const view = ok(await create({ title: 'Pausable', schedule: 'every 1h', action: 'dispatch' }));
     refused(await request('POST', `/v2/loops/${view.id}/pause`, { expectedVersion: view.version, until: '2001-01-01T00:00:00Z' }), 400, 'invalid_input');
@@ -212,5 +270,33 @@ describe('entities.* loop arm', () => {
 
   it('refuses an invalid schedule (assertValidSchedule on every write)', async () => {
     refused(await request('POST', '/v2/entities', { spaceId: space, kind: 'loop', title: 'Broken', content: { schedule: 'sometimes' } }), 400, 'invalid_input');
+  });
+
+  it("keeps 091's meaning: clearing a spawn loop's runner routes it to the dispatcher", async () => {
+    const id = ok(await request('POST', '/v2/entities', { spaceId: space, kind: 'loop', title: 'Old UI spawn',
+      content: { schedule: 'every 1h', teamMemberId: persona } })).entity.id;
+    const spawn = ok(await request('GET', `/v2/loops/${id}`));
+    expect(spawn.definition.action).toBe('spawn');
+    ok(await request('PATCH', `/v2/entities/${id}`, { expectedVersion: spawn.version, content: { teamMemberId: null } }));
+    expect(ok(await request('GET', `/v2/loops/${id}`)).definition).toMatchObject({ action: 'dispatch', teamMemberId: null });
+  });
+
+  it("honours the loop panel's Run now (a nextRunAt of now) and ignores a later client value", async () => {
+    const view = ok(await create({ title: 'Run me', schedule: 'every 1d', action: 'dispatch' }));
+    ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: view.version, content: { nextRunAt: new Date().toISOString() } }));
+    const due = ok(await request('GET', `/v2/loops/${view.id}`));
+    expect(new Date(due.state.nextRunAt).getTime()).toBeLessThanOrEqual(Date.now());
+    ok(await request('PATCH', `/v2/entities/${view.id}`, { expectedVersion: due.version, content: { nextRunAt: '2099-01-01T00:00:00.000Z' } }));
+    expect(ok(await request('GET', `/v2/loops/${view.id}`)).state.nextRunAt).toBe(due.state.nextRunAt);
+  });
+
+  it('applies the tool persona rule loops.create applies', async () => {
+    const tool = { schedule: 'every 1h', action: 'tool', toolId: writeTool };
+    expect(refused(await request('POST', '/v2/entities', { spaceId: space, kind: 'loop', title: 'Tool, no persona', content: tool }),
+      400, 'invalid_input').message).toMatch(/^definition\.teamMemberId/);
+    const id = ok(await request('POST', '/v2/entities', { spaceId: space, kind: 'loop', title: 'Tool, persona',
+      content: { ...tool, teamMemberId: persona } })).entity.id;
+    const view = ok(await request('GET', `/v2/loops/${id}`));
+    refused(await request('PATCH', `/v2/entities/${id}`, { expectedVersion: view.version, content: { teamMemberId: null } }), 400, 'invalid_input');
   });
 });

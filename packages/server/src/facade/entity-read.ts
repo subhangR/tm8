@@ -179,10 +179,14 @@ export const ENTITY_COLUMNS = `
   lp.prompt as loop_prompt, lp.config as loop_config,
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
-  lp.action as loop_action, lp.timezone as loop_timezone, lp.paused_until as loop_paused_until,
-  lp.tool_id as loop_tool_id, lp.tool_inputs as loop_tool_inputs, lp.concurrency as loop_concurrency,
-  lp.max_runtime_seconds as loop_max_runtime_seconds, lp.retry_attempts as loop_retry_attempts,
-  lp.retry_delay_seconds as loop_retry_delay_seconds,
+  -- 384's columns read through to_jsonb (the chat-column pattern above), so a
+  -- suite that applies only the migrations it needs still runs this select.
+  to_jsonb(lp)->>'action' as loop_action, to_jsonb(lp)->>'timezone' as loop_timezone,
+  to_jsonb(lp)->>'paused_until' as loop_paused_until, to_jsonb(lp)->>'tool_id' as loop_tool_id,
+  to_jsonb(lp)->'tool_inputs' as loop_tool_inputs, to_jsonb(lp)->>'concurrency' as loop_concurrency,
+  (to_jsonb(lp)->>'max_runtime_seconds')::int as loop_max_runtime_seconds,
+  (to_jsonb(lp)->>'retry_attempts')::int as loop_retry_attempts,
+  (to_jsonb(lp)->>'retry_delay_seconds')::int as loop_retry_delay_seconds,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
   to_jsonb(cht)->'credential_selection' as chat_credential_selection,
   to_jsonb(cht)->'credential_intent' as chat_credential_intent,
@@ -632,7 +636,7 @@ export interface EntityRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
-  // Loops 378 columns. Optional: a row built by a select without the loops join has none.
+  // Loops 384 columns. Optional: a row built by a select without the loops join has none.
   loop_action?: 'spawn' | 'dispatch' | 'tool' | null;
   loop_timezone?: string | null;
   loop_paused_until?: Date | string | null;
@@ -2468,7 +2472,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  // A loop is edited through update_loop (091/378); research A found it missing here.
+  // A loop is edited through update_loop (091/384); research A found it missing here.
   const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story', 'craft', 'loop']);
   // A story's children are child stories (same-kind hierarchy, 283).
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);

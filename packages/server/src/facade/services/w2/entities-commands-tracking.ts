@@ -81,7 +81,7 @@ import {
 import type { RpcCommandResult } from '../../handlers/entities.js';
 import { buildReceipt, receiptSnapshot, wantsReceipt, type ServerReceipt } from '../../receipt.js';
 import { parentKindRefusal } from '../../placement-guidance.js';
-import { requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
+import { assertToolPersona, isRunNowRequest, requireSpawnConfig, requireValidSchedule, scheduleWrite } from '../../../loops/write.js';
 import { RUNS_ON, RUNS_ON_USAGE_OPERATION, runsOnListedFrom } from './runs-on-visibility.js';
 import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
@@ -1509,7 +1509,9 @@ export class W2EntitiesCommandsTrackingService {
               input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null,
               content.action ?? null, content.toolId ?? null, JSON.stringify(content.toolInputs ?? {}),
               timezone, content.concurrency ?? 'skip', content.maxRuntimeSeconds ?? null,
-              retry.attempts ?? 0, retry.delaySeconds ?? 300]);
+              retry.attempts ?? 0, retry.delaySeconds ?? 300, write.lastError ?? null]);
+            // The same persona rule loops.create applies (coordinator ruling, §2.1).
+            if (raw.entity) await assertToolPersona(q, raw.entity.id);
           }
           break;
         case 'graph': {
@@ -1705,22 +1707,39 @@ export class W2EntitiesCommandsTrackingService {
             // to null a column — so an unrelated patch cannot silently
             // unschedule a loop or drop its runner.
             // Loops design §3.1: nextRunAt is the server's, recomputed from now on
-            // a schedule/timezone change or an enable; a client value is ignored.
+            // a schedule/timezone change or an enable; a client value is ignored,
+            // except the loop panel's Run now (a nextRunAt of now, LoopControls),
+            // kept as "due at the next tick" until the UI calls loops.runNow.
             {
-              const current = (await q.query<{ schedule: string; timezone: string; enabled: boolean }>(
-                'select schedule, timezone, enabled from public.loops where entity_id = $1', [id]))[0];
+              const current = (await q.query<{
+                schedule: string; timezone: string; enabled: boolean; action: string;
+                nextRunAt: Date | null; lastError: string | null;
+              }>(`select schedule, timezone, enabled, action, next_run_at as "nextRunAt", last_error as "lastError"
+                    from public.loops where entity_id = $1`, [id]))[0];
               if (!current) throw new CollabError('not_found', `loop ${id} not found`);
               const after = {
                 schedule: typeof content.schedule === 'string' ? content.schedule : current.schedule,
                 timezone: typeof content.timezone === 'string' ? content.timezone : current.timezone,
                 enabled: typeof content.enabled === 'boolean' ? content.enabled : current.enabled,
               };
-              requireValidSchedule(after.schedule, after.timezone);
+              // Only what this patch writes is validated: disabling or renaming a
+              // loop whose stored schedule predates validation must still work.
+              if (typeof content.schedule === 'string' || typeof content.timezone === 'string') {
+                requireValidSchedule(after.schedule, after.timezone);
+              }
               const config = content.config === undefined ? undefined : requireSpawnConfig(content.config);
-              if (content.nextRunAt !== undefined) {
+              // 091's meaning on this path: a runner is a spawn, no runner is the
+              // dispatcher. A patch that moves the runner and names no action
+              // moves the action with it; a tool loop's runner is its persona.
+              const action = content.action
+                ?? (current.action === 'spawn' && content.teamMemberId === null ? 'dispatch'
+                  : current.action === 'dispatch' && typeof content.teamMemberId === 'string' ? 'spawn' : null);
+              const runNow = isRunNowRequest(content.nextRunAt);
+              if (content.nextRunAt !== undefined && !runNow) {
                 console.warn(`[tm8:loops] entities.patch ignored a client nextRunAt for loop ${id}`);
               }
               const write = scheduleWrite(current, after);
+              const nextRunAt = runNow ? new Date().toISOString() : write.nextRunAt;
               const retry = (content.retry ?? {}) as { attempts?: number; delaySeconds?: number };
               raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
                 input.title ?? null, content.schedule ?? null,
@@ -1729,14 +1748,15 @@ export class W2EntitiesCommandsTrackingService {
                 content.prompt ?? null,
                 config === undefined ? null : JSON.stringify(config),
                 content.enabled ?? null,
-                write.nextRunAt ?? null, write.nextRunAt === null,
-                null, write.lastError ?? null, false,
+                nextRunAt ?? null, nextRunAt === null,
+                null, write.lastError ?? null, write.lastError === null,
                 envelope.clientMutationId ?? null,
-                content.action ?? null, content.toolId ?? null, content.toolId === null,
+                action, content.toolId ?? null, content.toolId === null,
                 content.toolInputs === undefined ? null : JSON.stringify(content.toolInputs),
                 content.timezone ?? null, null, false, content.concurrency ?? null,
                 content.maxRuntimeSeconds ?? null, content.maxRuntimeSeconds === null,
                 retry.attempts ?? null, retry.delaySeconds ?? null, null]);
+              await assertToolPersona(q, id);
             }
             break;
           case 'graph': {

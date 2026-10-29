@@ -123,7 +123,13 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // `story` (283) sits right above `task`: it is the level work is told at —
     // one idea, its roots and where it stands — so it reads before the tasks
     // it gathers rather than among the containers in Structure.
-    kinds: ['chat', 'story', 'task', 'work_session', 'form', 'project'],
+    //
+    // `tool` and `loop` LEFT ADMIN (Tools v2 / Loops coordinator decision,
+    // 2026-10-28): they are runnable work, not wiring. A tool is a script any
+    // member runs into a session; a loop fires sessions, or a tool, on a
+    // schedule. Both sit after `form` and before `project`, which still
+    // closes the group.
+    kinds: ['chat', 'story', 'task', 'work_session', 'form', 'tool', 'loop', 'project'],
   },
   {
     id: 'library',
@@ -157,11 +163,12 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // on Home. What a session launches under, the keys it runs with, then the
     // other spaces and machines this one reaches.
     //
-    // The last three were the "Beta" group: shipped and reachable, shape not
-    // settled. They sit last so the settled kinds read first. `style` (284)
-    // follows them: the space's published themes are picked from the
-    // account menu, not created here — the same "listed, managed elsewhere" shape.
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'tool', 'style', 'loop', 'spell', 'container'],
+    // `style` (284) follows: the space's published themes are picked from the
+    // account menu, not created here — the same "listed, managed elsewhere"
+    // shape. `spell` and `container` close it, what is left of the "Beta"
+    // group (shipped and reachable, shape not settled) once `loop` and `tool`
+    // moved to Work, so the settled kinds read first.
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'style', 'spell', 'container'],
   },
 ];
 
