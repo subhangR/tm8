@@ -106,7 +106,7 @@ describe('Q15 / B20 — tm8.session_space_id across kind x TM8_SPACE_SESSIONS', 
   it('the kill switch still releases the HUMAN pins, which is all it was for', () => {
     // The paired negative. Without it, "pinned in every mode" could be passing
     // because the mode argument is ignored altogether.
-    for (const kind of ['browser', 'cli'] as const) {
+    for (const kind of ['browser', 'cli', 'mobile'] as const) {
       expect(identityFromSession(row(kind, SPACE), 'bearer', 'off').sessionSpaceId).toBeUndefined();
       expect(identityFromSession(row(kind, SPACE), 'bearer', 'agents').sessionSpaceId).toBe(SPACE);
       expect(identityFromSession(row(kind, SPACE), 'bearer', 'enforce').sessionSpaceId).toBe(SPACE);
@@ -116,7 +116,7 @@ describe('Q15 / B20 — tm8.session_space_id across kind x TM8_SPACE_SESSIONS', 
   it('a human gate session keeps its node-admin power while binding no Space', () => {
     // Folded in from pinned-kinds-always-bound.test.ts: the pin and node-admin
     // move together (K6), so an unpinned gate row must NOT lose the power.
-    for (const kind of ['browser', 'cli'] as const) {
+    for (const kind of ['browser', 'cli', 'mobile'] as const) {
       for (const mode of MODES) {
         const identity = identityFromSession({ ...row(kind, null), isNodeAdmin: true }, 'bearer', mode);
         expect(identity.sessionSpaceId).toBeUndefined();

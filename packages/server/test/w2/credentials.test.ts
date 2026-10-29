@@ -203,7 +203,7 @@ function deps(db: Db): FacadeDeps {
  */
 function context(
   opName: OperationName,
-  authKind: 'browser' | 'cli' | 'agent' | 'agent_runtime' | undefined,
+  authKind: 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | undefined,
   options: { params?: Record<string, string>; body?: unknown } = {},
 ): RequestContext {
   return {
@@ -451,7 +451,7 @@ describe('R2 — credential operations are human-only, status included', () => {
      * end-to-end path further down this file, so "admitted" is never the only
      * evidence that the operation works.
      */
-    for (const humanKind of ['browser', 'cli'] as const) {
+    for (const humanKind of ['browser', 'cli', 'mobile'] as const) {
       it(`POSITIVE CONTROL: a ${humanKind} session is ADMITTED on ${opName}`, async () => {
         // `cli` is human. A person at a terminal has exactly the entitlement of
         // a person in the settings screen — the guard separates human from

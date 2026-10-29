@@ -30,7 +30,7 @@ import {
 import type { DbSpaceLinkStore } from '../../src/credentials/space-link-store.js';
 import type { RequestContext } from '../../src/http/types.js';
 
-type AuthKind = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
+type AuthKind = 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | 'link';
 
 const SPACE = '01a0dc00-0000-7000-8000-000000000001';
 const TARGET = '01a0dc00-0000-7000-8000-000000000002';
@@ -111,7 +111,7 @@ async function invoke(registry: RawRegistry, ctx: RequestContext): Promise<unkno
 describe('W6 layer-1 guard — spaceLinks.* writes are human-only', () => {
   // `undefined` is a resolver that established no kind: the guard fails closed.
   const REFUSED: ReadonlyArray<AuthKind | undefined> = ['agent', 'agent_runtime', 'link', undefined];
-  const ADMITTED: readonly AuthKind[] = ['browser', 'cli'];
+  const ADMITTED: readonly AuthKind[] = ['browser', 'cli', 'mobile'];
 
   for (const { op, method, body } of WRITES) {
     for (const kind of REFUSED) {
