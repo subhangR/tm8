@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CollabError, type EntitySummary, type SpaceId, type ToolView } from '@tm8/contract';
-import type { LoopsClient } from './api';
+import { fieldPathOf, type LoopsClient } from './api';
 import { createFixtureLoopsClient, fixtureLoopView } from './fixture';
+import { LoopEditDialog } from './LoopEditDialog';
 import { LoopForm, type LoopFormSources } from './LoopForm';
 import { PREVIEW_DEBOUNCE_MS } from './SchedulePreview';
 import { expressionOf, presetOf } from './schedule-presets';
@@ -32,7 +33,9 @@ const TOOL_VIEW = {
   executionVersion: 1, configRevision: 0, config: {}, secretBindings: [],
 } as unknown as ToolView;
 
-function sources(): LoopFormSources & { query: ReturnType<typeof vi.fn> } {
+const WRITE_TOOL = { ...TOOL_VIEW, definition: { ...TOOL_VIEW.definition, tm8Access: 'write' } } as unknown as ToolView;
+
+function sources(getTool: () => Promise<ToolView> = async () => TOOL_VIEW): LoopFormSources & { query: ReturnType<typeof vi.fn> } {
   const rows: Record<string, EntitySummary[]> = {
     team_member: [summary(ADA, 'team_member', 'Ada')],
     tool: [summary(TOOL, 'tool', 'sweep')],
@@ -46,16 +49,17 @@ function sources(): LoopFormSources & { query: ReturnType<typeof vi.fn> } {
     query: query as never,
     entity: (async (id: string) => ({ id, title: id === DOC ? 'Roadmap' : 'Memory', state: { kind: 'doc' } })) as never,
     projects: (async () => []) as never,
-    commands: { tools: { get: async () => TOOL_VIEW } },
+    commands: { tools: { get: getTool } },
   } as never;
 }
 
-function mount(client: LoopsClient, extra: Partial<Parameters<typeof LoopForm>[0]> = {}) {
+function mount(client: LoopsClient, extra: Record<string, unknown> = {}, getTool?: () => Promise<ToolView>) {
   const onSaved = vi.fn();
   const onClose = vi.fn();
+  const props = { mode: 'create', spaceId: SPACE, client, sources: sources(getTool), onSaved, onClose, ...extra } as Parameters<typeof LoopForm>[0];
   render(
     <div className="cv2-root">
-      <LoopForm mode="create" spaceId={SPACE} client={client} sources={sources()} onSaved={onSaved} onClose={onClose} {...extra} />
+      <LoopForm {...props} />
     </div>,
   );
   return { onSaved, onClose };
@@ -242,5 +246,158 @@ describe('server validation errors render on the named field', () => {
     fireEvent.click(screen.getByTestId('loop-action-dispatch'));
     submit();
     await waitFor(() => expect(document.querySelector('.au-refusal, [data-testid="refusal-card"]') ?? screen.queryByText(/back to the form/)).toBeTruthy());
+  });
+});
+
+describe('a tool loop runs as a persona', () => {
+  it('a tool that reaches tm8 needs the teammate it runs as, and sends it', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    mount(client, {}, async () => WRITE_TOOL);
+    name('Sweep');
+    fireEvent.click(screen.getByTestId('loop-action-tool'));
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    fireEvent.change(await screen.findByLabelText('depth'), { target: { value: '3' } });
+    submit();
+    expect(await screen.findByText('This tool works in tm8, so pick the teammate it runs as.')).toBeTruthy();
+    expect(create).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('loop-tool-persona'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-persona-${ADA}`));
+    submit();
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]![1]).toMatchObject({ action: 'tool', toolId: TOOL, teamMemberId: ADA, toolInputs: { depth: 3 } });
+  });
+
+  it("the server's persona refusal is drawn under Runs as, without the path head", async () => {
+    const client = createFixtureLoopsClient();
+    vi.spyOn(client, 'create').mockRejectedValue(new CollabError('invalid_input',
+      'definition.teamMemberId: a tool with tm8Access read runs as a persona; name one', { details: { path: 'definition.teamMemberId' } }));
+    mount(client);
+    name('Sweep');
+    fireEvent.click(screen.getByTestId('loop-action-tool'));
+    fireEvent.click(screen.getByTestId('loop-tool'));
+    fireEvent.click(await screen.findByTestId(`loop-tool-${TOOL}`));
+    fireEvent.change(await screen.findByLabelText('depth'), { target: { value: '3' } });
+    submit();
+    expect(await screen.findByText('a tool with tm8Access read runs as a persona; name one')).toBeTruthy();
+  });
+});
+
+describe('an edit never rewrites what the human did not touch', () => {
+  const toolLoop = () => fixtureLoopView('019fe999-0000-7000-8000-00000000b002', SPACE, {
+    title: 'Sweep', action: 'tool', toolId: TOOL, teamMemberId: ADA, toolInputs: { depth: 2 },
+  }, { version: 4 });
+
+  it('a tool loop keeps its persona and inputs, even while the tool is still being read', async () => {
+    const view = toolLoop();
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view }, () => new Promise<ToolView>(() => undefined));
+    name('Sweep (nightly)');
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ title: 'Sweep (nightly)' });
+  });
+
+  it('a tool loop sends only the input that changed once the tool is read', async () => {
+    const view = toolLoop();
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view });
+    const depth = await screen.findByLabelText('depth') as HTMLInputElement;
+    expect(depth.value).toBe('2');
+    fireEvent.change(depth, { target: { value: '4' } });
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ toolInputs: { depth: 4 } });
+  });
+
+  it('a spawn loop keeps a max runtime off the minute, a lone agent tool and its schedule spelling', async () => {
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000b003', SPACE, {
+      title: 'Nightly', action: 'spawn', teamMemberId: ADA, schedule: '0  9 * * *', maxRuntimeSeconds: 90,
+      config: { agentTool: 'codex', accessMode: 'auto' },
+    }, { version: 2 });
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view });
+    name('Nightly sweep');
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ title: 'Nightly sweep' });
+
+    update.mockClear();
+    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.change(screen.getByLabelText('Max runtime (minutes)'), { target: { value: '3' } });
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ title: 'Nightly sweep', maxRuntimeSeconds: 180 });
+  });
+
+  it('a create leaves the retry delay at the contract default', async () => {
+    const client = createFixtureLoopsClient();
+    const create = vi.spyOn(client, 'create');
+    mount(client);
+    name('Morning triage');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    submit();
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(create.mock.calls[0]![1]).toMatchObject({ retry: { attempts: 0, delaySeconds: 300 } });
+  });
+});
+
+describe('where the form is drawn', () => {
+  it('inline (a draft tab) is not a modal and ignores a window Escape', () => {
+    const { onClose } = mount(createFixtureLoopsClient(), { inline: true });
+    expect(screen.getByTestId('loop-form')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.querySelector('.au-dialog__backdrop')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('as a dialog it is modal and Escape closes it', () => {
+    const { onClose } = mount(createFixtureLoopsClient());
+    expect(screen.getByRole('dialog', { name: 'New loop' }).getAttribute('aria-modal')).toBe('true');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('the edit dialog reads the loop, opens the form on it and saves under its version', async () => {
+    const view = fixtureLoopView('019fe999-0000-7000-8000-00000000b004', SPACE, { title: 'Weekly', action: 'dispatch' }, { version: 6 });
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    const onSaved = vi.fn();
+    render(<div className="cv2-root"><LoopEditDialog editor={{ loopId: view.id, spaceId: SPACE, client, sources: sources(), onSaved }} onClose={() => undefined} /></div>);
+    expect(screen.getByText('Reading the loop…')).toBeTruthy();
+    await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Weekly'));
+    name('Weekly digest');
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![0]).toMatchObject({ id: view.id, version: 6 });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('the field a refusal names', () => {
+  it('reads a string details.path and drops the path head the doors repeat', () => {
+    expect(fieldPathOf(new CollabError('invalid_input', 'schedule: cron needs 5 fields, got 2', { details: { path: 'definition.schedule' } })))
+      .toEqual({ path: 'schedule', message: 'cron needs 5 fields, got 2' });
+    expect(fieldPathOf(new CollabError('invalid_input', 'definition.config.model: Expected string', { details: { path: 'definition.config.model' } })))
+      .toEqual({ path: 'config.model', message: 'Expected string' });
+    expect(fieldPathOf(new CollabError('invalid_input', 'until must be in the future', { details: { path: 'until' } })))
+      .toEqual({ path: 'until', message: 'until must be in the future' });
+  });
+
+  it('a schedule refusal shows its text, not its path, under the schedule', async () => {
+    const client = createFixtureLoopsClient();
+    vi.spyOn(client, 'create').mockRejectedValue(new CollabError('invalid_input', 'schedule: cron needs 5 fields, got 2', { details: { path: 'definition.schedule' } }));
+    mount(client);
+    name('X');
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    submit();
+    expect(await screen.findByText('cron needs 5 fields, got 2')).toBeTruthy();
+    expect(screen.queryByText(/^schedule: /)).toBeNull();
   });
 });

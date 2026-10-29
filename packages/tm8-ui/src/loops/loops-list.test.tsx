@@ -94,6 +94,32 @@ describe('the loops list', () => {
     expect(screen.getByRole('dialog', { name: 'New loop' })).toBeTruthy();
   });
 
+  it('asks the server once the filter pauses, not on every keystroke', async () => {
+    const { client } = mount();
+    const list = vi.spyOn(client, 'list');
+    await screen.findByRole('table');
+    list.mockClear();
+    for (const text of ['n', 'ni', 'nig', 'night']) fireEvent.change(screen.getByLabelText('Filter loops'), { target: { value: text } });
+    expect(list).not.toHaveBeenCalled();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    expect(list.mock.calls[0]![1]).toMatchObject({ words: 'night' });
+  });
+
+  it('a second click while the switch is busy sends nothing', async () => {
+    const { client } = mount();
+    let finish: () => void = () => undefined;
+    const disable = vi.spyOn(client, 'disable').mockImplementation(loop => new Promise(resolve => {
+      finish = () => resolve({ ...(loop as never), state: { ...fixtureLoopView('x', SPACE).state, enabled: false } } as never);
+    }));
+    const toggle = await screen.findByRole('switch', { name: 'Disable Ada sweep' });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-busy')).toBe('true'));
+    fireEvent.click(toggle);
+    expect(disable).toHaveBeenCalledTimes(1);
+    finish();
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Enable Ada sweep' }).getAttribute('aria-busy')).toBeNull());
+  });
+
   it('says an empty space has no loops yet', async () => {
     mount(createFixtureLoopsClient());
     expect((await screen.findByTestId('loops-empty')).textContent).toContain('No loops yet');
