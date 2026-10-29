@@ -96,6 +96,7 @@ describe('tool exit capture on real PTYs', () => {
     expect(tail).not.toContain('ordinary-secret-value'); expect(tail).not.toContain('tm8s_secret_run_token');
     expect(tail).toContain('[credential-redacted]'); expect(run.revokeToken).toHaveBeenCalledTimes(1);
     expect(tail.split('── demo-tool v3 exited 7 in ').length - 1).toBe(1); // the footer, once
+    expect(tail).toContain(`── demo-tool v3 · inputs: key=[masked] ──\r\n── cwd: ${run.dir} ──`); // where the tool ran
     expect(run.host.hasSession(run.sessionId)).toBe(false);
   });
   it('leaves a usable shell after exit with secrets, token and agent-context marker absent', async () => {

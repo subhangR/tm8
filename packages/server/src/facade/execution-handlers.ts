@@ -78,6 +78,7 @@ import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTI
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import type { ToolRuntime } from '../tools/runtime.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -3044,6 +3045,11 @@ export function createLoopExecutorPort(deps: {
   resolveOwner: () => Promise<LoopbackOwner>;
   /** Same seam `execution.dispatch` uses; absent ⇒ stored-but-undelivered. */
   dispatchDelivery?: DispatchDelivery;
+  /**
+   * Tools v2 PR-C: how a firing runs a tool (docs/features/tools/SCHEDULED-RUNS.md).
+   * Called with `claimsForLoop`; absent on a node with no execution block.
+   */
+  tools?: Pick<ToolRuntime, 'runScheduled'>;
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
