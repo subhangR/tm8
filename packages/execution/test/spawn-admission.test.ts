@@ -152,6 +152,27 @@ describe('SpawnService.admit — answer at admission, boot behind it', () => {
     expect(graph.bootPhaseReports.map((r) => r.bootPhase)).toEqual(['lane']);
   });
 
+  it('a stop that reaches failSession is recognised as already ended: one write, no retries', async () => {
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4611',
+      dataDir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
+      bootSettlementMs: 25,
+      failedTransitionRetryMs: 1,
+    });
+    graph.refuseBootPhase = 'lane';
+
+    const outcome = await (await service.admit(AUTH, REQUEST)).boot;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(outcome.ok).toBe(false);
+    // The refused `failed` write is the row saying "already terminal" in the
+    // translated shape production delivers — not an outage to retry.
+    expect(graph.refusedStatusWrites.map((t) => t.status)).toEqual(['failed']);
+  });
+
   it('a session stopped between its agent report and `running` has its process killed', async () => {
     graph.refuseBootPhase = 'agent';
 

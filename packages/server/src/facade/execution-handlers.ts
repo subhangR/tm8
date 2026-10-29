@@ -133,7 +133,7 @@ import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { loadDesignContextForTask } from './spawn-design.js';
-import { buildDetail, toCommandResult, type RpcCommandResult } from './handlers/entities.js';
+import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
@@ -2531,21 +2531,9 @@ async function assembleCommandResult(
   raw: unknown,
   viewerIdentityId: string,
 ): Promise<unknown> {
-  // The entity's DETAIL and the rest (patches, edge, undo) are independent
-  // reads of rows the command already committed, so they run on two pooled
-  // clients at once instead of one after the other on one. Measured on a
-  // spawn (379, load ~80): the detail — row, summary, hierarchy, connections —
-  // was 400-700 ms and the patch summaries another 40-175 ms of the same
-  // single-client chain; side by side the answer costs the larger of the two.
-  const command = (raw ?? {}) as RpcCommandResult;
-  const entityId = command.entity?.id;
-  if (!entityId) return db.tx(claims, (q) => toCommandResult(q, command, viewerIdentityId));
-  const { entity: _entity, ...rest } = command;
-  const [entity, result] = await Promise.all([
-    db.tx(claims, (q) => buildDetail(q, entityId, viewerIdentityId)),
-    db.tx(claims, (q) => toCommandResult(q, rest, viewerIdentityId)),
-  ]);
-  return { entity, ...result };
+  // Two clients: the entity's detail is built beside the rest (toCommandResult).
+  return db.tx(claims, (q) => db.tx(claims, (detailOn) =>
+    toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId, { detailOn })));
 }
 
 /**

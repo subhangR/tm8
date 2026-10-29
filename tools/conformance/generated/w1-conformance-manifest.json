@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:2c09446a2a3ad1431ae8817e97d506cb4e1599537ad0646047e144cb936a575f",
+  "catalogDigest": "sha256:9c153b44706dd9893f8be587673f77373d49058d8a2aeef7ee132f45097d3ba3",
   "catalog": {
-    "total": 396,
-    "v1": 394,
+    "total": 397,
+    "v1": 395,
     "reserved": 2,
-    "http": 394,
+    "http": 395,
     "ws": 1,
-    "registerableV1Http": 392,
+    "registerableV1Http": 393,
     "methods": {
-      "GET": 132,
+      "GET": 133,
       "POST": 195,
       "PATCH": 22,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 139,
+      "read": 140,
       "command": 255,
       "stream": 2
     },
-    "uniqueNames": 396,
-    "uniqueBindings": 395
+    "uniqueNames": 397,
+    "uniqueBindings": 396
   },
   "reservedOperations": [
     "search.query",
@@ -1930,6 +1930,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.bootState",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/boot",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.gitStatus",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/git/status",
@@ -3176,7 +3183,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 364
+    "unimplementedV1Http": 365
   },
   "schemas": {
     "additive": {
@@ -7480,6 +7487,23 @@
         "intentTags": [
           "execution",
           "launch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.bootState",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.bootState",
+        "intentTags": [
+          "execution",
+          "boot",
+          "state"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

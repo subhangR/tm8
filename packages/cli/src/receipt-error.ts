@@ -41,6 +41,7 @@ import { clampTitle, ROW_CAP, SCHEMA_VERSION, type ReceiptOp } from './receipt.j
 import type { Tm8Client } from './client.js';
 import { clientFor } from './discovery/observe.js';
 import type { CommandContext } from './run.js';
+import { isRecord } from './guards.js';
 
 /** The four gate refusals the Server names in `details.reason` (§4.3). */
 export const GATE_REASONS = [
@@ -82,9 +83,6 @@ const TAKES_EXPECT_VERSION: ReadonlySet<ReceiptOp> = new Set(['task.complete', '
 
 type Rec = Record<string, unknown>;
 
-function isRecord(v: unknown): v is Rec {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;

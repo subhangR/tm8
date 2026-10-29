@@ -63,6 +63,7 @@ import {
 import type { CommandContext, CommandModule } from '../run.js';
 import { callerMutationId, spawnPostureText, spawnedWorktreeId, successReceipt } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
+import { isRecord } from '../guards.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
 const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
@@ -664,9 +665,6 @@ async function bootedLaunchReceipt(cmd: CommandContext, sessionId: string): Prom
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * The checkout path a spawned worktree session works in — the one receipt

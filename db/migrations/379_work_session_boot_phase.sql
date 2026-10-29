@@ -152,9 +152,11 @@ create trigger work_sessions_advance_boot_phase
 -- 3. The writer: 302's work_session_transition, plus p_boot_phase
 -- -----------------------------------------------------------------------------
 --
--- Body unchanged from 302 except the `boot_phase` line in the UPDATE. A NULL
--- p_boot_phase leaves the column as it is, so the trigger derives the phase
--- from the status; a phase with the status unchanged is a progress report.
+-- Body unchanged from 302 except the `boot_phase` line in the UPDATE and the
+-- progress-report branch at the end. A NULL p_boot_phase leaves the column as
+-- it is, so the trigger derives the phase from the status; a phase with the
+-- status unchanged is a progress report, which bumps neither version nor
+-- activity_at and announces itself with its own `entity.upsert`.
 -- Positional callers of the 8-argument form keep working: the new argument is
 -- last and defaults to NULL.
 
@@ -218,9 +220,22 @@ begin
    where entity_id = p_session_id;
   perform set_config('tm8.work_session_transition', 'off', true);
 
-  update public.entities
-     set version = version + 1, activity_at = now(), updated_at = now()
-   where id = p_session_id;
+  if p_boot_phase is not null and current_status = p_status then
+    -- A PROGRESS REPORT moves no status, so it is not an edit of the entity:
+    -- no version bump (a caller holding the admitted detail may still write
+    -- with its version) and no activity_at (recency feeds do not reorder
+    -- around a boot). The entities row is untouched, so its capture trigger
+    -- stays silent; the change is announced here instead, as the same
+    -- `entity.upsert` the trigger writes, and the mapper hydrates the
+    -- session's current state — its new boot phase — from it.
+    insert into public.workspace_events(space_id, seq, event_type, payload, client_mutation_id, recipient_member_id)
+    select en.space_id, internal.next_event_seq(en.space_id), 'entity.upsert', to_jsonb(en), internal.claim_cmid(), null
+      from public.entities en where en.id = p_session_id;
+  else
+    update public.entities
+       set version = version + 1, activity_at = now(), updated_at = now()
+     where id = p_session_id;
+  end if;
 
   return internal.ledger_record(p_client_mutation_id, 'execution.transition',
            internal.command_result(p_session_id, null, null, array[p_session_id]));

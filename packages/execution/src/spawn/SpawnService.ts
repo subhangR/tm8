@@ -394,11 +394,6 @@ async function allOrFirstFailure<T extends readonly unknown[] | []>(
   };
 }
 
-function settledValue<T>(result: PromiseSettledResult<T>): T {
-  if (result.status === 'rejected') throw result.reason;
-  return result.value;
-}
-
 /** How `admit` schedules the boot it starts. */
 export interface AdmitOptions {
   /**
@@ -412,6 +407,18 @@ export interface AdmitOptions {
   bootAfter?: Promise<unknown>;
 }
 
+/**
+ * The Postgres sqlstate behind a graph-port failure. A raw driver error carries
+ * it as `code`; the server's port translates every database error into a
+ * CollabError (`invariant_violation`, …) and keeps the sqlstate in
+ * `details.sqlstate` (db/errors.ts), which is the shape production delivers.
+ */
+function sqlStateOf(error: unknown): string | undefined {
+  const e = error as { code?: unknown; details?: { sqlstate?: unknown } } | null;
+  if (typeof e?.details?.sqlstate === 'string') return e.details.sqlstate;
+  return typeof e?.code === 'string' && /^[0-9A-Z]{5}$/.test(e.code) ? e.code : undefined;
+}
+
 /** Stop the boot when a phase report found its session already stopped. */
 function throwIfStopped(stopped: SpawnError | null): void {
   if (stopped) throw stopped;
@@ -422,7 +429,6 @@ const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
 
 /** How long `prompt` waits for the PTY of a session still booting here before refusing. */
 const PROMPT_BOOT_WAIT_MS = 30_000;
-const PROMPT_BOOT_POLL_MS = 50;
 
 /** The longest a boot waits for its caller's answer (`AdmitOptions.bootAfter`) before it starts anyway. */
 const BOOT_AFTER_MAX_WAIT_MS = 2_000;
@@ -757,6 +763,12 @@ export class SpawnService {
    * admission, and a caller that prompts right after it must keep working.
    */
   private readonly bootingSessions = new Set<string>();
+
+  /**
+   * Prompts waiting for a booting session's terminal (`awaitBootedTerminal`),
+   * woken when the boot spawns its PTY or ends without one.
+   */
+  private readonly terminalWaiters = new Map<string, Array<() => void>>();
 
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
@@ -1821,9 +1833,10 @@ export class SpawnService {
    *
    *   1. read the graph — context ∥ the parent's posture ∥ the interaction
    *      profile, three independent reads of one instant — and resolve the
-   *      launch config and workdir in-process. A refusal keeps the order it
-   *      always had: the context's, then the in-process ones, then the
-   *      profile's, because all three reads settle before any is judged.
+   *      launch config and workdir in-process. All three reads settle before
+   *      any is judged, and the first refusal in that order is the one
+   *      reported: the context's, then the profile's, then the in-process
+   *      checks that need both.
    *   2. read the selection headers `<context_index>` renders.
    *   3. worktree mode: RESERVE the checkout (`reserveWorktree`: repository,
    *      base, id, path, allocation) — never `git worktree add`, which is the
@@ -1842,7 +1855,7 @@ export class SpawnService {
     timer: SpawnPhaseTimer,
   ): Promise<AdmittedLaunch> {
     const taskIds = request.taskIds ?? [];
-    const [contextRead, parentPostureRead, profileRead] = await Promise.allSettled([
+    const [context, parentPosture, resolvedProfile] = await allOrFirstFailure([
       timer.time('loadSpawnContext', () => this.graph.loadSpawnContext(auth, {
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
@@ -1867,7 +1880,6 @@ export class SpawnService {
         interactionProfileId: request.interactionProfileId ?? null,
       })),
     ]);
-    const context = settledValue(contextRead);
 
     // A child inherits its parent's posture but not its harness pick; only a
     // resume replays the pick, because only a resume is the same launch. An
@@ -1875,7 +1887,7 @@ export class SpawnService {
     // replayed, so it keeps its pick: dropping a plugin allow set could widen it.
     const inherited = request.inheritPosture !== undefined
       ? request.inheritPosture
-      : childLaunchPosture(settledValue(parentPostureRead));
+      : childLaunchPosture(parentPosture);
     const launch = timer.timeSync('resolveLaunchConfig', () => resolveLaunchConfig(request, context, this.env, inherited));
     // Fail before creating a work_session row when a coordinated mode has no
     // concrete parent to receive its result. composeManifest repeats this
@@ -1902,7 +1914,6 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
-    const resolvedProfile = settledValue(profileRead);
     // `<context_index>` (design 01a0d348 §2): always on (launch card v3), so
     // its headers are always read.
     const indexSwitch = contextIndexSwitch(this.env, resolvedProfile.snapshot);
@@ -2399,6 +2410,7 @@ export class SpawnService {
         ...(request.cols ? { cols: request.cols } : {}),
         ...(request.rows ? { rows: request.rows } : {}),
       }));
+      this.wakeTerminalWaiters(sessionId);
 
       // Arm the watcher before the first post-spawn await. A very short-lived
       // child can exit while the running transition is in flight; registering
@@ -2428,6 +2440,9 @@ export class SpawnService {
             ...(onboarding
               ? [onboarding.seen.then((seen) => (seen ? ('onboarding' as const) : new Promise<never>(() => {})))]
               : []),
+            // A session stopped around its PTY spawn: the refused report ends
+            // the wait at once, and the catch kills the process.
+            agentPhase.then((stopped) => (stopped ? Promise.reject(stopped) : new Promise<never>(() => {}))),
           ]),
         ]));
       } finally {
@@ -2527,6 +2542,7 @@ export class SpawnService {
     } finally {
       if (worktree) this.bootingWorktrees.delete(worktree.worktreeId);
       this.bootingSessions.delete(sessionId);
+      this.wakeTerminalWaiters(sessionId);
     }
   }
 
@@ -2639,7 +2655,7 @@ export class SpawnService {
       await this.graph.transition(auth, { sessionId, status: 'spawning', bootPhase: phase });
       return null;
     } catch (error) {
-      if ((error as { code?: string } | null)?.code === '23514') {
+      if (sqlStateOf(error) === '23514') {
         return new SpawnError(
           `work session ${sessionId} was stopped while it was starting (at ${phase})`,
           'conflict',
@@ -3703,7 +3719,7 @@ export class SpawnService {
       // earlier (`coalesce(p_error, error)` only protects a NULL write; this
       // one is non-null). Detected by sqlstate rather than by re-reading the
       // row, so no extra query sits on this hot error path.
-      const sqlState = (cleanupError as { code?: string } | null)?.code;
+      const sqlState = sqlStateOf(cleanupError);
       if (sqlState === '23514') {
         this.cancelFailedTransitionRetry(transition.sessionId);
         this.logger?.info(
@@ -3829,12 +3845,22 @@ export class SpawnService {
    * when its boot ends without one or the bound passes.
    */
   private async awaitBootedTerminal(sessionId: string): Promise<boolean> {
-    const deadline = Date.now() + PROMPT_BOOT_WAIT_MS;
-    while (this.bootingSessions.has(sessionId) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, PROMPT_BOOT_POLL_MS));
-      if (this.pty.hasSession(sessionId)) return true;
-    }
+    if (!this.bootingSessions.has(sessionId)) return this.pty.hasSession(sessionId);
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, PROMPT_BOOT_WAIT_MS);
+      timer.unref?.();
+      const waiters = this.terminalWaiters.get(sessionId) ?? [];
+      waiters.push(() => { clearTimeout(timer); resolve(); });
+      this.terminalWaiters.set(sessionId, waiters);
+    });
     return this.pty.hasSession(sessionId);
+  }
+
+  /** Wake every prompt waiting on this session's terminal; see `awaitBootedTerminal`. */
+  private wakeTerminalWaiters(sessionId: string): void {
+    const waiters = this.terminalWaiters.get(sessionId);
+    this.terminalWaiters.delete(sessionId);
+    for (const wake of waiters ?? []) wake();
   }
 
   /**

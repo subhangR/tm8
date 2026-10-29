@@ -135,19 +135,30 @@ describe('379 — boot_phase', () => {
 
   it('moves forward through the reported steps, and `running` makes it live in the same write', async () => {
     const id = await asOwner(newSession);
-    const seen: Array<[string, number]> = [];
+    const admittedVersion = (await rowOf(id)).version;
+    const upserts = async (): Promise<number> => asOwner(async (c) => Number((await c.query<{ n: string }>(
+      `select count(*) n from public.workspace_events where event_type = 'entity.upsert' and payload->>'id' = $1`,
+      [id],
+    )).rows[0]!.n));
+    const before = await upserts();
+    const seen: string[] = [];
     for (const phase of ['lane', 'briefing', 'agent']) {
       await transition(id, 'spawning', { bootPhase: phase });
       const row = await rowOf(id);
-      seen.push([row.boot_phase ?? '', row.version]);
+      seen.push(row.boot_phase ?? '');
       expect(row.status).toBe('spawning');
     }
-    expect(seen.map(([phase]) => phase)).toEqual(['lane', 'briefing', 'agent']);
-    // Every report is a row change the change feed publishes (`entity.upsert`).
-    expect(seen[1]![1]).toBeGreaterThan(seen[0]![1]);
+    expect(seen).toEqual(['lane', 'briefing', 'agent']);
+    // A progress report is not an edit: the version a caller holds from the
+    // admitted answer still writes, and recency feeds do not move...
+    expect((await rowOf(id)).version).toBe(admittedVersion);
+    // ...yet each one reaches the live socket as an `entity.upsert`.
+    expect(await upserts()).toBe(before + 3);
 
     await transition(id, 'running');
     expect(await rowOf(id)).toMatchObject({ status: 'running', boot_phase: 'live' });
+    // A status move is an edit, as it always was.
+    expect((await rowOf(id)).version).toBeGreaterThan(admittedVersion);
 
     // The boot it describes succeeded; the run ending later leaves it alone.
     await transition(id, 'exited');
