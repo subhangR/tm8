@@ -3,7 +3,7 @@
 **Status:** FINAL (v3) · 2026-10-29 · approved by Subhang as the starting design · tasks `01a182ac-746a-75f2-beef-9690a26f21b3` ("Bridge as an entity", v1, 2026-10-28) and `01a188e7-cacc-7cac-b70c-cbe4a95e6672` (final)
 **Companion:** [`BRIDGES-V2-DESIGN.md`](./BRIDGES-V2-DESIGN.md) (v2, 2026-10-29): UI gaps, memories and loops on a bridge, the WhatsApp command set. Where v2 changes something here, this document now says so in place and points to the v2 section; v2 holds the detail. Section numbers here are unchanged, so v2's "v1 §n" references still resolve.
 **Basis:** `origin/main` @ `fcc49604b`; the Phase-1 WhatsApp bridge (`integrations/whatsapp-bridge`, its `OPERATIONS.md`, and the Phase-1 design of 2026-10-19); the kind precedents `space_link`/`server` (migrations 250, 261), `mcp_server` (296, ADR 0297), channel members (080), `agent_runtime` sessions (105); *The Capability Model*; `docs/identity/IDENTITY-DESIGN.md`; `docs/architecture/01-LAWS.md`.
-**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). v1's open questions are settled (§8 D14–D19); D20 (one connection per group, 2026-10-29) leaves two new ones, Q7 failover and Q8 hand-over (§9); D21 (2026-10-29) lets workers read and post on the bridge freely (§2.7).
+**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). v1's open questions are settled (§8 D14–D19); D20 (one connection per group, 2026-10-29) leaves two new ones, Q7 failover and Q8 hand-over (§9); D21 (2026-10-29) lets workers read and post on the bridge freely (§2.7); D22 (2026-10-29) puts an inherited `authored_from → bridge` provenance edge on everything a bridge causes (§2.8).
 
 > The ask (Subhang, 28 Oct): *"thinking of making bridge as tm8 entity. A bridge connects a channel from a provider to a tm8 session or chat. Different bridge types: WhatsApp, Facebook, Slack, etc. Space members and bridge-channel members link, so a channel member can act as a member in the tm8 space. A space can have multiple bridges: multiple WA groups, Slack channels, Instagram accounts."* And, during the work: *"see tm8 chat, session and channel — a bridge can be to any one of them."*
 
@@ -75,7 +75,7 @@ Every row is the same shape: a relationship or a fact about people and conversat
 T-L3's test is whether the four universal capabilities pay rent. For a bridge they all do:
 
 - **Discuss it** — the bridge's discussion *is* the provider conversation, mirrored. Opening the bridge shows the WhatsApp group, live, in tm8.
-- **Link it** — to its target (`bridged_to`), to the credential it rides on, to the sessions it has named, to the tasks that came out of it (`authored_from` already records that a task was made during a chat).
+- **Link it** — to its target (`bridged_to`), to the credential it rides on, to the sessions it has named, to everything that came out of it: tasks, docs, sessions, memories and the rest each carry a server-written `authored_from → bridge` edge naming the message that started it, inherited through workers at any depth (D22, §2.8).
 - **React to it**, **follow it**, give it a chip, a card, a panel and a place in the Home rail.
 - **Parent it** — no. A bridge is flat (`hierarchical: false`, like `credential` and `space_link`). A Slack thread is a reply chain, not a sub-bridge.
 
@@ -312,6 +312,77 @@ The bridge sets the ceiling (`workers.wake`, default `directed`); a worker may l
 - **Approvals never cross** (D9). A request a worker reads in the log grants nothing; it raises an attention request and says *needs your OK in tm8*. The credential-shaped-text refusal applies to worker posts as to turn answers.
 - **Pause and remove stop worker posting.** While the bridge is paused (including *pause for…* and `/mute`, v2 §1.3, §4.4) or `direction: in`, a worker's post to the log anchor is stored in tm8 only and refused for the provider with `bridge_paused`; reading continues, because logging does. After `bridges.remove` nothing crosses at all and the handles end, so posting and the cursor stop; a log kept read-only stays readable by members, not by workers.
 
+### 2.8 Provenance: everything from a bridge points back to it (D22)
+
+**The rule.** Every entity created because of a bridge — tasks and subtasks, docs, artifacts, memories (drafts and proposals included), drawings, forms, loops, work sessions, messages, anything — gets an **`authored_from` edge to the bridge**, written by the **server in the same transaction that creates the entity**. It is not left to the agent, the agent cannot opt out of it, and the agent cannot write one: an `authored_from → bridge` edge is server-written only, and `edges.create` / `edges.delete` refuse it from any caller.
+
+**One edge type, with the origin on it.** `authored_from` (entity → bridge) is the one edge; its props say which message started it:
+
+```ts
+// props of authored_from → bridge
+{ bridgeId: EntityId;
+  messageId: EntityId | null;          // the origin message on the log anchor (null for a loop firing)
+  providerMessageId: string | null;    // the provider's id, e.g. the WhatsApp wa_msg_id (message_origins.external_message_id)
+  sender: { memberId?: EntityId; participant?: string; handle?: string };   // linked member, else guest display name; handle when a worker spoke
+  command: string | null;              // '/work', '/task', '/remember', '/remind', … or null for a natural-language turn
+  loopId?: EntityId;                   // when a bridge loop fired it (v2 §2.2)
+  inherited: boolean;                  // false on the entity the origin first landed on; true on everything created under it
+  viaSessionId: EntityId | null;       // the session whose launch context carried it (null when the bridge layer itself created the entity)
+  depth: number }                      // 0 = created by the bridge layer or its direct worker; +1 per generation of spawned worker
+```
+
+**And to the source message.** Where the origin message is known (`messageId` not null), the recorder writes a second `authored_from` edge, entity → **that message** on the log anchor, with the same props. Same edge type, so *where did this come from* stays one query and lands on the WhatsApp message directly.
+
+The existing `authored_from → chat|session` edge (*made during this chat*) stays as it is; an entity made in a bridged chat carries both. Inbound provider messages themselves get no edge — they *are* the origin, and `message_origins` plus the log anchor already place them.
+
+**Where an origin is born.**
+
+| Origin | Who stamps it | `command` |
+|---|---|---|
+| a command that creates something (`/work`, `/task`, `/remember`, `/remind`, `/loop`, v2 §4) | the command executor, on every entity the command creates | the verb |
+| a routed message that starts a chat-target turn (§2.3) | the turn's context carries the origin; the recorder stamps what the turn creates | null |
+| a directed message delivered to a worker (`@handle`, a reply, `/tell`, §2.7) | appended to that worker's launch context on delivery | null or `/tell` |
+| a bridge loop firing (v2 §2.2) | the loop executor, on the session and task it derives | `loop` (`loopId` set) |
+
+**Inheritance — the mechanism.** Provenance travels in the **session's launch context**, not in the agent's prompt:
+
+1. When the server starts a session because of a bridge — `/work`, `bridges.work.start`, a chat turn spawning a worker while handling a routed message, a loop — it writes `bridgeOrigins: [{bridgeId, messageId, providerMessageId, sender, command, loopId?}]` into that session's launch context (the same server-held record as `launched_by`, 330). The session itself gets the `authored_from → bridge` edge(s) at creation.
+2. The **entity recorder** — the one server path every entity create goes through — reads the creating session's `bridgeOrigins` and writes one `authored_from → bridge` edge per origin on the new entity (`inherited: true`, `viaSessionId`, `depth`), in the create's own transaction. A task, a doc, an artifact, a memory draft, a message the worker posts: all the same path.
+3. When the entity being created is itself a **work session** (a worker spawning a worker), the recorder also copies `bridgeOrigins` into the child's launch context with `depth + 1`. Its children inherit the same way: **at any depth**, with no per-agent step.
+4. A running session gains an origin when a directed message from a bridge is delivered to it (row 3 above). From then on what it creates carries it too; what it created before does not (provenance is recorded at creation, never rewritten).
+
+Nothing here is something the agent does or can skip (and the group commands depend on it, below): an agent that never mentions the bridge still produces entities that point at it, and an agent cannot remove or forge the edge.
+
+**More than one origin.** A worker may carry several — `/work` from Infra, then `@keen-otter` from Ops; a chat turn answering two routed messages. It **keeps all of them**: `bridgeOrigins` is a list, deduped only on the `(bridgeId, providerMessageId)` pair, and every entity it creates gets one edge per origin. Two messages from the same bridge are two origins (two edges to the same bridge); the same message reaching it twice is one. The edge's key is accordingly `(src, 'authored_from', bridge, providerMessageId)`, not `(src, type, dst)`. Over-attribution is deliberate: the recorder cannot know which origin a doc was "for", and a lost origin is worse than an extra one.
+
+**Two queries.**
+
+```bash
+# everything that came out of the Infra bridge (any depth, any kind)
+tm8 edge list --target <bridge-id> --type authored_from --direction incoming
+
+# where did this doc come from? → the bridge, the WhatsApp message, the sender, the command
+tm8 edge list --source <doc-id> --type authored_from --direction outgoing   # props: bridgeId, messageId, providerMessageId, sender, command
+tm8 entity context <messageId>                                               # the original message on the bridge's log, with its quote chain
+```
+
+```sql
+-- the same, in SQL: all entities from bridge X, newest first, with the message that started each
+select e.id, e.kind, e.title, ed.props->>'providerMessageId' as wa_msg_id, ed.props->>'command' as command,
+       (ed.props->>'depth')::int as depth
+from public.edges ed join public.entities e on e.id = ed.src_id
+where ed.type = 'authored_from' and ed.dst_id = :bridge_id
+order by e.created_at desc;
+```
+
+The bridge panel's Connections tab is this first query, grouped by kind; an entity's own Connections tab shows its *From WhatsApp · Infra · Rahul · 10:41* origin chip, which opens the message.
+
+**The edges power the group commands.** Every group command that lists or opens things (v2 §4.4) — *tasks from this group* (`/tasks`), *docs and artifacts made here* (`/docs`), *what sessions are running for this group* (`/workers`), *memories from this chat* (`/memories`) — is the first query above filtered **by kind** (and status where it applies). There is **no separate per-group index**: the edge is the only source of truth. That has three consequences, all deliberate:
+
+- **The edge must be written whenever the entity is created.** An entity without it does not appear in any group command. So the recorder's write is part of the create: if the edge cannot be written, the create fails, and a test asserts that every create path under a session with `bridgeOrigins` produces it.
+- **Results follow group scope** (D20). A group is connected once per space, so *this group* means *this bridge*: commands return entities with an `authored_from` edge to this bridge, in this bridge's space, that the sender may read. Entities from the same group in another space are a different bridge and never appear.
+- **Edges stay put.** Moving an entity (`entity move`, a new parent, a new collection), editing it, retargeting the bridge (`bridges.retarget`) or completing a task leaves its provenance edges in place: where something came from does not change. Only deleting the entity removes them; removing the bridge keeps them, read-only, for *where did this come from*.
+
 ---
 
 ## 3. Contract and data
@@ -400,7 +471,9 @@ RLS: `bridges`, `bridge_participants`, `bridge_handles`, `message_origins` follo
 | type | direction | written by | meaning |
 |---|---|---|---|
 | `bridged_to` | bridge → chat \| work_session \| channel | server (`bridges.create`, `bridges.retarget`) | the tm8 side of the bridge |
-| `authored_from` | entity → chat/session | server (exists) | unchanged; a task made in a bridged chat already records it |
+| `authored_from` | entity → chat/session | server (exists) | unchanged: *made during this chat/session* |
+| `authored_from` | **any entity → bridge** | **server only**, in the create's transaction — the command executor, the turn, the loop executor, and the entity recorder for everything created under a session whose launch context carries `bridgeOrigins`; `edges.create`/`delete` refuse it (D22) | provenance: props `{bridgeId, messageId, providerMessageId, sender, command, loopId?, inherited, viaSessionId, depth}`; one edge per origin, keyed `(src, type, bridge, providerMessageId)`; inherited by spawned workers at any depth; the only index the group commands read (§2.8) |
+| `authored_from` | any entity → the origin **message** on the log anchor | server only, beside the bridge edge, where the message is known (D22) | lands *where did this come from* on the WhatsApp message itself |
 | `attached_to`, `relates_to` | any → bridge | agent (exist) | `bridge` joins their `dst_kinds` |
 
 No `has_participant` edge: participants are not entities (§2.4).
@@ -681,6 +754,7 @@ B0 and B1 are one lane each and can start together against the protocol document
 8. No read route returns `state_ref` bytes, a token, a QR or a pairing code; the QR event reaches only the requesting member's stream.
 9. `pg_dump` of the graph contains no provider secret (asserted by the existing secret-pattern test extended to `bridge_connections`).
 10. A worker launched off Infra main reads messages it was not addressed in with `tm8 bridge log --unread` and posts an unprompted message that lands as `Title (handle): …`; an un-directed message does not wake it, an `@handle` does; its reply to an un-directed message the main chat is still answering is refused `not_answerer`; its 7th un-directed post in 10 min is refused `rate_limited`; while the bridge is paused its post stays in tm8 with `bridge_paused` (D21).
+11. `/work` with two lines from WhatsApp; the first worker writes a doc and spawns a worker that opens a PR task. `tm8 edge list --target <bridge> --type authored_from` lists the parent task, both child tasks, both sessions, the doc, the grandchild session and its task, each with the command's `providerMessageId`; the grandchild's edges say `inherited: true, depth: 1`. A worker then directed from a second bridge gives its next doc two `authored_from → bridge` edges; redelivering the same message adds none. An agent's `tm8 edge delete` of one is refused; `/tasks` and `/docs` in the group list the child tasks and the doc, and still do after the doc is moved under another parent (D22).
 
 The command layer's acceptance is v2 §8.
 
@@ -720,6 +794,7 @@ Subhang accepted this gap for the first build (2026-10-29). It is deliberately n
 | D19 (was Q6) | The watchdog is a server scheduler job (`scheduler/jobs/`) over `message_origins` and turns; it reacts on the provider through the outbox and raises `fyi` attention | keep it in the runtime | the server owns derived truth (T-L12); the runtime holds no routing logic (D7) |
 | D20 | **One connection per group, per space.** A provider conversation (WhatsApp group, Slack channel) is connected once per space, whichever member's number or account connects it: `unique (space_id, provider, external_conversation_id)`; a second member sees *already connected by <name>*. That one bridge has one target, so the group feeds exactly one main chat or channel; workers keep their `@handles` and, since D21, read and post on the bridge freely. Inbound dedupes per bridge on the provider message id, from any number. Linking numbers to members (`/link`) stays unlimited per group. Approved by Subhang, 2026-10-29 | the old key `(connection_id, external_conversation_id)`, which only stopped one connection binding a group twice and let two members' numbers make two bridges; one bridge per member's number | two bridges on one group meant two main chats answering the same message and double replies; one bridge keeps "who answers" single (D2); per-bridge dedupe stays correct if another number ever delivers the same message (Q7) |
 | D21 | **Workers read and talk on the bridge freely.** A worker launched from a bridge (any session with a live handle on it) gets read access to the bridge's whole conversation (`tm8 bridge log`, messages on the log anchor) and may post to it at any time, as `Title (handle)`. `@handle` and a reply to its message stay as the way to **direct** a message to a worker — they wake it and make it the answerer — not as the only way it hears or speaks. Un-directed messages do not wake workers by default (`wake: directed`); a worker reads with `tm8 bridge log --unread`. Guardrails: the main chat stays the default answerer of un-directed messages (one answerer per message, `not_answerer`); a per-worker outbound limit; approvals never cross (D9); pause, `direction: in` and remove stop worker posting. §2.7. Approved by Subhang, 2026-10-29 (from WhatsApp) | by-name-only: a worker hears only `@handle`/replies and speaks only in a thread addressed to it (Phase 1); every message wakes every worker | a worker that cannot see the room repeats what was said, misses corrections and cannot offer what it found; waking on every message spends workers on chatter; one answerer per message keeps D20's "no double replies" |
+| D22 | **Bridge provenance edge on everything, inherited.** Every entity created because of a bridge — tasks, subtasks, docs, artifacts, memories (incl. drafts), drawings, forms, loops, work sessions, messages, anything — gets `authored_from → bridge`, written by the server at creation time with props `{bridgeId, messageId, providerMessageId, sender, command, …}`. Inherited: a session started from a bridge holds `bridgeOrigins` in its launch context, and the entity recorder copies them onto every entity created under it, including child sessions, at any depth. Not opt-in, not agent-writable or removable. Several origins are all kept, deduped only on `(bridgeId, providerMessageId)`. Where the origin message is known, a second `authored_from` goes to it. These edges are what group commands query by kind (`/tasks`, `/docs`, `/workers`, `/memories`, v2 §4.4) — no per-group index, so a missing edge means a missing result, results follow D20's group scope, and edges survive moves and edits. §2.8. Approved by Subhang, 2026-10-29 (from WhatsApp) | the agent links what it makes (today's `authored_from → chat`, best effort); a property on the task only; a new `from_bridge` edge type; keep only the first origin | "everything from this bridge" and "where did this come from" become one graph query each, and stay true however deep the workers go; an agent cannot forget or forge provenance; one edge type keeps the query single; keeping every origin never loses where work came from |
 
 ---
 

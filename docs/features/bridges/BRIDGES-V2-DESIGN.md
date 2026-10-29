@@ -1,7 +1,7 @@
 # Bridges v2 — every setting on screen, memories and loops on a bridge, and a WhatsApp command set that can run a team
 
 **Status:** DESIGN v2 · 2026-10-29 · task `01a1889e-d435-7b99-ac66-9e00425a3bcc`
-**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc. v1 D21 (2026-10-29) — workers read the whole conversation and post to it freely; `@handle` directs, it is not the only way in — amends §1.3, §1.7, §4.3, §4.4, §4.7, §4.8 and §5 here, in place.
+**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc. v1 D21 (2026-10-29) — workers read the whole conversation and post to it freely; `@handle` directs, it is not the only way in — amends §1.3, §1.7, §4.3, §4.4, §4.7, §4.8 and §5 here, in place. v1 D22 (same day) makes every `authored_from → bridge` below the server-written, inherited provenance edge of v1 §2.8.
 **Basis:** `origin/main` @ `cfb4622b4` (`integrations/whatsapp-bridge/src/{core,text,http,admin,forms,briefing,config}.ts`), the deployed copy in `prod-data/wa-bridge/src` (2026-10-20, same command set, no `forms.ts`), the loop executor (`packages/server/src/scheduler/jobs/loops.ts`, migrations 091/348/375), the launch defaults (`packages/contract/src/launch-defaults.ts`: `remembers` / `equips`), and `execution.spawn` (`tm8 help session spawn`).
 **Scope:** design only. No code.
 
@@ -245,7 +245,7 @@ The budget meter is unchanged: bridge memories are measured like any default (`p
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**From WhatsApp.** `/remember <text>` (§4) creates a memory **draft** with `authored_from → bridge`, linked to the bridge by a `proposed` flag on the edge's metadata, and raises an `fyi` attention request to the bridge's admins: *Rahul proposed a memory for Infra*. It is injected nowhere until a human accepts it in tm8 (v1 D9's reasoning: a memory is a *persistent prompt*; a stranger who can write one can steer every future agent in the group). The secret-pattern scanner (`guard_manifest_secrets`) runs on proposals; a hit is flagged, not silently dropped. `/memories` lists the accepted ones; `/forget <n>` by a linked member creates an *unlink proposal* the same way.
+**From WhatsApp.** `/remember <text>` (§4) creates a memory **draft** with `authored_from → bridge` (the provenance edge, v1 D22: `command: '/remember'`, the sender, the WhatsApp message id), linked to the bridge by a `proposed` flag on the edge's metadata, and raises an `fyi` attention request to the bridge's admins: *Rahul proposed a memory for Infra*. It is injected nowhere until a human accepts it in tm8 (v1 D9's reasoning: a memory is a *persistent prompt*; a stranger who can write one can steer every future agent in the group). The secret-pattern scanner (`guard_manifest_secrets`) runs on proposals; a hit is flagged, not silently dropped. `/memories` lists the accepted ones; `/forget <n>` by a linked member creates an *unlink proposal* the same way.
 
 A per-bridge switch *Accept memories from linked members without review* exists, is off by default, is admin-only, human-only, and goes through §1.5's confirm. It never applies to guests.
 
@@ -416,7 +416,7 @@ or on one line, items split on `;`: `/work fix login timeout; add upload retries
 
 **What the server does, in one transaction per item, keyed by the message's mutation ids:**
 
-1. Creates a **parent task** "*From WhatsApp · Infra · 10:41*" (only when there are ≥ 2 items) with `authored_from → bridge`, and one **child task per line** under it. The task body carries the line, the quoted message if the command was a reply, the sender (as the linked member) and the bridge id. (Rule: a task is created under the task it breaks down — the parent here.)
+1. Creates a **parent task** "*From WhatsApp · Infra · 10:41*" (only when there are ≥ 2 items) with `authored_from → bridge`, and one **child task per line** under it — each task, and each worker session started for it, carrying the server-written provenance edge with `command: '/work'` and the message id (v1 D22, §2.8); whatever those workers create inherits it, at any depth. The task body carries the line, the quoted message if the command was a reply, the sender (as the linked member) and the bridge id. (Rule: a task is created under the task it breaks down — the parent here.)
 2. For each child, a **launch request** to the queue (§4.5) with the bridge's **worker defaults**: teammate, project, workdir, access mode, effort (Routing → *Workers*, §1.7). If the bridge has a default project the worker starts in a worktree; otherwise `session dispatch` lets the dispatcher pick.
 3. Mints the **handle at request time** (not when a poller notices the session — fixes W8) in `bridge_handles` with `status: 'queued'`, and the 3-4-word title from the task title.
 4. Answers once, quoting the command:
@@ -441,12 +441,14 @@ When each actually starts, finishes, blocks or fails, it reports in the thread o
 
 `(L)` = needs a linked member allowed to trigger; `(A)` = needs a space admin linked member; unmarked = anyone in the group, read-only. Every list reply is numbered so `#n` works next.
 
+**What "from this group" means.** Every command that lists or opens things made here — `/workers`, `/tasks`, `/docs`, `/memories`, `/result` — reads the **provenance edges** (`authored_from → bridge`, v1 D22, §2.8) filtered by kind, and nothing else: no per-group index. An entity appears if and only if it carries the edge, which the server writes at creation (a worker's tasks, docs and child sessions included, at any depth); results are this bridge's, in its space (v1 D20), filtered to what the sender may read; moving or editing an entity does not drop it from the list.
+
 **Workers**
 
 | Command | Does | Example reply |
 |---|---|---|
 | `/work <items>` (L) | §4.3 | `3 workers on it …` |
-| `/workers` · `/workers all` | live + queued workers started from this bridge (default: mine; `all` = everyone's), with state and age | `1 Login timeout fix (keen-otter) · working 12m · last: "running tests"` |
+| `/workers` · `/workers all` | live + queued workers started from this bridge — work sessions with the provenance edge (v1 D22), including workers' own workers — plus queued launch requests (default: mine; `all` = everyone's), with state and age | `1 Login timeout fix (keen-otter) · working 12m · last: "running tests"` |
 | `/status <worker>` | one worker: state, task, last update, PR, cost so far | `keen-otter · working 14m · PR #1421 draft · 41k tokens` |
 | `/tell <worker> <text>` (L) | direct a message to the worker (same as `@keen-otter <text>`, but works for queued workers too: delivered when it starts). Workers read the rest of the group on their own (v1 D21); this is how to make sure one *answers* | `sent to keen-otter` |
 | `/result <worker>` | the worker's close-out message, or its latest report | the close-out, ≤ 10 lines, "*more in tm8*" |
@@ -459,16 +461,17 @@ When each actually starts, finishes, blocks or fails, it reports in the thread o
 
 | Command | Does |
 |---|---|
-| `/task <title>` (L) | create a task without starting a worker (`authored_from → bridge`); returns `#n` |
-| `/tasks` · `/tasks open` | tasks made from this bridge, newest first, with status |
+| `/task <title>` (L) | create a task without starting a worker (`authored_from → bridge`, the v1 D22 provenance edge); returns `#n` |
+| `/tasks` · `/tasks open` | tasks made from this bridge (incoming `authored_from` edges, v1 D22 — including tasks workers made), newest first, with status |
 | `/start #n` (L) | queue a worker on an existing task (same path as `/work`) |
+| `/docs` · `/docs artifacts` · `/docs drawings` | docs, artifacts and drawings made from this group (provenance edges by kind, v1 D22), newest first; `/docs #n` sends the link, or the artifact's page |
 
 **Memory and loops** (§2)
 
 | Command | Does |
 |---|---|
 | `/remember <text>` (L) | propose a memory (accepted in tm8, unless the bridge's switch is on) |
-| `/memories` | list the bridge's accepted memories |
+| `/memories` · `/memories from here` | list the bridge's accepted memories (`remembers`); `from here` = memories made from this group, drafts and proposals included (provenance edges, v1 D22) |
 | `/forget #n` (L) | propose unlinking one |
 | `/remind <when> <text>` (L) | a message loop: `/remind every sunday 8pm papers due monday`, `/remind tomorrow 9am call the bank` (one-off = a loop that disables itself after one firing) |
 | `/loop <when> <prompt>` (L) | propose an agent loop: `/loop weekdays 9am post yesterday's merged PRs and today's blockers` |
@@ -504,7 +507,7 @@ The 64-session cap is a node/space fact; the fix is not to raise it but to stop 
 | Tier | Who | Commands |
 |---|---|---|
 | **Everyone** | any sender, guests included, even when `whoMayTrigger: linked` | `/help`, `/whoami`, `/link`, `/bridge` |
-| **Readers** | senders allowed to trigger | `/workers`, `/status`, `/result`, `/queue`, `/tasks`, `/memories`, `/loops`, `/who` |
+| **Readers** | senders allowed to trigger | `/workers`, `/status`, `/result`, `/queue`, `/tasks`, `/docs`, `/memories`, `/loops`, `/who` |
 | **Linked** | linked (or asserted) members allowed to trigger, acting with their own space permissions | `/work`, `/task`, `/start`, `/tell`, `/stop` (own), `/retry`, `/remember`, `/forget`, `/remind`, `/loop` (propose), own-reminder pause/delete |
 | **Admin** | linked members who are space admins; **asserted** links never count as admin | `/stop` others', `/stop all`, `/mute`, `/new`, loop pause/delete for any loop |
 | **Never from WhatsApp** | — | create/remove a bridge, change trust or `whoMayTrigger`, accept memory proposals, arm agent loops, approvals, anything with a secret |
@@ -530,6 +533,7 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 | Partial failure | `/work` with 3 items where 1 fails to create: refused whole (one transaction per command for task creation); launch failures are per-item and reported per line |
 | Observability | every command is a stored message + a `bridge.command` event with outcome; Health shows *last 20 commands* beside *last 20 outbox rows* |
 | Privacy | replies never show phone numbers, token-shaped text or other spaces' data; `/result` quotes the close-out through the credential-shaped-text refusal (Phase-1 relay rule) |
+| Provenance | list commands read `authored_from → bridge` edges only (v1 D22); a create that cannot write the edge fails rather than producing an entity the group cannot see |
 | Tests | a table-driven parser test over every example in this section; one end-to-end per tier through `bridgeRuntime.inbound` with fixture runtime frames |
 
 ---
@@ -540,7 +544,8 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 |---|---|
 | `bridges` content | `pausedUntil: string | null`, `timezone: string`, `commands: { tiers: {readers: bool, linked: bool, admin: bool}, acceptMemoriesFromLinked: bool }`, `workers: { teammateId, projectId, workdir, accessMode, effort, maxPerCommand, maxLive, wake: 'directed'|'thread'|'all', postLimit: {perMin, undirectedPer10Min} }` (wake and postLimit: v1 D21), `history: { lastImportAt, lastImportDays }` |
 | operations | `bridges.log.read`, `bridges.listen` (v1 §2.7, D21), `bridges.test`, `bridges.history.import`, `bridges.update --dry-run` → `consequences[]`, `bridges.memories.link|unlink|proposals.resolve`, `bridges.work.start`, `launch.requests.list|cancel` (space-wide, §4.5) |
-| edges | `remembers` gains `src_kinds += bridge`; loops use the existing `subjectId` |
+| edges | `remembers` gains `src_kinds += bridge`; loops use the existing `subjectId`; `authored_from` gains `bridge` in `dst_kinds`, server-written only, keyed by `providerMessageId` (v1 D22, §2.8) |
+| launch context | `bridgeOrigins[]` on a session, copied by the entity recorder to everything it creates and to child sessions (v1 D22) |
 | loops | `config.bridge {action: 'agent'|'message', text?, quietHours?, onlyIfNew?, replyTo?}`; executor branch for `message`; subject-status pre-check |
 | launch defaults | `LaunchDefaultVia += 'bridge'` |
 | runtime protocol | `history.fetch {connectionId, conversationId, sinceTs}` → `history.batch {items[], done}` |
