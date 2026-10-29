@@ -146,6 +146,17 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
       });
       if (!claim.claimed) {
         if (claim.reason === 'overlap') {
+          // A launch still in flight (no session yet) is most often a client that
+          // timed out mid-launch and re-sent with a NEW id: tell it how to get
+          // that run's result, never to force, which starts a second session.
+          const open = claim.waitingOnRunId
+            ? await readRun(claims, claim.waitingOnRunId, false).catch(() => null)
+            : null;
+          if (open && open.status === 'running' && open.sessionId === null) {
+            throw new CollabError('conflict',
+              `a run of this loop is still launching (run ${open.id}): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run`,
+              { details: { reason: 'loop_run_overlap', runId: open.id, launching: true } });
+          }
           throw new CollabError('conflict', 'a run of this loop is still live; pass force to run anyway', {
             details: { reason: 'loop_run_overlap', runId: claim.waitingOnRunId ?? null },
           });
