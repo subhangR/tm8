@@ -336,7 +336,8 @@ function authoredOf(row: HeaderRow): AuthoredHeader | null {
  * kind's name is its own column, uncut, and is redacted like every other field.
  */
 export function headerNameOf(row: HeaderRow): string {
-  // A tool title is its definition name (titleOf parses the whole tool view, which this row does not carry)
+  // A tool's title is its definition's name (`titleOf` parses the whole
+  // tool view, which this row does not carry).
   if (row.kind === 'tool') return safeText(row.tool_name ?? null) ?? 'Tool';
   // A loop falls through: titleOf reads row.loop_title, which HEADER_SQL selects.
   const memory_statement = row.kind === 'memory' ? safeText(row.memory_statement, L) : row.memory_statement;
