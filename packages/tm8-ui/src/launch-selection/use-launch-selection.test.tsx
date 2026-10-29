@@ -75,10 +75,10 @@ describe('cached defaults on the first frame', () => {
     renderHook(() => {
       const selection = useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' });
       const references = selection.defaults.references;
-      statuses.push(references.status === 'ready' && references.confirming ? 'ready, confirming' : references.status);
+      statuses.push(references.status === 'ready' && references.confirmation === 'pending' ? 'ready, pending' : references.status);
       return selection;
     });
-    expect(statuses[0]).toBe('ready, confirming');
+    expect(statuses[0]).toBe('ready, pending');
     expect(statuses).not.toContain('loading');
   });
 
@@ -87,7 +87,7 @@ describe('cached defaults on the first frame', () => {
     const { result } = renderHook(() => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }));
     await answer(LAUNCH_DEFAULTS);
     const skills = result.current.defaults.skills;
-    expect(skills.status === 'ready' && skills.confirming).toBeUndefined();
+    expect(skills.status === 'ready' && skills.confirmation).toBeUndefined();
     expect(result.current.defaultsNote).toBeNull();
   });
 
@@ -113,21 +113,29 @@ describe('cached defaults on the first frame', () => {
 });
 
 describe('an edit made on cached rows is never lost', () => {
-  it('when the confirming read FAILS, the edited group is sent as the exact set the person saw, and the card says it could not confirm', async () => {
-    const pending: Array<{ reject(error: unknown): void }> = [];
-    const read = vi.fn(() => new Promise<LaunchDefaultsResult>((_resolve, reject) => { pending.push({ reject }); }));
+  it('when the confirming read FAILS the edits stay, Launch is refused naming the group, and a retry that succeeds unblocks with the edits intact', async () => {
+    const pending: Array<{ resolve(r: LaunchDefaultsResult): void; reject(error: unknown): void }> = [];
+    const read = vi.fn(() => new Promise<LaunchDefaultsResult>((resolve, reject) => { pending.push({ resolve, reject }); }));
     const load: LoadLaunchDefaults = Object.assign(read, { peek: () => LAUNCH_DEFAULTS });
     const { result } = renderHook(() => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }));
     // Untick the one cached reference default the person does not want.
     act(() => { result.current.toggle('references', { id: 'ent-file-log' as EntityId, kind: 'file', title: 'boot.log', text: null, derived: false, via: null }); });
     expect(result.current.launchBlock).toMatch(/references defaults/);
     await act(async () => { pending.shift()!.reject(new Error('503')); });
-    // Nothing is pending any more: Launch goes, and it carries exactly what was shown minus the removal —
-    // never the node's defaults with the removal silently dropped.
+
+    // Kept, not dropped — and not launched on an unconfirmed list either.
+    expect(result.current.edits.references.removed).toEqual(['ent-file-log']);
+    expect(result.current.launchBlock).toBe('Couldn’t confirm this launch’s references defaults with the node. Retry before launching with your edits — they are kept.');
+    expect(result.current.canRetryDefaults).toBe(true);
+    // An untouched group never blocks.
+    expect(result.current.outcomes().memories).toEqual({ omit: 'not-asked' });
+
+    act(() => { result.current.retryDefaults(); });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(result.current.launchBlock).toMatch(/Reading this launch’s references defaults/);
+    await act(async () => { pending.shift()!.resolve(LAUNCH_DEFAULTS); });
     expect(result.current.launchBlock).toBeNull();
     expect(result.current.outcomes().references).toEqual({ send: ['ent-doc-spec'] });
-    expect(result.current.outcomes().memories).toEqual({ omit: 'not-asked' });
-    expect(result.current.defaultsNote).toMatch(/Couldn’t confirm this launch’s defaults/);
   });
 });
 

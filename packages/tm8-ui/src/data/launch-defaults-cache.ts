@@ -16,7 +16,7 @@
  *    answers synchronously: the answer this loader kept, else the one this
  *    browser stored (the reader's `seed`), so a reload keeps the first frame
  *    warm too.
- *  - Keyed by node, space and `launchDefaultsKey(input)` — exactly what the
+ *  - Stored per node, space and VIEWER, and keyed by `launchDefaultsKey(input)` — exactly what the
  *    answer is a function of, so a hit answers THIS question, never a
  *    neighbour's (another subject's references are not this launch's).
  *  - Only an answer the node gave is stored. A failed read stores nothing and
@@ -26,7 +26,7 @@
  *    launches before it is written — localStorage is one 5MB origin budget.
  *    Every stored row is checked field by field before it is drawn.
  *  - `clearLaunchDefaultsCache(nodeKey)` forgets every space's answers for a
- *    node. An explicit sign-out calls it (auth/session-reset.ts): the rows are
+ *    node. Every session end calls it (auth/session-reset.ts): the rows are
  *    graph content — titles, header text — from one viewer's spaces, keyed by
  *    node and space, never account. An answer still in flight then is never
  *    stored, and a loader built before the sweep forgets what it kept the next
@@ -60,8 +60,9 @@ interface StoredEntry {
   result: LaunchDefaultsResult;
 }
 
-function storageKeyFor(nodeKey: string, spaceId: string): string {
-  return `${KEY_PREFIX}.${nodeKey}.${spaceId}`;
+/** Node, space AND viewer: two people on one browser never seed each other's first frame. */
+function storageKeyFor(nodeKey: string, spaceId: string, viewerId: string): string {
+  return `${KEY_PREFIX}.${nodeKey}.${spaceId}.${viewerId}`;
 }
 
 /**
@@ -115,12 +116,16 @@ function readStored(storageKey: string): StoredEntry[] {
 function store(storageKey: string, key: string, result: LaunchDefaultsResult): void {
   const browser = browserStorage();
   if (!browser) return;
-  const entries = [{ key, result }, ...readStored(storageKey).filter((entry) => entry.key !== key)].slice(0, MAX_REMEMBERED);
+  const stored = readStored(storageKey);
+  const fresh = JSON.stringify({ key, result });
+  /* The same answer already newest: nothing to write (the common reopen). */
+  if (stored[0] && JSON.stringify(stored[0]) === fresh) return;
+  const entries = [fresh, ...stored.filter((entry) => entry.key !== key).map((entry) => JSON.stringify(entry))].slice(0, MAX_REMEMBERED);
   const kept: string[] = [];
   let size = 0;
-  for (const entry of entries) {
-    const json = JSON.stringify(entry);
-    if (size + json.length > MAX_STORED_CHARS) break;
+  for (const json of entries) {
+    /* An entry that cannot fit is skipped, never the reason the others are dropped. */
+    if (size + json.length > MAX_STORED_CHARS) continue;
     kept.push(json);
     size += json.length + 1;
   }
@@ -136,19 +141,15 @@ export function launchDefaultsLoader(
   read: (input: LaunchDefaultsInput) => Promise<LaunchDefaultsResult>,
   nodeKey: string,
   spaceId: string,
+  /** Null while the viewer is not known yet: answers are then kept for this tab only, never stored. */
+  viewerId: string | null,
 ): LoadLaunchDefaults {
-  const storageKey = storageKeyFor(nodeKey, spaceId);
+  const storageKey = viewerId ? storageKeyFor(nodeKey, spaceId, viewerId) : null;
   const reader = sharedRead(
-    (input: LaunchDefaultsInput) => {
-      const asked = sweepOf(nodeKey);
-      return read(input).then((result) => {
-        if (asked === sweepOf(nodeKey)) store(storageKey, launchDefaultsKey(input), result);
-        return result;
-      });
-    },
+    read,
     launchDefaultsKey,
     {
-      seed: (input) => readStored(storageKey).find((entry) => entry.key === launchDefaultsKey(input))?.result ?? null,
+      seed: (input) => (storageKey ? readStored(storageKey) : []).find((entry) => entry.key === launchDefaultsKey(input))?.result ?? null,
       maxKept: MAX_REMEMBERED,
     },
   );
@@ -158,7 +159,16 @@ export function launchDefaultsLoader(
     if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); sweptAt = sweepOf(nodeKey); }
     return reader;
   };
-  return Object.assign((input: LaunchDefaultsInput) => current()(input), {
+  /* The sweep a call is asked under is taken AT the call: an answer that lands
+     after a sign-out is never stored for the next viewer. */
+  const call = (input: LaunchDefaultsInput) => {
+    const asked = sweepOf(nodeKey);
+    return current()(input).then((result) => {
+      if (storageKey && asked === sweepOf(nodeKey)) store(storageKey, launchDefaultsKey(input), result);
+      return result;
+    });
+  };
+  return Object.assign(call, {
     peek: (input: LaunchDefaultsInput) => current().peek(input),
   });
 }

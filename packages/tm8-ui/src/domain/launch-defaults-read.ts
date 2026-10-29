@@ -12,20 +12,22 @@
  *              `reason` says which, and every group is unknown with it
  *   loading    the read is in flight and this browser has no earlier answer
  *   cached     the read is in flight; the card draws this browser's last
- *              answer for the same key (ready groups marked `confirming`)
+ *              answer for the same key (ready groups, confirmation `pending`)
  *   confirmed  the node answered; `changed` lists the groups whose defaults
  *              differ from the cached answer that was showing (none when they
  *              matched, or when nothing was cached)
  *   failed     the read failed. With a cached answer showing, that answer
- *              STAYS the groups' basis — the set the person saw and may have
- *              edited — and the card says it could not be confirmed; with
- *              none, every group is unknown
+ *              STAYS on the card (confirmation `failed`) so the person's
+ *              edits are kept, an edited group blocks Launch until a retry
+ *              confirms it, and the card says so; with none, every group is
+ *              unknown
  *
  * TRANSITIONS — `nextDefaultsRead` is the only place a read changes state:
  *   close(reason)       any → idle
  *   open(key, cached)   any → cached (an earlier answer) | loading (none)
  *   answered(key, r)    loading | cached → confirmed
  *   failed(key)         loading | cached → failed
+ *   retry(key)          failed → cached (its kept answer) | loading (none)
  * An answer or failure for a key that is not the open one changes nothing,
  * so a slow read for a previous teammate can never land on the current one.
  *
@@ -33,9 +35,10 @@
  *   - a cached answer is never `confirmed` by anything but this read's answer;
  *   - `changed` is computed once, at cached → confirmed, by id: an order or
  *     title change alone merges silently, a different set is named;
- *   - an edit made on cached rows is never lost: while the read is in flight
- *     it waits (`launchBlock`); if the read fails, the rows it was made on
- *     stay, and the edited group is sent as the exact set the person saw;
+ *   - an edit made on cached rows is never lost, and never launched on an
+ *     unconfirmed list: while the read is in flight it waits; if the read
+ *     fails, the rows it was made on stay and the group blocks Launch, named,
+ *     until a retry confirms them (`launchBlock`);
  *   - what is SENT is decided elsewhere (`launchBlock`, `manualOutcome`): an
  *     untouched group is omitted, and the node loads its own defaults.
  *
@@ -45,7 +48,7 @@
 import type { LaunchDefaultsInput, LaunchDefaultsResult, SpawnSelectionGroup } from '@tm8/contract';
 
 import {
-  confirmingDefaults,
+  unconfirmedDefaults,
   LAUNCH_GROUP_LABEL,
   LAUNCH_SELECTION_GROUPS,
   loadingDefaults,
@@ -76,7 +79,8 @@ export type LaunchDefaultsReadEvent =
   | { readonly type: 'close'; readonly reason: string }
   | { readonly type: 'open'; readonly key: string; readonly cached: LaunchDefaultsResult | null }
   | { readonly type: 'answered'; readonly key: string; readonly result: LaunchDefaultsResult }
-  | { readonly type: 'failed'; readonly key: string };
+  | { readonly type: 'failed'; readonly key: string }
+  | { readonly type: 'retry'; readonly key: string };
 
 /** Why there is nothing to read: no teammate is picked yet. (No loader at all says `UNKNOWN_DEFAULTS_NOTE`.) */
 export const NO_TEAMMATE_DEFAULTS_NOTE = 'Pick a teammate to see what this launch loads by default.';
@@ -115,6 +119,9 @@ export function nextDefaultsRead(read: LaunchDefaultsRead, event: LaunchDefaults
         return { phase: 'confirmed', key: event.key, result: event.result, changed: defaultsChanges(read.cached, event.result) };
       }
       return read.phase === 'loading' ? { phase: 'confirmed', key: event.key, result: event.result, changed: [] } : read;
+    case 'retry':
+      if (read.phase !== 'failed' || read.key !== event.key) return read;
+      return read.shown ? { phase: 'cached', key: event.key, cached: read.shown } : { phase: 'loading', key: event.key };
     case 'failed':
       if (read.key !== event.key) return read;
       if (read.phase === 'cached') return { phase: 'failed', key: event.key, shown: read.cached };
@@ -127,11 +134,9 @@ export function selectionDefaultsOf(read: LaunchDefaultsRead): LaunchSelectionDe
   switch (read.phase) {
     case 'idle': return unknownDefaults(read.reason);
     case 'loading': return loadingDefaults();
-    case 'cached': return groupsOf(read.cached, confirmingDefaults);
+    case 'cached': return groupsOf(read.cached, (g) => unconfirmedDefaults(g, 'pending'));
     case 'confirmed': return groupsOf(read.result, readyDefaults);
-    /* Nothing is pending any more, so the rows the person saw are the basis
-       as they stand: an edited group is sent as that exact set. */
-    case 'failed': return read.shown ? groupsOf(read.shown, readyDefaults) : unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
+    case 'failed': return read.shown ? groupsOf(read.shown, (g) => unconfirmedDefaults(g, 'failed')) : unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
   }
 }
 
@@ -148,7 +153,7 @@ export function shownAnswer(read: LaunchDefaultsRead): LaunchDefaultsResult | nu
 
 /** Said when the node could not confirm the cached defaults the card is drawing. */
 export const UNCONFIRMED_DEFAULTS_NOTE =
-  'Couldn’t confirm this launch’s defaults with the node. The ones shown are the last this browser read, and your edits apply to them.';
+  'Couldn’t confirm this launch’s defaults with the node. The ones shown are the last this browser read; untouched groups launch on the node’s own.';
 
 /**
  * The one line the card says about its defaults, or null — a confirmation

@@ -71,6 +71,10 @@ export interface LaunchSelection {
    * without a word.
    */
   defaultsNote: string | null;
+  /** Ask the node again after a failed read; a no-op otherwise. Edits are kept across it. */
+  retryDefaults(): void;
+  /** The read failed and can be asked again (`retryDefaults`). */
+  canRetryDefaults: boolean;
   /** Rows the person added, so an added row keeps its title while it is ticked. */
   added: Readonly<Record<SpawnSelectionGroup, readonly LaunchContextRow[]>>;
   /** Returns the refusal when the tick is refused; the row shows it too. */
@@ -102,6 +106,15 @@ const NOTHING_ADDED: LaunchSelection['added'] = { memories: [], skills: [], refe
 type ReadTarget =
   | { readonly key: string; readonly input: LaunchDefaultsInput }
   | { readonly key: null; readonly reason: string };
+
+function defaultsInput(teammateId: string, subjectId: string | null | undefined, agentTool: 'claude-code' | 'codex' | null, profileId: string | null): LaunchDefaultsInput {
+  return {
+    teamMemberId: teammateId as EntityId,
+    ...(subjectId ? { subjectId: subjectId as EntityId } : {}),
+    ...(agentTool ? { agentTool } : {}),
+    ...(profileId ? { interactionProfileId: profileId as EntityId } : {}),
+  };
+}
 
 function openEvent(target: ReadTarget, load: LoadLaunchDefaults | undefined): LaunchDefaultsReadEvent {
   return target.key === null
@@ -151,12 +164,7 @@ export function useLaunchSelection(args: {
     : !teammateId
       ? { key: null, reason: NO_TEAMMATE_DEFAULTS_NOTE }
       : (() => {
-        const input: LaunchDefaultsInput = {
-          teamMemberId: teammateId as EntityId,
-          ...(subjectId ? { subjectId: subjectId as EntityId } : {}),
-          ...(agentTool ? { agentTool } : {}),
-          ...(profileId ? { interactionProfileId: profileId as EntityId } : {}),
-        };
+        const input = defaultsInput(teammateId, subjectId, agentTool, profileId);
         return { key: launchDefaultsKey(input), input };
       })();
 
@@ -166,20 +174,25 @@ export function useLaunchSelection(args: {
   ));
   if (!isOpenFor(read, target)) dispatch(openEvent(target, load));
 
-  const targetRef = useRef(target);
-  targetRef.current = target;
+  /* The read for the open key, again on every retry. The key is a function of
+     these primitives, so they change only with it. */
   const openKey = target.key;
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const fn = loadRef.current;
-    const now = targetRef.current;
-    if (!fn || now.key === null || now.key !== openKey) return;
+    if (!fn || openKey === null || !teammateId) return;
     let live = true;
-    fn(now.input).then(
+    fn(defaultsInput(teammateId, subjectId, agentTool, profileId)).then(
       (result) => { if (live) dispatch({ type: 'answered', key: openKey, result }); },
       () => { if (live) dispatch({ type: 'failed', key: openKey }); },
     );
     return () => { live = false; };
-  }, [openKey]);
+  }, [openKey, attempt, teammateId, subjectId, agentTool, profileId]);
+  const retryDefaults = useCallback(() => {
+    if (read.phase !== 'failed') return;
+    dispatch({ type: 'retry', key: read.key });
+    setAttempt((n) => n + 1);
+  }, [read]);
 
   const [edits, setEdits] = useState<LaunchSelectionEdits>(NO_SELECTION_EDITS);
   const [added, setAdded] = useState<LaunchSelection['added']>(NOTHING_ADDED);
@@ -234,6 +247,8 @@ export function useLaunchSelection(args: {
     edits,
     warnings: answer ? answer.warnings : [],
     defaultsNote: defaultsNote(read),
+    retryDefaults,
+    canRetryDefaults: read.phase === 'failed',
     added,
     toggle,
     setEdit,

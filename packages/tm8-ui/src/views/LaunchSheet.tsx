@@ -60,7 +60,7 @@ import type { ContextBudgets, SkillPreviewResult } from '@tm8/contract';
  * rather than nesting a second modal dialog inside the first — one surface,
  * one dialog, which is what a screen reader is entitled to.
  */
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   CredentialProviderName,
   CredentialsSpaceListView,
@@ -306,6 +306,16 @@ export function LaunchSheet(props: LaunchSheetProps) {
     agentTool: agentToolId || null,
     interactionProfileId: profileId || null,
   });
+  /* THE PRESS HOLDS JEV (lane E): an answer landing while the launch is on its
+     way is held. The host unmounts the sheet when the launch goes through, so
+     the sheet still standing once `launching` falls back means it did not:
+     the held answers are shown after all. */
+  const jevUnseal = useRef<(() => void) | null>(null);
+  const wasLaunching = useRef(launching);
+  useEffect(() => {
+    if (wasLaunching.current && !launching) { jevUnseal.current?.(); jevUnseal.current = null; }
+    wasLaunching.current = launching;
+  }, [launching]);
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),
     skills: props.skillCandidates,
@@ -1086,7 +1096,16 @@ export function LaunchSheet(props: LaunchSheetProps) {
           waits rather than launch that group on its defaults and drop the
           person's removals. Said here, not only in a tooltip. */}
       {selection.launchBlock ? (
-        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">{selection.launchBlock}</div>
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">
+          {selection.launchBlock}
+          {selection.canRetryDefaults ? (
+            <button type="button" className="ls__cancel" data-testid="launch-selection-retry" onClick={selection.retryDefaults}>Retry</button>
+          ) : null}
+        </div>
+      ) : null}
+      {/* One line about the defaults the groups draw, said once for the sheet. */}
+      {selection.defaultsNote ? (
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-defaults-note">{selection.defaultsNote}</div>
       ) : null}
 
       <footer className="ls__foot">
@@ -1165,7 +1184,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
                edited group, by hand or by an applied Jev pick, is its exact
                set. No group edited ⇒ no `selection`, so the launch loads
                exactly what it always has. */
-            const jevFields = jev.toSpawnFields();
+            const sealed = jev.seal();
+            jevUnseal.current = sealed.unseal;
+            const jevFields = sealed.fields;
             const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
             props.onLaunch({
               subjectId: props.subjectId,

@@ -103,6 +103,7 @@ describe('sharedRead', () => {
       shared.forget('a');
       const after = shared('a');
       const joined = shared('a');
+      await Promise.resolve();
       expect(read).toHaveBeenCalledTimes(2);
       // The stale answer lands first: its caller gets it, nobody keeps it, and
       // the fresh request in flight is still the one later calls join.
@@ -167,5 +168,12 @@ describe('sharedRead', () => {
       expect(shared.peek('a')).toBe('a');
       expect(shared.peek('c')).toBe('c');
     });
+  });
+
+  it('a reader that throws synchronously is a failed read, not an exception', async () => {
+    const shared = sharedRead((): Promise<string> => { throw new Error('bad input'); }, () => 'k');
+    let call: Promise<string> | undefined;
+    expect(() => { call = shared(undefined); }).not.toThrow();
+    await expect(call).rejects.toThrow('bad input');
   });
 });

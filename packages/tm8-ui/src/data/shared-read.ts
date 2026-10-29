@@ -80,7 +80,8 @@ export function sharedRead<I, R>(
     if (pending) return pending;
     const asked = stampOf(key);
     const settle = () => { if (inFlight.get(key) === request) inFlight.delete(key); };
-    const request: Promise<R> = read(input).then(
+    /* Through a promise, so a reader that throws synchronously is a failed read like any other, never an exception in the caller's render. */
+    const request: Promise<R> = Promise.resolve().then(() => read(input)).then(
       (answer) => {
         settle();
         if (stampOf(key) === asked) remember(key, answer);

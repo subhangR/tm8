@@ -95,9 +95,7 @@ export function LaunchSelectionGroups({
       {selection.warnings.map((warning) => (
         <p key={warning} className="ls__profile-empty" role="status">{warning}</p>
       ))}
-      {selection.defaultsNote ? (
-        <p className="ls__profile-empty" role="status" data-testid="launch-selection-defaults-note">{selection.defaultsNote}</p>
-      ) : null}
+
     </>
   );
 }

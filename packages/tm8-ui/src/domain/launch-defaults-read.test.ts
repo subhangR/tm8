@@ -34,11 +34,11 @@ const WITH_EXTRA_SKILL: LaunchDefaultsResult = {
 };
 
 describe('the read opens on a launch key', () => {
-  it('with an earlier answer it is CACHED: every group draws that answer, ready and marked `confirming`', () => {
+  it('with an earlier answer it is CACHED: every group draws that answer, ready with confirmation `pending`', () => {
     const read = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
     expect(read.phase).toBe('cached');
     const groups = selectionDefaultsOf(read);
-    expect(groups.memories).toMatchObject({ status: 'ready', confirming: true, total: 1 });
+    expect(groups.memories).toMatchObject({ status: 'ready', confirmation: 'pending', total: 1 });
     expect(groups.references.status === 'ready' && groups.references.rows.map((r) => r.id)).toEqual(['ent-doc-spec', 'ent-file-log']);
     expect(shownAnswer(read)).toBe(LAUNCH_DEFAULTS);
   });
@@ -69,7 +69,7 @@ describe('the node answers', () => {
     const read = nextDefaultsRead(cached, { type: 'answered', key: 'k1', result: reordered });
     expect(read).toMatchObject({ phase: 'confirmed', changed: [] });
     const references = selectionDefaultsOf(read).references;
-    expect(references.status === 'ready' && references.confirming).toBeUndefined();
+    expect(references.status === 'ready' && references.confirmation).toBeUndefined();
     expect(defaultsNote(read)).toBeNull();
   });
 
@@ -98,16 +98,26 @@ describe('the node answers', () => {
     expect(nextDefaultsRead(confirmed, { type: 'answered', key: 'k1', result: WITH_EXTRA_SKILL })).toBe(confirmed);
   });
 
-  it('a failure over a cached answer KEEPS it as the basis — the rows the person saw and may have edited — and says so', () => {
+  it('a failure over a cached answer KEEPS it on the card, marked failed, and says so', () => {
     const cached = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
     const read = nextDefaultsRead(cached, { type: 'failed', key: 'k1' });
     expect(read).toMatchObject({ phase: 'failed', shown: LAUNCH_DEFAULTS });
     const skills = selectionDefaultsOf(read).skills;
-    // Ready, and no longer `confirming`: nothing is pending, so an edit is sent as the set shown.
-    expect(skills).toMatchObject({ status: 'ready', total: 1 });
-    expect(skills.status === 'ready' && skills.confirming).toBeUndefined();
+    // Still drawn, marked `failed`: an EDITED group now blocks Launch until a retry confirms it.
+    expect(skills).toMatchObject({ status: 'ready', confirmation: 'failed', total: 1 });
     expect(shownAnswer(read)).toBe(LAUNCH_DEFAULTS);
     expect(defaultsNote(read)).toBe(UNCONFIRMED_DEFAULTS_NOTE);
+  });
+
+  it('retry re-opens a failed read: back to cached with what was shown (or loading), never another key', () => {
+    const cached = nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: LAUNCH_DEFAULTS });
+    const failed = nextDefaultsRead(cached, { type: 'failed', key: 'k1' });
+    expect(nextDefaultsRead(failed, { type: 'retry', key: 'k2' })).toBe(failed);
+    expect(nextDefaultsRead(failed, { type: 'retry', key: 'k1' })).toEqual({ phase: 'cached', key: 'k1', cached: LAUNCH_DEFAULTS });
+    const bare = nextDefaultsRead(nextDefaultsRead(IDLE, { type: 'open', key: 'k1', cached: null }), { type: 'failed', key: 'k1' });
+    expect(nextDefaultsRead(bare, { type: 'retry', key: 'k1' })).toEqual({ phase: 'loading', key: 'k1' });
+    // Only a failed read retries.
+    expect(nextDefaultsRead(cached, { type: 'retry', key: 'k1' })).toBe(cached);
   });
 
   it('a failure with nothing cached is FAILED — every group unknown, nothing said beyond the groups’ own reason', () => {

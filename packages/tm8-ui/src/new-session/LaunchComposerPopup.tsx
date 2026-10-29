@@ -977,7 +977,7 @@ export function LaunchComposerPopup({
         onNotesChange={setNotes}
         notesPlaceholder={notesPlaceholderFor(subject.kind, continuing)}
         strip={strip}
-        stripRefusal={stripLock ?? stripNotice ?? selection.defaultsNote}
+        stripRefusal={stripLock ?? stripNotice}
         stripLoading={stripLoading}
         onTick={tickRow}
         onAddRows={addRows}
@@ -1013,7 +1013,7 @@ export function LaunchComposerPopup({
         onSubmit={onLaunch}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal}
+        notice={preview ? null : nodeRefusal ?? selection.defaultsNote}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}
