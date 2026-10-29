@@ -14,7 +14,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Db, DbClaims } from '../../src/db/types.js';
-import { createLoopsJob, type DueLoop, type LoopExecutorPort } from '../../src/scheduler/jobs/loops.js';
+import { createLoopsJob, TOOL_LOOP_NOT_RUNNABLE, type DueLoop, type LoopExecutorPort } from '../../src/scheduler/jobs/loops.js';
 import type { JobContext } from '../../src/scheduler/types.js';
 
 const CLAIMS: DbClaims = { identityId: 'owner', nodeAdmin: true, requestId: 'test' };
@@ -207,6 +207,24 @@ describe('failure handling', () => {
     expect(outcome).toMatchObject({ detail: { failed: 1 } });
     const update = rec.rpcs.find((r) => r.fn === 'update_loop')!;
     expect(String(update.args[15])).toContain('never matches');
+    expect(update.args[11]).toBeNull();
+  });
+
+  it("advances a cron loop in the loop's own timezone (§3.1), not UTC", async () => {
+    // 10:00Z on 9 Aug is 11:00 in London (BST): the next 09:00 London is 08:00Z on the 10th.
+    const { db, port, rec } = harness({ due: [dueLoop({ schedule: '0 9 * * *', timezone: 'Europe/London' })] });
+    await createLoopsJob({ db, port }).run(ctx(new Date('2026-08-09T10:00:00Z')));
+    expect(rec.rpcs.find((r) => r.fn === 'update_loop')!.args[12]).toBe('2026-08-10T08:00:00.000Z');
+  });
+
+  it('never fires a tool loop as a spawn or a dispatch: the reason is recorded and the schedule moves on', async () => {
+    const { db, port, rec } = harness({ due: [dueLoop({ action: 'tool' })] });
+    const outcome = await createLoopsJob({ db, port }).run(ctx());
+    expect(rec.fired).toHaveLength(0);
+    expect(outcome).toMatchObject({ detail: { failed: 1, fired: 0 } });
+    const update = rec.rpcs.find((r) => r.fn === 'update_loop')!;
+    expect(update.args[15]).toBe(TOOL_LOOP_NOT_RUNNABLE);
+    expect(update.args[12]).not.toBeNull();
     expect(update.args[11]).toBeNull();
   });
 

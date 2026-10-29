@@ -123,11 +123,30 @@ function matches(spec: CronSpec, at: Wall): boolean {
 
 export const DEFAULT_TIMEZONE = 'UTC';
 
-let knownZones: ReadonlySet<string> | null = null;
-/** IANA validation (§3.1): the runtime's own zone list, plus the UTC spellings. */
+/** An IANA zone name's shape (`Area/Location`, `UTC`, `Etc/GMT+5`): no offsets, no spaces. */
+const ZONE_NAME = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
+const zoneVerdicts = new Map<string, boolean>();
+
+/**
+ * IANA validation (§3.1): a zone the runtime's Intl can evaluate, which is what
+ * the cron stepping below needs. `Intl.supportedValuesOf('timeZone')` alone is
+ * too narrow: it lists only CLDR canonical names, so the current IANA names
+ * browsers report (`Asia/Kolkata`, `Europe/Kyiv`) and `UTC` itself are missing.
+ */
 export function isValidTimezone(timezone: string): boolean {
-  knownZones ??= new Set([...Intl.supportedValuesOf('timeZone'), 'UTC', 'Etc/UTC']);
-  return knownZones.has(timezone);
+  let verdict = zoneVerdicts.get(timezone);
+  if (verdict === undefined) {
+    verdict = ZONE_NAME.test(timezone) && timezone.length <= 64;
+    if (verdict) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+      } catch {
+        verdict = false;
+      }
+    }
+    if (zoneVerdicts.size < 1024) zoneVerdicts.set(timezone, verdict);
+  }
+  return verdict;
 }
 
 export function assertValidTimezone(timezone: string): void {

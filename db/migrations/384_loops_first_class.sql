@@ -191,7 +191,10 @@ create function public.create_loop(
   p_action text default null, p_tool_id uuid default null,
   p_tool_inputs jsonb default '{}'::jsonb, p_timezone text default 'UTC',
   p_concurrency text default 'skip', p_max_runtime_seconds integer default null,
-  p_retry_attempts integer default 0, p_retry_delay_seconds integer default 300
+  p_retry_attempts integer default 0, p_retry_delay_seconds integer default 300,
+  -- The server's reason when it could compute no next run (§3.3: parked, never
+  -- silently never-due). Like p_next_run_at, stored as handed, never computed.
+  p_last_error text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   replay jsonb;
@@ -248,13 +251,13 @@ begin
   insert into public.loops(entity_id, title, schedule, team_member_id, subject_id, prompt,
                            config, enabled, next_run_at, action, tool_id, tool_inputs,
                            timezone, concurrency, max_runtime_seconds, retry_attempts,
-                           retry_delay_seconds)
+                           retry_delay_seconds, last_error)
   values (loop_id, btrim(p_title), btrim(p_schedule), p_team_member_id, p_subject_id,
           coalesce(p_prompt, ''), coalesce(p_config, '{}'::jsonb),
           coalesce(p_enabled, true), p_next_run_at, v_action, p_tool_id,
           coalesce(p_tool_inputs, '{}'::jsonb), btrim(coalesce(p_timezone, 'UTC')),
           coalesce(p_concurrency, 'skip'), p_max_runtime_seconds,
-          coalesce(p_retry_attempts, 0), coalesce(p_retry_delay_seconds, 300));
+          coalesce(p_retry_attempts, 0), coalesce(p_retry_delay_seconds, 300), p_last_error);
   perform internal.record_initial_version(loop_id, actor);
 
   activity_id := internal.record_activity(p_space_id, loop_id, actor, 'created',
@@ -382,8 +385,8 @@ begin
 end
 $$;
 
-revoke all on function public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer) from public;
-grant execute on function public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer) to tm8_app;
+revoke all on function public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer,text) from public;
+grant execute on function public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer,text) to tm8_app;
 revoke all on function public.update_loop(uuid,integer,uuid,text,text,uuid,boolean,uuid,boolean,text,jsonb,boolean,timestamptz,boolean,timestamptz,text,boolean,text,text,uuid,boolean,jsonb,text,timestamptz,boolean,text,integer,boolean,integer,integer,integer) from public;
 grant execute on function public.update_loop(uuid,integer,uuid,text,text,uuid,boolean,uuid,boolean,text,jsonb,boolean,timestamptz,boolean,timestamptz,text,boolean,text,text,uuid,boolean,jsonb,text,timestamptz,boolean,text,integer,boolean,integer,integer,integer) to tm8_app;
 
@@ -493,11 +496,15 @@ revoke all on function public.loop_run_settle(uuid,text,text) from public;
 grant execute on function public.loop_run_settle(uuid,text,text) to tm8_app;
 
 -- -----------------------------------------------------------------------------
--- §5. 375's due read skips a loop paused into the future (§3.2). The return
---     shape is unchanged, so this is a plain replace; PR2's claim door
---     supersedes it.
+-- §5. 375's due read skips a loop paused into the future (§3.2) and returns
+--     `timezone` and `action` after 375's columns: the executor advances a cron
+--     loop in its own zone (§3.1), and a tool loop is not fired as a spawn or a
+--     dispatch before the tool action exists (loops PR3). A new return shape
+--     needs a drop; PR2's claim door supersedes this read for the job.
 -- -----------------------------------------------------------------------------
-create or replace function public.loops_due_for_executor(p_limit integer default 25)
+drop function public.loops_due_for_executor(integer);
+
+create function public.loops_due_for_executor(p_limit integer default 25)
 returns table (
   entity_id        uuid,
   space_id         uuid,
@@ -508,7 +515,9 @@ returns table (
   prompt           text,
   config           jsonb,
   version          integer,
-  act_as_identity  text
+  act_as_identity  text,
+  timezone         text,
+  action           text
 )
 language sql stable security definer
 set search_path = public, internal, pg_temp as $$
@@ -534,7 +543,9 @@ set search_path = public, internal, pg_temp as $$
                and m.status = 'active'
              order by m.entity_id
              limit 1)
-         ) act_as_identity
+         ) act_as_identity,
+         l.timezone,
+         l.action
     from public.loops l
     join public.entities e on e.id = l.entity_id
    where internal.is_loops_worker()
@@ -546,6 +557,16 @@ set search_path = public, internal, pg_temp as $$
    order by l.next_run_at
    limit greatest(coalesce(p_limit, 25), 0)
 $$;
+
+comment on function public.loops_due_for_executor(integer) is
+  '375/384: due loops across every space, for the in-process loop executor only '
+  '(internal.is_loops_worker). Read-only. `act_as_identity` is the human who '
+  'armed the loop (343), else the space owner, else NULL when the space has no '
+  'active member left to act as. 384: a loop paused into the future is not due; '
+  '`timezone` and `action` trail the 375 columns.';
+
+revoke all on function public.loops_due_for_executor(integer) from public;
+grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §6. Selection headers for loops. Sibling definer: Tools PR-E's
