@@ -2,10 +2,11 @@
  * The web-platform globals this package's code uses, and nothing else.
  *
  * The package compiles against `lib: ["ES2022"]` with no DOM, so that a
- * reference to `window`, `document`, `history` or `localStorage` is a type
- * error here and not a crash on a phone. Both runtimes that execute this code
- * provide the five below: the browser (tm8-ui through Vite) and Hermes (the
- * app through Metro). Each is declared only as far as the moved code uses it:
+ * reference to a browser global (the window, the document, history, web
+ * storage) is a type error here and not a crash on a phone. Both runtimes
+ * that execute this code provide the five below: the browser (tm8-ui through
+ * Vite) and Hermes (the app through Metro). Each is declared only as far as
+ * the moved code uses it:
  * `btoa`, `atob`, `TextEncoder` and `TextDecoder` in `routes/q.ts` (the `q=`
  * codec), `URL#host` in `chat/turn-steps.ts`. A new use is a deliberate edit
  * here, which is the point.
