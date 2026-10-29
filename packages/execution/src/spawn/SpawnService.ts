@@ -97,7 +97,7 @@ import {
   readProjectSkillKeys,
   type ConfigHomeSkill,
 } from './harness-surface.js';
-import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
+import { applyDispatcherTeammates, contextHeaderIds, contextIndexForResume, contextIndexSwitch, DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_READ_MAX } from './context-index.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
@@ -1549,6 +1549,16 @@ export class SpawnService {
         excludeTeamMemberId: context.teamMember.id,
         limit: DISPATCHER_ROSTER_READ_MAX,
       });
+    }
+    // The space's tools (Tools v2 PR-E), so their headers ride the same read.
+    // Fail-soft, like the story and design blocks: a tools read that fails
+    // costs the prompt its tools group, never the launch.
+    if (this.graph.loadSpaceTools) {
+      try {
+        context.tools = await this.graph.loadSpaceTools(auth, { spaceId: context.spaceId, limit: TOOL_INDEX_READ_MAX });
+      } catch (error) {
+        this.logger?.warn?.('spawn: space tools read failed', { spaceId: context.spaceId, error: String(error) });
+      }
     }
     if (this.graph.loadContextHeaders) {
       context.headers = await this.graph.loadContextHeaders(auth, {
