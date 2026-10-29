@@ -80,10 +80,13 @@ const RUN_NOW_SKEW_MS = 30_000;
 /**
  * The loop panel's Run now on the entities.patch path (LoopControls): a client
  * nextRunAt at or before now. A later instant is a client computing a schedule,
- * which is the server's job (§3.1), so the caller ignores it.
+ * which is the server's job (§3.1), so the caller ignores it. A space-link
+ * caller never gets it: loops.runNow is refused to links (process_start), and
+ * this would fire B's loop as B's human armer (review 8b of #1406).
+ * Temporary: PR5b removes it when the panel calls loops.runNow.
  */
-export function isRunNowRequest(value: unknown, now: number = Date.now()): boolean {
-  if (typeof value !== 'string') return false;
+export function isRunNowRequest(value: unknown, caller: { viaLink: boolean }, now: number = Date.now()): boolean {
+  if (caller.viaLink || typeof value !== 'string') return false;
   const at = Date.parse(value);
   return Number.isFinite(at) && at <= now + RUN_NOW_SKEW_MS;
 }
