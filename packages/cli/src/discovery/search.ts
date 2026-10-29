@@ -305,6 +305,14 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     candidates: [{ path: ['loop', 'stop'], example: 'tm8 loop stop <run-id>   (the run ids: tm8 loop runs <id|title>)' }],
   },
   {
+    // Removing a loop is the ordinary entity delete (its runs go with it; its tasks and sessions stay).
+    // Without this route the 13 loop rows tie on the 'loop' tag and catalog order answers `loop create`.
+    intent: 'delete a loop',
+    all: [['loop', 'loops'], ['delete', 'remove', 'archive', 'destroy', 'trash']],
+    none: ['new', 'create', 'make'],
+    candidates: [{ path: ['entity', 'delete'], example: 'tm8 entity delete <loop-id>' }],
+  },
+  {
     // Stopping the LOOP itself (no run named): nothing more fires. Never run-now.
     intent: 'stop a loop firing (disable it)',
     all: [['loop'], LOOP_STOP_WORDS],
@@ -315,8 +323,9 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     intent: 'run a loop now',
     all: [['loop'], LOOP_RUN_NOW_WORDS],
     // Every steering, stopping or creating word vetoes: only "run it now" is run-now.
+    // "start the loop now" reads as enable, the safer answer: start/arm/activate veto run-now too.
     none: [...LOOP_STEERING_WORDS.filter(word => !LOOP_RUN_NOW_WORDS.includes(word)), ...LOOP_STOP_WORDS,
-      'new', 'create', 'make', 'add', 'schedule', 'set', 'setup'],
+      'new', 'create', 'make', 'add', 'schedule', 'set', 'setup', 'start', 'arm', 'activate'],
     candidates: [{ path: ['loop', 'run-now'], example: 'tm8 loop run-now <id|title>' }],
   },
   {

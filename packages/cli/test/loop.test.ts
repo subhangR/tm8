@@ -436,6 +436,16 @@ describe('tm8 loop discovery', () => {
       expect(path, query).not.toBe('loop create');
     }
     expect(matchIntent('enable the loop now')?.candidates[0]?.path).toEqual(['loop', 'enable']);
+    expect(matchIntent('start the loop now')?.candidates[0]?.path).toEqual(['loop', 'enable']);
+  });
+  it('removing a loop is the entity delete, never a create or a run', () => {
+    for (const query of ['delete a loop', 'delete the nightly loop', 'remove the loop', 'archive the loop', 'delete loops']) {
+      expect(matchIntent(query)?.candidates[0]?.path, query).toEqual(['entity', 'delete']);
+      const top = searchHelp(query).matches[0]?.command;
+      expect(top, query).toBe('entity delete');
+      expect(top, query).not.toBe('loop create');
+      expect(top, query).not.toBe('loop run-now');
+    }
   });
   it('leaves steering, reading and one-off work to the ranker', () => {
     for (const query of ['pause the nightly loop', 'list loops', 'stop a loop run', 'disable a loop', 'preview a cron schedule',
