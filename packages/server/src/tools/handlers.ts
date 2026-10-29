@@ -111,7 +111,8 @@ export function registerToolHandlers(registry: HandlerRegistry, deps: FacadeDeps
       if (keys.length !== 2 || keys[0] !== toolId || (keys[1] !== null && typeof keys[1] !== 'string')) throw new CollabError('invalid_cursor', 'Invalid tool run cursor');
       return deps.db.tx(claimsFor(await deps.owner(), ctx), async q => {
         await loadTool(q, toolId);
-        const rows = await q.query<ToolRunRow>(`${RUN_SELECT} and w.tool_id=$1 and ($2::uuid is null or e.id>$2::uuid) order by e.id limit $3`, [toolId, keys[1], limit + 1]);
+        // Newest first: uuidv7 ids order by creation, so the cursor walks back in time.
+        const rows = await q.query<ToolRunRow>(`${RUN_SELECT} and w.tool_id=$1 and ($2::uuid is null or e.id<$2::uuid) order by e.id desc limit $3`, [toolId, keys[1], limit + 1]);
         const page = rows.slice(0, limit);
         const actors = await loadActors(q, page.map(row => row.created_by));
         return { items: page.map(row => ({ ...toolRunView(row), invoker: actorOf(actors, row.created_by) })), nextCursor: rows.length > limit ? encodeCursor([toolId, page.at(-1)!.id]) : null };
