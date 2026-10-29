@@ -98,7 +98,7 @@ async function authSignup(cmd: CommandContext): Promise<ExitCode> {
 async function authLogin(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('auth login', cmd.options.value('mutation-id'));
   const usage =
-    'usage: tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]';
+    'usage: tm8 auth login <username> --password <password> [--kind browser|cli|mobile] [--label <label>] [--print-token]';
   const username = requireOnePositional(cmd, usage);
   const body: Record<string, unknown> = {
     username,

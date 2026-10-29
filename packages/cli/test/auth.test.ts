@@ -46,6 +46,23 @@ const SESSION = {
 
 const TOKEN = 'tm8s_sess-1.secret-value-1';
 
+/** A TM8 Mobile sign-in as `auth.sessions.list` returns it (391). */
+const MOBILE_LISTING = {
+  sessionId: '00000000-0000-4000-8000-0000000000c1',
+  kind: 'mobile',
+  createdAt: '2026-10-29T12:00:00.000Z',
+  lastUsedAt: null,
+  expiresAt: '2027-01-27T12:00:00.000Z',
+  label: 'TM8 Mobile · iPhone',
+  spaceId: null,
+  spaceName: null,
+  parentSessionId: null,
+  origin: 'login',
+  originEntityId: null,
+  owner: { identityId: ACCOUNT.identityId, displayName: 'Alice' },
+  current: false,
+};
+
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
@@ -178,6 +195,10 @@ describe('auth login / logout against one Server', () => {
         res.end(JSON.stringify({ data: { sessionId: requested, revoked: true }, requestId: 'req-logout' }));
         return;
       }
+      if (path === '/v2/auth/sessions') {
+        res.end(JSON.stringify({ data: { spaceId: null, sessions: [MOBILE_LISTING] }, requestId: 'req-sessions' }));
+        return;
+      }
       if (path === '/v2/spaces') {
         if (req.headers.authorization === 'Bearer tm8s_stale.dead') {
           res.statusCode = 401;
@@ -211,6 +232,24 @@ describe('auth login / logout against one Server', () => {
     expect(stderr).toBe('');
     // The login request itself is claim-free: no bearer header.
     expect(seen).toMatchObject([{ method: 'POST', path: '/v2/auth/login', authorization: undefined }]);
+  });
+
+  it('login --kind mobile --label sends both; without --kind a CLI login is a cli session', async () => {
+    expect(await run(['auth', 'login', 'alice', '--password', 'pw', '--kind', 'mobile', '--label', 'TM8 Mobile · iPhone'])).toBe(0);
+    expect(await run(['auth', 'login', 'alice', '--password', 'pw'])).toBe(0);
+    expect(seen.map((request) => request.body)).toEqual([
+      { username: 'alice', password: 'pw', kind: 'mobile', label: 'TM8 Mobile · iPhone' },
+      { username: 'alice', password: 'pw', kind: 'cli' },
+    ]);
+  });
+
+  it('auth sessions shows a mobile session\'s kind and label', async () => {
+    seedCredential(apiUrl, TOKEN);
+    expect(await run(['auth', 'sessions'])).toBe(0);
+    const row = stdout.split('\n').find((line) => line.includes(MOBILE_LISTING.sessionId));
+    expect(row).toBeDefined();
+    expect(row!.split(/\s{2,}/)).toEqual(expect.arrayContaining(['mobile', 'login', 'gate', '"TM8 Mobile · iPhone"']));
+    expect(seen).toMatchObject([{ method: 'GET', path: '/v2/auth/sessions', authorization: `Bearer ${TOKEN}` }]);
   });
 
   it('login --print-token prints once and stores nothing', async () => {

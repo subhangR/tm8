@@ -449,12 +449,13 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.login': {
     cmd: ['auth', 'login'],
-    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]',
+    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli|mobile] [--label <label>] [--print-token]',
     sum: 'Exchange a username and password for a tm8s_… bearer session with this Server',
     authz: 'server',
     input: 'bound',
-    tags: ['login', 'token', 'session', 'bearer', 'password', 'credential'],
+    tags: ['login', 'token', 'session', 'bearer', 'password', 'credential', 'mobile', 'phone', 'device', 'kind'],
     notes: [
+      '--kind sets what the session is: cli (the default here) and mobile live 90 days, browser 30 days; mobile is the TM8 Mobile app\'s own kind, a human session that every human-only door admits — name the device with --label (e.g. "TM8 Mobile · iPhone") and tm8 auth sessions shows it beside the kind',
       'the credential is stored per Server origin — macOS keychain, else a 0600 file — and later commands against that Server authenticate automatically',
       'with --print-token (or in an agent session) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
       'the failure message never distinguishes an unknown username from a wrong password',
@@ -514,6 +515,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'humans only; the admin view needs owner/admin of the space and a session that is not pinned elsewhere',
       'never shows a token; origin is login, space_enter, spawn or chat',
+      'each row shows the session\'s kind (browser, cli, mobile, agent, agent_runtime) and its label, e.g. the device a phone signed in from',
     ],
   },
   'auth.sessions.revoke': {
