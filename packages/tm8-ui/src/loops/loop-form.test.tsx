@@ -335,6 +335,17 @@ describe('an edit never rewrites what the human did not touch', () => {
     expect(update.mock.calls[0]![1]).toEqual({ title: 'Nightly sweep', maxRuntimeSeconds: 180 });
   });
 
+  it('switching to Dispatcher decides clears the runner and the tool (a dispatch loop names neither)', async () => {
+    const view = toolLoop();
+    const client = createFixtureLoopsClient([view]);
+    const update = vi.spyOn(client, 'update');
+    mount(client, { mode: 'edit', view });
+    fireEvent.click(screen.getByTestId('loop-action-dispatch'));
+    submit();
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![1]).toEqual({ action: 'dispatch', teamMemberId: null, toolId: null, toolInputs: {} });
+  });
+
   it('a create leaves the retry delay at the contract default', async () => {
     const client = createFixtureLoopsClient();
     const create = vi.spyOn(client, 'create');

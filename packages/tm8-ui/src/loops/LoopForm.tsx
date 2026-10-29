@@ -283,7 +283,7 @@ function patchOf(stored: LoopDefinition, untouched: LoopDefinition, after: LoopD
   }
   if (JSON.stringify(config) !== JSON.stringify(stored.config)) out.config = config;
   // A different tool (or action) must not inherit the old tool's stored inputs.
-  if (after.action === 'tool' && ('toolId' in out || 'action' in out)) out.toolInputs = after.toolInputs;
+  if (('toolId' in out || 'action' in out) && JSON.stringify(after.toolInputs) !== JSON.stringify(stored.toolInputs)) out.toolInputs = after.toolInputs;
   return out as LoopDefinitionPatch;
 }
 
