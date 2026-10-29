@@ -224,7 +224,7 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     throw new Error('continuity_context_overflow: required attribution and uncertainty exceed budget');
   }
   const originals = new Set(original);
-  return { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
+  return boundManifest({ schemaVersion: 1, snapshotId: options.snapshotId, coverage,
     contentHash: createHash('sha256').update(rendered).digest('hex'), renderedContext: rendered,
     manifest: [
       ...dropped.map(record => ({ sourceId: record.sourceId, treatment: 'reference' as const,
@@ -232,7 +232,47 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
       ...records.map(record => ({ sourceId: record.sourceId,
         treatment: originals.has(record) && !omitted(record.content) ? 'included' as const : 'summarized' as const,
         reason: originals.has(record) && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })),
-    ] };
+    ] });
+}
+
+/** Newest manifest entries one bootstrap carries; older ones fold into a single entry. */
+export const MANIFEST_ENTRY_LIMIT = 256;
+/**
+ * `seal_chat_turn_snapshot` refuses a bootstrap whose jsonb text is over
+ * 262,144 bytes. jsonb text adds a space after every ':' and ',', so measure
+ * JSON.stringify against a lower line.
+ */
+export const BOOTSTRAP_MAX_BYTES = 196_608;
+
+/**
+ * BOUNDED, NOT REFUSED. The rendered context keeps its ~32 KiB budget, but the
+ * manifest used to list every record of every earlier turn, dropped ones
+ * included: one entry per tool call, forever. readyai-main reached ~1,000
+ * entries (~235 KB), crossed the seal's 256 KiB limit on 2026-10-24, and every
+ * later turn failed "Chat runtime could not prepare this turn" — a chat only
+ * grows, so it never recovered. The manifest is an audit list (not part of
+ * coverage or contentHash): keep the newest entries and name the rest in one
+ * folded entry; halve further if the whole bootstrap is still too big.
+ */
+function boundManifest(context: BootstrapContext): BootstrapContext {
+  const entries = context.manifest;
+  const fold = (keep: number): BootstrapContext => {
+    if (entries.length <= keep) return context;
+    const folded = entries.slice(0, entries.length - keep);
+    return { ...context, manifest: [{ sourceId: `manifest-folded:${folded.length}`, treatment: 'reference',
+      reason: `${folded.length} earlier manifest entries (${folded[0]!.sourceId} through ${folded.at(-1)!.sourceId}) `
+        + 'folded to bound the snapshot; details require a current authorized source read' },
+    ...entries.slice(entries.length - keep)] };
+  };
+  const fits = (value: BootstrapContext) => Buffer.byteLength(JSON.stringify(value), 'utf8') <= BOOTSTRAP_MAX_BYTES;
+  let keep = MANIFEST_ENTRY_LIMIT - 1;
+  let bounded = fold(keep);
+  while (!fits(bounded) && keep > 0) {
+    keep = Math.floor(keep / 2);
+    bounded = fold(keep);
+  }
+  if (!fits(bounded)) throw new Error('continuity_context_overflow: bootstrap exceeds the snapshot size limit');
+  return bounded;
 }
 
 /** Newest turns read into one history; older ones are named by a notice, never silently dropped. */
