@@ -10,15 +10,16 @@
 --   internal.claim_text         037  every session claim, tm8.identity_id
 --                                     among them
 --   public.rename_work_session  085  a title 'v2 rev' was stored as '2 re'
---   internal.header_text        223  selection-header text lost edge v's
+--   internal.header_text        223  selection-header text and every keyword
+--                                     lost edge v's ('csv' -> 'cs')
 --
 -- What that broke: an identity whose id begins or ends with 'v' is a member of
 -- no space (is_space_member compares members.identity_id with the trimmed
 -- claim), and one whose trimmed form is another identity's id reads as that
 -- identity. Ids minted by the server ('id_' + base64url of 16 bytes) can start
 -- or end with neither, so it surfaced through a test fixture: Tools PR-F's
--- 'versions-owner' arrived as 'ersions-owner'. The tab-only title 085 refuses
--- was refused for \t but stored for a lone vertical tab.
+-- 'versions-owner' arrived as 'ersions-owner'. And 085's refusal of a blank
+-- title let a lone vertical tab through as the stored title.
 --
 -- THE FIX IS THE LITERAL AND NOTHING ELSE. \x0B is the vertical tab. Each body
 -- below is the live definition on origin/main (the latest definer of each is
