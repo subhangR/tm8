@@ -12,6 +12,7 @@ import type { EntityId } from '@tm8/contract';
 import {
   beginLaunch,
   launchPageModel,
+  launchRecord,
   LaunchPageHostContext,
   resetLaunches,
   transition,
@@ -124,6 +125,14 @@ describe('the launching page', () => {
     expect(screen.queryByTestId('session-launching-dismiss')).toBeNull();
   });
 
+  it('says it is reconnecting — not that anything timed out — when a re-attached page replays', () => {
+    beginLaunch(launch);
+    render(<SessionLaunching model={launchPageModel(transition('mut-1', { type: 'reconnect' }), null)!} />);
+    expect(screen.getByTestId('session-launching-reconnecting')).toBeTruthy();
+    expect(screen.queryByTestId('session-launching-checking')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Reconnecting');
+  });
+
   it('says it is checking while a timed-out launch is being looked for', () => {
     beginLaunch(launch);
     render(<SessionLaunching model={launchPageModel(transition('mut-1', { type: 'check' }), null)!} />);
@@ -162,6 +171,13 @@ describe('the session’s work view while it boots', () => {
     render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting()} />);
     expect(screen.getByTestId('session-launching-line').textContent).toContain('Worktree from main');
     expect(screen.getByTestId('session-launching-phase-admitted').textContent).toContain('0.5 s');
+  });
+
+  it('once the session is live, its launch record is retired', () => {
+    beginLaunch(launch, Date.now() - 1_500);
+    transition('mut-1', { type: 'admit', sessionId: 's-1' as EntityId, at: Date.now() - 1_000 });
+    render(<WorkSessionContent sessionId="s-1" profile={null} {...surfaces} boot={booting({ status: 'running', started: true })} />);
+    expect(launchRecord('mut-1')).toBeNull();
   });
 
   it('a failed session this window did not launch is the work view’s to tell', () => {

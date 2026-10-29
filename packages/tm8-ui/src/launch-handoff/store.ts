@@ -5,32 +5,40 @@
  * CONTRACT
  *   writes  `beginLaunch` (a press), `adoptLaunch` (a page re-attaching after a
  *           reload or in another window), `transition(id, event)` (everything
- *           after), `dropLaunch` (Dismiss, or a retry taking the record's place).
+ *           after), `dropLaunch` (Dismiss, a retry taking the record's place,
+ *           or the session going live: `retireLaunch`).
  *   reads   `launchRecord`, `launchForSession`, and their `useLaunch*` hooks.
- *   callers `views/useLaunchHandoff.ts` is the only writer; the launching page
- *           (Work's launch tab) and the session panel read.
+ *   callers `views/useLaunchHandoff.ts` writes; the session's work view
+ *           retires a record once its session is live (`retireLaunch`); the
+ *           launching page and the session view read.
  *   invariants
  *     - `id` is the launch's clientMutationId and never changes;
  *     - `sessionId` is non-null exactly in `admitted`, `failure` exactly in
- *       `failed`;
+ *       `failed`; `input` is dropped at admission (nothing replays an admitted
+ *       launch, and prompt bodies need not outlive their send);
  *     - an event the current state does not take is REFUSED: it returns null
  *       and changes nothing, so a late answer can never resurrect a launch the
- *       viewer dismissed or re-label one that already settled.
+ *       viewer dismissed or re-label one that already settled;
+ *     - `bySession` indexes every admitted record by its session id.
  *
  * THE MACHINE (`state`)
  *
  *     press ──► starting ──admit──► admitted     terminal: from here the
- *                 │  │                            session's own status (and
- *                 │  └──fail──► failed            boot phase) tells the page
- *            check│               ▲   │           what happens next
- *                 ▼               │   └─ a press of the SAME id ──► starting
- *              checking ──fail────┘
- *                 └──admit──► admitted
+ *                 │  │  │                         session's own status (and
+ *                 │  │  └──fail──► failed         boot phase) tells the page
+ *            check│  │reconnect     ▲   │         what happens next
+ *                 ▼  ▼              │   └─ a press of the SAME id ──► starting
+ *        checking  reconnecting ──fail
+ *                 └──────┴──admit──► admitted
  *   failed ──choose (the person picks a found session)──► admitted
  *
+ *   checking      THIS window's send timed out; it is asking whether it started
+ *   reconnecting  a page re-attached after a reload / in another window is
+ *                 replaying the stored input — no timeout happened here
+ *
  * `page` is ORTHOGONAL to `state` — where the launching page lives: queued
- * behind Work's restore, in a Work tab, or nowhere (Work refused the tab; the
- * session then opens the old way). It moves by its own event, `land`, in any
+ * behind Work's restore, in a Work tab (its id kept, so an answer reaching a
+ * closed tab still lands through it), or nowhere. It moves by `land`, in any
  * state.
  *
  * WHY A STORE AND NOT COMPONENT STATE: Work renders only the ACTIVE tab, so the
@@ -43,7 +51,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import type { LaunchStarted } from '../new-session/launch-started';
 
-export type LaunchState = 'starting' | 'checking' | 'admitted' | 'failed';
+export type LaunchState = 'starting' | 'checking' | 'reconnecting' | 'admitted' | 'failed';
 
 export interface LaunchFailure {
   /** The node's own words. Never paraphrased: a paraphrase discards the remedy. */
@@ -57,9 +65,9 @@ export interface LaunchFailure {
    */
   uncertain: boolean;
   /**
-   * Sessions that started on the subject since the press, when a timed-out
-   * launch could not be matched to one: the person picks (`choose`) — the
-   * page never adopts one of them silently.
+   * Sessions that started on the subject since the press, when the check could
+   * not match one to this launch: the person picks (`choose`) — the page never
+   * adopts one of them silently.
    */
   candidates?: readonly { id: EntityId; title: string }[];
 }
@@ -69,12 +77,14 @@ export interface LaunchPage {
   at: 'queued' | 'tab' | 'none';
   viewerId: string;
   spaceId: string;
+  /** The launch tab's id while `at` is `tab` — kept after a close, for the bind's closed-tab path. */
+  tabId?: string;
 }
 
 export interface LaunchRecord {
   readonly id: string;
   readonly launch: LaunchStarted;
-  /** The exact input sent, once the host's spawn ran; the check replays it unchanged. */
+  /** The exact input sent, until admission; a replay sends it again unchanged. */
   readonly input: ExecutionSpawnInput | null;
   /** Epoch ms of the press — the page's elapsed timer counts from here. */
   readonly startedAt: number;
@@ -89,8 +99,10 @@ export interface LaunchRecord {
 export type LaunchEvent =
   /** The host's spawn ran: the input is on record (for the replay). */
   | { type: 'send'; input: ExecutionSpawnInput }
-  /** The send timed out: ask whether it started. */
+  /** This window's send timed out: ask whether it started. */
   | { type: 'check' }
+  /** A re-attached page replays the stored input. */
+  | { type: 'reconnect' }
   | { type: 'admit'; sessionId: EntityId; at: number }
   | { type: 'fail'; failure: LaunchFailure }
   /** The person picked, on a failed page, the session this launch started. */
@@ -98,8 +110,9 @@ export type LaunchEvent =
   | { type: 'land'; page: LaunchPage };
 
 const TAKES: Record<LaunchState, ReadonlySet<LaunchEvent['type']>> = {
-  starting: new Set(['send', 'check', 'admit', 'fail', 'land']),
+  starting: new Set(['send', 'check', 'reconnect', 'admit', 'fail', 'land']),
   checking: new Set(['admit', 'fail', 'land']),
+  reconnecting: new Set(['admit', 'fail', 'land']),
   admitted: new Set(['land']),
   failed: new Set(['choose', 'land']),
 };
@@ -110,9 +123,11 @@ function next(record: LaunchRecord, event: LaunchEvent): LaunchRecord {
       return { ...record, input: event.input };
     case 'check':
       return { ...record, state: 'checking' };
+    case 'reconnect':
+      return { ...record, state: 'reconnecting' };
     case 'admit':
     case 'choose':
-      return { ...record, state: 'admitted', sessionId: event.sessionId, admittedAt: event.at, failure: null };
+      return { ...record, state: 'admitted', sessionId: event.sessionId, admittedAt: event.at, failure: null, input: null };
     case 'fail':
       return { ...record, state: 'failed', failure: event.failure };
     case 'land':
@@ -122,12 +137,17 @@ function next(record: LaunchRecord, event: LaunchEvent): LaunchRecord {
 
 interface LaunchesState {
   records: Readonly<Record<string, LaunchRecord>>;
+  /** session id → record id, for every admitted record. */
+  bySession: Readonly<Record<string, string>>;
 }
 
-export const launchesStore: StoreApi<LaunchesState> = createStore<LaunchesState>()(() => ({ records: {} }));
+export const launchesStore: StoreApi<LaunchesState> = createStore<LaunchesState>()(() => ({ records: {}, bySession: {} }));
 
 function put(record: LaunchRecord): LaunchRecord {
-  launchesStore.setState((s) => ({ records: { ...s.records, [record.id]: record } }));
+  launchesStore.setState((s) => ({
+    records: { ...s.records, [record.id]: record },
+    bySession: record.sessionId ? { ...s.bySession, [record.sessionId]: record.id } : s.bySession,
+  }));
   return record;
 }
 
@@ -165,12 +185,14 @@ export function startingRecord(
 }
 
 /**
- * A press. A second press of an id still in flight IS that launch and changes
- * nothing; a press of a failed id starts it over — the ledger key is the
- * launch's identity, not the press.
+ * A press. A press of an id still in flight IS that launch (returned as it
+ * is); a press of a failed id starts it over (the ledger key is the launch's
+ * identity, not the press); a press of an ADMITTED id is refused — null — for
+ * there is no launch left to start: the caller lands its session instead.
  */
-export function beginLaunch(launch: LaunchStarted, now: number = Date.now()): LaunchRecord {
+export function beginLaunch(launch: LaunchStarted, now: number = Date.now()): LaunchRecord | null {
   const current = launchesStore.getState().records[launch.clientMutationId];
+  if (current?.state === 'admitted') return null;
   if (current && current.state !== 'failed') return current;
   /* A restart keeps where its page is and nothing else: the new press sends
      its own input. */
@@ -193,25 +215,37 @@ export function adoptLaunch(
 }
 
 export function dropLaunch(id: string): void {
-  if (!launchesStore.getState().records[id]) return;
+  const current = launchesStore.getState().records[id];
+  if (!current) return;
   launchesStore.setState((s) => {
     const { [id]: _gone, ...records } = s.records;
-    return { records };
+    if (!current.sessionId) return { records };
+    const { [current.sessionId]: _unindexed, ...bySession } = s.bySession;
+    return { records, bySession };
   });
+}
+
+/**
+ * The session is live: nothing about its launch is needed any more — the page
+ * has given way to the session's own surfaces. Called by the session's work
+ * view; a no-op for anything but an admitted record.
+ */
+export function retireLaunch(id: string): void {
+  if (launchesStore.getState().records[id]?.state === 'admitted') dropLaunch(id);
 }
 
 export function launchRecord(id: string): LaunchRecord | null {
   return launchesStore.getState().records[id] ?? null;
 }
 
-function sessionRecord(records: Readonly<Record<string, LaunchRecord>>, sessionId: string): LaunchRecord | null {
-  for (const record of Object.values(records)) if (record.sessionId === sessionId) return record;
-  return null;
+function sessionRecord(s: LaunchesState, sessionId: string): LaunchRecord | null {
+  const id = s.bySession[sessionId];
+  return id ? s.records[id] ?? null : null;
 }
 
 /** The launch that produced `sessionId`, when this window watched it. */
 export function launchForSession(sessionId: string): LaunchRecord | null {
-  return sessionRecord(launchesStore.getState().records, sessionId);
+  return sessionRecord(launchesStore.getState(), sessionId);
 }
 
 export function useLaunchRecord(id: string | null | undefined): LaunchRecord | null {
@@ -219,10 +253,10 @@ export function useLaunchRecord(id: string | null | undefined): LaunchRecord | n
 }
 
 export function useLaunchForSession(sessionId: string | null | undefined): LaunchRecord | null {
-  return useStore(launchesStore, (s) => (sessionId ? sessionRecord(s.records, sessionId) : null));
+  return useStore(launchesStore, (s) => (sessionId ? sessionRecord(s, sessionId) : null));
 }
 
 /** Test seam: forget every record. */
 export function resetLaunches(): void {
-  launchesStore.setState({ records: {} });
+  launchesStore.setState({ records: {}, bySession: {} });
 }

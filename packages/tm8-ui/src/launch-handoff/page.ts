@@ -20,6 +20,7 @@
  * THE PAGE'S STATES, derived here and stored nowhere:
  *   starting  pressed, the node has not answered
  *   checking  the send timed out; asking whether it started
+ *   reconnecting  re-attached after a reload / in another window: replaying
  *   booting   admitted; the session exists and is not up yet
  *   live      every step done
  *   failed    refused, timed out with no session to show, or the boot failed
@@ -29,7 +30,7 @@ import { accessModeLabel, EFFORT_LABELS } from '../domain/launch';
 import type { LaunchRecord } from './store';
 import { bootPhaseOf, launchPhases, type BootStep, type LaunchWorkdirMode, type PhaseRow } from './phases';
 
-export type LaunchPageState = 'starting' | 'checking' | 'booting' | 'live' | 'failed';
+export type LaunchPageState = 'starting' | 'checking' | 'reconnecting' | 'booting' | 'live' | 'failed';
 
 /** What a session's own entity says about its boot. */
 export interface BootingSession {
@@ -95,17 +96,19 @@ export function bootingSessionOf(detail: {
     ? (state.status as WorkSessionStatus)
     : null;
   if (!status) return null;
-  const teammate = state.teammate as { displayName?: unknown; name?: unknown } | null | undefined;
-  const teammateName = typeof teammate?.displayName === 'string'
-    ? teammate.displayName
-    : typeof teammate?.name === 'string' ? teammate.name : null;
+  /* `teammate` is the work_session state's persona (an ActorSummary,
+     projected by the entity read through `participates_in`); null or absent
+     when the run has none, or on an older node. */
+  const teammate = state.teammate as { displayName?: unknown } | null | undefined;
+  const teammateName = typeof teammate?.displayName === 'string' ? teammate.displayName : null;
+  const boot = bootPhaseOf(state);
   return {
     id: detail.id,
     title: detail.title,
     createdAt: detail.createdAt,
     status,
-    bootPhase: bootPhaseOf(state)?.phase ?? null,
-    bootPhaseAt: bootPhaseOf(state)?.at ?? null,
+    bootPhase: boot?.phase ?? null,
+    bootPhaseAt: boot?.at ?? null,
     started: typeof state.startedAt === 'string' && state.startedAt.length > 0,
     teammate: teammateName,
     model: typeof state.model === 'string' ? state.model : null,
@@ -192,8 +195,8 @@ export function launchPageModel(
       ? 'failed'
       : session
         ? 'booting'
-        : record!.state === 'checking'
-          ? 'checking'
+        : record!.state === 'checking' || record!.state === 'reconnecting'
+          ? record!.state
           : record!.state === 'admitted' ? 'booting' : 'starting';
 
   const failure = state !== 'failed'

@@ -26,7 +26,7 @@ import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import type { LaunchFailure } from '../../launch-handoff/store';
 import type { LaunchStarted } from '../../new-session/launch-started';
 import type { WorkspaceRuntime } from './dispatch';
-import type { DraftTabRecord, Source } from './types';
+import { isNonEmptyString, isRecord, type DraftTabRecord, type Source } from './types';
 
 export const LAUNCH_TAB_KIND = 'work_session';
 
@@ -46,17 +46,12 @@ export interface LaunchTabValues {
   failure: LaunchFailure | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Read a draft's values as a launch tab's, or null when they are not one —
  * a ＋ New → Session draft holds the screen's own fields instead. Shape-checked
  * because the values travel through storage and the node.
  */
-const str = (v: unknown): v is string => typeof v === 'string';
-const strOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string';
 const VERBS: ReadonlySet<string> = new Set(['worker', 'coordinator', 'dispatcher']);
 
 /**
@@ -68,31 +63,33 @@ const VERBS: ReadonlySet<string> = new Set(['worker', 'coordinator', 'dispatcher
 function launchStartedOf(raw: unknown): LaunchStarted | null {
   if (!isRecord(raw)) return null;
   const { clientMutationId, subjectId, title, verb, teammate, model, effort, accessMode, workdir, notes } = raw;
-  if (!str(clientMutationId) || !str(subjectId) || !str(title) || !str(verb) || !VERBS.has(verb) || !str(notes)) return null;
-  if (!strOrNull(model) || !strOrNull(effort) || !strOrNull(accessMode)) return null;
-  if (teammate !== null && !(isRecord(teammate) && str(teammate.id) && str(teammate.name))) return null;
+  const textOrNull = (v: unknown) => v === null || typeof v === 'string';
+  if (!isNonEmptyString(clientMutationId) || !isNonEmptyString(subjectId) || typeof title !== 'string') return null;
+  if (!isNonEmptyString(verb) || !VERBS.has(verb) || typeof notes !== 'string') return null;
+  if (!textOrNull(model) || !textOrNull(effort) || !textOrNull(accessMode)) return null;
+  if (teammate !== null && !(isRecord(teammate) && isNonEmptyString(teammate.id) && typeof teammate.name === 'string')) return null;
   if (!isRecord(workdir)) return null;
   const okWorkdir = workdir.kind === 'scratch'
-    || (workdir.kind === 'project' && str(workdir.projectId)
-      && (workdir.mode === 'project' || workdir.mode === 'worktree') && strOrNull(workdir.baseRef));
+    || (workdir.kind === 'project' && isNonEmptyString(workdir.projectId)
+      && (workdir.mode === 'project' || workdir.mode === 'worktree') && textOrNull(workdir.baseRef));
   return okWorkdir ? (raw as unknown as LaunchStarted) : null;
 }
 
 function failureOf(raw: unknown): LaunchFailure | null {
-  if (!isRecord(raw) || !str(raw.message)) return null;
+  if (!isRecord(raw) || typeof raw.message !== 'string') return null;
   const candidates = Array.isArray(raw.candidates)
-    ? raw.candidates.filter((c): c is { id: EntityId; title: string } => isRecord(c) && str(c.id) && str(c.title))
+    ? raw.candidates.filter((c): c is { id: EntityId; title: string } => isRecord(c) && isNonEmptyString(c.id) && typeof c.title === 'string')
     : [];
   return {
     message: raw.message,
-    code: str(raw.code) ? raw.code : null,
+    code: typeof raw.code === 'string' ? raw.code : null,
     uncertain: raw.uncertain === true,
     ...(candidates.length > 0 ? { candidates } : {}),
   };
 }
 
 export function launchTabValues(values: Record<string, unknown> | null | undefined): LaunchTabValues | null {
-  if (!values || !str(values.launchId) || values.launchId.length === 0) return null;
+  if (!values || !isNonEmptyString(values.launchId)) return null;
   const launch = launchStartedOf(values.launch);
   if (!launch || launch.clientMutationId !== values.launchId) return null;
   const startedAt = typeof values.startedAt === 'number' && Number.isFinite(values.startedAt) ? values.startedAt : Date.now();
@@ -130,11 +127,6 @@ export function openLaunchTab(runtime: WorkspaceRuntime, values: LaunchTabValues
   const tab = result.tabId ? runtime.store.getState().tabs[result.tabId] : undefined;
   if (result.status !== 'applied' || tab?.type !== 'draft') return null;
   runtime.drafts.set(tab.draftId, { ...values });
-  runtime.dispatch({
-    command: 'workspace.drafts.markDirty',
-    args: { tabId: tab.id, dirty: false, submitting: true },
-    source: 'system',
-  });
   return tab.id;
 }
 
@@ -165,15 +157,27 @@ export function storeLaunchFacts(
  * answers with a REPLACE — the in-place, no-history half of the rule.
  * False when no launch tab is open for `launchId` (closed meanwhile).
  */
-export function bindLaunchTab(runtime: WorkspaceRuntime, launchId: string, sessionId: EntityId, title: string): boolean {
+export function bindLaunchTab(
+  runtime: WorkspaceRuntime,
+  launchId: string,
+  sessionId: EntityId,
+  title: string,
+  /** The tab the launch was opened in, for when the viewer has closed it since. */
+  openedIn?: string,
+): boolean {
   const tab = findLaunchTab(runtime, launchId);
-  if (!tab) return false;
+  /* `openedIn` only when that tab is GONE: a live tab that no longer holds
+     this launch (a retry took it over) must never be bound to its session. */
+  const tabId = tab?.id ?? (openedIn && !runtime.store.getState().tabs[openedIn] ? openedIn : undefined);
+  if (!tabId) return false;
+  /* A closed tab is the reducer's own case: bind answers it with the
+     "Created <title>" toast and its Open, and recreates nothing. */
   runtime.dispatch({
     command: 'workspace.drafts.bind',
-    args: { tabId: tab.id, entityId: sessionId, kind: LAUNCH_TAB_KIND, title },
+    args: { tabId, entityId: sessionId, kind: LAUNCH_TAB_KIND, title },
     source: 'system',
   });
-  return true;
+  return tab !== null;
 }
 
 /** Dismiss: close the launch tab. Not dirty, so the close never prompts. */

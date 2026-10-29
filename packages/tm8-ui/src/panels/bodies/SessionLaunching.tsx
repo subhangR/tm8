@@ -19,6 +19,7 @@ import {
   bootIsFresh,
   formatElapsed,
   launchPageModel,
+  retireLaunch,
   useLaunchForSession,
   useLaunchPageHost,
   type BootingSession,
@@ -32,6 +33,7 @@ import './session-launching.css';
 const EYEBROW: Record<Exclude<LaunchPageState, 'live'>, string> = {
   starting: 'Launching',
   checking: 'Checking',
+  reconnecting: 'Reconnecting',
   booting: 'Starting',
   failed: 'Launch failed',
 };
@@ -101,6 +103,12 @@ export function useSessionLaunching(boot: BootingSession | null): { page: Launch
     const timer = setTimeout(() => setCrossed((n) => n + 1), wait + 50);
     return () => clearTimeout(timer);
   }, [freshUntil]);
+  /* Live: the launch has nothing left to say — retire its record (the page
+     gives way to the surfaces; the prompt body need not outlive this). */
+  const retire = model?.state === 'live' && record ? record.id : null;
+  useEffect(() => {
+    if (retire) retireLaunch(retire);
+  }, [retire]);
   if (model?.state === 'booting') {
     return record || bootIsFresh(boot!, Date.now()) ? { page: model, stale: false } : { page: null, stale: true };
   }
@@ -128,7 +136,7 @@ function Mark({ mark }: { mark: PhaseMark }) {
 
 export function SessionLaunching({ model }: { model: LaunchPageModel }) {
   const actions = useLaunchPageHost();
-  const running = model.state === 'starting' || model.state === 'checking' || model.state === 'booting';
+  const running = model.state === 'starting' || model.state === 'checking' || model.state === 'reconnecting' || model.state === 'booting';
   const elapsed = useElapsed(model.startedAt, running);
   const state = model.state === 'live' ? 'booting' : model.state;
   const launchId = model.launchId;
@@ -179,6 +187,11 @@ export function SessionLaunching({ model }: { model: LaunchPageModel }) {
           ))}
         </ol>
 
+        {model.state === 'reconnecting' ? (
+          <p className="slaunch__note" data-testid="session-launching-reconnecting">
+            Reconnecting to this launch…
+          </p>
+        ) : null}
         {model.state === 'checking' ? (
           <p className="slaunch__note" data-testid="session-launching-checking">
             The node didn’t answer in time. Checking whether the launch started before anything is retried.

@@ -16,7 +16,7 @@ import {
   resetLaunchTabQueue,
   type LaunchTabValues,
 } from '../tab-workspace/runtime/launchTabs';
-import { launchPageModel, launchRecord, resetLaunches } from '../launch-handoff';
+import { launchForSession, launchPageModel, launchRecord, resetLaunches, retireLaunch } from '../launch-handoff';
 import type { LaunchStarted } from '../new-session/launch-started';
 import { createLaunchHandoff, landQueuedLaunches, RESUME_GRACE_MS, type LaunchHandoffDeps } from './useLaunchHandoff';
 
@@ -105,7 +105,7 @@ describe('the press, inside Work', () => {
     expect(handoff.onLaunchStarted(launchOf())).toBe(true);
 
     const tab = findLaunchTab(ws.runtime, 'mut-1');
-    expect(tab).toMatchObject({ type: 'draft', kind: 'work_session', submitting: true, dirty: false });
+    expect(tab).toMatchObject({ type: 'draft', kind: 'work_session', holds: 'launch', dirty: false });
     expect(ws.runtime.store.getState().presentation).toEqual({ surface: 'tab', tabId: tab!.id });
     expect(launchTabValues(ws.runtime.drafts.get(tab!.draftId))).toMatchObject({ launchId: 'mut-1', input: null });
     expect(launchRecord('mut-1')).toMatchObject({ state: 'starting', page: { at: 'tab' } });
@@ -245,7 +245,7 @@ describe('a refusal and a timeout', () => {
 
   it('a refusal on the replay is shown as the refusal', async () => {
     const ws = workspace();
-    const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn() });
+    const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn().mockResolvedValue([]) });
     spawnSession.mockRejectedValueOnce(timeout()).mockRejectedValueOnce(new Error('task is archived'));
     handoff.onLaunchStarted(launchOf());
     await handoff.spawn(inputOf()).catch(() => undefined);
@@ -389,7 +389,12 @@ describe('re-attach: a page that finds a launch this window holds no record of',
     expect(scheduled()?.ms).toBe(RESUME_GRACE_MS - 2_000);
     expect(spawnSession).not.toHaveBeenCalled();
 
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValueOnce(answer.promise);
     scheduled()!.run();
+    /* No timeout happened in this window: the page says it is reconnecting. */
+    expect(launchRecord('mut-1')?.state).toBe('reconnecting');
+    answer.resolve('session-1' as EntityId);
     await flush();
     expect(spawnSession).toHaveBeenCalledWith(values.input);
     expect(launchRecord('mut-1')).toMatchObject({ state: 'admitted', sessionId: 'session-1' });
@@ -565,5 +570,82 @@ describe('what a launch tab stores survives the trip', () => {
     ]) {
       expect(launchTabValues({ ...base, launch: broken } as unknown as Record<string, unknown>)).toBeNull();
     }
+  });
+});
+
+describe('round 3', () => {
+  it('a replay that errors looks before declaring: something started → offered, not refused', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws, { sessionsSince: vi.fn().mockResolvedValue([{ id: 's-9', title: 'Mine?' }]) });
+    spawnSession.mockRejectedValueOnce(timeout()).mockRejectedValueOnce(Object.assign(new Error('conflict'), { code: 'conflict' }));
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf()).catch(() => undefined);
+    expect(launchRecord('mut-1')).toMatchObject({ state: 'failed', failure: { uncertain: true, candidates: [{ id: 's-9', title: 'Mine?' }] } });
+  });
+
+  it('the launch tab closed while the node answers: the bind’s closed-tab path toasts “Created”, and the record goes', async () => {
+    const ws = workspace();
+    const toast = vi.fn();
+    ws.runtime.setHooks({ toast });
+    const { handoff, spawnSession } = handoffFor(ws);
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValue(answer.promise);
+    handoff.onLaunchStarted(launchOf());
+    const sent = handoff.spawn(inputOf());
+    ws.runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: findLaunchTab(ws.runtime, 'mut-1')!.id }, source: 'click' });
+
+    answer.resolve('session-1' as EntityId);
+    await sent;
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ text: 'Created Fix the flaky login test' }));
+    expect(entityTabOf(ws.runtime, 'session-1')).toBeNull();
+    expect(launchRecord('mut-1')).toBeNull();
+  });
+
+  it('the launch tab closed while the node refuses: a toast whose Show re-opens the page with the failure', async () => {
+    const ws = workspace();
+    const toast = vi.fn();
+    ws.runtime.setHooks({ toast });
+    const { handoff, spawnSession } = handoffFor(ws);
+    const answer = deferred<EntityId>();
+    spawnSession.mockReturnValue(answer.promise);
+    handoff.onLaunchStarted(launchOf());
+    const sent = handoff.spawn(inputOf());
+    ws.runtime.dispatch({ command: 'workspace.tabs.close', args: { tabId: findLaunchTab(ws.runtime, 'mut-1')!.id }, source: 'click' });
+
+    answer.reject(new Error('cap reached'));
+    await sent.catch(() => undefined);
+    const shown = toast.mock.calls[0]![0] as { text: string; action: { label: string; run(): void } };
+    expect(shown.text).toContain('cap reached');
+    expect(shown.action.label).toBe('Show');
+    shown.action.run();
+    const reopened = findLaunchTab(ws.runtime, 'mut-1')!;
+    expect(launchTabValues(ws.runtime.drafts.get(reopened.draftId))?.failure?.message).toBe('cap reached');
+  });
+
+  it('a press of a launch already admitted opens its session, and no launch tab that could never bind', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    spawnSession.mockResolvedValue('session-1' as EntityId);
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf());
+    const before = ws.runtime.store.getState().orderedTabIds.length;
+
+    expect(handoff.onLaunchStarted(launchOf())).toBe(true);
+    expect(findLaunchTab(ws.runtime, 'mut-1')).toBeNull();
+    expect(ws.runtime.store.getState().orderedTabIds).toHaveLength(before);
+    expect(entityTabOf(ws.runtime, 'session-1')).not.toBeNull();
+  });
+
+  it('admission drops the input and indexes the record by its session', async () => {
+    const ws = workspace();
+    const { handoff, spawnSession } = handoffFor(ws);
+    spawnSession.mockResolvedValue('session-1' as EntityId);
+    handoff.onLaunchStarted(launchOf());
+    await handoff.spawn(inputOf());
+    expect(launchRecord('mut-1')).toMatchObject({ state: 'admitted', input: null });
+    expect(launchForSession('session-1')?.id).toBe('mut-1');
+    retireLaunch('mut-1');
+    expect(launchForSession('session-1')).toBeNull();
+    expect(launchRecord('mut-1')).toBeNull();
   });
 });

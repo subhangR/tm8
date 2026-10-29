@@ -16,6 +16,7 @@ export {
   launchRecord,
   launchesStore,
   resetLaunches,
+  retireLaunch,
   transition,
   useLaunchForSession,
   useLaunchRecord,

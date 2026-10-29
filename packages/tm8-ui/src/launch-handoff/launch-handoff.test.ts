@@ -71,6 +71,20 @@ describe('the launch record’s machine', () => {
     expect(restarted).toMatchObject({ state: 'starting', startedAt: 300, input: null, failure: null, page });
   });
 
+  it('a press of an admitted launch is refused — there is nothing left to start', () => {
+    beginLaunch(launch, 100);
+    transition('mut-1', { type: 'admit', sessionId: 's-1' as EntityId, at: 200 });
+    expect(beginLaunch(launch, 300)).toBeNull();
+    expect(launchRecord('mut-1')?.state).toBe('admitted');
+  });
+
+  it('reconnect is its own state, not a timeout check', () => {
+    beginLaunch(launch, 100);
+    expect(transition('mut-1', { type: 'reconnect' })?.state).toBe('reconnecting');
+    expect(launchPageModel(launchRecord('mut-1'), null)?.state).toBe('reconnecting');
+    expect(transition('mut-1', { type: 'check' })).toBeNull();
+  });
+
   it('an unknown launch takes no event', () => {
     expect(transition('nope', { type: 'check' })).toBeNull();
   });

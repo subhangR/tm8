@@ -185,14 +185,18 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
 
   const runtimeOfPage = (page: LaunchPage | null) => (page ? runtimeFor(page.viewerId, page.spaceId) : null);
 
-  /** The session is known: the page becomes it, wherever the page is. */
+  /**
+   * The session is known: the page becomes it, wherever the page is. A launch
+   * tab the viewer CLOSED meanwhile is answered through the bind's own
+   * closed-tab path (a "Created <title>" toast with Open), never silently.
+   */
   const land = (record: LaunchRecord | null, sessionId: EntityId) => {
     const runtime = runtimeOfPage(record?.page ?? null);
     if (!record?.page || !runtime) return; // Dismissed while the node was answering.
-    if (record.page.at === 'tab') bindLaunchTab(runtime, record.id, sessionId, record.launch.title);
-    else if (record.page.at === 'none') openSessionTab(runtime, sessionId);
-    /* `queued`: Work's drain opens it as the session's tab. A launch tab the
-       viewer closed meanwhile stays closed — the session runs on regardless. */
+    if (record.page.at === 'tab') {
+      if (!bindLaunchTab(runtime, record.id, sessionId, record.launch.title, record.page.tabId)) dropLaunch(record.id);
+    } else if (record.page.at === 'none') openSessionTab(runtime, sessionId);
+    /* `queued`: Work's drain opens it as the session's tab. */
   };
   /**
    * Record the answer, then land it. Landing is this window's own work (a tab
@@ -208,45 +212,70 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     }
   };
 
-  /** The failure, on the record and on the tab — a reload draws it, never replays it. */
+  /**
+   * The failure, on the record and on the tab — a reload draws it, never
+   * replays it. A launch tab the viewer closed meanwhile is answered by a
+   * toast whose Show re-opens the launch's page with the failure on it.
+   */
   const fail = (launchId: string, failure: LaunchFailure) => {
     const record = transition(launchId, { type: 'fail', failure });
     const runtime = runtimeOfPage(record?.page ?? null);
-    if (record && runtime) storeLaunchFacts(runtime, launchId, { failure });
-  };
-
-  /** "Did it start?" — the replay first; the subject's sessions, offered, second. */
-  const check = async (launchId: string, input: ExecutionSpawnInput) => {
-    if (!transition(launchId, { type: 'check' })) return;
-    let replayed: EntityId | null = null;
-    try {
-      replayed = await deps.spawnSession(input);
-    } catch (again) {
-      if (!isLaunchTimeout(again)) {
-        fail(launchId, launchFailureOf(again));
-        return;
-      }
-    }
-    if (replayed !== null) {
-      admit(launchId, replayed);
+    if (!record || !runtime) return;
+    if (record.page?.at === 'tab' && !findLaunchTab(runtime, launchId)) {
+      runtime.hooks.toast({
+        text: `“${record.launch.title}” did not launch: ${failure.message}`,
+        action: {
+          label: 'Show',
+          run: () => {
+            const tabId = openLaunchTab(runtime, valuesOf(record), 'click');
+            if (tabId) transition(launchId, { type: 'land', page: { ...record.page!, tabId } });
+          },
+        },
+      });
       return;
     }
+    storeLaunchFacts(runtime, launchId, { failure });
+  };
+
+  /**
+   * "Did it start?" — the replay first; the subject's sessions second. ANY
+   * replay error looks before it declares: a refusal is definite only when
+   * nothing started on the subject since the press. What is found is OFFERED,
+   * never adopted. `how` names why this window asks: its own send timed out
+   * (`check`), or a re-attached page is replaying (`reconnect`).
+   */
+  const check = async (launchId: string, input: ExecutionSpawnInput, how: 'check' | 'reconnect') => {
+    if (!transition(launchId, { type: how })) return;
+    let replayError: unknown = null;
+    try {
+      admit(launchId, await deps.spawnSession(input));
+      return;
+    } catch (again) {
+      replayError = again;
+    }
+    const timedOut = isLaunchTimeout(replayError);
     const record = launchRecord(launchId);
     if (!record) return;
     if (!deps.sessionsSince) {
-      fail(launchId, { message: LAUNCH_TIMEOUT_WORDS.cannotCheck, code: 'upstream_unavailable', uncertain: true });
+      fail(launchId, timedOut
+        ? { message: LAUNCH_TIMEOUT_WORDS.cannotCheck, code: 'upstream_unavailable', uncertain: true }
+        : { ...launchFailureOf(replayError), uncertain: true });
       return;
     }
     try {
       const found = await deps.sessionsSince(record.launch.subjectId, new Date(record.startedAt).toISOString());
-      fail(launchId, found.length > 0
-        ? {
+      if (found.length > 0) {
+        fail(launchId, {
           message: LAUNCH_TIMEOUT_WORDS.foundSince,
-          code: 'upstream_unavailable',
+          code: timedOut ? 'upstream_unavailable' : launchFailureOf(replayError).code,
           uncertain: true,
           candidates: found.map((s) => ({ id: s.id as EntityId, title: s.title })),
-        }
-        : { message: LAUNCH_TIMEOUT_WORDS.none, code: 'upstream_unavailable', uncertain: false });
+        });
+      } else {
+        fail(launchId, timedOut
+          ? { message: LAUNCH_TIMEOUT_WORDS.none, code: 'upstream_unavailable', uncertain: false }
+          : launchFailureOf(replayError));
+      }
     } catch {
       fail(launchId, { message: LAUNCH_TIMEOUT_WORDS.checkFailed, code: 'upstream_unavailable', uncertain: true });
     }
@@ -257,7 +286,7 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     try {
       sessionId = await deps.spawnSession(input);
     } catch (error) {
-      if (isLaunchTimeout(error)) await check(launchId, input);
+      if (isLaunchTimeout(error)) await check(launchId, input, 'check');
       else fail(launchId, launchFailureOf(error));
       return;
     }
@@ -268,15 +297,23 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
     const { viewerId, spaceId } = deps;
     if (landingNow() !== 'work' || !viewerId || !spaceId) return false;
     const runtime = runtimeFor(viewerId, spaceId);
-    const tabPage: LaunchPage = { at: 'tab', viewerId, spaceId };
+    const tabPage = (tabId: string): LaunchPage => ({ at: 'tab', viewerId, spaceId, tabId });
+
+    /* A press of a launch the node already ADMITTED starts nothing: its
+       session is what the press is about, so its tab is opened. */
+    const record = beginLaunch(launch, now());
+    if (!record) {
+      const admitted = launchRecord(launch.clientMutationId);
+      if (admitted?.sessionId) openSessionTab(runtime, admitted.sessionId);
+      return Boolean(admitted?.sessionId);
+    }
 
     /* A RETRY FROM THE PAGE takes the failed launch's tab over, in place. */
     if (replaces && replaces !== launch.clientMutationId && findLaunchTab(runtime, replaces)) {
-      const record = beginLaunch(launch, now());
       const tabId = rewriteLaunchTab(runtime, replaces, valuesOf(record));
       dropLaunch(replaces);
       if (tabId) {
-        transition(record.id, { type: 'land', page: tabPage });
+        transition(record.id, { type: 'land', page: tabPage(tabId) });
         runtime.dispatch({ command: 'workspace.tabs.activate', args: { tabId }, source: 'click' });
         return true;
       }
@@ -289,20 +326,20 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
       /* A tab scope without sessions would answer the open with the reveal
          prompt, whose replay opens a BLANK New session draft; that launch
          keeps the popup's in-card state instead. */
-      if (!kindInScope(runtime.store.getState().scope, LAUNCH_TAB_KIND)) return false;
-      const record = beginLaunch(launch, now());
-      if (!openLaunchTab(runtime, valuesOf(record), 'click')) {
+      const tabId = kindInScope(runtime.store.getState().scope, LAUNCH_TAB_KIND)
+        ? openLaunchTab(runtime, valuesOf(record), 'click')
+        : null;
+      if (!tabId) {
         dropLaunch(record.id);
         return false;
       }
-      transition(record.id, { type: 'land', page: tabPage });
+      transition(record.id, { type: 'land', page: tabPage(tabId) });
       return true;
     }
 
     /* Work not on screen (or still mounting): the tab waits behind Work's
        restore, and the ONE navigation is a push into Work — unless Work's
        route is already the one showing. */
-    const record = beginLaunch(launch, now());
     queueLaunchTab(viewerId, spaceId, valuesOf(record));
     transition(record.id, { type: 'land', page: { at: 'queued', viewerId, spaceId } });
     if (presence === 'elsewhere') navigateToWork();
@@ -350,7 +387,8 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
   const resume = (values: LaunchTabValues): void => {
     const { viewerId, spaceId } = deps;
     if (!viewerId || !spaceId || launchRecord(values.launchId)) return;
-    adoptLaunch(values.launch, values.input, values.startedAt, { at: 'tab', viewerId, spaceId });
+    const tabId = findLaunchTab(runtimeFor(viewerId, spaceId), values.launchId)?.id;
+    adoptLaunch(values.launch, values.input, values.startedAt, { at: 'tab', viewerId, spaceId, ...(tabId ? { tabId } : {}) });
     if (values.failure) {
       transition(values.launchId, { type: 'fail', failure: values.failure });
       return;
@@ -372,7 +410,7 @@ export function createLaunchHandoff(deps: LaunchHandoffDeps): LaunchHandoff {
          dismissed the tab meanwhile, or this one dropped the launch. */
       const record = launchRecord(values.launchId);
       if (!record || record.state !== 'starting' || !findLaunchTab(runtime, values.launchId)) return;
-      void check(values.launchId, input);
+      void check(values.launchId, input, 'reconnect');
     }, Math.max(0, values.startedAt + RESUME_GRACE_MS - now()));
   };
 
@@ -397,7 +435,7 @@ export function landQueuedLaunches(runtime: WorkspaceRuntime): void {
     const tabId = kindInScope(runtime.store.getState().scope, LAUNCH_TAB_KIND)
       ? openLaunchTab(runtime, valuesOf(record), 'system')
       : null;
-    transition(record.id, { type: 'land', page: page(tabId ? 'tab' : 'none') });
+    transition(record.id, { type: 'land', page: tabId ? { ...page('tab'), tabId } : page('none') });
   });
 }
 
