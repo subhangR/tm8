@@ -10,7 +10,9 @@
  * and that `stop` ends through the server's own stop path; a tick of the real
  * job (same port, real `loop_run_claim`) fires a lapsed pause once, skips or
  * queues on a live run, retries a failed launch with backoff, and times out a
- * run past its max runtime by stopping its real PTY.
+ * run past its max runtime by stopping its real PTY. Loops PR3 adds a TOOL
+ * run: Run now fires it through the server's ToolRuntime, and both stops end
+ * it through the tool's own launcher.
  *
  * Needs TM8_W1_ADMIN_DATABASE_URL (the test cluster). Skipped without one.
  */
@@ -376,5 +378,78 @@ describePg('loops PR2: runs on a real node', () => {
     await tick();
     const [row] = await node.database.query<{ outcome: string | null }>('select outcome from public.loop_runs where id = $1', [run.id]);
     expect(row!.outcome).toBe('stopped');
+  });
+
+  describe('a TOOL run (loops PR3): stop and max runtime end it through the same port', () => {
+    // What the Tools lane asked PR3 to pin (msg 01a1884b-c443). Both stops go
+    // through the port's stopSession (SpawnService.terminate), and the tool's own
+    // launcher must still settle the run: recorded killed and its run-scoped
+    // token revoked, not left 'running' for a restart's reconcile, and nothing
+    // left holding one of the member's tool slots.
+    const tokensOf = (sessionId: string) => node.database.query<{ revoked: boolean }>(
+      'select revoked_at is not null as revoked from public.auth_sessions where work_session_id = $1', [sessionId]);
+
+    async function toolLoop(title: string, extra: Record<string, unknown> = {}) {
+      // tm8Access read, so the run mints a run-scoped token for the stop to revoke.
+      const tool = ok(await request<{ id: string }>('POST', `/v2/spaces/${spaceId}/tools`, { definition: {
+        name: `sleeper-${randomUUID().slice(0, 8)}`, description: '', help: '', runtime: 'bash', source: 'sleep 300',
+        inputs: [], tm8Access: 'read', timeoutSeconds: 600,
+      } }));
+      return { toolId: tool.id, loop: await createLoop({ title, action: 'tool', toolId: tool.id, toolInputs: {}, ...extra }) };
+    }
+
+    async function fireToolRun(loopId: string): Promise<LoopRun> {
+      const run = LoopRunSchema.parse(ok(await runNow(loopId)).run);
+      expect(run).toMatchObject({ action: 'tool', status: 'running', taskId: null });
+      live.add(run.sessionId!);
+      expect(node.production.execution!.pty.hasSession(run.sessionId!)).toBe(true);
+      expect(await tokensOf(run.sessionId!)).toEqual([{ revoked: false }]);
+      return run;
+    }
+
+    async function expectToolRunEnded(toolId: string, sessionId: string) {
+      // (2) The launcher's own settle: the PTY went away with no status file.
+      type Ended = { status: string; outcome: string | null; ended_kind: string | null; tool_state: string | null; tool_keep_open: boolean };
+      let ended: Ended | undefined;
+      await vi.waitFor(async () => {
+        [ended] = await node.database.query<Ended>(
+          'select status, outcome, ended_kind, tool_state, tool_keep_open from public.work_sessions where entity_id = $1', [sessionId]);
+        expect(ended?.tool_state).toBe('killed');
+      }, { timeout: 15_000, interval: 100 });
+      // (1) The work session is terminal, an operator stop.
+      expect(['exited', 'failed']).toContain(ended!.status);
+      expect(ended).toMatchObject({ outcome: 'stopped', ended_kind: 'stopped_by_operator', tool_keep_open: false });
+      // (3) Its one run-scoped token is revoked.
+      expect(await tokensOf(sessionId)).toEqual([{ revoked: true }]);
+      // (5) No PTY, and no session of this tool in a state 318's tool_session_count
+      // counts. A loop run is never keep-open: 389 refuses one (tools/scheduled-runs.pg).
+      expect(node.production.execution!.pty.hasSession(sessionId)).toBe(false);
+      const [held] = await node.database.query<{ n: number }>(
+        "select count(*)::int as n from public.work_sessions where tool_id = $1 and status in ('spawning', 'running', 'idle')", [toolId]);
+      expect(held!.n).toBe(0);
+      live.delete(sessionId);
+    }
+
+    it('loops.runs.stop: the tool is recorded killed, its token revoked, and the run reads stopped', async () => {
+      const { toolId, loop } = await toolLoop('Tool run, stopped');
+      const run = await fireToolRun(loop.id);
+      const stopped = LoopRunSchema.parse(ok(await request<{ run: LoopRun }>('POST', `/v2/loop-runs/${run.id}/stop`, {})).run);
+      // (4)
+      expect(stopped.status).toBe('stopped');
+      await expectToolRunEnded(toolId, run.sessionId!);
+      expect((await getRun(run.id)).status).toBe('stopped');
+    });
+
+    it('max runtime: the sweep stops the tool, which is recorded killed, its token revoked, and the run timed_out', async () => {
+      const { toolId, loop } = await toolLoop('Tool run, bounded', { maxRuntimeSeconds: 60 });
+      const run = await fireToolRun(loop.id);
+      await sql(`update public.loop_runs set fired_at = now() - interval '2 minutes' where id = $1`, [run.id]);
+      expect(await tick()).toMatchObject({ detail: { timedOut: 1 } });
+      // (4)
+      const timedOut = await waitForStatus(run.id, 'timed_out');
+      expect(timedOut.error).toMatch(/maximum runtime/);
+      await expectToolRunEnded(toolId, run.sessionId!);
+      expect((await getRun(run.id)).status).toBe('timed_out');
+    });
   });
 });
