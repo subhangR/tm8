@@ -77,7 +77,7 @@ import {
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
-import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { firingKeyFor } from '../loops/firing.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
@@ -3088,6 +3088,10 @@ export function createLoopExecutorPort(deps: {
     }),
     liveSessionIds: () => pty.liveSessionIds(),
     async fire(loop, claims, firedAt, runId) {
+      // Until the tool action exists (loops PR3) a tool loop is refused here, the
+      // one place both the scheduled job and Run now fire through, rather than
+      // run as a spawn (its persona) or a dispatch. The run records the reason.
+      if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(

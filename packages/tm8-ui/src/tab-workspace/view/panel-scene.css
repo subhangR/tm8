@@ -1,0 +1,526 @@
+/* The panel's scene (task 01a18396): a landscape behind the panel's top —
+   the "Space:" row and the new-item tile — faded into the panel's surface.
+
+   THE PALETTES ARE ARTWORK, NOT CHROME. They are the pixels of a painting,
+   the way an image file's would be, so they are written here as hsl() rather
+   than drawn from the ink and paper tokens. Every scene is muted on purpose:
+   it should sit in the panel like a postcard tucked behind glass, never
+   compete with the list. Day palettes are the light theme; the dark theme
+   gets each scene by night. Space and Aurora are night in both. */
+
+/* ---- The head: the row, the tile and the scene behind them ---------------- */
+
+.cv2-root .tws-browser .tws-panelhead {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .tws-browser .tws-panelhead > .tws-paneltop {
+  position: relative;
+}
+/* A click on the painting moves to the next scene. */
+.cv2-root .tws-browser .tws-panelhead[data-scene] {
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-panelhead__scene {
+  position: absolute;
+  inset: 0 0 -18px;
+  overflow: hidden;
+  pointer-events: none;
+  /* Embedded: no edge, no box — the painting thins into the panel. */
+  -webkit-mask-image: linear-gradient(to bottom, black 0, black 52%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0, black 52%, transparent 100%);
+  animation: tws-scene-in 420ms var(--pn-ease-standard, ease-out) both;
+}
+.cv2-root .tws-browser .tws-panelhead__scene > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* A whisper of the panel's own paper over the painting, so it reads as part
+   of the panel rather than a photo laid on it. */
+.cv2-root .tws-browser .tws-panelhead__scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--pn-surface) 14%, transparent), transparent 60%);
+}
+.cv2-root .tws-scene-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+/* A photo is busier than a painting: a soft veil where the row's text sits,
+   in the tone the text needs. */
+.cv2-root .tws-browser .tws-panelhead__scene[data-set='photo']::after {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--pn-surface) 30%, transparent), transparent 70%);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-panelhead__scene[data-set='photo']::after {
+  background: linear-gradient(to bottom, hsl(230 40% 6% / 0.4), transparent 70%);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-panelhead__scene[data-set='photo']::after {
+  background: linear-gradient(to bottom, hsl(40 30% 98% / 0.38), transparent 70%);
+}
+@keyframes tws-scene-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Over a painting the row's text gets a soft halo of its own background. */
+.cv2-root .tws-browser .tws-panelhead[data-scene] .tws-paneltop__label,
+.cv2-root .tws-browser .tws-panelhead[data-scene] .shell-switcher__trigger {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--pn-surface) 70%, transparent);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene] .tws-paneltop .tws-icon-btn {
+  color: var(--pn-ink-2);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene] .tws-paneltop__space:hover,
+.cv2-root .tws-browser .tws-panelhead[data-scene] .tws-paneltop__space:has(.shell-switcher__trigger[aria-expanded='true']),
+.cv2-root .tws-browser .tws-panelhead[data-scene] .tws-paneltop .tws-icon-btn:hover {
+  background: color-mix(in srgb, var(--pn-surface) 30%, transparent);
+}
+
+/* A night scene in the light theme: the row's ink turns to starlight. Only
+   the row's own text and icons — never the switcher's popover. */
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] {
+  --tws-scene-ink: hsl(225 40% 97%);
+  --tws-scene-ink-2: hsl(225 22% 84%);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop__label,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .shell-switcher__caret,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop .tws-icon-btn {
+  color: var(--tws-scene-ink-2);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .shell-switcher__trigger {
+  color: var(--tws-scene-ink);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop__label,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .shell-switcher__trigger {
+  text-shadow: 0 1px 6px hsl(230 50% 8% / 0.55);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop__space:hover,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop__space:has(.shell-switcher__trigger[aria-expanded='true']),
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='night'] .tws-paneltop .tws-icon-btn:hover {
+  background: hsl(225 40% 97% / 0.12);
+}
+
+/* A light scene in the dark theme (a daylight photo): the row's ink stays dark. */
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-paneltop__label,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .shell-switcher__caret,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-paneltop .tws-icon-btn {
+  color: hsl(228 18% 30%);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .shell-switcher__trigger {
+  color: hsl(228 28% 12%);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-paneltop__label,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .shell-switcher__trigger {
+  text-shadow: 0 0 6px hsl(40 40% 98% / 0.7);
+}
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-paneltop__space:hover,
+.cv2-root .tws-browser .tws-panelhead[data-scene-tone='day'] .tws-paneltop .tws-icon-btn:hover {
+  background: hsl(40 40% 98% / 0.35);
+}
+
+/* ---- The picker: a quiet ⛰, full strength when the head is hovered -------- */
+
+.cv2-root .tws-browser .tws-paneltop .tws-scenepick {
+  opacity: 0.55;
+  transition: opacity var(--pn-dur-fast, 120ms) var(--pn-ease-standard, ease);
+}
+.cv2-root .tws-browser .tws-panelhead:hover .tws-scenepick,
+.cv2-root .tws-browser .tws-paneltop .tws-scenepick:focus-visible,
+.cv2-root .tws-browser .tws-paneltop .tws-scenepick[aria-expanded='true'] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .cv2-root .tws-browser .tws-paneltop .tws-scenepick {
+    opacity: 1;
+  }
+}
+
+.cv2-root .tws-browser .tws-scenemenu {
+  position: absolute;
+  z-index: 40;
+  top: 48px;
+  right: 10px;
+  width: min(248px, calc(100% - 20px));
+  box-sizing: border-box;
+  padding: 10px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  box-shadow: var(--pn-sh-pop);
+  animation: tws-scene-in 140ms ease-out both;
+}
+.cv2-root .tws-browser .tws-scenemenu__heading {
+  margin: 12px 2px 6px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+.cv2-root .tws-browser .tws-scenemenu__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.cv2-root .tws-browser .tws-scenemenu__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-scenemenu__thumb {
+  position: relative;
+  display: block;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--pn-line);
+  transition: box-shadow 120ms ease, transform 120ms ease-out;
+}
+.cv2-root .tws-browser .tws-scenemenu__thumb > :is(svg, img) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cv2-root .tws-browser .tws-scenemenu__thumb[data-none] {
+  background: var(--pn-surface);
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+  background-image: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.5px),
+    var(--pn-line-2) calc(50% - 0.5px),
+    var(--pn-line-2) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+.cv2-root .tws-browser .tws-scenemenu__opt:hover .tws-scenemenu__thumb {
+  transform: translateY(-1px);
+}
+.cv2-root .tws-browser .tws-scenemenu__opt:focus-visible {
+  outline: none;
+}
+.cv2-root .tws-browser .tws-scenemenu__opt:focus-visible .tws-scenemenu__thumb,
+.cv2-root .tws-browser .tws-scenemenu__opt[aria-checked='true'] .tws-scenemenu__thumb {
+  box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3.5px var(--pn-brand);
+}
+.cv2-root .tws-browser .tws-scenemenu__opt[aria-checked='true'] .tws-scenemenu__name {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+.cv2-root .tws-browser .tws-scenemenu__hint {
+  margin: 10px 2px 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-xs, 12px);
+}
+.cv2-root .tws-browser .tws-scenemenu {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.cv2-root .tws-browser .tws-scenemenu__name {
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Motion: stars breathe, the aurora drifts. Never under reduced motion. */
+
+.tws-scene .tws-scene__stars {
+  opacity: var(--sc-stars, 0);
+}
+.tws-scene .tws-scene__twinkle {
+  animation: tws-scene-twinkle 5.5s ease-in-out infinite;
+}
+@keyframes tws-scene-twinkle {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.2; }
+}
+.tws-scene .tws-scene__veil {
+  animation: tws-scene-veil 14s ease-in-out infinite alternate;
+}
+@keyframes tws-scene-veil {
+  from { opacity: 0.75; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(6px); }
+}
+.tws-scene .tws-scene__flake {
+  animation: tws-snowfall 10s linear infinite;
+}
+@keyframes tws-snowfall {
+  0% { transform: translate(0, var(--fall-from)); }
+  50% { transform: translate(3px, calc((var(--fall-from) + var(--fall-to)) / 2)); }
+  100% { transform: translate(-1px, var(--fall-to)); }
+}
+.tws-scene .tws-scene__burst {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tws-scene-burst 4.8s ease-out infinite;
+}
+@keyframes tws-scene-burst {
+  0% { opacity: 0; transform: scale(0.35); }
+  14% { opacity: 1; }
+  62% { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.08); }
+}
+.tws-scene .tws-scene__flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: tws-scene-flicker 1.6s ease-in-out infinite alternate;
+}
+@keyframes tws-scene-flicker {
+  from { transform: scale(0.92, 0.86); opacity: 0.9; }
+  to { transform: scale(1.04, 1.1); opacity: 1; }
+}
+.tws-scene .tws-scene__bat {
+  animation: tws-scene-bat 2.6s ease-in-out infinite alternate;
+}
+@keyframes tws-scene-bat {
+  from { transform: translate(-1px, -1.5px); }
+  to { transform: translate(1px, 1.5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tws-scene .tws-scene__twinkle,
+  .tws-scene .tws-scene__veil,
+  .tws-scene .tws-scene__flake,
+  .tws-scene .tws-scene__burst,
+  .tws-scene .tws-scene__flame,
+  .tws-scene .tws-scene__bat,
+  .cv2-root .tws-browser .tws-panelhead__scene,
+  .cv2-root .tws-browser .tws-scenemenu {
+    animation: none;
+  }
+}
+
+/* ---- Palettes ------------------------------------------------------------- */
+
+/* Night sky: deep indigo, two faint nebulae, a ringed planet in the gap. */
+.tws-scene[data-scene='space'] {
+  --sc-sky-top: hsl(234 42% 10%);
+  --sc-sky-low: hsl(258 30% 21%);
+  --sc-neb-a: hsl(276 50% 58%);
+  --sc-neb-b: hsl(198 65% 52%);
+  --sc-star: hsl(220 60% 96%);
+  --sc-planet-lit: hsl(32 55% 80%);
+  --sc-planet-dark: hsl(14 30% 34%);
+  --sc-ring: hsl(36 40% 82% / 0.7);
+}
+
+/* Mountains: dawn haze and blue ridges by day; moonlit ranges by night. */
+.tws-scene[data-scene='mountains'] {
+  --sc-sky-top: hsl(208 48% 87%);
+  --sc-sky-low: hsl(26 70% 90%);
+  --sc-halo: hsl(36 100% 88%);
+  --sc-light: hsl(38 92% 82%);
+  --sc-l1: hsl(220 26% 82%);
+  --sc-l2: hsl(223 22% 72%);
+  --sc-l3: hsl(227 20% 61%);
+  --sc-l4: hsl(231 21% 50%);
+}
+
+/* Forest: morning mist through pines by day; a dark wood under a moon by night. */
+.tws-scene[data-scene='forest'] {
+  --sc-sky-top: hsl(160 20% 88%);
+  --sc-sky-low: hsl(48 42% 90%);
+  --sc-halo: hsl(48 80% 92%);
+  --sc-light: hsl(46 70% 88%);
+  --sc-mist: hsl(80 25% 93%);
+  --sc-l1: hsl(158 13% 76%);
+  --sc-l2: hsl(162 15% 63%);
+  --sc-l3: hsl(166 18% 48%);
+  --sc-l4: hsl(170 24% 34%);
+}
+
+/* Ocean: a low sun on a calm sea by day; a moon path by night. */
+.tws-scene[data-scene='ocean'] {
+  --sc-sky-top: hsl(200 50% 87%);
+  --sc-sky-low: hsl(22 68% 90%);
+  --sc-halo: hsl(34 100% 88%);
+  --sc-light: hsl(32 90% 80%);
+  --sc-l1: hsl(204 34% 72%);
+  --sc-l2: hsl(212 34% 56%);
+  --sc-l3: hsl(214 18% 74%);
+  --sc-glint: hsl(40 100% 94%);
+  --sc-swell: hsl(200 50% 88%);
+}
+
+/* Aurora: green and violet veils over a still range. */
+.tws-scene[data-scene='aurora'] {
+  --sc-sky-top: hsl(226 48% 8%);
+  --sc-sky-low: hsl(206 40% 15%);
+  --sc-veil-a: hsl(152 72% 58%);
+  --sc-veil-b: hsl(282 55% 66%);
+  --sc-star: hsl(200 60% 95%);
+  --sc-l1: hsl(218 30% 15%);
+  --sc-l2: hsl(222 34% 10%);
+}
+
+/* Dunes: warm sand under a low sun by day; violet dunes by night. */
+.tws-scene[data-scene='dunes'] {
+  --sc-sky-top: hsl(34 62% 89%);
+  --sc-sky-low: hsl(18 66% 87%);
+  --sc-halo: hsl(32 100% 88%);
+  --sc-light: hsl(30 88% 78%);
+  --sc-l1: hsl(30 42% 80%);
+  --sc-l2: hsl(26 44% 71%);
+  --sc-l3: hsl(21 40% 60%);
+  --sc-l4: hsl(16 36% 48%);
+}
+
+/* Snow: a quiet white valley under falling snow by day; blue snowlight by night. */
+.tws-scene[data-scene='snow'] {
+  --sc-sky-top: hsl(212 32% 88%);
+  --sc-sky-low: hsl(210 30% 95%);
+  --sc-halo: hsl(45 80% 94%);
+  --sc-light: hsl(45 60% 92%);
+  --sc-l1: hsl(212 28% 86%);
+  --sc-l2: hsl(205 20% 60%);
+  --sc-l3: hsl(210 40% 97%);
+  --sc-l4: hsl(212 34% 92%);
+  --sc-flake: hsl(212 30% 72%);
+}
+
+/* Christmas: a lit tree under its star, snow falling on the pines. */
+.tws-scene[data-scene='christmas'] {
+  --sc-sky-top: hsl(222 50% 11%);
+  --sc-sky-low: hsl(200 38% 20%);
+  --sc-star: hsl(210 60% 95%);
+  --sc-halo: hsl(44 100% 70%);
+  --sc-star-gold: hsl(44 96% 66%);
+  --sc-tree: hsl(152 38% 17%);
+  --sc-l1: hsl(170 30% 13%);
+  --sc-l3: hsl(210 30% 84%);
+  --sc-l4: hsl(212 26% 74%);
+  --sc-bulb-a: hsl(0 80% 64%);
+  --sc-bulb-b: hsl(44 98% 66%);
+  --sc-bulb-c: hsl(140 60% 58%);
+  --sc-bulb-d: hsl(205 85% 68%);
+  --sc-flake: hsl(0 0% 100%);
+}
+
+/* Halloween: a harvest moon, bats, and lanterns grinning on the hill. */
+.tws-scene[data-scene='halloween'] {
+  --sc-sky-top: hsl(268 36% 12%);
+  --sc-sky-low: hsl(18 58% 30%);
+  --sc-star: hsl(40 60% 92%);
+  --sc-halo: hsl(32 100% 62%);
+  --sc-light: hsl(38 85% 78%);
+  --sc-crater: hsl(34 55% 68%);
+  --sc-ink: hsl(268 30% 7%);
+  --sc-l1: hsl(272 26% 13%);
+  --sc-l2: hsl(270 30% 8%);
+  --sc-pumpkin: hsl(26 90% 52%);
+  --sc-pumpkin-rib: hsl(20 80% 38%);
+  --sc-stem: hsl(90 30% 30%);
+  --sc-glow: hsl(46 100% 66%);
+}
+
+/* Diwali: fireworks over a garland of lights, a row of diyas burning. */
+.tws-scene[data-scene='diwali'] {
+  --sc-sky-top: hsl(252 46% 11%);
+  --sc-sky-low: hsl(318 36% 21%);
+  --sc-star: hsl(40 70% 92%);
+  --sc-fw-a: hsl(44 100% 68%);
+  --sc-fw-b: hsl(330 85% 72%);
+  --sc-fw-c: hsl(178 70% 62%);
+  --sc-string: hsl(40 40% 50% / 0.6);
+  --sc-bulb-a: hsl(44 100% 66%);
+  --sc-bulb-b: hsl(24 100% 62%);
+  --sc-bulb-c: hsl(340 85% 70%);
+  --sc-flame: hsl(42 100% 64%);
+  --sc-clay: hsl(18 58% 44%);
+  --sc-clay-rim: hsl(36 80% 60%);
+  --sc-l1: hsl(300 26% 14%);
+  --sc-l2: hsl(290 30% 9%);
+}
+
+/* By night (the dark theme). */
+[data-theme='dark'] .tws-scene,
+.cv2-root[data-theme='dark'] .tws-scene {
+  --sc-stars: 1;
+  --sc-star: hsl(220 60% 95%);
+  --sc-light: hsl(46 45% 90%);
+  --sc-halo: hsl(220 60% 78% / 0.3);
+}
+[data-theme='dark'] .tws-scene[data-scene='mountains'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='mountains'] {
+  --sc-sky-top: hsl(228 38% 11%);
+  --sc-sky-low: hsl(248 26% 22%);
+  --sc-l1: hsl(232 22% 26%);
+  --sc-l2: hsl(234 24% 20%);
+  --sc-l3: hsl(236 26% 15%);
+  --sc-l4: hsl(238 28% 11%);
+}
+[data-theme='dark'] .tws-scene[data-scene='forest'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='forest'] {
+  --sc-sky-top: hsl(198 34% 11%);
+  --sc-sky-low: hsl(182 22% 19%);
+  --sc-mist: hsl(186 22% 32%);
+  --sc-l1: hsl(186 18% 22%);
+  --sc-l2: hsl(188 22% 17%);
+  --sc-l3: hsl(190 25% 12%);
+  --sc-l4: hsl(192 30% 8%);
+}
+[data-theme='dark'] .tws-scene[data-scene='ocean'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='ocean'] {
+  --sc-sky-top: hsl(224 42% 11%);
+  --sc-sky-low: hsl(232 28% 21%);
+  --sc-l1: hsl(224 32% 18%);
+  --sc-l2: hsl(226 38% 10%);
+  --sc-l3: hsl(228 24% 15%);
+  --sc-glint: hsl(46 60% 86%);
+  --sc-swell: hsl(220 40% 40%);
+}
+[data-theme='dark'] .tws-scene[data-scene='dunes'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='dunes'] {
+  --sc-sky-top: hsl(252 30% 12%);
+  --sc-sky-low: hsl(282 22% 22%);
+  --sc-l1: hsl(266 16% 26%);
+  --sc-l2: hsl(268 18% 20%);
+  --sc-l3: hsl(270 20% 15%);
+  --sc-l4: hsl(272 24% 10%);
+}
+[data-theme='dark'] .tws-scene[data-scene='snow'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='snow'] {
+  --sc-sky-top: hsl(222 38% 13%);
+  --sc-sky-low: hsl(214 32% 24%);
+  --sc-l1: hsl(214 24% 32%);
+  --sc-l2: hsl(206 26% 18%);
+  --sc-l3: hsl(212 26% 40%);
+  --sc-l4: hsl(214 26% 33%);
+  --sc-flake: hsl(0 0% 100%);
+}
+/* Space and Aurora are night already, and their own halo is not a moon's. */
+[data-theme='dark'] .tws-scene[data-scene='space'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='space'],
+[data-theme='dark'] .tws-scene[data-scene='aurora'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='aurora'] {
+  --sc-star: hsl(220 60% 96%);
+}
+/* The festive scenes are night already: their halos, moon and stars stay theirs. */
+[data-theme='dark'] .tws-scene[data-scene='christmas'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='christmas'] {
+  --sc-halo: hsl(44 100% 70%);
+  --sc-star: hsl(210 60% 95%);
+}
+[data-theme='dark'] .tws-scene[data-scene='halloween'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='halloween'] {
+  --sc-halo: hsl(32 100% 62%);
+  --sc-light: hsl(38 85% 78%);
+  --sc-star: hsl(40 60% 92%);
+}
+[data-theme='dark'] .tws-scene[data-scene='diwali'],
+.cv2-root[data-theme='dark'] .tws-scene[data-scene='diwali'] {
+  --sc-star: hsl(40 70% 92%);
+}

@@ -18,7 +18,7 @@ drop function if exists public.loop_run_settle(uuid,text,text);
 drop function if exists public.loop_run_record(uuid,timestamptz,text,text,integer,text,text,uuid,uuid,text,uuid,text);
 drop table if exists public.loop_runs;
 
-drop function if exists public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer);
+drop function if exists public.create_loop(uuid,text,uuid,text,uuid,uuid,text,jsonb,boolean,timestamptz,uuid,double precision,text,text,uuid,jsonb,text,text,integer,integer,integer,text);
 drop function if exists public.update_loop(uuid,integer,uuid,text,text,uuid,boolean,uuid,boolean,text,jsonb,boolean,timestamptz,boolean,timestamptz,text,boolean,text,text,uuid,boolean,jsonb,text,timestamptz,boolean,text,integer,boolean,integer,integer,integer);
 drop function if exists internal.assert_loop_runner(uuid,text,uuid,uuid,text);
 
@@ -295,8 +295,9 @@ revoke all on function public.update_loop(uuid,integer,uuid,text,text,uuid,boole
 grant execute on function public.update_loop(uuid,integer,uuid,text,text,uuid,boolean,uuid,boolean,text,jsonb,boolean,timestamptz,boolean,timestamptz,text,boolean,text) to tm8_app;
 
 
--- 375's due read, verbatim.
-create or replace function public.loops_due_for_executor(p_limit integer default 25)
+-- 375's due read, verbatim (384 added two return columns, so it is dropped first).
+drop function if exists public.loops_due_for_executor(integer);
+create function public.loops_due_for_executor(p_limit integer default 25)
 returns table (
   entity_id        uuid,
   space_id         uuid,
@@ -346,6 +347,15 @@ set search_path = public, internal, pg_temp as $$
    order by l.next_run_at
    limit greatest(coalesce(p_limit, 25), 0)
 $$;
+
+comment on function public.loops_due_for_executor(integer) is
+  '375: due loops across every space, for the in-process loop executor only '
+  '(internal.is_loops_worker). Read-only. `act_as_identity` is the human who '
+  'armed the loop (343), else the space owner, else NULL when the space has no '
+  'active member left to act as.';
+
+revoke all on function public.loops_due_for_executor(integer) from public;
+grant execute on function public.loops_due_for_executor(integer) to tm8_app;
 
 -- 292's header kinds, verbatim.
 create or replace function internal.header_kind_allowed(p_kind text)

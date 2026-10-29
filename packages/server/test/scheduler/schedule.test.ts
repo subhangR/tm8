@@ -141,6 +141,15 @@ describe('cron in an IANA timezone (loops design §3.1)', () => {
     expect(isValidTimezone('Mars/Olympus')).toBe(false);
     expect(() => nextRunAt('0 9 * * *', at('2026-07-01T00:00:00Z'), 'Mars/Olympus')).toThrow(ScheduleError);
   });
+
+  it('accepts the IANA names the CLDR canonical list leaves out, and refuses what is not a zone name', () => {
+    // Intl.supportedValuesOf('timeZone') lists Asia/Calcutta and Europe/Kiev, not the current names browsers report.
+    for (const zone of ['Asia/Kolkata', 'Europe/Kyiv', 'America/Argentina/Buenos_Aires', 'US/Eastern', 'Etc/GMT+5', 'GMT']) {
+      expect(isValidTimezone(zone), zone).toBe(true);
+    }
+    for (const zone of ['+05:30', ' UTC', 'Europe/London ', '../etc', '']) expect(isValidTimezone(zone), zone).toBe(false);
+    expect(iso(nextRunAt('0 9 * * *', at('2026-07-01T00:00:00Z'), 'Asia/Kolkata'))).toBe('2026-07-01T03:30:00.000Z');
+  });
 });
 
 describe('describeSchedule', () => {
