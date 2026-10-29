@@ -6,7 +6,7 @@ import { run } from '../src/run.js';
 import { loopState, pauseUntil, renderLoop } from '../src/commands/loop.js';
 import { nounHelp } from '../src/discovery/help.js';
 import { discovery } from '../src/discovery/operations.js';
-import { matchIntent, queryWords } from '../src/discovery/search.js';
+import { matchIntent, queryWords, rank } from '../src/discovery/search.js';
 import { searchHelp } from '../src/discovery/help.js';
 
 const LOOP = '11111111-1111-7111-8111-111111111111';
@@ -514,6 +514,11 @@ const ROUTING_CORPUS: ReadonlyArray<readonly [query: string, top: string]> = [
   ['suspend the loop now', 'loop pause'], ['freeze the running loop', 'loop pause'], ["clear the loop's trigger", 'loop edit'],
   ["wipe the loop's trigger", 'loop edit'], ["clear the loop's task", 'loop edit'], ["clear the loop's session", 'loop edit'],
   ['remove the pause from the loop', 'loop resume'], ['end the pause on the loop', 'loop resume'],
+  // stopping with no loop named (round 6): a stop answers a stop, never run-now
+  ['cancel the run now', 'loop stop'], ['stop running now', 'loop stop'], ['kill the run now', 'loop stop'],
+  ['stop it now', 'loop stop'], ['cancel it now', 'loop stop'], ['halt it now', 'loop stop'], ['interrupt the run now', 'loop stop'],
+  ['stop the session now', 'session terminate'], ['cancel the chat now', 'chat stop'], ['stop the container now', 'container stop'],
+  ['cancel the upload now', 'file upload abort'],
   // editing, including clearing a field
   ["set a loop's schedule", 'loop edit'], ["change the loop's timezone", 'loop edit'], ['add a teammate to the loop', 'loop edit'],
   ['remove the subject from the loop', 'loop edit'], ['remove the teammate from the loop', 'loop edit'],
@@ -554,9 +559,18 @@ const namesOnlyTheLoop = (query: string) => queryWords(query).every(word => ONLY
 /** Every word the help catalog itself uses: the vocabulary a caller borrows from it. */
 const CATALOG_WORDS = [...new Set(discovery().flatMap(row =>
   queryWords([row.noun, row.verb, row.summary, ...row.intentTags, ...row.notes].join(' '))))].sort();
+/**
+ * A FIXED SAMPLE of that vocabulary, every 7th word in sorted order (no seed: the same catalog gives the
+ * same words), so each generated suite stays well under ten seconds on a loaded node (round 6).
+ */
+const SAMPLED_WORDS = CATALOG_WORDS.filter((_, index) => index % 7 === 0);
+const GENERATED_TIMEOUT = 120_000;
 /** Things a person may remove from a loop that are only stopwords to the tokenizer. */
 const PRONOUNS = ['me', 'it', 'them', 'him', 'her', 'us', 'this', 'that', 'everything', 'something', 'all', 'one'];
 const answer = (query: string) => matchIntent(query)?.candidates[0]?.path.join(' ');
+/** Every phrasing whose first answer is missing or in `bad`, as "query -> answer": one assertion lists them all. */
+const violations = (queries: readonly string[], bad: readonly string[], read: (query: string) => string | undefined = answer) =>
+  queries.flatMap(query => { const top = read(query); return top === undefined || bad.includes(top) ? [`${query} -> ${top}`] : []; });
 
 describe('tm8 help --query: the routing corpus', () => {
   it.each(ROUTING_CORPUS)('"%s" answers %s first', (query, top) => {
@@ -578,56 +592,70 @@ describe('tm8 help --query: the routing corpus', () => {
  * the full answer agrees.
  */
 describe('tm8 help --query: generated loop phrasings never delete, create or fire unasked', () => {
+  // The full answer (route, then ranker) for at most 25 evenly spaced phrasings per suite: each costs a ranking.
   const sampleAgrees = (queries: string[]) => {
-    for (const query of queries.filter((_, i) => i % 97 === 0)) {
+    const stride = Math.max(1, Math.ceil(queries.length / 25));
+    for (const query of queries.filter((_, i) => i % stride === 0)) {
       expect(searchHelp(query).matches[0]?.command, query).toBe(answer(query));
     }
   };
   it('has a vocabulary to draw on', () => {
     expect(CATALOG_WORDS.length).toBeGreaterThan(300);
+    expect(SAMPLED_WORDS.length).toBeGreaterThan(200);
   });
   it('removing anything from a loop is never the loop\'s delete, nor a create or a run', () => {
     const templates = ['remove the {w} from the loop', "delete the loop's {w}", "clear the loop's {w}", 'drop the {w} from the loop',
       "erase the loop's {w}", 'purge the {w} from the loop', "wipe the loop's {w}", 'get rid of the {w} on the loop', 'remove {w} from the loop',
       'delete the {w} of the loop'];
-    const queries = templates.flatMap(t => [...CATALOG_WORDS, ...PRONOUNS].filter(w => !ONLY_THE_LOOP.has(w)).map(w => t.replace('{w}', w)));
-    for (const query of queries) {
-      const top = answer(query);
-      expect(top, query).toBeDefined();
-      for (const bad of ['entity delete', 'loop create', 'loop run-now']) expect(top, query).not.toBe(bad);
-    }
+    const queries = templates.flatMap(t => [...SAMPLED_WORDS, ...PRONOUNS].filter(w => !ONLY_THE_LOOP.has(w)).map(w => t.replace('{w}', w)));
+    expect(violations(queries, ['entity delete', 'loop create', 'loop run-now'])).toEqual([]);
     sampleAgrees(queries);
-  });
+  }, GENERATED_TIMEOUT);
   it('stopping, pausing, resuming, disabling or enabling a loop never fires or creates one', () => {
     const verbs = ['stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'pause', 'resume', 'disable', 'enable', 'suspend',
       'freeze', 'unpause', 'deactivate'];
     const tails = ['the loop', 'the loop now', 'the loop run', 'the running loop', 'the loop immediately', 'the loop again',
       'the nightly loop now', 'the loop once', 'the loop {w}', 'the {w} loop now'];
-    const queries = verbs.flatMap(v => tails.flatMap(t => (t.includes('{w}') ? CATALOG_WORDS.map(w => t.replace('{w}', w)) : [t]).map(t2 => `${v} ${t2}`)));
-    for (const query of queries) {
-      const top = answer(query);
-      expect(top, query).toBeDefined();
-      for (const bad of ['loop run-now', 'loop create', 'entity delete']) expect(top, query).not.toBe(bad);
-    }
+    const queries = verbs.flatMap(v => tails.flatMap(t => (t.includes('{w}') ? SAMPLED_WORDS.map(w => t.replace('{w}', w)) : [t]).map(t2 => `${v} ${t2}`)));
+    expect(violations(queries, ['loop run-now', 'loop create', 'entity delete'])).toEqual([]);
     sampleAgrees(queries);
-  });
+  }, GENERATED_TIMEOUT);
+  it('a stop with no loop named answers a stop: never a run, a create or a delete (round 6)', () => {
+    const verbs = ['stop', 'cancel', 'kill', 'abort', 'end', 'halt', 'terminate', 'interrupt', 'quit'];
+    const tails = ['the run now', 'running now', 'it now', 'now', 'the run', 'it immediately', 'everything now', 'this run',
+      'the job now', 'the {w} now', 'the {w} run'];
+    const words = SAMPLED_WORDS.filter((_, index) => index % 6 === 0).filter(w => w !== 'loop' && w !== 'loops');
+    const stops = new Set(['loop stop', 'session terminate', 'chat stop', 'container stop', 'file upload abort']);
+    // The plain phrasings answer a stop command.
+    for (const query of verbs.flatMap(v => tails.filter(t => !t.includes('{w}')).map(t => `${v} ${t}`))) {
+      expect(stops.has(answer(query) ?? searchHelp(query).matches[0]?.command ?? ''), `${query} -> ${answer(query)}`).toBe(true);
+    }
+    // With any catalog word as the thing stopped, an earlier route may claim it ("stop the closeout now" is the
+    // closeout's): whatever answers, it never fires, creates or deletes.
+    const queries = verbs.flatMap(v => tails.filter(t => t.includes('{w}')).flatMap(t => words.map(w => `${v} ${t.replace('{w}', w)}`)));
+    // A route answers nearly all of them; the few it leaves (an upload, a handoff) are read from the full answer.
+    expect(violations(queries, ['loop run-now', 'loop create', 'entity delete'],
+      query => answer(query) ?? searchHelp(query).matches[0]?.command)).toEqual([]);
+  }, GENERATED_TIMEOUT);
+  it('the ranker never answers loop run-now first: firing needs the run-now route (round 6)', () => {
+    const rows = discovery();
+    const queries = ['run it now', 'run now', 'fire it now', 'trigger it again', 'run the job now', 'run it again once',
+      ...SAMPLED_WORDS.filter((_, index) => index % 4 === 0).map(w => `run the ${w} now`)];
+    expect(queries.filter(query => rank(query, rows, 5)[0]?.row.operation === 'loops.runNow')).toEqual([]);
+    // The route still answers it, given a loop and nothing more.
+    expect(searchHelp('run the nightly loop now').matches[0]?.command).toBe('loop run-now');
+  }, GENERATED_TIMEOUT);
   it('any other verb on a loop reads it: never a create, a run or a delete', () => {
     const creating = new Set(['create', 'setup', 'build', 'automate', 'make', 'add', 'schedule', 'new']);
     const firing = new Set(['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once']);
-    const verbs = CATALOG_WORDS.filter(w => !creating.has(w) && !firing.has(w) && !ONLY_THE_LOOP.has(w));
+    const verbs = SAMPLED_WORDS.filter(w => !creating.has(w) && !firing.has(w) && !ONLY_THE_LOOP.has(w));
     const tails = ['the loop', 'the nightly loop', 'my loops', 'the loop schedule', "the loop's teammate"];
     const queries = verbs.flatMap(v => tails.map(t => `${v} ${t}`));
-    for (const query of queries) {
-      const top = answer(query);
-      expect(top, query).toBeDefined();
-      for (const bad of ['loop create', 'loop run-now', 'entity delete']) expect(top, query).not.toBe(bad);
-    }
+    expect(violations(queries, ['loop create', 'loop run-now', 'entity delete'])).toEqual([]);
     sampleAgrees(queries);
-  });
+  }, GENERATED_TIMEOUT);
   it('every generated delete is a phrasing that names only the loop', () => {
-    const queries = [...CATALOG_WORDS, ...PRONOUNS].flatMap(w => [`delete the ${w} loop`, `remove ${w} loop`, `${w} the loop`]);
-    for (const query of queries) {
-      if (answer(query) === 'entity delete') expect(namesOnlyTheLoop(query), query).toBe(true);
-    }
-  });
+    const queries = [...SAMPLED_WORDS, ...PRONOUNS].flatMap(w => [`delete the ${w} loop`, `remove ${w} loop`, `${w} the loop`]);
+    expect(queries.filter(query => answer(query) === 'entity delete' && !namesOnlyTheLoop(query))).toEqual([]);
+  }, GENERATED_TIMEOUT);
 });

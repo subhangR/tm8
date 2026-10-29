@@ -156,11 +156,17 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
+  // FIRING NEEDS EVIDENCE, so `loop run-now` is never the ranker's first answer, whatever the verb
+  // ("cancel the run now", "interrupt it now"; review of #1405, round 6). A query that names a loop is
+  // answered by a route before the ranker (the last loop routes catch every one), and only the run-now
+  // route, "run the loop" and nothing else, answers it first. Here it ranks after every other row.
+  const fires = (s: Scored) => (s.row.operation === 'loops.runNow' ? 1 : 0);
   return rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
+        fires(a) - fires(b) ||
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
     )
@@ -227,7 +233,7 @@ const WHICH_LOOP_WORDS = ['nightly', 'daily', 'weekly', 'hourly', 'monthly', 'ol
 /** "Run it now" — the run-now route's words. */
 const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
 /** Stopping a live run. */
-const LOOP_STOP_WORDS = ['stop', 'cancel', 'kill', 'abort', 'end', 'terminate', 'halt'];
+const LOOP_STOP_WORDS = ['stop', 'cancel', 'kill', 'abort', 'end', 'terminate', 'halt', 'interrupt', 'quit', 'cease', 'shut', 'shutdown'];
 
 /** The plain words a request carries that name nothing: an `only` route always allows them. */
 const PLAIN_WORDS: ReadonlySet<string> = new Set([
@@ -380,6 +386,37 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
    * #1405). These come first because the set-up routes below match on words
    * a steering query also has ("run", "set", "schedule").
    */
+  {
+    // A STOP WITH NO LOOP NAMED ("cancel the run now", "stop it now"): stopping is never firing, and
+    // the ranker's 'run'/'now' tags would answer `loop run-now`. What is named stops by its own command.
+    intent: 'stop a session',
+    all: [LOOP_STOP_WORDS, ['session', 'sessions']],
+    none: ['loop', 'loops'],
+    candidates: [{ path: ['session', 'terminate'], example: 'tm8 session terminate <work-session-id> --stop --yes' }],
+  },
+  {
+    intent: 'stop a chat turn',
+    all: [LOOP_STOP_WORDS, ['chat', 'chats', 'turn', 'turns']],
+    none: ['loop', 'loops', 'session', 'sessions'],
+    candidates: [{ path: ['chat', 'stop'], example: 'tm8 chat stop <chat-id>' }],
+  },
+  {
+    intent: 'stop a container',
+    all: [LOOP_STOP_WORDS, ['container', 'containers', 'machine', 'machines']],
+    none: ['loop', 'loops', 'session', 'sessions', 'chat', 'chats'],
+    candidates: [{ path: ['container', 'stop'], example: 'tm8 container stop <container-id> --expect-version <n>' }],
+  },
+  {
+    intent: 'stop a run (no loop named)',
+    all: [LOOP_STOP_WORDS, ['run', 'running', 'runs', 'now', 'immediately']],
+    // An upload or a handoff has its own answer in the ranker (and run-now never ranks first on a stop).
+    none: ['loop', 'loops', 'session', 'sessions', 'chat', 'chats', 'turn', 'turns', 'container', 'containers', 'machine',
+      'machines', 'upload', 'uploads', 'handoff', 'handoffs'],
+    candidates: [{
+      path: ['loop', 'stop'],
+      example: 'tm8 loop stop <run-id>   (a session: tm8 session terminate <work-session-id> --stop --yes; a chat turn: tm8 chat stop <chat-id>)',
+    }],
+  },
   {
     // First: ending a pause is resuming, whichever verb says it ("remove the pause from the loop").
     intent: "end a loop's pause (resume it)",
