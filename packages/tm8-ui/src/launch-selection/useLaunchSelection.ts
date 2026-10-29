@@ -137,8 +137,10 @@ function isOpenFor(read: LaunchDefaultsRead, target: ReadTarget): boolean {
  * `peek`) is on the very first frame instead of one frame of "loading", and
  * the call that confirms it starts in the effect.
  *
- * THE LOADER RIDES A REF: hosts may rebuild it, and keying the read on its
- * identity would re-read the defaults once per rebuild.
+ * THE READ IS KEYED ON THE LOADER TOO. Hosts build it once per seam, space
+ * and viewer (views/useGateData.ts), never per graph event, so a new loader is
+ * a new reader — the open card reads through it rather than leave its answer
+ * with one nobody holds.
  *
  * A TEAMMATE CHANGE re-reads the defaults and keeps the edits: a removal of
  * something the new teammate doesn't carry falls away, and an addition stays
@@ -156,8 +158,6 @@ export function useLaunchSelection(args: {
   const { load, teammateId, subjectId } = args;
   const agentTool = args.agentTool === 'claude-code' || args.agentTool === 'codex' ? args.agentTool : null;
   const profileId = args.interactionProfileId || null;
-  const loadRef = useRef(load);
-  loadRef.current = load;
 
   const target: ReadTarget = !load
     ? { key: null, reason: UNKNOWN_DEFAULTS_NOTE }
@@ -174,20 +174,24 @@ export function useLaunchSelection(args: {
   ));
   if (!isOpenFor(read, target)) dispatch(openEvent(target, load));
 
-  /* The read for the open key, again on every retry. The key is a function of
-     these primitives, so they change only with it. */
+  /* The read for the open key — again on every retry, and again when the host
+     hands over a new loader (it rebuilds one when the viewer becomes known),
+     so an answer is never left to a reader nobody holds. The input is the
+     open target's, taken from the render that opened it. */
   const openKey = target.key;
+  const openInput = useRef<LaunchDefaultsInput | null>(null);
+  openInput.current = target.key === null ? null : target.input;
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    const fn = loadRef.current;
-    if (!fn || openKey === null || !teammateId) return;
+    const input = openInput.current;
+    if (!load || openKey === null || !input) return;
     let live = true;
-    fn(defaultsInput(teammateId, subjectId, agentTool, profileId)).then(
+    load(input).then(
       (result) => { if (live) dispatch({ type: 'answered', key: openKey, result }); },
       () => { if (live) dispatch({ type: 'failed', key: openKey }); },
     );
     return () => { live = false; };
-  }, [openKey, attempt, teammateId, subjectId, agentTool, profileId]);
+  }, [openKey, attempt, load]);
   const retryDefaults = useCallback(() => {
     if (read.phase !== 'failed') return;
     dispatch({ type: 'retry', key: read.key });

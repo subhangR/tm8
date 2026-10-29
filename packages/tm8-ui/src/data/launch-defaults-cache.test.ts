@@ -163,6 +163,34 @@ describe('who and how much is stored', () => {
   });
 });
 
+describe('recency wins the size cap', () => {
+  const KEY = 'tm8.launch-defaults.v1.local.sp-1.viewer-1';
+  const keys = () => (JSON.parse(localStorage.getItem(KEY)!) as { entries: Array<{ key: string }> }).entries.map((e) => e.key);
+
+  it('writes the newest launch first and drops the oldest that no longer fit', async () => {
+    const mid = { ...LAUNCH_DEFAULTS, warnings: ['m'.repeat(90_000)] };
+    const load = cache.launchDefaultsLoader(async (i) => (i.teamMemberId === ('tm-c' as never) ? LAUNCH_DEFAULTS : mid), 'local', 'sp-1', 'viewer-1');
+    await load(input('tm-a'));
+    await load(input('tm-b'));
+    await load(input('tm-c'));
+    expect(keys()).toEqual(['tm-c|task-1|claude-code|', 'tm-b|task-1|claude-code|', 'tm-a|task-1|claude-code|']);
+    const bigger = { ...LAUNCH_DEFAULTS, warnings: ['n'.repeat(95_000)] };
+    await cache.launchDefaultsLoader(async () => bigger, 'local', 'sp-1', 'viewer-1')(input('tm-d'));
+    expect(keys()[0]).toBe('tm-d|task-1|claude-code|');
+    expect(keys()).not.toContain('tm-a|task-1|claude-code|');
+  });
+
+  it('an answer too big to ever fit keeps that launch’s previous entry', async () => {
+    let huge = false;
+    const load = cache.launchDefaultsLoader(async () => (huge ? { ...LAUNCH_DEFAULTS, warnings: ['x'.repeat(250_000)] } : LAUNCH_DEFAULTS), 'local', 'sp-1', 'viewer-1');
+    await load(input('tm-a'));
+    huge = true;
+    await load(input('tm-a'));
+    expect(keys()).toEqual(['tm-a|task-1|claude-code|']);
+    expect((await reloadModule()).launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', 'sp-1', 'viewer-1').peek?.(input('tm-a'))).toEqual(LAUNCH_DEFAULTS);
+  });
+});
+
 describe('an explicit sign-out', () => {
   it('never stores an answer that was still in flight when the viewer signed out', async () => {
     const gate = deferred<LaunchDefaultsResult>();

@@ -247,13 +247,16 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
      usable key is reused while fresh; "no key" never is — the person may be
      adding one in Settings right now, and the card must see it when they
      come back. */
+  const viewerId = data.viewerActor?.id ?? null;
   const jevKeyStatus = useMemo(() => {
-    const status = sharedRead(() => data.seam.credentials.serviceKeys(), () => 'viewer', {
+    /* Per viewer: a new viewer is a new reader, so one person's usable key is
+       never another's verdict, whatever happens to the session in between. */
+    const status = sharedRead(() => data.seam.credentials.serviceKeys(), () => viewerId ?? 'unknown', {
       freshForMs: LAUNCH_READ_FRESH_MS,
       keep: (view) => jevKeyUsable(view) === true,
     });
     return () => status(undefined);
-  }, [data.seam]);
+  }, [data.seam, viewerId]);
 
   return useMemo(
     () => ({

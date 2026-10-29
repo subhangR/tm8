@@ -134,11 +134,6 @@ export function endSession(end: SessionEnd, opts: SessionResetOptions = {}): voi
   chatStore.getState().clearAll();
   resetChatEntityResolutionCache();
 
-  /* The launch card's remembered defaults — memory statements, skill and doc
-     titles — go on EVERY end, not only an explicit sign-out: whoever signs in
-     next on this browser must never draw them on a first frame. */
-  clearLaunchDefaultsCache(activeNodeKey());
-
   if (end !== 'signed-out') return;
 
   const nodeKey = activeNodeKey();
@@ -149,6 +144,11 @@ export function endSession(end: SessionEnd, opts: SessionResetOptions = {}): voi
      viewer's teammate picker by the previous viewer's launches, which names
      who they work as. */
   clearLaunchRecents(nodeKey);
+  /* The launch card's remembered defaults — memory statements, skill and doc
+     titles. Kept on `expired` (the server's invalid verdict, the daily path):
+     the store is keyed by viewer, so whoever signs in next reads their own
+     key and never this one, and the same person keeps a warm first frame. */
+  clearLaunchDefaultsCache(nodeKey);
   /* Keyed by viewer, but still this browser's record of what they had open. */
   clearCraftOpenTabs(nodeKey);
   const address = opts.address === undefined ? browserAddress() : opts.address;

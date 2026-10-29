@@ -200,15 +200,20 @@ export function unconfirmedReason(groups: readonly SpawnSelectionGroup[]): strin
  *  - `pending`: its exact set would be built on this browser's last answer,
  *    and a default the node added since would be left out unseen — so it
  *    waits for the answer;
- *  - `failed`: the same, with no answer coming — the edits are kept, and the
- *    read must be retried (`unconfirmedReason` names the groups).
+ *  - `failed`, or `unknown` (a failed read with nothing to show): the same,
+ *    with no answer coming — the edits are kept, and the read must be
+ *    retried (`unconfirmedReason` names the groups).
+ * The rule is absolute: an edited group never launches on unconfirmed or
+ * unknown defaults.
  * An untouched group never blocks — it is omitted, and the node loads its own
  * defaults whatever the card drew.
  */
 export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSelectionEdits): string | null {
   const edited = (group: SpawnSelectionGroup) => edits[group].removed.length > 0 || edits[group].added.length > 0;
   const where = (test: (d: LaunchGroupDefaults) => boolean) => LAUNCH_SELECTION_GROUPS.filter((g) => edited(g) && test(defaults[g]));
-  const failed = where((d) => d.status === 'ready' && d.confirmation === 'failed');
+  /* Unknown counts too: an edited group whose re-read failed with nothing to
+     show (a teammate switch) would otherwise be omitted, its removals dropped. */
+  const failed = where((d) => d.status === 'unknown' || (d.status === 'ready' && d.confirmation === 'failed'));
   if (failed.length > 0) return unconfirmedReason(failed);
   const waiting = where((d) => d.status === 'loading' || (d.status === 'ready' && d.confirmation === 'pending'));
   return waiting.length > 0 ? defaultsWaitReason(waiting) : null;

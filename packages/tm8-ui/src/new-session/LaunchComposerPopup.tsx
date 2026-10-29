@@ -925,7 +925,15 @@ export function LaunchComposerPopup({
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
-        connectors={(
+        connectors={(<>
+          {/* THE DEFAULTS COULD NOT BE READ: what the card asks for, it offers
+              here (lane E). Moves into the card's notice slot with lane A. */}
+          {selection.canRetryDefaults ? (
+            <p className="lcd-note" role="status" data-testid="launch-defaults-retry-line">
+              {selection.launchBlock ? null : selection.defaultsNote ?? 'Couldn’t read this launch’s defaults from the node.'}{' '}
+              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.retryDefaults}>Retry</button>
+            </p>
+          ) : null}
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
              and skills, never the launcher's personal Claude connectors. */
           <McpPicker
@@ -940,7 +948,7 @@ export function LaunchComposerPopup({
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
           />
-        )}
+        </>)}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -1013,7 +1021,7 @@ export function LaunchComposerPopup({
         onSubmit={onLaunch}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal ?? selection.defaultsNote}
+        notice={preview ? null : nodeRefusal ?? (selection.canRetryDefaults ? null : selection.defaultsNote)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}

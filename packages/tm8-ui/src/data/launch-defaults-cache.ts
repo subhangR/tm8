@@ -55,12 +55,13 @@ const MAX_REMEMBERED = 24;
 /** The stored payload's ceiling, in characters. */
 const MAX_STORED_CHARS = 200_000;
 
+/** One stored launch: its key, its answer, and the exact JSON written for it (dedup compares strings). */
 interface StoredEntry {
   key: string;
   result: LaunchDefaultsResult;
+  json: string;
 }
 
-/** Node, space AND viewer: two people on one browser never seed each other's first frame. */
 function storageKeyFor(nodeKey: string, spaceId: string, viewerId: string): string {
   return `${KEY_PREFIX}.${nodeKey}.${spaceId}.${viewerId}`;
 }
@@ -96,45 +97,68 @@ function isAnswer(value: unknown): value is LaunchDefaultsResult {
 
 /** The stored answers, most recently answered first; [] when none, none readable, or none well-formed. */
 function readStored(storageKey: string): StoredEntry[] {
-  const store = browserStorage();
-  if (!store) return [];
+  const browser = browserStorage();
+  if (!browser) return [];
   try {
-    const raw = store.getItem(storageKey);
+    const raw = browser.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { entries?: unknown } | null;
     if (!parsed || !Array.isArray(parsed.entries)) return [];
-    return (parsed.entries as Array<Partial<StoredEntry> | null>).filter(
-      (entry): entry is StoredEntry => !!entry && isText(entry.key) && isAnswer(entry.result),
-    );
+    return (parsed.entries as Array<{ key?: unknown; result?: unknown } | null>).flatMap((entry) => (
+      entry && isText(entry.key) && isAnswer(entry.result)
+        ? [{ key: entry.key as string, result: entry.result, json: JSON.stringify({ key: entry.key, result: entry.result }) }]
+        : []
+    ));
   } catch {
     // Corrupt payload: drop it rather than fail every later open.
-    try { store.removeItem(storageKey); } catch { /* nothing further to do */ }
+    try { browser.removeItem(storageKey); } catch { /* nothing further to do */ }
     return [];
   }
 }
 
-function store(storageKey: string, key: string, result: LaunchDefaultsResult): void {
-  const browser = browserStorage();
-  if (!browser) return;
-  const stored = readStored(storageKey);
-  const fresh = JSON.stringify({ key, result });
-  /* The same answer already newest: nothing to write (the common reopen). */
-  if (stored[0] && JSON.stringify(stored[0]) === fresh) return;
-  const entries = [fresh, ...stored.filter((entry) => entry.key !== key).map((entry) => JSON.stringify(entry))].slice(0, MAX_REMEMBERED);
-  const kept: string[] = [];
-  let size = 0;
-  for (const json of entries) {
-    /* An entry that cannot fit is skipped, never the reason the others are dropped. */
-    if (size + json.length > MAX_STORED_CHARS) continue;
-    kept.push(json);
-    size += json.length + 1;
+/**
+ * The next stored list after an answer: RECENCY WINS. The new answer goes
+ * first, then older launches while they fit the ceiling. An answer too big to
+ * ever fit is the one thing skipped — and then that launch's previous entry
+ * stays, rather than the launch losing its cache altogether.
+ */
+function nextStored(stored: readonly StoredEntry[], fresh: StoredEntry): StoredEntry[] {
+  const fits = fresh.json.length <= MAX_STORED_CHARS;
+  const out: StoredEntry[] = fits ? [fresh] : [];
+  let size = fits ? fresh.json.length + 1 : 0;
+  for (const entry of stored) {
+    if (out.length >= MAX_REMEMBERED) break;
+    if (fits && entry.key === fresh.key) continue;
+    if (size + entry.json.length > MAX_STORED_CHARS) continue;
+    out.push(entry);
+    size += entry.json.length + 1;
   }
-  try {
-    browser.setItem(storageKey, `{"entries":[${kept.join(',')}]}`);
-  } catch {
-    // Quota or a storage policy. The loader still keeps it for this tab; the
-    // next reload just opens cold. Nothing the viewer could act on.
-  }
+  return out;
+}
+
+/** The store for one loader: parsed once, kept in memory until a write or a sweep. */
+function storeFor(storageKey: string) {
+  let entries: StoredEntry[] | null = null;
+  const current = () => (entries ??= readStored(storageKey));
+  return {
+    find(key: string): LaunchDefaultsResult | null {
+      return current().find((entry) => entry.key === key)?.result ?? null;
+    },
+    write(key: string, result: LaunchDefaultsResult): void {
+      const fresh = { key, result, json: JSON.stringify({ key, result }) };
+      const stored = current();
+      /* The same answer already newest: nothing to write (the common reopen). */
+      if (stored[0]?.json === fresh.json) return;
+      entries = nextStored(stored, fresh);
+      try {
+        browserStorage()?.setItem(storageKey, `{"entries":[${entries.map((entry) => entry.json).join(',')}]}`);
+      } catch {
+        // Quota or a storage policy. The loader still keeps it for this tab; the
+        // next reload just opens cold. Nothing the viewer could act on.
+      }
+    },
+    forget(): void { entries = null; },
+  };
 }
 
 export function launchDefaultsLoader(
@@ -144,19 +168,16 @@ export function launchDefaultsLoader(
   /** Null while the viewer is not known yet: answers are then kept for this tab only, never stored. */
   viewerId: string | null,
 ): LoadLaunchDefaults {
-  const storageKey = viewerId ? storageKeyFor(nodeKey, spaceId, viewerId) : null;
-  const reader = sharedRead(
-    read,
-    launchDefaultsKey,
-    {
-      seed: (input) => (storageKey ? readStored(storageKey) : []).find((entry) => entry.key === launchDefaultsKey(input))?.result ?? null,
-      maxKept: MAX_REMEMBERED,
-    },
-  );
-  /* A sweep since this loader was last used: what it kept is the previous viewer's. */
+  const stored = viewerId ? storeFor(storageKeyFor(nodeKey, spaceId, viewerId)) : null;
+  const reader = sharedRead(read, launchDefaultsKey, {
+    seed: (input) => stored?.find(launchDefaultsKey(input)) ?? null,
+    maxKept: MAX_REMEMBERED,
+  });
+  /* A sweep since this loader was last used: what it kept, in memory and as
+     its parsed copy of the store, is the previous viewer's. */
   let sweptAt = sweepOf(nodeKey);
   const current = () => {
-    if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); sweptAt = sweepOf(nodeKey); }
+    if (sweptAt !== sweepOf(nodeKey)) { reader.forgetAll(); stored?.forget(); sweptAt = sweepOf(nodeKey); }
     return reader;
   };
   /* The sweep a call is asked under is taken AT the call: an answer that lands
@@ -164,7 +185,7 @@ export function launchDefaultsLoader(
   const call = (input: LaunchDefaultsInput) => {
     const asked = sweepOf(nodeKey);
     return current()(input).then((result) => {
-      if (storageKey && asked === sweepOf(nodeKey)) store(storageKey, launchDefaultsKey(input), result);
+      if (stored && asked === sweepOf(nodeKey)) stored.write(launchDefaultsKey(input), result);
       return result;
     });
   };

@@ -150,13 +150,37 @@ describe('one read per launch key', () => {
     expect(result.current.defaults.skills.status === 'ready' && result.current.defaults.skills.total).toBe(1);
   });
 
-  it('a host that rebuilds its loader does not re-read: the read is keyed on the launch, not the function', () => {
+  it('a new loader (the host rebuilt it when the viewer became known) reads once through it; a re-render alone reads nothing', () => {
     const first = loader();
     const { rerender } = renderHook(({ load }) => useLaunchSelection({ load, teammateId: 'tm-1', subjectId: 'task-1' }), { initialProps: { load: first.load } });
+    rerender({ load: first.load });
+    expect(first.read).toHaveBeenCalledTimes(1);
     const rebuilt = loader();
     rerender({ load: rebuilt.load });
     expect(first.read).toHaveBeenCalledTimes(1);
-    expect(rebuilt.read).not.toHaveBeenCalled();
+    expect(rebuilt.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('an EDITED group whose re-read failed with nothing to show blocks Launch, named, until a retry — the teammate-switch case', async () => {
+    const { load, answer } = loader();
+    const failing: Array<() => void> = [];
+    let failNext = false;
+    const read = vi.fn((input: Parameters<LoadLaunchDefaults>[0]) => (failNext
+      ? new Promise<LaunchDefaultsResult>((_res, rej) => { failing.push(() => rej(new Error('503'))); })
+      : load(input)));
+    const { result, rerender } = renderHook(({ teammate }) => useLaunchSelection({ load: read, teammateId: teammate, subjectId: 'task-1' }), { initialProps: { teammate: 'tm-1' } });
+    await answer(LAUNCH_DEFAULTS);
+    act(() => { result.current.toggle('references', { id: 'ent-file-log' as EntityId, kind: 'file', title: 'boot.log', text: null, derived: false, via: null }); });
+    failNext = true;
+    rerender({ teammate: 'tm-2' });
+    await act(async () => { failing.shift()!(); });
+    expect(result.current.defaults.references.status).toBe('unknown');
+    expect(result.current.launchBlock).toBe('Couldn’t confirm this launch’s references defaults with the node. Retry before launching with your edits — they are kept.');
+    failNext = false;
+    act(() => { result.current.retryDefaults(); });
+    await answer(LAUNCH_DEFAULTS);
+    expect(result.current.launchBlock).toBeNull();
+    expect(result.current.outcomes().references).toEqual({ send: ['ent-doc-spec'] });
   });
 
   it('with no teammate there is nothing to read, and the groups say why', async () => {

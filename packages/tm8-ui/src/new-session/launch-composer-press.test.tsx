@@ -8,8 +8,11 @@
  * refused launch must not cost the person the ask.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, waitFor } from '@testing-library/react';
-import type { ExecutionSpawnInput } from '@tm8/contract';
+import { act, fireEvent, waitFor, within } from '@testing-library/react';
+import type { ExecutionSpawnInput, LaunchDefaultsResult } from '@tm8/contract';
+
+import { LAUNCH_DEFAULTS, LAUNCH_REFERENCE_CANDIDATES } from '../views/launch-fixtures';
+import type { LoadLaunchDefaults } from '../launch-selection';
 
 import { answer, item, MEMORIES, okGroup, pendingPort } from '../jev/test-support';
 import { renderPopup } from './launch-test-kit';
@@ -62,5 +65,30 @@ describe('Jev at the press', () => {
     await act(async () => { spawn.reject(Object.assign(new Error('No session slots free.'), { code: 'invalid_input' })); });
     await waitFor(() => expect(view.getByTestId('lcd3-group-memory').textContent).toMatch(/✦ 2/));
     expect(port.calls).toHaveLength(1);
+  });
+});
+
+describe('defaults the node could not confirm', () => {
+  it('the card offers the Retry it asks for: refusal → Retry → unblocked, the edit intact', async () => {
+    const pending: Array<{ resolve(r: LaunchDefaultsResult): void; reject(e: unknown): void }> = [];
+    const read = vi.fn(() => new Promise<LaunchDefaultsResult>((resolve, reject) => { pending.push({ resolve, reject }); }));
+    const load: LoadLaunchDefaults = Object.assign(read, { peek: () => LAUNCH_DEFAULTS });
+    const view = renderPopup({ selection: { load, candidates: { references: [...LAUNCH_REFERENCE_CANDIDATES] } } });
+    await view.ready();
+    // Untick the cached doc default, then the confirming read fails.
+    const menu = await view.openGroup('doc');
+    fireEvent.click(within(within(menu).getByTestId('lcd3-row-ent-doc-spec')).getByRole('menuitemcheckbox'));
+    await act(async () => { pending.shift()!.reject(new Error('503')); });
+
+    const send = view.getByTestId('nsx-send');
+    expect(send.getAttribute('aria-disabled')).toBe('true');
+    expect(send.getAttribute('title')).toMatch(/Couldn’t confirm this launch’s references defaults/);
+    fireEvent.click(view.getByTestId('launch-defaults-retry'));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await act(async () => { pending.shift()!.resolve(LAUNCH_DEFAULTS); });
+
+    await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
+    expect(view.queryByTestId('launch-defaults-retry')).toBeNull();
+    expect(view.getByTestId('lcd3-group-doc').getAttribute('data-edited')).toBe('true');
   });
 });

@@ -1098,14 +1098,18 @@ export function LaunchSheet(props: LaunchSheetProps) {
       {selection.launchBlock ? (
         <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">
           {selection.launchBlock}
+        </div>
+      ) : null}
+      {/* One line about the defaults the groups draw, said once for the sheet —
+          not when the block above already says it — and Retry whenever the
+          read failed, blocking or not. */}
+      {(selection.defaultsNote && !(selection.launchBlock && selection.canRetryDefaults)) || selection.canRetryDefaults ? (
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-defaults-note">
+          {selection.launchBlock && selection.canRetryDefaults ? null : selection.defaultsNote ?? 'Couldn’t read this launch’s defaults from the node.'}
           {selection.canRetryDefaults ? (
             <button type="button" className="ls__cancel" data-testid="launch-selection-retry" onClick={selection.retryDefaults}>Retry</button>
           ) : null}
         </div>
-      ) : null}
-      {/* One line about the defaults the groups draw, said once for the sheet. */}
-      {selection.defaultsNote ? (
-        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-defaults-note">{selection.defaultsNote}</div>
       ) : null}
 
       <footer className="ls__foot">
