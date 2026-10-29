@@ -17,7 +17,7 @@
  * undiscoverable, which is the failure this whole surface exists to prevent —
  * but recommending them first would be answering a question with a dead end.
  */
-import type { CommandDiscovery, OperationDiscovery } from './operations.js';
+import { DISCOVERY, type CommandDiscovery, type OperationDiscovery, type SideEffect } from './operations.js';
 
 /**
  * Words that carry no intent. Without this list, "what can I do with all of
@@ -200,7 +200,7 @@ export function rank(
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
     );
-  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation, s.row.sideEffect, s.row.command)).slice(0, limit);
 }
 
 /**
@@ -211,25 +211,100 @@ export function rank(
  * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
  * RANKED_LAST holds for every query.
  */
-export function rankedLast(tokens: readonly string[], operation: string): boolean {
-  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)))
-    || (tokens.some((t) => ENDING_WORDS.has(t)) && startsOrDestroys(tokens, operation));
+export function rankedLast(
+  tokens: readonly string[],
+  operation: string,
+  sideEffect: SideEffect = catalogRow(operation)?.sideEffect ?? 'durable',
+  command: string | readonly string[] | null = catalogRow(operation)?.command ?? null,
+): boolean {
+  if (RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)))) return true;
+  if (sideEffect === 'none') return false;
+  const ending = endingKind(tokens);
+  return ending === 'negation' || (ending === 'stop' && !endsItself(tokens, verbOf(operation, command)));
 }
 
 /**
- * A query that ends, prevents or steers something ("kill it", "cancel the recurring task", "don't
- * spawn a session", "postpone the run") never gets an operation that STARTS, CREATES, ADDS or
- * DESTROYS something first, whichever row outscores the rest: with `execution.terminate` held back,
- * "kill it" was answering `credentials.space.delete`, and "kill everything" `space create`
- * (follow-up 01a188d3-0526). When nothing else matched, the query answers nothing, as for every
- * ranked-last operation. The verb is the operation name's last segment, or that segment's leading
- * word (`addItem`, `runNow`). Leaving a NAMED space stays ("quit the space"), and a revoke is how
- * access ends, so neither is held back.
+ * An ENDING query never gets a write that does anything but end something first (follow-up
+ * 01a188d3-0526). With `execution.terminate` held back, "kill it" answered `credentials.space.delete`
+ * and "cancel the recurring task" `loop create`; a verb denylist then promoted the writes it missed
+ * ("add a comment saying don't merge yet" answered `pr merge`). So it is an allowlist, as for the
+ * routes (#1405, round 5): every operation that writes (its catalog `sideEffect` is not `none`) is
+ * held back unless its own verb ends something. The query is ending only when its VERB, after the
+ * request words, ends or negates ("don't merge", "never resume it", "turn off the schedule"), never
+ * a word inside its object ("spawn a session to change the readme"). A negation holds back every
+ * write, an ending one too: "don't stop the loop" must not answer loop disable.
  */
-const STARTS_OR_DESTROYS = /\.(create|add|delete|remove|purge|destroy|spawn|launch|invoke|run|start|leave)([A-Z][A-Za-z]*)?$/;
-function startsOrDestroys(tokens: readonly string[], operation: string): boolean {
-  return STARTS_OR_DESTROYS.test(operation)
-    && !(operation === 'spaces.leave' && tokens.some((t) => t === 'space' || t === 'spaces' || t === 'workspace'));
+function endingKind(tokens: readonly string[]): 'stop' | 'negation' | null {
+  let i = 0;
+  while (i < tokens.length && REQUEST_WORDS.has(tokens[i]!)) i++;
+  const verb = tokens[i];
+  // A negation rejects the very action it names ("don't merge", "don't stop the loop"): no write leads it.
+  if (NEGATIONS.has(verb ?? '')) return 'negation';
+  // A phrasal end: "turn / switch / power / call / shut / cut off" (never "kick off", which starts something).
+  if (OFF_VERBS.has(verb ?? '')) return tokens[i + 1] === 'off' || ENDING_VERBS.has(verb!) ? 'stop' : null;
+  return verb !== undefined && ENDING_VERBS.has(verb) ? 'stop' : null;
+}
+
+/**
+ * Write verbs that END something without destroying it (lead rulings 01a188fa-6dfa, 01a188fd-4c7c,
+ * 01a188ff-61a7). A pure stop may lead any ending query; the rest detach or close something, so
+ * they lead only when the query names what ("revoke the token", never "stop it"), as `leave` leads
+ * only for a named space. Never discard, retire or resolve: they destroy or retire what persists,
+ * or answer a delete prompt.
+ */
+const PURE_STOP_OP_VERBS: ReadonlySet<string> = new Set(['stop', 'terminate', 'disable', 'pause', 'interrupt', 'cancel']);
+const DETACH_OP_VERBS: ReadonlySet<string> = new Set([
+  'revoke', 'unshare', 'unbind', 'unexpose', 'unset', 'logout', 'complete', 'finish', 'close', 'abort', 'release',
+  'withdraw', 'unlink', 'unequip',
+]);
+/** What a stop may say after its verb and still name nothing: "end everything", "kill it now". */
+const NAMES_NOTHING: ReadonlySet<string> = new Set([
+  'everything', 'anything', 'something', 'nothing', 'stuff', 'things', 'whatever', 'now', 'immediately', 'again',
+  'right', 'away', 'more',
+]);
+const NEGATIONS: ReadonlySet<string> = new Set(['don', 'dont', 'not', 'never']);
+
+/**
+ * What an operation does: its CLI command's last word, since commands are verb-last (`file upload
+ * abort`, `chat stop`, `collection add`), else its name's last segment or that segment's leading
+ * word (`credentials.space.delete`, `runNow`).
+ */
+function verbOf(operation: string, command: string | readonly string[] | null): string {
+  const words = typeof command === 'string' ? command.split(' ') : command;
+  if (words && words.length > 0) return words[words.length - 1]!;
+  return /^[a-z]+/.exec(operation.slice(operation.lastIndexOf('.') + 1))?.[0] ?? '';
+}
+
+/** That verb ends something, for this query. */
+function endsItself(tokens: readonly string[], verb: string): boolean {
+  if (PURE_STOP_OP_VERBS.has(verb)) return true;
+  if (verb === 'leave') return tokens.some((t) => t === 'space' || t === 'spaces' || t === 'workspace');
+  return DETACH_OP_VERBS.has(verb) && namesAnObject(tokens);
+}
+
+/** Past the verb (and the verb a negation negates, and an off/down), the query names something. */
+function namesAnObject(tokens: readonly string[]): boolean {
+  let i = 0;
+  while (i < tokens.length && REQUEST_WORDS.has(tokens[i]!)) i++;
+  let j = i + 1;
+  if (NEGATIONS.has(tokens[i] ?? '')) j++;
+  if (tokens[j] === 'off' || tokens[j] === 'down') j++;
+  return tokens.slice(j).some((t) => !NAMES_NOTHING.has(t));
+}
+
+let SIDE_EFFECTS_BY_COMMAND: ReadonlyMap<string, SideEffect> | undefined;
+/** A route answers a write when its first candidate's command does (unknown: a write). */
+function routeWrites(route: IntentRoute): boolean {
+  SIDE_EFFECTS_BY_COMMAND ??= new Map(DISCOVERY.flatMap((row) => (row.command === null ? [] : [[row.command.join(' '), row.sideEffect] as const])));
+  const path = route.candidates[0]?.path.join(' ');
+  return path !== undefined && (SIDE_EFFECTS_BY_COMMAND.get(path) ?? 'durable') !== 'none';
+}
+
+let ROWS_BY_OPERATION: ReadonlyMap<string, OperationDiscovery> | undefined;
+/** A caller that passes no row (a test): the catalog's row for that operation. */
+function catalogRow(operation: string): OperationDiscovery | undefined {
+  ROWS_BY_OPERATION ??= new Map(DISCOVERY.map((row) => [row.operation, row]));
+  return ROWS_BY_OPERATION.get(operation);
 }
 
 /**
@@ -268,8 +343,9 @@ export function rankAll(
     ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
     ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
   ].sort((a, b) => b.score - a.score);
-  return keepRankedLast(combined, (e) =>
-    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
+  return keepRankedLast(combined, (e) => e.kind === 'operation'
+    ? rankedLast(tokens, e.entry.row.operation, e.entry.row.sideEffect, e.entry.row.command)
+    : rankedLast(tokens, e.entry.row.operations[0] ?? '', e.entry.row.sideEffect, e.entry.row.command));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
@@ -350,15 +426,9 @@ const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
   ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
   'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
 ]);
-/**
- * Ending, preventing or steering something: `rankedLast` holds back what starts, creates, adds or
- * destroys (see `startsOrDestroys`). A steer changes what exists ("postpone the recurring task", "nudge
- * the run"), so it never starts a new one either.
- */
-const ENDING_WORDS: ReadonlySet<string> = new Set([
-  ...NOT_RUN_WORDS, 'close', 'closing', 'shut', 'shutdown', 'nuke', 'off',
-  'steer', 'steering', 'redirect', 'redirecting', 'nudge', 'nudging', 'postpone', 'postponing', 'delay', 'delaying', 'change', 'changing',
-]);
+/** A query whose VERB is one of these ends, prevents or negates something (`endingKind`). */
+const ENDING_VERBS: ReadonlySet<string> = new Set([...NOT_RUN_WORDS, 'close', 'closing', 'shut', 'shutdown', 'nuke', 'suspend']);
+const OFF_VERBS: ReadonlySet<string> = new Set(['turn', 'switch', 'power', 'call', 'shut', 'cut']);
 /** The plain words a request carries that name nothing: an `only` route always allows them. */
 const PLAIN_WORDS: ReadonlySet<string> = new Set([
   'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
@@ -668,8 +738,10 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     // Stopping one ("cancel / kill / turn off the recurring task") disables its loop, never loop create.
     // A run named ("cancel the recurring run") is the run stop's above.
     intent: 'stop a recurring task (disable its loop)',
-    all: [RECURRING_WORDS, TASK_JOB_WORDS, [...LOOP_STOP_WORDS, 'off', 'disable', 'deactivate']],
+    all: [RECURRING_WORDS, TASK_JOB_WORDS, [...LOOP_STOP_WORDS, 'turn', 'off', 'disable', 'deactivate']],
     none: ['run', 'running', 'runs'],
+    // Only which one: "set up a recurring job that turns off idle sessions" sets one up (review of #1416).
+    only: WHICH_LOOP_WORDS,
     candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
   },
   {
@@ -757,16 +829,20 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
 
 /** The first route whose token groups all match the query, or undefined. */
 export function matchIntent(query: string): IntentRoute | undefined {
-  const tokens = new Set(tokenize(query));
+  const tokenList = tokenize(query);
+  const tokens = new Set(tokenList);
   if (tokens.size === 0) return undefined;
   const words = queryWords(query);
+  // A negated query is never routed to a write: "don't enable the loop" is not `loop enable` (01a188d3-0526).
+  const negated = endingKind(tokenList) === 'negation';
   return INTENT_ROUTES.find(
     (r) =>
       r.all.every((group) => group.some((t) => tokens.has(t))) &&
       !(r.none ?? []).some((t) => tokens.has(t)) &&
       (r.only === undefined ||
         words.every((w) => PLAIN_WORDS.has(w) || r.only!.includes(w) || r.all.some((group) => group.includes(w)))) &&
-      (r.when === undefined || r.when(words)),
+      (r.when === undefined || r.when(words)) &&
+      !(negated && routeWrites(r)),
   );
 }
 
