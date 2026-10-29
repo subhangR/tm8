@@ -100,10 +100,6 @@ An agent can run the digest, inspect its output and pass the summary as `slack-n
 
 A run's working directory is the invoking session's cwd (an agent, or the CLI inside a session). A human with no invoking session (the UI, or the CLI as the node's loopback owner) gets a per-tool scratch directory, `<dataDir>/tool-workspaces/<identity>/<tool>`. `--cwd` may name only a directory inside the session cwd, that scratch directory, or a path grant; anything else is refused with `Tool path is outside the invoking session cwd and path grants`.
 
-## Run on a schedule
-
-A loop whose action is `tool` runs a tool on its schedule. Choose the tool and its input values when you create the loop, and the persona the run acts as (required when the tool's tm8 access is `read` or `write`). Each firing is an ordinary run in the tool's history, attributed to the loop, with the shell closed on exit. A nonzero exit is a completed run with that code, not a loop failure. A firing the server refuses (stale or renamed inputs, a missing persona, the eight-session cap, an unavailable credential, a failed launch) becomes the loop's last error and the schedule advances. Details are in [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md).
-
 ## Python dependencies
 
 Python tools run with the node's `/usr/bin/python3 -I` and its system site-packages. There is no virtualenv and no per-tool package list: a module must be installed on the node for every tool that imports it, and a tool that imports a missing module exits 1 with the traceback in the terminal and in the stored output tail. The starters use only the standard library.
