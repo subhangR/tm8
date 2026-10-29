@@ -397,6 +397,22 @@ describe('W2.G10 live delivery cursors', () => {
     // the client supplies one.
   });
 
+  it('a re-subscribe does not inherit the cursor of an earlier, unsubscribed subscription', async () => {
+    // Subscribed at mark 1, then unsubscribed. Events 2 and 3 land while it
+    // is not subscribed. A re-subscribe whose mark cannot be established must
+    // be UNSEEDED — not live from the old cursor, which would replay 2 and 3
+    // at a client that only asked to be subscribed.
+    const opts: { mark?: number | null } = { mark: 1 };
+    const h = pumped(opts);
+    await h.send({ type: 'subscribe', spaceIds: [ALLOWED] });
+    await h.send({ type: 'unsubscribe', spaceIds: [ALLOWED] });
+    opts.mark = null;
+    await h.send({ type: 'subscribe', spaceIds: [ALLOWED] });
+
+    expect(await h.pump.tick(), 'no stale cursor survives unsubscribe').toBe(0);
+    expect(h.sink.events()).toEqual([]);
+  });
+
   it('resume hands over to live delivery with no gap and no duplicate', async () => {
     const h = pumped();
     await h.send({ type: 'subscribe', spaceIds: [ALLOWED] });

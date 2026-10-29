@@ -133,6 +133,8 @@ export class DbSubscriptionAuthorizer implements SubscriptionAuthorizer {
  */
 export interface LiveCursor {
   seed(connId: string, spaceId: string, seq: number): void;
+  /** Clear one Space's cursor, so a later subscribe starts from its own seed. */
+  drop(connId: string, spaceId: string): void;
 }
 
 export interface ControlChannelDeps {
@@ -237,7 +239,12 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         // Deliberately unauthorized: giving up access you may or may not have
         // is always permitted, and requiring a check here would mean a caller
         // whose membership was revoked could not stop its own subscription.
-        for (const spaceId of frame.spaceIds) registry.unsubscribe(sink.id, spaceId);
+        // The live cursor goes with it: a later re-subscribe whose mark cannot
+        // be established must stay unseeded, not resume from this stale one.
+        for (const spaceId of frame.spaceIds) {
+          registry.unsubscribe(sink.id, spaceId);
+          deps.cursors?.drop(sink.id, spaceId);
+        }
         return;
       }
 

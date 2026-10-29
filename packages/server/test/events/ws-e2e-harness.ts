@@ -553,6 +553,7 @@ export function composeRealEventPath(db: TestDb, opts: { batch?: number } = {}):
         seeds.push({ connId, spaceId, seq });
         pump.seed(connId, spaceId, seq);
       },
+      drop: (connId, spaceId) => pump.drop(connId, spaceId),
     },
     highWaterMark,
     onError,

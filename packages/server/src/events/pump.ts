@@ -63,6 +63,8 @@ export interface DurableEventPump {
    * whole retained log on subscribe. `resume` is how a client asks for history.
    */
   seed(connId: string, spaceId: string, seq: number): void;
+  /** Clear one Space's cursor on unsubscribe. */
+  drop(connId: string, spaceId: string): void;
   forget(connId: string): void;
 }
 
@@ -167,6 +169,10 @@ export function createDurableEventPump(deps: DurableEventPumpDeps): DurableEvent
 
     seed(connId: string, spaceId: string, seq: number): void {
       cursorsFor(connId).set(spaceId, seq);
+    },
+
+    drop(connId: string, spaceId: string): void {
+      cursors.get(connId)?.delete(spaceId);
     },
 
     forget(connId: string): void {

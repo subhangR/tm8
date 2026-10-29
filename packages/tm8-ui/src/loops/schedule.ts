@@ -27,7 +27,7 @@ const CRON_BOUNDS: ReadonlyArray<readonly [number, number]> = [
   [0, 23],
   [1, 31],
   [1, 12],
-  [0, 6],
+  [0, 7], // 7 is Sunday too, as in every cron
 ];
 
 function expandField(field: string, index: number): Set<number> {
@@ -66,6 +66,8 @@ function expandField(field: string, index: number): Set<number> {
     for (let value = start; value <= end; value += step) out.add(value);
   }
   if (out.size === 0) throw new LoopScheduleError(`cron field "${field}" matches nothing`);
+  // Day of week: fold 7 onto 0, the only value `getUTCDay()` reports for Sunday.
+  if (index === 4 && out.delete(7)) out.add(0);
   return out;
 }
 
