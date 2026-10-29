@@ -20,7 +20,11 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  AuthClaimResultSchema,
+  AuthInviteSignupResultSchema,
+  AuthLoginResultSchema,
   AuthSessionsListResultSchema,
+  AuthSpaceEnterResultSchema,
   type AuthClaimResult,
   type AuthInviteSignupResult,
   type AuthLoginResult,
@@ -78,6 +82,18 @@ async function ownSpace(tag: string): Promise<string> {
   return created.data!.space.id;
 }
 
+/** A fresh member invite into a fresh space, redeemed by a new person signing in as `kind`. */
+async function inviteSignup(kind: 'browser' | 'cli' | 'mobile'): Promise<Wire<AuthInviteSignupResult>> {
+  const spaceId = await ownSpace(`invite-${kind}`);
+  const invite = await send<{ invite?: { code: string }; code?: string }>('POST', `/v2/spaces/${spaceId}/invites`, {
+    role: 'member', maxUses: 1, clientMutationId: `mobile-invite-${randomUUID()}`,
+  });
+  const code = invite.data!.invite?.code ?? invite.data!.code;
+  return send<AuthInviteSignupResult>('POST', '/v2/auth/invite/signup', {
+    code, username: `invitee-${kind}-${randomUUID().slice(0, 8)}`, password: 'invitee-password-123', kind,
+  });
+}
+
 /** The SQLSTATE a refused call raised, or `'ok'`. */
 async function outcome(run: () => Promise<unknown>): Promise<string> {
   try {
@@ -113,6 +129,7 @@ afterAll(async () => {
 describe.sequential('the three sign-in paths mint a mobile session (HTTP)', () => {
   it('auth.claim {kind: mobile}: the owner signs in on a mobile session, 90 days, no cookie', () => {
     expect(claim.status).toBe(200);
+    expect(AuthClaimResultSchema.safeParse(claim.data).error?.issues).toBeUndefined();
     expect(claim.data!.session.kind).toBe('mobile');
     expect(daysLeft(claim.data!.session.expiresAt)).toBeGreaterThan(89.9);
     expect(daysLeft(claim.data!.session.expiresAt)).toBeLessThanOrEqual(90);
@@ -158,18 +175,27 @@ describe.sequential('the three sign-in paths mint a mobile session (HTTP)', () =
   });
 
   it('auth.invite.signup {kind: mobile}: an invited person joins and is signed in on a mobile session', async () => {
-    const spaceId = await ownSpace('invite');
-    const invite = await send<{ invite?: { code: string }; code?: string }>('POST', `/v2/spaces/${spaceId}/invites`, {
-      role: 'member', maxUses: 1, clientMutationId: `mobile-invite-${randomUUID()}`,
-    });
-    const code = invite.data!.invite?.code ?? invite.data!.code;
-    const signup = await send<AuthInviteSignupResult>('POST', '/v2/auth/invite/signup', {
-      code, username: `mobile-invitee-${randomUUID().slice(0, 8)}`, password: 'invitee-password-123', kind: 'mobile',
-    });
+    const signup = await inviteSignup('mobile');
     expect(signup.status).toBe(200);
     expect(signup.data!.session.kind).toBe('mobile');
     expect(daysLeft(signup.data!.session.expiresAt)).toBeGreaterThan(89.9);
     expect(signup.cookie).toBeNull();
+  });
+});
+
+describe('every sign-in result is in its contract shape (ISO-8601 UTC timestamps), whatever the kind', () => {
+  it('auth.login, auth.invite.signup and auth.space.enter results parse for browser, cli and mobile', async () => {
+    const spaceId = await ownSpace('shapes');
+    for (const kind of ['browser', 'cli', 'mobile'] as const) {
+      const signedIn = await send<AuthLoginResult>('POST', '/v2/auth/login', { ...OWNER, kind, label: LABEL });
+      expect([kind, AuthLoginResultSchema.safeParse(signedIn.data).error?.issues]).toEqual([kind, undefined]);
+      expect(signedIn.data!.session.kind).toBe(kind);
+      const joined = await inviteSignup(kind);
+      expect([kind, AuthInviteSignupResultSchema.safeParse(joined.data).error?.issues]).toEqual([kind, undefined]);
+      const entered = await send<AuthSpaceEnterResult>('POST', '/v2/auth/space/enter', { spaceId }, signedIn.data!.token);
+      expect([kind, AuthSpaceEnterResultSchema.safeParse(entered.data).error?.issues]).toEqual([kind, undefined]);
+      expect(entered.data!.session.kind).toBe(kind);
+    }
   });
 });
 

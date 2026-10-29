@@ -413,8 +413,9 @@ export async function enterSpace(
       actingAsTeamMemberId: session.acting_as_team_member_id,
       label: session.label,
       spaceId: session.space_id,
-      createdAt: session.created_at,
-      expiresAt: session.expires_at,
+      // to_jsonb text ('…+00:00') is not the contract's ISO-8601 UTC form.
+      createdAt: iso(session.created_at)!,
+      expiresAt: iso(session.expires_at)!,
     },
   };
 }
@@ -523,8 +524,9 @@ export async function loginWithPassword(
       kind: session.kind,
       actingAsTeamMemberId: session.acting_as_team_member_id,
       label: session.label,
-      createdAt: session.created_at,
-      expiresAt: session.expires_at,
+      // As in enterSpace: the contract's ISO-8601 UTC form, not to_jsonb's.
+      createdAt: iso(session.created_at)!,
+      expiresAt: iso(session.expires_at)!,
     },
   };
 }
