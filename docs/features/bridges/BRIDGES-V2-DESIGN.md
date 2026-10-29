@@ -1,7 +1,7 @@
 # Bridges v2 — every setting on screen, memories and loops on a bridge, and a WhatsApp command set that can run a team
 
 **Status:** DESIGN v2 · 2026-10-29 · task `01a1889e-d435-7b99-ac66-9e00425a3bcc`
-**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc.
+**Extends:** [`BRIDGE-ENTITY-DESIGN.md`](./BRIDGE-ENTITY-DESIGN.md) (v1, 2026-10-28; final v3, 2026-10-29, which folds v1's Q1–Q6 into decisions D14–D19 and points to this doc wherever v2 changes it). Everything in v1 stands unless a section here says it changes. Section references like "v1 §2.3" point into that doc. v1 D21 (2026-10-29) — workers read the whole conversation and post to it freely; `@handle` directs, it is not the only way in — amends §1.3, §1.7, §4.3, §4.4, §4.7, §4.8 and §5 here, in place.
 **Basis:** `origin/main` @ `cfb4622b4` (`integrations/whatsapp-bridge/src/{core,text,http,admin,forms,briefing,config}.ts`), the deployed copy in `prod-data/wa-bridge/src` (2026-10-20, same command set, no `forms.ts`), the loop executor (`packages/server/src/scheduler/jobs/loops.ts`, migrations 091/348/375), the launch defaults (`packages/contract/src/launch-defaults.ts`: `remembers` / `equips`), and `execution.spawn` (`tm8 help session spawn`).
 **Scope:** design only. No code.
 
@@ -99,12 +99,13 @@ v1 put the lifecycle only on the Settings row. The bridge panel header gets a st
                                          │ ⏸ Pause bridge               │   │ Move to another …   │
                                          │   Messages are still logged; │   │ Send a test message │
                                          │   nobody is answered, nothing│   │ Copy bridge id      │
-                                         │   is sent. Loops wait.       │   │ ───────────────     │
+                                         │   is sent. Loops and workers │   │ ───────────────     │
+                                         │   wait.                      │   │                     │
                                          │ ⏸ Pause for [1 hour ▾]       │   │ Remove bridge…      │
                                          └──────────────────────────────┘   └─────────────────────┘
 ```
 
-- **Pause** keeps logging inbound (so nothing is lost) and stops routing, outbound and loops. *Pause for…* (1 h, 8 h, until tomorrow 9:00) sets `pausedUntil`; the server resumes it. The pill reads *◌ paused until 18:00* — colour and word.
+- **Pause** keeps logging inbound (so nothing is lost) and stops routing, outbound and loops. Workers can still read the log; their posts stay in tm8, refused for WhatsApp with `bridge_paused` (v1 §2.7, D21). *Pause for…* (1 h, 8 h, until tomorrow 9:00) sets `pausedUntil`; the server resumes it. The pill reads *◌ paused until 18:00* — colour and word.
 - **Resume** is the same pill. It shows what waited: "*12 messages arrived while paused. They are logged, not answered.*" with *[Answer the last one]* (routes one message — never a blind replay).
 - **Remove** is a typed-name confirm:
 
@@ -202,6 +203,7 @@ The check behind "*configure everything*": each field a human can set, where it 
 | people: mute, assert, invite, unlink | — | People | — | `bridge people|assert|invite` | admin |
 | my own link | — | People → *This is me* | — | `bridge link begin` | the member |
 | handles | — | Routing → Handles | — | `bridge handles` | read: member |
+| worker listening (`workers.wake`: directed · thread · all) and the per-worker post limit (v1 §2.7, D21) | — | Routing → *Workers* | — | `--worker-wake`, `--worker-post-limit`; a worker's own `bridge listen` | admin; `all` asks first (§1.5) |
 | memories | — | Memory (§2.1) | — | `bridge memory add|remove` | admin; propose: linked |
 | loops | — | Loops (§2.2) | — | `entity create loop --subject <bridge>` | admin; reminders: linked |
 | command policy (§4.6) | — | Routing → *Commands* | — | `--commands …` | admin |
@@ -424,10 +426,10 @@ tm8: 3 workers on it
 1 Login timeout fix (keen-otter) — starting
 2 Upload client retries (calm-heron) — starting
 3 Release notes 1.4.3 (brisk-lynx) — queued, 2 ahead
-Reply to a line, or @keen-otter, to talk to that worker. /workers to check.
+Workers read the group and may post here. Reply to a line, or @keen-otter, to ask one directly. /workers to check.
 ```
 
-When each actually starts, finishes, blocks or fails, it reports in the thread of *that line* (v1's "replies on bridged messages cross"): `Login timeout fix (keen-otter): done — PR #1421, 2 files.` A worker that blocks posts its question in its thread; the human answers by replying to it. Approvals still never cross (v1 D9): a worker that needs one says "*needs your OK in tm8*" and links nothing secret.
+When each actually starts, finishes, blocks or fails, it reports in the thread of *that line* (v1's "replies on bridged messages cross"): `Login timeout fix (keen-otter): done — PR #1421, 2 files.` A worker that blocks posts its question in its thread; the human answers by replying to it. Workers are not confined to their thread (v1 D21, §2.7): each reads the whole group with `tm8 bridge log --unread` and may post when it has something useful — *calm-heron: the upload fix also touches login, keen-otter* — within the per-worker limit, and leaves un-directed questions to the main chat. Approvals still never cross (v1 D9): a worker that needs one says "*needs your OK in tm8*" and links nothing secret.
 
 **Options**, inline and optional, per command or per line: `teammate:<name>` (fuzzy, like `@tm8-<teammate>` today), `project:<name>`, `effort:low|high|max`, `x3` (three independent attempts at the same item — a race; each is its own child task, the parent records them as alternatives). Unknown options are answered, not ignored.
 
@@ -446,7 +448,7 @@ When each actually starts, finishes, blocks or fails, it reports in the thread o
 | `/work <items>` (L) | §4.3 | `3 workers on it …` |
 | `/workers` · `/workers all` | live + queued workers started from this bridge (default: mine; `all` = everyone's), with state and age | `1 Login timeout fix (keen-otter) · working 12m · last: "running tests"` |
 | `/status <worker>` | one worker: state, task, last update, PR, cost so far | `keen-otter · working 14m · PR #1421 draft · 41k tokens` |
-| `/tell <worker> <text>` (L) | message the worker (same as `@keen-otter <text>`, but works for queued workers too: delivered when it starts) | `sent to keen-otter` |
+| `/tell <worker> <text>` (L) | direct a message to the worker (same as `@keen-otter <text>`, but works for queued workers too: delivered when it starts). Workers read the rest of the group on their own (v1 D21); this is how to make sure one *answers* | `sent to keen-otter` |
 | `/result <worker>` | the worker's close-out message, or its latest report | the close-out, ≤ 10 lines, "*more in tm8*" |
 | `/stop <worker>` (L, own workers; A for others') | terminate the session and set its task `blocked` with "*stopped from WhatsApp by Rahul*"; queued → removed from the queue | `stopped keen-otter` |
 | `/stop all` · `/stop mine` (L/A) | the same for many, **after a confirm** (§4.6) | `stop 3 workers? reply YES within 2 min` |
@@ -513,7 +515,7 @@ A bridge admin can switch tiers off (Routing → *Commands*: e.g. a family group
 
 ### 4.7 Agents in a bridged chat, after v2
 
-RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start work for the group, use `tm8 bridge work`; to answer, reply to the message*". The main chat remains the front desk for natural language; commands bypass it. The `@tm8-<teammate>` hint becomes the `teammate:` option of `bridges.work.start`, decided by the agent as today.
+RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start work for the group, use `tm8 bridge work`; to answer, reply to the message*". The main chat remains the front desk for natural language — the default answerer of every un-directed message — and commands bypass it. Workers are no longer told to stay silent until named (v1 D21, §2.7): the kind help adds "*read the group with `tm8 bridge log --unread`; post when it helps; answer un-directed questions only once the main chat has, or hands one to you*". The `@tm8-<teammate>` hint becomes the `teammate:` option of `bridges.work.start`, decided by the agent as today.
 
 ### 4.8 Robustness checklist
 
@@ -521,7 +523,7 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 |---|---|
 | Ack latency | ≤ 2 s (reaction `⏳` if the answer needs longer) |
 | Duplicate delivery | inbound dropped when its provider message id is already stored for the bridge, from any number (v1 D20); mutation ids from `(bridge, externalMessageId, item)`; the outbox reply is idempotent on the command's message id |
-| Rate limits | per-sender 10 commands/min, per-bridge 30/min; over → one notice, then silence for the window (no notice storms) |
+| Rate limits | per-sender 10 commands/min, per-bridge 30/min; over → one notice, then silence for the window (no notice storms). Worker posts: 20/min per handle, at most 6 un-directed per 10 min (v1 §2.7, D21), refused `rate_limited` on the message, never silently queued |
 | Output size | ≤ 10 lines per reply; `more: /workers 2` paging; never a wall of ids (style line rules) |
 | Loop guard | bridge notices carry the v1 echo guard and `BRIDGE_MARK`; a notice is never parsed as a command |
 | Time zones | the bridge has a `timezone` (default: the creating member's), shown in every time a command echoes |
@@ -536,15 +538,15 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 
 | Area | Addition |
 |---|---|
-| `bridges` content | `pausedUntil: string | null`, `timezone: string`, `commands: { tiers: {readers: bool, linked: bool, admin: bool}, acceptMemoriesFromLinked: bool }`, `workers: { teammateId, projectId, workdir, accessMode, effort, maxPerCommand, maxLive }`, `history: { lastImportAt, lastImportDays }` |
-| operations | `bridges.test`, `bridges.history.import`, `bridges.update --dry-run` → `consequences[]`, `bridges.memories.link|unlink|proposals.resolve`, `bridges.work.start`, `launch.requests.list|cancel` (space-wide, §4.5) |
+| `bridges` content | `pausedUntil: string | null`, `timezone: string`, `commands: { tiers: {readers: bool, linked: bool, admin: bool}, acceptMemoriesFromLinked: bool }`, `workers: { teammateId, projectId, workdir, accessMode, effort, maxPerCommand, maxLive, wake: 'directed'|'thread'|'all', postLimit: {perMin, undirectedPer10Min} }` (wake and postLimit: v1 D21), `history: { lastImportAt, lastImportDays }` |
+| operations | `bridges.log.read`, `bridges.listen` (v1 §2.7, D21), `bridges.test`, `bridges.history.import`, `bridges.update --dry-run` → `consequences[]`, `bridges.memories.link|unlink|proposals.resolve`, `bridges.work.start`, `launch.requests.list|cancel` (space-wide, §4.5) |
 | edges | `remembers` gains `src_kinds += bridge`; loops use the existing `subjectId` |
 | loops | `config.bridge {action: 'agent'|'message', text?, quietHours?, onlyIfNew?, replyTo?}`; executor branch for `message`; subject-status pre-check |
 | launch defaults | `LaunchDefaultVia += 'bridge'` |
 | runtime protocol | `history.fetch {connectionId, conversationId, sinceTs}` → `history.batch {items[], done}` |
 | events | `bridge.command {bridgeId, messageId, verb, outcome}`, `launch.request {id, status, position}` |
-| tables | `launch_requests` (§4.5), `bridge_command_confirms(notice_message_id pk, sender_external_id, command jsonb, expires_at, used_at)` |
-| CLI | `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run`, `tm8 launch queue [--cancel <id>]` |
+| tables | `bridge_read_cursors(bridge_id, session_id, last_message_id, read_at)` (v1 §2.7, D21), `launch_requests` (§4.5), `bridge_command_confirms(notice_message_id pk, sender_external_id, command jsonb, expires_at, used_at)` |
+| CLI | `tm8 bridge log|listen` (v1 D21), `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run`, `tm8 launch queue [--cancel <id>]` |
 
 ---
 

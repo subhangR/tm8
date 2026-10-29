@@ -7,7 +7,7 @@ runs today from `integrations/whatsapp-bridge` on a `config.json`.
 
 | Document | What it decides |
 |---|---|
-| [`BRIDGE-ENTITY-DESIGN.md`](BRIDGE-ENTITY-DESIGN.md) | The `bridge` kind: nouns, target semantics, the message model, people and identity links, connections and the connector runtime, contract, UI, providers, security, migration and phasing; all its open questions settled (D14–D19); subagents and multi-agent workflows out of scope for now (§7.4) |
+| [`BRIDGE-ENTITY-DESIGN.md`](BRIDGE-ENTITY-DESIGN.md) | The `bridge` kind: nouns, target semantics, the message model, people and identity links, connections and the connector runtime, contract, UI, providers, security, migration and phasing; all its open questions settled (D14–D19); one connection per group (D20); workers read and post on the bridge freely (D21, §2.7); subagents and multi-agent workflows out of scope for now (§7.4) |
 | [`BRIDGES-V2-DESIGN.md`](BRIDGES-V2-DESIGN.md) | The v2 companion: UI gaps, memories and loops on a bridge, today's WhatsApp commands and their server-side redesign (`/work`, the launch queue) |
 
 Where the Phase-1 bridge is documented: `integrations/whatsapp-bridge/README.md`

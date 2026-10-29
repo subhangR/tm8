@@ -3,7 +3,7 @@
 **Status:** FINAL (v3) · 2026-10-29 · approved by Subhang as the starting design · tasks `01a182ac-746a-75f2-beef-9690a26f21b3` ("Bridge as an entity", v1, 2026-10-28) and `01a188e7-cacc-7cac-b70c-cbe4a95e6672` (final)
 **Companion:** [`BRIDGES-V2-DESIGN.md`](./BRIDGES-V2-DESIGN.md) (v2, 2026-10-29): UI gaps, memories and loops on a bridge, the WhatsApp command set. Where v2 changes something here, this document now says so in place and points to the v2 section; v2 holds the detail. Section numbers here are unchanged, so v2's "v1 §n" references still resolve.
 **Basis:** `origin/main` @ `fcc49604b`; the Phase-1 WhatsApp bridge (`integrations/whatsapp-bridge`, its `OPERATIONS.md`, and the Phase-1 design of 2026-10-19); the kind precedents `space_link`/`server` (migrations 250, 261), `mcp_server` (296, ADR 0297), channel members (080), `agent_runtime` sessions (105); *The Capability Model*; `docs/identity/IDENTITY-DESIGN.md`; `docs/architecture/01-LAWS.md`.
-**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). v1's open questions are settled (§8 D14–D19); D20 (one connection per group, 2026-10-29) leaves two new ones, Q7 failover and Q8 hand-over (§9).
+**Scope:** the entity model, the contract, the runtime seam, security, the UI, the provider matrix, the migration from Phase 1 and the build order. No code is written here. Subagents and multi-agent workflows beyond independent workers are **out of scope** for now (§7.4). v1's open questions are settled (§8 D14–D19); D20 (one connection per group, 2026-10-29) leaves two new ones, Q7 failover and Q8 hand-over (§9); D21 (2026-10-29) lets workers read and post on the bridge freely (§2.7).
 
 > The ask (Subhang, 28 Oct): *"thinking of making bridge as tm8 entity. A bridge connects a channel from a provider to a tm8 session or chat. Different bridge types: WhatsApp, Facebook, Slack, etc. Space members and bridge-channel members link, so a channel member can act as a member in the tm8 space. A space can have multiple bridges: multiple WA groups, Slack channels, Instagram accounts."* And, during the work: *"see tm8 chat, session and channel — a bridge can be to any one of them."*
 
@@ -44,7 +44,7 @@
 3. **The conversation lives in the graph.** Every provider message is a tm8 `message` on the bridge's *log anchor* (the channel when the target is a channel, otherwise the bridge itself). The Phase-1 SQLite log and `/history`, `/search` HTTP API are retired; agents use `tm8 message list` and `tm8 search`. (D3)
 4. **People are attributed, never invented.** A linked participant's message is authored *as that member* (with `via: {bridgeId}`); an unlinked participant's message is authored by the **bridge** as a guest, with the participant's name on it. No member rows are created for strangers. (D4)
 5. **Links are proofs.** A code-verified link belongs to the *identity* and works in every space; an admin-asserted link belongs to *one space*. (D5)
-6. **Agents speak through tm8, not through the bridge.** `tm8 message reply` on a bridged message crosses to the provider; speaker tokens, briefings with token files and the loopback HTTP API disappear. (D8)
+6. **Agents speak through tm8, not through the bridge.** `tm8 message reply` on a bridged message crosses to the provider; speaker tokens, briefings with token files and the loopback HTTP API disappear. (D8) Workers launched from a bridge read the whole conversation and may post to it at any time; `@handle` directs a message to one, it is not the only way in (D21, §2.7).
 7. **Approvals never cross a bridge.** A sensitive action a provider message asked for is an attention request, resolved in the tm8 UI by a human session — now enforceable rather than a briefing rule. (D9)
 
 **What this changes for the people using the Phase-1 bridge today.** Nothing in their WhatsApp groups. In tm8: the four groups and the self chat become five `bridge` entities you can open, read live, reply in and manage; trusting a sender becomes a link instead of a config edit and a restart; adding a group becomes a wizard; a second number becomes a second connection, not a second container deploy.
@@ -155,18 +155,18 @@ One bridge, one target, three kinds — and the kind decides what "bridging" mea
 | | target = **chat** | target = **work_session** | target = **channel** |
 |---|---|---|---|
 | **An inbound message becomes** | a message on the chat → **a turn**; the chat's teammate answers | a message anchored on the session → the stored-first **PTY delivery** with the `tm8.incoming-message` envelope (`CHAT-SYSTEM-DESIGN.md` §A) | a message anchored on the channel: **a mirror**, authored as the linked member or as a guest |
-| **Who answers** | the teammate, every turn | the session, by `tm8 message reply` | nobody unless mentioned; a mentioned teammate who is a channel member gets it in their inbox (`SESSION-COMMUNICATION-MODEL.md` §1.6) |
+| **Who answers** | the teammate, for every un-directed routed message; a directed one (`@handle`, a reply to a worker) is answered by that worker. Workers read the whole log and may also post unprompted (D21, §2.7) | the session, by `tm8 message reply` | nobody unless mentioned; a mentioned teammate who is a channel member gets it in their inbox (`SESSION-COMMUNICATION-MODEL.md` §1.6) |
 | **What crosses back** | the turn's final answer (the Phase-1 relay rule, now the rule) + any reply on a bridged message + anything sent `--to <bridge>` | replies on bridged messages + anything sent `--to <bridge>` | every message posted on the channel (`outbound: all`), unless `direction: in` |
 | **Log anchor** (where the full conversation is stored) | the bridge | the bridge | **the channel itself** |
 | **Default policy** | `trigger: mention` (`every` for a DM), `direction: both`, `outbound: replies`, `whoMayTrigger: linked` (`anyone` for a DM, D16) | same as chat | `trigger: none`, `direction: both`, `outbound: all`, `whoMayTrigger: linked` |
-| **Handles** | sessions the chat launches get handles and become addressable (§2.4) | the session itself has the handle | none |
+| **Handles** | sessions the chat launches get handles: addressable, and able to read the bridge's log and post to it (§2.4, §2.7) | the session itself has the handle | none |
 | **Phase-1 equivalent** | a channel's **main chat** | a **named session** | — (the Slack-import design's "sync") |
 | **Typical use** | "@tm8 in the Infra group" | steer one long job from Slack; escalations land where the work is | Slack `#deploys` ↔ tm8 `#deploys`; a WhatsApp group humans in tm8 want to read and answer |
 
 Two rules hold across kinds, and one for channel targets:
 
 - **The log anchor rule.** `logAnchor = target.kind === 'channel' ? target : bridge`. Every inbound message is stored **once**, on the log anchor. A routed message to a chat or session is a **batch copy** — the existing multi-anchor `messages.post` with `anchorIds: [logAnchor, target]` and one `messageBatchId` — so the bridge copy and the chat copy are the same message by correlation, and a reply to either resolves to the same provider message.
-- **The target is retargetable but single.** `bridges.retarget` moves the `bridged_to` edge (the Phase-1 "epoch rollover" with a new main chat becomes "retarget to a new chat", or simply nothing, since chat continuity exists since migration 332). The bridge's memories and loops move with it (v2 V1, §2.3). A conversation is connected **once per space** (D20): whichever member's number or account connects it, that one bridge is the group's only bridge in the space, so the group feeds exactly one main chat (or channel). Workers launched from the group are still reached by their `@handles` (§2.4); that is unchanged. Enforced in SQL by `unique (space_id, provider, external_conversation_id)`.
+- **The target is retargetable but single.** `bridges.retarget` moves the `bridged_to` edge (the Phase-1 "epoch rollover" with a new main chat becomes "retarget to a new chat", or simply nothing, since chat continuity exists since migration 332). The bridge's memories and loops move with it (v2 V1, §2.3). A conversation is connected **once per space** (D20): whichever member's number or account connects it, that one bridge is the group's only bridge in the space, so the group feeds exactly one main chat (or channel). Workers launched from the group keep their `@handles` (§2.4) and read and post on the bridge freely (D21, §2.7); that is unchanged by D20. Enforced in SQL by `unique (space_id, provider, external_conversation_id)`.
 - **A channel target's roster follows its links** (D18). A linked participant who is an active member of the space is added to the channel as a `has_member`; guests never are.
 
 ### 2.3 Messages: one store, two directions
@@ -183,7 +183,7 @@ Two rules hold across kinds, and one for channel targets:
 **Outbound.** A message is queued to the provider when any of these is true and `direction` allows it:
 
 - it **replies to a bridged message** (anywhere that message was copied — the batch id makes the chat copy and the log copy one message);
-- it is posted **on the log anchor** by a member or an agent (`tm8 message send --to <bridge-id>`; for a channel target, on the channel);
+- it is posted **on the log anchor** by a member or an agent (`tm8 message send --to <bridge-id>`; for a channel target, on the channel) — including a worker posting unprompted (D21; bounded by §2.7's per-worker limit and refused while paused);
 - it is a chat target's **turn answer** to a routed message (the Phase-1 "fallback relay" promoted to the rule, including its credential-shaped-text refusal);
 - `outbound: all` and it is on the target.
 
@@ -197,14 +197,15 @@ Queued means a `bridge_outbox` row with idempotency = the message id, dispatched
 <trusted_control type="tm8.incoming-message" version="1" message_id="…" anchor_id="…">
   <from actor_id="…" source_session_id="" />
   <origin kind="bridge" bridge_id="…" provider="whatsapp" conversation="Infra"
-          participant="Rahul" trust="linked|asserted|guest" external_message_id="3EB0…" />
+          participant="Rahul" trust="linked|asserted|guest" external_message_id="3EB0…"
+          directed="true|false" unread="7" />   <!-- D21: unread = log messages since the reader's cursor -->
   <style>short and readable: lead with the answer…</style>
   <reply command_ref="tm8://help/message/reply" anchor_id="…" parent_message_id="…" />
 </trusted_control>
 <untrusted_data type="message-body" …>@tm8 is the deploy done?</untrusted_data>
 ```
 
-The body is data. `trust` tells the agent how far to take the sender at their word, exactly as Phase 1's bracket label did, now from a verified link rather than a config list. No URL, no token, no briefing: to answer, `tm8 message reply <message-id>`; to start a thread, `tm8 message send --to <bridge-id>`; to read the room, `tm8 message list <log-anchor>`; to find something, `tm8 search`; to know who is who, `tm8 bridge people <bridge-id>`.
+The body is data. `trust` tells the agent how far to take the sender at their word, exactly as Phase 1's bracket label did, now from a verified link rather than a config list. No URL, no token, no briefing: to answer, `tm8 message reply <message-id>`; to start a thread, `tm8 message send --to <bridge-id>`; to read the room, `tm8 bridge log <bridge-id> --unread` (or `tm8 message list <log-anchor>`, §2.7); to find something, `tm8 search`; to know who is who, `tm8 bridge people <bridge-id>`.
 
 ### 2.4 People: participants, links, trust, handles
 
@@ -229,7 +230,7 @@ Resolution on every inbound message: `(provider, external_id)` → an unrevoked 
 
 **What a link grants, exactly.** Attribution — the message is theirs, in their name, with their avatar; the trust word the agent reads; the right to trigger agents where `whoMayTrigger: linked`; and **form answers submitted as themselves** (`forms.submit` with the member as actor — the Phase-1 `wa_respondent` question goes away). It grants **no permission the member does not already hold**, and it never grants the agent anything: a triggered agent acts with its own persona under its owner's authorization, as always.
 
-**Handles** are the Phase-1 names registry, per bridge: `bridge_handles(bridge_id, handle, entity_id, kind 'chat'|'work_session', title, status, created_at)`. Readable adjective-animal words, unique per bridge, never reused. The server records one when the target chat launches a session (`launched_by`, 330), when a session asks (`tm8 bridge handle claim`), and — for workers started by `/work` or `bridges.work.start` — at request time, before the session exists, with `status: 'queued'` (v2 §4.3). `@keen-otter …` or a reply to keen-otter's message routes to that session; an ended session's handle routes to the target chat with a note, as Phase 1 does.
+**Handles** are the Phase-1 names registry, per bridge: `bridge_handles(bridge_id, handle, entity_id, kind 'chat'|'work_session', title, status, created_at)`. Readable adjective-animal words, unique per bridge, never reused. The server records one when the target chat launches a session (`launched_by`, 330), when a session asks (`tm8 bridge handle claim`), and — for workers started by `/work` or `bridges.work.start` — at request time, before the session exists, with `status: 'queued'` (v2 §4.3). `@keen-otter …` or a reply to keen-otter's message **directs** a message to that session: it is delivered as a turn and keen-otter is its answerer. It is not the only way a worker hears or speaks — a live handle also grants reading the whole log and posting to it (D21, §2.7). An ended session's handle routes to the target chat with a note, as Phase 1 does.
 
 ### 2.5 Connections and the runtime
 
@@ -270,13 +271,46 @@ Health is **derived once on the server** from heartbeats and connection states a
 | Rule | Enforced by |
 |---|---|
 | A provider conversation is connected **once per space**, whichever member's number or account connects it; a second attempt is refused with *already connected by <name>* (D20) | `unique (space_id, provider, external_conversation_id)` on `public.bridges` |
-| That bridge has **one target**: the group feeds exactly one main chat or channel; workers are reached by `@handles` | the single `bridged_to` edge (§2.2) |
+| That bridge has **one target**: the group feeds exactly one main chat or channel; workers keep `@handles` for directed messages and read and post freely (D21) | the single `bridged_to` edge (§2.2) |
 | Inbound is deduped **per bridge**, not per connection | `unique (bridge_id, external_message_id, direction)` on `public.message_origins` |
 | **Linking numbers to members is unlimited per group**: any number of participants may send `/link` and be linked; this is not the connection rule above | no limit; links are per identity (§2.4) |
 | A connection can serve bridges in **many spaces** | one offered `credential` per (connection, space) |
 | A space can have **many connections and many bridges** | nothing to enforce; the Settings page lists them by provider |
 | A bridge lives **in its target's space** | `bridges.create` checks it; the `bridged_to` edge is same-space like every edge |
 | A **second number** is a second connection on the same runtime | the runtime multiplexes connections; no second container, no second port |
+
+### 2.7 Workers on the bridge: they read the room and speak in it (D21)
+
+A **worker** here is any session holding a live handle on the bridge (§2.4): launched by the target chat, started by `/work` or `bridges.work.start` (v2 §4.3), fired by a bridge loop (v2 §2.2), or one that claimed a handle. A worker takes part in the conversation; it is not a phone that rings only when its name is called. The Phase-1 briefing rule — *speak in the group ONLY when addressed; the bridge refuses a `/say` without a `reply_to` in a thread addressed to you* — is dropped.
+
+| | Phase 1, and this design before D21 | Now (D21) |
+|---|---|---|
+| **What a worker reads** | the messages routed to it (`@handle`, a reply to its message) | the **whole conversation** on the log anchor, at any time, from the moment its handle exists |
+| **When a worker speaks** | only a reply in a thread addressed to it | **any time**: a new message (`tm8 message send --to <bridge-id>`) or a reply, shown as `Title (handle): …` (`policy.voice`) |
+| **`@handle` / reply to its message** | the only way in and out | a way to **direct** a message: it wakes the worker and makes it the answerer of that message |
+
+**How a worker reads.**
+
+- `tm8 bridge log <bridge-id> [--unread | --since <message-id>] [--thread <message-id>] [--limit <n>]` (`bridges.log.read`): a page of the log anchor, oldest first, each row with the participant, the trust word, where it was routed and who answered it. `--unread` reads from the worker's own cursor and advances it. It is a thin verb over `messages.list` on the log anchor plus a per-session cursor, `bridge_read_cursors(bridge_id, session_id, last_message_id, read_at)`; `tm8 message list <log-anchor>` and `tm8 search` keep working (D3).
+- **Access comes with the handle.** The server checks a live `bridge_handles` row for the calling session; a session whose handle has ended loses read and post together. The read is the member read of the bridge panel: phone numbers masked, guests by display name.
+- Bodies stay `untrusted_data` with `trust` per message (§2.3). Reading the room never turns a message into an instruction.
+
+**How a worker hears about new messages.** Not every message becomes a turn: a group runs to hundreds of messages a day, and waking every worker on each would spend them all on chatter.
+
+| Message | Reaches the worker as | |
+|---|---|---|
+| `@handle …`, a reply to one of its messages, `/tell <handle>` (v2 §4.4), a message in its `/work` line's thread | a **delivery** — the `tm8.incoming-message` envelope with `origin` and `directed="true"`; it wakes the worker | always |
+| anything else in the conversation | **nothing pushed**; it is counted. The next delivery's `origin` carries `unread="<n>"`, and the worker reads with `tm8 bridge log --unread` when it chooses — between steps, before it posts, or on its own poll | default (`wake: directed`) |
+| | opt-in: `wake: thread` also wakes it on any message in a thread it has posted in; `wake: all` wakes it on every message (a session that is the group's dedicated watcher; admin-set, shown with its cost) | Routing → *Workers* (v2 §1.7) |
+
+The bridge sets the ceiling (`workers.wake`, default `directed`); a worker may lower its own with `tm8 bridge listen <bridge-id> directed|thread|all`, never above the ceiling.
+
+**Guardrails.**
+
+- **One answerer per message.** Each inbound message has exactly one answerer: the addressed handle when it is directed, otherwise the **target** — the main chat stays the default answerer for un-directed messages (D2). A worker that reads an un-directed message and has something to add waits until the main chat's turn on it has settled, or until the main chat hands it over (its "*Title (handle) is on it*" announcement makes that worker the answerer). The server holds this on replies: a `messages.post` that replies to a bridged message whose answerer is someone else, while that answer is still open, is refused `not_answerer` with *post a new message or wait for <answerer>*. New messages are not blocked by this rule; the rate limit bounds them.
+- **Outbound rate limit per worker.** A token bucket per handle on the outbox: 20/min overall (the Phase-1 speaker number), of which at most **6 per 10 min un-directed** (anything that is not a reply to a message directed to it). Over the limit the post is refused `rate_limited` with `retryAfterMs` on the message — never silently queued. The per-conversation 30/min (§6) still caps the sum.
+- **Approvals never cross** (D9). A request a worker reads in the log grants nothing; it raises an attention request and says *needs your OK in tm8*. The credential-shaped-text refusal applies to worker posts as to turn answers.
+- **Pause and remove stop worker posting.** While the bridge is paused (including *pause for…* and `/mute`, v2 §1.3, §4.4) or `direction: in`, a worker's post to the log anchor is stored in tm8 only and refused for the provider with `bridge_paused`; reading continues, because logging does. After `bridges.remove` nothing crosses at all and the handles end, so posting and the cursor stop; a log kept read-only stays readable by members, not by workers.
 
 ---
 
@@ -390,6 +424,8 @@ Catalog rows in the `spaceLinks.*` / `mcp.servers.*` idiom. **Human-only** is th
 | `bridges.links.list` · `bridges.links.revoke` | GET · POST `/v2/me/bridge-links[/…/revoke]` | read · command | the identity itself; admins for space-scoped rows |
 | `bridges.handles.list` | GET `/v2/bridges/:bridgeId/handles` | read | member |
 | `bridges.handles.claim` | POST `/v2/bridges/:bridgeId/handles` | command | a session launched from the target (server checks `launched_by` lineage) |
+| `bridges.log.read` | GET `/v2/bridges/:bridgeId/log` | read | member; a session with a live handle on the bridge (D21, §2.7) — `--unread` advances the caller's cursor |
+| `bridges.listen` | POST `/v2/bridges/:bridgeId/listen` | command | a session with a live handle: sets its own `wake`, capped by the bridge's `workers.wake` (§2.7) |
 | `bridges.connections.list` | GET `/v2/me/bridge-connections` | read | the owner; node admins see all |
 | `bridges.connections.begin` | POST `/v2/me/bridge-connections` | command | **human-only**: starts a link/install flow; auth frames arrive on the caller's event stream |
 | `bridges.connections.offer` · `.withdraw` | POST `/v2/me/bridge-connections/:id/offer` | command | the owner, human-only; creates/revokes the space credential |
@@ -418,6 +454,8 @@ tm8 bridge assert <bridge-id> <external-id> --member <member-id> # admin: space-
 tm8 bridge invite <bridge-id> <external-id> [--role member]      # admin: DM a join link; link completes on redeem
 tm8 bridge handles <bridge-id>
 tm8 bridge handle claim <bridge-id> [--title <≤4 words>]         # from a session launched off the target
+tm8 bridge log <bridge-id> [--unread | --since <message-id>] [--thread <message-id>] [--limit <n>]   # a worker reads the room (D21)
+tm8 bridge listen <bridge-id> directed|thread|all                # a worker's own wake level, ≤ the bridge's (D21)
 tm8 bridge link begin --provider whatsapp                        # me: prints TM8-4F7K, 10 min
 tm8 bridge link list | revoke <provider> <external-id>
 tm8 bridge connection list | begin --provider <p> | offer <id> --space <space-id> | withdraw | remove
@@ -425,7 +463,7 @@ tm8 bridge conversations <connection-id>                         # the picker, f
 tm8 form create … && tm8 bridge deliver-form <bridge-id> <form-id>
 ```
 
-Speaking needs no new verb: `tm8 message reply <message-id> "<text>"` answers in the provider thread; `tm8 message send --to <bridge-id> "<text>"` opens a new one. v2 §5 adds `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run` and `tm8 launch queue`.
+Speaking needs no new verb: `tm8 message reply <message-id> "<text>"` answers in the provider thread; `tm8 message send --to <bridge-id> "<text>"` opens a new one — a worker may do either at any time (D21). v2 §5 adds `tm8 bridge test|import|work|memory add|remove`, `tm8 bridge update … --dry-run` and `tm8 launch queue`.
 
 ### 3.6 Events
 
@@ -588,7 +626,7 @@ The vocabulary is closed and each provider declares what it can do; the UI shows
 | Prompt injection from a provider message | The body is `untrusted_data` in the same envelope every tm8 message already uses; `trust` and `participant` ride the trusted control block; the agent's posture rules are unchanged. |
 | A provider message asks for something destructive | Approvals are attention requests resolved by a browser/CLI session only; `bridgeRuntime.*` cannot resolve one, and neither can a `bridge` actor. (D9) |
 | Message loops (bridge echoes its own output) | `message_origins` matches the runtime's echo of an outbound message to its outbox row (external id, then content hash as Phase 1 does for media captions); mention text in outbound bodies is escaped per provider. |
-| Spam and provider rate limits | Per-bridge and per-connection token buckets on the server outbox (Phase-1 numbers: 20/min per speaker, 30/min per conversation), 429-style refusal to the sender with the retry-after on the message's delivery badge. |
+| Spam and provider rate limits | Per-bridge and per-connection token buckets on the server outbox (Phase-1 numbers: 20/min per speaker, 30/min per conversation), plus the per-worker un-directed limit (6 per 10 min, D21, §2.7), 429-style refusal to the sender with the retry-after on the message's delivery badge. |
 | PII (phone numbers, handles) | Masked in every content field and every member-level read; full ids only on admin reads and in the participant row; retention per bridge (D15) runs through the existing retention job. |
 | A logged-out device, a dead socket | Heartbeats → `degraded` on every bridge of the runtime within 90 s; an attention request (`fyi`) to the connection's owner; inbound is queued by the provider, outbound by the outbox. Nothing is retried blind. |
 | Two bridges on one conversation (double routing) — including two members connecting the same group from different numbers | `unique (space_id, provider, external_conversation_id)` on `bridges`; the wizard shows *already connected by <name>* and `bridges.create` refuses the second (D20). |
@@ -607,8 +645,8 @@ The vocabulary is closed and each provider declares what it can do; the UI shows
 | `instances/<inst>/`, two containers, two ports | one WhatsApp runtime, two **connections**, both owned by Subhang's account, offered to the spaces that use them |
 | `tm8.tokenFile`, `secrets/tm8-token-<id>` (human tokens pinned to other spaces) | gone; the runtime's `bridge_runtime` session + offered credentials |
 | `ownerJids`, `trustedSenders`, `allowedSenders` | links (Subhang's number: code-verified once, identity-scoped; others: admin-asserted per space) + `whoMayTrigger` |
-| `names` table, token files, briefings, `rebrief-*` | `bridge_handles`; no tokens; the envelope's `origin` block; the kind help page |
-| SQLite log + FTS, `/history`, `/search`, `/message` | messages on the log anchor; `tm8 message list`, `tm8 search`; an optional one-shot backfill of the SQLite log as messages with `message_origins` |
+| `names` table, token files, briefings, `rebrief-*` | `bridge_handles`; no tokens; the envelope's `origin` block; the kind help page. The briefing's *speak ONLY when addressed* rule is dropped: workers read and post freely (D21, §2.7) |
+| SQLite log + FTS, `/history`, `/search`, `/message` | messages on the log anchor; `tm8 bridge log`, `tm8 message list`, `tm8 search`; an optional one-shot backfill of the SQLite log as messages with `message_origins` |
 | `POST /say`, `/say-media`, `/react`, `/form`, `/names`, `/sync` | `tm8 message reply|send`, attachments, reactions, `tm8 bridge deliver-form`, `tm8 bridge handles`; nothing to sync — the server is the registry |
 | the fallback relay, the watchdog's 👀/⚠️ reactions, the escalation and delegate rules | the chat-target outbound rule; the watchdog stays, as a **server scheduler job** (D19: a routed message with no answer in N minutes reacts ⚠️ through the outbox and raises `fyi` attention on the bridge); the escalation rule moves into the teammate's skill/persona, where briefing text belongs; the delegate rule (RULE 2) becomes `tm8 bridge work` (v2 §4.7) |
 | slash commands `/help`, `/who`, `/status`, `/stop`, `/new` (`text.ts`, `core.ts`) | server-side commands run as the linked member, with a tolerant parser and an answer for every message (v2 §4) |
@@ -642,12 +680,13 @@ B0 and B1 are one lane each and can start together against the protocol document
 7. The same WhatsApp message delivered twice by the runtime stores one message. A second member connecting the Infra group from another number is refused with *already connected by <name>*, and the wizard shows the group greyed with the same words (D20).
 8. No read route returns `state_ref` bytes, a token, a QR or a pairing code; the QR event reaches only the requesting member's stream.
 9. `pg_dump` of the graph contains no provider secret (asserted by the existing secret-pattern test extended to `bridge_connections`).
+10. A worker launched off Infra main reads messages it was not addressed in with `tm8 bridge log --unread` and posts an unprompted message that lands as `Title (handle): …`; an un-directed message does not wake it, an `@handle` does; its reply to an un-directed message the main chat is still answering is refused `not_answerer`; its 7th un-directed post in 10 min is refused `rate_limited`; while the bridge is paused its post stays in tm8 with `bridge_paused` (D21).
 
 The command layer's acceptance is v2 §8.
 
 ### 7.4 Out of scope, for later: subagents and multi-agent workflows
 
-This design covers **independent workers**: a session the target chat launches, or one `/work` starts (v2 §4.3), gets a handle, speaks as `Title (handle)`, and can be addressed, listed and stopped from the conversation. It does **not** cover:
+This design covers **independent workers**: a session the target chat launches, or one `/work` starts (v2 §4.3), gets a handle, reads the whole conversation and speaks in it as `Title (handle)` whenever it has something to say (D21, §2.7), and can be addressed, listed and stopped from the conversation. It does **not** cover:
 
 - **Subagents** a session runs inside itself (harness sub-agents). They get no handle, cannot be addressed from the provider, and reach the conversation only through their parent session.
 - **Multi-agent workflows**: a worker that launches workers, a coordinator with a tree of sessions, orchestrated workflows, and `x<n>` races (v2 Q5). A session launched by another worker gets a handle only if it claims one (`tm8 bridge handle claim`); the conversation does not see the tree, its progress, or a way to stop it as a whole.
@@ -679,7 +718,8 @@ Subhang accepted this gap for the first build (2026-10-29). It is deliberately n
 | D17 (was Q4) | History backfill is an explicit choice (*Import the last N days*, in the wizard and later from Routing, v2 §1.1), idempotent on external ids, logged only, never implicit | backfill on create; never | importing is a data decision a human makes; idempotency makes it safe to repeat; imported messages must not start turns |
 | D18 (was Q5) | A channel-target bridge adds linked participants who are space members as channel `has_member`s; guests are never channel members | no automatic membership | the channel's roster then reads truthfully; guests are not members (D4) |
 | D19 (was Q6) | The watchdog is a server scheduler job (`scheduler/jobs/`) over `message_origins` and turns; it reacts on the provider through the outbox and raises `fyi` attention | keep it in the runtime | the server owns derived truth (T-L12); the runtime holds no routing logic (D7) |
-| D20 | **One connection per group, per space.** A provider conversation (WhatsApp group, Slack channel) is connected once per space, whichever member's number or account connects it: `unique (space_id, provider, external_conversation_id)`; a second member sees *already connected by <name>*. That one bridge has one target, so the group feeds exactly one main chat or channel; workers keep their `@handles`. Inbound dedupes per bridge on the provider message id, from any number. Linking numbers to members (`/link`) stays unlimited per group. Approved by Subhang, 2026-10-29 | the old key `(connection_id, external_conversation_id)`, which only stopped one connection binding a group twice and let two members' numbers make two bridges; one bridge per member's number | two bridges on one group meant two main chats answering the same message and double replies; one bridge keeps "who answers" single (D2); per-bridge dedupe stays correct if another number ever delivers the same message (Q7) |
+| D20 | **One connection per group, per space.** A provider conversation (WhatsApp group, Slack channel) is connected once per space, whichever member's number or account connects it: `unique (space_id, provider, external_conversation_id)`; a second member sees *already connected by <name>*. That one bridge has one target, so the group feeds exactly one main chat or channel; workers keep their `@handles` and, since D21, read and post on the bridge freely. Inbound dedupes per bridge on the provider message id, from any number. Linking numbers to members (`/link`) stays unlimited per group. Approved by Subhang, 2026-10-29 | the old key `(connection_id, external_conversation_id)`, which only stopped one connection binding a group twice and let two members' numbers make two bridges; one bridge per member's number | two bridges on one group meant two main chats answering the same message and double replies; one bridge keeps "who answers" single (D2); per-bridge dedupe stays correct if another number ever delivers the same message (Q7) |
+| D21 | **Workers read and talk on the bridge freely.** A worker launched from a bridge (any session with a live handle on it) gets read access to the bridge's whole conversation (`tm8 bridge log`, messages on the log anchor) and may post to it at any time, as `Title (handle)`. `@handle` and a reply to its message stay as the way to **direct** a message to a worker — they wake it and make it the answerer — not as the only way it hears or speaks. Un-directed messages do not wake workers by default (`wake: directed`); a worker reads with `tm8 bridge log --unread`. Guardrails: the main chat stays the default answerer of un-directed messages (one answerer per message, `not_answerer`); a per-worker outbound limit; approvals never cross (D9); pause, `direction: in` and remove stop worker posting. §2.7. Approved by Subhang, 2026-10-29 (from WhatsApp) | by-name-only: a worker hears only `@handle`/replies and speaks only in a thread addressed to it (Phase 1); every message wakes every worker | a worker that cannot see the room repeats what was said, misses corrections and cannot offer what it found; waking on every message spends workers on chatter; one answerer per message keeps D20's "no double replies" |
 
 ---
 
