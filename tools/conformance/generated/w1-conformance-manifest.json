@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f",
+  "catalogDigest": "sha256:4476cbb24c6a080cb0859e5b3e93e33436ba0b2b911cd1b9259aabbd695b3248",
   "catalog": {
-    "total": 383,
-    "v1": 381,
+    "total": 386,
+    "v1": 384,
     "reserved": 2,
-    "http": 381,
+    "http": 384,
     "ws": 1,
-    "registerableV1Http": 379,
+    "registerableV1Http": 382,
     "methods": {
       "GET": 128,
-      "POST": 187,
+      "POST": 188,
       "PATCH": 21,
-      "DELETE": 23,
-      "PUT": 22,
+      "DELETE": 24,
+      "PUT": 23,
       "WS": 2
     },
     "kinds": {
       "read": 134,
-      "command": 247,
+      "command": 250,
       "stream": 2
     },
-    "uniqueNames": 383,
-    "uniqueBindings": 382
+    "uniqueNames": 386,
+    "uniqueBindings": 385
   },
   "reservedOperations": [
     "search.query",
@@ -2357,6 +2357,27 @@
         "source": "server-router"
       },
       {
+        "operation": "devices.register",
+        "method": "POST",
+        "path": "/v2/devices",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "devices.update",
+        "method": "PUT",
+        "path": "/v2/devices/:deviceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "devices.unregister",
+        "method": "DELETE",
+        "path": "/v2/devices/:deviceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.signup",
         "method": "POST",
         "path": "/v2/auth/signup",
@@ -3085,7 +3106,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 351
+    "unimplementedV1Http": 354
   },
   "schemas": {
     "additive": {
@@ -8428,6 +8449,54 @@
           "style",
           "default",
           "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "devices.register",
+        "noun": "device",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/devices.register",
+        "intentTags": [
+          "devices",
+          "register"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "devices.update",
+        "noun": "device",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/devices.update",
+        "intentTags": [
+          "devices",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "devices.unregister",
+        "noun": "device",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/devices.unregister",
+        "intentTags": [
+          "devices",
+          "unregister"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -434,6 +434,53 @@ const ROWS: Record<OperationName, Row> = {
     ],
     examples: ['tm8 style default <space-ref> --space <space-id>'],
   },
+  // ── devices (392, TM8 Mobile S1): phones that get your push notifications ──
+  'devices.register': {
+    cmd: ['device', 'register'],
+    syn: 'tm8 device register --platform ios|android --token <token-source> --app-version <version> --locale <tag> --label <text> [--previews full|sender|none] [--quiet-until <iso-time>] [--relay <relay>] [--mutation-id <id>]',
+    sum: 'Register a phone for push notifications from this server: the Expo push token of this sign-in, and what a push may show',
+    authz: 'server',
+    input: 'bound',
+    tags: ['device', 'devices', 'phone', 'mobile', 'push', 'notifications', 'notification', 'register', 'expo', 'token'],
+    notes: [
+      'human sessions only: the Server refuses an agent token',
+      'one device per sign-in: registering again from the same sign-in updates it in place and keeps its device id',
+      'the token is a credential: <token-source> is - (stdin) or @<file>, never the token itself, and no answer, list or log ever shows it',
+      'the relay is expo, the only one in v1, and the default',
+      'previews defaults to sender (full = title and text, sender = who only, none = nothing on the lock screen)',
+      'signing out (auth logout) or revoking the sign-in deletes the device; nothing more is pushed to it',
+    ],
+    examples: ['tm8 device register --platform ios --token @<token-file> --app-version <version> --locale <tag> --label <label>'],
+  },
+  'devices.update': {
+    cmd: ['device', 'update'],
+    syn: 'tm8 device update <device-id> --expect-version <n> [--token <token-source>] [--app-version <version>] [--locale <tag>] [--label <text>] [--previews full|sender|none] [--quiet-until <iso-time>|none] [--mutation-id <id>]',
+    sum: 'Rotate a phone\'s push token, or change what its pushes show (previews) and its quiet hours (quiet until)',
+    authz: 'server',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['device', 'phone', 'mobile', 'push', 'notifications', 'rotate', 'token', 'previews', 'quiet', 'expo'],
+    notes: [
+      'yours only: another person\'s device id is not found',
+      'while now is before quiet-until the server sends quiet pushes (passive on iOS, the low channel on Android); --quiet-until none clears it',
+      'the device stays bound to the sign-in that registered it, whoever updates it',
+    ],
+    examples: ['tm8 device update <device-id> --expect-version <n> --previews none'],
+  },
+  'devices.unregister': {
+    cmd: ['device', 'unregister'],
+    syn: 'tm8 device unregister <device-id> [--expect-version <n>] [--mutation-id <id>]',
+    sum: 'Unregister a phone: this server stops sending it push notifications (the first step of signing out on the phone)',
+    authz: 'server',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['device', 'phone', 'mobile', 'push', 'notifications', 'unregister', 'sign-out', 'remove', 'stop'],
+    notes: [
+      'idempotent: a device that is already gone, or is not yours, answers "nothing to unregister"',
+      'auth logout and revoking the sign-in also remove the device, so a phone that signed out offline stops getting pushes as soon as its sign-in ends',
+    ],
+    examples: ['tm8 device unregister <device-id>'],
+  },
   // ── auth (Identity v2 Stage 1: local accounts) ───────────────────────────
   'auth.signup': {
     cmd: ['auth', 'signup'],
@@ -4324,6 +4371,8 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `spaces.styleDefault.*` keep their family nouns; their commands are
   // `style use` and `style default`. generator.ts nounForOperation says the same.
   styles: 'style',
+  // Push devices (392, TM8 Mobile S1). generator.ts nounForOperation says the same.
+  devices: 'device',
 };
 
 function nounFor(operation: OperationName): string {
@@ -4452,7 +4501,8 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:68a6bfebefba47862f09f56cefbe59dae630f710904a2334499ed15d69cb401f';
+  // Re-measured for devices.register|update|unregister (TM8 Mobile S1, 392) — RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated conformance manifest.
+  'sha256:4476cbb24c6a080cb0859e5b3e93e33436ba0b2b911cd1b9259aabbd695b3248';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -5405,6 +5455,7 @@ export function isCommandPath(path: readonly string[]): boolean {
 const NOUN_SUMMARY: Record<string, string> = {
   tool: 'Reusable scripts: declared inputs, generated help, configuration, secrets and recorded terminal runs',
   identity: 'Who this process is calling as',
+  device: 'Phones that get your push notifications from this server: register, update, unregister',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',
   space: 'Spaces — the authorization and event boundary, and their members, invites, axes, and menus',
