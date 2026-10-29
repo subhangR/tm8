@@ -97,7 +97,7 @@ Every verb prints human text by default and the operation's DTO with
 | 0 | success |
 | 2 | usage error caught locally (missing `--schedule`, `--expect-version`, conflicting runner flags, bad enum, a value outside the contract's range, a mistyped or secret `--input`), or `preview` of an invalid schedule (the problem is printed) |
 | 5 | the named loop, teammate or tool was not found |
-| server codes | `invalid_input` (field path in details), `version_conflict` (exit 6), `conflict` (a run-now refused, reason `loop_run_overlap`: a run is still live, or still launching, often after a run-now that timed out. Check `tm8 loop runs <id>` first and re-send a timed-out run-now with the SAME `--mutation-id`; its timeout hint names it. `--force` starts a second run), `forbidden`, `not_implemented` map through the CLI's usual error table |
+| server codes | `invalid_input` (field path in details), `version_conflict` (exit 6), `conflict` (a run-now refused, reason `loop_run_overlap`: a run is still live, or still launching, often after a run-now that timed out. Check `tm8 loop runs <id>` first and re-send a timed-out run-now with the SAME `--mutation-id`; its timeout hint names it. The server words a launching one "a run of this loop is still launching (run <id>): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run". `--force` starts a second run), `forbidden`, `not_implemented` map through the CLI's usual error table |
 
 Mutations accept `--mutation-id`. Re-run a timed-out write with the same id,
 because it was usually stored. `edit`, `enable`, `disable`, `pause` and
