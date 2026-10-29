@@ -399,3 +399,5 @@ comment on function public.update_device(uuid, integer, text, bytea, bytea, text
 comment on function public.unregister_device(uuid, integer, text) is
   'devices.unregister (392): idempotent removal of the caller''s own device; another person''s '
   'id answers unregistered: false, exactly like a missing one.';
+
+reset role;

@@ -344,8 +344,9 @@ describe('the token never leaves its seal (ac3)', () => {
     const rotated = newToken();
     const registerCmid = randomUUID();
     const updateCmid = randomUUID();
-    const [{ count: eventsBefore }] = await asOwner(async (c) =>
-      (await c.query<{ count: string }>('select count(*)::text count from public.workspace_events')).rows);
+    const eventCount = async (): Promise<string> => asOwner(async (c) =>
+      (await c.query<{ count: string }>('select count(*)::text count from public.workspace_events')).rows[0]!.count);
+    const eventsBefore = await eventCount();
 
     const registered = await register(ANA, ids.anaGate, token, { cmid: registerCmid });
     const updated = await update(ANA, ids.anaGate, registered.deviceId, registered.device.version,
@@ -356,9 +357,7 @@ describe('the token never leaves its seal (ac3)', () => {
       'select result from public.command_ledger where client_mutation_id = any($1)', [[registerCmid, updateCmid]],
     )).rows);
     expect(ledger).toHaveLength(2);
-    const [{ count: eventsAfter }] = await asOwner(async (c) =>
-      (await c.query<{ count: string }>('select count(*)::text count from public.workspace_events')).rows);
-    expect(eventsAfter).toBe(eventsBefore);
+    expect(await eventCount()).toBe(eventsBefore);
 
     const surfaces = [JSON.stringify(registered), JSON.stringify(updated), JSON.stringify(ledger)];
     // Control: the probes find a token and a hash where one is present.
