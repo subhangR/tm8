@@ -2048,8 +2048,18 @@ const ROWS: readonly KindConfig[] = [
     kind: 'tool', label: 'Tool', labelPlural: 'Tools', icon: '⌘', iconArt: KIND_ART.tool,
     slug: 'tools', strategy: 'collection', defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
-    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
-    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'toolLastRun', 'toolRuntime', 'activityAt'] },
+    /* A tool is born from its DEFINITION (`tools.create`: name, runtime,
+       source, inputs…), never from a bare title, so New opens the staged
+       `tool-definition` form (Tools v2 §3.1): `ToolCreateControl` in the list
+       header and the palette, `ToolDraftBody` in the New tab. */
+    // Tools v2: the last run's outcome in the status slot, then what it runs and asks for.
+    list: baseList({ quickCreate: true, tile: { badges: [
+      { source: 'toolLastRun' }, { source: 'toolRuntime' }, { source: 'toolInputs' }, { source: 'toolSecrets' },
+      { source: 'toolLastRunAt' }, { source: 'toolVersion' },
+    ] } }),
+    createForm: 'tool-definition',
+    palette: { createLabel: 'New tool' },
     panel: { archetype: 'scripted', blocks: [COLLECTIONS_BLOCK] },
   },
 

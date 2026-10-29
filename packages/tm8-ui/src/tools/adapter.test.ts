@@ -1,4 +1,4 @@
-import { ACTION_ROW_COLUMNS, ToolConfigSetInputSchema, ToolRunInputSchema, ToolSecretBindInputSchema, ToolViewSchema, type ActionRows, type OperationName } from '@tm8/contract';
+import { ACTION_ROW_COLUMNS, ToolConfigSetInputSchema, ToolCreateInputSchema, ToolRunInputSchema, ToolSecretBindInputSchema, ToolViewSchema, type ActionRows, type EntityHeaderResult, type OperationName } from '@tm8/contract';
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
 import { fakeFetch } from '../data/real/test-support';
@@ -9,9 +9,47 @@ function actions(human = true): ActionRows {
   return { schema: 'tm8.actions.v2', actorId: fixtureTool.id, human, columns: ACTION_ROW_COLUMNS, capabilityEpoch: 'test', total: 4,
     rows: ['tools.update', 'tools.config.set', 'tools.secrets.bind', 'tools.run'].map(name => [name as OperationName, 'command', 'entity', 'public']) };
 }
-const graph = () => ({ actions: { list: vi.fn(async () => actions()) }, connections: vi.fn(async () => ({ items: [], nextCursor: null })) });
+const graph = (header: EntityHeaderResult = { patches: [] }) => ({
+  actions: { list: vi.fn(async () => actions()) }, connections: vi.fn(async () => ({ items: [], nextCursor: null })),
+  commands: { setEntityHeader: vi.fn(async () => header) },
+});
 
 describe('tool operation transport', () => {
+  it('creates through the space route with a stamped mutation id and the strict create body', async () => {
+    const f = fakeFetch(() => ({ data: fixtureTool }));
+    const port = createToolPort(createHttpClient({ fetch: f.fetch }), graph());
+    const spaceId = fixtureTool.spaceId;
+    const view = await port.create(spaceId, fixtureTool.definition);
+    expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/spaces/${spaceId}/tools`, body: { definition: fixtureTool.definition, clientMutationId: expect.stringMatching(/^tool-/) } });
+    expect(f.last().body).not.toHaveProperty('spaceId');
+    expect(ToolCreateInputSchema.safeParse(f.last().body).success).toBe(true);
+    expect(view).toEqual(fixtureTool);
+  });
+
+  it('sets the selection header through the seam\u2019s own door and reports only an authored header as stored', async () => {
+    const authored = graph({ patches: [], header: { whenToUse: 'Open when checking URLs', summary: 's', keywords: [], version: 1, pinnedVersion: 1 } as EntityHeaderResult['header'] });
+    const port = createToolPort(createHttpClient({ fetch: fakeFetch(() => ({ data: {} })).fetch }), authored);
+    expect(await port.setHeader(fixtureTool.id, { whenToUse: 'Open when checking URLs', summary: 's', keywords: [] })).toEqual({ stored: true });
+    expect(authored.commands.setEntityHeader).toHaveBeenCalledWith(fixtureTool.id, { whenToUse: 'Open when checking URLs', summary: 's', keywords: [], clientMutationId: expect.stringMatching(/^tool-/) });
+    // A node that skips the kind answers with a warning and no authored header.
+    const skipped = graph({ patches: [], warnings: [{ code: 'header_kind_unsupported', message: 'a tool cannot carry a selection header; nothing was stored' }] });
+    expect(await port.setHeader(fixtureTool.id, { whenToUse: 'x', summary: null, keywords: [] })).toEqual({ stored: true });
+    const skippedPort = createToolPort(createHttpClient({ fetch: fakeFetch(() => ({ data: {} })).fetch }), skipped);
+    expect(await skippedPort.setHeader(fixtureTool.id, { whenToUse: 'x', summary: null, keywords: [] })).toEqual({ stored: false, reason: 'a tool cannot carry a selection header; nothing was stored' });
+    // A derived header at version 0 is not a stored one either.
+    const derived = graph({ patches: [], header: { whenToUse: 'derived', summary: null, keywords: [], version: 0, pinnedVersion: null } as EntityHeaderResult['header'] });
+    expect(await createToolPort(createHttpClient({ fetch: fakeFetch(() => ({ data: {} })).fetch }), derived).setHeader(fixtureTool.id, { whenToUse: 'x', summary: null, keywords: [] })).toEqual({ stored: false, reason: 'the node returned no authored header' });
+  });
+
+  it('lists every page of the space\u2019s tools', async () => {
+    const second = { ...fixtureTool, id: '00000000-0000-4000-8000-000000000099', definition: { ...fixtureTool.definition, name: 'second' } };
+    const f = fakeFetch(call => call.url.includes('cursor=') ? { data: { items: [second], nextCursor: null } } : { data: { items: [fixtureTool], nextCursor: 'c1' } });
+    const port = createToolPort(createHttpClient({ fetch: f.fetch }), graph());
+    const tools = await port.list(fixtureTool.spaceId);
+    expect(tools.map(tool => tool.definition.name)).toEqual(['url-check', 'second']);
+    expect(f.calls.map(call => call.url)).toEqual([`/v2/spaces/${fixtureTool.spaceId}/tools?limit=100`, `/v2/spaces/${fixtureTool.spaceId}/tools?limit=100&cursor=c1`]);
+  });
+
   it('uses the final versioned config and human secret operation routes and value payload', async () => {
     const f = fakeFetch(() => ({ data: {} }));
     const port = createToolPort(createHttpClient({ fetch: f.fetch }), graph());
