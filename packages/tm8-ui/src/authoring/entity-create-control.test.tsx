@@ -2,10 +2,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { getKind } from '../domain';
+import { createToolFixture } from '../tools/fixture';
 import { EntityCreateControl } from './EntityCreateControl';
 import type { AuthoringCommands } from './commands';
 import type { NewTaskHandle } from './useNewTask';
 
+vi.mock('../tools/SourceEditor', () => ({ SourceEditor: ({ value, onChange }: { value: string; onChange(value: string): void }) => <textarea aria-label="Source" value={value} onChange={(event) => onChange(event.target.value)} /> }));
 afterEach(cleanup);
 
 const immediate: NewTaskHandle = {
@@ -35,6 +37,25 @@ describe('the registry selects the honest create flow', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'New loop' }));
     expect(screen.getByTestId('loop-create-dialog')).toBeTruthy();
+    expect(immediate.create).not.toHaveBeenCalled();
+  });
+
+  it('opens the tool-definition form for a kind made from a definition, with the starters installer beside it', () => {
+    const { port } = createToolFixture();
+    render(
+      <div className="cv2-root">
+        <EntityCreateControl
+          config={getKind('tool')}
+          immediate={immediate}
+          spaceId="space-1"
+          commands={{ ...commands, tools: port }}
+        />
+      </div>,
+    );
+    expect(screen.getByRole('button', { name: 'Install starter tools' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'New tool' }));
+    expect(screen.getByTestId('tool-create-dialog')).toBeTruthy();
+    expect(screen.getByRole('form', { name: 'New tool' })).toBeTruthy();
     expect(immediate.create).not.toHaveBeenCalled();
   });
 
