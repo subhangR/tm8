@@ -26,10 +26,13 @@ describe('a loop row in the generic lists', () => {
     expect(loopRowNoteOf({ ...row(), kind: 'task', state: { kind: 'task' } } as unknown as EntitySummary)).toBeNull();
   });
 
-  it('an expired pause reads as enabled; a failure is named', () => {
+  it('an expired pause reads as enabled; a last error is named, never called a failed run', () => {
     expect(loopRowStatus(row({ pausedUntil: inHours(-1) }).state as never)).toBe('enabled');
-    render(<div>{loopRowNoteOf(row({ lastError: 'no slots' }))}</div>);
-    expect(screen.getByTestId('loop-row-note-loop-1').textContent).toContain('last run failed');
+    render(<div>{loopRowNoteOf(row({ lastError: 'schedule never matches within a year', nextRunAt: null }))}</div>);
+    const note = screen.getByTestId('loop-row-note-loop-1');
+    expect(note.textContent).toContain('last error');
+    expect(note.textContent).not.toContain('failed');
+    expect(note.querySelector('[title]')?.getAttribute('title')).toBeTruthy();
   });
 });
 

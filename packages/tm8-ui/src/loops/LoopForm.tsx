@@ -444,7 +444,7 @@ export function LoopForm(props: LoopFormProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tool, setTool] = useState<ToolView | null>(null);
   const [toolProblem, setToolProblem] = useState<string | null>(null);
-  const [projects, setProjects] = useState<{ id: string; name: string; trusted: boolean }[]>([]);
+  const [projects, setProjects] = useState<ProjectOptions>({ rows: [], loaded: false, problem: null });
   const firstField = useRef<HTMLInputElement | null>(null);
   // The stored inputs, typed once their tool is read (edit only).
   const seedInputs = useRef(props.view?.definition.toolId ? { toolId: props.view.definition.toolId, inputs: props.view.definition.toolInputs } : null);
@@ -470,13 +470,18 @@ export function LoopForm(props: LoopFormProps) {
   const tools = useEntityOptions(sources, spaceId, 'tool', draft.action === 'tool');
   const profiles = useEntityOptions(sources, spaceId, 'interaction_profile', spawnAdvanced);
 
-  const projectsWanted = spawnAdvanced || projects.length > 0;
+  const projectsWanted = spawnAdvanced || projects.loaded;
   useEffect(() => {
     if (!sources.projects || !projectsWanted) return;
     let live = true;
     sources.projects(spaceId).then(
-      rows => { if (live) setProjects(rows.map(row => ({ id: row.id, name: row.name, trusted: row.trust === 'trusted' }))); },
-      () => undefined,
+      rows => {
+        if (live) setProjects({ rows: rows.map(row => ({ id: row.id, name: row.name, trusted: row.trust === 'trusted' })), loaded: true, problem: null });
+      },
+      // A failed read says so (the select's note), rather than looking like a space with no projects.
+      (error: unknown) => {
+        if (live) setProjects({ rows: [], loaded: true, problem: error instanceof Error ? error.message : 'The projects could not be read.' });
+      },
     );
     return () => { live = false; };
   }, [sources, spaceId, projectsWanted]);
@@ -1073,10 +1078,12 @@ function effortOptions(model: string, current: string): ComposerSelectOption[] {
 type DraftSetter = <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 type StringKey = { [K in keyof Draft]: Draft[K] extends string ? K : never }[keyof Draft];
 
+type ProjectOptions = { rows: { id: string; name: string; trusted: boolean }[]; loaded: boolean; problem: string | null };
+
 function SpawnSettings({ draft, set, projects, profiles, sources, spaceId, errorFor, reader }: {
   draft: Draft;
   set: DraftSetter;
-  projects: { id: string; name: string; trusted: boolean }[];
+  projects: ProjectOptions;
   profiles: Options;
   sources: LoopFormSources;
   spaceId: SpaceId;
@@ -1086,8 +1093,9 @@ function SpawnSettings({ draft, set, projects, profiles, sources, spaceId, error
   const modelOptions = useModelOptions(draft.model);
   const projectOptions = useMemo<ComposerSelectOption[]>(() => withCurrent([
     { id: DEFAULT, label: 'No project' },
-    ...projects.map(p => ({ id: p.id, label: p.name, ...(p.trusted ? {} : { disabledReason: UNTRUSTED_REASON }) })),
-  ], draft.projectId, () => 'A project you cannot see'), [projects, draft.projectId]);
+    ...projects.rows.map(p => ({ id: p.id, label: p.name, ...(p.trusted ? {} : { disabledReason: UNTRUSTED_REASON }) })),
+  ], draft.projectId, () => (projects.loaded ? 'A project you cannot see' : 'Loading…')), [projects, draft.projectId]);
+  const projectNote = projects.problem ? `Could not read the projects: ${projects.problem}` : projects.loaded ? null : 'Loading projects…';
   const profileOptions = useMemo<ComposerSelectOption[]>(() => withCurrent([
     { id: DEFAULT, label: "Teammate's default" },
     ...profiles.options.map(p => {
@@ -1097,10 +1105,10 @@ function SpawnSettings({ draft, set, projects, profiles, sources, spaceId, error
       return { id: p.id, label: p.title, ...(reason ? { disabledReason: reason } : {}) };
     }),
   ], draft.interactionProfileId, () => 'A profile you cannot see'), [profiles.options, draft.interactionProfileId]);
-  const select = (label: string, key: StringKey, options: readonly ComposerSelectOption[], testId: string, path: string, emptyNote = 'Nothing to choose.') => (
+  const select = (label: string, key: StringKey, options: readonly ComposerSelectOption[], testId: string, path: string, emptyNote = 'Nothing to choose.', note: string | null = null) => (
     <Field label={label} error={errorFor(path)}>
       <ComposerSelect label={label} options={options} value={draft[key]} onChange={id => set(key, id)}
-        emptyNote={emptyNote} variant="quiet" testId={testId} />
+        emptyNote={emptyNote} note={note} variant="quiet" testId={testId} />
     </Field>
   );
   return (
@@ -1109,7 +1117,7 @@ function SpawnSettings({ draft, set, projects, profiles, sources, spaceId, error
       {select('Reasoning effort', 'reasoningEffort', effortOptions(draft.model, draft.reasoningEffort), 'loop-effort', 'config.reasoningEffort')}
       {select('Access', 'accessMode', ACCESS_OPTIONS, 'loop-access', 'config.accessMode')}
       {select('Mode', 'sessionMode', SESSION_MODE_OPTIONS, 'loop-mode', 'config.mode')}
-      {select('Project', 'projectId', projectOptions, 'loop-project', 'config.projectId')}
+      {select('Project', 'projectId', projectOptions, 'loop-project', 'config.projectId', 'Nothing to choose.', projectNote)}
       {select('Working copy', 'workdirMode', WORKDIR_OPTIONS, 'loop-workdir', 'config.workdir')}
       {draft.workdirMode === 'worktree' ? (
         <Field label="Base ref" optional error={errorFor('config.workdir.baseRef')}>

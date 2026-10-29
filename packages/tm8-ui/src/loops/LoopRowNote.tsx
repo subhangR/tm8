@@ -17,7 +17,8 @@ export function loopRowNoteOf(row: EntitySummary): ReactNode | null {
         : status === 'paused' ? <Timestamp at={state.pausedUntil} prefix="paused, resumes" title="Paused until" />
           : state.nextRunAt ? <Timestamp at={state.nextRunAt} prefix="next" title={absolute(state.nextRunAt, state.timezone)} />
             : <span className="loop-row-note__off">not scheduled</span>}
-      {state.lastError ? <span className="loop-row-note__error" title={state.lastError}> · last run failed</span> : null}
+      {/* The server also stores a park reason here (a schedule that never matches), so it is an error, not a failed run. */}
+      {state.lastError ? <span className="loop-row-note__error" title={state.lastError}> · last error</span> : null}
     </span>
   );
 }

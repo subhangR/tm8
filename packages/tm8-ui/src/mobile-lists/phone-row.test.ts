@@ -171,10 +171,11 @@ describe('phoneRowOf — a loop', () => {
     expect(phoneRowOf(loop(), NOW).pill).toBeUndefined();
   });
 
-  it('says disabled, paused and failing with a pill', () => {
+  it('says disabled, paused and a last error with a pill', () => {
     expect(phoneRowOf(loop({ enabled: false }), NOW)).toMatchObject({ meta: '0 9 * * * · Europe/London · disabled', pill: { label: 'disabled' } });
     expect(phoneRowOf(loop({ pausedUntil: new Date(NOW + 2 * HOUR).toISOString() }), NOW))
       .toMatchObject({ meta: '0 9 * * * · Europe/London · paused, resumes in 2h', pill: { label: 'paused' } });
-    expect(phoneRowOf(loop({ lastError: 'spawn refused' }), NOW).pill).toEqual({ label: 'failing', tone: 'block' });
+    // A park reason lives in lastError too ("schedule never matches within a year"): an error, not a failed run.
+    expect(phoneRowOf(loop({ lastError: 'schedule never matches within a year', nextRunAt: null }), NOW).pill).toEqual({ label: 'last error', tone: 'wait' });
   });
 });

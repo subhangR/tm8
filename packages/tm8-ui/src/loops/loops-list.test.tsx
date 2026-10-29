@@ -212,7 +212,8 @@ describe('the list stays honest when a read fails or a fact is missing', () => {
     fireEvent.click(more);
     fireEvent.click(more);
     await waitFor(() => expect(screen.queryByRole('button', { name: /Show more|Loading/ })).toBeNull());
-    expect(list).toHaveBeenCalledTimes(1);
+    // Only the page reads count: the minute refresh may also run on a slow machine, and it reads page one.
+    expect(list.mock.calls.filter(([, query]) => query?.cursor !== undefined)).toHaveLength(1);
     expect(screen.getAllByRole('switch')).toHaveLength(101);
   });
 

@@ -232,6 +232,8 @@ export function MembershipPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<readonly EntitySummary[]>([]);
+  // The text `options` were computed for: Enter may pick only from a list that answers what is typed now.
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
   const searchSeq = useRef(0);
 
   const runSearch = (text: string) => {
@@ -247,6 +249,7 @@ export function MembershipPicker({
           .filter((option) => needle === '' || option.title.toLowerCase().includes(needle))
           .slice(0, 8),
       );
+      setOptionsFor(text);
     });
   };
 
@@ -263,7 +266,9 @@ export function MembershipPicker({
   const onFilterKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      if (options[0]) pick(options[0]);
+      // While the search for the typed text is in flight, the list on screen is the previous
+      // text's: picking from it would add the wrong entity (every host writes on pick).
+      if (optionsFor === query && options[0]) pick(options[0]);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();

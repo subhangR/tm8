@@ -265,16 +265,11 @@ describe('typed nullable and JSON fields keep their wire semantics', () => {
   ];
 
   it('clears nullable ids and parses config', () => {
-    const initial = {
-      'content.teamMemberId': '019fe999-0000-7000-8000-000000000003',
-      'content.subjectId': '019fe999-0000-7000-8000-000000000004',
-      'content.config': '{}',
-    };
     const edits = editsFrom(fields, {
       'content.teamMemberId': '',
       'content.subjectId': '',
       'content.config': '{"model":"opus"}',
-    }, initial);
+    });
     expect(edits.content).toEqual({
       teamMemberId: null,
       subjectId: null,

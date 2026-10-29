@@ -1620,8 +1620,8 @@ export interface EditFieldSpec {
    *
    * `nullable-text` turns an empty draft into an explicit `null` (the loop
    * door's clear flag); `json-object` parses before Save and refuses arrays or
-   * invalid JSON visibly; `schedule` validates against the executor grammar
-   * and recomputes `nextRunAt` only when this field changed.
+   * invalid JSON visibly. (There is no `schedule` type: a loop is edited by its
+   * own form, and only the server computes a next run.)
    *
    * `date` IS A CALENDAR DAY, NOT A TIMESTAMP, and that is the server's shape
    * rather than a simplification made here: `tasks.due_date` is a `date`
