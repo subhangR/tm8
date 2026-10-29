@@ -68,6 +68,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     createWith: ['message send', 'message reply'],
   },
   channel: { group: 'talk', summary: 'a named stream of messages', createWith: ['entity create channel'] },
+  bridge: {
+    group: 'talk',
+    summary: 'a conversation on another network (WhatsApp, Slack, …) bound to a chat, a session or a channel here',
+    createWith: ['bridge create'],
+  },
   voice_channel: { group: 'talk', summary: 'a live voice room', createWith: ['entity create voice_channel'] },
   chat: {
     group: 'talk',

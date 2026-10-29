@@ -140,7 +140,20 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // admin). There is no update door at all; 284's `delete_entity` refuses the
   // kind in SQL too. The refusals name the right door (STYLE_LIFECYCLE_REMEDY).
   'style',
+  // `bridge` (392) is born from `bridges.create` (a human space admin who owns
+  // the connection) and ended only by `bridges.remove`, which leaves the
+  // tombstone. A generic delete would hide the bridge while its outbox, links
+  // and handles stayed live; SQL refuses it too (392 guard_bridge_entity). The
+  // refusals name the door (BRIDGE_LIFECYCLE_REMEDY).
+  'bridge',
 ]);
+
+/** The bridge kind's refusals say which door to use instead (392). */
+const BRIDGE_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
+  'entities.create': 'a bridge is created with `tm8 bridge create` (bridges.create: a space admin who owns the connection)',
+  'entities.patch': 'a bridge is edited with `tm8 bridge update` (bridges.update)',
+  'entities.delete': 'a bridge is removed with `tm8 bridge remove` (bridges.remove)',
+};
 
 /**
  * The style kind's refusals say what to do instead (284). A space style is
@@ -1051,6 +1064,9 @@ function normalizeReason(error: unknown): never {
 function assertGenericLifecycle(kind: string, operation: string): void {
   if (kind === 'style' && STYLE_LIFECYCLE_REMEDY[operation]) {
     throw new CollabError('invariant_violation', STYLE_LIFECYCLE_REMEDY[operation]);
+  }
+  if (kind === 'bridge' && BRIDGE_LIFECYCLE_REMEDY[operation]) {
+    throw new CollabError('forbidden', BRIDGE_LIFECYCLE_REMEDY[operation]);
   }
   if (RESTRICTED_LIFECYCLE_KINDS.has(kind)) {
     throw new CollabError('forbidden', `${operation} is owned by the ${kind} lifecycle`);
