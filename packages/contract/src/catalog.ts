@@ -614,6 +614,17 @@ export const OPERATIONS = [
   { name: 'spaces.styleDefault.get',                   method: 'GET',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'read',    status: 'v1' },
   { name: 'spaces.styleDefault.set',                   method: 'PUT',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'command', status: 'v1', humanOnly: true },
 
+  // Push devices (TM8 Mobile S1, migration 392; s-lld §11 "Registration"). One
+  // row per human sign-in on one phone: where the relay reaches it, and what a
+  // push may show (previews, quietUntil). Per server and person, never per
+  // space. HUMAN-ONLY on all three: an agent carries its human's identity, and
+  // a door that let it bind a token it controls would hand it that human's
+  // notifications. The token is WRITE-ONLY — sealed at rest, and no read,
+  // result or error returns it. Revoking the sign-in deletes the device.
+  { name: 'devices.register',                          method: 'POST',   path: '/v2/devices',                                                kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'devices.update',                            method: 'PUT',    path: '/v2/devices/:deviceId',                                      kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'devices.unregister',                        method: 'DELETE', path: '/v2/devices/:deviceId',                                      kind: 'command', status: 'v1', humanOnly: true },
+
   // Identity v2 Stage 1 (doc 4 §6): local accounts. The four operations the UI
   // asked for as MISSING_AUTH_OPS — now wired by its gate as GATE_AUTH_OPS
   // (tm8-ui src/auth). `auth.signup` is node-admin gated — never open

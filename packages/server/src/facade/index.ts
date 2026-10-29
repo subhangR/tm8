@@ -78,6 +78,7 @@ import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks
 import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
 import { registerW2ConfigsHandlers } from './handlers/w2/configs.js';
 import { registerW2StyleHandlers } from './handlers/w2/styles.js';
+import { registerW2DeviceHandlers } from './handlers/w2/devices.js';
 import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
@@ -374,6 +375,9 @@ export function registerFacadeHandlers(
    * forgets.
    */
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
+  // TM8 Mobile S1 (392): push devices seal their token under the same node key,
+  // so they need the credential root; without one they answer an honest 501.
+  if (deps.credentials) registerW2DeviceHandlers(registry, facade, { dataDir: deps.credentials.dataDir });
 
   // W6 space links: the writes are human-only inside the registration (and in SQL).
   const spaceLinksBase = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);

@@ -84,6 +84,10 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // `read_mcp_launch_selections` has no such gate — so this door carries the
     // wrapper for real and the catalog flags it.
     'packages/server/src/chat/handlers.ts',
+    // 392 (TM8 Mobile S1): all three `devices.*` are human-only. An agent
+    // carries its human's identity; binding a push token it controls would
+    // hand it that human's notifications.
+    'packages/server/src/facade/handlers/w2/devices.ts',
   ];
 
   it('matches op by op, not by prefix', () => {

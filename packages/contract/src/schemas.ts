@@ -181,6 +181,7 @@ import type {
   ExecutionTerminalStartInput,
   WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
+  DeviceView, DeviceWriteResult, DevicesRegisterInput, DevicesUnregisterInput, DevicesUnregisterResult, DevicesUpdateInput,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
 
@@ -6237,4 +6238,91 @@ export const SpaceStyleDefaultSetInputSchema: z.ZodType<SpaceStyleDefaultSetInpu
   clientMutationId: z.string().min(1),
   expectedRevision: z.number().int().nonnegative().optional(),
   defaultStyle: SpaceStyleDefaultRefSchema,
+}).strict();
+
+// ── devices (392, TM8 Mobile S1; s-lld §11 "Registration") ──────────────────
+// The token is a credential to reach a phone. Every refusal below names the
+// field and never echoes its value: zod's regex and length issues carry no
+// `received`, and nothing here is an enum over the token.
+
+export const DEVICE_PLATFORMS = ['ios', 'android'] as const;
+export const DEVICE_RELAYS = ['expo'] as const;
+export const DEVICE_PREVIEWS = ['full', 'sender', 'none'] as const;
+
+/**
+ * Expo's own shape for a push token (expo-server-sdk `isExpoPushToken`): the
+ * bracketed `ExponentPushToken[...]` / `ExpoPushToken[...]` form, or the bare
+ * uuid form. The bracketed body is held to url-safe characters, so no quote,
+ * space or control character reaches the relay call.
+ */
+export const EXPO_PUSH_TOKEN_RE =
+  /^(?:(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]{1,256}\]|[A-Za-z0-9]{8}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{12})$/;
+
+const NO_CONTROL_CHARS = /^[^\u0000-\u001f\u007f]*$/;
+
+const DeviceTokenSchema = z.string().max(300, 'token is longer than any Expo push token')
+  .regex(EXPO_PUSH_TOKEN_RE, 'token is not an Expo push token (ExponentPushToken[...])');
+const DeviceAppVersionSchema = z.string().max(64).regex(NO_CONTROL_CHARS, 'appVersion has a control character')
+  .refine((v) => v.trim().length >= 1, 'appVersion must not be blank');
+const DeviceLocaleSchema = z.string().max(64)
+  .regex(/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,6}$/, 'locale is a BCP 47 tag such as en-US');
+const DeviceLabelSchema = z.string().max(200).regex(NO_CONTROL_CHARS, 'label has a control character')
+  .refine((v) => v.trim().length >= 1, 'label must not be blank');
+const DeviceQuietUntilSchema = z.string().datetime({ offset: true }).nullable();
+
+export const DevicesRegisterInputSchema: z.ZodType<DevicesRegisterInput> = z.object({
+  clientMutationId: z.string().min(1),
+  platform: z.enum(DEVICE_PLATFORMS),
+  relay: z.enum(DEVICE_RELAYS),
+  token: DeviceTokenSchema,
+  appVersion: DeviceAppVersionSchema,
+  locale: DeviceLocaleSchema,
+  previews: z.enum(DEVICE_PREVIEWS).optional(),
+  label: DeviceLabelSchema,
+  quietUntil: DeviceQuietUntilSchema.optional(),
+}).strict();
+
+export const DevicesUpdateInputSchema: z.ZodType<DevicesUpdateInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  token: DeviceTokenSchema.optional(),
+  appVersion: DeviceAppVersionSchema.optional(),
+  locale: DeviceLocaleSchema.optional(),
+  previews: z.enum(DEVICE_PREVIEWS).optional(),
+  label: DeviceLabelSchema.optional(),
+  quietUntil: DeviceQuietUntilSchema.optional(),
+}).strict().refine(
+  (v) => v.token !== undefined || v.appVersion !== undefined || v.locale !== undefined
+    || v.previews !== undefined || v.label !== undefined || v.quietUntil !== undefined,
+  'devices.update needs at least one of token, appVersion, locale, previews, label or quietUntil',
+);
+
+export const DevicesUnregisterInputSchema: z.ZodType<DevicesUnregisterInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive().optional(),
+}).strict();
+
+/** Strict, so a response that ever carried a token field fails to parse. */
+export const DeviceViewSchema: z.ZodType<DeviceView> = z.object({
+  id: z.string().uuid(),
+  platform: z.enum(DEVICE_PLATFORMS),
+  relay: z.enum(DEVICE_RELAYS),
+  appVersion: z.string(),
+  locale: z.string(),
+  previews: z.enum(DEVICE_PREVIEWS),
+  label: z.string(),
+  quietUntil: z.string().nullable(),
+  version: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}).strict();
+
+export const DeviceWriteResultSchema: z.ZodType<DeviceWriteResult> = z.object({
+  deviceId: z.string().uuid(),
+  device: DeviceViewSchema,
+}).strict();
+
+export const DevicesUnregisterResultSchema: z.ZodType<DevicesUnregisterResult> = z.object({
+  deviceId: z.string().uuid(),
+  unregistered: z.boolean(),
 }).strict();

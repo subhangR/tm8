@@ -9109,3 +9109,76 @@ export interface SpaceStyleDefaultSetInput {
   expectedRevision?: number;
   defaultStyle: string;
 }
+
+// ── devices (392, TM8 Mobile S1; s-lld §11 "Registration") ──────────────────
+// A phone that gets a person's push notifications from this node: one row per
+// human sign-in on one phone. The push token is WRITE-ONLY: it goes in on
+// register and update, and no read, result or error ever returns it.
+
+export type DevicePlatform = 'ios' | 'android';
+/** Who delivers to the phone. v1 has one relay, the Expo Push Service. */
+export type DeviceRelay = 'expo';
+/** What a push shows on the lock screen: everything, the sender only, or nothing. */
+export type DevicePreviews = 'full' | 'sender' | 'none';
+
+/** A device as every door returns it: everything but the token. */
+export interface DeviceView {
+  id: EntityId;
+  platform: DevicePlatform;
+  relay: DeviceRelay;
+  appVersion: string;
+  locale: string;
+  previews: DevicePreviews;
+  label: string;
+  /** While now < quietUntil the node sends passive (iOS) or low-channel (Android) pushes. */
+  quietUntil: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevicesRegisterInput {
+  clientMutationId: string;
+  platform: DevicePlatform;
+  relay: DeviceRelay;
+  /** The Expo push token. Stored sealed; never returned. */
+  token: string;
+  appVersion: string;
+  locale: string;
+  /** Defaults to `sender` when absent. */
+  previews?: DevicePreviews;
+  /** What `auth.sessions.list` and the person read, e.g. "TM8 Mobile · iPhone". */
+  label: string;
+  quietUntil?: string | null;
+}
+
+/** Every field but the version is optional; at least one must change. */
+export interface DevicesUpdateInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  /** A rotated Expo push token. */
+  token?: string;
+  appVersion?: string;
+  locale?: string;
+  previews?: DevicePreviews;
+  label?: string;
+  /** null clears it. */
+  quietUntil?: string | null;
+}
+
+export interface DevicesUnregisterInput {
+  clientMutationId: string;
+  expectedVersion?: number;
+}
+
+/** `devices.register` and `devices.update`. */
+export interface DeviceWriteResult {
+  deviceId: EntityId;
+  device: DeviceView;
+}
+
+/** `devices.unregister`: false when there was nothing of yours to remove. */
+export interface DevicesUnregisterResult {
+  deviceId: EntityId;
+  unregistered: boolean;
+}

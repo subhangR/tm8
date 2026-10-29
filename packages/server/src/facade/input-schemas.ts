@@ -10,6 +10,7 @@ import {
   WorkspaceUpdateInputSchema,
 } from '@tm8/contract';
 import { McpCredentialCommandInputSchema, McpCredentialRevokeAllInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpTokenCreateInputSchema, McpTokenRevokeInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
+import { DevicesRegisterInputSchema, DevicesUnregisterInputSchema, DevicesUpdateInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -288,6 +289,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'styles.resolve': StylesResolveInputSchema,
   'identity.stylePrefs.set': StylePrefsSetInputSchema,
   'spaces.styleDefault.set': SpaceStyleDefaultSetInputSchema,
+  // Push devices (392, TM8 Mobile S1). Strict DTOs: no owner, session or actor
+  // can be named on the wire, and a refused token is never echoed.
+  'devices.register': DevicesRegisterInputSchema,
+  'devices.update': DevicesUpdateInputSchema,
+  'devices.unregister': DevicesUnregisterInputSchema,
 
   // auth (v2 Stage 1). No actorId and no clientMutationId on any of these —
   // authentication has no authoring persona and no idempotency ledger entry.
