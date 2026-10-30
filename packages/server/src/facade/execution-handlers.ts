@@ -3477,7 +3477,7 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
   };
 }
 
-/** One target of a bridge loop as its worker sees it at launch (405's loop_fire_targets). */
+/** One target of a bridge loop as its worker sees it at launch (406's loop_fire_targets). */
 export interface LoopTargetContext {
   bridgeId: string;
   name: string;

@@ -1,8 +1,8 @@
 -- =============================================================================
--- 405 — Bridges L: a loop is a teammate on a schedule that posts to many groups
--- (Authored as 401; renumbered to 405 at merge by the bridges merger: next free number above main's 404.)
+-- 406 — Bridges L: a loop is a teammate on a schedule that posts to many groups
 -- (BRIDGE-ENTITY-DESIGN.md D26, D30, D67–D69; BRIDGES-V2-DESIGN.md §2.2–§2.3).
 -- (Provisional number; the bridges merger assigns the final one.)
+-- (Authored as 401; renumbered to 406 at merge by the bridges merger: next free number above main's 405 (main took 405 for 405_mcp_members_add_connectors).)
 --
 -- Task 01a189d7-7b8e-7cf2-a42f-390dc76353f2. Extends main's first-class loops
 -- (384/385) — no new executor — on B1b-2's outbox (398) and B1b-3's provenance
@@ -31,7 +31,7 @@
 --   §10 a removed bridge disables the loops that target it (v2 §2.3).
 --
 -- 398's bridge_runtime_inbound and bridge_outbox_enqueue are re-declared here
--- VERBATIM plus the blocks marked `405 (L)` (the 348 precedent). A rebase
+-- VERBATIM plus the blocks marked `406 (L)` (the 348 precedent). A rebase
 -- onto a changed 398 re-copies them; nothing else in 398/399 is replaced but
 -- 399's internal.guard_authored_from_bridge (one marked branch for loops).
 -- =============================================================================
@@ -234,7 +234,7 @@ set search_path = public, internal, pg_temp as $$
        from public.entities e
        join public.members m on m.space_id = e.space_id
       where e.id = p_loop_id
-        and not internal.loop_has_targets(p_loop_id)   -- 405 (L): no fallback for bridge loops
+        and not internal.loop_has_targets(p_loop_id)   -- 406 (L): no fallback for bridge loops
         and m.role = 'owner'
         and m.status = 'active'
       order by m.entity_id
@@ -300,7 +300,7 @@ revoke all on function internal.loops_on_member_left() from public;
 create trigger members_loops_owner_left after update of status on public.members
 for each row execute function internal.loops_on_member_left();
 
--- 384's armer stamp, plus the takeover (405, marked): a human's write to a
+-- 384's armer stamp, plus the takeover (406, marked): a human's write to a
 -- suspended loop (D26) re-arms it in their name, and only an admin may.
 create or replace function internal.stamp_loop_armed_by() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -324,7 +324,7 @@ begin
             - 'enabled' - 'paused_until' - 'retry_attempt' - 'armed_at'
             - 'armed_by_member_id' - 'armed_by_identity_id')
       or (new.enabled and not old.enabled);
-    -- 405 (L): a human enabling or editing a suspended bridge loop takes it over.
+    -- 406 (L): a human enabling or editing a suspended bridge loop takes it over.
     -- Read off the OLD row: an edit made while disabled, or one that clears the
     -- targets, is still a takeover (else a member edits, then enables, as armer);
     -- only disabling it is not. The suspension's own write (an admin's
@@ -372,7 +372,7 @@ begin
   new.armed_by_member_id := v_member;
   new.armed_by_identity_id := internal.identity_id();
   new.armed_at := now();
-  -- 405 (L): the takeover clears the suspension and its requests.
+  -- 406 (L): the takeover clears the suspension and its requests.
   if v_takeover or (tg_op = 'UPDATE' and old.last_error = internal.loop_suspended_reason()) then
     if new.last_error = internal.loop_suspended_reason() or new.last_error like 'needs arming%' then new.last_error := null; end if;
     update public.attention_requests
@@ -430,7 +430,7 @@ end
 $$;
 revoke all on function internal.loop_record_target(uuid, uuid, uuid, text, text, uuid) from public;
 
--- 398's enqueue, verbatim plus the 405 (L) blocks: the hold, and each target's result.
+-- 398's enqueue, verbatim plus the 406 (L) blocks: the hold, and each target's result.
 create or replace function internal.bridge_outbox_enqueue(
   p_bridge uuid, p_message uuid, p_kind text, p_payload jsonb, p_opts jsonb
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -440,7 +440,7 @@ declare
   v_teammate uuid := nullif(p_opts ->> 'teammateId', '')::uuid;
   v_directed boolean := coalesce((p_opts ->> 'directed')::boolean, false);
   reason text; retry_ms integer; oldest timestamptz; row_id uuid; existing public.bridge_outbox;
-  -- 405 (L)
+  -- 406 (L)
   v_run public.loop_runs; v_loop public.loops; v_held public.loop_held_posts;
 begin
   if p_kind not in ('send', 'react') then raise exception 'unknown outbox kind' using errcode = '22023'; end if;
@@ -466,7 +466,7 @@ begin
     when p_kind = 'send' and internal.bridge_text_looks_secret(coalesce(p_payload ->> 'text', '')) then 'credential_text'
   end;
 
-  -- 405 (L, D67): quiet hours hold a loop's unprompted post (never a reply, never
+  -- 406 (L, D67): quiet hours hold a loop's unprompted post (never a reply, never
   -- an exempt loop's); a newer held post supersedes the older one.
   if p_kind = 'send' then
     v_run := internal.loop_run_of_post(p_opts);
@@ -533,7 +533,7 @@ begin
       on conflict (message_id) do update set reason = excluded.reason, retry_after_ms = excluded.retry_after_ms,
         created_at = now();
     end if;
-    -- 405 (L): the run's result for this group.
+    -- 406 (L): the run's result for this group.
     if v_run.id is not null then
       perform internal.loop_record_target(v_run.id, v_loop.entity_id, p_bridge,
         case reason when 'bridge_paused' then 'paused' else 'refused' end, reason, p_message);
@@ -548,7 +548,7 @@ begin
           b.external_conversation_id, v_poster, v_teammate, nullif(p_opts ->> 'sessionId', '')::uuid, v_directed)
   returning id into row_id;
   delete from public.bridge_delivery_refusals where message_id = p_message and p_kind = 'send';
-  -- 405 (L): the run's result for this group.
+  -- 406 (L): the run's result for this group.
   if v_run.id is not null then
     perform internal.loop_record_target(v_run.id, v_loop.entity_id, p_bridge, 'posted', null, p_message);
   end if;
@@ -557,7 +557,7 @@ end
 $$;
 revoke all on function internal.bridge_outbox_enqueue(uuid, uuid, text, jsonb, jsonb) from public;
 
--- 398's inbound, verbatim plus the 405 (L) block: reply routing (§6).
+-- 398's inbound, verbatim plus the 406 (L) block: reply routing (§6).
 create or replace function public.bridge_runtime_inbound(p_frame jsonb, p_command boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
@@ -588,7 +588,7 @@ declare
   existing uuid;
   wake jsonb := null;
   target_e public.entities;
-  -- 405 (L)
+  -- 406 (L)
   loop_sid uuid;
   sess_e public.entities;
 begin
@@ -690,7 +690,7 @@ begin
                               'command', true, 'routed', false);
   end if;
 
-  -- 405 (L, D26, D69): a reply to a post by a live interactive loop session goes
+  -- 406 (L, D26, D69): a reply to a post by a live interactive loop session goes
   -- to that session, which becomes its answerer and gains the group as an
   -- origin (D30). Once the session has closed, the chat answers as before.
   if parent_msg is not null
@@ -1040,7 +1040,7 @@ revoke all on function internal.loop_record_provenance() from public;
 create trigger entities_loop_provenance after insert on public.entities
 for each row execute function internal.loop_record_provenance();
 
--- 399's guard, plus the loop branch (405, marked).
+-- 399's guard, plus the loop branch (406, marked).
 create or replace function internal.guard_authored_from_bridge() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 declare dst_kind text;
@@ -1050,7 +1050,7 @@ begin
     return new;
   end if;
   select kind into dst_kind from public.entities where id = new.dst_id;
-  -- 405 (L): authored_from -> loop carries {bridgeId: null, loopId: <dst>}.
+  -- 406 (L): authored_from -> loop carries {bridgeId: null, loopId: <dst>}.
   if dst_kind = 'loop' or new.props ? 'loopId' and jsonb_typeof(new.props -> 'bridgeId') = 'null' then
     if dst_kind is distinct from 'loop' or coalesce(new.props ->> 'loopId', '') <> new.dst_id::text
        or jsonb_typeof(new.props -> 'bridgeId') is distinct from 'null' then

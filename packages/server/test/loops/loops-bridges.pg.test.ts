@@ -1,5 +1,5 @@
 /**
- * Bridges L (migration 405; BRIDGE-ENTITY-DESIGN §7.3 "L (D26)", D30, D67–D69)
+ * Bridges L (migration 406; BRIDGE-ENTITY-DESIGN §7.3 "L (D26)", D30, D67–D69)
  * against a real PostgreSQL with every migration applied. Two test bridges,
  * Infra and Gaming, on one connection; no provider runtime: the runtime's
  * inbound door is called with a bridge_runtime session, as B1b-2's suite does.
