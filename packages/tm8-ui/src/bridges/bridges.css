@@ -45,7 +45,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  margin: 4px 0 0;
+  /* Under the body column (`.tch-turn__attachments`, `.tch-parts`: 26px). */
+  margin: 4px 0 0 26px;
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-tick);
 }
