@@ -261,8 +261,14 @@ describe('what the screen shows', () => {
     fireEvent.click(view.getByTestId('phone-live-ask-send'));
     await waitFor(() => expect(signalTo['term-1']).toBeTypeOf('function'));
     const emit = (signal: ScreenSignal) => act(() => signalTo['term-1']!(signal));
-    emit({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
-    expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    /* The render that registered term-1 also scheduled the new screen's reset
+       (PhoneLive's passive effect on the terminal id). A frame sent before that
+       effect has run is wiped by it, which is how this read "Unable to find
+       phone-live-frame" on a slow machine. Send the frame until it holds. */
+    await waitFor(() => {
+      signalTo['term-1']!({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
+      expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    });
     emit(userVar('tm8run', { title: 'Your cases', device: 'iPhone 16 Pro Max', run: 'live-1', planned: ['Search works', 'Cart badge'] }));
     emit(userVar('tm8step', { i: 0, name: 'Search works', state: 'run' }));
     let cases = view.getByTestId('phone-live-cases').querySelectorAll('li');
