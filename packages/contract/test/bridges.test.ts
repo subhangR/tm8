@@ -84,7 +84,7 @@ describe('catalog (§3.4)', () => {
   });
 });
 
-describe('link inputs (B3, 402)', () => {
+describe('link inputs (B3, 407)', () => {
   it('begin takes a known provider; an invite pins a bridge id and an external id; the code shape is TM8-', async () => {
     const { BridgeLinkBeginInputSchema, BridgeInviteParticipantSchema, BRIDGE_LINK_CODE_PATTERN } = await import('../src/bridges.js');
     expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'whatsapp' }).success).toBe(true);

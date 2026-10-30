@@ -190,7 +190,7 @@ async function readLog(q: Querier, bridgeId: string, opts: {
   };
 }
 
-/** 402's link rows carry timestamps as SQL renders them; the wire is ISO. */
+/** 407's link rows carry timestamps as SQL renders them; the wire is ISO. */
 function linkOf(row: BridgeIdentityLink): BridgeIdentityLink {
   return { ...row, verifiedAt: iso(row.verifiedAt)!, revokedAt: iso(row.revokedAt) };
 }
@@ -319,7 +319,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const run = unread ? command : read;
       return run(ctx, q => readLog(q, bridgeId, { since, before, latest, thread, limit, unread }));
     },
-    // B3 (402, §4.6): the caller's own links. Begin and revoke are human-only
+    // B3 (407, §4.6): the caller's own links. Begin and revoke are human-only
     // here and in SQL; an agent can neither mint a proof of its owner nor end one.
     'bridges.links.begin': requireHumanSession(async ctx => {
       const input = BridgeLinkBeginInputSchema.parse(ctx.body ?? {});
