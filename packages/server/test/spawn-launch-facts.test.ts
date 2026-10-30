@@ -9,7 +9,7 @@
  * same block from it — which is where a CLI that waited for `running` reads it.
  *
  * The fake `Db` answers by SQL shape, as in spawn-chat-parent.test.ts. The
- * response re-read (`toCommandResult`) is stubbed to echo the RPC's entity:
+ * response re-read (`toCommandResult`, `toCommandResultOnTwoClients`) is stubbed to echo the RPC's entity:
  * this file is about the `launch` block, not the entity projection.
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -33,6 +33,7 @@ import type { RequestContext } from '../src/http/types.js';
 vi.mock('../src/facade/handlers/entities.js', async (original) => ({
   ...(await original<typeof import('../src/facade/handlers/entities.js')>()),
   toCommandResult: async (_q: unknown, raw: { entity?: unknown }) => ({ entity: raw.entity, patches: [] }),
+  toCommandResultOnTwoClients: async (_db: unknown, _claims: unknown, raw: { entity?: unknown }) => ({ entity: raw.entity, patches: [] }),
 }));
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
