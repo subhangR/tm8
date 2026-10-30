@@ -156,6 +156,60 @@ describe('shared functions keep their existing arms (398 replaces validate_messa
   });
 });
 
+describe('internal.bridge_signed is VOLATILE: a worker signature writes through bridge_poster_handle', () => {
+  it('is marked volatile, and every row of one statement gets its own handle write', async () => {
+    const [p] = await owner<{ v: string }>(`select provolatile as v from pg_proc where oid = 'internal.bridge_signed(public.bridges,uuid,uuid,text,text)'::regprocedure`);
+    expect(p!.v).toBe('v');
+    // A stand-in for B1b-3's door where it is absent: it writes, as the real one does.
+    await owner(`create table if not exists public.b1b2_handle_writes(n serial primary key, session uuid)`);
+    const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.bridge_poster_handle(uuid,uuid)')::text as r`))[0]!.r;
+    if (!real) {
+      await owner(`create function public.bridge_poster_handle(p_bridge uuid, p_session uuid) returns jsonb language plpgsql volatile as $f$
+        begin insert into public.b1b2_handle_writes(session) values (p_session);
+              return jsonb_build_object('handle', 'keen-otter', 'title', 'Deploy fixer'); end $f$`);
+    }
+    const rows = await owner<{ s: string }>(`select internal.bridge_signed(b, $2, $3, 'worker', 'hi ' || g) as s
+      from public.bridges b, generate_series(1, 3) g where b.entity_id = $1 order by g`, [infra, teammate, session]);
+    expect(rows.map(r => r.s)).toEqual(['hi 1', 'hi 2', 'hi 3'].map(t => expect.stringMatching(new RegExp(`\\): ${t}$`))));
+    if (!real) {
+      expect(rows[0]!.s).toBe('Deploy fixer (keen-otter): hi 1');
+      const [n] = await owner<{ n: number }>(`select count(*)::int as n from public.b1b2_handle_writes`);
+      expect(n!.n).toBe(3);
+      await owner(`drop function public.bridge_poster_handle(uuid, uuid)`);
+    }
+  });
+});
+
+describe('402 (B1b-8): review fixes N1 and N3 on 398', () => {
+  it('N1: a routed message hands add_bridge_origin the participant display STRING (D22)', async () => {
+    const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.add_bridge_origin(uuid,jsonb)')::text as r`))[0]!.r;
+    if (real) return;   // B1b-3's real door is covered by its own suite
+    await owner(`create table if not exists public.b1b8_origins(holder uuid, origin jsonb)`);
+    await owner(`create function public.add_bridge_origin(p_holder uuid, p_origin jsonb) returns jsonb language plpgsql volatile as $f$
+      begin insert into public.b1b8_origins values (p_holder, p_origin); return p_origin; end $f$`);
+    try {
+      const r = await inbound(frame({ body: '@tm8 origin please', sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
+      expect(r.routed).toBe(true);
+      const [row] = await owner<{ holder: string; origin: { sender: { participant: unknown }; providerMessageId: string } }>(
+        `select holder, origin from public.b1b8_origins order by ctid desc limit 1`);
+      expect(row!.holder).toBe(chatA);
+      expect(row!.origin.sender.participant).toBe('Priya');
+    } finally {
+      await owner(`drop function public.add_bridge_origin(uuid, jsonb)`);
+    }
+  });
+
+  it('N3: an admins-only fallback to direction in bumps the bridge entity version', async () => {
+    const before = (await owner<{ version: number }>('select version from public.entities where id = $1', [gaming]))[0]!.version;
+    await door('bridge_runtime_conversation_state', JSON.stringify({ connectionId: connection, conversationId: GROUP_B, canSend: false, reason: 'admins_only' }));
+    const [after] = await owner<{ version: number; dir: string }>(`select e.version, b.policy ->> 'direction' as dir
+      from public.entities e join public.bridges b on b.entity_id = e.id where e.id = $1`, [gaming]);
+    expect(after).toMatchObject({ dir: 'in' });
+    expect(after!.version).toBeGreaterThan(before);
+    await owner(`update public.bridges set policy = policy || '{"direction":"both"}' where entity_id = $1`, [gaming]);
+  });
+});
+
 describe('allowlists (§2.3, D28, D35, ac4, ac7)', () => {
   let lastVersion = 0;
   it('hello answers each connection with its live, unpaused conversations and a fresh version', async () => {

@@ -2418,7 +2418,7 @@ export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.o
 
 export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'bridge_runtime']),
   createdAt: IsoTimestamp,
   lastUsedAt: IsoTimestamp.nullable(),
   expiresAt: IsoTimestamp,

@@ -2706,7 +2706,12 @@ export type AuthSessionOrigin = 'login' | 'space_enter' | 'spawn' | 'chat' | 'li
 
 export interface AuthSessionListing {
   sessionId: string;
-  kind: AuthSessionKindView;
+  /**
+   * `bridge_runtime` (395/398): the connector runtime's session. 398 keeps it
+   * out of `list_auth_sessions`, but the kind is a real `auth_sessions` kind,
+   * so a listing row naming it still validates.
+   */
+  kind: AuthSessionKindView | 'bridge_runtime';
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string;
