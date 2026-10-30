@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  BRIDGE_MARK, isBridgeCommandText, isConfirmText, parseBridgeCommand, parseWorkItems, parseWorkerRef, suggestVerb,
+  BRIDGE_MARK, isBridgeCommandText, isConfirmText, parseBridgeCommand, parseDuration, parseWorkItems, parseWorkerRef, suggestVerb,
 } from '../../src/bridges/commands/parse.js';
 
 describe('what is a command (§4.2)', () => {
@@ -25,6 +25,9 @@ describe('what is a command (§4.2)', () => {
     ['/tasks open', 'tasks'],
     ['/docs artifacts', 'docs'],
     ['/link TM8-4F7K', 'link'],
+    ['/mute 1h', 'mute'],
+    ['/who', 'who'],
+    ['/bridge', 'bridge'],
     ['\n\n/task write the notes', 'task'],
     // Not commands: a slash mid-sentence, a path, a URL, nothing.
     ['can you /stop it', null],
@@ -67,7 +70,7 @@ describe('unknown and planned words are answered, never routed (§4.2)', () => {
     expect(parseBridgeCommand('/xyzzy')).toMatchObject({ kind: 'unknown', suggestion: null });
     expect(isBridgeCommandText('/xyzzy')).toBe(true);
   });
-  it.each(['tell', 'result', 'retry', 'remember', 'remind', 'loops', 'mute', 'new', 'who'])(
+  it.each(['tell', 'result', 'retry', 'remember', 'remind', 'loops', 'start'])(
     '/%s is a later verb: planned, not a did-you-mean', word => {
       expect(parseBridgeCommand(`/${word} something`)).toMatchObject({ kind: 'planned', verb: word });
     });
@@ -131,6 +134,11 @@ describe('worker references (§4.2)', () => {
     expect(parseWorkerRef(text)).toEqual(ref);
   });
   it('an empty reference is none', () => expect(parseWorkerRef('  ')).toBeNull());
+});
+
+describe('durations (/mute)', () => {
+  it.each([['30m', 1_800_000], ['1h', 3_600_000], ['1h30m', 5_400_000], ['2 days', 172_800_000], ['2d', 172_800_000], ['8d', null], ['soon', null], ['0m', null]] as const)(
+    '%j -> %s', (text, ms) => expect(parseDuration(text)).toBe(ms));
 });
 
 describe('confirm bodies (§4.6)', () => {

@@ -63,10 +63,17 @@ declare
   v_status text;
   reply_message uuid;
   reply_direction text;
+  muted_until timestamptz;
 begin
   perform internal.require_bridge_commands_worker();
   select * into b from public.bridges where entity_id = p_bridge_id;
   if b.entity_id is null then return null; end if;
+  -- B1b-2's /mute column; read so this file applies before or after theirs.
+  begin
+    execute 'select muted_until from public.bridges where entity_id = $1' into muted_until using p_bridge_id;
+  exception when undefined_column then
+    muted_until := null;
+  end;
   select * into e from public.entities where id = p_bridge_id;
   if p_member_id is not null then
     select mb.role, mb.status into v_role, v_status
@@ -89,7 +96,11 @@ begin
     'teammateId', b.teammate_id,
     'targetTeammateId', case when b.target_kind = 'chat'
       then (select c.teammate_id from public.chats c where c.entity_id = b.target_id) end,
+    'targetTitle', internal.bridge_target_title(b.target_kind, b.target_id),
     'whoMayTrigger', b.policy ->> 'whoMayTrigger',
+    'direction', b.policy ->> 'direction',
+    'trigger', b.policy ->> 'trigger',
+    'mutedUntil', muted_until,
     'pausedAt', b.paused_at,
     'endedAt', b.ended_at,
     'deleted', e.deleted_at is not null,
