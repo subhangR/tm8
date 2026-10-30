@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BridgeDeliveryTick, bridgeProviderLabel, BridgeVia } from '../bridge-marks';
-import type { BridgeLogEntry, BridgeView } from '@tm8/contract';
+import type { BridgeLogEntry, BridgeTrust, BridgeView } from '@tm8/contract';
 import { clockTime } from '../../kit/time';
 import type { BridgesPort } from '../api';
 import { bridgeFailureOf } from '../format';
@@ -91,8 +91,8 @@ function Bubble({ entry, view }: { entry: BridgeLogEntry; view: BridgeView }) {
             bridge={{
               bridgeId: view.id, provider: view.provider, conversation: view.title, direction: 'in',
               participant: entry.origin?.participant ?? null,
-              // The log read carries no trust yet; B2-ticks adds it to BridgeLogEntry (#1434).
-              trust: null,
+              // #1457 adds `trust` to BridgeLogEntry (the MessageBridgeView value); null until it is on main.
+              trust: (entry as BridgeLogEntry & { trust?: BridgeTrust | null }).trust ?? null,
               delivery: null,
             }}
           />

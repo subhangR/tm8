@@ -123,3 +123,38 @@ test.describe('phone shell', () => {
     await page.screenshot({ path: info.outputPath('42-phone-entity-page.png') });
   });
 });
+
+test('Loops tab: the loops that post here, their words, a new loop here', async ({ page }, info) => {
+  await openInfra(page);
+  await page.getByRole('tab', { name: 'Loops' }).click();
+  const tab = page.getByTestId('bridge-loops');
+  await expect(tab.getByRole('button', { name: 'Stand-up nudge', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('70-loops-tab.png') });
+  await page.getByRole('button', { name: 'Run Stand-up nudge now' }).click();
+  await expect(tab.getByText(/Last run here: posted/)).toBeVisible();
+  await page.screenshot({ path: info.outputPath('71-loops-after-run.png') });
+  await page.getByRole('button', { name: 'Edit what Stand-up nudge says here' }).click();
+  await page.screenshot({ path: info.outputPath('72-loops-edit-text.png') });
+  await page.getByRole('button', { name: 'Cancel' }).first().click();
+  await page.getByRole('button', { name: '+ New loop here' }).click();
+  await page.getByLabel('Loop name').fill('Friday wrap-up');
+  await page.getByLabel('Schedule').fill('every friday at 17:00');
+  await page.getByLabel('What it posts in Infra').fill("It's Friday: post one thing you shipped this week.");
+  await expect(page.getByTestId('bridge-new-loop-preview')).toContainText('every friday');
+  await page.screenshot({ path: info.outputPath('73-loops-new-loop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Create loop' }).click();
+  await expect(tab.getByRole('button', { name: 'Friday wrap-up', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('74-loops-created.png'), fullPage: true });
+});
+
+test('Conversation opens on the newest page and scrolls back (#1446)', async ({ page }, info) => {
+  await openInfra(page);
+  const conv = page.getByTestId('bridge-conversation');
+  await expect(conv.getByText('nice, ship the changelog too')).toBeVisible();
+  await expect(conv.getByText('@tm8 is the deploy done?')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('75-conversation-newest.png') });
+  await conv.getByTestId('bridge-conversation-older').click();
+  await expect(conv.getByText('@tm8 is the deploy done?')).toBeVisible();
+  await expect(conv.getByTestId('bridge-conversation-start')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('76-conversation-scrolled-back.png') });
+});
