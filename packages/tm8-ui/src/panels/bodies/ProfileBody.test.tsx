@@ -651,8 +651,8 @@ describe('the memory detail is a registry row, not a new body', () => {
 
 /*
  * THE LOOP DETAIL used to be the profile archetype's fourth frame. It moved to
- * `loops/loop-controls.test.tsx` with the panel itself: a loop's body follows
- * its VERBS, and `loop-controls` mutates, so the kind is `generic` — the only
+ * `loops/loop-page.test.tsx` with the panel itself: a loop's body follows
+ * its VERBS, and `loop-header` mutates, so the kind is `generic` — the only
  * archetype handed a command executor. Every fact those tests asserted is
  * asserted there, against the blocks the registry actually ships.
  */

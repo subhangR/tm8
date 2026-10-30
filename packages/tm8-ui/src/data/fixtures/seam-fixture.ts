@@ -23,6 +23,8 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import { managedPortFromSeam } from '../../managed/port';
+import { createFixtureLoopsClient, fixtureLoopViewOf } from '../../loops/fixture';
+import { loopFormSourcesOf } from '../../loops/sources';
 import {
   type ContainerProfile,
   type CreateInviteInput,
@@ -735,9 +737,11 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // has to produce a whole one rather than falling through to the open
       // `{ kind }` variant below.
       return {
-        kind: 'loop', schedule: state.schedule, enabled: state.enabled,
-        teamMemberId: state.teamMemberId, subjectId: state.subjectId,
-        prompt: '', config: {},
+        kind: 'loop', action: state.action, schedule: state.schedule, timezone: state.timezone,
+        enabled: state.enabled, pausedUntil: state.pausedUntil,
+        teamMemberId: state.teamMemberId, toolId: state.toolId, subjectId: state.subjectId,
+        prompt: '', config: {}, toolInputs: {}, concurrency: 'skip', maxRuntimeSeconds: null,
+        retry: { attempts: 0, delaySeconds: 300 },
         nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
     case 'graph':
@@ -6296,5 +6300,10 @@ export function createFixtureSeam(): FixtureSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
+  // Seeded from the fixture loop entities, so the list and the loop page agree with the entity rows.
+  seam.commands.loops = createFixtureLoopsClient(
+    [...summaries.values()].flatMap((row) => fixtureLoopViewOf(row) ?? []),
+  );
+  seam.commands.loopForm = loopFormSourcesOf(seam);
   return seam;
 }

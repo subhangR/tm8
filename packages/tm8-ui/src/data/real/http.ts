@@ -142,12 +142,18 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
  * second slot against the session cap. Measured on prod from the CLI journals
  * (2026-09-20..24, n=212): `execution.spawn` p50 4.4s, p90 29s, max 180s.
  *
+ * `loops.runNow` fires a loop synchronously, and for a teammate loop that IS a
+ * spawn: it answers with the run and the session it started, after the same
+ * first-prompt settlement. At 15s the page said Run now failed while the
+ * session kept booting, and "Run anyway" then started a SECOND one.
+ *
  * Floors on the DEFAULT only: a client built with an explicit `timeoutMs`
  * said a number out loud and gets it, as `--timeout` does on the CLI.
  */
 export const SLOW_OPERATION_TIMEOUT_MS: Readonly<Partial<Record<OperationName, number>>> = {
   'execution.spawn': 180_000,
   'execution.resume': 180_000,
+  'loops.runNow': 180_000,
 };
 /** Uploads move real bytes; they get a proportionally longer leash. */
 export const UPLOAD_TIMEOUT_MS = 120_000;

@@ -50,6 +50,7 @@ import { resetChatEntityResolutionCache } from '../chat-home/EntityChip';
 import { clearLastPlace } from '../views/last-place';
 import { clearLaunchCache, nodeKeyOf } from '../data/launch-cache';
 import { clearLaunchRecents } from '../data/launch-recents';
+import { clearLaunchDefaultsCache } from '../data/launch-defaults-cache';
 import { clearCraftOpenTabs } from '../craft/craft-open-tabs';
 import { readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
 
@@ -143,6 +144,11 @@ export function endSession(end: SessionEnd, opts: SessionResetOptions = {}): voi
      viewer's teammate picker by the previous viewer's launches, which names
      who they work as. */
   clearLaunchRecents(nodeKey);
+  /* The launch card's remembered defaults — memory statements, skill and doc
+     titles. Kept on `expired` (the server's invalid verdict, the daily path):
+     the store is keyed by viewer, so whoever signs in next reads their own
+     key and never this one, and the same person keeps a warm first frame. */
+  clearLaunchDefaultsCache(nodeKey);
   /* Keyed by viewer, but still this browser's record of what they had open. */
   clearCraftOpenTabs(nodeKey);
   const address = opts.address === undefined ? browserAddress() : opts.address;
