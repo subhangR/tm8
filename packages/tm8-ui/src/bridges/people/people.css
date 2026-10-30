@@ -1,7 +1,7 @@
 /* The bridge People tab (BRIDGE-ENTITY-DESIGN §4.4, D51). Every class is
    prefixed `brp`; tokens only — `src/hex-ban.test.ts` walks this file. */
 
-.brp { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; min-width: 0; }
+.brp { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; min-width: 0; container-type: inline-size; }
 .brp p { margin: 0; }
 .brp__muted { font-size: 10.5px; line-height: 1.5; color: var(--pn-ink-3); }
 .brp__notice { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-run); }
@@ -59,7 +59,9 @@
 .brp__meta { font-size: 10.5px; color: var(--pn-ink-3); gap: 10px; }
 .brp__id { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-2); }
 .brp__member { display: inline-flex; align-items: center; gap: 4px; }
-.brp__chip { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; }
+.brp__member { color: var(--pn-ink-2); }
+/* A <button> keeps the UA's black text unless told otherwise: unreadable in dark. */
+.brp__chip { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
 
 .brp__actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .brp__btn {
@@ -87,3 +89,10 @@
   background: var(--pn-hover);
 }
 .brp__select { font: inherit; font-size: 11px; padding: 2px 4px; max-width: 220px; }
+
+/* Narrow panels and phones: the actions drop under the row instead of
+   squeezing its text into a sliver (measured at 390px). */
+@container (max-width: 560px) {
+  .brp__row { grid-template-columns: 32px minmax(0, 1fr); }
+  .brp__actions { grid-column: 2; justify-content: flex-start; }
+}

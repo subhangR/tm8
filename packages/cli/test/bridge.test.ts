@@ -25,6 +25,16 @@ const view: BridgeDetailView = {
   recentPosters: [{ actorId: CHAT, actorKind: 'team_member', displayName: 'Infra', handle: 'keen-otter', posts: 3, lastPostAt: '2026-10-29T22:10:00.000Z' }],
 };
 
+// Bridges P (404, D50-D52): one linked member and one guest, masked as a member sees them.
+const PEOPLE = [
+  { externalId: '…0001', altExternalIds: [], masked: true, displayName: 'Subhang', avatarRef: null, muted: false,
+    firstSeenAt: view.createdAt, lastSeenAt: view.createdAt, messageCount: 214, trust: 'linked', memberId: CHAT,
+    member: { id: CHAT, kind: 'member', displayName: 'Subhang' }, link: { method: 'code', verifiedAt: view.createdAt }, you: true },
+  { externalId: '…9494', altExternalIds: [], masked: true, displayName: 'Rahul', avatarRef: null, muted: false,
+    firstSeenAt: view.createdAt, lastSeenAt: view.createdAt, messageCount: 37, trust: 'guest', memberId: null,
+    member: null, link: null, you: false },
+];
+
 let server: Server;
 let requests: Array<{ method: string; path: string; query: URLSearchParams; body: Record<string, any> }> = [];
 let stdout = '', stderr = '';
@@ -41,6 +51,8 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: [view] };
       else if (url.pathname.endsWith('/handles') && req.method === 'POST') data = { spaceId: SPACE, handle: 'keen-otter', entityId: CHAT, kind: 'work_session', title: null, status: 'live', createdAt: view.createdAt };
       else if (url.pathname.endsWith('/listen')) data = { bridgeId: BRIDGE, sessionId: CHAT, wake: body.wake, ceiling: 'thread' };
+      else if (url.pathname.endsWith('/participants')) data = { bridgeId: BRIDGE, spaceId: SPACE, admin: false, items: PEOPLE };
+      else if (url.pathname.includes('/participants/')) data = { ...PEOPLE[1], muted: body.patch?.muted ?? false };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -132,5 +144,27 @@ describe('tm8 bridge (B0a)', () => {
     expect(await run(['entity', 'create', 'bridge', 'Infra'])).toBe(2);
     expect(stderr).toMatch(/use `tm8 bridge create`/);
     expect(requests).toEqual([]);
+  });
+
+  it('people reads the roster and filters linked from guests (Bridges P, D50)', async () => {
+    expect(await run(['bridge', 'people', BRIDGE, '--guests'])).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'GET', path: `/v2/bridges/${BRIDGE}/participants` });
+    expect(stdout).toContain('Rahul'); expect(stdout).toContain('…9494'); expect(stdout).not.toContain('Subhang');
+    stdout = '';
+    expect(await run(['bridge', 'people', BRIDGE, '--linked'])).toBe(0);
+    expect(stdout).toContain('linked ✓'); expect(stdout).toContain('(you)'); expect(stdout).not.toContain('Rahul');
+    expect(await run(['bridge', 'people', BRIDGE, '--linked', '--guests'])).toBe(2);
+  });
+
+  it('participant sends exactly the patch it was given (Bridges P, D52)', async () => {
+    const ext = '919811109494@s.whatsapp.net';
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--mute', 'on'])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'PATCH', path: `/v2/bridges/${BRIDGE}/participants/${encodeURIComponent(ext)}`, body: { patch: { muted: true } } });
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--member', CHAT])).toBe(0);
+    expect(requests.at(-1)!.body.patch).toEqual({ memberId: CHAT });
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--unassert'])).toBe(0);
+    expect(requests.at(-1)!.body.patch).toEqual({ memberId: null });
+    expect(await run(['bridge', 'participant', BRIDGE, ext])).toBe(2);
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--member', CHAT, '--unassert'])).toBe(2);
   });
 });
