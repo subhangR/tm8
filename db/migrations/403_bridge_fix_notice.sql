@@ -381,9 +381,15 @@ begin
 end
 $$;
 revoke all on function internal.bridge_fix_on_edge() from public;
+-- Queued only for what the body acts on: a tracks edge, or an authored_from
+-- whose bridgeId is its dst (399's guard makes that every authored_from ->
+-- bridge, and no -> origin message edge). An ordinary edge write queues no
+-- deferred event. A transaction that writes such an edge and then ALTERs
+-- public.edges must run `set constraints all immediate` first: ALTER TABLE
+-- refuses a table with pending trigger events.
 create constraint trigger edges_bridge_fix after insert or update on public.edges
   deferrable initially deferred for each row
-  when (new.type = 'tracks' or (new.type = 'authored_from' and new.props ? 'bridgeId'))
+  when (new.type = 'tracks' or (new.type = 'authored_from' and new.props ->> 'bridgeId' = new.dst_id::text))
   execute function internal.bridge_fix_on_edge();
 
 -- A report entering done (D72), and `bug` added to a task with origins.
