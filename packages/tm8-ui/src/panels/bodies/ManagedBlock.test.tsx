@@ -214,3 +214,86 @@ describe('space link verbs act on the caller\'s own sign-in', () => {
     expect(view.getByTestId('managed-verb-spaceLinks.setSpawn').textContent).toBe('Let agents start sessions there');
   });
 });
+
+describe('the credential page (task 01a18e53): header, details, lifecycle, states', () => {
+  const record = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: PUBLIC_MINE, spaceId: FIXTURE_SPACE_ID, provider: 'anthropic', shape: 'api_key', label: 'Team key',
+    isDefault: false, status: 'active', createdByAccountId: null, displayLogin: null, keyHint: 'k3Jd',
+    createdAt: '2026-09-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:00.000Z',
+    lastUsedAt: null, lastProbeAt: '2026-10-30T10:00:00.000Z', ownerAccountId: null, visibility: 'public', ...over,
+  }) as ManagedRecord;
+
+  it('the header names provider, kind, status and owner, and DETAILS does not repeat them', async () => {
+    const view = await mount(detailOf('credential', PUBLIC_MINE), portWith(rowsOf([]), record()));
+    const head = view.getByTestId('managed-head');
+    expect(head.textContent).toContain('Team key');
+    expect(head.textContent).toContain('Anthropic · API key');
+    expect(within(head).getByText('Active')).toBeTruthy();
+    expect(within(head).getByTestId('managed-owner').textContent).toBe('This space');
+    const facts = view.getByTestId('managed-facts');
+    expect(within(facts).queryByText('Provider')).toBeNull();
+    expect(within(facts).queryByText('Status')).toBeNull();
+  });
+
+  it('the key hint is drawn behind dots, and no fact outside the spec is drawn', async () => {
+    const view = await mount(detailOf('credential', PUBLIC_MINE), portWith(rowsOf([]), record({ secret: 'sk-ant-SECRET' })));
+    expect(view.getByTestId('managed-fact-keyHint').querySelector('dd')?.textContent).toBe('•••• k3Jd');
+    expect(view.container.textContent).not.toContain('sk-ant-SECRET');
+  });
+
+  it('the lifecycle draws what happened, and says plainly what has not', async () => {
+    const view = await mount(detailOf('credential', PUBLIC_MINE), portWith(rowsOf([]), record()));
+    const life = view.getByTestId('managed-lifecycle');
+    expect(within(life).getByText('Created')).toBeTruthy();
+    expect(within(life).getByText('Last verified')).toBeTruthy();
+    expect(view.getByTestId('managed-step-lastUsedAt').textContent).toContain('No session has used it yet');
+    expect(within(life).queryByText('Revoked')).toBeNull();
+  });
+
+  it('a stale credential says it failed its last check rather than "last verified"', async () => {
+    const view = await mount(detailOf('credential', PUBLIC_MINE), portWith(rowsOf([]), record({ status: 'stale' })));
+    const life = view.getByTestId('managed-lifecycle');
+    expect(within(life).getByText('Failed its last check')).toBeTruthy();
+    expect(within(life).queryByText('Last verified')).toBeNull();
+  });
+
+  it('a revoked credential (not listed) draws its envelope under a note, with a Revoked step and no invented "never used"', async () => {
+    const revoked = { kind: 'credential', provider: 'mcp', shape: 'api_key', visibility: 'private', status: 'revoked', ownerAccountId: null };
+    const detail = { ...detailOf('credential', PUBLIC_MINE), title: 'yo-yo', state: revoked, content: revoked } as EntityDetail;
+    const view = await mount(detail, portWith(rowsOf([]), null));
+    expect(view.getByTestId('managed-envelope')).toBeTruthy();
+    expect(view.queryByTestId('managed-unreadable')).toBeNull();
+    expect(view.getByTestId('managed-head').textContent).toContain('yo-yo');
+    expect(view.getByTestId('managed-head').textContent).toContain('Revoked');
+    const life = view.getByTestId('managed-lifecycle');
+    expect(within(life).getByText('Revoked')).toBeTruthy();
+    expect(within(life).queryByText('Last used')).toBeNull();
+  });
+
+  it('a failed load says so with a retry, draws no verbs, and retry reloads', async () => {
+    const port = portWith(rowsOf([]), record());
+    let fail = true;
+    port.actions = vi.fn(async () => { if (fail) throw new Error('503'); return rowsOf(['credentials.space.rename']); });
+    const view = await mount(detailOf('credential', PUBLIC_MINE), port);
+    expect(view.getByTestId('managed-load-error').textContent).toContain('503');
+    expect(view.queryByTestId('managed-verbs')).toBeNull();
+    fail = false;
+    await act(async () => { fireEvent.click(within(view.getByTestId('managed-load-error')).getByText('Retry')); });
+    await waitFor(() => expect(view.getByTestId('managed-verb-credentials.space.rename').tagName).toBe('BUTTON'));
+    expect(view.queryByTestId('managed-load-error')).toBeNull();
+  });
+
+  it('a session in SESSIONS opens that session', async () => {
+    const port = portWith(rowsOf(['credentials.space.usage']), record());
+    port.run = vi.fn(async () => ({ sessions: [{ workSessionId: 'ws-abcdef123456', source: 'pinned', status: 'running', recordedAt: base.updatedAt }] }));
+    const opened: string[] = [];
+    const view = render(
+      <EntityDetailPanel detail={detailOf('credential', PUBLIC_MINE)} reasons={REASONS} ctx={ctx}
+        commands={{ managed: port } as never} onOpenEntity={(id) => opened.push(id)} />,
+    );
+    const read = await waitFor(() => view.getByTestId('managed-read-credentials.space.usage'));
+    expect(within(read).getByText('Running')).toBeTruthy();
+    fireEvent.click(within(read).getByText('ws-abcde'));
+    expect(opened).toEqual(['ws-abcdef123456']);
+  });
+});

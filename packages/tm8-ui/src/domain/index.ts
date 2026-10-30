@@ -42,6 +42,8 @@ export type {
   LiveTreatment,
   MembershipListControl,
   ManagedFact,
+  ManagedHeader,
+  ManagedStep,
   ManagedPanelSpec,
   ManagedRead,
   ManagedSource,

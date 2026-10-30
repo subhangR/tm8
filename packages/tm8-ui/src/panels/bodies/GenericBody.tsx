@@ -304,7 +304,8 @@ function ContentBlock({
       case 'managed': {
         const spec = getKind(detail.kind).panel.managed;
         return spec ? (
-          <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl} />
+          <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl}
+            {...(onOpenEntity ? { onOpenEntity } : {})} />
         ) : null;
       }
       /* The connector page: the same detail body the Connectors drawer draws,
