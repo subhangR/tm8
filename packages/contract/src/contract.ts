@@ -1499,9 +1499,64 @@ export interface CollectionQuery {
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority'|'progress';
   cursor?: Cursor; limit?: number;
+  /**
+   * Additive (S5, mobile LLD §5.1 "one query per list"): the rows under this
+   * page, down to `depth` levels, in the same trip. Level 1 reads the children
+   * of the page's rows with `childCount > 0`; level 2 reads the children of
+   * level 1's. Each level is the rows the step query
+   * `{spaceId, kinds, filters: {parentIn: <those ids>}, sort, limit: 200}`
+   * returns (the three trips a list made before), cut to the first
+   * `perParent` rows of each parent in the same sort order. Children ride
+   * along whatever their status: the page's `filters` pick the page only.
+   * See `CollectionTreeOption` for the bounds; `CollectionResult.tree` holds
+   * the levels.
+   */
+  tree?: CollectionTreeOption;
 }
 
-export interface CollectionResult { query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[] }
+/**
+ * S5 tree bounds, enforced by `CollectionQuerySchema`. A level holds at most
+ * `COLLECTION_TREE_LEVEL_MAX` rows, so the next level's parents are never more
+ * than the 200 ids `filters.parentIn` allows; the page itself is bounded by
+ * `limit` (at most 200).
+ */
+export const COLLECTION_TREE_MAX_DEPTH = 2;
+export const COLLECTION_TREE_LEVEL_MAX = 200;
+
+export interface CollectionTreeOption {
+  /** How many levels under the page to read: 1 or 2. Deeper rows stay unread; their parent's `childCount` says how many. */
+  depth: 1 | 2;
+  /**
+   * At most this many children of each parent, 1 to 200. Default 200: no cut
+   * beyond the level's own 200, which is exactly what the step query returns.
+   * The echoed `query` carries the resolved value.
+   */
+  perParent?: number;
+}
+
+export interface CollectionResult {
+  query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[];
+  /** Present exactly when the query asked for `tree`: one level per depth, 1 first. */
+  tree?: CollectionTree;
+}
+export interface CollectionTree { levels: CollectionTreeLevel[] }
+export interface CollectionTreeLevel {
+  depth: 1 | 2;
+  /**
+   * The rows whose children this level read: the rows one level up (the page
+   * for level 1) with `childCount > 0`. Empty when none has children; the
+   * level is then read from nothing and holds nothing.
+   */
+  parentIds: EntityId[];
+  /**
+   * The children, each with its own `childCount`, in the page's sort order:
+   * at most `perParent` per parent and at most `COLLECTION_TREE_LEVEL_MAX` in
+   * all. A parent's `childCount` minus its rows here is the number not shown.
+   */
+  items: EntitySummary[];
+  /** True when the level's 200-row bound cut rows the per-parent bound kept. */
+  capped: boolean;
+}
 export interface CollectionGroup {
   key: string; label: string; items: EntitySummary[]; nextCursor?: Cursor;
   /**
@@ -1512,7 +1567,8 @@ export interface CollectionGroup {
    */
   total?: number;
 }
-export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
+/** `tree` is a collection page's: a graph lens has no page for it to hang from, and `GraphQuerySchema` refuses it. */
+export interface GraphQuery extends Omit<CollectionQuery, 'tree'> { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
 export interface GraphResult { nodes: EntitySummary[]; edges: GraphEdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
 

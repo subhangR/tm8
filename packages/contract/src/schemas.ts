@@ -18,6 +18,8 @@ import { z } from 'zod';
 import { isOperationName } from './catalog.js';
 import type { OperationName } from './catalog.js';
 import {
+  COLLECTION_TREE_LEVEL_MAX,
+  COLLECTION_TREE_MAX_DEPTH,
   MAX_CONTROL_FRAME_SPACES,
   PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES,
   PROJECT_FOLDER_UPLOAD_MAX_FILES,
@@ -78,6 +80,7 @@ import type {
   SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
+  CollectionTree, CollectionTreeLevel, CollectionTreeOption,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
@@ -1429,8 +1432,43 @@ function collectionQueryShape() {
   };
 }
 
+/**
+ * `tree` (S5, mobile LLD §5.1): the page plus up to two levels under it, in
+ * one trip. THE BOUNDS ARE THE CONTRACT, and a value outside them is refused,
+ * never clamped (a client that asked for three levels and drew two would show
+ * a tree that looks whole and is not):
+ *   - `depth`: 1 or 2 (`COLLECTION_TREE_MAX_DEPTH`).
+ *   - `perParent`: an integer from 1 to 200; omitted means 200, no cut beyond
+ *     the level's own, so each level is exactly the step query's rows.
+ *   - every level holds at most 200 rows (`COLLECTION_TREE_LEVEL_MAX`), so the
+ *     next level's parents are at most the 200 ids `filters.parentIn` allows;
+ *     a level the bound cut says `capped: true`.
+ *   - the page is bounded by `limit` (at most 200), so level 1's parents are too.
+ * Only `collections.query` takes it: `GraphQuerySchema` has no `tree`, so a
+ * graph read refuses it instead of ignoring it.
+ */
+export const CollectionTreeOptionSchema: z.ZodType<CollectionTreeOption> = z.object({
+  depth: z.union([z.literal(1), z.literal(2)], {
+    errorMap: () => ({
+      message: `tree.depth must be 1 or 2: at most ${COLLECTION_TREE_MAX_DEPTH} levels are read under the page`,
+    }),
+  }),
+  perParent: z.number().int().min(1).max(COLLECTION_TREE_LEVEL_MAX).optional(),
+}).strict();
+
 export const CollectionQuerySchema: z.ZodType<CollectionQuery> =
-  z.object(collectionQueryShape()).strict();
+  z.object({ ...collectionQueryShape(), tree: CollectionTreeOptionSchema.optional() }).strict();
+
+export const CollectionTreeLevelSchema: z.ZodType<CollectionTreeLevel> = z.lazy(() => z.object({
+  depth: z.union([z.literal(1), z.literal(2)]),
+  parentIds: z.array(EntityIdSchema).max(COLLECTION_TREE_LEVEL_MAX),
+  items: z.array(EntitySummarySchema).max(COLLECTION_TREE_LEVEL_MAX),
+  capped: z.boolean(),
+}).strict());
+
+export const CollectionTreeSchema: z.ZodType<CollectionTree> = z.lazy(() => z.object({
+  levels: z.array(CollectionTreeLevelSchema).min(1).max(COLLECTION_TREE_MAX_DEPTH),
+}).strict());
 
 export const CollectionGroupSchema: z.ZodType<CollectionGroup> = z.lazy(() => z.object({
   key: z.string(),
@@ -1444,6 +1482,7 @@ export const CollectionResultSchema: z.ZodType<CollectionResult> = z.lazy(() => 
   query: CollectionQuerySchema,
   page: pageOf(EntitySummarySchema),
   groups: z.array(CollectionGroupSchema).optional(),
+  tree: CollectionTreeSchema.optional(),
 }).strict());
 
 export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({

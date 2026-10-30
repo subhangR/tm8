@@ -2215,20 +2215,22 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>] [--tree-depth <1|2> [--per-parent <count>]]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
-    tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
+    tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work', 'tree', 'children', 'subtasks', 'nested'],
     notes: [
       '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
       '--status is the task work status (open|pulled|working|in_review|done|blocked|cancelled); a pull request\'s or session\'s own state is not a query filter',
+      '--tree-depth 1|2 also returns the children of each row on the page (and, at 2, their children) in the same request, each level in `tree.levels`: the rows a --kind query with filters.parentIn would return, whatever their status; --per-parent <1-200> keeps the first n children of each row (default 200), a level holds at most 200 rows (`capped` says when that cut), and a row whose children are not all shown reads `▸ N more` from its childCount',
     ],
     examples: [
       'tm8 entity query --kind task --assignee <actor-id> --status working',
       'tm8 entity query --space <space-id> --kind story --roots',
       'tm8 entity query --kind story --parent <story-id>',
+      'tm8 entity query --kind task --roots --tree-depth 2 --per-parent 20',
     ],
   },
   'collections.addItem': {
