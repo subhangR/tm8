@@ -1,5 +1,5 @@
 /**
- * Bridges B2-ticks (migration 406): the bridged-message read every message
+ * Bridges B2-ticks (migration 407): the bridged-message read every message
  * view carries (BRIDGE-ENTITY-DESIGN §4.5, D4, D64, D65).
  *
  * An inbound message reads as the bridge's participant with a trust word

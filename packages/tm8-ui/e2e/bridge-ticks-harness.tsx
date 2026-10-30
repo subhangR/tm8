@@ -5,7 +5,7 @@
  * WhatsApp bridge targets: the header chip, a guest's bubble, a linked and an
  * asserted member's, and an agent answer in each outbox state (pending, sent,
  * retrying, failed, refused: paused / rate limited / worker posting off).
- * The data is `MessageView.bridge` as 406 serves it; the server read is held
+ * The data is `MessageView.bridge` as 407 serves it; the server read is held
  * by `packages/server/test/db/bridge-message-badges.pg.test.ts`.
  *
  * `e2e/capture-bridge-ticks.mjs` drives it and saves the screenshots.

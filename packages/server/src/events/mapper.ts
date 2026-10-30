@@ -209,7 +209,7 @@ interface LiveMessageContent {
   body: string;
   mentions: unknown[];
   attachments: unknown[];
-  /** The bridge mark and delivery tick, read live too: a tick moves by `message.updated` (406). */
+  /** The bridge mark and delivery tick, read live too: a tick moves by `message.updated` (407). */
   bridge?: MessageBridgeView;
 }
 

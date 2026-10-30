@@ -56,7 +56,7 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
 
 /**
  * 395 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
- * bridge rows. 406 (Bridges B2): the message readers and the projector select
+ * bridge rows. 407 (Bridges B2): the message readers and the projector select
  * `internal.bridge_message_badges(ids)` for every page of messages. Historical
  * fixtures that stop before 395 mirror only those reads' signatures: a NULL
  * view and an empty badge list (no message crossed a bridge). No bridge rows
