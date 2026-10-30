@@ -247,7 +247,7 @@ export const CoreEntityKindSchema = z.enum([
   // Crafts (304; renamed from design in 322): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'craft',
-  // Bridges (392). Not in `CreatableEntityKind`: `bridges.create` is its door.
+  // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
   'bridge',
 ]);
 
@@ -782,7 +782,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
-  // 392 — a bridge's derived facts; state and content are the same view.
+  // 395 — a bridge's derived facts; state and content are the same view.
   BridgeEntitySchema,
   // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
@@ -1234,7 +1234,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
-  // 392 — a bridge's derived facts; state and content are the same view.
+  // 395 — a bridge's derived facts; state and content are the same view.
   BridgeEntitySchema,
   // 284 — a space style's content: its state plus the description.
   z.object({

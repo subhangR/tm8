@@ -75,7 +75,7 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   // Attention v2 (256): an undo past its window, a withdraw of a row that is
   // not an open agent row, a reused batch id; details.reason says which.
   TAC01: 'conflict',
-  // Bridges (392): target_has_bridge (D25), already_connected (D20), bridge_ended;
+  // Bridges (395): target_has_bridge (D25), already_connected (D20), bridge_ended;
   // details.reason says which.
   TBC01: 'conflict',
 };

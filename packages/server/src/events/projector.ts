@@ -370,7 +370,7 @@ interface SummaryRow {
   drawing_element_count: number | null;
   mcp_definition?: unknown;
   tool_content?: unknown; ws_tool_run?: unknown; ws_session_kind?: string | null;
-  /** 392 — MIRRORS entity-read.ts: `internal.bridge_view`, null off a bridge row. */
+  /** 395 — MIRRORS entity-read.ts: `internal.bridge_view`, null off a bridge row. */
   bridge_view?: Record<string, unknown> | null;
   story_title: string | null;
   story_description: string | null;
@@ -607,7 +607,7 @@ select
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   mcp.definition as mcp_definition,
-  -- 392 — MIRRORS entity-read.ts: the one SQL function both read paths select.
+  -- 395 — MIRRORS entity-read.ts: the one SQL function both read paths select.
   case when e.kind = 'bridge' then internal.bridge_view(e.id) end as bridge_view,
   ${TOOL_CONTENT_SQL} as tool_content,
   ${TOOL_RUN_SQL} as ws_tool_run,
@@ -1725,7 +1725,7 @@ export class PgEntityProjector implements EntityProjector {
         // on a strict-schema refusal.
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
       case 'bridge':
-        // 392 — MIRRORS entity-read.ts stateOf.
+        // 395 — MIRRORS entity-read.ts stateOf.
         return bridgeEntityOf(r.bridge_view);
       case 'space_link':
       case 'server':

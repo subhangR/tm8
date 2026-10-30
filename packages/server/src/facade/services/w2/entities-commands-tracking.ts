@@ -140,15 +140,15 @@ export const RESTRICTED_LIFECYCLE_KINDS = new Set([
   // admin). There is no update door at all; 284's `delete_entity` refuses the
   // kind in SQL too. The refusals name the right door (STYLE_LIFECYCLE_REMEDY).
   'style',
-  // `bridge` (392) is born from `bridges.create` (a human space admin who owns
+  // `bridge` (395) is born from `bridges.create` (a human space admin who owns
   // the connection) and ended only by `bridges.remove`, which leaves the
   // tombstone. A generic delete would hide the bridge while its outbox, links
-  // and handles stayed live; SQL refuses it too (392 guard_bridge_entity). The
+  // and handles stayed live; SQL refuses it too (395 guard_bridge_entity). The
   // refusals name the door (BRIDGE_LIFECYCLE_REMEDY).
   'bridge',
 ]);
 
-/** The bridge kind's refusals say which door to use instead (392). */
+/** The bridge kind's refusals say which door to use instead (395). */
 const BRIDGE_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
   'entities.create': 'a bridge is created with `tm8 bridge create` (bridges.create: a space admin who owns the connection)',
   'entities.patch': 'a bridge is edited with `tm8 bridge update` (bridges.update)',

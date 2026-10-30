@@ -1,5 +1,5 @@
 /**
- * Bridges B0a (BRIDGE-ENTITY-DESIGN §3.4, migration 392): the catalog doors B1
+ * Bridges B0a (BRIDGE-ENTITY-DESIGN §3.4, migration 395): the catalog doors B1
  * builds on. Every write is one SQL door; every read answers
  * `internal.bridge_view`, so status and health are derived once (T-L12).
  *

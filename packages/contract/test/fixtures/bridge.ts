@@ -1,5 +1,5 @@
 /**
- * Bridge fixtures (392, B0a): one live WhatsApp group bridged to a chat, the
+ * Bridge fixtures (395, B0a): one live WhatsApp group bridged to a chat, the
  * shape `internal.bridge_view` answers. B1 and the CLI tests build on these.
  */
 import type { BridgeDetailView, BridgeFacts, BridgePolicy, BridgeView } from '../../src/index.js';

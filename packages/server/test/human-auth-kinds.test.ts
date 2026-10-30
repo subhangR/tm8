@@ -84,7 +84,7 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // `read_mcp_launch_selections` has no such gate — so this door carries the
     // wrapper for real and the catalog flags it.
     'packages/server/src/chat/handlers.ts',
-    // 392: bridges.create/retarget/remove (design §3.4: human-only).
+    // 395: bridges.create/retarget/remove (design §3.4: human-only).
     'packages/server/src/bridges/handlers.ts',
   ];
 

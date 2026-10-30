@@ -857,7 +857,7 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // 284: a space style's content is its state's facts plus a description.
       return { ...state, description: null };
     case 'bridge':
-      // 392: a bridge's content is the same derived facts as its state.
+      // 395: a bridge's content is the same derived facts as its state.
       return { ...state };
     default:
       // pull_request | commit | file | spell | skill — the open content variant

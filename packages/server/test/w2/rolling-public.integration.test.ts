@@ -586,7 +586,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   'loops.create', 'loops.update', 'loops.get', 'loops.list', 'loops.enable', 'loops.disable',
   'loops.pause', 'loops.resume', 'loops.runNow', 'loops.runs.list', 'loops.runs.get',
   'loops.runs.stop', 'loops.schedule.preview',
-  // Bridges B0a (392): every bridges.* row is registered.
+  // Bridges B0a (395): every bridges.* row is registered.
   'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
   'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
   // Spec D1 (301): `tm8 task release` joins the entities-commands module.

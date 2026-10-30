@@ -365,7 +365,7 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
         ],
       };
     case 'bridge-lifecycle':
-      // NOTHING generic to WRITE (392, bridges design §3.4). Born only from
+      // NOTHING generic to WRITE (395, bridges design §3.4). Born only from
       // `bridges.create` (a human admin who owns the connection), ended only by
       // `bridges.remove`, which leaves the tombstone. The conversation is its
       // discussion, so messages, reactions and connections ride the envelope.
@@ -683,7 +683,7 @@ export const CORE_KIND_DISPOSITIONS = {
     capabilities: { profile: 'style-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'style-detail' },
   }),
-  // Bridges (migration 392): one provider conversation bound to one target.
+  // Bridges (migration 395): one provider conversation bound to one target.
   // Created and managed in Settings → Bridges, never filed from the generic menu.
   bridge: core('bridge', 'bridges', {
     collection: typedCollection, projection: universal,

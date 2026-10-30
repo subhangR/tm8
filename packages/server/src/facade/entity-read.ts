@@ -217,7 +217,7 @@ export const ENTITY_COLUMNS = `
   drw.files as drawing_files,
   mcp.definition as mcp_definition,
   ${TOOL_CONTENT_SQL} as tool_content,
-  -- 392: a bridge's derived facts, the one SQL function the projector twin selects too.
+  -- 395: a bridge's derived facts, the one SQL function the projector twin selects too.
   case when e.kind = 'bridge' then internal.bridge_view(e.id) end as bridge_view,
   ${TOOL_RUN_SQL} as ws_tool_run,
   case when e.kind='mcp_server' then internal.is_space_admin(e.space_id) else false end as mcp_manage,
@@ -681,7 +681,7 @@ export interface EntityRow {
   drawing_files: Record<string, unknown> | null;
   mcp_definition?: unknown;
   tool_content?: unknown; ws_tool_run?: unknown;
-  /** 392: `internal.bridge_view`, camelCase; null off a bridge row or for a reader who cannot see it. */
+  /** 395: `internal.bridge_view`, camelCase; null off a bridge row or for a reader who cannot see it. */
   bridge_view?: Record<string, unknown> | null;
   mcp_manage?: boolean;
   story_title?: string | null;
@@ -2267,7 +2267,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         stale: (row.commit_fetched_at ?? null) === null,
       } as EntityState;
     case 'bridge':
-      // 392: state and content are the same derived view. MIRRORS the projector twin.
+      // 395: state and content are the same derived view. MIRRORS the projector twin.
       return bridgeEntityOf(row.bridge_view);
     case 'space_link':
     case 'server':
@@ -2566,7 +2566,7 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   const base = capabilitiesOf(row);
   const live = row.deleted_at === null;
   if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
-  // 392: edited and ended only through bridges.* (generic delete is refused in SQL); flat, never completed.
+  // 395: edited and ended only through bridges.* (generic delete is refused in SQL); flat, never completed.
   if (row.kind === 'bridge') return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
@@ -3351,7 +3351,7 @@ export function craftSummaryOf(raw: unknown): Extract<EntityState, { kind: 'craf
 }
 
 /**
- * A bridge row's facts from `internal.bridge_view` (392). The view answers null
+ * A bridge row's facts from `internal.bridge_view` (395). The view answers null
  * to a reader who cannot see the bridge; such a row never reaches assembly, so
  * a missing view is a broken invariant and fails loudly rather than inventing facts.
  */

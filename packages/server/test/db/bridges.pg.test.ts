@@ -1,5 +1,5 @@
 /**
- * Bridges B0a (migration 392): the kind, the doors and the rules §7.3 holds
+ * Bridges B0a (migration 395): the kind, the doors and the rules §7.3 holds
  * B0a to — item 1's refused generic create lives in the service test; here:
  * item 13 at the API level (target_has_bridge on create and retarget, owner
  * only), D20's already-connected refusal, the handle uniqueness rules (D23),

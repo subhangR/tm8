@@ -2929,7 +2929,7 @@ describe('W3-audit node-admin policies (002, K6) — every is_node_admin() arm i
   const NODE_ADMIN_POLICIES = [
     'artifact_bundle_revisions.artifact_bundle_revisions_select',
     'artifact_preview_sessions.artifact_preview_sessions_select',
-    // 392 (Bridges B0a): node admins see every connection's metadata (never
+    // 395 (Bridges B0a): node admins see every connection's metadata (never
     // state_ref, which tm8_app cannot select); a pinned session is not a node
     // admin (K6), so a pinned node admin sees only its own account's rows.
     'bridge_connections.bridge_connections_select',

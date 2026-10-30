@@ -1,6 +1,7 @@
 -- =============================================================================
--- 392 — Bridges B0a: the `bridge` kind, its tables, the `bridge_runtime` auth
+-- 395 — Bridges B0a: the `bridge` kind, its tables, the `bridge_runtime` auth
 -- kind, the edge rules, author resolution and the policy validator.
+-- (Authored as 392; renumbered to 395 at merge by the bridges merger: 391-394 are reserved for Mobile/Loops.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- §2.1, §2.4, §3.1-§3.7, D20, D23, D25; build step B0a in §7.2. Task
@@ -102,7 +103,7 @@ grant select (id, provider, owner_account_id, label, external_account_id, status
   on public.bridge_connections to tm8_app;
 
 comment on table public.bridge_connections is
-  '392 (Bridges §2.5): one authenticated provider account, owned by the human '
+  '395 (Bridges §2.5): one authenticated provider account, owned by the human '
   'account that linked it. No secret: state_ref names the node-sealed blob and '
   'is withheld from tm8_app by a column grant.';
 
@@ -149,7 +150,7 @@ create index bridges_space_idx on public.bridges(space_id, created_at desc);
 create index bridges_connection_idx on public.bridges(connection_id);
 
 comment on table public.bridges is
-  '392 (Bridges §3.2): one provider conversation bound to one tm8 target. The '
+  '395 (Bridges §3.2): one provider conversation bound to one tm8 target. The '
   'target is also the bridged_to edge. ended_at is the tombstone (bridges.remove).';
 
 -- Presence, per bridge (§2.4).
@@ -802,7 +803,7 @@ begin
         || jsonb_build_object('config', coalesce((select jsonb_object_agg(c.input_name,c.value) from public.tool_config c where c.tool_id=target),'{}'::jsonb),
           'secretBindings', coalesce((select jsonb_agg(jsonb_build_object('inputName',b.input_name,'credentialId',b.credential_id,'boundBy',b.bound_by,'boundAt',b.bound_at)) from public.tool_secret_bindings b where b.tool_id=target),'[]'::jsonb))
         into content from public.tools tl where tl.entity_id=target;
-      -- 392 (Bridges B0a): the detail row. No secret lives on it.
+      -- 395 (Bridges B0a): the detail row. No secret lives on it.
       when 'bridge' then select to_jsonb(br) - 'entity_id' into content from public.bridges br where br.entity_id = target;
       else content := '{}'::jsonb;
     end case;

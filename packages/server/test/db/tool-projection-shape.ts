@@ -55,8 +55,8 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
 }
 
 /**
- * 392 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
- * bridge rows. Historical fixtures that stop before 392 mirror only that read's
+ * 395 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
+ * bridge rows. Historical fixtures that stop before 395 mirror only that read's
  * signature: a NULL stub. No bridge rows are tested.
  */
 export async function addBridgeProjectionShape(database: W1ScratchDatabase): Promise<void> {

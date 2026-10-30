@@ -1,5 +1,5 @@
 /**
- * Bridges (BRIDGE-ENTITY-DESIGN.md §2.1, §3.4; migration 392): one provider
+ * Bridges (BRIDGE-ENTITY-DESIGN.md §2.1, §3.4; migration 395): one provider
  * conversation — a WhatsApp group, a Slack channel, a DM thread — bound to
  * one tm8 target (a chat, a work session or a channel).
  *

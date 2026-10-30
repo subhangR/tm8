@@ -4406,7 +4406,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
-  /* +12 bridges.* (Bridges B0a, 392): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
+  /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
      JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */

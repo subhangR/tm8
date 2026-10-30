@@ -255,7 +255,7 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
-  // Bridges B0a (392): the bridges.* catalog doors.
+  // Bridges B0a (395): the bridges.* catalog doors.
   registerBridgeHandlers(registry, facade);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside
   // registerLoopHandlers, so the W1 source inventory (tools/conformance) counts its registrations.

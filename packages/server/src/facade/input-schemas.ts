@@ -270,7 +270,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'loops.runNow': LoopRunNowInputSchema,
   'loops.runs.stop': LoopRunStopInputSchema,
   'loops.schedule.preview': LoopSchedulePreviewInputSchema,
-  // Bridges B0a (392): every bridges.* command, as its handler parses it.
+  // Bridges B0a (395): every bridges.* command, as its handler parses it.
   'bridges.create': BridgeCreateInputSchema,
   'bridges.update': BridgeUpdateInputSchema,
   'bridges.retarget': BridgeRetargetInputSchema,

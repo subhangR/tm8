@@ -867,7 +867,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
       hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
     });
   }
-  // A bridge is born only by `bridges.create` (392): the number's owner, a
+  // A bridge is born only by `bridges.create` (395): the number's owner, a
   // space admin, with the target checked and the bridged_to edge written.
   if (kind === 'bridge') {
     throw new CliError('use `tm8 bridge create`: a bridge is created by a space admin who owns the connection', EXIT_USAGE, {
