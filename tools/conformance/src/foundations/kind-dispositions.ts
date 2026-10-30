@@ -35,6 +35,7 @@ export type CapabilityProfile =
   | 'space-link-lifecycle'
   | 'server-lifecycle'
   | 'style-lifecycle'
+  | 'bridge-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -68,6 +69,7 @@ export type MigrationStrategy =
   | 'story-detail'
   | 'craft-detail'
   | 'style-detail'
+  | 'bridge-detail'
   | 'custom-registry'
   | 'none';
 
@@ -362,6 +364,33 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'spaceLinks.setSpawn',
         ],
       };
+    case 'bridge-lifecycle':
+      // NOTHING generic to WRITE (392, bridges design §3.4). Born only from
+      // `bridges.create` (a human admin who owns the connection), ended only by
+      // `bridges.remove`, which leaves the tombstone. The conversation is its
+      // discussion, so messages, reactions and connections ride the envelope.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: false,
+        genericMove: false,
+        genericHierarchy: false,
+        genericDeleteRestore: false,
+        genericPoints: false,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'bridges.list',
+          'bridges.get',
+          'bridges.create',
+          'bridges.update',
+          'bridges.retarget',
+          'bridges.pause',
+          'bridges.resume',
+          'bridges.remove',
+        ],
+      };
     case 'style-lifecycle':
       // NOTHING generic to WRITE (284, styles spec §3.3). A space style is
       // read-only: born and re-versioned only by `styles.push` from a personal
@@ -653,6 +682,13 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'style-lifecycle' },
     menu: { strategy: 'not-addressable' }, migration: { strategy: 'style-detail' },
+  }),
+  // Bridges (migration 392): one provider conversation bound to one target.
+  // Created and managed in Settings → Bridges, never filed from the generic menu.
+  bridge: core('bridge', 'bridges', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'bridge-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'bridge-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

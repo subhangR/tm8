@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { registerBridgeHandlers } from '../bridges/handlers.js';
 import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
@@ -254,6 +255,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
+  // Bridges B0a (392): the bridges.* catalog doors.
+  registerBridgeHandlers(registry, facade);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside
   // registerLoopHandlers, so the W1 source inventory (tools/conformance) counts its registrations.
   registerLoopRunHandlers(registry, facade, deps.loops);

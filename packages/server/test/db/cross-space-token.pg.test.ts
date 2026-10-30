@@ -2929,6 +2929,10 @@ describe('W3-audit node-admin policies (002, K6) — every is_node_admin() arm i
   const NODE_ADMIN_POLICIES = [
     'artifact_bundle_revisions.artifact_bundle_revisions_select',
     'artifact_preview_sessions.artifact_preview_sessions_select',
+    // 392 (Bridges B0a): node admins see every connection's metadata (never
+    // state_ref, which tm8_app cannot select); a pinned session is not a node
+    // admin (K6), so a pinned node admin sees only its own account's rows.
+    'bridge_connections.bridge_connections_select',
     'projects.projects_select',
     'server_connections.server_connections_node_admin_select',
   ];
@@ -2944,7 +2948,7 @@ describe('W3-audit node-admin policies (002, K6) — every is_node_admin() arm i
     await database.query('delete from public.server_connections where name = $1', [connection]);
   });
 
-  it('the node-admin policy set is exactly the reviewed four', async () => {
+  it('the node-admin policy set is exactly the reviewed five', async () => {
     const rows = await database.query<{ policy: string }>(
       `select tablename || '.' || policyname as policy from pg_policies
         where schemaname = 'public'

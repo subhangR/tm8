@@ -53,3 +53,16 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
       add column if not exists sessions  integer not null default 0;
     reset role;`);
 }
+
+/**
+ * 392 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
+ * bridge rows. Historical fixtures that stop before 392 mirror only that read's
+ * signature: a NULL stub. No bridge rows are tested.
+ */
+export async function addBridgeProjectionShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    create or replace function internal.bridge_view(p_bridge_id uuid) returns jsonb
+      language sql stable as 'select null::jsonb';
+    grant execute on function internal.bridge_view(uuid) to tm8_app;
+    reset role;`);
+}

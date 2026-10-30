@@ -104,7 +104,11 @@ export type CoreEntityKind =
   | 'style' | 'mcp_server' | 'tool'
   // Crafts (migration 304 as `design`, renamed by 322 on 2026-10-10): an ordered set of
   // PAGES, each any entity, held as ordered `contains` edges. See ./craft.ts.
-  | 'craft';
+  | 'craft'
+  // Bridges (migration 392, BRIDGE-ENTITY-DESIGN §3.1): one provider
+  // conversation bound to one chat, session or channel. Born only from
+  // `bridges.create`; ended only by `bridges.remove`. See ./bridges.ts.
+  | 'bridge';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -152,7 +156,7 @@ export interface ActorSummary {
    * what it is. The ONE deliberate non-additive change in the board/people
    * wave; adjudicated twice independently.
    */
-  kind: 'member' | 'team_member' | 'work_session';
+  kind: 'member' | 'team_member' | 'work_session' | 'bridge';
   displayName: string;
   avatar?: string | null;
   role?: string | null;
@@ -163,7 +167,18 @@ export interface ActorSummary {
    * is the persona, and `via.sessionId` is the run it acted through. Additive;
    * a consumer that ignores it renders the persona and is still truthful.
    */
-  via?: { sessionId: EntityId };
+  via?: {
+    sessionId?: EntityId;
+    /**
+     * Bridges (392, design §3.7) — the second deliberate non-additive change,
+     * for the same reason as `work_session`: a linked participant's message is
+     * `{kind:'member', via:{bridgeId}}`; a guest's is `{kind:'bridge', id:
+     * <bridge>, via:{bridgeId, participant}}`. No member is invented for a
+     * stranger. A consumer that ignores `via` still renders a true author.
+     */
+    bridgeId?: EntityId;
+    participant?: { displayName: string; avatar?: string | null };
+  };
   /**
    * Present only when the membership behind this actor has ENDED (migration
    * 232): a `member` who left or was removed, or a `team_member` whose owner
@@ -638,6 +653,8 @@ export type CoreEntityState =
    */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** A bridge's facts (392): state and content are the same derived view. */
+  | ({ kind: 'bridge' } & import('./bridges.js').BridgeFacts)
   /**
    * A space style's row facts (284, spec §4.3). The FULL document rides on the
    * state on purpose (sign-off decision): `entity.upsert` after a push is how
@@ -1143,6 +1160,8 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
+  /** A bridge (392): the same facts as its state (`internal.bridge_view`). */
+  | ({ kind: 'bridge' } & import('./bridges.js').BridgeFacts)
   /** A space style (284): the same facts as its state plus the description. */
   | { kind: 'style'; description: string | null; doc: StyleDoc; resolvedHash: string | null;
       pushedBy: EntityId; pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
@@ -3772,6 +3791,9 @@ export type CreatableEntityKind = Exclude<
   // `style` is born ONLY from `styles.push` (284): a space style is read-only
   // and every version is a deliberate publish from a personal style.
   | 'style'
+  // `bridge` is born ONLY from `bridges.create` (392): a human space admin who
+  // owns the connection, with the target checked and the edge written.
+  | 'bridge'
 >;
 
 export interface CreateEntityInput extends CommandContext {

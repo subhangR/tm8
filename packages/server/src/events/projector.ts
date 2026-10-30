@@ -55,7 +55,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
+import { bridgeEntityOf, bridgeTitleOf, chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -370,6 +370,8 @@ interface SummaryRow {
   drawing_element_count: number | null;
   mcp_definition?: unknown;
   tool_content?: unknown; ws_tool_run?: unknown; ws_session_kind?: string | null;
+  /** 392 — MIRRORS entity-read.ts: `internal.bridge_view`, null off a bridge row. */
+  bridge_view?: Record<string, unknown> | null;
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
@@ -605,6 +607,8 @@ select
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   mcp.definition as mcp_definition,
+  -- 392 — MIRRORS entity-read.ts: the one SQL function both read paths select.
+  case when e.kind = 'bridge' then internal.bridge_view(e.id) end as bridge_view,
   ${TOOL_CONTENT_SQL} as tool_content,
   ${TOOL_RUN_SQL} as ws_tool_run,
   ws.session_kind as ws_session_kind,
@@ -1263,6 +1267,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'server':
         // Its own name — MIRRORS entity-read.ts titleOf.
         return r.srv_name ?? 'Server';
+      case 'bridge':
+        // The conversation's title — MIRRORS entity-read.ts titleOf.
+        return bridgeTitleOf(r.bridge_view);
       case 'space_link':
         // Never the target's name (P8) — MIRRORS entity-read.ts titleOf.
         return 'Space link';
@@ -1717,6 +1724,9 @@ export class PgEntityProjector implements EntityProjector {
         // hypothetical stray envelope projectable instead of poisoning the feed
         // on a strict-schema refusal.
         return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
+      case 'bridge':
+        // 392 — MIRRORS entity-read.ts stateOf.
+        return bridgeEntityOf(r.bridge_view);
       case 'space_link':
       case 'server':
         // 250 (W6): no row facts on the entity; `spaceLinks.list` answers for a
