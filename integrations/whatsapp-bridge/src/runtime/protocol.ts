@@ -2,6 +2,12 @@
 // Runtime → server frames are POSTed to /v2/bridge-runtime/<route>; server → runtime frames arrive on one WebSocket.
 // Every id here is the provider's: a conversation id is a WhatsApp JID (`…@g.us`, or the owner's own `…@s.whatsapp.net`
 // for a self chat the owner connected), a message id is WhatsApp's key id.
+//
+// TWO BYTE-IDENTICAL COPIES (coordinator ruling, B1b, 2026-10-30). The canonical one is
+// packages/contract/src/bridge-runtime-protocol.ts, exported from @tm8/contract for tm8-server. The mirror is
+// integrations/whatsapp-bridge/src/runtime/protocol.ts, because the runtime's Docker context is that directory alone
+// and the server's rootDir cannot reach it. Edit both together: packages/contract/test/bridge-runtime-protocol.test.ts
+// fails when they differ. The module stays dependency-free.
 
 export const PROTOCOL_VERSION = 1
 

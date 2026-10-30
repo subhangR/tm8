@@ -15,7 +15,7 @@
  * empty registry still reproduces the conformance stub's profile exactly
  * (taxonomy/envelope/501-honesty assertions pass, v1 semantics red).
  */
-import { RESERVED_OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
+import { CollabError, RESERVED_OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
 import type { OperationHandler } from '../http/types.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
 import { refuseLinkBearerOp } from '../identity/link-bearer.js';
@@ -76,6 +76,11 @@ export class HandlerRegistry {
       // A context with no identity (in-process callers and tests that build
       // one by hand) is not a link bearer: it passes through, as before.
       refuseLinkBearerOp(name, ctx);
+      // 398 (§2.5): default-deny for the connector runtime, behind the
+      // resolver's refusal. Its doors are routes, never catalog ops.
+      if (ctx.identity?.authKind === 'bridge_runtime') {
+        throw new CollabError('forbidden', 'a bridge runtime session may only call the bridgeRuntime doors');
+      }
       if (op.kind !== 'read') requireWriteApiScope(ctx.identity);
       return handler(ctx);
     };

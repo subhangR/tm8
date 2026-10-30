@@ -1759,6 +1759,17 @@ export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(()
   // Optional, not nullable: absent means the batch named no session. An empty
   // array would read as "every target failed" and is therefore never emitted.
   delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
+  bridgeDelivery: z.array(z.object({
+    messageId: z.string().min(1),
+    bridgeId: z.string().min(1),
+    status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
+    reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
+      'not_connected', 'credential_text']).optional(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
+    externalMessageId: z.string().min(1).optional(),
+    detail: z.string().min(1).optional(),
+    at: z.string().min(1),
+  }).strict()).min(1).optional(),
   warnings: z.array(ResultWarningSchema).min(1).optional(),
 }).strict());
 

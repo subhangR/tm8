@@ -118,6 +118,13 @@ import {
   type PtyWsServer,
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
+import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
+import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
+import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
+import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
+import { bridgeWatchdogJob } from './scheduler/jobs/bridge-watchdog.js';
+import { LOCAL_KEY_ID, localKeyProvider } from './credentials/key-provider.js';
+import pg from 'pg';
 import { WsAdmissionController } from './http/ws-admission.js';
 import {
   ChatOrchestrator,
@@ -854,7 +861,39 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
   credentialStreamTarget = ptyWs;
-  const upgrades: UpgradeTarget = ptyWs
+  /**
+   * Bridges B1b-2 (398): the connector runtime's end on this node — its push
+   * socket, the allowlist push and the outbox dispatch (bridges/runtime/hub.ts).
+   * Idle until a runtime connects. The command executor (B1b-4) is assigned to
+   * `bridgeCommands`; until then nothing a group sends is a command.
+   */
+  let bridgeCommands: BridgeCommandHook | undefined;
+  const bridgeHub = db && config.databaseUrl
+    ? new BridgeRuntimeHub({
+        db,
+        nodeKey: () => localKeyProvider(dataDir).keyFor(LOCAL_KEY_ID),
+        authorize: async (req) => {
+          const identity = await (identityResolver ?? autoOwnerResolver)(req.headers, {
+            remoteAddress: req.socket.remoteAddress,
+            disableAutoOwner: config.disableAutoOwner === true,
+            bridgeRuntime: true,
+          });
+          if (identity.kind === 'anonymous') throw new CollabError('unauthenticated', 'authentication is required');
+          return identity;
+        },
+        listen: async (channel, onNotify) => {
+          const client = new pg.Client({ connectionString: config.databaseUrl });
+          await client.connect();
+          client.on('notification', () => onNotify());
+          client.on('error', (err) => console.warn(`[bridges] LISTEN connection: ${err.message}`));
+          await client.query(`listen ${channel}`);
+          return async () => { await client.end().catch(() => undefined); };
+        },
+        log: (line) => console.warn(line),
+      })
+    : undefined;
+
+  const baseUpgrades: UpgradeTarget = ptyWs
     ? {
         handleUpgrade: (req, socket, head) =>
           isPtyUpgrade(req)
@@ -866,6 +905,30 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }
     : ws;
+  const upgrades: UpgradeTarget = bridgeHub
+    ? {
+        handleUpgrade: (req, socket, head) =>
+          isBridgeRuntimeUpgrade(req)
+            ? bridgeHub.handleUpgrade(req, socket, head)
+            : baseUpgrades.handleUpgrade(req, socket, head),
+        closeAll: () => {
+          baseUpgrades.closeAll?.();
+          void bridgeHub.stop();
+        },
+      }
+    : baseUpgrades;
+
+  const bridgeRuntimeRoute = db && bridgeHub
+    ? createBridgeRuntimeRoute({
+        db,
+        resolveIdentity: identityResolver ?? autoOwnerResolver,
+        disableAutoOwner: config.disableAutoOwner === true,
+        hub: bridgeHub,
+        commands: () => bridgeCommands,
+        ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
+        log: (line) => console.warn(line),
+      })
+    : undefined;
 
   const rawUpload = db && blobStore
     ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
@@ -957,6 +1020,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
+    ...(bridgeRuntimeRoute ? { bridgeRuntimeRoute } : {}),
     ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
     ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
@@ -969,6 +1033,36 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     void chatLeaseDb?.end().catch(() => undefined);
   });
   const { url } = await server.listen();
+
+  // Bridges (§2.5): the hub starts pushing once a runtime connects; with a
+  // token file configured, the node mints the runtime's bridge_runtime session
+  // (and starts the sidecar, if a command is given) now that it is listening.
+  let bridgeSupervisor: BridgeRuntimeSupervisor | undefined;
+  if (bridgeHub) {
+    await bridgeHub.start();
+    server.http.once('close', () => { void bridgeHub.stop(); void bridgeSupervisor?.stop(); });
+    const tokenFile = process.env.TM8_BRIDGE_RUNTIME_TOKEN_FILE;
+    if (tokenFile && db && owner) {
+      const command = process.env.TM8_BRIDGE_RUNTIME_COMMAND
+        ? (JSON.parse(process.env.TM8_BRIDGE_RUNTIME_COMMAND) as string[])
+        : undefined;
+      bridgeSupervisor = new BridgeRuntimeSupervisor({
+        db,
+        ownerClaims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridges.runtime-mint' };
+        },
+        tokenFile,
+        label: process.env.TM8_BRIDGE_RUNTIME_LABEL ?? 'whatsapp-runtime',
+        ...(command && command.length > 0
+          ? { command: { file: command[0]!, args: command.slice(1), ...(process.env.TM8_BRIDGE_RUNTIME_CWD ? { cwd: process.env.TM8_BRIDGE_RUNTIME_CWD } : {}) } }
+          : {}),
+        serverUrl: url,
+        log: (line) => console.warn(line),
+      });
+      await bridgeSupervisor.start().catch((err: unknown) => console.warn(`[bridges] runtime supervisor: ${String(err)}`));
+    }
+  }
 
   // Retention, on boot and never on the request path: an expired date-bucket is
   // a directory removal, so this is cheap, and doing it here means a node that
@@ -1175,6 +1269,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
       }),
     );
+    // Bridges D19 (398): the watchdog — degraded runtimes, failed turns, stuck
+    // dispatches — and the command executor's sweep.
+    if (bridgeHub) {
+      scheduler.register(bridgeWatchdogJob({ db, commands: () => bridgeCommands, onChanged: () => bridgeHub.kick() }));
+    }
     // Forms W2 (214): the backstop for the hooks above — a restart, a lost
     // hook, or a session that went live through a path that fired none.
     if (formDelivery) scheduler.register(createFormDeliveryJob({ drain: formDelivery }));

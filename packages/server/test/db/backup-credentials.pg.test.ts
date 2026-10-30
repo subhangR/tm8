@@ -15,6 +15,13 @@
  *      pg_dump 16 against a postgres:17 service, so there the cell SKIPS, and
  *      its name and a warning say why — it never passes silently.
  *
+ * Bridges (398, §7.3 item 9): a WhatsApp connection's sealed key directory is
+ * opened with a stateKey DERIVED from the node key (D38). The database holds
+ * only `bridge_connections` metadata and `state_ref`, never the key: each
+ * connection's stateKey joins the needles, so both cells also prove that no
+ * table and no dump holds it. (`message_origins.provider_payload` holds a sent
+ * message's media keys by design, server-only; it is not a credential.)
+ *
  * Needles are compared with includes/LIKE only. No key byte is ever printed:
  * a failure names the surface and a sha256 prefix of the needle, not the needle.
  */
@@ -28,6 +35,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { bridgeStateKey } from '../../src/bridges/runtime/hub.js';
 import { credentialKeyPath, resetCredentialKeyCache } from '../../src/credentials/credential-key.js';
 import { DbSpaceCredentialStore } from '../../src/credentials/space-credential-store.js';
 import { createDb } from '../../src/db/index.js';
@@ -72,6 +80,7 @@ let dataDir: string;
 let credentialId: string;
 let needles: string[] = [];
 let ciphertextHex = '';
+const bridgeConnection = randomUUID();
 
 const claims = (identityId: string): DbClaims =>
   ({ identityId, nodeAdmin: false, requestId: randomUUID(), authKind: 'browser' }) as DbClaims;
@@ -92,6 +101,9 @@ beforeAll(async () => {
     const member = await id();
     await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'member', 0, $1)`, [member, space]);
     await c.query(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'owner', $3)`, [member, space, OWNER]);
+    await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status, state_ref, external_account_id)
+      select $1::uuid, 'whatsapp', a.id, '+91 …9494', 'linked', 'bridges/' || $1::text, '919800000001@s.whatsapp.net'
+        from public.accounts a where a.identity_id = $2`, [bridgeConnection, OWNER]);
     return space;
   });
   const store = new DbSpaceCredentialStore({ db, dataDir, logger: { warn: () => undefined } });
@@ -101,7 +113,9 @@ beforeAll(async () => {
   });
   credentialId = made.id;
   const key = await readFile(credentialKeyPath(dataDir));
-  needles = [key.toString('hex'), key.toString('base64'), key.toString('base64url')];
+  const stateKey = Buffer.from(bridgeStateKey(key, bridgeConnection), 'base64');
+  needles = [key.toString('hex'), key.toString('base64'), key.toString('base64url'),
+    stateKey.toString('hex'), stateKey.toString('base64'), stateKey.toString('base64url')];
   const [row] = await database.query<{ hex: string }>(
     `select encode(secret_ciphertext, 'hex') hex from public.space_credentials where id = $1`, [credentialId]);
   ciphertextHex = row!.hex;
@@ -129,6 +143,10 @@ describe('W10d a4 (B) — a backup keeps the ciphertext and never the node key',
       }
     }
     expect(hits).toEqual([]);
+    // The bridge tables were in the scan, and the connection row is there.
+    expect(tables.map((t) => t.t)).toEqual(expect.arrayContaining(['bridge_connections', 'message_origins', 'bridge_outbox']));
+    const [conn] = await database.query<{ n: number }>(`select count(*)::int n from public.bridge_connections where id = $1`, [bridgeConnection]);
+    expect(conn!.n).toBe(1);
     // Paired positive, same scan: the ciphertext IS in its row, so a whole-DB dump carries it.
     const [pos] = await database.query<{ n: number }>(
       `select count(*)::int n from public.space_credentials x where x::text like '%' || $1 || '%'`, [ciphertextHex]);
