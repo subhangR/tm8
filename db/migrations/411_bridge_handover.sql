@@ -30,7 +30,9 @@
 --   §4  a removed bridge lapses its open offer;
 --   §5  D56: a connection going offline or logged out raises an fyi to every
 --       space admin (beside D19's own to the owner) naming the hand-over; it
---       clears when the connection is linked again.
+--       clears when the connection is linked again;
+--   §6  an outbox insert racing an accept rides the bridge's committed
+--       connection (a share lock on the bridge row).
 --
 -- WHAT IT NEVER DOES. Nothing here picks another number by itself (D56): the
 -- only path that changes a bridge's connection is an accept by the receiving
@@ -260,8 +262,13 @@ begin
     perform internal.require_replay_subject(replay #>> '{handover,id}', p_handover_id::text, 'hand-over');
     return replay;
   end if;
-  select * into h from public.bridge_handovers where id = p_handover_id for update;
+  -- Lock order: the bridge, then the offer, then the connection. remove_bridge
+  -- (and 410's connection remove) lock the bridge and then, through §4's lapse
+  -- trigger, the offer; the same order here cannot deadlock against them.
+  select * into h from public.bridge_handovers where id = p_handover_id;
   if h.id is null then raise exception 'hand-over not found' using errcode = 'P0002'; end if;
+  select * into b from public.bridges where entity_id = h.bridge_id for update;
+  select * into h from public.bridge_handovers where id = p_handover_id for update;
   select * into to_conn from public.bridge_connections where id = h.to_connection_id for update;
   if to_conn.owner_account_id is distinct from internal.current_account_id() then
     raise exception 'only the receiving connection''s owner can accept a hand-over' using errcode = '42501',
@@ -278,7 +285,6 @@ begin
   end if;
   perform internal.bind_actor(actor);
 
-  select * into b from public.bridges where entity_id = h.bridge_id for update;
   if b.ended_at is not null then
     perform internal.bridge_refuse('bridge_ended', 'this bridge was removed');
   end if;
@@ -319,9 +325,16 @@ begin
   update public.bridge_outbox set connection_id = to_conn.id
    where bridge_id = b.entity_id and connection_id = h.from_connection_id and status = 'pending';
   get diagnostics moved = row_count;
-  -- The bridge is served again: D19/D56's down items on it are done.
-  perform internal.clear_attention_signal(b.space_id, 'bridge.runtime_down:' || h.from_connection_id, b.entity_id,
-                                          'handed over to another connection');
+  -- D19's item to the old number's owner is one per connection (the watchdog
+  -- raises it once, on its first bridge, and not again while down_since holds):
+  -- it is done only when no live bridge rides that connection in any space.
+  -- The admins' D56 items are per space: done once none rides it here.
+  if not exists (select 1 from public.bridges where connection_id = h.from_connection_id and ended_at is null) then
+    perform internal.clear_attention_signal(ar.space_id, ar.signal_key, null, 'handed over to another connection')
+       from (select distinct space_id, signal_key from public.attention_requests
+              where signal_key = 'bridge.runtime_down:' || h.from_connection_id
+                and status in ('open', 'acknowledged')) ar;
+  end if;
   perform internal.bridge_clear_connection_down(h.from_connection_id, b.space_id, true);
 
   return internal.ledger_record(p_client_mutation_id, 'bridges.handover.accept',
@@ -586,7 +599,10 @@ begin
         update public.attention_requests set assignee_id = a.entity_id where id = r.request_id and assignee_id is null;
       end loop;
     end loop;
-  elsif new.status = 'linked' and old.status in ('offline', 'logged_out') then
+  -- Any arrival at `linked` clears: a re-link goes logged_out -> connecting ->
+  -- linked (begin_bridge_connection, then the runtime's state frame), and a
+  -- reconnect may report `connecting` first. A clear with nothing open is a no-op.
+  elsif new.status = 'linked' and old.status <> 'linked' then
     perform internal.bridge_clear_connection_down(new.id, null, false);
   end if;
   return null;
@@ -596,6 +612,32 @@ revoke all on function internal.bridge_connection_down_admins() from public;
 create trigger bridge_connections_down_admins after update of status on public.bridge_connections
   for each row when (new.status is distinct from old.status)
   execute function internal.bridge_connection_down_admins();
+
+-- -----------------------------------------------------------------------------
+-- §6. An enqueue racing an accept follows the bridge (D78).
+-- -----------------------------------------------------------------------------
+-- internal.bridge_outbox_enqueue reads bridges.connection_id without a lock. In
+-- READ COMMITTED an enqueue that read the old connection before an accept
+-- committed, and inserts after the accept's re-address ran, would land on the
+-- old number and fail `not_connected`. Before every insert this takes a share
+-- lock on the bridge row: it waits for an accept in flight (FOR UPDATE) and
+-- then reads its committed connection; an enqueue that locks first makes the
+-- accept wait until it commits, so the re-address then sees its row. A row
+-- still to be dispatched rides the bridge's connection as it is now.
+create or replace function internal.bridge_outbox_follow_connection() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare cur uuid;
+begin
+  select connection_id into cur from public.bridges where entity_id = new.bridge_id for share;
+  if new.status = 'pending' and cur is not null and new.connection_id is distinct from cur then
+    new.connection_id := cur;
+  end if;
+  return new;
+end
+$$;
+revoke all on function internal.bridge_outbox_follow_connection() from public;
+create trigger bridge_outbox_follow_connection before insert on public.bridge_outbox
+  for each row execute function internal.bridge_outbox_follow_connection();
 
 reset role;
 

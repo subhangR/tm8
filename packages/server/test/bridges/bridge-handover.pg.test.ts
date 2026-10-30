@@ -17,6 +17,10 @@
  *   H5 the guards still hold outside an accept (395/408's arms);
  *   H6 D56: B logged out raises an fyi to the space admin (not B's owner),
  *      naming the hand-over; linked again clears it. Nothing moved.
+ *   H7 review fixes on #1455: (F1) a re-link through `connecting` clears the
+ *      admins' items; (F3) the owner's D19 item survives while another live
+ *      bridge still rides the old number; (F2) an outbox insert racing an
+ *      accept rides the committed connection, with two real connections.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,6 +28,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Client } from 'pg';
 
 import { TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE, type AllowlistFrame, type ServerFrame } from '@tm8/contract';
 
@@ -412,5 +417,83 @@ describe('H6. D56: degraded tells the admins and names the hand-over; nothing mo
     expect(item!.reason).toContain('offline');
     // D19's own item to the number's owner is unchanged.
     expect((await attention(`bridge.runtime_down:${connB}`))[0]).toMatchObject({ status: 'open' });
+  });
+});
+
+describe('H7. review fixes', () => {
+  const openDown = async (conn: string) => (await owner<{ n: string }>(
+    `select count(*)::text n from public.attention_requests where signal_key like $1 and status in ('open','acknowledged')`,
+    [`bridge.connection_down:${conn}:%`]))[0]!.n;
+
+  it('F1: logged_out -> connecting -> linked clears the admins\' items', async () => {
+    await owner(`update public.bridge_connections set status = 'linked', down_since = null, heartbeat_at = now() + interval '1 hour' where id = $1`, [connB]);
+    await owner(`update public.bridge_connections set status = 'logged_out' where id = $1`, [connB]);
+    expect(Number(await openDown(connB))).toBe(2);
+    await owner(`update public.bridge_connections set status = 'connecting' where id = $1`, [connB]);
+    expect(Number(await openDown(connB))).toBe(2);
+    await owner(`update public.bridge_connections set status = 'linked' where id = $1`, [connB]);
+    expect(await openDown(connB)).toBe('0');
+  });
+
+  it('F3: a hand-over of one bridge keeps the owner\'s D19 item while another still rides the old number', async () => {
+    // A second bridge on B: Bina creates it (create is the number's owner and an admin, D28).
+    const opsChat = randomUUID(), OPS = '120363-ops@g.us';
+    await owner(`update public.members set role = 'admin' where entity_id = $1`, [people.bina.member]);
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [opsChat, spaceId, people.asha.member]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,'Ops main',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/handover', gen_random_uuid(), $4, $5, $6)`,
+        [opsChat, spaceId, teammate, people.asha.identity, people.asha.member, `ho-${randomUUID()}`]);
+    });
+    const ops = (await db.tx(claims('bina'), q => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connB, OPS,
+      JSON.stringify({ kind: 'group', title: 'Ops', memberCount: 3 }), opsChat, '{}', teammate, null, null, true, null, null, randomUUID()]))).entity.id;
+    await owner(`update public.members set role = 'member' where entity_id = $1`, [people.bina.member]);
+    // D19's item for B, as the watchdog raises it: once, on B's first bridge (Infra).
+    await owner(`select internal.raise_attention_signal($1, $2, $3, 'B stopped answering', 'fyi', 'review', $4)`,
+      [spaceId, bridge, `bridge.runtime_down:${connB}`, people.bina.member]);
+    const runtimeDown = async () => (await attention(`bridge.runtime_down:${connB}`))[0]!.status;
+    const move = async (b: string, conv: string) => {
+      const h = await db.tx(claims('asha'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [b, connA, randomUUID()]));
+      await db.tx(claims('asha'), q => q.rpc('accept_bridge_handover', [h.handover.id, [conv], randomUUID()]));
+    };
+    await move(bridge, GROUP);
+    expect((await bridgeRow()).connection_id).toBe(connA);
+    expect(await runtimeDown()).toBe('open');
+    await move(ops, OPS);
+    expect(await runtimeDown()).toBe('cleared');
+  });
+
+  it('F2: an outbox insert racing an accept waits for it and rides the committed connection', async () => {
+    // The bridge rides A (F3). c1 is an accept in flight moving it to B, by
+    // the same writes accept makes; c2 inserts a pending row still addressed to A.
+    const [msg] = await owner<{ id: string }>(`select entity_id::text id from public.messages where anchor_id = internal.bridge_log_anchor(
+      (select b from public.bridges b where entity_id = $1)) limit 1`, [bridge]);
+    const c1 = new Client({ connectionString: database.url }), c2 = new Client({ connectionString: database.url });
+    await c1.connect(); await c2.connect();
+    try {
+      await c1.query('begin'); await c1.query('set local role tm8_graph_owner');
+      await c1.query(`insert into public.bridge_handovers(bridge_id, space_id, from_connection_id, to_connection_id, offered_by, status, settled_at, settled_by)
+        values ($1,$2,$3,$4,$5,'accepted',now(),$5)`, [bridge, spaceId, connA, connB, people.bina.member]);
+      await c1.query('update public.bridges set connection_id = $2, credential_id = $3 where entity_id = $1', [bridge, connB, credB]);
+      await c2.query('begin'); await c2.query('set local role tm8_graph_owner');
+      let landed = false;
+      const insert = c2.query(`insert into public.bridge_outbox(bridge_id, message_id, payload, kind, reaction, connection_id, external_conversation_id, poster)
+        values ($1,$2,'{"emoji":"👍"}'::jsonb,'react','f2-race',$3,$4,'system') returning id::text, connection_id::text`,
+        [bridge, msg!.id, connA, GROUP]).then((r) => { landed = true; return r.rows[0] as { id: string; connection_id: string }; });
+      await new Promise((r) => setTimeout(r, 500));
+      expect(landed).toBe(false); // waiting on the accept's row lock
+      await c1.query('commit');
+      const row = await insert;
+      await c2.query('commit');
+      expect(row.connection_id).toBe(connB);
+    } finally {
+      await c1.end(); await c2.end();
+    }
+    // Not pending (or not on this bridge): left as written.
+    const [direct] = await owner<{ c: string }>(`insert into public.bridge_outbox(bridge_id, message_id, payload, kind, reaction, connection_id, external_conversation_id, poster, status)
+      values ($1,$2,'{}'::jsonb,'react','f2-sent',$3,$4,'system','sent') returning connection_id::text c`, [bridge, msg!.id, connA, GROUP]);
+    expect(direct!.c).toBe(connA);
   });
 });
