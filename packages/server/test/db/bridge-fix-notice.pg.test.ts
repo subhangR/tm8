@@ -354,6 +354,28 @@ describe('F: review regressions', () => {
     expect((await scratch.query('select 1 from public.bridge_fix_reports where task_id = $1', [task]))).toEqual([]);
   });
 
+  it('an edge F does not act on queues no deferred event: ALTER TABLE edges in the same transaction succeeds', async () => {
+    // follows_up: no deferred trigger on edges watches it.
+    await inTx(null, async c => {
+      const [a, b] = [await newTask(c, 'Earlier work'), await newTask(c, 'Later work')];
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1,$2,$3,'follows_up',$4)`,
+        [spaceId, b, a, teammate]);
+      await c.query('alter table public.edges disable trigger edges_bridge_fix');
+      await c.query('alter table public.edges enable trigger edges_bridge_fix');
+    });
+    // A bridge-marked authored_from -> origin message (399's recorder writes one beside
+    // every -> bridge edge): its bridgeId is not its dst, so F queues nothing for it.
+    const r = await report(infra, 'disk full', 'wamid.INFRA9');
+    await inTx(null, async c => {
+      const task = await newTask(c, 'Disk full');
+      await c.query(`select internal.w1_set_writer('entity_recorder')`);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by, props) values ($1,$2,$3,'authored_from',$4,$5::jsonb)`,
+        [spaceId, task, r, teammate, JSON.stringify({ bridgeId: infra, origins: [] })]);
+      await c.query('alter table public.edges disable trigger edges_bridge_fix');
+      await c.query('alter table public.edges enable trigger edges_bridge_fix');
+    });
+  });
+
   it('a failing notice never fails the triggering write, and the next event retries', async () => {
     const r = await report(infra, 'webhooks dropped', 'wamid.INFRA8');
     await startTurn(chatInfra, infra, r, 'wamid.INFRA8');
