@@ -304,6 +304,16 @@ export const KIND_ART = {
   ],
 
   /**
+   * A tag — a `label` is a name and a colour put on other entities (397).
+   * The punched hole is what keeps it from reading as `bridge`'s arc or as a
+   * plain arrow at 16px.
+   */
+  label: [
+    'M2.8 3.6v4l5.6 5.6 4.8-4.8-5.6-5.6h-4a.8.8 0 0 0-.8.8z',
+    'M5.4 6.2a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+  ],
+
+  /**
    * The custom-kind fallback. A plain diamond ON PURPOSE: it is the one mark
    * that must say "this kind has no artwork of its own", so it stays the
    * neutral shape the old set used for exactly that job.
