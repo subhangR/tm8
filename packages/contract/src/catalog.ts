@@ -101,6 +101,8 @@ export const OPERATIONS = [
   { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
   { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },
   { name: 'bridges.listen', method: 'POST', path: '/v2/bridges/:bridgeId/listen', kind: 'command', status: 'v1' },
+  // v2 §4.3: the agent's door to /work — the same server path, handles, provenance and announcement.
+  { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },

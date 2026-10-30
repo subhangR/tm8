@@ -28,14 +28,14 @@
  * and settles `done`; a fault settles back to `pending`, so 398's claim retries
  * it and turns it `failed` after its attempts run out.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, type BridgeWorkStartInput, type BridgeWorkStartResult } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import {
   isConfirmText, parseBridgeCommand, parseDuration, parseWorkItems, parseWorkerRef, stripTail, titleOf,
   type BridgeVerb, type ParsedBridgeCommand, type WorkItem, type WorkerRef,
 } from './parse.js';
 import type {
-  BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts,
+  BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeWorkStarter,
 } from './ports.js';
 
 /** v2 §4.3 Routing → Workers defaults; the bridge row does not carry them yet. */
@@ -117,8 +117,12 @@ interface Command {
   origin: (verb: string) => BridgeCommandOrigin;
 }
 
-/** A reply, plus a confirm to open on the notice it becomes. */
-interface Answer { text: string; confirm?: StoredConfirm }
+/** A reply, plus a confirm to open on the notice it becomes, plus /work's own facts (for bridges.work.start). */
+interface Answer {
+  text: string;
+  confirm?: StoredConfirm;
+  work?: { parentTaskId: string | null; items: Array<{ taskId: string; sessionId: string | null; handle: string | null; error: string | null }> };
+}
 
 /** What a confirm stores, to run on YES (§4.6). Intent, never an approval (D9). */
 interface StoredConfirm { verb: 'work' | 'stop'; args: string; body: string[]; externalMessageId: string; messageId: string }
@@ -167,7 +171,7 @@ function hhmm(now: Date): string {
   return `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')} UTC`;
 }
 
-export interface BridgeCommandExecutor extends BridgeCommandHook {
+export interface BridgeCommandExecutor extends BridgeCommandHook, BridgeWorkStarter {
   /** One command, loaded; run() is claim + load + this + settle. */
   execute(input: BridgeCommandInput): Promise<void>;
   /** Exposed for tests: the in-memory per-sender lists and rate windows. */
@@ -355,30 +359,40 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         case 'race_not_available': throw new Refusal(`${parsed.detail} (several attempts at one item) isn't available yet`);
       }
     }
-    const items = parsed.items;
+    return runWork(cmd, claims, parsed.items, confirmed
+      ? null
+      : { verb: 'work', args, body, externalMessageId: cmd.input.externalMessageId, messageId: cmd.input.messageId });
+  }
+
+  /**
+   * The one /work path (§4.3), for the command and for bridges.work.start:
+   * limits, then one transaction for every task, then every worker at once.
+   * `confirm` null means confirmed (or not asked, for the agent's door).
+   */
+  async function runWork(cmd: Command, claims: DbClaims, items: WorkItem[], confirm: StoredConfirm | null): Promise<Answer> {
     if (items.length > MAX_WORKERS_PER_COMMAND) {
       throw new Refusal(`${items.length} items is over this bridge's limit of ${MAX_WORKERS_PER_COMMAND} workers per command — nothing started`);
     }
     // A re-run of this same command must not count its own workers against it.
     const self = cmd.origin('/work').providerMessageId;
     const live = (await provenance(cmd, ['work_session'], 200))
-      .filter(r => LIVE_SESSION.has(r.status ?? '') && !r.origins.some(o => o.providerMessageId === self)).length;
+      .filter(r => LIVE_SESSION.has(r.status ?? '') && !(self && r.origins.some(o => o.providerMessageId === self))).length;
     if (live + items.length > MAX_LIVE_WORKERS_PER_BRIDGE) {
       throw new Refusal(`${live} workers are running from this group; ${items.length} more is over the limit of ${MAX_LIVE_WORKERS_PER_BRIDGE} — nothing started`);
     }
     // Resolve every option before creating anything: a bad name refuses the whole command.
     const teammates = await Promise.all(items.map(item => resolveTeammate(cmd, claims, item.options.teammate)));
     const projects = await Promise.all(items.map(item => resolveProject(cmd, claims, item.options.project)));
-    if (items.length > CONFIRM_WORK_OVER && !confirmed) {
+    if (items.length > CONFIRM_WORK_OVER && confirm) {
       return {
         text: [`start ${items.length} workers?`, ...items.map((item, i) => `${i + 1} ${titleOf(item.text, 60)}`), 'reply YES within 2 min'].join('\n'),
-        confirm: { verb: 'work', args, body, externalMessageId: cmd.input.externalMessageId, messageId: cmd.input.messageId },
+        confirm,
       };
     }
 
     // One transaction for every task (§4.8 partial failure: refused whole).
     const origin = cmd.origin('/work');
-    const { taskIds } = await ports.db.tx(claims, async q => {
+    const { parentId, taskIds } = await ports.db.tx(claims, async q => {
       let parent: string | null = null;
       if (items.length >= 2) {
         const provider = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
@@ -425,7 +439,15 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       const title = titleOf(item.text, 60);
       return s.ok ? `${i + 1} ${s.handle ? `${title} (${s.handle})` : title} — starting` : `${i + 1} ${title} — didn't start: ${s.reason}`;
     });
-    return { text: [head, ...lines, 'Reply to a line, or @handle, to ask one directly. /workers to check.'].join('\n') };
+    return {
+      text: [head, ...lines, 'Reply to a line, or @handle, to ask one directly. /workers to check.'].join('\n'),
+      work: {
+        parentTaskId: parentId,
+        items: started.map((s, i) => s.ok
+          ? { taskId: taskIds[i]!, sessionId: s.sessionId, handle: s.handle, error: null }
+          : { taskId: taskIds[i]!, sessionId: null, handle: null, error: s.reason }),
+      },
+    };
   }
 
   async function workers(cmd: Command, args: string): Promise<Answer> {
@@ -838,7 +860,72 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     }
   }
 
+  /**
+   * bridges.work.start (v2 §4.3): the agent's door to /work — the same path,
+   * limits, handles, provenance and announcement, as the CALLER (their own
+   * claims: a member, or an agent session acting for one). Idempotent on the
+   * client mutation id, which keys every write the way a message id keys a
+   * command's. No confirm: the caller asked explicitly.
+   */
+  async function workStart(claims: DbClaims, input: BridgeWorkStartInput & { bridgeId: string }): Promise<BridgeWorkStartResult> {
+    const [row] = await ports.db.query<{ space_id: string; member_id: string | null; display_name: string | null }>(claims,
+      `select b.space_id::text, m.entity_id::text member_id, m.display_name
+         from public.bridges b join public.entities e on e.id = b.entity_id and e.deleted_at is null
+         left join public.members m on m.entity_id = internal.current_member_id(b.space_id)
+        where b.entity_id = $1`, [input.bridgeId]);
+    if (!row) throw new CollabError('not_found', 'Bridge is unavailable');
+    if (!row.member_id) throw new CollabError('forbidden', 'start work on a bridge in a space you are a member of');
+    const bridge = await loadFacts({ bridgeId: input.bridgeId, author: { kind: 'member', actorId: row.member_id } } as BridgeCommandInput);
+    if (!bridge || bridge.deleted || bridge.endedAt) throw new CollabError('conflict', 'this bridge was removed', { details: { reason: 'bridge_ended' } });
+    // Like a loop's 'loop:<id>' key: the origin's dedupe key when no provider message started it.
+    const originKey = `api:${input.clientMutationId}`;
+    const sender: Sender = {
+      externalId: '', displayName: row.display_name ?? '', memberId: row.member_id, identityId: claims.identityId ?? null,
+      trust: 'linked', admin: false, reader: true,
+    };
+    const cmd: Command = {
+      input: {
+        bridgeId: input.bridgeId, spaceId: row.space_id, connectionId: '', messageId: '', externalMessageId: originKey,
+        senderExternalId: `api:${row.member_id}`, author: { kind: 'member', actorId: row.member_id, trust: 'linked', identityId: claims.identityId ?? '', linkId: '', participant: { displayName: row.display_name ?? '' } },
+        text: '',
+      },
+      bridge, sender, claims,
+      key: `bridge:${input.bridgeId}:${originKey}`,
+      origin: () => ({ bridgeId: input.bridgeId, messageId: null, providerMessageId: originKey, sender: { memberId: row.member_id! }, command: 'bridges.work.start' }),
+    };
+    const options = input.options ?? {};
+    const items: WorkItem[] = input.items.map(text => ({
+      text: text.trim(),
+      options: {
+        ...(options.teammate ? { teammate: options.teammate } : {}),
+        ...(options.project ? { project: options.project } : {}),
+        ...(options.effort ? { effort: options.effort } : {}),
+      },
+    }));
+    let answered: Answer;
+    try {
+      answered = await runWork(cmd, claims, items, null);
+    } catch (error) {
+      if (error instanceof Refusal) throw new CollabError('invalid_input', error.message);
+      throw error;
+    }
+    // The same announcement /work posts, to the group, on the call's own key.
+    let noticeMessageId: string | null = null;
+    try {
+      const notice = await ports.postNotice(ports.db, {
+        bridgeId: input.bridgeId, text: answered.text, replyToMessageId: null,
+        idempotencyKey: `work:${input.bridgeId}:${input.clientMutationId}`,
+      });
+      noticeMessageId = notice.delivery.status === 'pending' ? notice.messageId : null;
+    } catch (error) {
+      ports.logger?.warn(`bridge ${input.bridgeId}: bridges.work.start could not announce: ${errorText(error)}`);
+    }
+    const work = answered.work ?? { parentTaskId: null, items: [] };
+    return { bridgeId: input.bridgeId, parentTaskId: work.parentTaskId, items: work.items, noticeMessageId };
+  }
+
   return {
+    workStart,
     reset() { lists.clear(); windows.clear(); },
 
     async detect(text: string, ctx: BridgeCommandDetectContext): Promise<boolean> {

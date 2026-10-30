@@ -21,6 +21,7 @@
  * Kept as a seam, not imports, so the executor is testable against a scratch
  * database with fakes for the PTY host and the outbox.
  */
+import type { BridgeWorkStartInput, BridgeWorkStartResult } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
 import type { BridgeAuthor } from '../runtime/command-hook.js';
@@ -67,6 +68,11 @@ export interface BridgeCommandInput {
   text: string;
   replyTo?: { externalMessageId: string; text?: string } | null;
   edited?: boolean;
+}
+
+/** bridges.work.start's door into the executor (v2 §4.3): the /work path, as the caller. */
+export interface BridgeWorkStarter {
+  workStart(claims: DbClaims, input: BridgeWorkStartInput & { bridgeId: string }): Promise<BridgeWorkStartResult>;
 }
 
 export interface BridgeCommandPorts {

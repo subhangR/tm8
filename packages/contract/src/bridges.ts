@@ -257,6 +257,32 @@ export interface BridgeStateInput extends BridgeCommand { bridgeId?: EntityId; e
 export interface BridgeHandleClaimInput { spaceId?: SpaceId; title?: string }
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 
+/** `bridges.work.start` (v2 §4.3): the agent's door to `/work`, the same server path. */
+export const BRIDGE_WORK_ITEMS_MAX = 5;
+export type BridgeWorkEffort = 'low' | 'high' | 'max';
+export interface BridgeWorkStartInput {
+  clientMutationId: string;
+  bridgeId?: EntityId;
+  /** One line each; one child task and one worker per item. */
+  items: string[];
+  options?: { teammate?: string; project?: string; effort?: BridgeWorkEffort };
+}
+export interface BridgeWorkStartItem {
+  taskId: EntityId;
+  sessionId: EntityId | null;
+  handle: string | null;
+  /** Why the worker did not start; the task stays. */
+  error: string | null;
+}
+export interface BridgeWorkStartResult {
+  bridgeId: EntityId;
+  /** The parent task, when there are two items or more. */
+  parentTaskId: EntityId | null;
+  items: BridgeWorkStartItem[];
+  /** The announcement posted to the group (absent when the outbox refused it). */
+  noticeMessageId: EntityId | null;
+}
+
 const Id = z.string().uuid();
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, bridgeId: Id.optional(), expectedVersion: z.number().int().positive() };
@@ -360,3 +386,13 @@ export const BridgeHandleClaimInputSchema = z.object({
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
+export const BridgeWorkStartInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  bridgeId: Id.optional(),
+  items: z.array(OneLine(500)).min(1).max(BRIDGE_WORK_ITEMS_MAX),
+  options: z.object({
+    teammate: OneLine(200).optional(),
+    project: OneLine(200).optional(),
+    effort: z.enum(['low', 'high', 'max']).optional(),
+  }).strict().optional(),
+}).strict();

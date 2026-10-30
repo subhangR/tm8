@@ -686,6 +686,37 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(finals().length).toBeGreaterThanOrEqual(1);
   });
 
+  it('B1b-6 bridges.work.start: the /work path as the caller, announced, idempotent on the mutation id', async () => {
+    await endWorkers();
+    const tasks = await bridgeTasks();
+    const before = spawns.length;
+    const cmid = `api-${randomUUID()}`;
+    const input = { bridgeId, clientMutationId: cmid, items: ['api item one', 'api item two'], options: { effort: 'high' as const } };
+    const result = await executor.workStart(memberClaims(people.rahul.identity), input);
+    expect(result.parentTaskId).not.toBeNull();
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every(i => i.sessionId && i.handle && !i.error)).toBe(true);
+    expect(await bridgeTasks()).toBe(tasks + 3);
+    expect(spawns.length).toBe(before + 2);
+    expect(spawns.at(-1)).toMatchObject({ effort: 'high', origins: [expect.objectContaining({ command: 'bridges.work.start', messageId: null, sender: { memberId: people.rahul.member } })] });
+    const [edge] = (await asOwner(c => c.query(
+      `select props from public.edges where src_id = $1 and dst_id = $2 and type = 'authored_from'`, [result.items[0]!.taskId, bridgeId]))).rows;
+    expect(edge.props.origins[0]).toMatchObject({ command: 'bridges.work.start', providerMessageId: `api:${cmid}` });
+    expect(result.noticeMessageId).toBe(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.messageId);
+    expect(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.text).toMatch(/^2 workers on it/);
+    // Replay: the same tasks, sessions and announcement.
+    const again = await executor.workStart(memberClaims(people.rahul.identity), input);
+    expect(again).toEqual(result);
+    expect(await bridgeTasks()).toBe(tasks + 3);
+    expect(spawns.length).toBe(before + 2);
+    // A stranger to the space is refused; so are too many items.
+    await expect(executor.workStart(memberClaims(`stranger-${randomUUID()}`), { ...input, clientMutationId: randomUUID() }))
+      .rejects.toMatchObject({ code: expect.stringMatching(/forbidden|not_found/) });
+    await expect(executor.workStart(memberClaims(people.rahul.identity), {
+      bridgeId, clientMutationId: randomUUID(), items: ['1', '2', '3', '4', '5', '6'],
+    })).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
   it('F4: a /work re-run does not count its own workers against the live cap', async () => {
     await endWorkers();
     const body = ['/work', ...Array.from({ length: 3 }, (_, i) => `f4 item ${i}`)].join('\n');
