@@ -82,6 +82,7 @@ import { dispatchRequestInjection } from '@tm8/prompt';
 import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { firingKeyFor } from '../loops/firing.js';
 import type { ToolRuntime } from '../tools/runtime.js';
+import type { BridgeCommandPorts } from '../bridges/commands/ports.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -3263,34 +3264,86 @@ export function createLoopExecutorPort(deps: {
      * share one path. A completed session that is merely still open closes as
      * `exited_clean`, exactly as the HTTP op records it.
      */
-    async stopSession(claims, sessionId, request) {
-      const rows = await db.query<{ outcome: string | null }>(
-        claims,
-        'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
-        [sessionId],
-      );
-      if (rows.length === 0) {
-        throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
-      }
-      const outcome = rows[0]!.outcome;
-      let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
-      if (outcome === 'completed') {
-        ending = CLOSED_AFTER_COMPLETION;
-      } else {
-        if (outcome !== 'stopped') {
-          await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
-        }
-        ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
-      }
-      await rethrowing(() =>
-        spawnService.terminate(claims, sessionId, {
-          force: false,
-          clientMutationId: request.clientMutationId,
-          reason: request.reason,
-          ...ending,
-        }),
-      );
+    stopSession: (claims, sessionId, request) => stopSessionAsOperator(db, spawnService, claims, sessionId, request),
+  };
+}
+
+/**
+ * Stop a session the way `execution.terminate` does — `stop_work_session`
+ * while the outcome is open (claims released, outcome 'stopped'), then
+ * `SpawnService.terminate` with 171's ending facts — so a session stopped by
+ * a loop or from a bridge (`/stop`) is indistinguishable in the graph from an
+ * operator-stopped one. A completed session that is merely still open closes
+ * as `exited_clean`, exactly as the HTTP op records it.
+ */
+export async function stopSessionAsOperator(
+  db: Db,
+  spawnService: SpawnService,
+  claims: DbClaims,
+  sessionId: string,
+  request: { reason: string; endedReason: string; clientMutationId: string | null },
+): Promise<void> {
+  const rows = await db.query<{ outcome: string | null }>(
+    claims,
+    'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
+    [sessionId],
+  );
+  if (rows.length === 0) {
+    throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+  }
+  const outcome = rows[0]!.outcome;
+  let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
+  if (outcome === 'completed') {
+    ending = CLOSED_AFTER_COMPLETION;
+  } else {
+    if (outcome !== 'stopped') {
+      await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
+    }
+    ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
+  }
+  await rethrowing(() =>
+    spawnService.terminate(claims, sessionId, {
+      force: false,
+      clientMutationId: request.clientMutationId,
+      reason: request.reason,
+      ...ending,
+    }),
+  );
+}
+
+/**
+ * Bridges B1b-4: the command executor's worker seam (v2 §4.3). A `/work`
+ * worker is spawned as the linked member, on its task, with the bridge
+ * origins handed over as a SERVER fact (B1b-3: written with the session in
+ * the spawn's own transaction, so the worker never runs without them).
+ */
+export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnService }): {
+  spawnWorker: BridgeCommandPorts['spawnWorker'];
+  stopWorker: BridgeCommandPorts['stopWorker'];
+} {
+  const { db, spawnService } = deps;
+  return {
+    async spawnWorker(claims, request) {
+      const spawned = await rethrowing(() => spawnService.spawn(claims, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        parentSessionId: null,
+        taskIds: [request.taskId],
+        projectId: request.projectId,
+        mode: null,
+        model: null,
+        agentTool: null,
+        reasoningEffort: request.effort,
+        accessMode: null,
+        title: request.title,
+        promptExtra: null,
+        clientMutationId: request.clientMutationId,
+      }, { bridgeOrigins: request.origins } as Parameters<SpawnService['spawn']>[2]));
+      return { sessionId: spawned.sessionId };
     },
+    stopWorker: (claims, sessionId, input) => stopSessionAsOperator(db, spawnService, claims, sessionId, {
+      reason: input.reason, endedReason: input.reason, clientMutationId: input.clientMutationId,
+    }),
   };
 }
 
