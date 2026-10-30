@@ -25,6 +25,8 @@
  *   TM8_BASE_URL=http://127.0.0.1:4691 node scripts/measure-spawn.mjs \
  *     [--n 10] [--modes scratch,worktree] [--files 500] \
  *     [--server-log /tmp/server.log] [--json out.json] [--label before]
+ *     [--gap 35]   seconds between launches (default 0): past the server's 30 s
+ *                  skill-scan debounce, each launch is one a human makes later
  *
  * Dependency-free (node >= 22 global fetch), like scripts/smoke-loop.mjs.
  */
@@ -47,6 +49,7 @@ const FILES = Number.parseInt(flag('files', '500'), 10);
 const SERVER_LOG = flag('server-log', null);
 const JSON_OUT = flag('json', null);
 const LABEL = flag('label', 'run');
+const GAP_MS = Number.parseFloat(flag('gap', '0')) * 1000;
 const RUNNING_TIMEOUT_MS = 180_000;
 // Gentle on purpose: every poll is a full entity read on the server being
 // measured, and a tight loop slows the very boot it times. The instants come
@@ -209,6 +212,7 @@ for (const mode of MODES) {
   const loadBefore = load();
   const samples = [];
   for (let i = 0; i < N; i += 1) {
+    if (GAP_MS > 0 && (i > 0 || mode !== MODES[0])) await new Promise((r) => setTimeout(r, GAP_MS));
     const task = await call('POST', '/v2/entities', {
       spaceId, kind: 'task', title: `Measure ${mode} ${i + 1}`, clientMutationId: cmid('task'),
     });

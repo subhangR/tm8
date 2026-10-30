@@ -2,10 +2,14 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute } from 'node:path';
 import { CollabError } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
-import { scanSkills, SkillScanDebouncer, type SkillScanStore } from './scanner.js';
+import { scanSkills, SkillScanDebouncer, type ServedSkillScan, type SkillScanResult, type SkillScanStore } from './scanner.js';
 import type { ParsedSkillFile } from './parse.js';
 import type { SkillRoots } from './discovery.js';
-export interface SkillScanOptions { root?: string; all?: boolean; force?: boolean; homesOnly?: boolean }
+export interface SkillScanOptions {
+  root?: string; all?: boolean; force?: boolean; homesOnly?: boolean;
+  /** The launch path: answer from the cached scan and refresh it in the background (SkillScanDebouncer.serve). */
+  serveStale?: boolean;
+}
 interface ProjectRoot { id: string; working_dir: string; trust: string; defaults: Record<string, unknown> }
 const debounce = new SkillScanDebouncer();
 const absolute = (value: unknown): value is string => typeof value === 'string' && isAbsolute(value);
@@ -57,7 +61,9 @@ export function skillScanStore(db: Db, claims: DbClaims, spaceId: string): Skill
     async markMissing(ids, scannedAt) { await db.rpc(claims, 'mark_skill_references_missing', [spaceId, ids, scannedAt]); },
   };
 }
-export async function scanSpaceSkills(db: Db, claims: DbClaims, spaceId: string, options: SkillScanOptions = {}) {
+export function scanSpaceSkills(db: Db, claims: DbClaims, spaceId: string, options: SkillScanOptions & { serveStale: true }): Promise<ServedSkillScan>;
+export function scanSpaceSkills(db: Db, claims: DbClaims, spaceId: string, options?: SkillScanOptions): Promise<SkillScanResult>;
+export async function scanSpaceSkills(db: Db, claims: DbClaims, spaceId: string, options: SkillScanOptions = {}): Promise<SkillScanResult | ServedSkillScan> {
   // Authorization must precede both cached responses and filesystem access.
   const membership = await db.query<{ allowed: boolean }>(claims, 'select internal.is_space_member($1::uuid) as allowed', [spaceId]);
   if (!membership[0]?.allowed) throw new CollabError('forbidden', 'space membership required for skill scanning');
@@ -67,5 +73,19 @@ export async function scanSpaceSkills(db: Db, claims: DbClaims, spaceId: string,
   }
   const roots = await resolveSkillRoots(db, claims, spaceId, options);
   const key = JSON.stringify([spaceId, claims.identityId, claims.actorId, roots]);
-  return debounce.run(key, () => scanSkills({ roots, store: skillScanStore(db, claims, spaceId) }), options.force);
+  const scan = () => scanSkills({ roots, store: skillScanStore(db, claims, spaceId) });
+  if (options.serveStale) return debounce.serve(key, scan, () => persistedScanAt(db, claims, spaceId));
+  return debounce.run(key, scan, options.force);
+}
+
+/**
+ * When the space's file-backed references were last seen, or null when it has
+ * none: a previous process's scan, the cache a restarted node serves from.
+ */
+async function persistedScanAt(db: Db, claims: DbClaims, spaceId: string): Promise<string | null> {
+  const rows = await db.query<{ at: string | Date | null }>(claims, `select max(s.last_seen_at) as at
+    from public.skills s join public.entities e on e.id = s.entity_id
+    where e.space_id = $1 and e.deleted_at is null and s.source_path is not null`, [spaceId]);
+  const at = rows[0]?.at;
+  return at ? new Date(at).toISOString() : null;
 }
