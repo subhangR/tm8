@@ -302,8 +302,14 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     const frames = await worker<{ runtimeId: string; frame: Record<string, unknown> }[]>('internal.bridge_outbox_take', [['wa-test'], 10]);
     const mine = frames.find(f => f.frame['outboxId'] === ob!.id)!;
     expect(mine.frame).toMatchObject({ type: 'send', connectionId: connection, conversationId: GROUP, text: 'Infra Bot: Deployed at 10:40.' });
+    const updates = async (id: string) => (await owner<{ n: number }>(`select count(*)::int as n from public.workspace_events
+      where event_type = 'message.updated' and subject_ids @> array[$1::uuid]`, [id]))[0]!.n;
+    const before = await updates(answer);
     await door('bridge_runtime_sent', JSON.stringify({ outboxId: ob!.id, connectionId: connection, externalMessageId: 'BAE5OUT1',
       message: { conversation: 'Infra Bot: Deployed at 10:40.' } }));
+    // ac11: the settle reached readers as an event on the message (254 drops a bare entities touch).
+    const after = await updates(answer);
+    expect(after).toBeGreaterThan(before);
     const badge = await human(q => q.rpc<{ messageId: string; status: string; externalMessageId: string }[]>(
       'internal.bridge_message_delivery', [[answer]]));
     expect(badge).toEqual([expect.objectContaining({ messageId: answer, status: 'sent', externalMessageId: 'BAE5OUT1' })]);

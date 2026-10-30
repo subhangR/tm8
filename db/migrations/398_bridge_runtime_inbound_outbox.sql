@@ -835,9 +835,6 @@ begin
            last_error = left(coalesce(p_frame #>> '{failed,reason}', 'failed'), 300)
      where id = ob.id;
   end if;
-  -- The badge rides the message: a messages UPDATE emits message.updated (an
-  -- entities.updated_at touch alone emits nothing, 254).
-  update public.messages set updated_at = clock_timestamp() where entity_id = ob.message_id;
   select * into ob from public.bridge_outbox where id = ob.id;
   return jsonb_build_object('outboxId', ob.id, 'status', ob.status);
 end
@@ -848,6 +845,34 @@ grant execute on function public.bridge_runtime_sent(jsonb) to tm8_app;
 -- -----------------------------------------------------------------------------
 -- §6. The outbox.
 -- -----------------------------------------------------------------------------
+
+-- The badge rides the message (§2.3, §3.6). Every change to a send's state, and
+-- every refusal written or cleared, touches the message and its batch twins
+-- (the chat copy and the log copy are one message by correlation). A messages
+-- UPDATE emits message.updated (254); an entities.updated_at touch alone emits
+-- nothing, so it is never used for this.
+create or replace function internal.bridge_touch_delivery() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare msg uuid;
+begin
+  if tg_table_name = 'bridge_outbox' then
+    if new.kind <> 'send' or (tg_op = 'UPDATE' and new.status is not distinct from old.status) then return null; end if;
+    msg := new.message_id;
+  else
+    msg := coalesce(new.message_id, old.message_id);
+  end if;
+  update public.messages m set updated_at = clock_timestamp()
+   where m.entity_id = msg
+      or (m.message_batch_id is not null
+          and m.message_batch_id = (select b.message_batch_id from public.messages b where b.entity_id = msg));
+  return null;
+end
+$$;
+revoke all on function internal.bridge_touch_delivery() from public;
+create trigger bridge_outbox_touch_delivery after insert or update of status on public.bridge_outbox
+for each row execute function internal.bridge_touch_delivery();
+create trigger bridge_delivery_refusals_touch_delivery after insert or delete on public.bridge_delivery_refusals
+for each row execute function internal.bridge_touch_delivery();
 
 -- Credential-shaped text never crosses (the Phase-1 relay refusal, §2.3).
 create or replace function internal.bridge_text_looks_secret(p text) returns boolean
@@ -1201,7 +1226,6 @@ begin
       when not (r.conv = any(internal.bridge_allowlist_ids(r.connection_id))) then 'not_connected' end;
     if reason is not null then
       update public.bridge_outbox set status = 'failed_permanent', settled_at = now(), last_error = reason where id = r.id;
-      update public.messages set updated_at = clock_timestamp() where entity_id = r.message_id;
       continue;
     end if;
     update public.bridge_outbox set status = 'dispatching', attempts = attempts + 1, dispatched_at = now() where id = r.id;
