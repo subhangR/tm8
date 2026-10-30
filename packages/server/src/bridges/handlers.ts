@@ -19,6 +19,7 @@ import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, isUuid, limitOf, requireUuidParam } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
+import { bridgeMessageBadges } from '../db/bridge-badges.js';
 import type { Querier } from '../db/types.js';
 import type { RequestContext } from '../http/types.js';
 
@@ -130,6 +131,7 @@ async function readLog(q: Querier, bridgeId: string, opts: {
       limit $4`, [bridge.anchor, after, opts.thread, opts.limit + 1]);
   const page = rows.slice(0, opts.limit);
   const actors = await loadActors(q, page.map(r => r.author_id).filter((x): x is string => x !== null));
+  const badges = await bridgeMessageBadges(q, page.map(r => r.id), 'bridges.log.read:badges');
   const items: BridgeLogEntry[] = page.map(r => {
     const actor = r.author_id ? actorOf(actors, r.author_id) : null;
     return {
@@ -141,6 +143,7 @@ async function readLog(q: Querier, bridgeId: string, opts: {
         ? { direction: r.direction, externalMessageId: r.external_message_id, participant: r.participant }
         : null,
       handle: r.handle,
+      delivery: badges.get(r.id)?.delivery ?? null,
     };
   });
   const last = page.at(-1)?.id ?? null;

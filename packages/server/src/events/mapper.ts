@@ -35,8 +35,10 @@ import type {
   MessageView,
   NotificationItem,
   WorkspaceEvent,
+  MessageBridgeView,
 } from '@tm8/contract';
 
+import { bridgeMessageBadges } from '../db/bridge-badges.js';
 import type { Querier } from '../db/types.js';
 import { sessionChatOrigins } from '../db/authored-origins.js';
 import { OffContractEventError, assertWorkspaceEvent } from './emitter.js';
@@ -207,6 +209,8 @@ interface LiveMessageContent {
   body: string;
   mentions: unknown[];
   attachments: unknown[];
+  /** The bridge mark and delivery tick, read live too: a tick moves by `message.updated` (406). */
+  bridge?: MessageBridgeView;
 }
 
 /** Which entity ids a row's projection will need hydrated. */
@@ -394,6 +398,11 @@ export class WorkspaceEventMapper {
         mentions: redacted || !Array.isArray(m.mentions) ? [] : m.mentions,
         attachments: redacted || !Array.isArray(m.attachments) ? [] : m.attachments,
       });
+    }
+    const bridged = await bridgeMessageBadges(q, [...out.keys()], 'events:bridge-badges');
+    for (const [id, bridge] of bridged) {
+      const content = out.get(id);
+      if (content) content.bridge = bridge;
     }
     return out;
   }
@@ -684,6 +693,7 @@ export class WorkspaceEventMapper {
             attachments: live.attachments as MessageView['content']['attachments'],
           },
           replyCount: 0,
+          ...(live.bridge ? { bridge: live.bridge } : {}),
         };
         // Envelope-level SENDER provenance, hydrated live from the `authored_from`
         // edge rather than read from the captured payload (the payload has no such

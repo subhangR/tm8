@@ -1,6 +1,6 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
-import { BridgeEntitySchema } from './bridges.js';
+import { BridgeEntitySchema, MessageBridgeViewSchema } from './bridges.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -1734,6 +1734,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
   sourceWorkSessionId: EntityIdSchema.optional(),
+  bridge: MessageBridgeViewSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
