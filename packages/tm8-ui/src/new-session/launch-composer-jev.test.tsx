@@ -149,6 +149,39 @@ describe('asking', () => {
   });
 });
 
+describe('an unticked Jev pick', () => {
+  it('stays one click away: listed under Attach → Suggested with its reason, and one click ticks it back', async () => {
+    const view = setup();
+    await view.ask();
+    const menu = await view.openGroup('memory');
+    fireEvent.click(within(within(menu).getByTestId('lcd3-row-mem-a')).getByRole('menuitemcheckbox'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    const suggested = view.getByTestId('lcd3-attach-suggested-mem-a');
+    expect(suggested.textContent).toContain('✦ Jev');
+    expect(suggested.getAttribute('title')).toMatch(/^Jev: /);
+    fireEvent.click(suggested);
+    const input = await view.spawn();
+    expect([...(input.selection?.memoryIds ?? [])].sort()).toEqual(['ent-mem-tokens', 'mem-a', 'mem-b']);
+  });
+});
+
+describe('a default Jev left out', () => {
+  it('when Jev leaves out every memory, the group leaves the card but the default is under Suggested with Jev’s reason', async () => {
+    /* ent-mem-tokens is LAUNCH_DEFAULTS' one memory default; Jev ranks it below the floor. */
+    const view = setup({ memories: okGroup({ ...MEMORIES, items: [item('ent-mem-tokens', 'memory', 0.3, false, ['teammate'])] }) });
+    await view.ask();
+    await waitFor(() => expect(view.queryByTestId('lcd3-group-memory')).toBeNull());
+    expect(view.getByTestId('lcd3-attach-suggested-count').textContent).toContain('1 suggested');
+    fireEvent.click(view.getByTestId('lcd3-attach'));
+    const row = view.getByTestId('lcd3-attach-suggested-ent-mem-tokens');
+    expect(row.textContent).toContain('✦ left out');
+    expect(row.getAttribute('title')).toMatch(/^Jev: /);
+    fireEvent.click(row);
+    await waitFor(() => expect(view.getByTestId('lcd3-group-memory')).toBeTruthy());
+  });
+});
+
 describe('undo and staleness', () => {
   it('Undo Jev’s changes reverts its picks and its teammate, and keeps a later edit of yours', async () => {
     const view = setup();

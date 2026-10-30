@@ -18,6 +18,7 @@ verification specific to it.
 | Hosted workspaces | [`shared-workspace/`](shared-workspace/) | [`README.md`](shared-workspace/README.md) |
 | Shareable links | [`sharing/`](sharing/) | [`SHAREABLE-LINKS-DESIGN.md`](sharing/SHAREABLE-LINKS-DESIGN.md) |
 | Mobile shell | [`mobile/`](mobile/) | [`BACK-CONTRACT.md`](mobile/BACK-CONTRACT.md) |
+| Bridges | [`bridges/`](bridges/) | [`BRIDGE-ENTITY-DESIGN.md`](bridges/BRIDGE-ENTITY-DESIGN.md) |
 
 Most feature directories also carry the lane brief they were built from:
 [`worktrees/BRIEF-WORKTREES.md`](worktrees/BRIEF-WORKTREES.md),

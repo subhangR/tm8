@@ -10,7 +10,8 @@ import {
 } from '../domain/launch-selection';
 import { BudgetMeter } from '../jev';
 import { groupMeter, REASON_WORDS, type GroupMeterFacts, type LaunchRanked } from './meter';
-import type { LaunchSelection, LoadLaunchDefaults } from './useLaunchSelection';
+import type { LoadLaunchDefaults } from './port';
+import type { LaunchSelection } from './useLaunchSelection';
 
 /** What a surface knows about the launch's prompt bytes, for the per-group meter (I7). All optional: absent, the meter falls back to `launch.defaults`, then to counts. */
 export interface LaunchSelectionBudgetProps {
@@ -94,6 +95,7 @@ export function LaunchSelectionGroups({
       {selection.warnings.map((warning) => (
         <p key={warning} className="ls__profile-empty" role="status">{warning}</p>
       ))}
+
     </>
   );
 }

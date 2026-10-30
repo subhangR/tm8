@@ -39,6 +39,7 @@
  * property that makes a stale entry harmless — a deleted persona cannot be
  * resurrected into the roster by having once been launched.
  */
+import { browserStorage, forgetKeysWithPrefix } from './browser-store';
 
 /**
  * Bumped whenever the stored shape changes. A miss on this prefix IGNORES the
@@ -67,21 +68,6 @@ function keyFor(nodeKey: string, spaceId: string): string {
 }
 
 /**
- * EVERY localStorage access is guarded, for the reasons `launch-cache.ts`
- * spells out: private-mode Safari throws on write, a full quota throws on
- * write, and a disabled-storage policy throws on READ. An ordering hint may
- * never be the thing that breaks a launch.
- */
-function storage(): Storage | null {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * The remembered order, most recent FIRST. Empty when there is nothing stored,
  * nothing readable, or nothing of the right shape — every one of which means
  * the same thing to the caller: rank nothing, fall back to the alphabetical
@@ -89,7 +75,7 @@ function storage(): Storage | null {
  * roster is still perfectly ordered.
  */
 export function readLaunchRecents(nodeKey: string, spaceId: string): readonly string[] {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return [];
   try {
     const raw = store.getItem(keyFor(nodeKey, spaceId));
@@ -151,7 +137,7 @@ export function rememberLaunchPick(
   // Move-to-front. `normalise` drops the previous occurrence for us, because
   // the new head is now the first one it sees.
   const next = normalise([teamMemberId, ...current]);
-  const store = storage();
+  const store = browserStorage();
   if (!store) return next;
   try {
     const payload: RecentsPayload = { savedAt: new Date().toISOString(), ids: [...next] };
@@ -175,19 +161,5 @@ export function rememberLaunchPick(
  * same class, and it names who they work as.
  */
 export function clearLaunchRecents(nodeKey: string): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    const prefix = `${KEY_PREFIX}.${nodeKey}.`;
-    // Snapshot the keys BEFORE removing any: `key(i)` walks a live index, and
-    // deleting mid-walk skips entries.
-    const doomed: string[] = [];
-    for (let i = 0; i < store.length; i += 1) {
-      const key = store.key(i);
-      if (key !== null && key.startsWith(prefix)) doomed.push(key);
-    }
-    for (const key of doomed) store.removeItem(key);
-  } catch {
-    // Storage refused. Nothing stored, nothing to forget.
-  }
+  forgetKeysWithPrefix(`${KEY_PREFIX}.${nodeKey}.`);
 }

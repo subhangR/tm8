@@ -30,6 +30,8 @@ import { screenStackStore, screenKeyOf } from '../stores/screenStackStore';
 import { chatStore } from '../channel-screen/chat-store';
 import { readLastSpace, readLastTarget, writeLastSpace, writeLastTarget } from '../views/last-place';
 import { readLaunchCache, writeLaunchCache } from '../data/launch-cache';
+import { launchDefaultsLoader } from '../data/launch-defaults-cache';
+import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
 
 /** A link of the shape §2.2 freezes for a shared entity — the thing at risk. */
 const DEEP_LINK = '#/s/019fbd5a-3c5b-71ea-9b91-1d3baa50da25/e/4f8c2a9e-77b1-4e3d-9c2f-a1b0d3e5f6a7?origin=tasks';
@@ -178,6 +180,14 @@ afterEach(() => {
   window.location.hash = '';
 });
 
+
+/** The launch card's stored defaults for one viewer, as a fresh page would seed them. */
+const DEFAULTS_INPUT = { teamMemberId: 'tm-1' as never, subjectId: OPEN as never };
+async function storeDefaults(): Promise<void> {
+  await launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, () => 'viewer-1')(DEFAULTS_INPUT);
+}
+const storedDefaults = () => launchDefaultsLoader(async () => LAUNCH_DEFAULTS, 'local', SPACE, () => 'viewer-1').peek?.(DEFAULTS_INPUT) ?? null;
+
 describe('an explicit sign-out', () => {
   it('leaves the next viewer nothing: no panels, no pins, no session, no screen stacks', () => {
     signIn();
@@ -219,6 +229,16 @@ describe('an explicit sign-out', () => {
     signOutOfServer();
 
     expect(readLaunchCache('local', SPACE)).toBeNull();
+  });
+
+  it('drops the launch card’s stored defaults (memory statements, titles)', async () => {
+    signIn();
+    await storeDefaults();
+    expect(storedDefaults()).not.toBeNull();
+
+    signOutOfServer();
+
+    expect(storedDefaults()).toBeNull();
   });
 
   it('still forgets the pass, and still remembers WHICH accounts have signed in here', () => {
@@ -278,6 +298,15 @@ describe('a session the SERVER ended', () => {
        from the machine; the destination is theirs to come back to. */
     expect(window.location.hash).toBe(DEEP_LINK);
     expect(readLastTarget('local', SPACE)).toEqual({ type: 'entity', ref: OPEN, kind: 'task' });
+  });
+
+  it('KEEPS the launch card’s stored defaults: they are keyed by viewer, so the same person gets a warm first frame and nobody else can read them', async () => {
+    signIn();
+    await storeDefaults();
+
+    await verifyStoredSession();
+
+    expect(storedDefaults()).toEqual(LAUNCH_DEFAULTS);
   });
 });
 
