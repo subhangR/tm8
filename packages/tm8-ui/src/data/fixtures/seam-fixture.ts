@@ -6076,7 +6076,7 @@ export function createFixtureSeam(): FixtureSeam {
           return {
             credentialId,
             // This fixture emits vendor launch usage; server-only keys have no vendor rows.
-            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' || row.provider === 'tool' ? [] : [{
+            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' || row.provider === 'tool' || row.provider === 'whatsapp' ? [] : [{
               workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
               credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
               agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,
