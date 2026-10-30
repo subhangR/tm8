@@ -175,9 +175,17 @@ describe('bridge rolling summary (S)', () => {
       await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'task',0,$3)", [task, space, member]);
       await c.query("insert into public.tasks(entity_id,title,work_status) values($1,'Rotate staging password','working')", [task]);
       await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'assigned_to',$3)", [space, task, member]);
-      await c.query(`select internal.w1_set_writer('message_recorder')`);
+      // The edge exactly as the provenance recorder writes it (D22/D31, 399's
+      // record_bridge_provenance): writer entity_recorder, props.bridgeId with
+      // origins[] beside it. 399's guard refuses a bridgeId marker without
+      // origins[]; this shape passes with or without 399 applied.
+      await c.query(`select internal.w1_set_writer('entity_recorder')`);
       await c.query(`insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
-        values($1,$2,$3,'authored_from',jsonb_build_object('bridgeId',$5::text),$4)`, [space, task, bridgeId, member, bridgeId]);
+        values($1,$2,$3,'authored_from',$5::jsonb,$4)`, [space, task, bridgeId, member, JSON.stringify({
+          bridgeId,
+          origins: [{ messageId: null, providerMessageId: 'summary-fixture-1', sender: { memberId: member }, command: '/task',
+                      inherited: false, viaSessionId: null, depth: 0 }],
+        })]);
       await c.query(`select internal.w1_set_writer(null)`);
     });
     const view: BridgeDetailView = await call('GET', `/v2/bridges/${bridgeId}`);
