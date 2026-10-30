@@ -4,6 +4,7 @@
   "description": "WhatsApp <-> tm8 bridge (Phase 1): routing, names, speaker-token API, history",
   "scripts": {
     "start": "tsx src/main.ts",
+    "runtime": "tsx src/runtime-main.ts",
     "link": "tsx src/main.ts --link",
     "test": "tsx --test test/*.test.ts",
     "admin": "tsx src/admin.ts",
