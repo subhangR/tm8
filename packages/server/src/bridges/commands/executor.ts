@@ -85,6 +85,8 @@ interface BridgeFacts {
   trigger: 'mention' | 'every' | 'none';
   targetTitle: string | null;
   mutedUntil: string | null;
+  /** The group's log (399's internal.bridge_log_anchor): the bridge, or its channel. */
+  logAnchor: string;
   pausedAt: string | null;
   endedAt: string | null;
   deleted: boolean;
@@ -701,7 +703,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: `${named(row)} couldn't resume — started ${launched.handle ?? 'a new worker'} on "${t.title}"` };
   }
 
-  /** /result <worker> (§4.4): its latest report, ≤ 10 lines, never secret-shaped text (§4.8). */
+  /** /result <worker> (§4.4): its latest post on this group's log, ≤ 10 lines, never secret-shaped text (§4.8). */
   async function result(cmd: Command, args: string): Promise<Answer> {
     requireReader(cmd);
     const ref = parseWorkerRef(args);
@@ -710,9 +712,11 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     if (!row) throw new Refusal(`no worker "${stripTail(args)}" from this group — /workers all to list them`);
     const rows = cmd.claims
       ? await ports.db.query<{ body: string }>(cmd.claims,
+        // Only what the worker posted on THIS bridge's log: the answer is read
+        // by the whole group, so nothing from elsewhere in the space (§4.8).
         `select m.body from public.edges ed join public.messages m on m.entity_id = ed.src_id
-          where ed.type = 'authored_from' and ed.dst_id = $1 and m.redacted_at is null
-          order by m.created_at desc limit 1`, [row.id])
+          where ed.type = 'authored_from' and ed.dst_id = $1 and m.anchor_id = $2 and m.redacted_at is null
+          order by m.created_at desc limit 1`, [row.id, cmd.bridge.logAnchor])
       : await exec(q => q.query<{ body: string }>('select body from public.bridge_command_guest_result($1, $2) as body',
         [cmd.input.bridgeId, row.id]));
     const body = rows[0]?.body;
@@ -891,7 +895,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       },
       bridge, sender, claims,
       key: `bridge:${input.bridgeId}:${originKey}`,
-      origin: () => ({ bridgeId: input.bridgeId, messageId: null, providerMessageId: originKey, sender: { memberId: row.member_id! }, command: 'bridges.work.start' }),
+      // The same provenance as /work (v2 §4.3), keyed on the call instead of a message.
+      origin: () => ({ bridgeId: input.bridgeId, messageId: null, providerMessageId: originKey, sender: { memberId: row.member_id! }, command: '/work' }),
     };
     const options = input.options ?? {};
     const items: WorkItem[] = input.items.map(text => ({

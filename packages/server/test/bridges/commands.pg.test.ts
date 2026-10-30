@@ -651,6 +651,44 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(await db.query(bridgesWorkerClaims(), 'select * from public.bridge_command_guest_result($1, $2)', [bridgeId, randomUUID()])).toEqual([]);
     await expect(db.query(memberClaims(people.owner.identity), 'select * from public.bridge_command_guest_result($1, $2)', [bridgeId, session]))
       .rejects.toMatchObject({ code: 'forbidden' });
+    // F1: a newer message the worker wrote ELSEWHERE (a task thread) is never quoted into the group.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const elsewhere = randomUUID();
+    const [{ id: taskAnchor }] = (await asOwner(c => c.query(
+      `select ed.src_id::text id from public.edges ed join public.entities e on e.id = ed.src_id
+        where ed.dst_id = $1 and ed.type = 'authored_from' and e.kind = 'task' limit 1`, [bridgeId]))).rows;
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'message',0,$3)", [elsewhere, space, people.rahul.member]);
+      await c.query('insert into public.messages(entity_id,anchor_id,author_id,body) values($1,$2,$3,$4)', [elsewhere, taskAnchor, people.rahul.member, 'private note on a task']);
+      await c.query("select set_config('tm8.w1_writer', 'entity_recorder', true)");
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'authored_from',$4)",
+        [space, elsewhere, session, people.rahul.member]);
+    });
+    // ...and nor is a newer post on ANOTHER bridge's log.
+    const otherChat = randomUUID();
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'chat',0,$3)", [otherChat, space, people.owner.member]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,'Ops main',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/b1b4', gen_random_uuid(), $4, $5, $6)`,
+        [otherChat, space, persona, people.owner.identity, people.owner.member, `b1b6-${randomUUID()}`]);
+    });
+    const other = await db.rpc<{ entity: { id: string } }>(
+      { identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b6-other' }, 'create_bridge',
+      [space, connection, '120363-ops@g.us', JSON.stringify({ kind: 'group', title: 'Ops', memberCount: null }), otherChat,
+        '{}', persona, null, null, true, null, null, `b1b6-other-${randomUUID()}`]);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const otherPost = randomUUID();
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'message',0,$3)", [otherPost, space, people.rahul.member]);
+      await c.query('insert into public.messages(entity_id,anchor_id,author_id,body) values($1,$2,$3,$4)', [otherPost, other.entity.id, people.rahul.member, 'said in the Ops group']);
+      await c.query("select set_config('tm8.w1_writer', 'entity_recorder', true)");
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'authored_from',$4)",
+        [space, otherPost, session, people.rahul.member]);
+    });
+    expect((await command('rahul', `/result ${handle}`)).reply!.text.split('\n')[1]).toBe('line 1');
+    expect((await db.query<{ body: string }>(bridgesWorkerClaims(),
+      'select body from public.bridge_command_guest_result($1, $2) as body', [bridgeId, session]))[0]!.body.split('\n')[0]).toBe('line 1');
     await new Promise(resolve => setTimeout(resolve, 5));
     await report('done. token: ghp_' + 'a'.repeat(36));
     expect((await command('rahul', `/result ${handle}`)).reply!.text).toMatch(/looks like it holds a secret — read it in tm8$/);
@@ -698,12 +736,14 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(result.items.every(i => i.sessionId && i.handle && !i.error)).toBe(true);
     expect(await bridgeTasks()).toBe(tasks + 3);
     expect(spawns.length).toBe(before + 2);
-    expect(spawns.at(-1)).toMatchObject({ effort: 'high', origins: [expect.objectContaining({ command: 'bridges.work.start', messageId: null, sender: { memberId: people.rahul.member } })] });
+    expect(spawns.at(-1)).toMatchObject({ effort: 'high', origins: [expect.objectContaining({ command: '/work', messageId: null, sender: { memberId: people.rahul.member } })] });
     const [edge] = (await asOwner(c => c.query(
       `select props from public.edges where src_id = $1 and dst_id = $2 and type = 'authored_from'`, [result.items[0]!.taskId, bridgeId]))).rows;
-    expect(edge.props.origins[0]).toMatchObject({ command: 'bridges.work.start', providerMessageId: `api:${cmid}` });
+    expect(edge.props.origins[0]).toMatchObject({ command: '/work', providerMessageId: `api:${cmid}` });
     expect(result.noticeMessageId).toBe(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.messageId);
     expect(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.text).toMatch(/^2 workers on it/);
+    // The same provenance as /work, so /tasks lists them like any /work task.
+    expect((await command('rahul', '/tasks')).reply!.text).toContain('Api item one');
     // Replay: the same tasks, sessions and announcement.
     const again = await executor.workStart(memberClaims(people.rahul.identity), input);
     expect(again).toEqual(result);

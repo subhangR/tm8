@@ -13,9 +13,12 @@
 --       `commandState` (398's message_origins.command_state), so the executor
 --       can tell the group once when 398's claim has failed a command after
 --       its attempts;
+--   §1b public.bridge_command_context: 401's body plus `logAnchor`
+--       (399's internal.bridge_log_anchor), which /result filters on;
 --   §2  public.bridge_command_guest_result: a guest's /result — the latest
---       message a worker of THIS bridge authored, when every member of the
---       space may read it (visibility 'space'). Executor-only, like 401's doors.
+--       message a worker of THIS bridge posted on this bridge's log (what the
+--       group already saw), when every member of the space may read it.
+--       Executor-only, like 401's doors.
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -57,6 +60,70 @@ revoke all on function public.bridge_command_input(uuid) from public;
 grant execute on function public.bridge_command_input(uuid) to tm8_app;
 
 -- -----------------------------------------------------------------------------
+-- §1b. The bridge's facts (401), now with its log anchor.
+-- -----------------------------------------------------------------------------
+create or replace function public.bridge_command_context(
+  p_bridge_id uuid, p_member_id uuid, p_reply_to_external_id text)
+returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare
+  b public.bridges;
+  e public.entities;
+  v_role text;
+  v_status text;
+  reply_message uuid;
+  reply_direction text;
+  muted_until timestamptz;
+begin
+  perform internal.require_bridge_commands_worker();
+  select * into b from public.bridges where entity_id = p_bridge_id;
+  if b.entity_id is null then return null; end if;
+  -- B1b-2's /mute column; read so this file applies before or after theirs.
+  begin
+    execute 'select muted_until from public.bridges where entity_id = $1' into muted_until using p_bridge_id;
+  exception when undefined_column then
+    muted_until := null;
+  end;
+  select * into e from public.entities where id = p_bridge_id;
+  if p_member_id is not null then
+    select mb.role, mb.status into v_role, v_status
+      from public.members mb where mb.entity_id = p_member_id and mb.space_id = b.space_id;
+  end if;
+  if p_reply_to_external_id is not null then
+    select r.message_id, r.direction into reply_message, reply_direction
+      from public.message_origins r
+     where r.bridge_id = p_bridge_id and r.external_message_id = p_reply_to_external_id
+     order by (r.direction = 'out') desc
+     limit 1;
+  end if;
+  return jsonb_build_object(
+    'bridgeId', b.entity_id,
+    'spaceId', b.space_id,
+    'provider', b.provider,
+    'title', coalesce(b.conversation ->> 'title', ''),
+    'targetKind', b.target_kind,
+    'targetId', b.target_id,
+    'teammateId', b.teammate_id,
+    'targetTeammateId', case when b.target_kind = 'chat'
+      then (select c.teammate_id from public.chats c where c.entity_id = b.target_id) end,
+    'targetTitle', internal.bridge_target_title(b.target_kind, b.target_id),
+    -- 411: where the group's log lives (399), so /result quotes only what the group saw.
+    'logAnchor', internal.bridge_log_anchor(b.entity_id),
+    'whoMayTrigger', b.policy ->> 'whoMayTrigger',
+    'direction', b.policy ->> 'direction',
+    'trigger', b.policy ->> 'trigger',
+    'mutedUntil', muted_until,
+    'pausedAt', b.paused_at,
+    'endedAt', b.ended_at,
+    'deleted', e.deleted_at is not null,
+    'memberRole', case when v_status = 'active' then v_role end,
+    'replyTo', case when p_reply_to_external_id is null then null else jsonb_build_object(
+      'messageId', reply_message, 'direction', reply_direction) end);
+end
+$$;
+revoke all on function public.bridge_command_context(uuid, uuid, text) from public;
+grant execute on function public.bridge_command_context(uuid, uuid, text) to tm8_app;
+
+-- -----------------------------------------------------------------------------
 -- §2. A guest's /result.
 -- -----------------------------------------------------------------------------
 create or replace function public.bridge_command_guest_result(p_bridge_id uuid, p_session_id uuid)
@@ -66,11 +133,14 @@ begin
   if not exists (select 1 from public.edges where src_id = p_session_id and dst_id = p_bridge_id and type = 'authored_from') then
     return;
   end if;
+  -- Only what the worker posted on THIS bridge's log (the bridge, or the
+  -- channel for a channel target): the answer is read by the whole group.
   return query
     select m.body from public.edges ed
       join public.messages m on m.entity_id = ed.src_id
       join public.entities me on me.id = m.entity_id
      where ed.type = 'authored_from' and ed.dst_id = p_session_id
+       and m.anchor_id = internal.bridge_log_anchor(p_bridge_id::uuid)
        and m.redacted_at is null and me.deleted_at is null and me.visibility = 'space'
      order by m.created_at desc
      limit 1;
