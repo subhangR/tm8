@@ -40,80 +40,6 @@ let bridgeId = '';
 
 const memberClaims = (identityId: string): DbClaims => ({ identityId, nodeAdmin: false, requestId: `t-${randomUUID()}` });
 
-/** Create `fn` only when the applied migrations have not (the sibling lanes' real doors win). */
-const STUBS: Array<[string, string]> = [
-  ['internal.is_bridges_worker()', `create function internal.is_bridges_worker() returns boolean language sql stable as $$
-     select coalesce(internal.claim_text('tm8.background_job') = 'bridges.runtime', false) $$;
-     grant execute on function internal.is_bridges_worker() to tm8_app;`],
-  ['internal.is_bridge_runtime()', `create function internal.is_bridge_runtime() returns boolean language sql stable as $$ select false $$;
-     grant execute on function internal.is_bridge_runtime() to tm8_app;`],
-  ['internal.bridge_command_claim(uuid)', `
-     alter table public.message_origins add column if not exists command_state text;
-     alter table public.message_origins add column if not exists command_claimed_at timestamptz;
-     alter table public.message_origins add column if not exists command_settled_at timestamptz;
-     create function internal.bridge_command_claim(p uuid) returns boolean language plpgsql security definer
-     set search_path = public, internal, pg_temp as $$
-     declare n int;
-     begin
-       if not internal.is_bridges_worker() then raise exception 'not the bridges worker' using errcode = '42501'; end if;
-       update public.message_origins set command_state = 'running', command_claimed_at = now()
-        where message_id = p and (command_state = 'pending'
-          or (command_state = 'running' and command_claimed_at < now() - interval '2 minutes'));
-       get diagnostics n = row_count; return n = 1;
-     end $$;
-     grant execute on function internal.bridge_command_claim(uuid) to tm8_app;`],
-  ['internal.bridge_command_settle(uuid,text)', `create function internal.bridge_command_settle(p uuid, o text) returns void language plpgsql security definer
-     set search_path = public, internal, pg_temp as $$
-     begin
-       if not internal.is_bridges_worker() then raise exception 'not the bridges worker' using errcode = '42501'; end if;
-       update public.message_origins set command_state = o, command_settled_at = now() where message_id = p;
-     end $$;
-     grant execute on function internal.bridge_command_settle(uuid, text) to tm8_app;`],
-  // D31's shape: one edge per (entity, bridge), origins[] appended, deduped on providerMessageId.
-  ['public.record_bridge_provenance(uuid,jsonb)', `create function public.record_bridge_provenance(p_entity uuid, p_origins jsonb) returns void
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     declare o jsonb; e public.entities; existing public.edges;
-     begin
-       select * into e from public.entities where id = p_entity;
-       perform internal.w1_set_writer('entity_recorder');
-       for o in select * from jsonb_array_elements(p_origins) loop
-         select * into existing from public.edges where src_id = p_entity and dst_id = (o->>'bridgeId')::uuid and type = 'authored_from';
-         if existing.id is null then
-           insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
-           values (e.space_id, p_entity, (o->>'bridgeId')::uuid, 'authored_from',
-                   jsonb_build_object('bridgeId', o->>'bridgeId', 'origins', jsonb_build_array(o || '{"inherited":false,"depth":0}'::jsonb)), e.created_by);
-         elsif not exists (select 1 from jsonb_array_elements(existing.props->'origins') x where x->>'providerMessageId' = o->>'providerMessageId') then
-           update public.edges set props = jsonb_set(props, '{origins}', (props->'origins') || jsonb_build_array(o)) where id = existing.id;
-         end if;
-       end loop;
-       perform internal.w1_set_writer(null);
-     end $$;
-     grant execute on function public.record_bridge_provenance(uuid, jsonb) to tm8_app;`],
-  ['public.bridge_set_mute(uuid,timestamptz)', `
-     alter table public.bridges add column if not exists muted_until timestamptz;
-     create function public.bridge_set_mute(p_bridge uuid, p_until timestamptz) returns jsonb
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     begin
-       perform internal.require_space_admin((select space_id from public.bridges where entity_id = p_bridge));
-       update public.bridges set muted_until = p_until where entity_id = p_bridge;
-       return jsonb_build_object('mutedUntil', p_until);
-     end $$;
-     grant execute on function public.bridge_set_mute(uuid, timestamptz) to tm8_app;`],
-  ['public.bridge_poster_handle(uuid,uuid)', `create function public.bridge_poster_handle(p_bridge uuid, p_session uuid) returns jsonb
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     declare s uuid; h public.bridge_handles;
-     begin
-       select space_id into s from public.bridges where entity_id = p_bridge;
-       insert into public.bridge_handles(space_id, handle, entity_id, kind, title)
-       values (s, internal.bridge_new_handle(s), p_session, 'work_session',
-               left(nullif((select title from public.work_sessions where entity_id = p_session), ''), 80))
-       on conflict (space_id, entity_id) do nothing;
-       select * into h from public.bridge_handles where space_id = s and entity_id = p_session;
-       return jsonb_build_object('handle', h.handle, 'title', h.title);
-     end $$;
-     grant execute on function public.bridge_poster_handle(uuid, uuid) to tm8_app;`],
-];
-
 async function asOwner<T>(fn: (c: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> }) => Promise<T>): Promise<T> {
   return database.transaction(async c => {
     await c.query('set local role tm8_graph_owner');
@@ -125,12 +51,6 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('bridge_commands');
   database.apply(migrationFiles());
   db = createDb(database.url);
-  await database.transaction(async c => {
-    for (const [signature, sql] of STUBS) {
-      const { rows } = await c.query('select to_regprocedure($1) is not null as present', [signature]);
-      if (!rows[0].present) await c.query(sql);
-    }
-  });
   await asOwner(async c => {
     const all = Object.values(people);
     for (const p of all) {
