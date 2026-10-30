@@ -577,6 +577,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);
 
+      const schema: ZodTypeAny | undefined = INPUT_SCHEMAS[match.opName];
       const requestBody = normalizeCommandInputForIdempotencyMode(
         match.op,
         body,
@@ -584,8 +585,8 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         // caller's clientMutationId when idempotency is off, so reading an
         // absent field as "off" silently discards every caller's id.
         config.idempotencyEnabled !== false,
+        schema,
       );
-      const schema: ZodTypeAny | undefined = INPUT_SCHEMAS[match.opName];
       const input = schema ? validate(schema, requestBody) : requestBody;
 
       const ctx: RequestContext = {

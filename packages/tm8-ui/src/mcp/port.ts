@@ -1,4 +1,4 @@
-import type { McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpServerDefinition, McpSessionProvenance, McpTestResult, McpUnavailableTool } from '@tm8/contract';
+import type { McpAuditListResult, McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpServerDefinition, McpSessionProvenance, McpTestResult, McpUnavailableTool } from '@tm8/contract';
 /** UI-only values. Account metadata never contains provider credentials. */
 export interface McpSelection { serverId: string; credentialId?: string }
 export interface McpAccount {
@@ -44,7 +44,7 @@ export interface McpCatalog {
  * module working coverage out for itself.
  */
 export interface McpTestReport {
-  ok: boolean; message: string; tools: { name: string; description?: string }[];
+  ok: boolean; message: string; tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[];
   unavailableTools?: McpUnavailableTool[];
 }
 export interface McpDefinition {
@@ -124,4 +124,10 @@ export interface McpPort {
    * binding expired with its auth session), not an error, and the view says so.
    */
   sessionProvenance?(sessionId: string): Promise<McpSessionProvenance>;
+  /**
+   * §5.6 — the newest `mcp_call_audit` rows for one connector. `scope` is what
+   * the caller was allowed to see: the whole Space, or only their own calls.
+   * OPTIONAL like the two above; absent, the entity page omits Recent calls.
+   */
+  audit?(serverId: string, limit?: number): Promise<McpAuditListResult>;
 }

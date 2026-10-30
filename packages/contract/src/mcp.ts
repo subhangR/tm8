@@ -285,7 +285,15 @@ export const McpCredentialViewSchema = z.object({
   lastUsedAt: z.string().nullable().optional(), lastRefreshAt: z.string().nullable().optional(),
 }).strict();
 export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
-export const McpToolSchema = z.object({ name: z.string(), description: z.string().optional(), inputSchema: z.record(z.unknown()) }).strict();
+/**
+ * A tool as a connector's `tools/list` reports it. NOT strict: the MCP spec adds
+ * fields over time (`title`, `annotations` in 2025-06-18; `outputSchema`, `_meta`,
+ * `icons`), and a real server such as Context7 sends them. Rejecting the whole
+ * test on an unknown key reported a working connector as broken. The fields tm8
+ * reads are named; anything else is stripped on parse.
+ */
+export const McpToolSchema = z.object({ name: z.string(), title: z.string().optional(), description: z.string().optional(),
+  inputSchema: z.record(z.unknown()), outputSchema: z.record(z.unknown()).optional(), annotations: z.record(z.unknown()).optional() });
 /**
  * A tool the connector has but this CONNECTION cannot use, because the account
  * did not grant a scope it needs (granular consent; B41). It is never offered

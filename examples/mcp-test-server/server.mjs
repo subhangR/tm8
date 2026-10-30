@@ -117,7 +117,11 @@ function log(line) { console.log(`${new Date().toISOString()} ${line}`); }
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   if (url.pathname === '/health') return send(res, 200, { ok: true });
-  if (url.pathname !== '/mcp') return send(res, 404, { error: 'not found; the MCP endpoint is /mcp' });
+  // The endpoint is /mcp, and / answers too, so a connector saved without the path still works.
+  if (url.pathname !== '/mcp' && url.pathname !== '/') {
+    log(`404 ${req.method} ${url.pathname} (the MCP endpoint is /mcp)`);
+    return send(res, 404, { error: 'not found; the MCP endpoint is /mcp' });
+  }
   if (!authorized(req)) {
     log(`401 ${req.method} ${url.pathname} (missing or wrong API key)`);
     return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });

@@ -31,6 +31,7 @@ import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { SettingsHomeLink } from '../SettingsHomeLink';
 import type { ManagedPort } from '../../managed/port';
 import { ManagedBlock } from './ManagedBlock';
+import { ConnectorEntityBlock } from '../../mcp/ConnectorEntityBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
@@ -313,6 +314,10 @@ function ContentBlock({
           <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl} />
         ) : null;
       }
+      /* The connector page: the same detail body the Connectors drawer draws,
+         over the MCP catalog read (`McpProvider` wraps every panel). */
+      case 'mcp-connector':
+        return <ConnectorEntityBlock detail={detail} {...(onOpenEntity ? { onOpenEntity } : {})} />;
       default:
         return null;
     }
