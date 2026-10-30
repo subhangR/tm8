@@ -18,6 +18,12 @@
 //     named reason. It does not quietly hand back the project directory —
 //     silently downgrading isolation is the single failure this whole feature
 //     is an argument against (§7.4, prohibition 1).
+//
+// Steps 1-4 (`reserveWorktree`) and 5-6 (`materializeWorktree`) are separately
+// callable because their costs differ by orders of magnitude: the reservation
+// is a few Git reads and one insert, the checkout is `git worktree add` of the
+// whole tree. An admitted spawn writes its session row with the reserved path
+// between the two and answers its caller before the checkout exists.
 
 import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
@@ -37,6 +43,26 @@ export interface ProvisionedWorktree {
   baseRef: string;
   /** What was actually checked out. Refs move; this does not. */
   baseCommitOid: string;
+}
+
+/**
+ * Steps 1-4 done, nothing on disk yet: the allocation row is `preparing` and
+ * every fact the session row records about its workdir is already final. The
+ * path is deterministic (`computeWorktreePath` of an id minted in step 3), so a
+ * launch can be admitted — its row written with this exact path — before step 5
+ * creates the directory.
+ */
+export interface ReservedWorktree {
+  worktreeId: string;
+  /** The path step 5 will create: `computeWorktreePath(projectId, worktreeId)`. */
+  path: string;
+  branch: string;
+  /** The SYMBOLIC ref, kept as provenance only. */
+  baseRef: string;
+  /** What step 5 will check out. Refs move; this does not. */
+  baseCommitOid: string;
+  /** The validated repository root step 5 runs `git worktree add` against. */
+  repoRoot: string;
 }
 
 export interface ProvisionWorktreeParams {
@@ -133,13 +159,41 @@ async function directoryExists(path: string): Promise<boolean> {
 }
 
 /**
+ * The in-process lock key the step 4 reservation serializes under.
+ *
+ * NOT the project's Git lock. The reservation is one database insert whose only
+ * shared state is the per-project cap count, so it has to serialize against
+ * other reservations of the same project (two concurrent counts would both pass
+ * the cap) and against nothing else. Holding the Git lock for it would make
+ * every launch's admission wait behind another launch's `git worktree add` —
+ * seconds per queued checkout on a large repository, which is exactly the
+ * fan-out case.
+ */
+function reservationLockKey(projectId: string): string {
+  return `${projectId}:reserve`;
+}
+
+/**
  * Steps 1-6. Returns once the checkout exists on disk AND the entity that names
  * it exists in the graph; the lease, the edge and the `ready` publish are step
  * 7's business and belong to the caller, because they need the session id.
+ *
+ * Exactly {@link reserveWorktree} then {@link materializeWorktree}. A caller
+ * that can record the reserved path before the checkout exists (an admitted
+ * spawn) calls the two halves itself, with its own work in between.
  */
 export async function provisionWorktree(
   params: ProvisionWorktreeParams,
 ): Promise<ProvisionedWorktree> {
+  return materializeWorktree(params, await reserveWorktree(params));
+}
+
+/**
+ * Steps 1-4: validate, resolve the base, mint the id and its path, reserve.
+ * Nothing touches the disk, so a refusal here leaves nothing to clean, and the
+ * returned path is the one step 5 will create.
+ */
+export async function reserveWorktree(params: ProvisionWorktreeParams): Promise<ReservedWorktree> {
   const { auth, graph, manager } = params;
 
   // Step 1 (§4.2) — repository validation. A working directory that is not a
@@ -168,12 +222,10 @@ export async function provisionWorktree(
   const branch = branchNameFor(worktreeId);
   const path = await manager.computeWorktreePath(params.projectId, worktreeId);
 
-  // Steps 4-6 under the per-project Git lock, taken OUTSIDE every ledgered
-  // door below it (§5.1). `git worktree add/remove/prune` mutate shared
-  // `.git/worktrees` metadata; distinct projects still proceed concurrently.
-  return manager.withProjectLock(params.projectId, async () => {
-    // Step 4 (§4.5) — reserve. Nothing is on disk yet, so a failure here leaves
-    // nothing to clean.
+  // Step 4 (§4.5) — reserve. Nothing is on disk yet, so a failure here leaves
+  // nothing to clean. Under the reservation lock, not the Git lock: see
+  // `reservationLockKey`.
+  await manager.withProjectLock(reservationLockKey(params.projectId), async () => {
     try {
       await graph.reserveWorktreeAllocation(auth, {
         worktreeId,
@@ -187,7 +239,27 @@ export async function provisionWorktree(
     } catch (error) {
       throw asSpawnError(error, 'worktree reservation failed');
     }
+  });
 
+  return { worktreeId, path, branch, baseRef, baseCommitOid, repoRoot };
+}
+
+/**
+ * Steps 5-6 for a reservation {@link reserveWorktree} made: the checkout, the
+ * shared-path links and the entity. Every failure settles the allocation
+ * exactly as an unsplit provisioning would.
+ */
+export async function materializeWorktree(
+  params: ProvisionWorktreeParams,
+  reserved: ReservedWorktree,
+): Promise<ProvisionedWorktree> {
+  const { auth, graph, manager } = params;
+  const { worktreeId, path, branch, baseRef, baseCommitOid, repoRoot } = reserved;
+
+  // Steps 5-6 under the per-project Git lock, taken OUTSIDE every ledgered
+  // door below it (§5.1). `git worktree add/remove/prune` mutate shared
+  // `.git/worktrees` metadata; distinct projects still proceed concurrently.
+  return manager.withProjectLock(params.projectId, async () => {
     // Step 5 (§4.6) — `git worktree add`, argv-only, against the resolved OID.
     try {
       await manager.add({ repoRoot, projectId: params.projectId, worktreeId, branch, baseCommitOid });

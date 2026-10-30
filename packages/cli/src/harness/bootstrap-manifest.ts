@@ -38,6 +38,7 @@ import {
   utf8Bytes,
   type CoordinatorKind,
 } from '@tm8/prompt';
+import { isRecord } from '../guards.js';
 
 export const MANIFEST_VERSION = '2';
 export const GRAMMAR_VERSION = '2';
@@ -400,9 +401,6 @@ export function bootstrapManifestBytes(manifest: BootstrapManifestV2): number {
   return utf8Bytes(JSON.stringify(manifest));
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Parse a v2 manifest, or return `null` when the input is not one.

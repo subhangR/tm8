@@ -320,11 +320,38 @@ export class FakeGraph implements GraphPort {
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
     this.authSeen.push(auth);
+    // A boot's progress report (404) moves no status, so it is kept apart from
+    // the status transitions every other test asserts on.
+    if (input.bootPhase !== undefined) {
+      await this.bootPhaseGates.get(input.bootPhase);
+      if (this.refuseBootPhase === input.bootPhase) {
+        // The session was stopped while it booted: its row is terminal now.
+        this.stoppedSessions.add(input.sessionId);
+        throw refusedTransition('illegal work_session transition exited -> spawning');
+      }
+      this.bootPhaseReports.push({ sessionId: input.sessionId, bootPhase: input.bootPhase });
+      return;
+    }
+    if (this.stoppedSessions.has(input.sessionId)) {
+      this.refusedStatusWrites.push(input);
+      throw refusedTransition(`illegal work_session transition exited -> ${input.status}`);
+    }
     if (this.failTransitionFor.has(input.sessionId)) {
       throw new Error(`injected transition failure for ${input.sessionId}`);
     }
     this.transitions.push(input);
   }
+
+  /** Sessions whose row a refused boot report ended (404): every later status write is refused too. */
+  readonly stoppedSessions = new Set<string>();
+  /** Status writes refused for a stopped session, in order. */
+  readonly refusedStatusWrites: TransitionInput[] = [];
+  /** Every boot progress report (404), in order. */
+  readonly bootPhaseReports: Array<{ sessionId: string; bootPhase: string }> = [];
+  /** A report of this phase is refused as the row would refuse it once the session stopped (23514). */
+  refuseBootPhase: string | null = null;
+  /** A report of a phase waits for its gate, so a test can hold a boot mid-flight. */
+  readonly bootPhaseGates = new Map<string, Promise<void>>();
 
   async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
     this.authSeen.push(auth);
@@ -676,4 +703,13 @@ export class FakeGraph implements GraphPort {
     this.authSeen.push(auth);
     return this.projectWorkingDirs.get(projectId) ?? null;
   }
+}
+
+/**
+ * A refused transition as the server's graph port delivers it: `DbGraphPort`
+ * goes through translateDbError, so the caller sees a CollabError-shaped
+ * `invariant_violation` with the sqlstate in `details`, never a raw `code`.
+ */
+function refusedTransition(message: string): Error {
+  return Object.assign(new Error(message), { code: 'invariant_violation', details: { sqlstate: '23514' } });
 }

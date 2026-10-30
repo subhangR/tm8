@@ -180,7 +180,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionBootState, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -374,6 +374,9 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 404. */
+export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
+  z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
 /**
@@ -699,6 +702,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
+    // 404: the last phase the launch's boot reached, and when. Absent on a
+    // node (or a row) that records no boot. Named here for the reason above.
+    bootPhase: WorkSessionBootPhaseSchema.optional(),
+    bootPhaseAt: z.string().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -2996,6 +3003,10 @@ export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.laz
   warnings: z.array(ResultWarningSchema).optional(),
   createdTaskId: EntityIdSchema.optional(),
   launch: ExecutionSpawnLaunchSchema.optional(),
+  timings: z.object({
+    totalMs: z.number().nonnegative(),
+    phases: z.record(z.number().nonnegative()),
+  }).strict().optional(),
 }).strict());
 
 export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
@@ -4557,6 +4568,14 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
  * its interior would make this read fail closed on exactly the sessions a
  * debug surface most needs to explain. The envelope around it is strict.
  */
+export const WorkSessionBootStateSchema: z.ZodType<WorkSessionBootState> = z.object({
+  sessionId: EntityIdSchema,
+  status: WorkSessionStatusSchema,
+  bootPhase: WorkSessionBootPhaseSchema.optional(),
+  bootPhaseAt: z.string().optional(),
+  endedReason: z.string().nullable(),
+}).strict();
+
 export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),
@@ -4587,6 +4606,7 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unlinkedMemories: z.array(z.string()),
     unlinkedSkillCount: z.number().int().nonnegative(),
   }).strict().nullable(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
 }).strict();
 
 /**
@@ -5104,6 +5124,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   endedReason: NullableString,
   outcome: NullableString,
   receiptMessageId: NullableString,
+  bootPhase: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
   launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,

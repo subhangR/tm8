@@ -5143,7 +5143,6 @@ export type Unsubscribe = () => void;
 
 /** Single writer: the execution block's transition function (R29). */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
-
 /**
  * The phases a launch's boot passes through, in order, or its failure —
  * `work_sessions.boot_phase`. Each step names the fact REACHED: `lane` is
@@ -6543,10 +6542,27 @@ export interface ExecutionSpawnResult extends CommandResult {
   createdTaskId?: EntityId;
   /**
    * What the new session actually launched with — the RESOLVED posture, not
-   * an echo of the request, which may name none of it. Absent from a server
-   * that predates it.
+   * an echo of the request, which may name none of it. ABSENT AT ADMISSION
+   * (404): `execution.spawn` answers before the boot resolves the credentials,
+   * so a current server never carries it here. Read it from `execution.launch`
+   * (`SessionLaunchRecord.launch`) once the session's manifest is recorded —
+   * by the time it is `running`. Only a server older than admission answers
+   * with it.
    */
   launch?: ExecutionSpawnLaunch;
+  /** Where this request's time went, phase by phase. Absent from a server that predates it. */
+  timings?: ExecutionSpawnTimings;
+}
+
+/**
+ * The wall clock of one `execution.spawn`, in milliseconds. DIAGNOSTIC ONLY:
+ * the phase names are the server's internal steps and change when those
+ * steps do, so nothing may branch on them. Phases that ran concurrently
+ * overlap and need not sum to `totalMs`.
+ */
+export interface ExecutionSpawnTimings {
+  totalMs: number;
+  phases: Record<string, number>;
 }
 
 /**
@@ -7641,6 +7657,27 @@ export interface SessionLaunchRecord {
    * manifest. Unlike `manifest`, this is filtered for the viewer.
    */
   launchContext: SessionLaunchContext | null;
+  /**
+   * The spawn receipt's posture rows — the resolved access mode and where it
+   * came from, the credential each provider ran on, the parent — rebuilt from
+   * the recorded manifest, exactly as `execution.spawn` reported them when it
+   * answered only once the session ran (404). Absent when no manifest was
+   * recorded, and on a manifest that predates the access-mode source.
+   */
+  launch?: ExecutionSpawnLaunch;
+}
+
+/**
+ * `execution.bootState` (404): how far a session's boot has got, read from its
+ * row. `bootPhase`/`bootPhaseAt` are absent on a row written before boot
+ * phases; `endedReason` says why a session that ended, ended.
+ */
+export interface WorkSessionBootState {
+  sessionId: EntityId;
+  status: WorkSessionStatus;
+  bootPhase?: WorkSessionBootPhase;
+  bootPhaseAt?: string;
+  endedReason: string | null;
 }
 
 /** What an entity was in the launch. */
@@ -8489,6 +8526,8 @@ export interface EntityContextV2View {
   /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
   outcome?: string | null;
   receiptMessageId?: string | null;
+  /** 404: the last phase the launch's boot reached (`WorkSessionBootPhase`), while it boots or when it failed. */
+  bootPhase?: string | null;
   tasks?: EntityContextRef[];
   /**
    * 330 (chat and work_session): the sessions this one launched — their

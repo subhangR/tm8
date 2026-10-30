@@ -25,10 +25,12 @@ import type {
   SpawnSelectionGroup,
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
+  WorkSessionBootPhase,
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 import type { SessionHomeFacts, SessionHomeOwnerFacts } from './session-artifact-reclaim.js';
+import type { SpawnTimings } from './spawn-timings.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -1024,7 +1026,16 @@ export interface TransitionInput {
    */
   endedKind?: WorkSessionEndedKind | null;
   endedReason?: string | null;
+  /**
+   * A boot's progress report (404), with `status` the row's current one
+   * (`spawning`). The terminal phases are not reported: `live` and `failed`
+   * follow from the status in the same write.
+   */
+  bootPhase?: BootProgressPhase;
 }
+
+/** The boot phases a booting launch REPORTS; `admitted`, `live` and `failed` follow from status. */
+export type BootProgressPhase = Extract<WorkSessionBootPhase, 'lane' | 'briefing' | 'agent'>;
 
 export interface RecordCommandInput {
   sessionId: string;
@@ -1572,6 +1583,13 @@ export interface Tm8Manifest {
     model: string | null;
     permissionMode: PermissionMode;
     accessMode: AccessMode;
+    /**
+     * Which link of the precedence chain chose `accessMode`. Recorded so the
+     * spawn receipt's posture rows (`spawnLaunchFacts`) can be rebuilt from
+     * the manifest once the boot has run: a launch answered at admission (404)
+     * carries no receipt of its own. Absent on manifests written before it.
+     */
+    accessModeSource?: SpawnAccessModeSource;
     reasoningEffort: ReasoningEffort | null;
     /**
      * Deprecated common source. Null when providers differ or run in auto.
@@ -1838,6 +1856,39 @@ export interface SpawnResult {
    * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
    */
   launchFacts?: ExecutionSpawnLaunch;
+  /** Wall clock per phase of this spawn (spawn-timings.ts). Absent on resume. */
+  timings?: SpawnTimings;
+}
+
+/**
+ * What `SpawnService.admit` answers with: the launch is ADMITTED — its row
+ * exists (`spawning`, boot phase `admitted`) and it is booting. Everything that
+ * exists only once the boot has run (the manifest, the command line, the
+ * environment, the resolved credential posture) is on the boot's
+ * {@link SpawnResult}, not here.
+ */
+export interface SpawnAdmission {
+  sessionId: string;
+  /** The workdir the session boots into. A worktree's exists once the boot's lane phase is reached. */
+  cwd: string;
+  commandResult: unknown;
+  /** A ledger replay: the original launch's session, in whatever phase it is; nothing was started. */
+  reused: boolean;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /** A dispatcher launched on tasks routes these, in order (see {@link SpawnResult}). */
+  routedTaskIds?: string[];
+  /** The admission's own phases. The boot's are logged when it ends. */
+  timings: SpawnTimings;
+}
+
+/** How an admitted launch's boot ended. A failure is already on the row when this resolves. */
+export type SpawnBootOutcome = { ok: true; result: SpawnResult } | { ok: false; error: unknown };
+
+/** A launch the node admitted, and the boot it started. `boot` never rejects. */
+export interface AdmittedSpawn {
+  admission: SpawnAdmission;
+  boot: Promise<SpawnBootOutcome>;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

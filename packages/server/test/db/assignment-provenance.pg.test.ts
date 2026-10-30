@@ -440,6 +440,11 @@ describe.sequential('task assignment provenance (129)', () => {
       add column outcome text not null default 'open', add column outcome_at timestamptz,
       add column outcome_by uuid, add column receipt_message_id uuid,
       add column outcome_source text, add column outcome_note text`);
+    // 404 (boot phase): the session readers select `ws.boot_phase` and
+    // `ws.boot_phase_at`. 404 rewrites work_session_transition over 302,
+    // which this partial chain lacks, so only the two columns are mirrored.
+    await database.query(`alter table public.work_sessions
+      add column boot_phase text, add column boot_phase_at timestamptz`);
     // 307 (task progress): `entity-read.ts` and the projector select
     // `internal.task_progress(e.id)` on task rows. 307 itself rewrites
     // story_summary over 289/295 and adds triggers this partial chain does not

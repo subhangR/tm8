@@ -36,6 +36,8 @@
  * cannot drift per command.
  */
 
+import { isRecord } from './guards.js';
+
 export type RenderMode = 'full' | 'terse';
 
 /** UI decoration a work reader never consumes — dropped whole. */
@@ -45,9 +47,6 @@ const DECORATION: ReadonlySet<string> = new Set([
   'counters', 'badges',
 ]);
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /** The field combination nothing but an EntitySummary (or its detail) carries. */
 function isEntitySummary(v: unknown): v is Record<string, unknown> {

@@ -37,6 +37,7 @@
  * `mutationId` when — only when — the caller passed one (D4.5, D4.7).
  */
 import { createHash } from 'node:crypto';
+import { isRecord } from './guards.js';
 
 export const SCHEMA_VERSION = 'tm8.receipt.v1';
 
@@ -160,9 +161,6 @@ export interface ReceiptInput {
 
 type Rec = Record<string, unknown>;
 
-function isRecord(v: unknown): v is Rec {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;

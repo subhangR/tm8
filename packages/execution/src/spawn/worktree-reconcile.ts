@@ -58,6 +58,14 @@ export interface ReconcileParams {
   /** The live PTY map. Only the node owning a terminal can say whether it is gone. */
   hasLivePty: (sessionId: string) => boolean;
   /**
+   * Whether a launch this process admitted is still booting into this
+   * reservation. An admitted spawn writes its session row before `git worktree
+   * add` runs, so its allocation sits in `preparing` for as long as the
+   * checkout takes; the answer here is exact where the grace window below is a
+   * guess. Absent → the grace window alone decides, as before.
+   */
+  isBootInFlight?: (worktreeId: string) => boolean;
+  /**
    * `project.working_dir` per project id. Reconciliation needs a repository
    * root to run `git worktree list/remove/prune` against, and allocations only
    * carry the project id. Absent → the Git-side checks for that project are
@@ -249,6 +257,12 @@ async function reconcileOne(
 
   switch (row.state) {
     case 'preparing': {
+      // A boot this process is running owns the row whatever its age: a slow
+      // checkout behind an admitted session is work in progress, not a leak.
+      if (params.isBootInFlight?.(row.worktreeId) === true) {
+        record('preparing under a boot in flight', 'left alone (boot in flight)', null);
+        return;
+      }
       // A reservation that changed a moment ago is very likely a spawn still
       // running, not a crash to clean up. Skip it and let the next sweep decide
       // — the row is not going anywhere, and the cost of being hasty here is

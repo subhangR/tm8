@@ -11,11 +11,13 @@ export {
 } from './secret-redaction.js';
 export {
   SpawnService,
+  type AdmitOptions,
   type CredentialContainmentCause,
   type CredentialContainmentResult,
   type SessionLiveCause,
   type SessionLiveListener,
   type SpawnServiceOptions,
+  type TerminalWait,
 } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,
@@ -129,11 +131,15 @@ export {
   type CredentialResolutionInput,
   type ResolvedSessionCredentials,
 } from './credential-resolution.js';
+export { SpawnPhaseTimer, type SpawnTimings } from './spawn-timings.js';
 export {
   branchNameFor,
+  materializeWorktree,
   provisionWorktree,
+  reserveWorktree,
   type ProvisionedWorktree,
   type ProvisionWorktreeParams,
+  type ReservedWorktree,
 } from './worktree-provisioning.js';
 export {
   reconcileNodeWorktrees,
@@ -186,6 +192,10 @@ export type {
   SpawnContext,
   SpawnRequest,
   SpawnResult,
+  SpawnAdmission,
+  SpawnBootOutcome,
+  AdmittedSpawn,
+  BootProgressPhase,
   TaskContext,
   TeamMemberContext,
   Tm8Manifest,

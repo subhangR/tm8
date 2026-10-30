@@ -31,6 +31,7 @@ import { DbGraphPort, registerExecutionHandlers } from '../src/facade/execution-
 import { HandlerRegistry } from '../src/facade/registry.js';
 import { CollabError, type OperationName } from '@tm8/contract';
 import type { RequestContext, RequestIdentity } from '../src/http/types.js';
+import { trackBoots } from './admitted-spawn.js';
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const TEAMMATE = '22222222-2222-4222-8222-222222222222';
@@ -167,7 +168,7 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-chatparent-data-'));
     const db = new SpawnDb(parentKind);
     const registry = new HandlerRegistry();
-    registerExecutionHandlers(registry, {
+    const runtime = registerExecutionHandlers(registry, {
       db,
       pty: {
         beginPromptHandoff: vi.fn(),
@@ -182,6 +183,9 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
         isNodeAdmin: true, isOwner: true,
       }),
     });
+    // The handler answers at admission (404); the boot runs on behind it and
+    // is waited for before the test's directories are removed.
+    const settled = trackBoots(runtime.spawnService);
     const handler = registry.get('execution.spawn' as OperationName);
     expect(handler).toBeDefined();
     // The RESPONSE is rendered by re-reading the new work_session through the
@@ -202,6 +206,8 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
       }));
     } catch (error) {
       if (!(error instanceof Error) || !/no such entity/.test(error.message)) throw error;
+    } finally {
+      await settled();
     }
     return db;
   }
