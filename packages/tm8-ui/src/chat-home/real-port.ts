@@ -7,6 +7,7 @@ import {
 } from './fixtures';
 import { turnPartFromMessagePart } from './wire';
 import type {
+  ChatBridgedFrom,
   ChatCreateInput,
   ChatHomePort,
   ChatStartResult,
@@ -212,6 +213,29 @@ export function createChatHomePortFromSeam(
   };
 
   /**
+   * The bridge whose target this chat is (§4.5): the incoming `bridged_to`
+   * edge's source, which carries the bridge's facts in its summary state. A
+   * node without bridges, or a bridge that cannot be read, is no chip.
+   */
+  const bridgedFromOf = async (chatId: EntityId): Promise<ChatBridgedFrom | null> => {
+    try {
+      const page = await seam.connections(chatId, {
+        types: ['bridged_to'], direction: 'incoming', limit: 1,
+      });
+      const state = page.items[0]?.source.state;
+      if (!state || state.kind !== 'bridge') return null;
+      return {
+        bridgeId: page.items[0]!.source.id,
+        provider: state.provider,
+        conversation: state.conversation.title,
+        status: state.status,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
    * A page of `messages.list` as turns, OLDEST FIRST (the order they render).
    *
    * WHICH MESSAGES WERE AUTHORED FROM SOMEWHERE ELSE rides each message
@@ -362,10 +386,11 @@ export function createChatHomePortFromSeam(
       // no thread root, so this is one ordinary anchor read — no root detail to
       // fetch separately, and no `{ rootMessageId }` scope to pass. The
       // user->agent pairing that threading used to express lives in chat_turns.
-      const [page, teammates, aboutId] = await Promise.all([
+      const [page, teammates, aboutId, bridgedFrom] = await Promise.all([
         readPage(chatId),
         listTeammates(listSpaceCache.get(chatId) ?? lastSpaceId ?? ''),
         aboutTargetOf(chatId),
+        bridgedFromOf(chatId),
       ]);
       const teammateLabel = teammates.find((teammate) => teammate.id === item.teammateId)?.label
         ?? 'Agent teammate';
@@ -375,6 +400,7 @@ export function createChatHomePortFromSeam(
         summary: {
           rootId: item.chatId,
           aboutId,
+          ...(bridgedFrom ? { bridgedFrom } : {}),
           title: item.title?.trim() || 'Conversation',
           // An in-flight turn's body is the claim placeholder ('Agent turn in
           // progress.'), not content — preview the last settled message instead.

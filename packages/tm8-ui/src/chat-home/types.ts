@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ChatCredentialIntent, ChatRuntimeState, ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, MessageBridgeView, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ChatCredentialIntent, ChatRuntimeState, ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, BridgeProvider, BridgeStatus, LaunchModelEffort, MessageBridgeView, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -152,6 +152,14 @@ export interface ChatThreadConfig {
   canSetModel?: boolean;
 }
 
+/** The one bridge a chat is the target of (D25: one chat per bridge). */
+export interface ChatBridgedFrom {
+  bridgeId: EntityId;
+  provider: BridgeProvider;
+  conversation: string;
+  status: BridgeStatus;
+}
+
 export interface ChatThreadSummary {
   /** The chat entity's id (176). It used to be the root message's. */
   rootId: EntityId;
@@ -178,6 +186,12 @@ export interface ChatThreadSummary {
    * `readThread` still reads the edge for the ONE chat being opened.
    */
   aboutId: EntityId | null;
+  /**
+   * THE BRIDGE THIS CHAT IS THE TARGET OF (§4.5): the `bridged_to` edge's
+   * source, read with the open thread like `aboutId`. Drawn as the header
+   * chip *Bridged from WhatsApp · Infra*. Absent when no bridge targets it.
+   */
+  bridgedFrom?: ChatBridgedFrom;
   /**
    * The subject's kind and title, for the Chats list's "about ‹title›" chip.
    * Present only when the list read carried them (`state.about`); a port or a

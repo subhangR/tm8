@@ -156,7 +156,7 @@ export function bridgeDeliveryWords(delivery: BridgeDelivery, provider: BridgePr
     case 'failed_permanent':
       return {
         tone: 'block', glyph: '!', label: `failed${delivery.detail ? `: ${delivery.detail}` : ''}`,
-        title: `Not delivered to ${to}${delivery.detail ? `: ${delivery.detail}` : ''}. The message stays here.`,
+        title: `Not sent to ${to}${delivery.detail ? `: ${delivery.detail}` : ''}. The message stays here.`,
         timed: true,
       };
     case 'refused': {
@@ -188,4 +188,37 @@ export function BridgeDeliveryTick({ delivery, provider }: { delivery: BridgeDel
       {w.timed ? <Timestamp at={delivery.at} className="bridge-tick__at" /> : null}
     </p>
   );
+}
+
+/**
+ * *◍ Bridged from WhatsApp · Infra* — the chat, session or channel header
+ * chip (§4.5). Opens the bridge; the bridge's status rides as a word when it
+ * is anything but live.
+ */
+export function BridgedFromChip({
+  bridged,
+  onOpen,
+}: {
+  bridged: { bridgeId: string; provider: BridgeProvider | string; conversation: string; status: string };
+  onOpen?: ((id: string) => void) | undefined;
+}) {
+  const label = `Bridged from ${bridgeProviderLabel(bridged.provider)} · ${bridged.conversation}`;
+  const body = (
+    <>
+      <BridgeProviderMark provider={bridged.provider} />
+      <span>{label}</span>
+      {bridged.status !== 'live' ? <span className="bridged-from__status" data-status={bridged.status}>{bridged.status}</span> : null}
+    </>
+  );
+  return onOpen ? (
+    <button
+      type="button"
+      className="bridged-from"
+      data-testid="bridged-from"
+      aria-label={`${label}: open the bridge`}
+      onClick={() => onOpen(bridged.bridgeId)}
+    >
+      {body}
+    </button>
+  ) : <span className="bridged-from" data-testid="bridged-from">{body}</span>;
 }

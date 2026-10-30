@@ -76,3 +76,22 @@
   border-radius: 3px;
   box-shadow: 0 0 0 1.5px var(--pn-surface);
 }
+
+.cv2-root .bridged-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-tick);
+  white-space: nowrap;
+}
+.cv2-root button.bridged-from { cursor: pointer; }
+.cv2-root button.bridged-from:hover { color: var(--pn-ink); border-color: var(--pn-ink-3); }
+.cv2-root .bridged-from__status { color: var(--pn-wait); }
+.cv2-root .bridged-from__status[data-status='ended'] { color: var(--pn-ink-3); }

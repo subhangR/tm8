@@ -44,6 +44,7 @@ import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
+import { BridgedFromChip } from '../bridges/bridge-marks';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ChatCredentialPicker, credentialValue } from './ChatCredentialPicker';
 import { ChatContextNumber, staleReason } from './ChatContextNumber';
@@ -2919,6 +2920,11 @@ export function ChatHomeScreen({
                   onOpen={onOpenEntity}
                 />
               </div>
+            ) : null}
+            {/* BRIDGED FROM (§4.5): the chip names the provider conversation
+                this chat answers, and opens the bridge. */}
+            {openDetail?.summary.bridgedFrom ? (
+              <BridgedFromChip bridged={openDetail.summary.bridgedFrom} onOpen={onOpenEntity} />
             ) : null}
             {/* THE CONTEXT NUMBER (Chat Context), read above. */}
             {openContext ? <ChatContextNumber context={openContext} stale={openContextStale} /> : null}
