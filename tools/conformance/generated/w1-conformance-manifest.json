@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:4476cbb24c6a080cb0859e5b3e93e33436ba0b2b911cd1b9259aabbd695b3248",
+  "catalogDigest": "sha256:481498471e59aa5a6b0517f8a30ea2676bc9fe87b5c8d060789934371937df33",
   "catalog": {
-    "total": 386,
-    "v1": 384,
+    "total": 399,
+    "v1": 397,
     "reserved": 2,
-    "http": 384,
+    "http": 397,
     "ws": 1,
-    "registerableV1Http": 382,
+    "registerableV1Http": 395,
     "methods": {
-      "GET": 128,
-      "POST": 188,
-      "PATCH": 21,
+      "GET": 132,
+      "POST": 196,
+      "PATCH": 22,
       "DELETE": 24,
       "PUT": 23,
       "WS": 2
     },
     "kinds": {
-      "read": 134,
-      "command": 250,
+      "read": 139,
+      "command": 258,
       "stream": 2
     },
-    "uniqueNames": 386,
-    "uniqueBindings": 385
+    "uniqueNames": 399,
+    "uniqueBindings": 398
   },
   "reservedOperations": [
     "search.query",
@@ -281,6 +281,97 @@
         "operation": "tools.runs.get",
         "method": "GET",
         "path": "/v2/tool-runs/:sessionId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/loops",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.update",
+        "method": "PATCH",
+        "path": "/v2/loops/:loopId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.get",
+        "method": "GET",
+        "path": "/v2/loops/:loopId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/loops",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.enable",
+        "method": "POST",
+        "path": "/v2/loops/:loopId/enable",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.disable",
+        "method": "POST",
+        "path": "/v2/loops/:loopId/disable",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.pause",
+        "method": "POST",
+        "path": "/v2/loops/:loopId/pause",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.resume",
+        "method": "POST",
+        "path": "/v2/loops/:loopId/resume",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.runNow",
+        "method": "POST",
+        "path": "/v2/loops/:loopId/run",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.runs.list",
+        "method": "GET",
+        "path": "/v2/loops/:loopId/runs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.runs.get",
+        "method": "GET",
+        "path": "/v2/loop-runs/:runId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.runs.stop",
+        "method": "POST",
+        "path": "/v2/loop-runs/:runId/stop",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "loops.schedule.preview",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/loops/schedule-preview",
         "status": "registered",
         "source": "server-router"
       },
@@ -3106,7 +3197,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 354
+    "unimplementedV1Http": 367
   },
   "schemas": {
     "additive": {
@@ -3462,6 +3553,219 @@
           "tools",
           "runs",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.create",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.create",
+        "intentTags": [
+          "loops",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.update",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.update",
+        "intentTags": [
+          "loops",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.get",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.get",
+        "intentTags": [
+          "loops",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.list",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.list",
+        "intentTags": [
+          "loops",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.enable",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.enable",
+        "intentTags": [
+          "loops",
+          "enable"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.disable",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.disable",
+        "intentTags": [
+          "loops",
+          "disable"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.pause",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.pause",
+        "intentTags": [
+          "loops",
+          "pause"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.resume",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.resume",
+        "intentTags": [
+          "loops",
+          "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.runNow",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.runNow",
+        "intentTags": [
+          "loops",
+          "run",
+          "now"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.runs.list",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.runs.list",
+        "intentTags": [
+          "loops",
+          "runs",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.runs.get",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.runs.get",
+        "intentTags": [
+          "loops",
+          "runs",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.runs.stop",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.runs.stop",
+        "intentTags": [
+          "loops",
+          "runs",
+          "stop"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "loops.schedule.preview",
+        "noun": "loop",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/loops.schedule.preview",
+        "intentTags": [
+          "loops",
+          "schedule",
+          "preview"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

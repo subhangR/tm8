@@ -54,7 +54,7 @@ import {
   type Versioning,
 } from './operations.js';
 import type { AvailabilityLedger } from './availability.js';
-import { matchIntent, matchReason, rank, rankCommands } from './search.js';
+import { matchIntent, matchReason, rankAll } from './search.js';
 import { storyGuide } from './story-guide.js';
 import { routineGuide } from './routine-guide.js';
 import { workspaceGuide } from './workspace-guide.js';
@@ -539,12 +539,8 @@ function routedMatch(query: string, from?: AvailabilityLedger): SearchHelp['matc
 export function searchHelp(query: string, opts: ShardOptions = {}): SearchHelp {
   const cap = opts.cap ?? CAPS.search;
   const routed = routedMatch(query, opts.from);
-  // Operation rows and alias commands in one ranking. The sort is stable, so an
-  // alias never displaces an operation it ties with, and catalog order holds.
-  const scored = [
-    ...rank(query, discovery(opts.from), MAX_MATCHES).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
-    ...rankCommands(query, aliasCommands(opts.from), MAX_MATCHES).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
-  ].sort((a, b) => b.score - a.score);
+  // Operation rows and alias commands in one ranking, with the ranked-last rule kept (search.ts).
+  const scored = rankAll(query, discovery(opts.from), aliasCommands(opts.from), MAX_MATCHES);
   const matches: SearchHelp['matches'] = routed === undefined ? [] : [routed];
   for (const item of scored) {
     if (matches.length >= MAX_MATCHES) break;

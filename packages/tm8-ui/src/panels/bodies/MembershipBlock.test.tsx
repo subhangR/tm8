@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
-import type { EntityDetail, EntityId } from '@tm8/contract';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import type { EntityDetail, EntityId, EntitySummary } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, createFixtureSeam } from '../../data/fixtures/seam-fixture';
 import { taskUuidTitle } from '../../fixtures';
 import { useCollectionMembership } from '../../authoring/useCollectionMembership';
-import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
+import { MembershipBlock, MembershipPicker, type MembershipAuthoring } from './MembershipBlock';
 
 /**
  * COLLECTION MEMBERSHIP, END TO END AGAINST THE FIXTURE SEAM.
@@ -348,5 +348,47 @@ describe('MembershipBlock — rows, remove, and the bounded picker', () => {
     const block = getByTestId('membership-block');
     expect(block.textContent).toMatch(/empty collection is a real state/i);
     expect(within(block).getByTestId('membership-add')).toBeTruthy();
+  });
+});
+
+describe('MembershipPicker — the filter\'s keys', () => {
+  const row = (id: string, title: string) => ({ id, kind: 'doc', title }) as unknown as EntitySummary;
+
+  it('Enter picks only from the list for what is typed now, never from a search still in flight', async () => {
+    let answer: (rows: EntitySummary[]) => void = () => undefined;
+    const search = vi.fn((text: string) => (text === ''
+      ? Promise.resolve([row('a', 'Alpha notes'), row('b', 'Beta release plan')])
+      : new Promise<EntitySummary[]>(resolve => { answer = resolve; })));
+    const onPick = vi.fn();
+    render(<form onSubmit={e => { e.preventDefault(); throw new Error('the picker submitted its form'); }}>
+      <MembershipPicker search={search} onPick={onPick} excludeIds={new Set()} addLabel="+ add" />
+    </form>);
+    fireEvent.click(screen.getByTestId('membership-add'));
+    await screen.findByText('Alpha notes');
+    const filter = screen.getByLabelText('Filter candidates by title');
+    fireEvent.change(filter, { target: { value: 'beta' } });
+    // The search for "beta" has not answered: the list on screen is the previous one.
+    fireEvent.keyDown(filter, { key: 'Enter' });
+    expect(onPick).not.toHaveBeenCalled();
+    await act(async () => { answer([row('b', 'Beta release plan')]); });
+    fireEvent.keyDown(filter, { key: 'Enter' });
+    expect(onPick).toHaveBeenCalledWith('b', 'Beta release plan');
+    cleanup();
+  });
+
+  it('Escape closes the picker and goes no further', async () => {
+    const onWindowEscape = vi.fn();
+    window.addEventListener('keydown', onWindowEscape);
+    try {
+      render(<MembershipPicker search={async () => [row('a', 'Alpha notes')]} onPick={vi.fn()} excludeIds={new Set()} addLabel="+ add" />);
+      fireEvent.click(screen.getByTestId('membership-add'));
+      await screen.findByText('Alpha notes');
+      fireEvent.keyDown(screen.getByLabelText('Filter candidates by title'), { key: 'Escape' });
+      expect(screen.queryByLabelText('Filter candidates by title')).toBeNull();
+      expect(onWindowEscape).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', onWindowEscape);
+      cleanup();
+    }
   });
 });

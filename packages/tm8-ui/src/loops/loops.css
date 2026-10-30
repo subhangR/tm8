@@ -1,6 +1,17 @@
-.cv2-root .loop-create {
-  max-height: min(88vh, 760px);
+.cv2-root .loop-form {
+  max-height: min(90vh, 860px);
+  width: min(620px, 94vw);
   overflow-y: auto;
+}
+
+/* In a workspace draft tab: the tab is the surface, so no dialog chrome or height cap. */
+.cv2-root .loop-form--inline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  max-height: none;
+  width: min(620px, 100%);
+  overflow: visible;
 }
 
 .cv2-root .loop-create__toggle {
@@ -11,41 +22,287 @@
   color: var(--pn-ink-2);
 }
 
-.cv2-root .loop-create__hint,
-.cv2-root .loop-create__truth {
+/* -- the create/edit form ------------------------------------------------ */
+
+.cv2-root .loop-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cv2-root .loop-form__segmented {
+  display: inline-flex;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.cv2-root .loop-form__segment {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  background: transparent;
+  border: 0;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.cv2-root .loop-form__segment + .loop-form__segment {
+  border-left: 1px solid var(--pn-line);
+}
+
+.cv2-root .loop-form__segment--on {
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+
+.cv2-root .loop-form__segment:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-ink));
+  outline-offset: -2px;
+}
+
+.cv2-root .loop-form__segment:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* A fieldset only to disable its controls while a save is in flight: it lays
+   out like the open Advanced section it sits in and draws nothing of its own. */
+.cv2-root .loop-form__plain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.cv2-root .loop-form__schedule,
+.cv2-root .loop-form__row,
+.cv2-root .loop-form__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .loop-form__schedule .au-dialog__input {
+  width: auto;
+}
+
+.cv2-root .loop-form__cron {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
-  line-height: 1.45;
+  min-width: 18ch;
+}
+
+.cv2-root .loop-form__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.cv2-root .loop-form__preview {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pn-hover);
+  font-size: 11.5px;
+}
+
+/* An answer for the previous expression while the new one is checked. */
+.cv2-root .loop-form__preview--stale .loop-form__summary,
+.cv2-root .loop-form__preview--stale .loop-form__next {
+  opacity: 0.5;
+}
+
+.cv2-root .loop-form__summary {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .loop-form__next {
+  margin: 0;
+  padding-left: 18px;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-form__muted {
+  margin: 0;
+  font-size: 11.5px;
   color: var(--pn-ink-3);
 }
 
-.cv2-root .loop-create__truth {
-  margin: 0;
+.cv2-root .loop-form__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pn-active);
+  font-size: 11.5px;
 }
 
-.cv2-root .loop-controls {
+.cv2-root .loop-form__chip button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .loop-form__advanced > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-form__advanced[open] {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.cv2-root .loop-controls__summary,
-.cv2-root .loop-controls__status,
-.cv2-root .loop-controls__error {
+.cv2-root .loop-form__spawn,
+.cv2-root .loop-form__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* -- the list ------------------------------------------------------------- */
+
+.cv2-root .loops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+.cv2-root .loops-list__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cv2-root .loops-list__title {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: 14px;
+}
+
+.cv2-root .loops-list__filter {
+  max-width: 240px;
+  margin-left: auto;
+}
+
+.cv2-root .loops-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.cv2-root .loops-table th {
+  text-align: left;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .loops-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-2);
+  vertical-align: middle;
+}
+
+.cv2-root .loops-table__open {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.cv2-root .loops-table__error {
+  color: var(--pn-block);
+}
+
+.cv2-root .loop-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  background: var(--pn-active);
   color: var(--pn-ink-2);
 }
 
-/* A recorded failure is a warning the summary must not blend into: the loop
-   stays enabled, so only the tone says something is wrong. */
-.cv2-root .loop-controls__error {
-  color: var(--pn-warn, var(--pn-ink-1));
+/* The row open in the detail pane: the list's own selected treatment. */
+.cv2-root .loops-table__row--selected td {
+  background: var(--pn-active);
 }
 
-.cv2-root .loop-controls__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+/* -- a loop row's facts in the generic lists (LoopRowNote) --------------- */
+
+.cv2-root .loop-row-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .loop-row-note__schedule {
+  font-family: var(--pn-mono);
+}
+
+.cv2-root .loop-row-note__error {
+  color: var(--pn-block);
+}
+
+.cv2-root .loop-switch {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--pn-line-2);
+  cursor: pointer;
+  padding: 0;
+}
+
+.cv2-root .loop-switch--on {
+  background: var(--pn-run);
+}
+
+.cv2-root .loop-switch[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cv2-root .loop-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--pn-card);
+  transition: transform 120ms ease;
+}
+
+.cv2-root .loop-switch--on .loop-switch__knob {
+  transform: translateX(13px);
 }
