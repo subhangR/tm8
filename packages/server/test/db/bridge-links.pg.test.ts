@@ -1,5 +1,5 @@
 /**
- * Bridges B3 (migration 407): code and invite links (BRIDGE-ENTITY-DESIGN
+ * Bridges B3 (migration 408): code and invite links (BRIDGE-ENTITY-DESIGN
  * §2.4, §4.6, D5, D58-D60). A code is minted by a human for their own
  * identity, redeemed once by /link from a connected conversation, and makes an
  * identity-scoped link; failed tries lock a sender out (D59); an invite pinned

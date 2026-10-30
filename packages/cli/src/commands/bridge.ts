@@ -274,7 +274,7 @@ async function bridgeListen(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-// B3 (407, §4.6, D58): the caller's own links. A code is shown once, here.
+// B3 (408, §4.6, D58): the caller's own links. A code is shown once, here.
 async function bridgeLinkBegin(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['provider']); argumentsCount(cmd, 0);
   const provider = (choice(cmd, 'provider', BRIDGE_PROVIDERS) ?? 'whatsapp') as BridgeProvider;

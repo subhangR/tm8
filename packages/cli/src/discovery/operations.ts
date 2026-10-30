@@ -4443,7 +4443,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
-  /* +3 bridges.links.* (B3, 407): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
+  /* +3 bridges.links.* (B3, 408): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
@@ -4524,7 +4524,7 @@ export const CATALOG_DIGEST =
   // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured on the merge of main 625165032 (+13 loops.*, #1413) into the S2 lane: 397 rows, meta.get once — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   // Re-measured on TM8 Mobile server batch 1, fourth build (S2 meta.get on main a991cf6ca, which carries Bridges B0a's 12 bridges.* rows): 410 rows — RECOMPUTED from JSON.stringify(OPERATIONS) on the batch head (merge of S2 47d56d78c into 9e6352403, server batch 1 fourth build) by the Merger.
-  // Re-measured for bridges.links.* (B3, 407) on the rebase onto main 32db3b4e0 — RECOMPUTED: equal to the regenerated conformance manifest's catalogDigest.
+  // Re-measured for bridges.links.* (B3, 408) on the rebase onto main 556b8cc5a — RECOMPUTED: equal to the regenerated conformance manifest's catalogDigest.
   'sha256:3f6525f02c156ef3b73a225ed0030a056626f80f1b0799b25708f2af06439c4c';
 
 export const GRAMMAR_VERSION = '2';

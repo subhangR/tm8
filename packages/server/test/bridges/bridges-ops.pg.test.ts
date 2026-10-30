@@ -299,7 +299,7 @@ describe('the newest page and scroll-back (bridges.log.read --latest / --before)
   });
 });
 
-describe('B3 links (407, §4.6, D58-D60)', () => {
+describe('B3 links (408, §4.6, D58-D60)', () => {
   it('begin answers the code once, to a human; the list shows its expiry, never the code', async () => {
     refused(await request(agent.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }), 403, 'forbidden');
     refused(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'fax' }), 400, 'invalid_input');

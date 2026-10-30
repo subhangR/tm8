@@ -362,7 +362,7 @@ export const BridgeHandleClaimInputSchema = z.object({
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
 
 // ---------------------------------------------------------------------------
-// B3 (407, §2.4, §4.6, D5, D58-D60): code and invite links.
+// B3 (408, §2.4, §4.6, D5, D58-D60): code and invite links.
 // ---------------------------------------------------------------------------
 
 /** A link code: `TM8-` and six characters, ten minutes, one use (D58). */
