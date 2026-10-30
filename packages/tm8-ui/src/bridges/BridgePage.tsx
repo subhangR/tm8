@@ -48,7 +48,8 @@ export function useBridgeView(port: BridgesPort | null | undefined, bridgeId: st
   useEffect(() => { void reload(); }, [reload, version]);
   /* A write answers the BridgeView; keep the posters this page already read. */
   const accept = useCallback((next: BridgeView) => {
-    setView((prev) => ({ ...next, recentPosters: prev?.recentPosters ?? [] }));
+    /* …and the rolling summary (#1438, D74): a write's BridgeView carries neither. */
+    setView((prev) => ({ ...next, recentPosters: prev?.recentPosters ?? [], summary: prev?.summary ?? null }));
   }, []);
   return { view, error, reload, accept };
 }
