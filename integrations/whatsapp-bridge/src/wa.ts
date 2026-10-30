@@ -5,9 +5,11 @@ import makeWASocket, {
   DisconnectReason,
   decryptPollVote,
   downloadMediaMessage,
+  fetchLatestWaWebVersion,
   jidNormalizedUser,
   normalizeMessageContent,
   useMultiFileAuthState,
+  type AuthenticationCreds,
   type WAMessage,
   type WAMessageKey,
   type WASocket,
@@ -49,6 +51,9 @@ export function textOf(m: proto.IMessage | null | undefined): string {
 function unwrap(m: proto.IMessage): proto.IMessage {
   return m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message ?? m.documentWithCaptionMessage?.message ?? m
 }
+
+/** Whether auth/ holds a linked device: pair-success (QR or code) stores the signed account identity. */
+export const isLinked = (creds: AuthenticationCreds): boolean => !!creds.account
 
 /** JSON that keeps protobuf bytes (media keys) intact: Buffers become {type: 'Buffer', data: base64}. */
 export const toJsonSafe = <T>(v: T): T => JSON.parse(JSON.stringify(v, BufferJSON.replacer))
@@ -228,12 +233,18 @@ export class WaConnection implements WaPort {
 
   async start(): Promise<void> {
     const { state, saveCreds } = await useMultiFileAuthState(this.o.authDir)
-    if (!state.creds.registered && !this.o.allowLink) {
+    // Linked means pair-success stored the account. `registered` is no test: only the pairing-code flow sets it, and it
+    // does so before the phone confirms, so a QR link never has it and a rejected code still does.
+    if (!isLinked(state.creds) && !this.o.allowLink) {
       this.bridge.waState = 'not_linked'
       this.bridge.log('[wa] auth/ holds no linked device; run with --link to pair (see OPERATIONS.md). Not connecting.')
       return
     }
+    // The library pins a WhatsApp Web version that goes stale; WhatsApp refuses new links from an old one
+    // ("couldn't link device"). Ask for the current one, falling back to the pinned default offline.
+    const { version } = await fetchLatestWaWebVersion({}).catch(() => ({ version: undefined }))
     const sock = makeWASocket({
+      ...(version ? { version } : {}),
       auth: state,
       logger: this.logger,
       // Pairing codes are rejected for custom browser names, so present as a stock desktop browser.
@@ -287,7 +298,7 @@ export class WaConnection implements WaPort {
         this.open = false
         if (this.sock === sock) this.sock = null
         const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode
-        if (!state.creds.registered) {
+        if (!isLinked(state.creds)) {
           // Linking timed out before pairing finished. Only in --link mode do we start over with fresh keys.
           this.bridge.waState = 'linking'
           this.bridge.log(`[wa] closed (${code}) before linking finished, issuing a new code`)

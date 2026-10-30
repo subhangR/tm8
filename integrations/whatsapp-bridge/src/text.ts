@@ -8,15 +8,16 @@ const ZWJ = '‍'
 /** A mention found in message text: `@tm8`, `@tm8-<teammate>` or `@<handle>`. */
 export type Mention = { kind: 'tm8'; teammate?: string } | { kind: 'handle'; handle: string }
 
-// `@word` at the start or after whitespace/punctuation, so e-mail addresses don't count.
-const MENTION_RE = /(^|[\s([{,;:!?"'“‘])@([A-Za-z0-9][A-Za-z0-9-]*)/g
+// `@word` at the start or after whitespace/punctuation, so e-mail addresses don't count. Dots belong to the word (a handle
+// may be `tm8.uhn`, and then `@tm8.uhn` must not read as `@tm8`); a trailing dot or dash is the sentence's, not the word's.
+const MENTION_RE = /(^|[\s([{,;:!?"'“‘])@([A-Za-z0-9][A-Za-z0-9.-]*)/g
 
 /** `handle`: the bridge's own mention (config.handle), so bridges sharing a chat each answer only theirs. */
 export function parseMentions(text: string, handle = 'tm8'): Mention[] {
   const out: Mention[] = []
   const seen = new Set<string>()
   for (const m of text.matchAll(MENTION_RE)) {
-    const word = m[2].toLowerCase().replace(/-+$/, '')
+    const word = m[2].toLowerCase().replace(/[.-]+$/, '')
     // Bare numbers are WhatsApp's rendering of real @mentions of people; those come via mentionedJid.
     if (!word || /^\d+$/.test(word) || seen.has(word)) continue
     seen.add(word)

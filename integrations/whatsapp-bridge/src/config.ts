@@ -142,7 +142,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
 const ID_RE = /^[a-z][a-z0-9-]{0,30}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SENDER_JID_RE = /^\d+@(s\.whatsapp\.net|lid)$/
-const HANDLE_RE = /^[a-z][a-z0-9]{1,20}$/i
+const HANDLE_RE = /^[a-z][a-z0-9]{1,20}(\.[a-z0-9]{1,20})?$/i
 
 /** A trustedSenders list: an array of `"owner"` or user JIDs. Never `"everyone"` or a group: trust names people. */
 function checkTrustedSenders(v: unknown, where: string): string[] {

@@ -15,7 +15,7 @@ if [ "$INST" = main ]; then ROOT=$REPO; SVC=wa-bridge; else ROOT="$REPO/instance
 if docker ps --format '{{.Names}}' | grep -qx "$SVC"; then
   echo "$SVC is running and holds this number's connection: docker stop $SVC first" >&2; exit 1
 fi
-if [ "$MODE" = --link ] && [ -f "$ROOT/auth/creds.json" ] && grep -q '"registered": *true' "$ROOT/auth/creds.json"; then
+if [ "$MODE" = --link ] && [ -f "$ROOT/auth/creds.json" ] && grep -q '"account":' "$ROOT/auth/creds.json"; then
   echo "$ROOT/auth already holds a linked device; move it aside first (OPERATIONS.md › Re-link)" >&2; exit 1
 fi
 APP_USER=${WA_BRIDGE_USER:-$(id -u tm8 2>/dev/null):$(id -g tm8 2>/dev/null)}
