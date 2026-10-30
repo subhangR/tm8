@@ -89,6 +89,16 @@ const STUBS: Array<[string, string]> = [
        perform internal.w1_set_writer(null);
      end $$;
      grant execute on function public.record_bridge_provenance(uuid, jsonb) to tm8_app;`],
+  ['public.bridge_set_mute(uuid,timestamptz)', `
+     alter table public.bridges add column if not exists muted_until timestamptz;
+     create function public.bridge_set_mute(p_bridge uuid, p_until timestamptz) returns jsonb
+     language plpgsql security definer set search_path = public, internal, pg_temp as $$
+     begin
+       perform internal.require_space_admin((select space_id from public.bridges where entity_id = p_bridge));
+       update public.bridges set muted_until = p_until where entity_id = p_bridge;
+       return jsonb_build_object('mutedUntil', p_until);
+     end $$;
+     grant execute on function public.bridge_set_mute(uuid, timestamptz) to tm8_app;`],
   ['public.bridge_poster_handle(uuid,uuid)', `create function public.bridge_poster_handle(p_bridge uuid, p_session uuid) returns jsonb
      language plpgsql security definer set search_path = public, internal, pg_temp as $$
      declare s uuid; h public.bridge_handles;
@@ -401,7 +411,8 @@ describe('§7.3 item 11: /tasks and /docs read the provenance edges (ac3)', () =
 
 describe('§4.6 admin tier is structural (ac5)', () => {
   // Each admin-tier command × {linked admin allowed, asserted admin refused, guest refused}.
-  const adminCommands = ['/stop all', '/stop <other>'] as const;
+  const adminCommands = ['/stop all', '/stop <other>', '/mute 1h', '/unmute', '/new'] as const;
+  const muted = async () => (await asOwner(c => c.query('select muted_until from public.bridges where entity_id = $1', [bridgeId]))).rows[0].muted_until;
   async function otherWorkerHandle(): Promise<string> {
     await command('rahul', `/work worker for the admin table ${randomUUID().slice(0, 4)}`);
     const { reply } = await command('rahul', '/workers');
@@ -409,12 +420,24 @@ describe('§4.6 admin tier is structural (ac5)', () => {
   }
   it.each(adminCommands)('%s: a linked admin may, an asserted admin and a guest may not', async cmd => {
     for (const [who, allowed] of [['maya', false], ['guest', false], ['owner', true]] as const) {
-      const body = cmd === '/stop all' ? '/stop all' : `/stop ${await otherWorkerHandle()}`;
+      const body = cmd === '/stop <other>' ? `/stop ${await otherWorkerHandle()}` : cmd;
       const before = stops.length;
+      if (cmd === '/unmute') await asOwner(c => c.query("update public.bridges set muted_until = now() + interval '1 hour' where entity_id = $1", [bridgeId]));
+      if (cmd === '/mute 1h') await asOwner(c => c.query('update public.bridges set muted_until = null where entity_id = $1', [bridgeId]));
+      const mutedBefore = await muted();
       const { reply } = await command(who, body);
       if (!allowed) {
         expect(reply!.text, `${who} ${body}`).toMatch(/link your number first|space admin|isn't yours/);
         expect(stops.length).toBe(before);
+        expect(await muted()).toEqual(mutedBefore); // the door never ran
+      } else if (cmd === '/mute 1h') {
+        expect(reply!.text).toMatch(/^muted until \d\d:\d\d UTC — commands still work/);
+        expect(await muted()).not.toBeNull();
+      } else if (cmd === '/unmute') {
+        expect(reply!.text).toBe('unmuted');
+        expect(await muted()).toBeNull();
+      } else if (cmd === '/new') {
+        expect(reply!.text).toMatch(/done in tm8/);
       } else if (cmd === '/stop all') {
         expect(reply!.text).toMatch(/^stop \d+ workers?\? reply YES within 2 min$/);
       } else {
@@ -423,6 +446,10 @@ describe('§4.6 admin tier is structural (ac5)', () => {
         // The stopped worker's task is set blocked, as the stopper (§4.4).
         expect(await count(`select count(*) n from public.edges ed join public.tasks t on t.entity_id = ed.dst_id
           where ed.src_id = $1 and ed.type = 'working_on' and t.work_status = 'blocked'`, [stops.at(-1)])).toBe(1);
+        // ... with the reason visible on the task, as a message from the stopper.
+        expect(await count(`select count(*) n from public.edges ed join public.messages m on m.anchor_id = ed.dst_id
+          where ed.src_id = $1 and ed.type = 'working_on' and m.body like 'stopped from WhatsApp by %' and m.author_id = $2`,
+          [stops.at(-1), people.owner.member])).toBe(1);
       }
     }
   });
@@ -474,7 +501,23 @@ describe('the rest of the slice', () => {
     const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
     expect((await command('rahul', `/status ${handle}`)).reply!.text).toMatch(new RegExp(`\\(${handle}\\) · working \\d+m · task: `));
     expect((await command('rahul', '/status #1')).reply!.text).toContain(handle);
-    expect((await command('rahul', '/remind tomorrow 9am')).reply!.text).toBe("/remind isn't available yet — /help for what is");
+    expect((await command('rahul', '/remind tomorrow 9am')).reply!.text).toBe('coming soon: /remind — /help for what works now');
+    expect((await command('rahul', '/start #1')).reply!.text).toBe('coming soon: /start — /help for what works now');
+  });
+  it('/who and /bridge describe the group', async () => {
+    expect((await command('guest', '/bridge')).reply!.text).toMatch(/^Infra → Infra main \(chat\) · (live|muted until .*)\nanswers: messages that mention tm8, from linked members\ncrosses back: replies to this group$/);
+    expect((await command('rahul', '/who')).reply!.text).toMatch(/^chat: Infra main \(tm8\)\n/);
+    expect((await command('rahul', '/mute 1h')).reply!.text).toMatch(/needs a space admin/);
+  });
+  it('/mute twice is one mute (ac4)', async () => {
+    const { messageId } = await command('owner', '/mute 2h');
+    const first = await count('select extract(epoch from muted_until)::bigint n from public.bridges where entity_id = $1', [bridgeId]);
+    const noticeCount = notices.length;
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    const second = await count('select extract(epoch from muted_until)::bigint n from public.bridges where entity_id = $1', [bridgeId]);
+    expect(Math.abs(second - first)).toBeLessThan(5);
+    expect(notices.length).toBe(noticeCount);
   });
   it('the per-sender rate limit answers once, then stays silent', async () => {
     let told = 0;

@@ -30,7 +30,7 @@
 import { CollabError } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import {
-  isConfirmText, parseBridgeCommand, parseWorkItems, parseWorkerRef, stripTail, titleOf,
+  isConfirmText, parseBridgeCommand, parseDuration, parseWorkItems, parseWorkerRef, stripTail, titleOf,
   type BridgeVerb, type ParsedBridgeCommand, type WorkItem, type WorkerRef,
 } from './parse.js';
 import type {
@@ -57,6 +57,8 @@ export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'lin
   help: 'everyone', whoami: 'everyone', link: 'everyone',
   workers: 'reader', status: 'reader', tasks: 'reader', docs: 'reader',
   work: 'linked', task: 'linked', stop: 'linked',
+  who: 'reader', bridge: 'everyone',
+  mute: 'admin', unmute: 'admin', new: 'admin',
 };
 
 const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
@@ -77,6 +79,10 @@ interface BridgeFacts {
   teammateId: string | null;
   targetTeammateId: string | null;
   whoMayTrigger: 'linked' | 'anyone';
+  direction: 'both' | 'in' | 'out';
+  trigger: 'mention' | 'every' | 'none';
+  targetTitle: string | null;
+  mutedUntil: string | null;
   pausedAt: string | null;
   endedAt: string | null;
   deleted: boolean;
@@ -262,7 +268,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       lines.push('/workers [all] · /status <worker> — what is running');
       lines.push('/tasks [open] · /docs [artifacts|drawings] — what this group made');
     }
-    lines.push('/whoami — who tm8 thinks you are');
+    if (cmd.sender.admin && (t === '' || t.startsWith('admin') || t.startsWith('mute'))) {
+      lines.push('/mute 1h · /unmute — hold tm8\'s posts here; commands keep working');
+    }
+    lines.push('/whoami · /bridge — who you are, where this group goes');
     if (!cmd.sender.memberId) lines.push(GUEST_FIRST);
     return { text: lines.slice(0, 9).join('\n') };
   }
@@ -489,10 +498,15 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         await ports.stopWorker(claims, row.id, { reason, clientMutationId: `${cmd.key}:stop:${row.id}` });
         const t = await workerTask(cmd, row.id);
         if (t && OPEN_TASK.has(t.status) && t.status !== 'blocked') {
-          // The reason rides the session's ended reason: set_work_state keeps a
-          // note only on the caller's own working_on claim, and the stopper is
-          // not working on the task.
+          // set_work_state keeps a note only on the caller's own working_on
+          // claim, and the stopper is not working on the task; so the reason
+          // is posted on the task, as the stopper, beside the transition.
           await ports.db.rpc(claims, 'set_work_state', [t.id, 'blocked', null, null, null, `${cmd.key}:block:${t.id}`, false, false]);
+          // messages.post's own door: anchors, body, parent, mentions, attachments,
+          // source session, actor, mutation id, chat mode, source chat.
+          await ports.db.rpc(claims, 'w2_post_message_batch', [
+            [t.id], `${reason}.`, null, [], [], null, null, `${cmd.key}:note:${t.id}`, null, null,
+          ]);
         }
         stopped.push(row.handle ?? row.title);
       } catch (error) {
@@ -536,6 +550,45 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: lines.join('\n') };
   }
 
+  /** Today's /who (§4.4): the chat that answers here, and everyone's live workers. */
+  async function who(cmd: Command): Promise<Answer> {
+    const head = `chat: ${cmd.bridge.targetTitle ?? 'the group chat'} (tm8)`;
+    const list = await workers(cmd, 'all');
+    return { text: list.text.startsWith('no workers') ? `${head}\nno workers running` : `${head}\n${list.text}` };
+  }
+
+  /** One card: where this group goes, who answers, what crosses back, paused or muted (§4.4). */
+  function bridgeCard(cmd: Command): Answer {
+    const b = cmd.bridge;
+    const at = now();
+    const muted = b.mutedUntil && new Date(b.mutedUntil) > at ? `muted until ${hhmm(new Date(b.mutedUntil))}` : null;
+    const state = b.pausedAt ? 'paused' : muted ?? 'live';
+    const trigger = b.trigger === 'every' ? 'every message' : b.trigger === 'mention' ? 'messages that mention tm8' : 'commands only';
+    const back = b.direction === 'in' ? 'nothing (listen only)' : b.direction === 'out' ? 'tm8 posts only' : 'replies to this group';
+    return {
+      text: [
+        `${b.title || 'this group'} → ${b.targetTitle ?? 'a tm8 chat'} (${b.targetKind.replace('_', ' ')}) · ${state}`,
+        `answers: ${trigger}, from ${b.whoMayTrigger === 'anyone' ? 'anyone' : 'linked members'}`,
+        `crosses back: ${back}`,
+      ].join('\n'),
+    };
+  }
+
+  async function mute(cmd: Command, args: string): Promise<Answer> {
+    const claims = requireAdminTier(cmd);
+    const ms = parseDuration(args);
+    if (ms === null) throw new Refusal('usage: /mute 30m, 2h or 1d (at most a week) — commands keep working; /unmute to undo');
+    const until = new Date(now().getTime() + ms);
+    await ports.db.rpc(claims, 'bridge_set_mute', [cmd.input.bridgeId, until.toISOString()]);
+    return { text: `muted until ${hhmm(until)} — commands still work; /unmute to undo` };
+  }
+
+  async function unmute(cmd: Command): Promise<Answer> {
+    const claims = requireAdminTier(cmd);
+    await ports.db.rpc(claims, 'bridge_set_mute', [cmd.input.bridgeId, null]);
+    return { text: 'unmuted' };
+  }
+
   async function yes(cmd: Command): Promise<Answer | null> {
     const stored = await exec(q => q.rpc<StoredConfirm | null>('bridge_command_confirm_take', [
       cmd.input.bridgeId, cmd.input.senderExternalId, cmd.input.replyTo?.externalMessageId ?? null,
@@ -559,7 +612,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
 
   async function dispatch(cmd: Command, parsed: ParsedBridgeCommand): Promise<Answer | null> {
     if (parsed.kind === 'none') return null;
-    if (parsed.kind === 'planned') return { text: `/${parsed.word} isn't available yet — /help for what is` };
+    // One entry for every verb a later slice builds (B1b-6, lanes L and R).
+    if (parsed.kind === 'planned') return { text: `coming soon: /${parsed.word} — /help for what works now` };
     if (parsed.kind === 'unknown') {
       const tail = parsed.args ? ` ${parsed.args}` : '';
       return {
@@ -588,6 +642,12 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'stop': return stop(cmd, parsed.args, false);
       case 'tasks': return tasks(cmd, parsed.args);
       case 'docs': return docs(cmd, parsed.args);
+      case 'who': return who(cmd);
+      case 'bridge': return bridgeCard(cmd);
+      case 'mute': return mute(cmd, parsed.args);
+      case 'unmute': return unmute(cmd);
+      // Retarget is human-only by design (D28): an admin does it in tm8.
+      case 'new': return { text: 'starting a fresh chat for this group is done in tm8: open the bridge → Retarget' };
     }
   }
 
