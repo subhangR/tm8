@@ -501,8 +501,7 @@ const LOOP_ACT_GUIDES = [
     + 'the tool reaches tm8. schedule is "every <n>m|h|d" or a five-field cron read in timezone (IANA, default UTC); '
     + 'the server computes every next run. prompt is what each firing is told, subjectId what it is about; concurrency '
     + 'skip|queue, maxRuntimeSeconds 60-86400, retry {attempts 0-5, delaySeconds 30-3600} (retries cover a refused '
-    + 'launch only). Preview the schedule first. Until loops PR3 ships, a tool loop is refused at every firing and a '
-    + 'spawn carries only config.model, agentTool and accessMode.', {
+    + 'launch only). Preview the schedule first.', {
     params: { spaceId: '<space-id>' },
     body: {
       definition: {

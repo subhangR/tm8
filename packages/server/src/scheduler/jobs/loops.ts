@@ -60,14 +60,6 @@ import type { JobContext, JobOutcome, ScheduledJob } from '../types.js';
 export const LOOPS_JOB_NAME = 'loops.execute-due';
 
 /**
- * Why a tool loop is not fired: the tool action (loops PR3) is what calls the
- * scheduled tool runtime, which the port is already handed (Tools PR-C).
- * Firing it through spawn or dispatch would run the wrong thing, so the port
- * refuses and the run records this reason.
- */
-export const TOOL_LOOP_NOT_RUNNABLE = 'tool loops cannot run yet: the tool action ships with loops PR3';
-
-/**
  * A claimed launch that has not recorded a session after this long is settled
  * 'failed': the only way to get there is a server that died between the claim
  * and the launch record. Matches the job's own timeout, so a slow but live

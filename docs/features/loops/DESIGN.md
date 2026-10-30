@@ -31,7 +31,7 @@ The body's "378+" was renumbered at merge, as §10 expected. Both numbers sort b
 - `show` labels the next instants "schedule from now" (the body's "upcoming").
 
 **Deviations and open items.**
-- **The tool action waits on PR3.** Until #1408 merges, a tool loop is accepted, but every firing is refused: `TOOL_LOOP_NOT_RUNNABLE`, recorded as the run's launch error and the loop's last error. Until then a spawn also passes only `config.model`, `agentTool` and `accessMode`; `projectId`, `mode` and `reasoningEffort` arrive as null. §3.4's full mapping is PR3's.
+- **The tool action and the full spawn mapping (PR3, #1408).** A tool loop fires its tool through `ToolRuntime.runScheduled`, with the loop's stored inputs checked against the current definition at fire time; migration 394 adds the gate that a loop-triggered run executes the tool the loop names (`loops.tool_id`). A spawn maps the loop's `config` 1:1 onto the launch request (§3.4): project, workdir, mode, reasoning effort, memories, credential source, interaction profile, model, agent tool and access mode.
 - **Every firing moves the loop's entity version.** `loop_run_claim` updates `next_run_at`/`last_run_at`, and the version snapshot counts them. This is accepted for v1, with follow-up task 01a1870b-8794. Every surface handles it. The CLI's `version_conflict` hint says a loop's version also moves when it fires. The UI's edit form re-reads the loop and resends the same patch, under the same mutation id, when nothing it changes moved, and asks the human to re-read only on a real overlap. The list's Enabled switch re-reads and flips the fresh row. MCP's `loops.update` guide says to read again and retry.
 - **Run now on a disabled loop** fires it once and leaves the schedule off (§3.3: a manual run leaves `next_run_at` alone). The page says so beside the button.
 - **A dispatch run settles `completed` at delivery** (`jobs/loops.ts`, `run-handlers.ts`): its row reads completed at delivery. The run's session is the space's shared Dispatcher (`resolveDispatcherSession` usually reuses a live one), which only routes the task; the worker it starts is not linked from the run, so the run's task is the way to the work.
@@ -178,7 +178,7 @@ export interface LoopSpawnConfig {
   reasoningEffort?: LaunchReasoningEffort | null;
   accessMode?: LaunchAccessMode | null;
   mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | null;
-  projectId?: ProjectId | null;
+  projectId?: ProjectId | null;     // a TRUSTED project of the space: no firing can confirm an untrusted spawn (S12)
   workdir?: { mode: WorkSessionWorkdirMode; baseRef?: string | null } | null;
   memoryIds?: EntityId[];           // max 32
   credentialSource?: LaunchCredentialSource | null;
@@ -247,7 +247,7 @@ loops.list → { items: LoopView[]; nextCursor: string | null }   loops.runs.lis
 Every command returns the updated `LoopView` (like `tools.update` returns the tool), so a CLI or UI never needs a second read.
 
 ### 4.3 Errors
-`invalid_input` (schedule unparseable / timezone unknown / action–runner mismatch / tool inputs invalid, with a field path), `conflict` (`version_conflict`; `loop_run_overlap` on runNow), `not_found`, `forbidden` (capabilities), `invariant_violation` (tool deleted since configured).
+`invalid_input` (schedule unparseable / timezone unknown / action–runner mismatch / tool inputs invalid / a config reference that is not a live entity of its kind in the space, or an untrusted project, with a field path), `conflict` (`version_conflict`; `loop_run_overlap` on runNow), `not_found`, `forbidden` (capabilities), `invariant_violation` (tool deleted since configured).
 
 ## 5. CLI — `tm8 loop` (packages/cli/src/commands/loop.ts; help via the CommandModule metadata like `tool.ts`)
 ```

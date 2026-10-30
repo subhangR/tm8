@@ -221,8 +221,7 @@ export const LOOP_HELP: KindHelpModule = {
             task until someone closes it. A firing acts as the loop&rsquo;s armer, the human who last created, enabled
             or edited it. Once that person has left the space, or an agent&rsquo;s edit has disarmed the loop, it acts
             as the space&rsquo;s owner, and the page says so; with no owner either, it is parked as{' '}
-            <em>needs arming</em> until someone can run it. (Until loops PR3 ships, a tool loop is refused when it
-            fires, and a teammate&rsquo;s launch carries only its model, agent tool and access mode.)
+            <em>needs arming</em> until someone can run it.
           </p>
         ),
       },

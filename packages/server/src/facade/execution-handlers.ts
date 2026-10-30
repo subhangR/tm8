@@ -79,8 +79,10 @@ import {
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
-import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { fireTool } from '../loops/fire-tool.js';
 import { firingKeyFor } from '../loops/firing.js';
+import { spawnRequestForLoop } from '../loops/spawn-config.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
@@ -3114,27 +3116,6 @@ export function createLoopExecutorPort(deps: {
     liveSessionIds: () => pty.liveSessionIds(),
     nodeId: deps.nodeId ?? null,
     async fire(loop, claims, firedAt, runId) {
-      // Until the tool action exists (loops PR3) a tool loop is refused here, the
-      // one place both the scheduled job and Run now fire through, rather than
-      // run as a spawn (its persona) or a dispatch. The run records the reason.
-      if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
-      // §3.4: the ACTION picks the branch, never the runner, so the port agrees
-      // with the job, Run now and the projection by construction. A spawn loop
-      // that lost its runner (team_member_id is `on delete set null`) is
-      // refused, never routed to the space's shared dispatcher.
-      const runner = loop.action === 'spawn' ? loop.teamMemberId : null;
-      if (loop.action === 'spawn' && !runner) {
-        throw new CollabError('invalid_input', `spawn loop ${loop.entityId} names no runner: choose the teammate it runs as`);
-      }
-      // The loop is its OWN launchable subject when it names none (§4.4), so
-      // there is always something to derive a task from.
-      const [taskId] = await resolveAssignmentAnchors(
-        db, claims, loop.spaceId, [loop.subjectId ?? loop.entityId],
-      );
-      if (!taskId) {
-        throw new Error(`derive_task_for_entity returned no task for loop ${loop.entityId}`);
-      }
-
       /**
        * THE firing key, and the reason it carries the instant.
        *
@@ -3161,6 +3142,37 @@ export function createLoopExecutorPort(deps: {
        */
       const firingKey = firingKeyFor(loop, firedAt, runId);
 
+      /**
+       * §3.4: a TOOL loop runs its tool (loops PR3) through `ToolRuntime.runScheduled`,
+       * the one place both the scheduled job and Run now fire through. It derives
+       * NO task and writes NO loop-side edge: `start_tool_session` (389, 394)
+       * writes the run's provenance-marked `triggered_by` inside the run's own
+       * transaction, which is both the run history the overlap guard reads and
+       * the authority its tm8 bearer is minted on. The runtime's refusals
+       * propagate unchanged, so the job records their text as the run's launch
+       * error and `last_error`.
+       */
+      if (loop.action === 'tool') {
+        return fireTool({ tools: deps.tools }, loop, claims, firingKey);
+      }
+
+      // §3.4: the ACTION picks the branch, never the runner, so the port agrees
+      // with the job, Run now and the projection by construction. A spawn loop
+      // that lost its runner (team_member_id is `on delete set null`) is
+      // refused, never routed to the space's shared dispatcher.
+      const runner = loop.action === 'spawn' ? loop.teamMemberId : null;
+      if (loop.action === 'spawn' && !runner) {
+        throw new CollabError('invalid_input', `spawn loop ${loop.entityId} names no runner: choose the teammate it runs as`);
+      }
+      // The loop is its OWN launchable subject when it names none (§4.4), so
+      // there is always something to derive a task from.
+      const [taskId] = await resolveAssignmentAnchors(
+        db, claims, loop.spaceId, [loop.subjectId ?? loop.entityId],
+      );
+      if (!taskId) {
+        throw new Error(`derive_task_for_entity returned no task for loop ${loop.entityId}`);
+      }
+
       // STABLE on purpose, and the contrast with `firingKey` is the point: this
       // edge asserts "this task belongs to this loop", which is one fact no
       // matter how many times it fires. A replay here is the correct outcome.
@@ -3168,23 +3180,17 @@ export function createLoopExecutorPort(deps: {
 
       let sessionId: string;
       if (runner) {
-        sessionId = (await spawnService.spawn(claims, {
-          spaceId: loop.spaceId,
-          teamMemberId: runner,
-          parentSessionId: null,
-          taskIds: [taskId],
-          projectId: null,
-          mode: null,
-          model: (loop.config?.['model'] as string | undefined) ?? null,
-          agentTool: (loop.config?.['agentTool'] as string | undefined) ?? null,
-          reasoningEffort: null,
-          accessMode: (loop.config?.['accessMode'] as never) ?? null,
-          title: loop.title,
-          // The loop's instruction is launch-manifest context, not a runtime
-          // prompt — the same channel `--context` uses.
-          promptExtra: loop.prompt === '' ? null : loop.prompt,
-          clientMutationId: `loop-fire:${firingKey}`,
-        }, {
+        sessionId = (await spawnService.spawn(
+          claims,
+          /*
+           * §3.4 "spawn": the loop's stored `config` mapped 1:1 onto the request
+           * (`spawnRequestForLoop`, loops PR3): projectId, workdir, mode, reasoning
+           * effort, memories, credential source, interaction profile, model,
+           * agent tool and access mode, exactly what a human launching by hand
+           * with those settings would send.
+           */
+          spawnRequestForLoop({ ...loop, teamMemberId: runner }, taskId, firingKey),
+          {
           /*
            * 348, ac1/ac2. THE FIRING'S PROVENANCE ROOT, handed over as a SERVER
            * FACT and written inside `execution_spawn`'s own transaction.

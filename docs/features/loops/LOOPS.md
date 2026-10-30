@@ -29,8 +29,6 @@ A firing acts as the loop's **armer**: the human who last created, enabled or ed
 
 **If the previous run is still going**, a loop set to *skip* (the default) records the firing as a skipped run, and one set to *queue* waits and fires as soon as the previous run settles. Missed firings are **never backfilled**. A node that was down for six hours fires a due loop once when it is back, and the next deadline is counted from that firing. A **pause** holds firings until an instant; a deadline that fell inside it fires once when the pause ends. A **launch** that fails (the session or dispatch could not start) is recorded on the run and as the loop's last error, and with **retries** set it is tried again after the retry delay. A run that starts and then fails, or that outlives its **max runtime** (stopped and recorded as timed out), shows on its own row in RUNS only: it is not retried, it leaves no last error, and the next good launch clears an old one. Failures never disable a loop.
 
-> Until loops PR3 (#1408) merges, a tool loop is accepted but refused at every firing, with a last error that says so, and a teammate loop carries only its model, agent tool and access mode.
-
 ## Create a loop
 
 ### In the UI
@@ -237,4 +235,3 @@ $ tm8 loop list
 | Parked: *needs arming* | No armer and no active owner to run as. Its clock keeps running: once a human edits it (which arms it), it fires on its kept deadline. Disabling and re-enabling also arms it, but recounts the next run from now. `loop enable` alone changes nothing; it is still enabled. |
 | `version_conflict` from the CLI | The loop moved since you read it, often because it fired. Run `tm8 loop show` and retry with the new version. |
 | `loop_run_overlap` from Run now | A run is still live, or still launching (often after a Run now that timed out; the server then says "a run of this loop is still launching (run <id>): re-send with the same clientMutationId to get its result, or read loops.runs.get; force starts a second run"). Check `tm8 loop runs <id>` first. Re-send a timed-out Run now with the SAME `--mutation-id` (or `clientMutationId`; the CLI's timeout hint names it) to get its result. Otherwise wait, or stop the live run. `--force` starts a second run. |
-| A tool loop's last error says tool loops cannot run yet | The tool action ships with loops PR3 (#1408). |

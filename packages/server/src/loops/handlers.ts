@@ -11,6 +11,7 @@ import type { RequestContext } from '../http/types.js';
 import { previewSchedule } from '../scheduler/schedule.js';
 import { listLoopViews, loadLoopView } from './views.js';
 import { assertToolPersona, requireSpawnConfig, requireValidSchedule, scheduleWrite, type ScheduleState } from './write.js';
+import { assertLoopReferences, EVERY_REFERENCE } from './validate.js';
 import type { LoopRunHandlerDeps } from './run-handlers.js';
 
 /** What the composition root hands the loops family beyond FacadeDeps (PR2: the executor port). */
@@ -116,6 +117,8 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           d.retry?.attempts ?? 0, d.retry?.delaySeconds ?? 300, write.lastError ?? null,
         ]);
         await assertToolPersona(q, result.entity.id);
+        // PR3: referenced entities live in the space; tool inputs fit the current definition.
+        await assertLoopReferences(q, result.entity.id);
         return loadLoopView(q, result.entity.id);
       });
     },
@@ -140,6 +143,11 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           ...deadlinePatch(current, after),
         });
         await assertToolPersona(q, loopId);
+        // Only what this patch sets is judged (review B2); an action change judges everything it launches with.
+        await assertLoopReferences(q, loopId, d.action !== undefined ? EVERY_REFERENCE : {
+          runner: typeof d.teamMemberId === 'string', config: d.config !== undefined,
+          tool: d.toolId !== undefined || d.toolInputs !== undefined,
+        });
         return loadLoopView(q, loopId);
       });
     },
