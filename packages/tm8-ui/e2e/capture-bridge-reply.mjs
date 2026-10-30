@@ -8,7 +8,11 @@ const OUT = process.env.OUT ?? 'gate-evidence/bridge-reply';
 mkdirSync(OUT, { recursive: true });
 
 // On this host: LD_LIBRARY_PATH=~/chromedeps/root/usr/lib/x86_64-linux-gnu, and the renderer needs one process.
-const browser = await chromium.launch({ args: ['--disable-gpu', '--single-process', '--no-zygote'] });
+const browser = await chromium.launch({
+  args: ['--disable-gpu', '--single-process', '--no-zygote'],
+  // CHROMIUM: an already-installed build, when this Playwright's own is not downloaded.
+  ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}),
+});
 const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 2 })).newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
