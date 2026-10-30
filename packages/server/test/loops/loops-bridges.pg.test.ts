@@ -491,3 +491,45 @@ describe('L7. authority: granted at arming vs approval-gated, and provenance -> 
     expect(other.code).toBe('forbidden');
   });
 });
+
+describe('L8. a removed bridge disables its loops and keeps them (v2 §2.3)', () => {
+  it('remove_bridge disables every loop targeting the bridge (or about it) with "bridge removed", keeping its targets and armer; others are untouched', async () => {
+    const chatOps = randomUUID();
+    await inTx(null, async c => {
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [chatOps, spaceId, ownerMember]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,'Ops main',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/l', gen_random_uuid(), $4, $5, $6)`,
+        [chatOps, spaceId, teammate, ownerIdentity, ownerMember, `l-${randomUUID()}`]);
+    });
+    const ops = (await human(ownerIdentity, q => q.rpc<{ entity: { id: string } }>('create_bridge', [
+      spaceId, connection, '120363-ops@g.us', JSON.stringify({ kind: 'group', title: 'Ops', memberCount: 3 }), chatOps, '{}', teammate,
+      null, null, true, null, null, randomUUID()]))).entity.id;
+    const both = await createLoop({ title: 'Ops and Infra', targets: [{ bridgeId: ops, text: 'ops text' }, { bridgeId: infra, text: null }] });
+    const post = await createLoop({ action: 'post', title: 'Ops reminder', targets: [{ bridgeId: ops, text: 'standup' }] });
+    const other = await createLoop({ title: 'Infra only', targets: [{ bridgeId: infra, text: null }] });
+    const before = await owner<{ entity_id: string; armed_by_member_id: string }>(
+      'select entity_id::text, armed_by_member_id::text from public.loops where entity_id = any($1::uuid[])', [[both, post]]);
+
+    const [{ version }] = await owner<{ version: number }>('select version from public.entities where id = $1', [ops]) as [{ version: number }];
+    await human(ownerIdentity, q => q.rpc('remove_bridge', [ops, version, null, randomUUID()]));
+
+    const rows = await owner<{ entity_id: string; enabled: boolean; last_error: string | null; targets: unknown; armed_by_member_id: string }>(
+      'select entity_id::text, enabled, last_error, targets, armed_by_member_id::text from public.loops where entity_id = any($1::uuid[])',
+      [[both, post, other]]);
+    const by = (id: string) => rows.find(r => r.entity_id === id)!;
+    for (const id of [both, post]) {
+      expect(by(id)).toMatchObject({ enabled: false, last_error: 'bridge removed' });
+      expect(by(id).armed_by_member_id).toBe(before.find(b => b.entity_id === id)!.armed_by_member_id);
+    }
+    expect(by(both).targets).toEqual([{ bridgeId: ops, text: 'ops text' }, { bridgeId: infra, text: null }]);
+    expect(by(other)).toMatchObject({ enabled: true, last_error: null });
+
+    // A human re-points it: the removed group cannot be a target again, the others can.
+    const refused = await refusal(human(ownerIdentity, q => q.rpc('set_loop_bridge_fields', [both, JSON.stringify([{ bridgeId: ops, text: null }]), null, null])));
+    expect(refused.message ?? '').toMatch(/not a live bridge/);
+    await human(ownerIdentity, q => q.rpc('set_loop_bridge_fields', [both, JSON.stringify([{ bridgeId: infra, text: null }]), null, null]));
+    expect((await owner<{ targets: unknown }>('select targets from public.loops where entity_id = $1', [both]))[0]!.targets)
+      .toEqual([{ bridgeId: infra, text: null }]);
+  });
+});

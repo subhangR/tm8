@@ -27,6 +27,7 @@
 --   §8  authority (D26, D68): the door the operation gate calls to raise an
 --       approval request to the owner.
 --   §9  the executor's doors: runs to replace, interactive idle close.
+--   §10 a removed bridge disables the loops that target it (v2 §2.3).
 --
 -- 398's bridge_runtime_inbound and bridge_outbox_enqueue are re-declared here
 -- VERBATIM plus the blocks marked `401 (L)` (the 348 precedent). A rebase
@@ -1151,6 +1152,32 @@ language sql stable security definer set search_path = public, internal, pg_temp
 $$;
 revoke all on function public.loop_runs_idle_interactive(timestamptz, interval) from public;
 grant execute on function public.loop_runs_idle_interactive(timestamptz, interval) to tm8_app;
+
+
+-- -----------------------------------------------------------------------------
+-- §10. A removed bridge (v2 §2.3, "Removed"): every loop that targets it, or
+-- has it as its subject, is disabled (`enabled: false`, `last_error: 'bridge
+-- removed'`) and kept, so a human can re-point it. Its targets are left as
+-- they were. Disabling is bookkeeping, so the armer stays (343); a human who
+-- edits the targets and enables the loop re-arms it as usual.
+-- -----------------------------------------------------------------------------
+create or replace function internal.loops_on_bridge_removed() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  if old.ended_at is null and new.ended_at is not null then
+    update public.loops l
+       set enabled = false, last_error = 'bridge removed', updated_at = now()
+      from public.entities e
+     where e.id = l.entity_id and e.deleted_at is null
+       and (l.targets @> jsonb_build_array(jsonb_build_object('bridgeId', new.entity_id)) or l.subject_id = new.entity_id)
+       and (l.enabled or l.last_error is distinct from 'bridge removed');
+  end if;
+  return null;
+end
+$$;
+revoke all on function internal.loops_on_bridge_removed() from public;
+create trigger bridges_loops_on_removed after update of ended_at on public.bridges
+for each row execute function internal.loops_on_bridge_removed();
 
 reset role;
 
