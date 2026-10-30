@@ -160,6 +160,9 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id, asserted_by_member_id, verified_at)
       values ('whatsapp',$1,$2,'admin',$3,$4,now())`, [people.maya.phone, people.maya.identity, space, people.owner.member]);
   });
+  // D32 (#1427): the bridge rides the connection's offer to this space.
+  await db.rpc({ identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b4-offer' },
+    'offer_bridge_connection', [connection, space, 'public', null, `b1b4-offer-${randomUUID()}`]);
   const created = await db.rpc<{ entity: { id: string } }>(
     { identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b4-create' },
     'create_bridge',

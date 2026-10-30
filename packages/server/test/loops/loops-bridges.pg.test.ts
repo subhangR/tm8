@@ -174,6 +174,8 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, verified_at)
       values ('whatsapp',$1,$2,'code',now())`, [RAHUL, adminIdentity]);
   });
+  // D32 (#1427): the bridges ride the connection's offer to this space.
+  await human(ownerIdentity, q => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
   const create = (conv: string, title: string, target: string) => human(ownerIdentity, q => q.rpc<{ entity: { id: string } }>('create_bridge', [
     spaceId, connection, conv, JSON.stringify({ kind: 'group', title, memberCount: 7 }), target, '{}', teammate,
     null, null, true, null, null, randomUUID()]));
