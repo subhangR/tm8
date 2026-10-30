@@ -18,7 +18,7 @@ const RAHUL = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb';
 const ASHA = 'cccccccc-cccc-7ccc-8ccc-cccccccccccc';
 const CONNECTION = '44444444-4444-7444-8444-444444444444';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
-const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', BAD = '910000000005@s.whatsapp.net';
+const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', BAD = '910000000005@s.whatsapp.net', CLASH = '910000000006@s.whatsapp.net';
 const PN = '910000000001@s.whatsapp.net', LID = '100000000000001@lid', TRUSTED = '910000000002@s.whatsapp.net';
 
 const base = { spaceId: SPACE, mainChats: {}, purposes: {}, members: {}, ownerMember: OWNER };
@@ -139,6 +139,11 @@ describe('tm8 bridge import-config (fake server)', () => {
             res.end(JSON.stringify({ error: { code: 'invalid_input', message: 'a WhatsApp link names a person', requestId: 'test', retryable: false } }));
             return;
           }
+          if (externalId === CLASH) {
+            res.writeHead(409, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: 'conflict', message: 'this address is verified as someone else', details: { reason: 'link_conflict' }, requestId: 'test', retryable: false } }));
+            return;
+          }
           const changed = asserted.get(externalId) !== body.patch.memberId;
           asserted.set(externalId, body.patch.memberId);
           data = { bridgeId: BRIDGE, externalId, changed, participant: null };
@@ -199,20 +204,21 @@ describe('tm8 bridge import-config (fake server)', () => {
     expect(stdout.match(/: unchanged/g)).toHaveLength(3);
   });
 
-  it('reports a 404 (member not active) and a 400 (not a person) on their rows, writes the rest, and exits non-zero', async () => {
+  it('reports a 404 (member not active), a 400 (not a person) and a 409 (linked to someone else) on their rows, writes the rest, and exits non-zero', async () => {
     const extra = ['--member', `${TRUSTED}=${GONE}`];
-    const withBad: Phase1Config = { ...config, trustedSenders: [...(config.trustedSenders ?? []), BAD] };
+    const withBad: Phase1Config = { ...config, trustedSenders: [...(config.trustedSenders ?? []), BAD, CLASH] };
     const file = `${FIXTURE}.bad.json`;
     (await import('node:fs')).writeFileSync(file, JSON.stringify(withBad));
     try {
       const a = args.map(x => (x === FIXTURE ? file : x)).filter((x, i, all) => !(x.startsWith(`${TRUSTED}=`) || (x === '--member' && all[i + 1]?.startsWith(`${TRUSTED}=`))));
-      expect(await run([...a, ...extra, '--member', `${BAD}=${RAHUL}`])).toBe(5);
+      expect(await run([...a, ...extra, '--member', `${BAD}=${RAHUL}`, '--member', `${CLASH}=${RAHUL}`])).toBe(5);
     } finally { (await import('node:fs')).rmSync(file); }
     expect(stdout).toContain('…0001@s.whatsapp.net → member');
     expect(stdout).toMatch(/…0002@s\.whatsapp\.net → member dddddddd-[^:]*: REFUSED member_not_active/);
     expect(stdout).toMatch(/…0005@s\.whatsapp\.net → member bbbbbbbb-[^:]*: REFUSED invalid_address/);
+    expect(stdout).toMatch(/…0006@s\.whatsapp\.net → member bbbbbbbb-[^:]*: REFUSED link_conflict/);
     expect(stdout).toContain('some links were refused');
-    expect(requests.filter(r => r.method === 'PATCH')).toHaveLength(4);
+    expect(requests.filter(r => r.method === 'PATCH')).toHaveLength(5);
   });
 
   it('refuses before any write when the bridge exists on another target', async () => {

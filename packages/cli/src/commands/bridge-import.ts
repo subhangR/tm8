@@ -10,11 +10,11 @@
 // nothing: an existing bridge on the conversation is reused, and an assertion
 // that already holds is a no-op on the server.
 import { randomUUID } from 'node:crypto';
-import type { BridgeListResult, BridgeParticipant, BridgePolicy, BridgeView } from '@tm8/contract';
+import type { BridgeListResult, BridgeParticipantUpdateResult, BridgePolicy, BridgeView } from '@tm8/contract';
 import { ApiError } from '../errors.js';
 import { requireSpace } from '../context.js';
 import { readTextSource } from '../args.js';
-import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_CONFLICT, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { observedInvoke } from '../discovery/observe.js';
 import type { CommandContext } from '../run.js';
 import { assertKnownOptions } from './entity.js';
@@ -158,13 +158,8 @@ export function mask(jid: string): string {
   return `…${user.slice(-4)}${at < 0 ? '' : jid.slice(at)}`;
 }
 
-/** P's `bridges.participants.update` reply (#1439): `participant` is null for someone who hasn't spoken. */
-interface ParticipantUpdateReply {
-  bridgeId: string; externalId: string; changed: boolean; participant: BridgeParticipant | null;
-}
-
 /** One link row's outcome: written, already so, or refused by the server for this row alone. */
-export type LinkOutcome = 'asserted' | 'unchanged' | 'member_not_active' | 'invalid_address';
+export type LinkOutcome = 'asserted' | 'unchanged' | 'member_not_active' | 'invalid_address' | 'link_conflict';
 
 interface ImportResult {
   dryRun: boolean;
@@ -237,10 +232,10 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     const links: ImportResult['bridges'][number]['links'] = [];
     for (const l of p.links) {
       // P's door (D52): an admin assertion; the same one again answers changed:false, so a rerun is safe.
-      // A refusal that concerns this row only (404 member not active here, 400 not a person's address)
-      // is reported on the row and the run goes on; anything else stops it.
+      // A refusal that concerns this row only (404 member not active here, 400 not a person's address,
+      // 409 linked to someone else) is reported on the row and the run goes on; anything else stops it.
       try {
-        const r = await observedInvoke<ParticipantUpdateReply>(api, 'bridges.participants.update', {
+        const r = await observedInvoke<BridgeParticipantUpdateResult>(api, 'bridges.participants.update', {
           params: { bridgeId: bridge.id, externalId: l.externalId },
           body: { clientMutationId: randomUUID(), patch: { memberId: l.memberId } },
         });
@@ -248,11 +243,12 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
         links.push({ externalId: l.externalId, memberId: l.memberId, outcome });
         lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: ${outcome}`);
       } catch (err) {
-        if (!(err instanceof ApiError) || (err.code !== 'not_found' && err.code !== 'invalid_input')) throw err;
-        const outcome: LinkOutcome = err.code === 'not_found' ? 'member_not_active' : 'invalid_address';
+        const ROW: Record<string, LinkOutcome> = { not_found: 'member_not_active', invalid_input: 'invalid_address', conflict: 'link_conflict' };
+        if (!(err instanceof ApiError) || !(err.code in ROW)) throw err;
+        const outcome = ROW[err.code]!;
         links.push({ externalId: l.externalId, memberId: l.memberId, outcome, message: err.message });
         lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: REFUSED ${outcome} (${err.message})`);
-        failure ??= outcome === 'member_not_active' ? EXIT_NOT_FOUND : EXIT_USAGE;
+        failure ??= outcome === 'member_not_active' ? EXIT_NOT_FOUND : outcome === 'link_conflict' ? EXIT_CONFLICT : EXIT_USAGE;
       }
     }
     result.bridges.push({ channel: p.channel, bridgeId: bridge.id, created, links });
