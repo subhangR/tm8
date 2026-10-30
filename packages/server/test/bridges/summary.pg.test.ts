@@ -177,7 +177,7 @@ describe('bridge rolling summary (S)', () => {
       await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'assigned_to',$3)", [space, task, member]);
       await c.query(`select internal.w1_set_writer('message_recorder')`);
       await c.query(`insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
-        values($1,$2,$3,'authored_from',jsonb_build_object('bridgeId',$3::text),$4)`, [space, task, bridgeId, member]);
+        values($1,$2,$3,'authored_from',jsonb_build_object('bridgeId',$5::text),$4)`, [space, task, bridgeId, member, bridgeId]);
       await c.query(`select internal.w1_set_writer(null)`);
     });
     const view: BridgeDetailView = await call('GET', `/v2/bridges/${bridgeId}`);
