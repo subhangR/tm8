@@ -470,7 +470,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
       const idleClosed = await closeIdleInteractiveRuns({ db, port, worker, now, ctx });
       let released = 0;
       try {
-        released = Number(await db.rpc<number>(worker, 'loop_release_held', [nowIso]));
+        released = Number(await db.rpc<number>(worker, 'loop_release_held', [nowIso])) || 0;
       } catch (error) {
         ctx.logger.warn(`held loop posts could not be released: ${errorText(error)}`);
       }

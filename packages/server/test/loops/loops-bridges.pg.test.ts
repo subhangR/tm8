@@ -43,7 +43,7 @@ let infra = '', gaming = '', runtimeSession = '';
 
 const as = (identityId: string): DbClaims => ({ identityId, authKind: 'browser', requestId: randomUUID() });
 const human = <T>(identityId: string, fn: (q: Querier) => Promise<T>) => db.tx(as(identityId), fn);
-const loopsWorker: DbClaims = { requestId: 'loops-test', backgroundJob: 'loops.execute-due' };
+const loopsWorker = (): DbClaims => ({ identityId: ownerIdentity, nodeAdmin: true, requestId: 'loops-test', backgroundJob: 'loops.execute-due' });
 const runtime = (): DbClaims => ({ identityId: ownerIdentity, authKind: 'bridge_runtime', authSessionId: runtimeSession, requestId: randomUUID() });
 const owner = <T>(sql: string, params: unknown[] = []) => scratch.transaction(async c => {
   await c.query('set local role tm8_graph_owner');
@@ -100,7 +100,7 @@ async function fireSession(loopId: string, runId: string, title = 'Daily update'
     await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1,$2,$3,'triggered_by',$4)`,
       [spaceId, sid, loopId, teammate]);
   });
-  await db.rpc(loopsWorker, 'loop_run_launched', [runId, null, sid]);
+  await db.rpc(loopsWorker(), 'loop_run_launched', [runId, null, sid]);
   return sid;
 }
 /** A session's post on a bridge (`tm8 message send --to <bridge>`): message_recorder's origin edge, committed. */
@@ -170,6 +170,9 @@ beforeAll(async () => {
     }
     await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status)
       values ($1,'whatsapp',$2,'+91 …9494','linked')`, [connection, ownerAccount]);
+    // Rahul's number is linked to the admin, so his replies may start a turn (whoMayTrigger: members).
+    await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, verified_at)
+      values ('whatsapp',$1,$2,'code',now())`, [RAHUL, adminIdentity]);
   });
   const create = (conv: string, title: string, target: string) => human(ownerIdentity, q => q.rpc<{ entity: { id: string } }>('create_bridge', [
     spaceId, connection, conv, JSON.stringify({ kind: 'group', title, memberCount: 7 }), target, '{}', teammate,
@@ -288,14 +291,14 @@ describe('L3. reply routing to the live interactive loop session (D26, D69)', ()
     expect((await outboxOf(reply))[0]).toMatchObject({ directed: true });
 
     // Not idle yet; 31 minutes after the last thing addressed to it, it is.
-    const idleNow = await db.query<{ run_id: string }>(loopsWorker,
+    const idleNow = await db.query<{ run_id: string }>(loopsWorker(),
       'select run_id::text from public.loop_runs_idle_interactive($1, interval \'30 minutes\')', [new Date().toISOString()]);
     expect(idleNow.map(r => r.run_id)).not.toContain(runId);
-    const idle = await db.query<{ run_id: string }>(loopsWorker,
+    const idle = await db.query<{ run_id: string }>(loopsWorker(),
       'select run_id::text from public.loop_runs_idle_interactive($1, interval \'30 minutes\')', [new Date(Date.now() + 31 * 60_000).toISOString()]);
     expect(idle.map(r => r.run_id)).toContain(runId);
     // The executor closes it (stop + settle); then a reply goes to the chat.
-    await db.rpc(loopsWorker, 'loop_run_settle', [runId, 'completed', null]);
+    await db.rpc(loopsWorker(), 'loop_run_settle', [runId, 'completed', null]);
     const r2 = await inbound(frame({ body: 'me too', replyTo: { externalMessageId: 'OUT-POLL-1' } }));
     expect(r2.wakeSession ?? null).toBeNull();
     expect(r2).toMatchObject({ routed: true, wakeChat: { chatId: chatInfra } });
@@ -322,7 +325,7 @@ describe('L4. concurrency replace: a new run ends the previous live one', () => 
       claimsForLoop: () => as(ownerIdentity),
       stopSession: async (_c: DbClaims, sessionId: string) => { stopped.push(sessionId); },
     } as unknown as LoopExecutorPort;
-    const n = await replacePreviousRuns({ db, port, worker: loopsWorker, loop: { entityId: loopId, spaceId }, actAsIdentity: ownerIdentity });
+    const n = await replacePreviousRuns({ db, port, worker: loopsWorker(), loop: { entityId: loopId, spaceId }, actAsIdentity: ownerIdentity });
     expect(n).toBe(1);
     expect(stopped).toEqual([sid]);
     const [run] = await owner<{ outcome: string; error: string }>('select outcome, error from public.loop_runs where id = $1', [first]);
@@ -335,13 +338,15 @@ describe('L4. concurrency replace: a new run ends the previous live one', () => 
 
 describe('L5. quiet hours hold unprompted posts; newest only on release (D67)', () => {
   it('holds two scheduled posts and sends only the newer when the hours end; replies go at once; exempt loops are never held', async () => {
+    // Isolation: the earlier tests' posts would fill the (teammate, bridge) un-directed bucket (6 per 10 min).
+    await owner(`update public.bridge_outbox set created_at = now() - interval '1 hour'`);
     await setQuiet(infra, quietWindow(true));
     try {
       const loopId = await createLoop({ action: 'post', title: 'Nightly', targets: [{ bridgeId: infra, text: 'nightly digest' }] });
       const run1 = await claimRun(loopId);
       const [p1] = await db.rpc<Array<{ result: string; messageId: string }>>(as(ownerIdentity), 'loop_post_targets', [loopId, run1]);
       expect(p1!.result).toBe('held');
-      await db.rpc(loopsWorker, 'loop_run_settle', [run1, 'completed', null]);
+      await db.rpc(loopsWorker(), 'loop_run_settle', [run1, 'completed', null]);
       const run2 = await claimRun(loopId);
       const [p2] = await db.rpc<Array<{ result: string; messageId: string }>>(as(ownerIdentity), 'loop_post_targets', [loopId, run2]);
       expect(p2!.result).toBe('held');
@@ -354,7 +359,7 @@ describe('L5. quiet hours hold unprompted posts; newest only on release (D67)', 
       expect(await resultFor(run1, infra)).toMatchObject({ result: 'superseded' });
 
       // Still quiet: nothing is released.
-      expect(await db.rpc<number>(loopsWorker, 'loop_release_held', [new Date().toISOString()])).toBe(0);
+      expect(await db.rpc<number>(loopsWorker(), 'loop_release_held', [new Date().toISOString()])).toBe(0);
       // A loop session's reply to a member goes out at once.
       const replyLoop = await createLoop({ title: 'Replier', mode: 'interactive', targets: [{ bridgeId: infra, text: null }] });
       const rr = await claimRun(replyLoop);
@@ -366,11 +371,14 @@ describe('L5. quiet hours hold unprompted posts; newest only on release (D67)', 
       // Its unprompted post is held.
       const unprompted = await sessionPost(sid, infra, 'FYI: maintenance at 2am');
       expect(await outboxOf(unprompted)).toEqual([]);
-      expect(await resultFor(rr, infra)).toMatchObject({ result: 'held' });
+      const [heldBadge] = await owner<{ reason: string }>('select reason from public.bridge_delivery_refusals where message_id = $1', [unprompted]);
+      expect(heldBadge!.reason).toBe('quiet_hours');
+      // The group was already posted to in this run (the reply): it stays `posted`.
+      expect(await resultFor(rr, infra)).toMatchObject({ result: 'posted' });
 
       // The hours end: only the newer of the two nightly posts is sent.
       await setQuiet(infra, quietWindow(false));
-      expect(await db.rpc<number>(loopsWorker, 'loop_release_held', [new Date().toISOString()])).toBe(2);
+      expect(await db.rpc<number>(loopsWorker(), 'loop_release_held', [new Date().toISOString()])).toBe(2);
       expect(await outboxOf(p2!.messageId)).toHaveLength(1);
       expect(await outboxOf(p1!.messageId)).toEqual([]);
       expect(await resultFor(run2, infra)).toMatchObject({ result: 'posted' });
@@ -404,7 +412,7 @@ describe('L6. owner leaves: suspended, admins notified, an admin takes it over',
     const requests = await owner<{ assignee_id: string; status: string }>(
       `select assignee_id::text, status from public.attention_requests where entity_id = $1 and signal_key like 'loop.owner_left:%' order by assignee_id`, [loopId]);
     expect(requests.map(r => r.assignee_id).sort()).toEqual([adminMember, ownerMember].sort());
-    const due = await db.query<{ entity_id: string; act_as_identity: string | null }>(loopsWorker,
+    const due = await db.query<{ entity_id: string; act_as_identity: string | null }>(loopsWorker(),
       'select entity_id::text, act_as_identity from public.loops_claimable(100, now(), $1)', [[]]);
     expect(due.map(d => d.entity_id)).not.toContain(loopId);
     // A loop without bridge targets keeps main's fallback to the owner.
@@ -428,7 +436,7 @@ describe('L6. owner leaves: suspended, admins notified, an admin takes it over',
     const open = await owner<{ n: string }>(`select count(*) n from public.attention_requests where entity_id = $1
       and signal_key like 'loop.owner_left:%' and status in ('open','acknowledged')`, [loopId]);
     expect(open[0]!.n).toBe('0');
-    const dueAfter = await db.query<{ entity_id: string; act_as_identity: string }>(loopsWorker,
+    const dueAfter = await db.query<{ entity_id: string; act_as_identity: string }>(loopsWorker(),
       'select entity_id::text, act_as_identity from public.loops_claimable(100, now(), $1)', [[]]);
     expect(dueAfter.find(d => d.entity_id === loopId)?.act_as_identity).toBe(adminIdentity);
   });
@@ -445,6 +453,7 @@ describe('L7. authority: granted at arming vs approval-gated, and provenance -> 
 
     const { task, doc, child, grand } = await inTx(sid, async c => {
       const task = await newEntity(c, 'task'), doc = await newEntity(c, 'doc'), child = await newEntity(c, 'work_session');
+      await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'Child','running','none',now())`, [child]);
       return { task, doc, child, grand: '' };
     }).then(async r => ({ ...r, grand: await inTx(r.child, c => newEntity(c, 'doc')) }));
     for (const id of [task, doc, child, grand]) {

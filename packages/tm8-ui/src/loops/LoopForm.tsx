@@ -150,6 +150,8 @@ interface Draft {
   retryAttempts: string;
   retryDelaySeconds: string;
   enabled: boolean;
+  /** Bridges L (D26): not edited here (the bridge Loops tab is B2); carried so a save never drops them. */
+  bridgeFields: Pick<LoopDefinition, 'targets' | 'mode' | 'quietHoursExempt'>;
 }
 
 const DEFAULT = '';
@@ -199,6 +201,7 @@ function draftOf(view: LoopView | undefined, tool: ToolView | null = null): Draf
     retryAttempts: String(d?.retry.attempts ?? 0),
     retryDelaySeconds: String(d?.retry.delaySeconds ?? LOOP_RETRY_DELAY_DEFAULT_SECONDS),
     enabled: view?.state.enabled ?? true,
+    bridgeFields: { targets: d?.targets ?? [], mode: d?.mode ?? 'one-shot', quietHoursExempt: d?.quietHoursExempt ?? false },
   };
 }
 
@@ -338,6 +341,7 @@ function definitionOf(draft: Draft, inputs: Record<string, ToolJsonValue>): Loop
       attempts: draft.retryAttempts.trim() === '' ? 0 : Number(draft.retryAttempts),
       delaySeconds: draft.retryDelaySeconds.trim() === '' ? LOOP_RETRY_DELAY_DEFAULT_SECONDS : Number(draft.retryDelaySeconds),
     },
+    ...draft.bridgeFields,
   };
 }
 
@@ -390,6 +394,7 @@ const FIELD_WORDS: Readonly<Record<keyof LoopDefinition, string>> = {
   title: 'the name', schedule: 'the schedule', timezone: 'the timezone', action: 'what runs', teamMemberId: 'the teammate',
   toolId: 'the tool', toolInputs: 'the tool inputs', subjectId: 'what it is about', prompt: 'the instructions',
   config: 'the advanced settings', concurrency: 'the concurrency', maxRuntimeSeconds: 'the max runtime', retry: 'the retries',
+  targets: 'the groups', mode: 'the mode', quietHoursExempt: 'the quiet-hours exemption',
 };
 
 function listWords(words: readonly string[]): string {
