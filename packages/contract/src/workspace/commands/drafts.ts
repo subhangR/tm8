@@ -11,7 +11,9 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
   const args = env.args;
   if (!isRecord(args) || !isNonEmptyString(args.kind)) return reject('invalid_arguments');
   if (args.replaceTabId !== undefined && !isNonEmptyString(args.replaceTabId)) return reject('invalid_arguments');
+  if (args.holds !== undefined && args.holds !== 'launch') return reject('invalid_arguments');
   if (!isWorkspaceKind(args.kind) || !hooks.canCreate(args.kind)) return reject('unsupported_kind');
+  const holds = args.holds;
   const kind = args.kind;
   if (!kindInScope(state.scope, kind)) {
     return {
@@ -22,8 +24,9 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
   const drafts = state.orderedTabIds
     .map((id) => state.tabs[id])
     .filter((tab): tab is DraftTabRecord => tab?.type === 'draft' && tab.kind === kind);
-  // A dirty (or submitting) draft is never reused or reset.
-  const untouched = drafts.find((tab) => !tab.dirty && !tab.submitting);
+  // A dirty (or submitting) draft is never reused or reset, nor one holding a
+  // launch; and a launch never takes over a blank draft — it always opens anew.
+  const untouched = holds ? undefined : drafts.find((tab) => !tab.dirty && !tab.submitting && !tab.holds);
   if (untouched) {
     let next: WorkspaceState = { ...state, orderedTabIds: afterActive(state, untouched.id) };
     if (next.orderedTabIds.every((id, i) => id === state.orderedTabIds[i])) next = state;
@@ -44,6 +47,7 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
     dirty: false,
     submitting: false,
     ordinal: drafts.reduce((max, tab) => Math.max(max, tab.ordinal), 0) + 1,
+    ...(holds ? { holds } : {}),
   };
   let next = activate(
     { ...state, tabs: { ...state.tabs, [record.id]: record }, orderedTabIds: afterActive(state, record.id) },
