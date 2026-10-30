@@ -156,3 +156,19 @@
   .brg-set__table td.brg-set__menu { position: absolute; top: 10px; right: var(--set-gutter, 18px); width: auto; }
   .brg-head__more { margin-left: 0; }
 }
+
+/* --- Loops tab (v2 §2.2, Bridges L) ---------------------------------------- */
+.brg-loops__list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.brg-loops__row { padding: 10px; border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-md); background: var(--pn-card); }
+.brg-loops__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: var(--pn-fs-sm); }
+.brg-loops__title { font-weight: 600; font-size: var(--pn-fs-body); }
+.brg-loops__text { margin: 6px 0; white-space: pre-wrap; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); }
+.brg-loops__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.brg-loops__add { margin-top: 12px; }
+.brg-loops__form { margin-top: 10px; padding: 10px; border: 1px dashed var(--pn-line-2); border-radius: var(--pn-r-md); }
+.brg-loops__form input[type='text'], .brg-loops__form select { flex: 1; min-width: 12rem; font: inherit; padding: 4px 8px; }
+.brg-loops__textline { align-items: flex-start; flex-direction: column; }
+.brg-loops__edit textarea, .brg-loops__textline textarea {
+  width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm);
+  background: var(--pn-card); color: var(--pn-ink);
+}

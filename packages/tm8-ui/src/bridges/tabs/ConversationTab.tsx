@@ -19,17 +19,19 @@ const PAGE = 50;
  */
 export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<BridgesPort, 'log'> }) {
   const [items, setItems] = useState<BridgeLogEntry[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
+  /* The id to pass as `before` for the next older page; null at the start of the log. */
+  const [older, setOlder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const provider = bridgeProviderLabel(view.provider);
 
-  const load = useCallback(async (since: string | null) => {
+  /* Open on the NEWEST page (#1446: latest=true) and scroll back with
+     before=olderCursor; rows stay oldest-first within a page, so an older page
+     goes in front. Neither read moves anyone's unread cursor. */
+  const load = useCallback(async (before: string | null) => {
     try {
-      const page = await port.log(view.id, { limit: PAGE, ...(since ? { since } : {}) });
-      setItems((prev) => (since ? [...(prev ?? []), ...page.items] : page.items));
-      setMore(page.more);
-      setCursor(page.lastMessageId ?? since);
+      const page = await port.log(view.id, { limit: PAGE, ...(before ? { before } : { latest: true }) });
+      setItems((prev) => (before ? [...page.items, ...(prev ?? [])] : page.items));
+      setOlder(page.olderCursor);
       setError(null);
     } catch (err) {
       setError(bridgeFailureOf(err));
@@ -43,11 +45,13 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   const crosses = view.policy.direction !== 'in' && view.status !== 'ended';
   return (
     <div className="brg-conv" data-testid="bridge-conversation">
-      {/* bridges.log.read answers oldest first from the start of the log
-          (server readLog); a latest-first read is a follow-up. Say so. */}
-      <p className="brg-hint" data-testid="bridge-conversation-order">
-        Oldest first, {PAGE} at a time{more ? ' — use Show later messages to read on' : ''}.
-      </p>
+      {older ? (
+        <button type="button" className="pn-btn brg-conv__older" onClick={() => void load(older)} data-testid="bridge-conversation-older">
+          Show earlier messages
+        </button>
+      ) : items.length > 0 ? (
+        <p className="brg-hint" data-testid="bridge-conversation-start">The start of the conversation.</p>
+      ) : null}
       {items.length === 0 ? (
         <p className="brg-hint">Nothing has crossed this bridge yet.</p>
       ) : (
@@ -55,9 +59,6 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
           {items.map((m) => <Bubble key={m.id} entry={m} view={view} />)}
         </ol>
       )}
-      {more ? (
-        <button type="button" className="pn-btn" onClick={() => void load(cursor)}>Show later messages</button>
-      ) : null}
       {error ? <p className="brg-error" role="alert">{error}</p> : null}
       <p className="brg-conv__where brg-hint" data-testid="bridge-conversation-where">
         {crosses
