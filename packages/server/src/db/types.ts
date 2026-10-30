@@ -125,6 +125,9 @@ export const BACKGROUND_JOB_CLAIMS = [
   'tracking.observer',
   'tracking.forge-watcher',
   'loops.execute-due',
+  // 398 (Bridges B1b-2): the in-process bridges worker — the runtime hub's
+  // allowlist push and outbox dispatch, the notice API and the watchdog.
+  'bridges.runtime',
 ] as const;
 export type BackgroundJobClaim = (typeof BACKGROUND_JOB_CLAIMS)[number];
 
