@@ -426,9 +426,11 @@ export function renderLoop(loop: LoopView): string {
     `next run: ${s.nextRunAt ?? 'none'} · last run: ${s.lastRunAt ?? 'never'}${s.waitingOnRunId ? ` · waiting on run ${s.waitingOnRunId}` : ''}`,
     `acts as: ${actor(s.actingAs.identity)} (${s.actingAs.via})`,
   ];
-  if (d.targets.length) {
+  // A server without Bridges L answers no targets.
+  const targets = d.targets ?? [];
+  if (targets.length) {
     lines.push(`targets (${d.mode}${d.quietHoursExempt ? ' · exempt from quiet hours' : ''}):`,
-      ...d.targets.map(t => `  ${t.bridgeId}${t.text ? `: ${t.text.split('\n')[0]}` : ''}`));
+      ...targets.map(t => `  ${t.bridgeId}${t.text ? `: ${t.text.split('\n')[0]}` : ''}`));
   }
   if (s.lastError) lines.push(`last error: ${s.lastError}`);
   // The server counts these from the moment of the read, not from the stored next run: an interval
