@@ -95,6 +95,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'presence',            // event watch --presence
   'confirm-untrusted',   // session spawn --confirm-untrusted
   'force-new-task',      // session spawn/dispatch --force-new-task
+  'no-wait',             // session spawn --no-wait — return at admission, not once running
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
@@ -142,6 +143,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'trust-css',           // style use — allow the named space style's css
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
+  'include-ended',       // tm8 bridge list
   // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
   // particular has to be listed or it would eat the next token and turn a
   // rehearsal into a write.

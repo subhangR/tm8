@@ -85,6 +85,22 @@ export const OPERATIONS = [
   { name: 'loops.runs.get', method: 'GET', path: '/v2/loop-runs/:runId', kind: 'read', status: 'v1' },
   { name: 'loops.runs.stop', method: 'POST', path: '/v2/loop-runs/:runId/stop', kind: 'command', status: 'v1' },
   { name: 'loops.schedule.preview', method: 'POST', path: '/v2/spaces/:spaceId/loops/schedule-preview', kind: 'read', status: 'v1' },
+  // bridges (BRIDGE-ENTITY-DESIGN §3.4, B0a, migration 395). The CLI noun
+  // `bridge` now names these; the reserved `bridge.fetchBlob` row (files section) keeps
+  // its slot until its retirement (D11) lands with its tests. create/retarget/remove are
+  // human-only in SQL; handles.claim, log.read and listen admit any session in the space (D23).
+  { name: 'bridges.list', method: 'GET', path: '/v2/spaces/:spaceId/bridges', kind: 'read', status: 'v1' },
+  { name: 'bridges.get', method: 'GET', path: '/v2/bridges/:bridgeId', kind: 'read', status: 'v1' },
+  { name: 'bridges.create', method: 'POST', path: '/v2/spaces/:spaceId/bridges', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.update', method: 'PATCH', path: '/v2/bridges/:bridgeId', kind: 'command', status: 'v1' },
+  { name: 'bridges.retarget', method: 'POST', path: '/v2/bridges/:bridgeId/retarget', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.pause', method: 'POST', path: '/v2/bridges/:bridgeId/pause', kind: 'command', status: 'v1' },
+  { name: 'bridges.resume', method: 'POST', path: '/v2/bridges/:bridgeId/resume', kind: 'command', status: 'v1' },
+  { name: 'bridges.remove', method: 'POST', path: '/v2/bridges/:bridgeId/remove', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handles.list', method: 'GET', path: '/v2/bridges/:bridgeId/handles', kind: 'read', status: 'v1' },
+  { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
+  { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },
+  { name: 'bridges.listen', method: 'POST', path: '/v2/bridges/:bridgeId/listen', kind: 'command', status: 'v1' },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },
@@ -506,6 +522,11 @@ export const OPERATIONS = [
   // build doing the reading rather than the launch being inspected. Pairs with
   // `execution.journal` on one debug surface: told, then did.
   { name: 'execution.launch',         method: 'GET',   path: '/v2/work-sessions/:workSessionId/launch',     kind: 'read',    status: 'v1' },
+  // A session's boot, and nothing else (404): status, boot phase, the ended
+  // reason. One row read, for a caller that follows a launch it was answered
+  // at admission for (`tm8 session spawn`'s wait) without paying for the full
+  // entity detail on every poll.
+  { name: 'execution.bootState',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/boot',       kind: 'read',    status: 'v1' },
   // The session git rail (Git UI wave): the #76 verbs behind the facade so a
   // BROWSER can drive them — the CLI runs argv git on its own machine; a
   // browser has no machine. The worktree path is resolved server-side from
@@ -703,6 +724,12 @@ export const OPERATIONS = [
   // so triggering it confers nothing on a caller who cannot read the box. It is
   // inert on a claimed node, exactly like the token it mints.
   { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
+  // `meta.get` — what this node speaks (TM8 Mobile s-lld §4, version signals):
+  // contract version, catalog digest, event schema version, the operations it
+  // mounts and the oldest clients it serves. The other bootstrap read beside
+  // `auth.claim.status`, and anonymous for the same reason: a client reads it
+  // before it signs in. See `MetaGetResult`.
+  { name: 'meta.get',                                    method: 'GET',    path: '/v2/meta',                                                           kind: 'read',    status: 'v1' },
 
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they

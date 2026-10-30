@@ -344,9 +344,41 @@ function renderHierarchy(dto: unknown): string {
   return lines.length > 0 ? lines.join('\n') : 'no hierarchy';
 }
 
+interface TreeRowLike extends SummaryLike {
+  parentId?: unknown;
+  childCount?: unknown;
+}
+
+/**
+ * A collection page. With `tree` (S5) each row's children are indented under
+ * it, two spaces a level, and a row with children that are not drawn says
+ * `▸ N more`: its `childCount` minus the rows under it, the node's number.
+ */
 function renderCollection(dto: unknown): string {
-  const result = dto as { page?: unknown } | undefined;
-  return renderPage(result?.page ?? dto);
+  const result = dto as { page?: { items?: unknown; nextCursor?: unknown }; tree?: { levels?: unknown } } | undefined;
+  const levels = result?.tree?.levels;
+  if (!Array.isArray(levels)) return renderPage(result?.page ?? dto);
+
+  const kidsOf = new Map<string, TreeRowLike[]>();
+  for (const level of levels as Array<{ items?: unknown }>) {
+    for (const row of (Array.isArray(level.items) ? level.items : []) as TreeRowLike[]) {
+      const parentId = String(row.parentId ?? '');
+      kidsOf.set(parentId, [...(kidsOf.get(parentId) ?? []), row]);
+    }
+  }
+  const lines: string[] = [];
+  const draw = (row: TreeRowLike, depth: number): void => {
+    lines.push(`${'  '.repeat(depth)}${summaryLine(row)}`);
+    const kids = depth < levels.length ? (kidsOf.get(String(row.id ?? '')) ?? []) : [];
+    for (const kid of kids) draw(kid, depth + 1);
+    const notShown = (typeof row.childCount === 'number' ? row.childCount : 0) - kids.length;
+    if (notShown > 0) lines.push(`${'  '.repeat(depth + 1)}▸ ${notShown} more`);
+  };
+  const roots = Array.isArray(result?.page?.items) ? (result.page.items as TreeRowLike[]) : [];
+  for (const row of roots) draw(row, 0);
+  const nextCursor = result?.page?.nextCursor;
+  if (typeof nextCursor === 'string' && nextCursor.length > 0) lines.push(`next-cursor: ${nextCursor}`);
+  return lines.length > 0 ? lines.join('\n') : 'no results';
 }
 
 function renderFeed(dto: unknown): string {
@@ -695,7 +727,7 @@ function refuseUnknownQueryValues(kinds: readonly string[], status: readonly str
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor']);
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor', 'tree-depth', 'per-parent']);
 
   const kinds = cmd.options.values('kind').map(normalizeKindAlias);
   const subtreeOf = cmd.options.value('subtree');
@@ -718,6 +750,15 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const ready = cmd.options.bool('ready');
   const limit = cmd.options.integer('limit');
   const cursor = cmd.options.value('cursor');
+  /* `--tree-depth` reads the levels under the page in the same request
+     (`CollectionQuery.tree`, S5); the bounds are the Server's to enforce, so
+     an out-of-range number reaches it and comes back refused in its words.
+     `--per-parent` only means something inside a tree. */
+  const treeDepth = cmd.options.integer('tree-depth');
+  const perParent = cmd.options.integer('per-parent');
+  if (perParent !== undefined && treeDepth === undefined) {
+    throw new CliError('--per-parent bounds the children of each row in a tree; pass --tree-depth 1|2 with it', EXIT_USAGE);
+  }
 
   const filters: Record<string, unknown> = {};
   if (status.length > 0) filters.status = status;
@@ -735,6 +776,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   if (Object.keys(filters).length > 0) body.filters = filters;
   if (limit !== undefined) body.limit = limit;
   if (cursor !== undefined) body.cursor = cursor;
+  if (treeDepth !== undefined) body.tree = { depth: treeDepth, ...(perParent === undefined ? {} : { perParent }) };
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'collections.query', { body });
   cmd.out.data(data, renderCollection);
@@ -865,6 +907,13 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (kind === 'style') {
     throw new CliError('a space style is created only by publishing a personal style: `tm8 style push <personal-ref>`', EXIT_USAGE, {
       hint: 'author one first with `tm8 style create <title> --foundation <builtin-ref>`, or copy one with `tm8 style pull <ref>`',
+    });
+  }
+  // A bridge is born only by `bridges.create` (395): the number's owner, a
+  // space admin, with the target checked and the bridged_to edge written.
+  if (kind === 'bridge') {
+    throw new CliError('use `tm8 bridge create`: a bridge is created by a space admin who owns the connection', EXIT_USAGE, {
+      hint: 'tm8 bridge create --connection <connection-id> --conversation <external-id> --to <chat|session|channel id>',
     });
   }
   const title = requireArg(cmd, 1, '<title>');

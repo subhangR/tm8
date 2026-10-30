@@ -20,6 +20,7 @@ import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-re
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS, type StyleRateLimits } from './style-rate-limit.js';
 import type { SpaceSessionsMode } from './types.js';
+import { DEFAULT_MOBILE_APP_ID } from './well-known.js';
 
 export interface ServerConfig {
   /** Bind address. Loopback only — see S1 above. */
@@ -149,6 +150,12 @@ export interface ServerConfig {
    * an insecure one.
    */
   readonly publicOrigin?: string;
+  /**
+   * The phone app named by `/.well-known/apple-app-site-association` and
+   * `/.well-known/assetlinks.json` (./well-known.ts). Always set by
+   * `loadConfig`; a hand-built config without it serves both as unconfigured.
+   */
+  readonly mobileApp?: MobileAppConfig;
   /**
    * W9c: space links across servers (`TM8_REMOTE_SPACE_LINKS=on`). Ships DARK:
    * default off, and off is today's behaviour exactly — a link to another
@@ -327,6 +334,32 @@ export interface PreviewConfig {
   readonly frameAncestors: readonly string[];
 }
 
+/**
+ * The TM8 phone app this node vouches for in its `/.well-known/`
+ * app-association files (./well-known.ts, s-lld §3). One app id names the app
+ * on both platforms: it is the iOS bundle id and the Android package name. The
+ * other two values are the identities that SIGN the app, issued by the Apple
+ * and Google accounts the owner opens later (decide Q3), so each file is served
+ * only once its value is set.
+ */
+export interface MobileAppConfig {
+  /** `TM8_MOBILE_APP_ID`, default `sh.tm8.mobile` (decide Q3). */
+  readonly appId: string;
+  /**
+   * `TM8_MOBILE_APPLE_TEAM_ID`: the 10-character Apple Developer Team ID that
+   * prefixes the app id in the AASA (`<Team ID>.sh.tm8.mobile`). Absent: the
+   * AASA path answers 404.
+   */
+  readonly appleTeamId?: string;
+  /**
+   * `TM8_MOBILE_ANDROID_CERT_SHA256`, comma-separated: the SHA-256
+   * fingerprints of the certificates that sign the Android app (Play App
+   * Signing's key, plus the upload key's for a build installed outside the
+   * store), as `AA:BB:…`. Empty: the assetlinks.json path answers 404.
+   */
+  readonly androidCertSha256: readonly string[];
+}
+
 /** The three values a LiveKit deployment needs, resolved together. */
 export interface LiveKitConfig {
   /** Client-facing signalling URL, e.g. `ws://localhost:7880` (dev) or `wss://…`. */
@@ -493,6 +526,47 @@ function parseBareOrigin(
     throw new ConfigError(`production ${subject} must use https, got ${JSON.stringify(value)}`);
   }
   return parsed;
+}
+
+/**
+ * The `TM8_MOBILE_*` variables, refused at boot when malformed rather than
+ * published. A malformed value delegates nothing, but these files exist to
+ * delegate: they hand this host's links, and its saved sign-in credentials, to
+ * the app identity they name. So only the exact shapes Apple and Google issue
+ * get through, and nothing is guessed for a value that is absent.
+ */
+function resolveMobileApp(env: NodeJS.ProcessEnv): MobileAppConfig {
+  const appId = env.TM8_MOBILE_APP_ID?.trim() || DEFAULT_MOBILE_APP_ID;
+  // Where an iOS bundle id ([A-Za-z0-9.-]) and an Android package name
+  // (segments of [A-Za-z0-9_], each starting with a letter) agree, because the
+  // one id names the app on both.
+  if (!/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/.test(appId)) {
+    throw new ConfigError(
+      `TM8_MOBILE_APP_ID must be a reverse-DNS app id such as ${DEFAULT_MOBILE_APP_ID}: two or more ` +
+        `dot-separated parts of letters and digits, each starting with a letter, got ${JSON.stringify(appId)}`,
+    );
+  }
+  const appleTeamId = env.TM8_MOBILE_APPLE_TEAM_ID?.trim() || undefined;
+  if (appleTeamId !== undefined && !/^[A-Z0-9]{10}$/.test(appleTeamId)) {
+    throw new ConfigError(
+      `TM8_MOBILE_APPLE_TEAM_ID must be the 10-character Apple Developer Team ID (A-Z and 0-9, as the ` +
+        `membership page shows it), got ${JSON.stringify(appleTeamId)}`,
+    );
+  }
+  const androidCertSha256: string[] = [];
+  for (const entry of (env.TM8_MOBILE_ANDROID_CERT_SHA256 ?? '').split(',')) {
+    const value = entry.trim();
+    if (value === '') continue;
+    if (!/^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$/.test(value)) {
+      throw new ConfigError(
+        `TM8_MOBILE_ANDROID_CERT_SHA256 entries must be SHA-256 certificate fingerprints, 32 ` +
+          `colon-separated hex pairs as keytool and the Play Console print them, got ${JSON.stringify(value)}`,
+      );
+    }
+    const fingerprint = value.toUpperCase();
+    if (!androidCertSha256.includes(fingerprint)) androidCertSha256.push(fingerprint);
+  }
+  return { appId, ...(appleTeamId === undefined ? {} : { appleTeamId }), androidCertSha256 };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -685,6 +759,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     nodeMode,
     spaceSessions,
     ...(publicOrigin ? { publicOrigin } : {}),
+    mobileApp: resolveMobileApp(env),
     // Present only when on, so an unset switch leaves the config as it was.
     ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS, 'TM8_REMOTE_SPACE_LINKS', false) ? { remoteSpaceLinks: true } : {}),
     ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK, 'TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK', false)

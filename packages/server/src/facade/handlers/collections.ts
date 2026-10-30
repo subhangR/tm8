@@ -21,6 +21,7 @@
  */
 import { createHash } from 'node:crypto';
 import {
+  COLLECTION_TREE_LEVEL_MAX,
   CollabError,
   decodeCursor,
   encodeCursor,
@@ -28,6 +29,8 @@ import {
   type CollectionAddItemInput,
   type CollectionQuery,
   type CollectionResult,
+  type CollectionTree,
+  type CollectionTreeLevel,
   type EntityKind,
   type EntitySummary,
   type Page,
@@ -136,7 +139,8 @@ const DEFAULT_SORT: SortName = 'activityAt_desc';
  * than a malformed cursor: Postgres can execute it and return a plausible but
  * incorrect page. The first cursor key is therefore a stable digest of the
  * normalized query plus the operation scope. `cursor` and `limit` are excluded
- * because they control traversal rather than membership/order; changing any
+ * because they control traversal rather than membership/order, and `tree`
+ * because it only says what rides along under each page (S5); changing any
  * filter, hierarchy, grouping, layout, graph lens, or sort invalidates it.
  */
 function cursorFingerprint(
@@ -144,7 +148,7 @@ function cursorFingerprint(
   sort: SortName,
   scope: string,
 ): string {
-  const { cursor: _cursor, limit: _limit, ...shape } = query;
+  const { cursor: _cursor, limit: _limit, tree: _tree, ...shape } = query;
 
   const stable = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -787,6 +791,7 @@ export async function queryCollection(
   if (query.groupBy && !['status', 'assignee', 'priority'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
   }
+  const tree = resolveTree(query.tree);
 
   const limit = limitOf(query.limit);
   const fingerprint = cursorFingerprint(query, sortName, cursorScope);
@@ -847,8 +852,9 @@ export async function queryCollection(
   };
 
   // The query as resolved, so re-running it is reproducible.
-  const resolved: CollectionQuery = { ...query, sort: sortName, limit };
-  if (!query.groupBy) return { query: resolved, page };
+  const resolved: CollectionQuery = { ...query, sort: sortName, limit, ...(tree ? { tree } : {}) };
+  const levels = tree ? { tree: await readTree(q, query, tree, sortName, items, viewerIdentityId) } : {};
+  if (!query.groupBy) return { query: resolved, page, ...levels };
 
   // The groups stay page-scoped (per-group paging is not built), but each
   // carries its TRUE size under the query's filters — the number that lets a
@@ -884,7 +890,114 @@ export async function queryCollection(
       });
     }
   }
-  return { query: resolved, page, groups };
+  return { query: resolved, page, groups, ...levels };
+}
+
+// ---------------------------------------------------------------------------
+// Tree (S5): the page plus up to two levels under it, in one trip
+// ---------------------------------------------------------------------------
+
+type ResolvedTree = { depth: 1 | 2; perParent: number };
+
+/**
+ * `tree` with its default filled in, or null when the query has none.
+ * `CollectionQuerySchema` already refuses anything out of bounds at the door;
+ * this re-check is for in-process callers that build a query themselves, the
+ * way `sort` and `groupBy` are re-checked above.
+ */
+function resolveTree(tree: CollectionQuery['tree']): ResolvedTree | null {
+  if (tree === undefined) return null;
+  if (typeof tree !== 'object' || tree === null) {
+    throw new CollabError('invalid_input', 'tree must be {depth: 1|2, perParent?: 1..200}');
+  }
+  const { depth, perParent = COLLECTION_TREE_LEVEL_MAX } = tree;
+  if (depth !== 1 && depth !== 2) {
+    throw new CollabError('invalid_input', 'tree.depth must be 1 or 2: at most 2 levels are read under the page');
+  }
+  if (!Number.isInteger(perParent) || perParent < 1 || perParent > COLLECTION_TREE_LEVEL_MAX) {
+    throw new CollabError('invalid_input', `tree.perParent must be an integer from 1 to ${COLLECTION_TREE_LEVEL_MAX}`);
+  }
+  return { depth, perParent };
+}
+
+/**
+ * The levels under a page (`CollectionQuery.tree`, mobile LLD §5.1).
+ *
+ * EACH LEVEL IS THE STEP QUERY'S OWN ROWS. A list used to make three trips:
+ * the page, then `{kinds, filters: {parentIn: <its rows with childCount > 0>},
+ * sort, limit: 200}`, then the same for the rows that came back. A level here
+ * builds that very query and runs its WHERE through the same `buildWhere`, so
+ * it cannot drift from what those trips return. The only addition is the
+ * per-parent cut: a rank inside each parent, in the same order. The level
+ * bound is the step query's own `limit: 200`, probed with one extra row so
+ * `capped` is a fact rather than a guess.
+ *
+ * Bounded at every step: a level holds at most 200 rows, so the next level's
+ * parents are at most the 200 ids `filters.parentIn` allows. The rank reads
+ * ids and sort keys only; the full rows, and their assembly, are read for the
+ * kept ids alone. What the 200 does NOT bound is the rank itself: row_number()
+ * sees every child of up to 200 parents before the cut, where the step query
+ * could stop at its 201st row, so a level costs its parents' total child count.
+ */
+async function readTree(
+  q: Querier,
+  query: CollectionQuery,
+  tree: ResolvedTree,
+  sortName: SortName,
+  page: readonly EntitySummary[],
+  viewerIdentityId: string,
+): Promise<CollectionTree> {
+  const sort = SORTS[sortName];
+  const levels: CollectionTreeLevel[] = [];
+  let above = page;
+  for (const depth of [1, 2] as const) {
+    if (depth > tree.depth) break;
+    const parentIds = above.filter((row) => (row.childCount ?? 0) > 0).map((row) => row.id);
+    if (parentIds.length === 0) {
+      levels.push({ depth, parentIds, items: [], capped: false });
+      above = [];
+      continue;
+    }
+    // The step query, as a list would send it: the page's kinds and sort, and
+    // `filters` replaced by `parentIn` alone, so children ride along whatever
+    // their status. No hierarchy clause, no cursor, no grouping.
+    const step: CollectionQuery = {
+      spaceId: query.spaceId,
+      ...(query.kinds ? { kinds: query.kinds } : {}),
+      filters: { parentIn: parentIds },
+      sort: sortName,
+      limit: COLLECTION_TREE_LEVEL_MAX,
+    };
+    const p = new Params();
+    const where = buildWhere(step, p);
+    const perParent = p.add(tree.perParent);
+    const rows = await q.query<EntityRow>(
+      `with ranked as (
+         select e.id, ${sort.expr} as __sort,
+                row_number() over (
+                  partition by e.parent_id order by ${sort.expr} ${sort.dir}, e.id ${sort.dir}
+                ) as __rank
+           ${ENTITY_FROM}
+          where ${where.join('\n            and ')}
+       ), kept as (
+         select id from ranked
+          where __rank <= ${perParent}::int
+          order by __sort ${sort.dir}, id ${sort.dir}
+          limit ${COLLECTION_TREE_LEVEL_MAX + 1}
+       )
+       select ${ENTITY_COLUMNS}
+         ${ENTITY_FROM}
+        where e.id = any(array(select id from kept))
+        order by ${sort.expr} ${sort.dir}, e.id ${sort.dir}`,
+      p.values,
+    );
+    const capped = rows.length > COLLECTION_TREE_LEVEL_MAX;
+    const kept = capped ? rows.slice(0, COLLECTION_TREE_LEVEL_MAX) : rows;
+    const items = await withChildCounts(q, await assembleSummaries(q, kept, viewerIdentityId));
+    levels.push({ depth, parentIds, items, capped });
+    above = items;
+  }
+  return { levels };
 }
 
 /**

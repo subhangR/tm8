@@ -285,6 +285,18 @@ export const KIND_ART = {
   ],
 
   /**
+   * Two posts and an arc between them — a `bridge` carries one conversation
+   * from another network across to a chat, session or channel here (395).
+   * Not `space_link`'s rings (two spaces joined) and not `channel`'s hash.
+   */
+  bridge: [
+    'M3.2 13V8.6',
+    'M12.8 13V8.6',
+    'M2.4 8.6c1.6-3.4 9.6-3.4 11.2 0',
+    'M2.4 13h11.2',
+  ],
+
+  /**
    * A globe — a `server` is another tm8 node (250, used from W8). Not a rack:
    * that silhouette is `container`'s.
    */

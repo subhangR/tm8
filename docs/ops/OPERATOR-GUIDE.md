@@ -210,6 +210,28 @@ A browser that gets **403 `Host "…" is not this node`** or **`cross-origin
 request … refused`** is reaching tm8 under a name the node was not told
 about. The message names the variable to set.
 
+### Links that open the TM8 phone app (optional)
+
+A phone opens a tm8 web link in the TM8 app, rather than the browser, when
+the host vouches for the app. tm8 serves the two files the phones check,
+`/.well-known/apple-app-site-association` (iOS) and
+`/.well-known/assetlinks.json` (Android), built from these variables:
+
+| Variable | Set it to | Why |
+|---|---|---|
+| `TM8_MOBILE_APP_ID` | `sh.tm8.mobile`, the default | The app's iOS bundle id and Android package name. Change it only for your own build of the app |
+| `TM8_MOBILE_APPLE_TEAM_ID` | the 10-character Team ID of the Apple Developer account that signs the app | Until it is set, the iOS file answers 404 |
+| `TM8_MOBILE_ANDROID_CERT_SHA256` | the SHA-256 fingerprints of the certificates that sign the Android app, `AA:BB:…`, comma-separated | Until it is set, the Android file answers 404 |
+
+Both files hand this host's links, and its saved passwords (iOS Password
+AutoFill, Android credential sharing), to the app they name, so name only an
+app you trust. The proxy must pass both paths through unchanged and must not
+redirect them: the phones accept only a 200 with `Content-Type:
+application/json`. `curl -i https://tm8.example.com/.well-known/assetlinks.json`
+shows what a phone gets. A link opens the app only if the app was built for
+that host, and the TM8 app is built for `tm8.sh`, so any other host needs its
+own build.
+
 ---
 
 ## 4. TLS

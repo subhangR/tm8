@@ -47,8 +47,9 @@ describe('L-A: app code names no kind (the scan)', () => {
     expect(appFiles).toEqual(expect.arrayContaining(['app/_layout.tsx', 'app/index.tsx']));
   });
 
-  it('reads the 33 core kinds from the contract', () => {
-    expect(CORE_KINDS).toHaveLength(33);
+  it('reads the 34 core kinds from the contract', () => {
+    // 33 -> 34: Bridges B0a's kind 'bridge' (main a16ae6b95, 395_bridge_schema). MEASURED on the sync of main a16ae6b95 into tm8/mobile-v1 b342584a2 by the Merger (Lead ruling 11:59Z: a count pin, re-measured, not incremented).
+    expect(CORE_KINDS).toHaveLength(34);
     expect(CORE_KINDS).toEqual(expect.arrayContaining(['task', 'work_session', 'chat', 'craft']));
   });
 

@@ -113,7 +113,7 @@ describe('a session records why it ended', () => {
     // precondition rather than depending on an unstated environment.)
     expect(await readOomKillCount()).toBe(0);
 
-    graph.nodeActiveSessions = [{ sessionId: 'ghost', status: 'running' }];
+    graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
     await service.reconcileNodeGhosts(AUTH);
 
     const { kind, reason, status } = endingFor(graph, 'ghost');
@@ -130,7 +130,7 @@ describe('a session records why it ended', () => {
     await service.recordShutdown(AUTH, 'SIGTERM');
     const observed = endingFor(graph, 'live').reason;
 
-    graph.nodeActiveSessions = [{ sessionId: 'ghost', status: 'running' }];
+    graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
     await service.reconcileNodeGhosts(AUTH);
     const inferred = endingFor(graph, 'ghost').reason;
 

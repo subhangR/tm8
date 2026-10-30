@@ -2005,6 +2005,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       model: launch.model,
       permissionMode: launch.permissionMode,
       accessMode: launch.accessMode,
+      ...(launch.accessModeSource ? { accessModeSource: launch.accessModeSource } : {}),
       reasoningEffort: launch.reasoningEffort,
       credentialSource: launch.credentialSource,
       credentialSources: launch.credentialSources,

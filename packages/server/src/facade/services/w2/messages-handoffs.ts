@@ -398,7 +398,8 @@ function deliveryRecord(row: DeliveryRow): MessageDeliveryRecord {
  * while team members hold 129 and 127. The two exceptions are `--as`
  * impersonation from a human's token, which sharpens the rule rather than
  * weakening it: the discriminator is the CREDENTIAL, not the author's kind.
- * `edges_authored_from_source_idx` is UNIQUE on `src_id`, so the edge is
+ * `edges_authored_from_source_idx` is UNIQUE on `src_id` for the session/chat
+ * origin (bridge provenance edges sit outside it, 396), so the origin is
  * single-valued and cannot resolve to one of several sessions.
  *
  * WHY THE TS-SIDE VALUE IS EXACT AND NOT A GUESS. `w2_post_message_batch`

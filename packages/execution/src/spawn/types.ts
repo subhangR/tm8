@@ -25,10 +25,12 @@ import type {
   SpawnSelectionGroup,
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
+  WorkSessionBootPhase,
 } from '@tm8/contract';
 import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 import type { SessionHomeFacts, SessionHomeOwnerFacts } from './session-artifact-reclaim.js';
+import type { SpawnTimings } from './spawn-timings.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
 
@@ -68,6 +70,53 @@ export type WorkSessionEndedKind =
   | 'lost'
   | 'credential_revoked'
   | 'unknown';
+
+/**
+ * One pass of a node job that ends this node's processes (403): boot ghost
+ * reconciliation, the lost-session reaper, the completed auto-close.
+ *
+ * - `candidates`: rows the pass would end (ghosts with no PTY here, or
+ *   completed sessions past their window);
+ * - `retired`: endings the node door recorded;
+ * - `notRecorded`: endings the door answered `recorded: false` for — the row
+ *   was no longer recorded live on this node by the time of the write;
+ * - `errors`: one per refusal or failure.
+ *
+ * Counted apart so a pass that ends nothing is never mistaken for a clean one.
+ */
+export interface NodeEndingSweepReport {
+  candidates: number;
+  retired: number;
+  notRecorded: number;
+  errors: Array<{ message: string }>;
+}
+
+/** A pass that ended nothing: a node with no id, or a candidate read that failed. */
+export function emptySweep(errors: Array<{ message: string }> = []): NodeEndingSweepReport {
+  return { candidates: 0, retired: 0, notRecorded: 0, errors };
+}
+
+/**
+ * The endings a node may record itself (403): failed with what it can infer
+ * about a process that is gone, or exited_clean for a completed session's idle
+ * process it closed. Never an operator's or the agent's own ending.
+ */
+export type NodeEndedKind = Extract<
+  WorkSessionEndedKind,
+  'lost' | 'server_restart' | 'unknown' | 'out_of_memory' | 'exited_clean'
+>;
+
+/** What the usage instrument needs to find a session's transcript. */
+export type SessionUsageFacts = Pick<
+  WorkSessionResumeInfo,
+  'agentTool' | 'nativeSessionId' | 'workdirMode' | 'workdirPath' | 'agentConfigDir'
+>;
+
+/** `recordNodeSessionEnding`'s answer: whether it wrote, and the usage facts if so. */
+export interface NodeSessionEnding {
+  recorded: boolean;
+  usageFacts: SessionUsageFacts | null;
+}
 
 /**
  * Permission posture handed to the agent. Named for old maestro's vocabulary
@@ -977,7 +1026,16 @@ export interface TransitionInput {
    */
   endedKind?: WorkSessionEndedKind | null;
   endedReason?: string | null;
+  /**
+   * A boot's progress report (404), with `status` the row's current one
+   * (`spawning`). The terminal phases are not reported: `live` and `failed`
+   * follow from the status in the same write.
+   */
+  bootPhase?: BootProgressPhase;
 }
+
+/** The boot phases a booting launch REPORTS; `admitted`, `live` and `failed` follow from status. */
+export type BootProgressPhase = Extract<WorkSessionBootPhase, 'lane' | 'briefing' | 'agent'>;
 
 export interface RecordCommandInput {
   sessionId: string;
@@ -1045,17 +1103,6 @@ export interface ResumeRequest {
  * single GraphPort instance serves every request on the node — a port that
  * captured claims at construction would hand one caller's identity to the next.
  */
-/**
- * What a ghost sweep did, and what it could not do — the shape its worktree
- * sibling (`WorktreeReconcileReport`) already has, for the reason that sibling's
- * failures reach the operator at boot and this one's did not.
- */
-export interface GhostReconcileReport {
-  readonly retired: number;
-  /** Empty on a clean sweep. Non-empty means rows were left claiming to be alive. */
-  readonly errors: readonly { readonly message: string }[];
-}
-
 export interface GraphPort {
   /** Reads. Runs before the session exists. */
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
@@ -1295,23 +1342,60 @@ export interface GraphPort {
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**
-   * Work sessions THIS node still believes are alive (status not terminal).
+   * The ghost candidates IN EVERY SPACE (`public.node_live_work_sessions`,
+   * 403): this node's sessions of ANY kind whose record says a process runs
+   * (`internal.work_session_process_recorded_live`) — a superset of what the
+   * concurrency cap counts (`internal.work_session_counts_against_cap`: agents
+   * whose work is not completed). Read by boot reconciliation and the
+   * lost-session reaper only.
    *
-   * A read, used only by startup ghost reconciliation. Scoped by `node_id`
-   * because a non-terminal session belonging to ANOTHER node may be perfectly
-   * alive over there — only the node that owns a PTY can say whether it is gone.
+   * Node admin, NOT filtered by space membership: the node's background
+   * identity is not a member of every space, and the RLS-scoped read this
+   * replaced left other spaces' ghosts counted by the cap forever. Scoped by
+   * `node_id`, because a live session on ANOTHER node may be alive over there.
    */
-  listNodeActiveSessions(
+  listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
   /**
-   * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
-   * recorded live and has been idle past its space's auto-close window
-   * (`public.completed_sessions_to_close`). Optional: a port without it never
-   * auto-closes anything.
+   * "This node's process for the session ended" (403,
+   * `public.node_record_work_session_ending`). The ONE write every node job
+   * uses — boot reconciliation, the lost-session reaper, the completed
+   * auto-close — in any space: status and ending, never the outcome or the
+   * claims. The durable record is the row's `session.process_changed` event,
+   * which carries the ending kind and reason and names `endedByNode`. Node
+   * admin. `recorded: false` when the process is no longer recorded live on
+   * this node (its own exit won the race).
    */
-  listCompletedSessionsToClose?(
+  recordNodeSessionEnding(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      status: 'exited' | 'failed';
+      endedKind: NodeEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<NodeSessionEnding>;
+  /**
+   * `recordWorkSessionUsage` for a session this node ran, in any space
+   * (`public.node_record_work_session_usage`, 403). Node admin. The node
+   * jobs' half of the usage instrument, written after the ending.
+   */
+  recordNodeSessionUsage(
+    auth: GraphAuth,
+    input: { nodeId: string; sessionId: string; usage: WorkSessionUsage; source: WorkSessionUsageSource },
+  ): Promise<boolean>;
+  /**
+   * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
+   * recorded live and has been idle past its space's auto-close window, in
+   * every space (`public.node_completed_sessions_to_close`, 403). Node admin,
+   * like the other node doors; the member-filtered read it replaced closed
+   * nothing outside the owner's spaces.
+   */
+  listCompletedSessionsToClose(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
@@ -1499,6 +1583,13 @@ export interface Tm8Manifest {
     model: string | null;
     permissionMode: PermissionMode;
     accessMode: AccessMode;
+    /**
+     * Which link of the precedence chain chose `accessMode`. Recorded so the
+     * spawn receipt's posture rows (`spawnLaunchFacts`) can be rebuilt from
+     * the manifest once the boot has run: a launch answered at admission (404)
+     * carries no receipt of its own. Absent on manifests written before it.
+     */
+    accessModeSource?: SpawnAccessModeSource;
     reasoningEffort: ReasoningEffort | null;
     /**
      * Deprecated common source. Null when providers differ or run in auto.
@@ -1765,6 +1856,39 @@ export interface SpawnResult {
    * receipt's posture rows (`spawnLaunchFacts`). Ids only, never a secret.
    */
   launchFacts?: ExecutionSpawnLaunch;
+  /** Wall clock per phase of this spawn (spawn-timings.ts). Absent on resume. */
+  timings?: SpawnTimings;
+}
+
+/**
+ * What `SpawnService.admit` answers with: the launch is ADMITTED — its row
+ * exists (`spawning`, boot phase `admitted`) and it is booting. Everything that
+ * exists only once the boot has run (the manifest, the command line, the
+ * environment, the resolved credential posture) is on the boot's
+ * {@link SpawnResult}, not here.
+ */
+export interface SpawnAdmission {
+  sessionId: string;
+  /** The workdir the session boots into. A worktree's exists once the boot's lane phase is reached. */
+  cwd: string;
+  commandResult: unknown;
+  /** A ledger replay: the original launch's session, in whatever phase it is; nothing was started. */
+  reused: boolean;
+  /** The task `SpawnRequest.newTask` created. */
+  createdTaskId?: string;
+  /** A dispatcher launched on tasks routes these, in order (see {@link SpawnResult}). */
+  routedTaskIds?: string[];
+  /** The admission's own phases. The boot's are logged when it ends. */
+  timings: SpawnTimings;
+}
+
+/** How an admitted launch's boot ended. A failure is already on the row when this resolves. */
+export type SpawnBootOutcome = { ok: true; result: SpawnResult } | { ok: false; error: unknown };
+
+/** A launch the node admitted, and the boot it started. `boot` never rejects. */
+export interface AdmittedSpawn {
+  admission: SpawnAdmission;
+  boot: Promise<SpawnBootOutcome>;
 }
 
 /** Raised for every spawn-flow failure that has a contract error code. */

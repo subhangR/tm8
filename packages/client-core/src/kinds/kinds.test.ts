@@ -13,8 +13,10 @@ import { CUSTOM_KIND_FALLBACK, KIND_CORE, kindBySlug } from './kinds';
 const CORE = CoreEntityKindSchema.options;
 
 describe('KIND_CORE', () => {
-  it('has exactly the 33 core kinds and the c:* fallback', () => {
-    expect(CORE).toHaveLength(33);
+  it('has exactly the 34 core kinds and the c:* fallback', () => {
+    // MEASURED: 33 at b342584a2 (main adb9c5c03); 34 at a16ae6b95, where Bridges B0a
+    // (593984ff1, migration 395) added 'bridge'. A new kind moves this pin on purpose.
+    expect(CORE).toHaveLength(34);
     expect(Object.keys(KIND_CORE).sort()).toEqual([...CORE, CUSTOM_KIND_FALLBACK].sort());
   });
 

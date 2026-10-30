@@ -119,7 +119,7 @@ export interface KindCore {
   iconArt: KindArt;
 }
 
-/** The 33 core kinds and the `c:*` fallback, in tm8-ui's registry order. */
+/** The 34 core kinds and the `c:*` fallback, in tm8-ui's registry order. */
 export const KIND_CORE: Readonly<Record<CoreEntityKind | CustomKindFallback, KindCore>> = {
   task: {
     label: 'Task',
@@ -360,6 +360,14 @@ export const KIND_CORE: Readonly<Record<CoreEntityKind | CustomKindFallback, Kin
     strategy: 'collection',
     group: 'code',
     iconArt: KIND_ART.worktree,
+  },
+  bridge: {
+    label: 'Bridge',
+    labelPlural: 'Bridges',
+    slug: 'bridges',
+    strategy: 'collection',
+    group: 'talk',
+    iconArt: KIND_ART.bridge,
   },
   space_link: {
     label: 'Space link',

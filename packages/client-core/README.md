@@ -7,7 +7,7 @@ What the web app (`packages/tm8-ui`) and the phone app (`apps/mobile`) must comp
 | Subpath | What it computes | Moved from (tm8-ui `src/`) |
 |---|---|---|
 | `/routes` | parse, build and normalize `#/s/<space>/…`; the `q=` codec; redirects; the memory router target | `routes/{codec,q,redirects,types}.ts`; `RouterTarget`, `MemoryTarget` and `createMemoryTarget` from `routes/transport.ts` |
-| `/kinds` | `KIND_CORE`: each kind's label, plural, slug, route strategy, group and drawn mark, for the 33 core kinds and the `c:*` fallback; `kindBySlug`; the vocabulary the codec reads | new `kinds.ts`, built from `domain/registry.ts`'s columns and the contract's kind groups; `KIND_ART` from `domain/kind-art.ts`; `ALL_MODES`, `VIEW_REF_ROUTE` and the contract-derived types from `domain/` |
+| `/kinds` | `KIND_CORE`: each kind's label, plural, slug, route strategy, group and drawn mark, for the 34 core kinds and the `c:*` fallback; `kindBySlug`; the vocabulary the codec reads | new `kinds.ts`, built from `domain/registry.ts`'s columns and the contract's kind groups; `KIND_ART` from `domain/kind-art.ts`; `ALL_MODES`, `VIEW_REF_ROUTE` and the contract-derived types from `domain/` |
 | `/chat` | frames → parts → projected turns → steps → ledger → receipt | `chat-home/{wire,turn-model,ledger,turn-receipt,turn-steps,turn-step-lines,write-classifier,payload-walk,explanation-tools,entity-refs}.ts`; the render types of `chat-home/types.ts` |
 | `/project` | the per-family event reducers; the optimistic journal keyed by `clientMutationId` | `data/project/{reducers,journal}.ts` |
 | `/project/test-support` | contract-typed row builders for reducer and journal tests | `data/project/test-support.ts` |

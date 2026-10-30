@@ -15,6 +15,7 @@ import { LAUNCH_DEFAULTS, LAUNCH_REFERENCE_CANDIDATES } from '../views/launch-fi
 import type { LoadLaunchDefaults } from '../launch-selection';
 
 import { answer, item, MEMORIES, okGroup, pendingPort } from '../jev/test-support';
+import { DETACH_AFTER_MS } from './LaunchComposerPopup';
 import { renderPopup } from './launch-test-kit';
 
 beforeEach(() => { localStorage.clear(); });
@@ -50,9 +51,8 @@ describe('Jev at the press', () => {
     await view.ready();
     await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
 
-    // The press, while Jev is still asking: Launch, then the preview's Launch.
-    fireEvent.click(view.getByTestId('nsx-send'));
-    await act(async () => { fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); });
+    // The press, while Jev is still asking: Launch commits on the first press.
+    await act(async () => { fireEvent.click(view.getByTestId('nsx-send')); });
     expect(onSpawn).toHaveBeenCalledTimes(1);
     // The groups still asking at the press ride the spawn as `jev-pending`.
     expect(onSpawn.mock.calls[0]![0].selectionReasons?.memories).toBe('jev-pending');
@@ -68,6 +68,36 @@ describe('Jev at the press', () => {
   });
 });
 
+describe('Jev and a DETACHED press', () => {
+  it('stays held while the detached press is unsettled; a refusal releases it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const port = pendingPort();
+      const spawn = deferred();
+      const onDetachedRefusal = vi.fn();
+      const view = renderPopup({ jev: port, onSpawn: () => spawn.promise, onDetachedRefusal });
+      await view.ready();
+      await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
+      await act(async () => { fireEvent.click(view.getByTestId('nsx-send')); });
+      await view.findByTestId('lcd3-launching');
+
+      // Detached mid-flight (this host keeps the popup mounted), then Jev answers: still held.
+      act(() => { vi.advanceTimersByTime(DETACH_AFTER_MS); });
+      fireEvent.click(view.getByTestId('lcd3-detach'));
+      expect(view.onDismiss).toHaveBeenCalledTimes(1);
+      await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input, { memories: JEV_MEMORIES })); });
+      expect(view.queryByTestId('lcd3-group-memory')?.textContent ?? '').not.toMatch(/✦/);
+
+      // It settles as refused: the refusal goes to the host and the held answer is shown.
+      await act(async () => { spawn.reject(Object.assign(new Error('No session slots free.'), { code: 'invalid_input' })); });
+      await waitFor(() => expect(onDetachedRefusal).toHaveBeenCalledWith('No session slots free.'));
+      await waitFor(() => expect(view.getByTestId('lcd3-group-memory').textContent).toMatch(/✦ 2/));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('Jev after a timeout that found the session', () => {
   it('the card stays up and ✦ keeps working: the held answer is shown', async () => {
     const port = pendingPort();
@@ -79,8 +109,7 @@ describe('Jev after a timeout that found the session', () => {
     });
     await view.ready();
     await act(async () => { fireEvent.click(view.getByTestId('lcd3-jev')); });
-    fireEvent.click(view.getByTestId('nsx-send'));
-    await act(async () => { fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); });
+    await act(async () => { fireEvent.click(view.getByTestId('nsx-send')); });
     await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input, { memories: JEV_MEMORIES })); });
     await act(async () => { spawn.reject(Object.assign(new Error('the node did not answer within 30s'), { code: 'upstream_unavailable' })); });
     await waitFor(() => expect(view.getByTestId('lcd3-group-memory').textContent).toMatch(/✦ 2/));
@@ -108,6 +137,10 @@ describe('defaults the node could not confirm', () => {
 
     await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
     expect(view.queryByTestId('launch-defaults-retry')).toBeNull();
-    expect(view.getByTestId('lcd3-group-doc').getAttribute('data-edited')).toBe('true');
+    // The edit is intact: the unticked default stays off the card (present-only, lane A)
+    // and waits under Attach → Suggested, one click from coming back.
+    expect(view.queryByTestId('lcd3-group-doc')).toBeNull();
+    await act(async () => { fireEvent.click(view.getByTestId('lcd3-attach')); });
+    expect(view.getByTestId('lcd3-attach-suggested-ent-doc-spec')).toBeTruthy();
   });
 });

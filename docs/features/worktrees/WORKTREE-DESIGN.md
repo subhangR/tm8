@@ -650,6 +650,25 @@ cannot silently change what was checked out.
 Failure: allocation → `failed` with `failure_code` and `git` stderr in `failure_detail`; if a
 directory was partially created, → `cleanup_pending` instead, so §6 removes it.
 
+**As built (2026-10).** The step runs in two halves: `git worktree add --no-checkout` under the
+per-project Git lock, then `reset --hard` with parallel checkout (`checkout.workers=0`) outside it.
+Those are the two commands a plain `git worktree add` runs itself, and only the first touches shared
+metadata. §4.4's containment re-assert runs after each half.
+
+**Warm lanes.** First, step 5 asks the node's warm lane pool
+(`packages/execution/src/worktree/warm-pool.ts`) for a checkout made in advance: a detached tree of
+the project's default base under `<dataDir>/worktrees-pool/<projectId>/<laneId>`. A claimed lane is
+moved to the reserved path with `git worktree move`, under the lock, with containment re-asserted
+after the move. It then gets its branch with `git checkout -b <branch>` at the reserved commit; when
+the pool's lane is behind, only the files that differ are rewritten. The result is the checkout
+`git worktree add` would have made, so step 4 cannot tell the difference and does not need to.
+
+A warm lane has no allocation row and sits outside the worktree area. It therefore never counts
+toward §5.2's cap, never appears in a lane listing, and is never examined by §6's reconciler. The pool
+sweeps its own area at startup and drains it at shutdown. An empty pool, or a claimed lane that
+cannot be adopted (it is removed again first), falls back to the two halves above. A containment
+violation does not fall back.
+
 ### 4.7 Step 6 — one database transaction
 
 Create, atomically: the `worktree` entity (via `create_worktree`, which also writes the initial
@@ -697,6 +716,14 @@ across steps 4–7 as an in-process keyed mutex *plus* the advisory lock taken i
 transaction only. The existing in-process mutex (`workspace-trust.ts:45-60`) is a single global
 promise chain and must be generalized to a `Map<projectId, Promise>` — that generalization is a named
 Phase-1 work item, not an assumption.
+
+**As built (2026-10).** The lock is narrower than the paragraph above describes:
+
+- Step 4 serializes under its own reservation key, so an admission never waits behind a checkout.
+- The WorktreeManager takes the Git lock itself, around exactly the commands that rewrite
+  `.git/worktrees`: `worktree add --no-checkout`, `move`, `remove` and `prune`. It is never held
+  around a checkout or a database door, so the ordering above holds by construction.
+- A caller that re-enters the lock is refused with `git_lock_reentrant` instead of deadlocking.
 
 ### 5.2 Caps
 

@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { registerBridgeHandlers } from '../bridges/handlers.js';
 import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
@@ -65,6 +66,7 @@ import type { FacadeDeps } from './deps.js';
 import type { W2FilesServiceOptions } from './services/w2/files.js';
 
 import { registerW2AuthHandlers } from './handlers/w2/auth.js';
+import { registerW2MetaHandlers } from './handlers/w2/meta.js';
 import { registerW2EdgesPlacementsHandlers } from './handlers/w2/edges-placements.js';
 import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entities-commands-tracking.js';
 import { registerAttentionHandlers } from './services/attention/index.js';
@@ -254,6 +256,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
+  // Bridges B0a (395): the bridges.* catalog doors.
+  registerBridgeHandlers(registry, facade);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside
   // registerLoopHandlers, so the W1 source inventory (tools/conformance) counts its registrations.
   registerLoopRunHandlers(registry, facade, deps.loops);
@@ -263,6 +267,9 @@ export function registerFacadeHandlers(
   registerW2IdentitySpacesHandlers(registry, facade);
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
   registerW2AuthHandlers(registry, facade, deps.sessionSockets ? { sockets: deps.sessionSockets } : {});
+  // meta.get (TM8 Mobile S2): what this node speaks; anonymous, like auth.claim.status.
+  // Its features are read from this registry per request, so the order here is free.
+  registerW2MetaHandlers(registry);
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);

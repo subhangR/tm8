@@ -344,3 +344,8 @@
   margin: 0;
   padding: var(--pn-space-2) var(--pn-space-3);
 }
+
+/* A launch tab (task 01a182d2): the launching page fills the draft's plane. */
+.cv2-root .tws-launch-tab {
+  block-size: 100%;
+}

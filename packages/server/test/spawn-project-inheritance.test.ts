@@ -21,6 +21,7 @@ import { inheritedSpawnProjectId, inheritsSpawnProject } from '../src/facade/spa
 import { HandlerRegistry } from '../src/facade/registry.js';
 import { CollabError, type OperationName } from '@tm8/contract';
 import type { RequestContext, RequestIdentity } from '../src/http/types.js';
+import { trackBoots } from './admitted-spawn.js';
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const TEAMMATE = '22222222-2222-4222-8222-222222222222';
@@ -202,7 +203,7 @@ describe('execution.spawn — a worker works where its chat or session does', ()
     db.parentProject = parentProject;
     db.projectDir = projectDir;
     const registry = new HandlerRegistry();
-    registerExecutionHandlers(registry, {
+    const runtime = registerExecutionHandlers(registry, {
       db,
       pty: {
         beginPromptHandoff: vi.fn(),
@@ -217,6 +218,9 @@ describe('execution.spawn — a worker works where its chat or session does', ()
         isNodeAdmin: true, isOwner: true,
       }),
     });
+    // The handler answers at admission (404); the boot runs on behind it and
+    // is waited for before the test's directories are removed.
+    const settled = trackBoots(runtime.spawnService);
     const handler = registry.get('execution.spawn' as OperationName)!;
     try {
       await handler(spawnCtx(identity, {
@@ -225,6 +229,8 @@ describe('execution.spawn — a worker works where its chat or session does', ()
       }));
     } catch (error) {
       if (!(error instanceof Error) || !/no such entity/.test(error.message)) throw error;
+    } finally {
+      await settled();
     }
     return db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args;
   }
