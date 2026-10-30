@@ -87,6 +87,25 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
   }, [port, spaceId]);
 
   useEffect(() => { void reload(); }, [reload]);
+  /* The row menu closes on Escape or a click outside it, and Escape goes no
+     further (the settings frame would otherwise take it). */
+  useEffect(() => {
+    if (!menuFor) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setMenuFor(null);
+    };
+    const away = (event: MouseEvent) => {
+      if (!(event.target as Element | null)?.closest?.('.brg-set__menu')) setMenuFor(null);
+    };
+    document.addEventListener('keydown', escape, true);
+    document.addEventListener('mousedown', away);
+    return () => {
+      document.removeEventListener('keydown', escape, true);
+      document.removeEventListener('mousedown', away);
+    };
+  }, [menuFor]);
 
   const connections = useMemo(() => connectionRowsOf(bridges ?? []), [bridges]);
   const wizardReason = unservedReason(port, 'bridges.connections.begin', 'The add-bridge wizard');

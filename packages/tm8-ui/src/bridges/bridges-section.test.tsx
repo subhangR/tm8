@@ -99,6 +99,14 @@ describe('Settings → Bridges', () => {
     await waitFor(() => expect(port.resume).toHaveBeenCalledWith('ent-bridge-deploys', 1));
   });
 
+  it('closes the row menu on Escape', async () => {
+    await renderSection();
+    fireEvent.click(screen.getByRole('button', { name: 'More for Infra' }));
+    expect(screen.getByRole('menu', { name: 'Infra actions' })).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByRole('menu', { name: 'Infra actions' })).toBeNull();
+  });
+
   it('removes only after the typed name, and lists what happens first', async () => {
     const { port } = await renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'More for Infra' }));

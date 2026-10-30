@@ -12,11 +12,13 @@ async function openSettings(page: Page) {
   await expect(page.getByTestId('bridges-table')).toBeVisible({ timeout: 60_000 });
 }
 
-async function openInfra(page: Page) {
-  await openSettings(page);
-  await page.getByRole('button', { name: 'Open Infra bridge' }).click();
+const ENTITY = (id: string) => `/e2e/admin-pages-harness.html#/s/sp-atelier/e/${id}`;
+
+async function openBridge(page: Page, id: string) {
+  await page.goto(ENTITY(id));
   await expect(page.getByTestId('bridge-page')).toBeVisible({ timeout: 60_000 });
 }
+const openInfra = (page: Page) => openBridge(page, 'ent-bridge-infra');
 
 test('Settings → Bridges lists accounts and bridges, status in colour and word', async ({ page }, info) => {
   await openSettings(page);
@@ -69,8 +71,7 @@ test('the bridge panel: header, and each tab', async ({ page }, info) => {
 });
 
 test('a degraded bridge says why on Health', async ({ page }, info) => {
-  await openSettings(page);
-  await page.getByRole('button', { name: 'Open Rahul bridge' }).click();
+  await openBridge(page, 'ent-bridge-rahul');
   await page.getByRole('tab', { name: 'Health' }).click();
   await expect(page.getByTestId('bridge-health')).toContainText('The runtime has not checked in');
   await page.screenshot({ path: info.outputPath('19-degraded-health.png') });
@@ -83,6 +84,18 @@ test('Settings → Bridges at 900×600 and on a phone: no horizontal page scroll
   await page.screenshot({ path: info.outputPath('20-settings-900x600.png') });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(SETTINGS);
-  await expect(page.getByTestId('bridges-section')).toBeVisible({ timeout: 60_000 });
-  await page.screenshot({ path: info.outputPath('21-settings-phone.png') });
+  await page.waitForTimeout(3000);
+  await page.screenshot({ path: info.outputPath('21-settings-phone-list.png') });
+  // The desktop shell at phone width: the settings nav fills the frame and
+  // lists Bridges under Agents & tools (the phone shell has its own list).
+  await expect(page.getByRole('button', { name: 'Bridges', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test('the bridge panel on a phone', async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openInfra(page);
+  await page.screenshot({ path: info.outputPath('23-panel-phone.png'), fullPage: true });
+  await page.getByRole('tab', { name: 'Routing' }).click();
+  await page.screenshot({ path: info.outputPath('24-panel-phone-routing.png'), fullPage: true });
 });

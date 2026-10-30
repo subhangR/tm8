@@ -127,8 +127,19 @@ function BridgeHeader({
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => { if (!menus.current?.contains(event.target as Node)) setOpen(null); };
+    /* Escape closes the MENU, not the panel: captured and stopped here, or the
+       panel's own Escape (close the entity) would take it. */
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(null);
+    };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', escape, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', escape, true);
+    };
   }, [open]);
 
   const ended = view.status === 'ended';

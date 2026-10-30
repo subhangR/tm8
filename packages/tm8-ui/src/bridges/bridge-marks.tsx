@@ -23,7 +23,7 @@ import type {
   MessageBridgeView,
 } from '@tm8/contract';
 import { Timestamp } from '../kit';
-import './bridge-panel.css';
+import './bridges.css';
 
 const PROVIDER_LABEL = new Map<string, string>([
   ['whatsapp', 'WhatsApp'],

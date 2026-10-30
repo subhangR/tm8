@@ -15,7 +15,7 @@
  * - People draws the counts and posters until the roster lands
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail } from '@tm8/contract';
 import { memoryTokens } from '../fixtures/entities';
 import { BRIDGE_TABS, BridgePageBlock } from './BridgePage';
@@ -53,6 +53,18 @@ describe('the bridge panel', () => {
     expect((await screen.findByRole('button', { name: /^Status: paused/ }))).toBeTruthy();
     expect(screen.getByTestId('bridge-header').textContent).toContain('Messages are still logged');
     expect((screen.queryByRole('menuitem', { name: /Pause for/ }))).toBeNull();
+  });
+
+  it('closes its menus on Escape without letting Escape reach the panel', async () => {
+    await renderPage();
+    const panelEscape = vi.fn();
+    document.addEventListener('keydown', panelEscape);
+    fireEvent.click(screen.getByRole('button', { name: /^Status: live/ }));
+    expect(screen.getByRole('menu', { name: 'Pause or resume' })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByRole('menu', { name: 'Pause or resume' })).toBeNull();
+    expect(panelEscape).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', panelEscape);
   });
 
   it('keeps Send a test message disabled with the unserved operation, and removes after the typed name', async () => {
