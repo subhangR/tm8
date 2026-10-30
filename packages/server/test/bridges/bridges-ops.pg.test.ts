@@ -206,6 +206,97 @@ describe('a worker session on the bridge (D21, D23)', () => {
   });
 });
 
+describe('the newest page and scroll-back (bridges.log.read --latest / --before)', () => {
+  const sender = '919876543210@s.whatsapp.net';
+  const ids: string[] = [];
+  beforeAll(async () => {
+    // Five more after 'hello 0' and 'hello 1': 'hello 2' … 'hello 6', the fourth inbound from a guest.
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at) values ($1,$2,'Rahul',now(),now())`, [bridgeId, sender]);
+      for (let n = 2; n <= 6; n++) {
+        const id = randomUUID();
+        ids.push(id);
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'message',$3)", [id, space, member]);
+        await c.query(`insert into public.messages(entity_id,anchor_id,author_id,body,created_at)
+          values($1,$2,$3,$4, now() + ($5 || ' s')::interval)`, [id, bridgeId, member, `hello ${n}`, String(n * 10)]);
+        if (n === 4) {
+          await c.query(`insert into public.message_origins(message_id, bridge_id, connection_id, direction, external_message_id,
+              external_conversation_id, external_sender_id) values ($1,$2,$3,'in','3EB0-4','infra@g.us',$4)`, [id, bridgeId, connection, sender]);
+        }
+      }
+    });
+  });
+  const bodies = (page: any) => page.items.map((m: any) => m.body);
+
+  it('--latest answers the newest page, oldest first within it, and never the phone number', async () => {
+    const page = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=3`));
+    expect(bodies(page)).toEqual(['hello 4', 'hello 5', 'hello 6']);
+    expect(page).toMatchObject({ more: false, olderCursor: ids[2], lastMessageId: ids[4] });
+    expect(page.items[0]).toMatchObject({ authorName: 'Rahul', origin: { direction: 'in', participant: 'Rahul' } });
+    expect(JSON.stringify(page)).not.toContain('919876543210');
+  });
+
+  it('--before pages back to the start of the log, where olderCursor is null', async () => {
+    const first = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=3`));
+    const second = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${first.olderCursor}&limit=3`));
+    expect(bodies(second)).toEqual(['hello 1', 'hello 2', 'hello 3']);
+    expect(second.more).toBe(true);
+    const third = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${second.olderCursor}&limit=3`));
+    expect(bodies(third)).toEqual(['hello 0']);
+    expect(third.olderCursor).toBeNull();
+    // The default read starts at the beginning: nothing older.
+    expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?limit=2`)).olderCursor).toBeNull();
+    expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?since=${ids[0]}&limit=2`)).olderCursor).toBe(ids[1]);
+  });
+
+  it('--latest and --before never move the session cursor', async () => {
+    ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true`));
+    ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${ids[4]}`));
+    // The cursor still sits on 'hello 1' (the --unread test above): everything after it is unread.
+    expect(bodies(ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?unread=true`))))
+      .toEqual(['hello 2', 'hello 3', 'hello 4', 'hello 5', 'hello 6']);
+  });
+
+  it('pages at the boundaries: an empty page, exactly n, n+1', async () => {
+    // Nothing older than the first message: an empty page at the start.
+    const oldest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?limit=1`)).items[0].id;
+    const empty = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${oldest}`));
+    expect(empty).toMatchObject({ items: [], olderCursor: null, lastMessageId: null });
+    // Seven messages on the log ('hello 0' … 'hello 6'): exactly n leaves nothing older, n+1 leaves one.
+    const all = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=7`));
+    expect(all.items).toHaveLength(7);
+    expect(all.olderCursor).toBeNull();
+    const six = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=6`));
+    expect(six.items).toHaveLength(6);
+    expect(six.olderCursor).toBe(six.items[0].id);
+    expect(bodies(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${six.olderCursor}&limit=6`)))).toEqual(['hello 0']);
+  });
+
+  it('takes one way to choose the page, and a before on this log', async () => {
+    for (const q of ['latest=true&unread=true', `latest=true&since=${ids[0]}`, `before=${ids[1]}&unread=true`, `before=${ids[1]}&latest=true`]) {
+      refused(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?${q}`), 400, 'invalid_input');
+    }
+    refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${randomUUID()}`), 400, 'invalid_input');
+  });
+
+  it('is stable under equal timestamps: ties break by id, with no row lost or repeated', async () => {
+    const tied = [randomUUID(), randomUUID(), randomUUID()].sort();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      for (const [n, id] of tied.entries()) {
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'message',$3)", [id, space, member]);
+        await c.query(`insert into public.messages(entity_id,anchor_id,author_id,body,created_at)
+          values($1,$2,$3,$4, now() + interval '1 hour')`, [id, bridgeId, member, `tie ${n}`]);
+      }
+    });
+    const newest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=2`));
+    expect(newest.items.map((m: any) => m.id)).toEqual([tied[1], tied[2]]);
+    const back = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${newest.olderCursor}&limit=2`));
+    expect(back.items.map((m: any) => m.id)).toEqual([ids[4], tied[0]]);
+  });
+});
+
 describe('remove (human-only)', () => {
   it('an agent is refused; a human leaves the tombstone', async () => {
     refused(await request(agent.token, 'POST', `/v2/bridges/${bridgeId}/remove`, { expectedVersion: version }), 403, 'forbidden');
