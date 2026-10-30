@@ -10,8 +10,9 @@
  */
 import {
   BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema,
+  BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
   BridgeStateInputSchema, BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
-  type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
+  type BridgeDetailView, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
   type BridgeLogEntry, type BridgeLogResult, type BridgeRecentPoster, type BridgeView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
@@ -148,6 +149,11 @@ async function readLog(q: Querier, bridgeId: string, opts: {
   return { bridgeId, logAnchorId: bridge.anchor, items, lastMessageId: last, more: rows.length > opts.limit };
 }
 
+/** 402's link rows carry timestamps as SQL renders them; the wire is ISO. */
+function linkOf(row: BridgeIdentityLink): BridgeIdentityLink {
+  return { ...row, verifiedAt: iso(row.verifiedAt)!, revokedAt: iso(row.revokedAt) };
+}
+
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
   const value = ctx.query.get(name);
   if (value === null || value === '') return null;
@@ -266,6 +272,30 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const run = unread ? command : read;
       return run(ctx, q => readLog(q, bridgeId, { since, thread, limit, unread }));
     },
+    // B3 (402, §4.6): the caller's own links. Begin and revoke are human-only
+    // here and in SQL; an agent can neither mint a proof of its owner nor end one.
+    'bridges.links.begin': requireHumanSession(async ctx => {
+      const input = BridgeLinkBeginInputSchema.parse(ctx.body ?? {});
+      return command(ctx, async q => {
+        const row = await q.rpc<BridgeLinkCode>('begin_bridge_link', [input.provider]);
+        return { kind: 'json' as const, status: 201, data: { ...row, expiresAt: iso(row.expiresAt)!, createdAt: iso(row.createdAt)! } };
+      });
+    }, 'a link code is for a human: open Account → Linked identities'),
+    'bridges.links.list': async ctx => read(ctx, async (q): Promise<BridgeLinksList> => {
+      const out = await q.rpc<BridgeLinksList>('my_bridge_links', []);
+      return {
+        items: out.items.map(linkOf),
+        pending: out.pending.map(p => ({ ...p, expiresAt: iso(p.expiresAt)!, createdAt: iso(p.createdAt)! })),
+      };
+    }),
+    'bridges.links.revoke': requireHumanSession(async ctx => {
+      const input = BridgeLinkRevokeInputSchema.parse(ctx.body ?? {});
+      const linkId = requireUuidParam(ctx, 'linkId');
+      if (input.linkId !== undefined && input.linkId !== linkId) {
+        throw new CollabError('invalid_input', 'body linkId does not match route');
+      }
+      return command(ctx, async q => linkOf(await q.rpc<BridgeIdentityLink>('revoke_bridge_link', [linkId])));
+    }, 'unlinking is for a human: open Account → Linked identities'),
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');
