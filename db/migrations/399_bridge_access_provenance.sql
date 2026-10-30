@@ -416,6 +416,13 @@ create or replace function internal.guard_authored_from_bridge() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
 declare dst_kind text;
 begin
+  -- A writer that is not an authored_from recorder is refused 42501 by
+  -- internal.guard_w1_edge, which runs after this trigger (names sort); answer
+  -- that refusal, not a shape error, to a client.
+  if coalesce(internal.w1_writer(), '') not in ('message_recorder', 'memory_recorder', 'artifact_publisher',
+      'form_recorder', 'entity_recorder', 'commit_recorder', 'edge_migration') then
+    return new;
+  end if;
   select kind into dst_kind from public.entities where id = new.dst_id;
   if dst_kind = 'bridge' and coalesce(new.props ->> 'bridgeId', '') <> new.dst_id::text then
     raise exception 'authored_from -> bridge must name the bridge in props.bridgeId'
@@ -690,6 +697,31 @@ returns uuid language sql stable security definer set search_path = public, inte
 $$;
 revoke all on function public.bridge_directed_by_handle(uuid, text) from public;
 grant execute on function public.bridge_directed_by_handle(uuid, text) to tm8_app;
+
+-- bridge_tell: `/tell <handle> <text>` (v2 §4.4) directs a message to a
+-- worker. Resolves the handle to a live session, makes the message an origin
+-- of it (D30, command '/tell') and the session its answerer. Returns the
+-- session, or null when the handle names no live worker (the executor says so).
+-- The delivery itself is the router's, like every directed message.
+create or replace function public.bridge_tell(p_bridge_id uuid, p_message_id uuid, p_handle text, p_sender jsonb default '{}'::jsonb)
+returns uuid language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare b public.entities; o public.message_origins; v_session uuid;
+begin
+  select * into b from public.entities where id = p_bridge_id and kind = 'bridge';
+  if b.id is null then raise exception 'bridge not found' using errcode = 'P0002'; end if;
+  select * into o from public.message_origins where message_id = p_message_id and bridge_id = p_bridge_id and direction = 'in';
+  if o.message_id is null then raise exception 'not an inbound message on this bridge' using errcode = '22023'; end if;
+  v_session := public.bridge_directed_by_handle(b.space_id, p_handle);
+  if v_session is null then return null; end if;
+  perform internal.bridge_holder_add(v_session, jsonb_build_object(
+    'bridgeId', p_bridge_id, 'messageId', p_message_id, 'providerMessageId', o.external_message_id,
+    'sender', coalesce(p_sender, '{}'::jsonb), 'command', '/tell'), false, null, 0);
+  perform public.set_bridge_answerer(p_message_id, v_session);
+  return v_session;
+end
+$$;
+revoke all on function public.bridge_tell(uuid, uuid, text, jsonb) from public;
+grant execute on function public.bridge_tell(uuid, uuid, text, jsonb) to tm8_app;
 
 -- bridge_message_audience: the sessions a log message reaches, at most one
 -- row each. `directed` wakes always: an @handle in the body, a reply to a

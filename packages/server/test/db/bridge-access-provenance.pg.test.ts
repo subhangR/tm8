@@ -326,6 +326,20 @@ describe('who hears a message, and unread (§2.7; §7.3 item 10)', () => {
     expect((await audience(infra, thread)).find(a => a.session_id === s1)?.reason).toBe('directed');
   });
 
+  it('/tell <handle> directs a message: the worker gains the origin and becomes its answerer', async () => {
+    const told = await inbound(ops, `/tell ${handle} check the ops box`, 'wamid.tell');
+    const target = await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, q =>
+      q.rpc<string | null>('bridge_tell', [ops, told, `@${handle}`, JSON.stringify({ participant: 'Rahul' })]));
+    expect(target).toBe(s1);
+    const [row] = await scratch.query<{ command: string; answerer: string }>(
+      `select o.command, a.answerer_id::text answerer from public.session_bridge_origins o
+         join public.bridge_message_answerers a on a.message_id = o.message_id
+        where o.holder_id = $1 and o.message_id = $2`, [s1, told]);
+    expect(row).toEqual({ command: '/tell', answerer: s1 });
+    expect(await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, q =>
+      q.rpc('bridge_tell', [ops, told, 'no-such-handle', '{}']))).toBeNull();
+  });
+
   it('wakes a session that listens at all, within the bridge ceiling', async () => {
     await inTx(null, c => c.query(`update public.bridges set worker_wake = 'all' where entity_id = $1`, [infra]));
     await inTx(null, c => c.query(`insert into public.bridge_read_cursors(bridge_id, session_id, wake) values ($1,$2,'all')
