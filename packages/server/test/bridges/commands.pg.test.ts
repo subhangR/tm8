@@ -206,7 +206,8 @@ async function storeMessage(author: string, body: string): Promise<string> {
 async function endWorkers(sessionId: string | null = null, reason: string | null = null): Promise<void> {
   await asOwner(async c => {
     await c.query("select set_config('tm8.work_session_transition', 'on', true)");
-    await c.query(`update public.work_sessions set status = 'exited', ended_reason = coalesce($2, ended_reason)
+    await c.query(`update public.work_sessions set status = 'exited', ended_reason = coalesce($2, ended_reason),
+        exited_at = now(), status_changed_at = now()
       where status in ('spawning','running','idle') and ($1::uuid is null or entity_id = $1)`, [sessionId, reason]);
   });
 }
@@ -530,6 +531,27 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(await notes()).toBe(1);
     await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
     await executor.run(messageId);
+    expect(await notes()).toBe(1);
+  });
+
+  it('F5: a later /stop does not re-note or re-list a worker an earlier /stop ended', async () => {
+    await endWorkers();
+    await command('rahul', '/work f5 worker');
+    const { reply: list } = await command('rahul', '/workers');
+    const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
+    const session = (await asOwner(c => c.query(
+      'select entity_id from public.bridge_handles where handle = $1', [handle]))).rows[0].entity_id as string;
+    expect((await command('rahul', `/stop ${handle}`)).reply!.text).toBe(`stopped ${handle}`);
+    const notes = () => count(`select count(*) n from public.edges ed join public.messages m on m.anchor_id = ed.dst_id
+      where ed.src_id = $1 and ed.type = 'working_on' and m.body like 'stopped from WhatsApp by %'`, [session]);
+    expect(await notes()).toBe(1);
+    // Later: the same worker again, and /stop mine confirmed by YES.
+    expect((await command('rahul', `/stop ${handle}`)).reply!.text).toMatch(new RegExp(`\\(${handle}\\) already ended$`));
+    await command('rahul', '/work f5 other');
+    const { reply: ask } = await command('rahul', '/stop mine');
+    const { reply: done } = await command('rahul', 'YES', ask!.externalId);
+    expect(done!.text).toMatch(/^stopped /);
+    expect(done!.text).not.toContain(handle);
     expect(await notes()).toBe(1);
   });
 

@@ -465,11 +465,19 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
   const stopReason = (cmd: Command) =>
     `stopped from ${PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider} by ${cmd.sender.displayName || 'a member'}`;
 
-  async function endedReasons(claims: DbClaims, ids: string[]): Promise<Map<string, string | null>> {
-    if (ids.length === 0) return new Map();
-    const rows = await ports.db.query<{ id: string; ended_reason: string | null }>(claims,
-      'select entity_id::text id, ended_reason from public.work_sessions where entity_id = any($1::uuid[])', [ids]);
-    return new Map(rows.map(r => [r.id, r.ended_reason]));
+  /**
+   * Sessions THIS command ended: they carry its reason and ended at or after
+   * its own message arrived (the original message, for a /stop confirmed by
+   * YES). The reason alone is the same for every /stop the sender ever sent.
+   */
+  async function endedByThis(cmd: Command, claims: DbClaims, ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await ports.db.query<{ id: string }>(claims,
+      `select ws.entity_id::text id from public.work_sessions ws
+        where ws.entity_id = any($1::uuid[]) and ws.ended_reason = $2
+          and coalesce(ws.exited_at, ws.status_changed_at) >= (select m.created_at from public.messages m where m.entity_id = $3)`,
+      [ids, stopReason(cmd), cmd.origin('/stop').messageId]);
+    return new Set(rows.map(r => r.id));
   }
 
   async function stop(cmd: Command, args: string, confirmed: boolean): Promise<Answer> {
@@ -492,8 +500,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       }
       // A re-run after a crash: the workers this command already ended still
       // need their task blocked and noted.
-      const ended = await endedReasons(claims, candidates.filter(r => !isLive(r)).map(r => r.id));
-      targets = candidates.filter(r => isLive(r) || ended.get(r.id) === reason);
+      const ended = await endedByThis(cmd, claims, candidates.filter(r => !isLive(r)).map(r => r.id));
+      targets = candidates.filter(r => isLive(r) || ended.has(r.id));
       if (targets.length === 0) return { text: 'no workers to stop' };
     } else {
       const row = await resolveWorker(cmd, ref);
@@ -507,7 +515,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
             : error;
         }
       }
-      if (!isLive(row) && (await endedReasons(claims, [row.id])).get(row.id) !== reason) {
+      if (!isLive(row) && !(await endedByThis(cmd, claims, [row.id])).has(row.id)) {
         return { text: `${named(row)} already ${sessionWord(row.status)}` };
       }
       targets = [row];
