@@ -1189,7 +1189,9 @@
   font-weight: 400;
 }
 
-.mcp-cform__check input {
+.mcp-cform .mcp-cform__check input {
+  flex: none;
+  width: auto;
   margin: 0;
   accent-color: var(--pn-brand);
 }

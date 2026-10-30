@@ -101,7 +101,9 @@ function Harness() {
     <div className="cv2-root shell-scope" data-theme={theme} style={{ minHeight: '100vh', background: 'var(--pn-paper)', display: 'flow-root' }}>
       <McpProvider port={port}>
         {params.get('entity') === '1'
-          ? <div style={{ maxWidth: 820, margin: '0 auto', padding: 16 }}><GenericBody detail={detail} blocks={getKind('mcp_server').panel.blocks ?? []} /></div>
+          // The panel's shape: a fixed-height column whose `.pn-body` is the scroller, as in the app.
+          ? <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', maxWidth: 820, margin: '0 auto', background: 'var(--pn-paper)' }}>
+            <GenericBody detail={detail} blocks={getKind('mcp_server').panel.blocks ?? []} /></div>
           : <div className="set-root" style={{ height: '100vh' }}><div className="set-card"><div style={{ flex: 1, overflow: 'auto' }}><ConnectorsSection /></div></div></div>}
       </McpProvider>
     </div>
