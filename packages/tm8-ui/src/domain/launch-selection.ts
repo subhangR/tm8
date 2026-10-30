@@ -6,6 +6,9 @@
  * — the node loads that group's edge defaults — or an EXACT set. The sheet
  * pre-ticks the defaults (read from `launch.defaults`, the loaders spawn
  * itself runs), so an untouched group already shows what the launch will get.
+ * Until that read answers, a group may be drawn from this browser's last
+ * answer for the same launch (`ready` with a `confirmation`; the read's states
+ * live in `launch-defaults-read.ts`).
  *
  * AN EDIT IS A DIFF, NOT A SET. A group holds `removed` (defaults unticked)
  * and `added` (entities ticked from the space). The exact set is derived:
@@ -62,8 +65,22 @@ export interface LaunchContextRow {
 export type LaunchGroupDefaults =
   | { readonly status: 'loading' }
   /** No defaults read (no port, a failed read, no teammate yet): the group cannot be edited. */
-  | { readonly status: 'unknown'; readonly reason: string }
-  | { readonly status: 'ready'; readonly rows: readonly LaunchContextRow[]; readonly total: number };
+  /** `readFailed`: the node was asked and the read failed — a retry can fix it, unlike no loader or no teammate. */
+  | { readonly status: 'unknown'; readonly reason: string; readonly readFailed?: true }
+  | {
+    readonly status: 'ready';
+    readonly rows: readonly LaunchContextRow[];
+    readonly total: number;
+    /**
+     * Absent: the node's own answer. Otherwise the rows are this browser's
+     * last answer (`domain/launch-defaults-read.ts`) and the node has not
+     * confirmed them — `pending` while its read is in flight, `failed` when the
+     * read failed. Shown and editable like any ready group; the one difference
+     * is that an EDITED group cannot launch on them (`launchBlock`): an exact set
+     * built on an unconfirmed list could drop a default nobody saw.
+     */
+    readonly confirmation?: 'pending' | 'failed';
+  };
 
 export type LaunchSelectionDefaults = Readonly<Record<SpawnSelectionGroup, LaunchGroupDefaults>>;
 
@@ -88,8 +105,8 @@ export function loadingDefaults(): LaunchSelectionDefaults {
   return { memories: { status: 'loading' }, skills: { status: 'loading' }, references: { status: 'loading' } };
 }
 
-export function unknownDefaults(reason: string): LaunchSelectionDefaults {
-  const group = { status: 'unknown', reason } as const;
+export function unknownDefaults(reason: string, why: { readFailed?: true } = {}): LaunchSelectionDefaults {
+  const group = { status: 'unknown', reason, ...why } as const;
   return { memories: group, skills: group, references: group };
 }
 
@@ -138,6 +155,11 @@ export function readyDefaults(group: LaunchDefaultsGroup): LaunchGroupDefaults {
   return { status: 'ready', rows: group.items.map(defaultRow), total: group.total };
 }
 
+/** A group drawn from this browser's last answer, which the node has not confirmed (yet: `pending`; could not: `failed`). */
+export function unconfirmedDefaults(group: LaunchDefaultsGroup, confirmation: 'pending' | 'failed'): LaunchGroupDefaults {
+  return { status: 'ready', rows: group.items.map(defaultRow), total: group.total, confirmation };
+}
+
 export const UNKNOWN_DEFAULTS_NOTE = 'The node didn’t say what this launch loads by default, so this group can’t be edited. It launches with its defaults.';
 
 export function ceilingNote(total: number): string {
@@ -154,19 +176,52 @@ export function groupLock(defaults: LaunchGroupDefaults): string | null {
   return null;
 }
 
-export const DEFAULTS_LOADING_BLOCK = 'Reading this launch’s defaults… Launch waits so your edits to them are kept.';
+/** "skills", "memories and skills", "memories, skills and references". */
+function groupList(groups: readonly SpawnSelectionGroup[]): string {
+  const words = groups.map((group) => LAUNCH_GROUP_LABEL[group].toLowerCase());
+  return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]!}`;
+}
+
+/** Launch's words while it waits on the defaults of these edited groups — the read is named, never a bare "loading". */
+export function defaultsWaitReason(groups: readonly SpawnSelectionGroup[]): string {
+  return `Reading this launch’s ${groupList(groups)} defaults… Launch waits so your edits to them are kept.`;
+}
+
+/** Launch's words when the node could not confirm the defaults these edited groups were made on. */
+export function unconfirmedReason(groups: readonly SpawnSelectionGroup[]): string {
+  return `Couldn’t confirm this launch’s ${groupList(groups)} defaults with the node. Retry before launching with your edits — they are kept.`;
+}
 
 /**
- * Why Launch must wait; null when it need not. An EDITED group whose defaults
- * are still loading (a teammate change re-reads them) is locked, so it would
- * be omitted and launch on its defaults — the person's removals silently
- * dropped. So Launch waits for that read. An untouched group never blocks: it
- * is omitted either way.
+ * Why Launch must not go yet; null when it may. Only an EDITED group can stop
+ * it, and only while its defaults are not the node's:
+ *  - `loading` (a teammate change re-reads them): the group is locked, so it
+ *    would be omitted and launch on its defaults — the person's removals
+ *    silently dropped;
+ *  - `pending`: its exact set would be built on this browser's last answer,
+ *    and a default the node added since would be left out unseen — so it
+ *    waits for the answer;
+ *  - `failed`, or `unknown` (a failed read with nothing to show): the same,
+ *    with no answer coming — the edits are kept, and the read must be
+ *    retried (`unconfirmedReason` names the groups).
+ * The rule is absolute: an edited group never launches on unconfirmed or
+ * unknown defaults.
+ * An untouched group never blocks — it is omitted, and the node loads its own
+ * defaults whatever the card drew.
  */
 export function launchBlock(defaults: LaunchSelectionDefaults, edits: LaunchSelectionEdits): string | null {
-  const waiting = LAUNCH_SELECTION_GROUPS.some((group) =>
-    defaults[group].status === 'loading' && (edits[group].removed.length > 0 || edits[group].added.length > 0));
-  return waiting ? DEFAULTS_LOADING_BLOCK : null;
+  const edited = (group: SpawnSelectionGroup) => edits[group].removed.length > 0 || edits[group].added.length > 0;
+  const where = (test: (d: LaunchGroupDefaults) => boolean) => LAUNCH_SELECTION_GROUPS.filter((g) => edited(g) && test(defaults[g]));
+  /* Unknown counts too: an edited group whose re-read failed with nothing to
+     show (a teammate switch) would otherwise be omitted, its removals dropped. */
+  const failed = where((d) => (d.status === 'unknown' && d.readFailed === true) || (d.status === 'ready' && d.confirmation === 'failed'));
+  if (failed.length > 0) return unconfirmedReason(failed);
+  /* Unknown for a reason no retry fixes (no teammate, no loader): its own words. */
+  const idle = where((d) => d.status === 'unknown')[0];
+  const idleDefaults = idle ? defaults[idle] : null;
+  if (idleDefaults?.status === 'unknown') return idleDefaults.reason;
+  const waiting = where((d) => d.status === 'loading' || (d.status === 'ready' && d.confirmation === 'pending'));
+  return waiting.length > 0 ? defaultsWaitReason(waiting) : null;
 }
 
 function defaultIds(defaults: LaunchGroupDefaults): readonly EntityId[] {

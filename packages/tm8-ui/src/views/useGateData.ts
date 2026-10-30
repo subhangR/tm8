@@ -2,9 +2,9 @@ import { createRealFormsPort } from '../forms/real-port';
 import { setDefaultFormsPort } from '../forms/seam';
 import type { SkillPort } from '../skills/port';
 import type { JevPort } from '../jev/port';
-import type { LaunchDefaultsInput, SkillPreviewResult } from '@tm8/contract';
+import type { SkillPreviewResult } from '@tm8/contract';
 import { REFERENCE_KINDS, referenceCandidateRow, skillCandidateRow, type LaunchContextRow } from '../domain/launch-selection';
-import type { LoadLaunchDefaults } from '../launch-selection/useLaunchSelection';
+import type { LoadLaunchDefaults } from '../launch-selection/port';
 /**
  * Gate boot: seam → domain store → the selectors the views hand to the panels.
  *
@@ -83,6 +83,7 @@ import {
   writeLaunchCache,
 } from '../data/launch-cache';
 import { readLaunchRecents, rememberLaunchPick } from '../data/launch-recents';
+import { launchDefaultsLoader } from '../data/launch-defaults-cache';
 import { DEFAULT_WINDOW, windowSpec } from '../graph/model';
 import { readLastSpace, writeLastSpace } from './last-place';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
@@ -2464,6 +2465,30 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [seam, domain, refetchDetail, spaceId, options.serverBaseUrl],
   );
 
+  /* THE LAUNCH PORT'S LOADERS — built once per seam, space and node, never per
+     graph event. The `launch` memo below re-derives the roster and the add
+     pools from `entities`, which changes on every event; built in there, each
+     loader was a new function per event, so every launch surface downstream
+     saw a "new" port mid-open and its reads had to hide behind refs. The
+     defaults loader is the cached one (data/launch-defaults-cache.ts): its
+     `peek` lets the card draw its strip on the first frame. */
+  const launchNodeKey = nodeKeyOf(options.serverBaseUrl);
+  /* Read through a getter: the loader keeps one identity while the viewer
+     resolves, so an open card is never re-read just because boot finished. */
+  const launchViewerId = useRef<string | null>(null);
+  launchViewerId.current = viewerActor?.id ?? null;
+  const launchLoaders = useMemo(() => {
+    const defaultsPort = seam.commands.launchDefaults;
+    const skills = seam.commands.skills;
+    return {
+      ...(seam.commands.jev ? { jev: seam.commands.jev } : {}),
+      ...(defaultsPort
+        ? { loadLaunchDefaults: launchDefaultsLoader((input) => defaultsPort.defaults(spaceId, input), launchNodeKey, spaceId, () => launchViewerId.current) }
+        : {}),
+      ...(skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => skills.preview(spaceId, input) } : {}),
+    };
+  }, [seam, spaceId, launchNodeKey]);
+
   const launch = useMemo<GateData['launch']>(() => {
     const summaries = Object.values(entities).filter((row) => row.spaceId === spaceId && row.deletedAt === null);
     const teammates: LaunchTeammate[] = summaries.flatMap((row) => {
@@ -2566,7 +2591,6 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       ? summaries.filter((row) => referenceKinds.includes(row.state.kind)).map(referenceCandidateRow)
       : undefined;
     const skillCandidates = skillOptions?.map(skillCandidateRow);
-    const launchDefaultsPort = seam.commands.launchDefaults;
     const capacity = executionCapacity
       ? {
           slotsFree: Math.max(0, executionCapacity.total - executionCapacity.used),
@@ -2580,18 +2604,16 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
          takes `teammates[0]` as the teammate. Sorting in the surfaces instead
          would be three call sites that can drift, and would leave whichever one
          nobody remembered on the old insertion order. */
-      ...(seam.commands.jev ? { jev: seam.commands.jev } : {}),
-      ...(launchDefaultsPort ? { loadLaunchDefaults: (input: LaunchDefaultsInput) => launchDefaultsPort.defaults(spaceId, input) } : {}),
+      ...launchLoaders,
       ...(skillCandidates ? { skillCandidates } : {}),
       ...(referenceCandidates ? { referenceCandidates } : {}),
-      ...(seam.commands.skills ? { loadSkillPreview: (input: Parameters<SkillPort['preview']>[1]) => seam.commands.skills!.preview(spaceId, input) } : {}),
       teammates: orderTeammatesByRecency(teammates, launchRecents),
       projects,
       profiles,
       ...(memories ? { memories } : {}),
       ...(capacity ? { capacity } : {}),
     };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, seam, skillOptions]);
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, rows, launchRecents, launchLoaders, skillOptions]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty
