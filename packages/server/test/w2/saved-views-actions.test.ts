@@ -691,7 +691,7 @@ describe('actions.list schema=v2 — factored rows, paging, size gate', () => {
 
 describe('actions.list — credential, space_link and server verbs (task 01a0e24d, doc 01a0e257 v2)', () => {
   /** `null`: the session row carried no kind at all. */
-  type AuthKind = 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link' | null;
+  type AuthKind = 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | 'link' | null;
 
   /** A context row of `kind` carrying the 269 facts `facts`, viewed under `authKind`. */
   async function listFor(
@@ -733,10 +733,11 @@ describe('actions.list — credential, space_link and server verbs (task 01a0e24
     cred_can_usage: true, cred_status: 'active', cred_shape: 'login',
   };
 
-  describe('`human` mirrors 083 require_human_auth_kind(): browser|cli, fail closed', () => {
+  describe('`human` mirrors require_human_auth_kind() (083, widened by 391): browser|cli|mobile, fail closed', () => {
     it.each([
       ['browser', true],
       ['cli', true],
+      ['mobile', true],
       // Correction A: a link session acts AS the member but is not human.
       ['link', false],
       ['agent', false],
