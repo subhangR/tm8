@@ -177,6 +177,8 @@ afterAll(async () => {
 // ----------------------------------------------------------------- fakes
 interface Notice { messageId: string; externalId: string; text: string; replyToMessageId: string | null; key: string }
 let notices: Notice[] = [];
+/** Every answer the executor tried to post, before the outbox's idempotency. */
+const attempted: Array<{ key: string; text: string }> = [];
 let reactions: string[] = [];
 let spawns: SpawnWorkerRequest[] = [];
 let stops: string[] = [];
@@ -201,12 +203,16 @@ async function storeMessage(author: string, body: string): Promise<string> {
 }
 
 /** What the PTY host's exit would record (the single writer of work_sessions.status). */
-async function endWorkers(sessionId: string | null = null): Promise<void> {
+async function endWorkers(sessionId: string | null = null, reason: string | null = null): Promise<void> {
   await asOwner(async c => {
     await c.query("select set_config('tm8.work_session_transition', 'on', true)");
-    await c.query("update public.work_sessions set status = 'exited' where status in ('spawning','running','idle') and ($1::uuid is null or entity_id = $1)", [sessionId]);
+    await c.query(`update public.work_sessions set status = 'exited', ended_reason = coalesce($2, ended_reason)
+      where status in ('spawning','running','idle') and ($1::uuid is null or entity_id = $1)`, [sessionId, reason]);
   });
 }
+
+/** One injected fault in the provenance write (a crash inside the task transaction). */
+let failNextOrigin = false;
 
 let executor: BridgeCommandExecutor;
 function makeExecutor(): BridgeCommandExecutor {
@@ -214,6 +220,7 @@ function makeExecutor(): BridgeCommandExecutor {
     db,
     executorClaims: async () => bridgesWorkerClaims(),
     async postNotice(_db, input) {
+      attempted.push({ key: input.idempotencyKey, text: input.text });
       const existing = notices.find(n => n.key === input.idempotencyKey);
       if (existing) return { messageId: existing.messageId, delivery: { status: 'pending', outboxId: 'x' } };
       const messageId = await storeMessage(bridgeId, `tm8: ${input.text}`);
@@ -228,6 +235,7 @@ function makeExecutor(): BridgeCommandExecutor {
     claim: async id => (await db.rpc<boolean>(bridgesWorkerClaims(), 'internal.bridge_command_claim', [id])) === true,
     settle: async (id, outcome) => { await db.rpc(bridgesWorkerClaims(), 'internal.bridge_command_settle', [id, outcome]); },
     recordOrigin: async (q, entityId, origin: BridgeCommandOrigin) => {
+      if (failNextOrigin) { failNextOrigin = false; throw new Error('injected crash'); }
       await q.rpc('record_bridge_provenance', [entityId, JSON.stringify([origin])]);
     },
     async spawnWorker(_claims, request) {
@@ -251,9 +259,9 @@ function makeExecutor(): BridgeCommandExecutor {
       spawned.set(request.clientMutationId, sessionId);
       return { sessionId };
     },
-    async stopWorker(_claims, sessionId) {
+    async stopWorker(_claims, sessionId, input) {
       stops.push(sessionId);
-      await endWorkers(sessionId);
+      await endWorkers(sessionId, input.reason);
     },
     workerHandle: async (claims, bridge, sessionId) =>
       db.rpc<{ handle: string; title: string | null }>(claims, 'bridge_poster_handle', [bridge, sessionId]),
@@ -480,9 +488,73 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(spawns.length).toBe(before + 4);
   });
 
+  it('F1: a YES whose run dies after the take re-runs to the same command; workers start once', async () => {
+    await endWorkers();
+    const before = spawns.length;
+    const { reply: ask } = await command('owner', '/work\nf1 one\nf1 two\nf1 three\nf1 four');
+    expect(ask!.text).toMatch(/^start 4 workers\?/);
+    failNextOrigin = true; // the take commits, then the task transaction dies
+    const { messageId: yesId } = await command('owner', 'YES', ask!.externalId);
+    expect(spawns.length).toBe(before);
+    // The crash left it for the sweep: re-run the same YES.
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [yesId]));
+    await executor.run(yesId);
+    expect(spawns.length).toBe(before + 4);
+    expect(notices.some(n => n.replyToMessageId === yesId && n.text.startsWith('4 workers on it'))).toBe(true);
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [yesId]));
+    await executor.run(yesId);
+    expect(spawns.length).toBe(before + 4);
+    // Another YES quoting the same notice gets nothing; a YES quoting nothing confirms nothing.
+    expect((await command('owner', 'YES', ask!.externalId)).reply!.text).toMatch(/^nothing to confirm/);
+    expect(await db.rpc(bridgesWorkerClaims(), 'bridge_command_confirm_take', [bridgeId, people.owner.phone, null, randomUUID()])).toBeNull();
+  });
+
+  it('F2: a /stop whose run died after the stop re-runs to a blocked task with the note', async () => {
+    await endWorkers();
+    await command('rahul', '/work f2 worker');
+    const { reply: list } = await command('rahul', '/workers');
+    const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
+    const session = (await asOwner(c => c.query(
+      'select entity_id from public.bridge_handles where handle = $1', [handle]))).rows[0].entity_id as string;
+    // The state a crash between stopWorker and the block leaves: ended with this command's reason, task untouched.
+    const messageId = await inbound(people.rahul.phone, people.rahul.member, `/stop ${handle}`);
+    await endWorkers(session, 'stopped from WhatsApp by a member');
+    const blocked = () => count(`select count(*) n from public.edges ed join public.tasks t on t.entity_id = ed.dst_id
+      where ed.src_id = $1 and ed.type = 'working_on' and t.work_status = 'blocked'`, [session]);
+    const notes = () => count(`select count(*) n from public.edges ed join public.messages m on m.anchor_id = ed.dst_id
+      where ed.src_id = $1 and ed.type = 'working_on' and m.body = 'stopped from WhatsApp by a member.'`, [session]);
+    expect(await blocked()).toBe(0);
+    await executor.run(messageId);
+    expect(notices.find(n => n.replyToMessageId === messageId)!.text).toBe(`stopped ${handle}`);
+    expect(await blocked()).toBe(1);
+    expect(await notes()).toBe(1);
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(await notes()).toBe(1);
+  });
+
+  it('F4: a /work re-run does not count its own workers against the live cap', async () => {
+    await endWorkers();
+    const body = ['/work', ...Array.from({ length: 3 }, (_, i) => `f4 item ${i}`)].join('\n');
+    // Seven other live workers, then three of this command's: 10, at the cap.
+    await command('rahul', '/work\nf4 a\nf4 b\nf4 c');
+    await command('rahul', '/work\nf4 d\nf4 e\nf4 f');
+    await command('rahul', '/work f4 g');
+    const { messageId, reply } = await command('rahul', body);
+    expect(reply!.text).toMatch(/^3 workers on it/);
+    const noticeCount = notices.length;
+    const spawnCount = spawns.length;
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    executor.reset();
+    await executor.run(messageId);
+    expect(spawns.length).toBe(spawnCount);
+    expect(notices.length).toBe(noticeCount);
+    expect(attempted.at(-1)!.text).toMatch(/^3 workers on it/); // the same answer, not "over the limit"
+  });
+
   it('the doors refuse any caller but the bridges worker', async () => {
     await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_input', [randomUUID()])).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_confirm_take', [bridgeId, people.owner.phone, null]))
+    await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_confirm_take', [bridgeId, people.owner.phone, 'OUT-1', randomUUID()]))
       .rejects.toMatchObject({ code: 'forbidden' });
   });
 });
