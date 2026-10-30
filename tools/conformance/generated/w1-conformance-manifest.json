@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:c984e1c913408de8219d2318e7def7a0a384b7d6de00279ab499769b4bb0a10e",
+  "catalogDigest": "sha256:c7a7ee5c0cb6ee7533cdb2e2d66ad555172d4133293c4bad6aa968e97a411b6f",
   "catalog": {
-    "total": 414,
-    "v1": 412,
+    "total": 416,
+    "v1": 414,
     "reserved": 2,
-    "http": 412,
+    "http": 414,
     "ws": 1,
-    "registerableV1Http": 410,
+    "registerableV1Http": 412,
     "methods": {
-      "GET": 139,
-      "POST": 205,
+      "GET": 140,
+      "POST": 206,
       "PATCH": 23,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 146,
-      "command": 266,
+      "read": 147,
+      "command": 267,
       "stream": 2
     },
-    "uniqueNames": 414,
-    "uniqueBindings": 413
+    "uniqueNames": 416,
+    "uniqueBindings": 415
   },
   "reservedOperations": [
     "search.query",
@@ -484,6 +484,20 @@
         "operation": "bridges.connections.withdraw",
         "method": "POST",
         "path": "/v2/me/bridge-connections/:connectionId/withdraw",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.connections.remove",
+        "method": "POST",
+        "path": "/v2/me/bridge-connections/:connectionId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.conversations.list",
+        "method": "GET",
+        "path": "/v2/me/bridge-connections/:connectionId/conversations",
         "status": "registered",
         "source": "server-router"
       },
@@ -3302,7 +3316,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 382
+    "unimplementedV1Http": 384
   },
   "schemas": {
     "additive": {
@@ -4134,6 +4148,40 @@
           "bridges",
           "connections",
           "withdraw"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.connections.remove",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.connections.remove",
+        "intentTags": [
+          "bridges",
+          "connections",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.conversations.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.conversations.list",
+        "intentTags": [
+          "bridges",
+          "conversations",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
