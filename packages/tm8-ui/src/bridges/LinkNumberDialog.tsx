@@ -44,11 +44,24 @@ export function LinkNumberDialog({
   const close = useCallback(() => { if (!busy) onClose(); }, [busy, onClose]);
   useDismissable(true, dialog, close);
 
-  /* The code is pushed, not answered: listen before asking. */
+  /* The code is pushed, not answered, and it can arrive BEFORE begin answers:
+     the server arms the relay before it asks the runtime to connect, and a
+     pairing code comes once. So listen from mount, keep the latest frame per
+     connection, and take the pending one's as soon as begin says which it is
+     (review #1447 r1). Nothing leaves this component's state. */
+  const frames = useRef(new Map<string, BridgeConnectionAuthFrame>());
+  const pendingId = useRef<string | null>(null);
   useEffect(() => {
     if (!port.onConnectionAuth) return;
-    return port.onConnectionAuth((f) => setFrame((prev) => (pending && f.connectionId === pending.id ? f : prev)));
-  }, [port, pending]);
+    return port.onConnectionAuth((f) => {
+      frames.current.set(f.connectionId, f);
+      if (f.connectionId === pendingId.current) setFrame(f);
+    });
+  }, [port]);
+  useEffect(() => {
+    pendingId.current = pending?.id ?? null;
+    if (pending) setFrame(frames.current.get(pending.id) ?? null);
+  }, [pending]);
 
   /* Wait for the runtime to say linked. */
   useEffect(() => {
@@ -79,6 +92,7 @@ export function LinkNumberDialog({
     setBusy(true);
     setError(null);
     setFrame(null);
+    frames.current.clear();
     try {
       const result = await port.connections.begin({
         ...(label.trim() ? { label: label.trim() } : {}),

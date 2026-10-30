@@ -57,6 +57,7 @@ export function AccountsBlock({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [linking, setLinking] = useState<{ relink: BridgeConnectionView | null } | null>(null);
   const [removing, setRemoving] = useState<BridgeConnectionView | null>(null);
+  const [withdrawing, setWithdrawing] = useState<BridgeConnectionView | null>(null);
   const [busy, setBusy] = useState(false);
   const menuCell = useRef<HTMLDivElement>(null);
   const closeMenu = useCallback(() => setMenuFor(null), []);
@@ -137,12 +138,7 @@ export function AccountsBlock({
                 {menuFor === c.id ? (
                   <div className="brg-menu" role="menu" aria-label={`${c.label} actions`}>
                     {offer ? (
-                      <button type="button" role="menuitem" onClick={() => void act(async () => {
-                        const r = await port.connections.withdraw(c.id, spaceId);
-                        return r.pausedBridgeIds.length
-                          ? `${c.label} is withdrawn from this space; ${r.pausedBridgeIds.length} bridge(s) riding it are paused.`
-                          : `${c.label} is withdrawn from this space.`;
-                      })}>
+                      <button type="button" role="menuitem" onClick={() => { setMenuFor(null); setWithdrawing(c); }}>
                         Withdraw {c.label} from this space
                       </button>
                     ) : (
@@ -199,6 +195,34 @@ export function AccountsBlock({
           onLinked={(c) => { setLinking(null); void reload(); onChanged(`${c.label} is linked${c.offers.some((o) => o.spaceId === spaceId) ? ' and offered to this space' : ''}.`); }}
         />
       ) : null}
+      {withdrawing ? (() => {
+        /* v2 §1.5: unsharing a connection stops every bridge riding it here —
+           named, in numbers, before the second click (review #1447 r1). */
+        const riding = bridges.filter((b) => b.connectionId === withdrawing.id && b.status !== 'ended');
+        return (
+          <ConsequenceDialog
+            title={`Withdraw ${withdrawing.label} from this space?`}
+            consequences={[
+              riding.length
+                ? `${riding.length} ${riding.length === 1 ? 'bridge' : 'bridges'} in this space stop: ${riding.map((b) => b.title).join(', ')}. They are paused, not removed; offering the number again lets you resume them.`
+                : 'No bridge in this space rides it, so nothing stops.',
+              'The number stays linked, and stays offered to any other space it is offered to.',
+            ]}
+            confirmLabel="Withdraw it"
+            onCancel={() => setWithdrawing(null)}
+            onConfirm={async () => {
+              const c = withdrawing;
+              setWithdrawing(null);
+              await act(async () => {
+                const r = await port.connections.withdraw(c.id, spaceId);
+                return r.pausedBridgeIds.length
+                  ? `${c.label} is withdrawn from this space; ${r.pausedBridgeIds.length} bridge(s) riding it are paused.`
+                  : `${c.label} is withdrawn from this space.`;
+              });
+            }}
+          />
+        );
+      })() : null}
       {removing ? (
         <ConsequenceDialog
           title={`Remove ${removing.label}?`}

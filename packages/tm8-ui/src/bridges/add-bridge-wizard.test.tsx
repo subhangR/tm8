@@ -166,6 +166,80 @@ describe('the add-bridge wizard', () => {
   });
 });
 
+describe('review #1447 round 1', () => {
+  it('keeps a pairing code that arrives before begin answers (it comes once)', async () => {
+    const t = wizardPort();
+    /* The server arms the relay before it asks the runtime to connect, so the
+       frame can beat the begin response: emit it, THEN resolve. */
+    let emit: ((f: any) => void) | null = null;
+    const port = {
+      ...t.port,
+      onConnectionAuth: (cb: (f: any) => void) => { emit = cb; return () => { emit = null; }; },
+      connections: {
+        ...t.port.connections,
+        begin: vi.fn(async () => {
+          const result = await t.client.connections.begin({ authFlow: { kind: 'pairing', phone: '+919800000094' } });
+          emit?.({ type: 'bridge.connection.auth', connectionId: result.connection.id, pairingCode: 'EARLY-123', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+          await new Promise((r) => setTimeout(r, 20));
+          return result;
+        }),
+      },
+    };
+    render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Link a new number' }));
+    const dialog = screen.getByTestId('bridge-link-number');
+    fireEvent.click(within(dialog).getByLabelText(/^This phone/));
+    fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+919800000094' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Get a code' }));
+    // Only the early frame reaches this stubbed socket; before the fix it was dropped and the dialog hung.
+    expect((await screen.findByTestId('bridge-link-code')).textContent).toBe('EARLY-123');
+  });
+
+  it('confirms direction tm8 → WhatsApp only, and holds Create on a retention out of bounds', async () => {
+    const t = wizardPort();
+    render(<AddBridgeWizard port={t.port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Ada · work phone' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Gaming/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
+    await screen.findByTestId('wizard-step-target');
+    await waitFor(() => expect(within(screen.getByLabelText('Target')).getAllByRole('option').length).toBe(2));
+    fireEvent.change(screen.getByLabelText('Target'), { target: { value: chatLaunchPlan.id } });
+    fireEvent.click(screen.getByLabelText(/^For a number of days/));
+    fireEvent.change(screen.getByLabelText('Keep messages for days'), { target: { value: '0' } });
+    expect((screen.getByRole('button', { name: 'Create bridge' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Keep messages for 1 to 3650 days.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Keep messages for days'), { target: { value: '30' } });
+    fireEvent.click(screen.getByLabelText('tm8 → WhatsApp only'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create bridge' }));
+    expect((await screen.findByTestId('bridge-consequences')).textContent).toContain("Nothing from Gaming will reach tm8");
+    expect(t.port.create).not.toHaveBeenCalled();
+  });
+
+  it('withdraw names the bridges here it stops, and waits for the second click', async () => {
+    const t = wizardPort();
+    render(<BridgesSection port={t.port} spaceId={SPACE} />);
+    await screen.findByTestId('connection-0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494');
+    await screen.findByTestId('bridges-table');
+    fireEvent.click(screen.getByRole('button', { name: 'More for Ada · work phone' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Withdraw Ada · work phone from this space' }));
+    const dialog = await screen.findByTestId('bridge-consequences');
+    expect(dialog.textContent).toContain('2 bridges in this space stop: Infra, Rahul');
+    expect(t.port.connections.withdraw).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Withdraw it' }));
+    await waitFor(() => expect(t.port.connections.withdraw).toHaveBeenCalledWith('0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494', SPACE));
+  });
+
+  it('step 1 hides removed numbers', async () => {
+    const t = wizardPort();
+    const id = '6f1e2d3c-4b5a-4968-8776-655443322110';
+    t.client.connectionsById.set(id, { ...t.client.connectionsById.get(id)!, status: 'removed' });
+    t.port.connections.list.mockImplementation(async () => [...t.client.connectionsById.values()]);
+    render(<AddBridgeWizard port={t.port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    await screen.findByRole('button', { name: 'Use Ada · work phone' });
+    expect(screen.queryByText('Ada · personal')).toBeNull();
+  });
+});
+
 describe('Settings → Bridges › Accounts & secrets, on connections.list', () => {
   it('lists my numbers with where they are offered, and offers, withdraws and removes', async () => {
     const t = wizardPort();
