@@ -42,3 +42,23 @@ create trigger entities_mcp_server_delete_revokes
   for each row
   when (new.kind = 'mcp_server' and old.deleted_at is null and new.deleted_at is not null)
   execute function internal.mcp_server_delete_revokes_credentials();
+
+-- Connectors deleted BEFORE this trigger existed left their connections active,
+-- holding their labels (the live node's test-mcp credential is one). Revoke
+-- them once, here, with the same columns the trigger writes. A function so the
+-- pg test can exercise the exact statement this migration runs.
+create or replace function internal.revoke_orphaned_mcp_credentials()
+returns integer language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare n integer;
+begin
+  update public.space_credentials c
+     set status = 'revoked', is_default = false, pending_expires_at = null,
+         secret_ciphertext = null, secret_nonce = null
+    from public.entities e
+   where c.provider = 'mcp' and c.status <> 'revoked'
+     and e.id = c.mcp_server_id and e.kind = 'mcp_server' and e.deleted_at is not null;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function internal.revoke_orphaned_mcp_credentials() from public;
+select internal.revoke_orphaned_mcp_credentials();

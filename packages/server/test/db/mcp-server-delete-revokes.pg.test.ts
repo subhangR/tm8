@@ -65,3 +65,27 @@ it('revokes the deleted connector’s connections, frees their label, and leaves
   await addServer(replacement, 'test-mcp-2');
   await expect(store.create(auth, { spaceId: space, serverId: replacement, label: 'subhang', secret: { kind: 'api_key', value: 'again' } })).resolves.toBeTruthy();
 });
+
+it('revokes the connections a connector deleted before 408 left behind', async () => {
+  // Reproduce the pre-408 state: delete with the trigger off, so the connection stays active.
+  const orphanServer = randomUUID();
+  await addServer(orphanServer, 'orphan-mcp');
+  const orphan = await store.create(auth, { spaceId: space, serverId: orphanServer, label: 'orphaned', secret: { kind: 'api_key', value: 'orphan-canary' } }) as { id: string };
+  await database.transaction(async c => {
+    await c.query('alter table public.entities disable trigger entities_mcp_server_delete_revokes');
+    await c.query("select set_config('tm8.identity_id','mcp-del-owner',true),set_config('tm8.auth_kind','browser',true)");
+    await c.query('update public.entities set deleted_at=now() where id=$1', [orphanServer]);
+    await c.query('alter table public.entities enable trigger entities_mcp_server_delete_revokes');
+  });
+  const [before] = await database.query<{ status: string }>('select status from public.space_credentials where id=$1', [orphan.id]);
+  expect(before!.status).toBe('active');
+
+  const [run] = await database.query<{ n: number }>('select internal.revoke_orphaned_mcp_credentials() as n');
+  expect(run!.n).toBe(1);
+  const rows = await database.query<{ id: string; status: string; secret_ciphertext: unknown }>(
+    "select id,status,secret_ciphertext from public.space_credentials where provider='mcp' and status<>'revoked'");
+  expect(rows.map(r => r.id)).not.toContain(orphan.id);
+  // A live connector's connection is not touched.
+  expect(rows.some(r => r.status === 'active')).toBe(true);
+});
+
