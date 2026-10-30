@@ -345,7 +345,7 @@ export interface LaunchCapacity {
   slotsTotal: number;
   /**
    * How many of the used slots are held by sessions with no process on the
-   * node (397): dead rows the lost-session reaper retires within its window.
+   * node (403): dead rows the lost-session reaper retires within its window.
    * Absent when the node does not report it, and then nothing is said.
    */
   ghosts?: number;

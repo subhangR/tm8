@@ -1,5 +1,5 @@
 -- =============================================================================
--- 397: a node ends its own sessions' processes in every space.
+-- 403: a node ends its own sessions' processes in every space.
 --
 -- A ghost is a work session whose record says a process runs (spawning /
 -- running / idle) while the node it is recorded against holds none: the
@@ -47,7 +47,7 @@
 --   * `node_completed_sessions_to_close(node)` — the auto-close candidates:
 --     the one rule (`internal.completed_sessions_due`, 330's launched_by
 --     guard) without the membership filter. `completed_sessions_to_close`
---     stays, as a member-filtered wrapper over the same rule, for a pre-397
+--     stays, as a member-filtered wrapper over the same rule, for a pre-403
 --     server during the deploy window; a later migration drops it;
 --   * `node_record_work_session_ending(node, session, status, kind, reason,
 --     error)` — the PROCESS fact only (status, ended_kind, ended_reason, error,
@@ -324,7 +324,7 @@ $$;
 
 revoke all on function internal.emit_work_session_events() from public;
 
--- DEPLOY WINDOW. A pre-397 server keeps calling `completed_sessions_to_close`
+-- DEPLOY WINDOW. A pre-403 server keeps calling `completed_sessions_to_close`
 -- between this migration and its own replacement, and after a rolled-back
 -- deploy. Kept, with its old member filter, as a thin wrapper over the one
 -- rule; nothing in this tree calls it. Drop it in a later migration.

@@ -1863,7 +1863,7 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
      outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
  | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
      endedKind: WorkSessionEndedKind | null; endedReason: string | null;
-     /** 397: the node that recorded this ending itself (a ghost, a lost or auto-closed session). Absent otherwise. */
+     /** 403: the node that recorded this ending itself (a ghost, a lost or auto-closed session). Absent otherwise. */
      endedByNode?: string;
      clientMutationId?: string }
  /**
@@ -7395,7 +7395,7 @@ export interface ExecutionLiveness {
   /**
    * Node-wide admission truth used by execution.spawn's concurrency gate.
    *
-   * `ghosts` (397): how many of `used` are recorded against THIS node while it
+   * `ghosts` (403): how many of `used` are recorded against THIS node while it
    * holds no process for them — dead rows the reaper will retire, which still
    * count until it does. Lets a full cap say why. Present only when the read
    * asks for it (`?ghosts=1`), so a client that does not know the field gets

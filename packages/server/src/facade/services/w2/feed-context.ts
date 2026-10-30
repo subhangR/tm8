@@ -66,6 +66,7 @@ import type { ZodTypeAny } from 'zod';
 import { cursorAfter, type ActionDiscovery } from './saved-views-actions.js';
 
 import type { Db, DbClaims, Querier } from '../../../db/types.js';
+import { sessionChatOrigins } from '../../../db/authored-origins.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import { claimsFor, cursorInstant, cursorUuid, requireParam, requireUuidParam } from '../../context.js';
 import { FULL_ENTITY_ID, resolveEntityReadId } from '../../entity-read-id.js';
@@ -655,17 +656,7 @@ async function hydrate(
 
   // `authored_from` is writer-gated to `message_recorder` (015:618), so this is
   // recorder-owned provenance. It is READ here and never accepted as input.
-  const provenanceRows = messageIds.length === 0 ? [] : await q.query<{
-    src_id: string;
-    dst_id: string;
-  }>(
-    `/* entities.feed:provenance */
-     select g.src_id, g.dst_id
-       from public.edges g
-      where g.type = 'authored_from' and g.src_id = any($1::uuid[])`,
-    [messageIds],
-  );
-  const authoredFrom = new Map(provenanceRows.map((row) => [row.src_id, row.dst_id]));
+  const authoredFrom = await sessionChatOrigins(q, messageIds, 'entities.feed:provenance');
 
   const anchorIds = [
     ...messageViews.map((view) => view.state.anchorId),

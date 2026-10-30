@@ -683,7 +683,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // stores its request on the task and answers `undelivered`.
     execution?.register(registry, {
       ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
-      // The capacity read's `ghosts` uses the reaper's own stale window (397).
+      // The capacity read's `ghosts` uses the reaper's own stale window (403).
       ghostStaleAfterMs: lostAfterMsFromEnv(),
     });
   }

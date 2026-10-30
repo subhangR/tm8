@@ -1,5 +1,5 @@
 /**
- * 397: boot reconciliation and the lost-session reaper reach ghosts in EVERY
+ * 403: boot reconciliation and the lost-session reaper reach ghosts in EVERY
  * space, through the node doors (`listNodeLiveSessions`,
  * `recordNodeSessionEnding`), never the member door.
  *
@@ -7,7 +7,7 @@
  * only, so the member write (`transition`, which `terminate` uses) refuses B's
  * session with the error prod printed. Reconciliation and the reaper must not
  * touch that door at all; the SQL side of the doors is pinned by
- * packages/server/test/db/node-ghost-sessions-397.pg.test.ts.
+ * packages/server/test/db/node-ghost-sessions-403.pg.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +44,7 @@ class TwoSpaceGraph extends FakeGraph {
   }
 }
 
-describe('node ghost doors (397)', () => {
+describe('node ghost doors (403)', () => {
   let graph: TwoSpaceGraph;
   let pty: PtyHostService;
   let service: SpawnService;

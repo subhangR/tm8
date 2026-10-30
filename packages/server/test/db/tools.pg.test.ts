@@ -135,7 +135,7 @@ it('settles exit outcomes independently of PTY state, excludes runs from counts 
       await c.query("update public.work_sessions set outcome_at=now()-interval '2 days' where entity_id=$1", [session]);
       await c.query("update public.entities set activity_at=now()-interval '2 days' where id=$1", [session]);
     });
-    // 397: the node's own auto-close read (node admin, no space pin).
+    // 403: the node's own auto-close read (node admin, no space pin).
     const node: DbClaims = { identityId: 'tools-owner', authKind: 'browser', nodeAdmin: true };
     expect(await db.rpc(node, 'node_completed_sessions_to_close', ['tool-test'])).toEqual([]);
   }
