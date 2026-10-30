@@ -1733,6 +1733,8 @@ export class SpawnService {
         // the MCP bind below runs inside this spawn and reads the schedule
         // provenance root off that edge.
         ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
+        // 399: from `server`, never from `request`, for the same reason.
+        ...(server?.bridgeOrigins?.length ? { bridgeOrigins: server.bridgeOrigins } : {}),
       });
     } catch (error) {
       // The row was refused, so nothing references the checkout just created
