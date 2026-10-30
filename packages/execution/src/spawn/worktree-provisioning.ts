@@ -8,11 +8,13 @@
 //
 // Two invariants that are easy to lose and expensive to lose:
 //
-//   * THE LOCK IS TAKEN HERE, NOT IN SQL. `internal.ledger_replay` is the first
-//     statement of every ledgered door and takes an advisory lock on the
-//     mutation id, so a spawn already runs under one. Nesting the per-project
-//     Git lock beneath it is the documented deadlock (§5.1). `withProjectLock`
-//     therefore wraps the ledgered call from outside, in this process.
+//   * THE LOCKS ARE IN THIS PROCESS, NOT IN SQL. `internal.ledger_replay` is
+//     the first statement of every ledgered door and takes an advisory lock on
+//     the mutation id, so a spawn already runs under one. Nesting a
+//     per-project lock beneath it is the documented deadlock (§5.1). The
+//     reservation lock therefore wraps the reserving door from outside, and
+//     the Git lock is never held across a door at all: WorktreeManager takes
+//     it itself, around the git commands that rewrite `.git/worktrees`.
 //
 //   * NEVER FALL BACK. A node that cannot provision a worktree refuses with a
 //     named reason. It does not quietly hand back the project directory —
@@ -24,6 +26,12 @@
 // is a few Git reads and one insert, the checkout is `git worktree add` of the
 // whole tree. An admitted spawn writes its session row with the reserved path
 // between the two and answers its caller before the checkout exists.
+//
+// Step 5 takes a WARM LANE from the node's pool when one is ready
+// (worktree/warm-pool.ts): an existing checkout moved to the reserved path and
+// branched there, tens of milliseconds instead of seconds. The reservation
+// does not know whether its lane will be warm or cold, and does not need to:
+// the path, the branch and the commit are the same either way.
 
 import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
@@ -198,17 +206,18 @@ export async function reserveWorktree(params: ProvisionWorktreeParams): Promise<
 
   // Step 1 (§4.2) — repository validation. A working directory that is not a
   // Git repository is `invalid_input`, never a downgrade to project mode.
+  // Step 2 (§4.3) — base ref resolution. The symbolic ref is provenance; the
+  // resolved OID is what gets stored and checked out, so a ref that moves
+  // between here and step 5 cannot change what the session actually gets.
+  // One manager call does both, concurrently, with step 1's refusal first.
   let repoRoot: string;
   let baseRef: string;
   let baseCommitOid: string;
   try {
-    ({ repoRoot } = await manager.validateRepository(params.projectWorkingDir));
-    // Step 2 (§4.3) — base ref resolution. The symbolic ref is provenance; the
-    // resolved OID is what gets stored and checked out, so a ref that moves
-    // between here and step 5 cannot change what the session actually gets.
-    const resolved = await manager.resolveBaseRef(repoRoot, params.requestedBaseRef ?? undefined);
-    baseRef = resolved.ref;
-    baseCommitOid = resolved.oid;
+    ({ repoRoot, ref: baseRef, oid: baseCommitOid } = await manager.resolveRepositoryBase(
+      params.projectWorkingDir,
+      params.requestedBaseRef ?? undefined,
+    ));
   } catch (error) {
     throw asSpawnError(error, 'worktree repository validation failed');
   }
@@ -254,80 +263,88 @@ export async function materializeWorktree(
   reserved: ReservedWorktree,
 ): Promise<ProvisionedWorktree> {
   const { auth, graph, manager } = params;
+  const { projectId } = params;
   const { worktreeId, path, branch, baseRef, baseCommitOid, repoRoot } = reserved;
 
-  // Steps 5-6 under the per-project Git lock, taken OUTSIDE every ledgered
-  // door below it (§5.1). `git worktree add/remove/prune` mutate shared
-  // `.git/worktrees` metadata; distinct projects still proceed concurrently.
-  return manager.withProjectLock(params.projectId, async () => {
-    // Step 5 (§4.6) — `git worktree add`, argv-only, against the resolved OID.
-    try {
-      await manager.add({ repoRoot, projectId: params.projectId, worktreeId, branch, baseCommitOid });
-    } catch (error) {
-      // Disk state decides the repair: a directory that got partially created
-      // is a cleanup obligation, and nothing on disk is simply a failure that
-      // is safe to retry.
-      const partial = await directoryExists(path);
-      await graph
-        .setWorktreeAllocationState(auth, {
-          worktreeId,
-          state: partial ? 'cleanup_pending' : 'failed',
-          failureCode: error instanceof WorktreeError ? error.reason : 'worktree_add_failed',
-          failureDetail: {
-            message: error instanceof Error ? error.message : String(error),
-            ...(error instanceof WorktreeError ? error.detail ?? {} : {}),
-          },
-        })
-        .catch(() => undefined);
-      throw asSpawnError(error, 'git worktree add failed');
-    }
-
-    // Step 5b — borrow the launch project's gitignored shared paths (the code
-    // graph) by symlink. Best-effort by design: a lane without the graph is a
-    // slower lane, not a broken one, so a failure here never fails the spawn.
-    try {
-      await manager.linkSharedPaths(repoRoot, path);
-    } catch (error) {
-      params.logger?.warn?.('worktree: linking shared paths failed', {
+  // Step 5 (§4.6) — the checkout, at exactly the reserved path, argv-only,
+  // against the resolved OID: a warm lane moved into place and branched when
+  // the pool has one, else `git worktree add`. The manager takes the Git lock
+  // around the metadata commands itself, so nothing here holds it — and no
+  // launch waits behind another launch's checkout.
+  try {
+    const warm = manager.pool
+      ? await manager.pool.claim({ projectId, repoRoot, worktreeId, branch, baseCommitOid })
+      : null;
+    if (warm === null) await manager.add({ repoRoot, projectId, worktreeId, branch, baseCommitOid });
+  } catch (error) {
+    // Disk state decides the repair: a directory that got partially created
+    // is a cleanup obligation, and nothing on disk is simply a failure that
+    // is safe to retry.
+    const partial = await directoryExists(path);
+    await graph
+      .setWorktreeAllocationState(auth, {
         worktreeId,
-        path,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+        state: partial ? 'cleanup_pending' : 'failed',
+        failureCode: error instanceof WorktreeError ? error.reason : 'worktree_add_failed',
+        failureDetail: {
+          message: error instanceof Error ? error.message : String(error),
+          ...(error instanceof WorktreeError ? error.detail ?? {} : {}),
+        },
+      })
+      .catch(() => undefined);
+    throw asSpawnError(error, 'git worktree add failed');
+  } finally {
+    // Whatever this launch took or could not take, the pool tops itself back
+    // up — in the background, never inside a launch. It also learns from the
+    // first cold launch that this project wants warm lanes at all.
+    manager.pool?.replenish(projectId, repoRoot);
+  }
 
-    // Step 6 (§4.7) — the entity that names what step 5 created. The path
-    // persisted here is the exact string step 5 created and step 3's
-    // post-creation assertion re-validated.
-    try {
-      await graph.createWorktreeEntity(auth, {
-        worktreeId,
-        spaceId: params.spaceId,
-        projectId: params.projectId,
-        path,
-        branch,
-        baseRef,
-        baseCommitOid,
-        clientMutationId: params.clientMutationId,
-      });
-    } catch (error) {
-      // The one window where disk leads the database, and deliberately the SAFE
-      // direction: an unreferenced directory is recoverable, a row pointing at
-      // nothing is not. The reconciler removes it.
-      await graph
-        .setWorktreeAllocationState(auth, {
-          worktreeId,
-          state: 'cleanup_pending',
-          failureCode: 'create_worktree_failed',
-          failureDetail: { message: error instanceof Error ? error.message : String(error) },
-        })
-        .catch(() => undefined);
-      params.logger?.warn?.('worktree: entity creation failed after the checkout existed', {
-        worktreeId,
-        path,
-      });
-      throw asSpawnError(error, 'create_worktree failed');
-    }
+  // Step 5b — borrow the launch project's gitignored shared paths (the code
+  // graph) by symlink. Best-effort by design: a lane without the graph is a
+  // slower lane, not a broken one, so a failure here never fails the spawn.
+  try {
+    await manager.linkSharedPaths(repoRoot, path);
+  } catch (error) {
+    params.logger?.warn?.('worktree: linking shared paths failed', {
+      worktreeId,
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
-    return { worktreeId, path, branch, baseRef, baseCommitOid };
-  });
+  // Step 6 (§4.7) — the entity that names what step 5 created. The path
+  // persisted here is the exact string step 5 created and step 3's
+  // post-creation assertion re-validated.
+  try {
+    await graph.createWorktreeEntity(auth, {
+      worktreeId,
+      spaceId: params.spaceId,
+      projectId: params.projectId,
+      path,
+      branch,
+      baseRef,
+      baseCommitOid,
+      clientMutationId: params.clientMutationId,
+    });
+  } catch (error) {
+    // The one window where disk leads the database, and deliberately the SAFE
+    // direction: an unreferenced directory is recoverable, a row pointing at
+    // nothing is not. The reconciler removes it.
+    await graph
+      .setWorktreeAllocationState(auth, {
+        worktreeId,
+        state: 'cleanup_pending',
+        failureCode: 'create_worktree_failed',
+        failureDetail: { message: error instanceof Error ? error.message : String(error) },
+      })
+      .catch(() => undefined);
+    params.logger?.warn?.('worktree: entity creation failed after the checkout existed', {
+      worktreeId,
+      path,
+    });
+    throw asSpawnError(error, 'create_worktree failed');
+  }
+
+  return { worktreeId, path, branch, baseRef, baseCommitOid };
 }

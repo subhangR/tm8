@@ -15,6 +15,8 @@
 //   G4.8  never infers merged/abandoned, under any input
 //   G4.9  never throws — an unreadable graph is a report, not a boot failure
 //   G4.11 preparing under a boot in flight            → left alone, whatever its age
+//   G4.12 warm lanes (worktree/warm-pool.ts)           → never examined or quarantined;
+//         a previous process's swept at startup, and the projects in use warmed
 
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -159,7 +161,7 @@ describe('§6.2 — the repair table', () => {
     expect(calls).toEqual([]);
     expect(report.repaired[0]?.action).toContain('possible live spawn');
     await expect(stat(path)).resolves.toBeTruthy();
-    await manager.remove({ repoRoot, path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path, force: true });
   });
 
   it('G4.11 a preparing row under a boot in flight is LEFT ALONE, whatever its age', async () => {
@@ -284,7 +286,7 @@ describe('§6.2 — the repair table', () => {
       (sessionId) => sessionId === 'session-live',
     );
     expect(calls.some((c) => c.call === 'unlease')).toBe(false);
-    await manager.remove({ repoRoot, path, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path, force: true });
   });
 });
 
@@ -304,7 +306,7 @@ describe('§6.3 — the prohibitions, which are the half that matters', () => {
     // one that eventually deletes someone's afternoon.
     await expect(stat(foreign)).resolves.toBeTruthy();
 
-    await manager.remove({ repoRoot, path: foreign, force: true });
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: foreign, force: true });
   });
 
   it('G4.8 never infers merged or abandoned — not for a vanished directory, not for a deleted branch', async () => {
@@ -366,6 +368,57 @@ describe('§6.3 — the prohibitions, which are the half that matters', () => {
     });
     expect(calls).toEqual([good]);
     expect(report.errors[0]?.worktreeId).toBe(bad);
+  });
+});
+
+describe('G4.12 — warm lanes are not lanes', () => {
+  it('sweeps a previous process\'s warm lanes, quarantines none, and warms the projects in use', async () => {
+    const pooled = (): WorktreeManager =>
+      new WorktreeManager({ worktreeRoot, pool: { root: join(base, 'worktrees-pool'), size: 1 } });
+    const canonical = (await manager.validateRepository(repoRoot)).repoRoot;
+
+    // The previous process filled a lane and died.
+    const previous = pooled();
+    previous.pool!.replenish(PROJECT_ID, canonical);
+    const deadline = Date.now() + 90_000;
+    while (!previous.pool!.snapshot(PROJECT_ID).some((l) => l.state === 'warm')) {
+      if (Date.now() > deadline) throw new Error('the previous pool never filled');
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const [leftover] = previous.pool!.snapshot(PROJECT_ID);
+
+    // This process: one live lane of the project, so the project is in use.
+    manager = pooled();
+    const liveId = uuidN(40);
+    const oid = await git(['rev-parse', 'HEAD^{commit}'], repoRoot);
+    const { path: livePath } = await manager.add({
+      repoRoot, projectId: PROJECT_ID, worktreeId: liveId, branch: `tm8/${liveId}`, baseCommitOid: oid,
+    });
+    const { report, calls } = await run([
+      allocation({ worktreeId: liveId, state: 'ready', path: livePath, entityExists: true }),
+    ]);
+
+    // (Earlier cases leave a foreign checkout in the shared lane area on
+    // purpose; what matters here is that no warm lane is ever among them.)
+    const inPoolArea = (q: { path: string }) => q.path.startsWith(join(base, 'worktrees-pool'));
+    expect(calls).toEqual([]);
+    expect(report.examined).toBe(1);
+    expect(report.quarantined.filter(inPoolArea)).toEqual([]);
+    expect(report.pool?.removed).toEqual([leftover!.path]);
+    expect(report.pool?.warming).toEqual([PROJECT_ID]);
+    await expect(stat(leftover!.path)).rejects.toThrow();
+
+    // The pool it started is this process's own: a second sweep finds it alive.
+    while (!manager.pool!.snapshot(PROJECT_ID).some((l) => l.state === 'warm')) {
+      if (Date.now() > deadline) throw new Error('the new pool never filled');
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const again = await run([allocation({ worktreeId: liveId, state: 'ready', path: livePath, entityExists: true })]);
+    expect(again.report.quarantined.filter(inPoolArea)).toEqual([]);
+    expect(manager.pool!.snapshot(PROJECT_ID).filter((l) => l.state === 'warm')).toHaveLength(1);
+
+    await manager.pool!.drain();
+    await manager.remove({ projectId: PROJECT_ID, repoRoot, path: livePath, force: true });
   });
 });
 
