@@ -177,19 +177,29 @@ export class BridgeRuntimeHub {
 
   /**
    * B1b-7 (`bridges.connections.remove`): stop one connection on the runtime
-   * holding it; `logout` unlinks the device and wipes its sealed keys. Sent to
-   * `runtimeId` when that runtime is connected, else to every connected runtime
-   * (a runtime ignores a connection it does not hold). False when none is.
+   * holding it; `logout` unlinks the device and wipes its sealed keys (D38).
+   * Sent to `runtimeId` when that runtime is connected, else to every open
+   * runtime (a runtime ignores a connection it does not hold). Each send stands
+   * alone, so a socket closing mid-loop costs only itself: true exactly when at
+   * least one runtime got the frame.
    */
   async disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean> {
     const held = opts.runtimeId ? this.runtimes.get(opts.runtimeId) : undefined;
     const targets = held && held.sink.isOpen ? [held] : [...this.runtimes.values()].filter((r) => r.sink.isOpen);
+    let sent = 0;
     for (const link of targets) {
-      this.send(link.runtimeId, { type: 'disconnect', connectionId, ...(opts.logout ? { logout: true } : {}) });
+      try {
+        this.send(link.runtimeId, { type: 'disconnect', connectionId, ...(opts.logout ? { logout: true } : {}) });
+        sent += 1;
+      } catch (err) {
+        this.o.log?.(`[bridges] disconnect to runtime ${link.runtimeId} failed: ${(err as Error).message}`);
+      }
     }
-    // The allowlist is derived in SQL: once the connection's bridges end, this pass pushes it emptied.
+    // A removed connection gets no further allowlist (bridge_allowlists_due skips it): the
+    // disconnect itself stops it on the runtime, and the next hello reply leaves it out.
+    // The kick still pushes any other connection this change left due.
     this.kick();
-    return targets.length > 0;
+    return sent > 0;
   }
 
   /** The owner's live group list (§4.3 picker, D28): asked of the runtime, never stored. */

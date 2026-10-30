@@ -111,6 +111,9 @@ describe('the owner leaves the space (§2.5, ac1)', () => {
   it('being removed by an admin (remove_space_member) pauses them too', async () => {
     await as(adminIdentity, q => q.rpc('remove_space_member', [spaceId, ownerMember, randomUUID()]));
     expect((await row(infra)).paused_at).not.toBeNull();
+    const blocked = await refusal(as(adminIdentity, async q => q.rpc('resume_bridge', [infra, await version(infra), null, randomUUID()])));
+    expect(blocked.code).toBe('conflict');
+    expect(reasonOf(blocked)).toBe('owner_not_member');
     await asOwner(`update public.members set status = 'active', left_at = null where entity_id = $1`, [ownerMember]);
     await as(ownerIdentity, q => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
   });
