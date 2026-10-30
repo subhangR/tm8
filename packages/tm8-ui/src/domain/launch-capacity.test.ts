@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { capacitySlots, describeCapacity } from './launch';
 
-describe('describeCapacity — ghosts (391)', () => {
+describe('describeCapacity — ghosts (397)', () => {
   it('reads exactly as before when the node does not report ghosts', () => {
     expect(describeCapacity({ slotsFree: 0, slotsTotal: 64 })).toBe('0 of 64 session slots free');
     expect(describeCapacity({ slotsFree: 3, slotsTotal: 8, ghosts: 0 })).toBe('3 of 8 session slots free');

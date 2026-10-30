@@ -70,7 +70,7 @@ export type WorkSessionEndedKind =
   | 'unknown';
 
 /**
- * One pass of a node job that ends this node's processes (391): boot ghost
+ * One pass of a node job that ends this node's processes (397): boot ghost
  * reconciliation, the lost-session reaper, the completed auto-close.
  *
  * - `candidates`: rows the pass would end (ghosts with no PTY here, or
@@ -95,7 +95,7 @@ export function emptySweep(errors: Array<{ message: string }> = []): NodeEndingS
 }
 
 /**
- * The endings a node may record itself (391): failed with what it can infer
+ * The endings a node may record itself (397): failed with what it can infer
  * about a process that is gone, or exited_clean for a completed session's idle
  * process it closed. Never an operator's or the agent's own ending.
  */
@@ -1332,7 +1332,7 @@ export interface GraphPort {
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**
    * The ghost candidates IN EVERY SPACE (`public.node_live_work_sessions`,
-   * 391): this node's sessions of ANY kind whose record says a process runs
+   * 397): this node's sessions of ANY kind whose record says a process runs
    * (`internal.work_session_process_recorded_live`) — a superset of what the
    * concurrency cap counts (`internal.work_session_counts_against_cap`: agents
    * whose work is not completed). Read by boot reconciliation and the
@@ -1348,7 +1348,7 @@ export interface GraphPort {
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
   /**
-   * "This node's process for the session ended" (391,
+   * "This node's process for the session ended" (397,
    * `public.node_record_work_session_ending`). The ONE write every node job
    * uses — boot reconciliation, the lost-session reaper, the completed
    * auto-close — in any space: status and ending, never the outcome or the
@@ -1370,7 +1370,7 @@ export interface GraphPort {
   ): Promise<NodeSessionEnding>;
   /**
    * `recordWorkSessionUsage` for a session this node ran, in any space
-   * (`public.node_record_work_session_usage`, 391). Node admin. The node
+   * (`public.node_record_work_session_usage`, 397). Node admin. The node
    * jobs' half of the usage instrument, written after the ending.
    */
   recordNodeSessionUsage(
@@ -1380,7 +1380,7 @@ export interface GraphPort {
   /**
    * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
    * recorded live and has been idle past its space's auto-close window, in
-   * every space (`public.node_completed_sessions_to_close`, 391). Node admin,
+   * every space (`public.node_completed_sessions_to_close`, 397). Node admin,
    * like the other node doors; the member-filtered read it replaced closed
    * nothing outside the owner's spaces.
    */

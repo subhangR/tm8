@@ -1451,7 +1451,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       const raw = await http.callPath<Omit<LivenessSnapshot, 'spaceId'> & { spaceId?: SpaceId }>(
         'GET',
         livenessPath(spaceId),
-        // 391: ask for the dead share of the cap, so a full cap can say why.
+        // 397: ask for the dead share of the cap, so a full cap can say why.
         { query: { ghosts: '1' } },
       );
       // The read is per-space and the response shape C-1 fixed does not echo

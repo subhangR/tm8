@@ -601,13 +601,13 @@ describe('W1 honest W2-only skeletons', () => {
       expect(parsed.data.liveChatCount).toBe(3);
       expect(parsed.data.workingChatCount).toBe(1);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
-      // 391: no `?ghosts=1`, so the SHAPE is byte-identical to before, and the
+      // 397: no `?ghosts=1`, so the SHAPE is byte-identical to before, and the
       // one capacity read named no node, so it counted no ghosts. The MEANING
       // of `used` did change: it is now node-wide for every caller (the spawn
       // gate's population, from the definer `session_capacity`), where it was
       // the caller's RLS-scoped count. This mock only pins the shape; the real
       // function is pinned against two spaces, with a member of each, in
-      // test/db/node-ghost-sessions-391.pg.test.ts ("session_capacity: used is
+      // test/db/node-ghost-sessions-397.pg.test.ts ("session_capacity: used is
       // node-wide for ANY caller").
       expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
       const capacityCall = query.mock.calls.find((c) => String(c[1]).includes('session_capacity')) as unknown[];
@@ -636,7 +636,7 @@ describe('W1 honest W2-only skeletons', () => {
     const intersectArgs = query.mock.calls[1] as unknown[];
     expect(intersectArgs[2]).toEqual([SPACE, [SOURCE, 'ffffffff-ffff-4fff-8fff-ffffffffffff']]);
 
-    // 391, opted in: `?ghosts=1` adds the dead share of the cap, as a count.
+    // 397, opted in: `?ghosts=1` adds the dead share of the cap, as a count.
     bound.mockResolvedValueOnce([{ last_seq: '1' }]);
     query
       .mockResolvedValueOnce([{ id: SPACE }])

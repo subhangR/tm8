@@ -29,8 +29,8 @@ export interface LostSessionReaperOptions {
 }
 
 /**
- * The one line every tick of a node-ending job logs (391), the reaper's and
- * the auto-close's alike. EVERY tick: before 391 the reaper could not see
+ * The one line every tick of a node-ending job logs (397), the reaper's and
+ * the auto-close's alike. EVERY tick: before 397 the reaper could not see
  * ghosts outside its identity's spaces, reported `skipped`, and said nothing
  * for weeks while 19 dead rows held the cap. `notRecorded` is counted apart
  * from `retired` and `refused`, so a pass whose writes all came back

@@ -1546,7 +1546,7 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * The node doors (391) behind boot reconciliation and the lost-session
+   * The node doors (397) behind boot reconciliation and the lost-session
    * reaper. SECURITY DEFINER RPCs gated on the node-admin claim, deliberately
    * not catalog operations: this is node-local maintenance, and the node's
    * background identity is not a member of every space it hosts.
@@ -2031,7 +2031,7 @@ export interface ExecutionRuntime {
  * claims raises 42501, the transition is dropped, and the row sits at 'running'
  * forever — a ghost session the UI paints as a live agent and the concurrency
  * cap counts against every future spawn (until the node jobs retire it through
- * the node doors, 391). A host built elsewhere and passed in cannot have that
+ * the node doors, 397). A host built elsewhere and passed in cannot have that
  * sink, so the cycle is closed here with a lazy closure.
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
@@ -2124,7 +2124,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER, and `nodeAdmin: o.isNodeAdmin` is
       // LOAD-BEARING: reconciliation reads and writes through the node doors
-      // (391), which refuse anyone without the node-admin claim. Through them
+      // (397), which refuse anyone without the node-admin claim. Through them
       // it retires ghosts in every space, the owner's or not.
       //
       // Wrapped because resolving the owner touches the database, and a node
@@ -2187,7 +2187,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as a node admin: the node doors (391) refuse anyone
+      // The loopback owner, as a node admin: the node doors (397) refuse anyone
       // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
@@ -2401,7 +2401,7 @@ export function registerExecutionHandlers(
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as a node admin: the node doors (391) refuse anyone
+      // The loopback owner, as a node admin: the node doors (397) refuse anyone
       // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
@@ -2971,7 +2971,7 @@ export type DispatchDelivery = NonNullable<
 
 export interface RegisterHandlersOptions {
   readonly dispatchDelivery?: DispatchDelivery;
-  /** This node's id, for the capacity read's `ghosts` count (391). */
+  /** This node's id, for the capacity read's `ghosts` count (397). */
   readonly nodeId?: string;
   /**
    * The lost-session reaper's stale window (`lostAfterMsFromEnv`). `ghosts`
@@ -3402,7 +3402,7 @@ function registerHandlers(
               and e.deleted_at is null and e.id = any($2::uuid[])`,
           [spaceId, live],
         );
-    // 391: `used` and `ghosts` in ONE read of ONE population, node-wide as the
+    // 397: `used` and `ghosts` in ONE read of ONE population, node-wide as the
     // spawn gate counts it (`session_capacity` is a definer; the plain-SQL
     // count under the caller's RLS saw only the caller's spaces). `ghosts` is
     // the share of `used` the reaper would retire: on THIS node, no PTY here,

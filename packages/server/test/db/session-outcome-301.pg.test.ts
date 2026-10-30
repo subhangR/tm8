@@ -732,7 +732,7 @@ describe('299 — events and the concurrency limit', () => {
 // Auto-close (owner ruling Q3) — which completed sessions the node closes
 // ---------------------------------------------------------------------------
 
-describe('301/391 — node_completed_sessions_to_close (Q3)', () => {
+describe('301/397 — node_completed_sessions_to_close (Q3)', () => {
   async function completedAgo(label: string, minutes: number): Promise<string> {
     const t = await createTask(label);
     const s = await running([t]);
@@ -746,7 +746,7 @@ describe('301/391 — node_completed_sessions_to_close (Q3)', () => {
     });
     return s;
   }
-  // 391: the auto-close reads through the node door, as a node admin.
+  // 397: the auto-close reads through the node door, as a node admin.
   const due = async (): Promise<string[]> =>
     (await asApp(async (q) => {
       await q(`select set_config('tm8.node_admin','true',true)`);
