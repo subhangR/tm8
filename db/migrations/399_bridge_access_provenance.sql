@@ -213,7 +213,11 @@ revoke all on function internal.bridge_merge_origins(jsonb, jsonb) from public;
 -- Upsert one provenance edge: insert, or merge origins[] into the one there.
 create or replace function internal.bridge_upsert_edge(e public.entities, p_dst uuid, p_bridge uuid, p_origins jsonb)
 returns void language plpgsql set search_path = public, internal, pg_temp as $$
-declare existing public.edges;
+declare
+  existing public.edges;
+  -- This runs inside the entities AFTER INSERT trigger: restore whatever
+  -- writer the creating path had set, never clear it (review F1).
+  prev_writer text := internal.w1_writer();
 begin
   perform internal.w1_set_writer('entity_recorder');
   select * into existing from public.edges
@@ -240,7 +244,7 @@ begin
        where id = existing.id;
     end if;
   end if;
-  perform internal.w1_set_writer(null);
+  perform internal.w1_set_writer(nullif(prev_writer, ''));
 end
 $$;
 revoke all on function internal.bridge_upsert_edge(public.entities, uuid, uuid, jsonb) from public;
