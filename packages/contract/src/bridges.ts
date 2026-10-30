@@ -186,6 +186,32 @@ export interface BridgeHandleListResult { items: BridgeHandleAppearance[] }
 
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
+/** How far a bridged sender is taken at their word (§2.4, D4). */
+export type BridgeTrust = 'linked' | 'asserted' | 'guest';
+
+/**
+ * A message that crossed a bridge, or is crossing (§4.5, D4): read for the
+ * message itself or its batch twin, so a routed message's chat copy and log
+ * copy carry the same mark. Absent on a message that never touched a bridge.
+ */
+export interface MessageBridgeView {
+  bridgeId: EntityId;
+  provider: BridgeProvider;
+  /** The provider conversation's title (`Infra`); null when unreadable. */
+  conversation: string | null;
+  direction: 'in' | 'out';
+  /** Inbound only: the participant's name as the provider sent it; never a phone number. */
+  participant: string | null;
+  /** Inbound only: linked (verified), asserted (an admin's *This is…*), guest (unlinked, authored by the bridge). */
+  trust: BridgeTrust | null;
+  /**
+   * Outbound only: the outbox ledger's state, or the refusal (398's badge).
+   * There is no `delivered` or `read`: the runtime protocol carries no
+   * receipts (D64).
+   */
+  delivery: BridgeDelivery | null;
+}
+
 /** One row of `bridges.log.read`: a message on the bridge's log anchor. Rows within a page are oldest first. */
 export interface BridgeLogEntry {
   id: EntityId;
@@ -205,6 +231,8 @@ export interface BridgeLogEntry {
   } | null;
   /** The poster's handle, when a session with one wrote it. */
   handle: string | null;
+  /** The outbound delivery badge (sent, queued, failed, refused), when this message crosses. */
+  delivery: BridgeDelivery | null;
 }
 export interface BridgeLogResult {
   bridgeId: EntityId;
@@ -264,6 +292,26 @@ const OneLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\r\
 const Hhmm = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'must be HH:MM');
 
 export const BridgeProviderSchema = z.enum(BRIDGE_PROVIDERS);
+export const BridgeDeliverySchema: z.ZodType<BridgeDelivery> = z.object({
+  messageId: z.string().min(1),
+  bridgeId: z.string().min(1),
+  status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
+  reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
+    'not_connected', 'credential_text']).optional(),
+  retryAfterMs: z.number().int().nonnegative().optional(),
+  externalMessageId: z.string().min(1).optional(),
+  detail: z.string().min(1).optional(),
+  at: z.string().min(1),
+}).strict();
+export const MessageBridgeViewSchema: z.ZodType<MessageBridgeView> = z.object({
+  bridgeId: Id,
+  provider: BridgeProviderSchema,
+  conversation: z.string().nullable(),
+  direction: z.enum(['in', 'out']),
+  participant: z.string().nullable(),
+  trust: z.enum(['linked', 'asserted', 'guest']).nullable(),
+  delivery: BridgeDeliverySchema.nullable(),
+}).strict();
 export const BridgeWakeSchema = z.enum(['directed', 'thread', 'all']);
 export const BridgePolicySchema: z.ZodType<BridgePolicy> = z.object({
   trigger: z.enum(['mention', 'every', 'none']),

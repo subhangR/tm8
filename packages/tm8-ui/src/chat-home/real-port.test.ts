@@ -431,11 +431,37 @@ describe('real chat-home seam adapter', () => {
 
     const detail = await port.readThread(CHAT);
     expect(detail.summary.aboutId).toBe(ABOUT);
-    expect(connections).toHaveBeenCalledTimes(1);
+    // One subject read for the opened chat, beside one bridge read (§4.5):
+    // never one per listed row.
+    expect(connections).toHaveBeenCalledTimes(2);
     expect(connections).toHaveBeenCalledWith(
       CHAT,
       expect.objectContaining({ types: ['about'], direction: 'outgoing' }),
     );
+    expect(connections).toHaveBeenCalledWith(
+      CHAT,
+      expect.objectContaining({ types: ['bridged_to'], direction: 'incoming' }),
+    );
+    // The stub's edge source is no bridge, so there is no chip.
+    expect(detail.summary.bridgedFrom).toBeUndefined();
+  });
+
+  it('names the bridge this chat is the target of, for the header chip (§4.5)', async () => {
+    const { seam, connections } = seamStub();
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    const BRIDGE = '019f0000-0000-7000-8000-0000000003b1';
+    connections.mockImplementation((async (_id: string, opts?: { types?: string[] }) => (
+      opts?.types?.[0] === 'bridged_to'
+        ? { items: [{ source: { id: BRIDGE, state: {
+          kind: 'bridge', provider: 'whatsapp', status: 'live',
+          conversation: { externalId: 'g', kind: 'group', title: 'Infra', memberCount: 9 },
+        } } }] }
+        : { items: [] }
+    )) as never);
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+    const detail = await port.readThread(CHAT);
+    expect(detail.summary.bridgedFrom).toEqual({ bridgeId: BRIDGE, provider: 'whatsapp', conversation: 'Infra', status: 'live' });
   });
 
   it('answers "which chats are about X" from ONE incoming-edge read on X', async () => {

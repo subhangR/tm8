@@ -1610,6 +1610,12 @@ export interface MessageView extends EntitySummary {
    * it — the chat surface used to pull a whole `entities.feed` page for this.
    */
   sourceWorkSessionId?: EntityId;
+  /**
+   * The bridge this message crossed, with its participant, trust and delivery
+   * badge (BRIDGE-ENTITY-DESIGN §4.5, D4). Absent on a message no bridge
+   * touched; optional under the rolling-node rule.
+   */
+  bridge?: import('./bridges.js').MessageBridgeView;
 }
 
 // ---------------------------------------------------------------------------

@@ -253,7 +253,8 @@ async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
       const who = `${m.authorName || m.authorId || 'unknown'}${m.handle ? ` (${m.handle})` : ''}`;
       const via = m.origin ? ` [${m.origin.direction === 'in' ? 'from' : 'to'} ${m.origin.externalMessageId}]` : '';
       const reply = m.parentMessageId ? ` ↳${m.parentMessageId}` : '';
-      return `${m.createdAt} ${m.id}${reply} ${who}${via}: ${m.body.replace(/\s+/g, ' ')}`;
+      const tick = m.delivery ? ` {${m.delivery.status}${m.delivery.reason ? `: ${m.delivery.reason}` : ''}}` : '';
+      return `${m.createdAt} ${m.id}${reply} ${who}${via}${tick}: ${m.body.replace(/\s+/g, ' ')}`;
     });
     if (p.olderCursor) lines.push(`older: tm8 bridge log ${p.bridgeId} --before ${p.olderCursor}`);
     if (p.more) lines.push(`more: tm8 bridge log ${p.bridgeId} --since ${p.lastMessageId}`);
