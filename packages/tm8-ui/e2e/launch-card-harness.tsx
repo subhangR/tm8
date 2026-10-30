@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import type { EntityId, ProjectId } from '@tm8/contract';
 
 import { LaunchComposerPopup } from '../src/new-session/LaunchComposerPopup';
+import { McpProvider } from '../src/mcp/context';
+import type { McpAccount, McpCatalog, McpPort, McpServer } from '../src/mcp/port';
 import type { LaunchProjectOption } from '../src/domain/launch';
 import type { LaunchContextRow, LaunchDefaultsResult } from '../src/domain/launch-selection';
 import { LAUNCH_DEFAULTS, LAUNCH_REFERENCE_CANDIDATES } from '../src/views/launch-fixtures';
@@ -33,6 +35,12 @@ import '../src/panels/panels.css';
  *   ?theme=dark            the dark palette
  *   ?attach=0              the launch starts with nothing attached
  *   ?launch=1              press Launch; the node never answers (the in-card launching state)
+ *   ?mcp=0|2               serve a connector catalog with 0 or 2 connectors
+ *                          (absent: no MCP port, the host serves none)
+ *   ?mcpDelay=<ms>         hold each catalog read this long (default 300)
+ *
+ * `harness-close` / `harness-reopen` unmount and remount the card, as closing
+ * and reopening it in the product does.
  */
 const params = new URLSearchParams(window.location.search);
 
@@ -58,10 +66,44 @@ const NOTHING_ATTACHED: LaunchDefaultsResult = {
   references: EMPTY_GROUP,
 };
 
+const mcpAccount = (over: Partial<McpAccount> = {}): McpAccount => ({
+  id: 'work', label: 'work@example.com', ownerId: 'me', ownerLabel: 'You',
+  canUse: true, canManage: true, status: 'connected', sharing: 'private', ...over,
+});
+const mcpServer = (over: Partial<McpServer>): McpServer => ({
+  id: 'x', version: 1, title: 'Connector', description: '', transport: 'http',
+  url: 'https://example.test/mcp', auth: 'api_key', approved: true, enabled: true,
+  canManage: true, canApprove: true, canAttach: true, accounts: [mcpAccount()], ...over,
+});
+const MCP_COUNT = params.get('mcp');
+const MCP_CATALOG: McpCatalog = {
+  canRegister: true,
+  canAttach: true,
+  defaults: MCP_COUNT === '2' ? [{ serverId: 'qa_alpha' }] : [],
+  servers: MCP_COUNT === '2' ? [
+    mcpServer({ id: 'qa_alpha', title: 'qa_alpha', description: 'First connector' }),
+    mcpServer({ id: 'qa_beta', title: 'qa_beta', description: 'Second connector', auth: 'none', accounts: [] }),
+  ] : [],
+};
+const MCP_DELAY = Number(params.get('mcpDelay') ?? 300);
+const noop = async () => {};
+const MCP_PORT: McpPort | null = MCP_COUNT === null ? null : {
+  catalog: () => new Promise((resolve) => setTimeout(() => resolve(structuredClone(MCP_CATALOG)), MCP_DELAY)),
+  register: noop, update: noop, remove: noop, importConfig: noop, attach: noop, detach: noop,
+  test: async () => ({ ok: true, message: 'ready', tools: [] }),
+  createKey: noop, rotateKey: noop,
+  startOAuth: async () => ({ authorizationUrl: 'https://identity.example/authorize' }),
+  share: noop, revoke: noop, members: async () => [],
+  chatSelections: async () => null,
+  setChatSelections: async (_chatId, value) => value,
+  sessionProvenance: async (sessionId) => ({ sessionId, recorded: false }),
+} as McpPort;
+
 const LONG_TITLE = 'Wire the launch flow end to end and keep the narrow widths honest';
 
 function Harness() {
   const [ready, setReady] = useState(false);
+  const [open, setOpen] = useState(true);
   const selection = useMemo(
     () => ({
       load: () => Promise.resolve(params.get('attach') === '0' ? NOTHING_ATTACHED : LAUNCH_DEFAULTS),
@@ -108,7 +150,10 @@ function Harness() {
       data-theme={params.get('theme') === 'dark' ? 'dark' : undefined}
       style={{ width: '100%', height: '100vh', background: 'var(--pn-paper)' }}
     >
-      <LaunchComposerPopup
+      <McpProvider port={MCP_PORT}>
+      <button type="button" data-testid="harness-close" style={{ position: 'fixed', left: 0, bottom: 0, opacity: 0 }} onClick={() => setOpen(false)}>close</button>
+      <button type="button" data-testid="harness-reopen" style={{ position: 'fixed', left: 40, bottom: 0, opacity: 0 }} onClick={() => setOpen(true)}>reopen</button>
+      {open ? <LaunchComposerPopup
         subject={{ id: 'task-9', title: LONG_TITLE, kind: 'task' }}
         spaceId="sp-1"
         teammates={TEAMMATES}
@@ -126,8 +171,9 @@ function Harness() {
         /* Every real launch surface wires Dispatch through the launch port, so
            the harness draws it too — the footer is measured as it ships. */
         onDispatch={() => Promise.resolve()}
-        onDismiss={() => {}}
-      />
+        onDismiss={() => setOpen(false)}
+      /> : null}
+      </McpProvider>
       {/* The defaults land asynchronously; the driver runs once the strip has
           stopped reading them, so a menu opens against settled content. */}
       <Settle onSettled={drive} />

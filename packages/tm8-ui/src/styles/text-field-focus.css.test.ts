@@ -60,4 +60,21 @@ describe('text-field focus', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it('the launch card rings its buttons, never its notes or inputs', () => {
+    // `.lcd--v3 :is(button, textarea, input):focus-visible { outline … }` named
+    // its fields outright, so the wildcard check above never saw it, and the
+    // autofocused notes opened inside a gold box (QA on a991cf6ca).
+    const offenders: string[] = [];
+    for (const file of sheets(join(SRC, 'new-session'))) {
+      const css = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (!/outline\s*:(?!\s*(none|0)\b)/.test(body)) continue;
+        for (const part of splitSelectors(selector)) {
+          if (/:focus/.test(part) && /\b(textarea|input)\b/.test(part)) offenders.push(`${relative(SRC, file)} → ${part.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

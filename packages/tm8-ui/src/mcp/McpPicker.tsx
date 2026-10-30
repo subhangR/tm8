@@ -29,7 +29,13 @@ import { OPEN_GATE, selectionGate, type SelectionGate } from './selection-gate';
 import type { McpSelection } from './port';
 import './mcp.css';
 
-const CHECKING: SelectionGate = { blocked: true, problem: 'Checking connectors…' };
+/**
+ * The gate's WAIT sentence: an explicit pick held until this mount's own read.
+ * A host that draws the picker holds its launch on it but need not repeat it
+ * as a refusal — the picker draws it as a quiet status line.
+ */
+export const CHECKING_CONNECTORS = 'Checking connectors…';
+const CHECKING: SelectionGate = { blocked: true, problem: CHECKING_CONNECTORS };
 
 /**
  * A host's state for the picker's verdict: the gate, and a STABLE `onReady`
