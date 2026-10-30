@@ -8,3 +8,4 @@ inbox/
 tokens/
 instances/
 config.json.bak*
+runtime-data/

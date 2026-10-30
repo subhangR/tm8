@@ -21,6 +21,8 @@
  * NOTHING HERE RETRIES, MERGES OR RE-READS. A conflict parks with the draft
  * intact so the text is not lost, and the person decides.
  */
+import type { LoopEditor } from '../loops/LoopEditDialog';
+import { getKind } from '../domain';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import {
@@ -64,6 +66,11 @@ export interface EntityEditHandle {
   cancel(): void;
   /** Leave a conflict or refusal card without closing the dialog. */
   dismiss(): void;
+  /**
+   * Set for a loop when the host's commands carry the loops client and its
+   * picker sources: the dialog then opens the loop form instead of fields.
+   */
+  loopEditor?: LoopEditor | null;
 }
 
 export interface EntityEditOptions {
@@ -187,5 +194,10 @@ export function useEntityEdit(options: EntityEditOptions): EntityEditHandle {
     save,
     cancel,
     dismiss,
+    /* Registry data, never a kind literal (§15.2): the kind whose create is
+       the scheduled-work form is edited by that form too. */
+    loopEditor: detail && getKind(detail.kind).createForm === 'scheduled-work' && commands?.loops && commands.loopForm
+      ? { loopId: detail.id, spaceId: detail.spaceId, client: commands.loops, sources: commands.loopForm, onSaved: () => onSaved?.({ patches: [] }) }
+      : null,
   };
 }

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   SPAWN_SELECTION_GROUP_LIMIT,
   type EntityId,
   type LaunchDefaultsGroup,
   type LaunchDefaultsInput,
-  type LaunchDefaultsResult,
   type SpawnSelectionGroup,
 } from '@tm8/contract';
 
@@ -15,13 +14,10 @@ import {
   groupLock,
   LAUNCH_SELECTION_GROUPS,
   launchBlock,
-  loadingDefaults,
   manualOutcome,
   NO_SELECTION_EDITS,
-  readyDefaults,
   toggleRow,
   UNKNOWN_DEFAULTS_NOTE,
-  unknownDefaults,
   type GroupDiff,
   type GroupOutcome,
   type LaunchContextRow,
@@ -29,55 +25,54 @@ import {
   type LaunchGroupEdit,
   type LaunchSelectionEdits,
 } from '../domain/launch-selection';
+import {
+  defaultsNote,
+  launchDefaultsKey,
+  nextDefaultsRead,
+  NO_TEAMMATE_DEFAULTS_NOTE,
+  selectionDefaultsOf,
+  shownAnswer,
+  type LaunchDefaultsRead,
+  type LaunchDefaultsReadEvent,
+} from '../domain/launch-defaults-read';
+import type { LoadLaunchDefaults } from './port';
 
 /**
  * What `launch.defaults` says a group's defaults COST (lane E, I7): each
- * default's prompt bytes and the group's budget. Optional on the wire until
- * E's fields land; absent, the meter shows counts only rather than invent bytes.
+ * default's prompt bytes and the group's budget, as the node measured them.
+ * Read tolerantly: a node that predates #829 (a named Server on an older
+ * build) omits them, and the meter then shows counts rather than invent bytes.
  */
 export interface LaunchGroupBytes {
   /** Bytes per default id, measured by the node with spawn's serializers. Missing id: unknown. */
   readonly bytes: Readonly<Record<string, number>>;
-  /** The group's budget; null: takes what the prompt has left; undefined: the node didn't say. */
+  /** The group's budget; null: takes what the prompt has left; undefined: no answer read yet. */
   readonly budget: number | null | undefined;
 }
 
-/** `launch.defaults` with I7's byte facts, read as optional (lane E adds them). */
-type DefaultsGroupWithBytes = LaunchDefaultsGroup & {
-  readonly budget?: number | null;
-  readonly items: ReadonlyArray<LaunchDefaultsGroup['items'][number] & { readonly promptBytes?: number }>;
-};
-
 function groupBytes(group: LaunchDefaultsGroup): LaunchGroupBytes {
-  const g = group as DefaultsGroupWithBytes;
   const bytes: Record<string, number> = {};
-  for (const item of g.items) if (typeof item.promptBytes === 'number') bytes[item.entityId] = item.promptBytes;
-  return { bytes, budget: g.budget };
+  for (const item of group.items) if (typeof item.promptBytes === 'number') bytes[item.entityId] = item.promptBytes;
+  return { bytes, budget: group.budget };
 }
 
 const NO_BYTES: LaunchGroupBytes = { bytes: {}, budget: undefined };
 const NO_BYTES_ALL: Record<SpawnSelectionGroup, LaunchGroupBytes> = { memories: NO_BYTES, skills: NO_BYTES, references: NO_BYTES };
-
-/**
- * What the launch will run with, which decides the defaults' bytes and
- * budgets (lane E, #829): the harness (a skill's entry reads differently
- * native) and the Interaction Profile (its `contextBudgets`). Query params on
- * `launch.defaults` — a node before #829 ignores them. Declared here until the
- * contract's `LaunchDefaultsInput` carries them; the intersection is harmless after.
- */
-export interface LaunchDefaultsLaunchParams {
-  agentTool?: 'claude-code' | 'codex';
-  interactionProfileId?: EntityId;
-}
-
-/** `launch.defaults`, bound to the space by the host. */
-export type LoadLaunchDefaults = (input: LaunchDefaultsInput & LaunchDefaultsLaunchParams) => Promise<LaunchDefaultsResult>;
 
 export interface LaunchSelection {
   defaults: LaunchSelectionDefaults;
   edits: LaunchSelectionEdits;
   /** The node's own words when a group came back emptier than asked. */
   warnings: readonly string[];
+  /** Ask the node again after a failed read; a no-op otherwise. Edits are kept across it. */
+  retryDefaults(): void;
+  /**
+   * THE ONE LINE both launch surfaces draw about their defaults, or null.
+   * `text` is the note (changed since last time / could not be confirmed /
+   * could not be read) — null when Launch's own block already says it;
+   * `retry` is there whenever the read failed, blocking or not.
+   */
+  defaultsLine: { text: string | null; retry: (() => void) | null } | null;
   /** Rows the person added, so an added row keeps its title while it is ticked. */
   added: Readonly<Record<SpawnSelectionGroup, readonly LaunchContextRow[]>>;
   /** Returns the refusal when the tick is refused; the row shows it too. */
@@ -92,12 +87,12 @@ export interface LaunchSelection {
   setEdit(group: SpawnSelectionGroup, edit: LaunchGroupEdit, rows?: readonly LaunchContextRow[]): string | null;
   /** The defaults' prompt bytes and the group's budget, as `launch.defaults` stated them. */
   bytes: Readonly<Record<SpawnSelectionGroup, LaunchGroupBytes>>;
-  /** Whether the launch renders `<context_index>`, as `launch.defaults` stated it; null: not said. */
+  /** Whether the launch renders `<context_index>`, as `launch.defaults` stated it; null: not read yet. */
   contextIndex: 'on' | 'off' | null;
   refusal: { group: SpawnSelectionGroup; id: EntityId; reason: string } | null;
   diff(group: SpawnSelectionGroup): GroupDiff;
   lock(group: SpawnSelectionGroup): string | null;
-  /** Why Launch must wait (an edited group's defaults are still loading); null when it need not. */
+  /** Why Launch must wait — an edited group's defaults are not confirmed yet, named; null when it need not. */
   launchBlock: string | null;
   /** Each group's outcome for `composeSelection`, read at Launch. */
   outcomes(): Record<SpawnSelectionGroup, GroupOutcome>;
@@ -105,13 +100,54 @@ export interface LaunchSelection {
 
 const NOTHING_ADDED: LaunchSelection['added'] = { memories: [], skills: [], references: [] };
 
+/** What the read is for on this render: a launch key and its input, or why there is nothing to read. */
+type ReadTarget =
+  | { readonly key: string; readonly input: LaunchDefaultsInput }
+  | { readonly key: null; readonly reason: string };
+
+const READ_FAILED_LINE = 'Couldn’t read this launch’s defaults from the node.';
+
+function lineOf(read: LaunchDefaultsRead, block: string | null, retry: () => void): LaunchSelection['defaultsLine'] {
+  const note = defaultsNote(read);
+  if (read.phase !== 'failed') return note ? { text: note, retry: null } : null;
+  /* While failed, any block is the unconfirmed one — it says it already. */
+  return { text: block ? null : note ?? READ_FAILED_LINE, retry };
+}
+
+function defaultsInput(teammateId: string, subjectId: string | null | undefined, agentTool: 'claude-code' | 'codex' | null, profileId: string | null): LaunchDefaultsInput {
+  return {
+    teamMemberId: teammateId as EntityId,
+    ...(subjectId ? { subjectId: subjectId as EntityId } : {}),
+    ...(agentTool ? { agentTool } : {}),
+    ...(profileId ? { interactionProfileId: profileId as EntityId } : {}),
+  };
+}
+
+function openEvent(target: ReadTarget, load: LoadLaunchDefaults | undefined): LaunchDefaultsReadEvent {
+  return target.key === null
+    ? { type: 'close', reason: target.reason }
+    : { type: 'open', key: target.key, cached: load?.peek?.(target.input) ?? null };
+}
+
+function isOpenFor(read: LaunchDefaultsRead, target: ReadTarget): boolean {
+  return target.key === null ? read.phase === 'idle' && read.reason === target.reason : read.key === target.key;
+}
+
 /**
  * The launch sheet's and Run composer's per-group selection (design 01a0d348
  * §5.1, I9). Reads the defaults for the teammate and subject, and holds the
  * person's edits as a diff against them.
  *
- * THE LOADER RIDES A REF: hosts rebuild it on every graph event, and keying
- * the read on its identity would re-read the defaults once per event.
+ * THE READ is the state machine in `domain/launch-defaults-read.ts`; this hook
+ * only feeds it. A new launch key OPENS on the render that sees it — the
+ * documented way to move state with a prop — so a cached answer (the loader's
+ * `peek`) is on the very first frame instead of one frame of "loading", and
+ * the call that confirms it starts in the effect.
+ *
+ * THE READ IS KEYED ON THE LOADER TOO. Hosts build it once per seam, space
+ * and node (views/useGateData.ts), never per graph event, so a new loader is
+ * a new reader — the open card reads through it rather than leave its answer
+ * with one nobody holds.
  *
  * A TEAMMATE CHANGE re-reads the defaults and keeps the edits: a removal of
  * something the new teammate doesn't carry falls away, and an addition stays
@@ -129,62 +165,55 @@ export function useLaunchSelection(args: {
   const { load, teammateId, subjectId } = args;
   const agentTool = args.agentTool === 'claude-code' || args.agentTool === 'codex' ? args.agentTool : null;
   const profileId = args.interactionProfileId || null;
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  const canLoad = load !== undefined;
-  const key = teammateId ? `${teammateId}|${subjectId ?? ''}|${agentTool ?? ''}|${profileId ?? ''}` : null;
 
-  const [read, setRead] = useState<{
-    key: string;
-    defaults: LaunchSelectionDefaults;
-    warnings: readonly string[];
-    bytes: Record<SpawnSelectionGroup, LaunchGroupBytes>;
-    contextIndex: 'on' | 'off' | null;
-  } | null>(null);
+  const target: ReadTarget = !load
+    ? { key: null, reason: UNKNOWN_DEFAULTS_NOTE }
+    : !teammateId
+      ? { key: null, reason: NO_TEAMMATE_DEFAULTS_NOTE }
+      : (() => {
+        const input = defaultsInput(teammateId, subjectId, agentTool, profileId);
+        return { key: launchDefaultsKey(input), input };
+      })();
+
+  const [read, dispatch] = useReducer(nextDefaultsRead, target, (first) => nextDefaultsRead(
+    { phase: 'idle', key: null, reason: '' },
+    openEvent(first, load),
+  ));
+  if (!isOpenFor(read, target)) dispatch(openEvent(target, load));
+
+  /* The read for the open key — again on every retry, and again when the host
+     hands over a new loader (a new seam, space or node),
+     so an answer is never left to a reader nobody holds. The input is the
+     open target's, taken from the render that opened it. */
+  const openKey = target.key;
+  const openInput = useRef<LaunchDefaultsInput | null>(null);
+  openInput.current = target.key === null ? null : target.input;
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const input = openInput.current;
+    if (!load || openKey === null || !input) return;
+    let live = true;
+    load(input).then(
+      (result) => { if (live) dispatch({ type: 'answered', key: openKey, result }); },
+      () => { if (live) dispatch({ type: 'failed', key: openKey }); },
+    );
+    return () => { live = false; };
+  }, [openKey, attempt, load]);
+  const retryDefaults = useCallback(() => {
+    if (read.phase !== 'failed') return;
+    dispatch({ type: 'retry', key: read.key });
+    setAttempt((n) => n + 1);
+  }, [read]);
+
   const [edits, setEdits] = useState<LaunchSelectionEdits>(NO_SELECTION_EDITS);
   const [added, setAdded] = useState<LaunchSelection['added']>(NOTHING_ADDED);
   const [refusal, setRefusal] = useState<LaunchSelection['refusal']>(null);
 
-  useEffect(() => {
-    const fn = loadRef.current;
-    if (!key || !teammateId || !fn) return;
-    let live = true;
-    fn({
-      teamMemberId: teammateId as EntityId,
-      ...(subjectId ? { subjectId: subjectId as EntityId } : {}),
-      ...(agentTool ? { agentTool } : {}),
-      ...(profileId ? { interactionProfileId: profileId as EntityId } : {}),
-    }).then(
-      (result) => {
-        if (!live) return;
-        setRead({
-          key,
-          defaults: {
-            memories: readyDefaults(result.memories),
-            skills: readyDefaults(result.skills),
-            references: readyDefaults(result.references),
-          },
-          warnings: result.warnings,
-          bytes: {
-            memories: groupBytes(result.memories),
-            skills: groupBytes(result.skills),
-            references: groupBytes(result.references),
-          },
-          contextIndex: (result as LaunchDefaultsResult & { contextIndex?: 'on' | 'off' }).contextIndex ?? null,
-        });
-      },
-      () => { if (live) setRead({ key, defaults: unknownDefaults(UNKNOWN_DEFAULTS_NOTE), warnings: [], bytes: NO_BYTES_ALL, contextIndex: null }); },
-    );
-    return () => { live = false; };
-  }, [key, teammateId, subjectId, agentTool, profileId, canLoad]);
-
-  const defaults = useMemo<LaunchSelectionDefaults>(() => {
-    if (!canLoad) return unknownDefaults(UNKNOWN_DEFAULTS_NOTE);
-    if (!key) return unknownDefaults('Pick a teammate to see what this launch loads by default.');
-    return read && read.key === key ? read.defaults : loadingDefaults();
-  }, [canLoad, key, read]);
-  const current = read && read.key === key ? read : null;
-  const warnings = current ? current.warnings : [];
+  const defaults = useMemo(() => selectionDefaultsOf(read), [read]);
+  const answer = shownAnswer(read);
+  const bytes = useMemo(() => (answer
+    ? { memories: groupBytes(answer.memories), skills: groupBytes(answer.skills), references: groupBytes(answer.references) }
+    : NO_BYTES_ALL), [answer]);
 
   const toggle = useCallback((group: SpawnSelectionGroup, row: LaunchContextRow): string | null => {
     const result = toggleRow(defaults[group], edits[group], row.id);
@@ -224,19 +253,22 @@ export function useLaunchSelection(args: {
     return out;
   }, [defaults, edits]);
 
+  const block = launchBlock(defaults, edits);
   return {
     defaults,
     edits,
-    warnings,
+    warnings: answer ? answer.warnings : [],
+    retryDefaults,
+    defaultsLine: lineOf(read, block, retryDefaults),
     added,
     toggle,
     setEdit,
-    bytes: current ? current.bytes : NO_BYTES_ALL,
-    contextIndex: current ? current.contextIndex : null,
+    bytes,
+    contextIndex: answer?.contextIndex ?? null,
     refusal,
     diff: (group) => groupDiff(defaults[group], edits[group]),
     lock: (group) => groupLock(defaults[group]),
-    launchBlock: launchBlock(defaults, edits),
+    launchBlock: block,
     outcomes,
   };
 }

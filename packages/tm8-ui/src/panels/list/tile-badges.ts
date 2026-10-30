@@ -1,7 +1,10 @@
-import type { ActorSummary, EntitySummary, StatusCategory } from '@tm8/contract';
+import type { ActorSummary, EntitySummary, StatusCategory, ToolLastRun } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
 import { actorPresentation } from '../../domain';
 import type { PillTone } from '../../kit';
+import { relTime } from '../../kit/time';
+import { runLabel, runTone } from '../../tools/values';
+import { toolVersionOf } from '../../tools/version-field';
 
 /**
  * TILE BADGES — the Z1 vocabulary, rendered.
@@ -157,6 +160,20 @@ const humanBytes = (n: number): string =>
   n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
 
 const meta = (text: string | null): TileSlot | null => (text ? { slot: 'meta', text } : null);
+
+/** A tool summary's definition and last run, read structurally (older summaries lack `lastRun`). */
+const toolDefinition = (row: EntitySummary) => {
+  const d = field(row, 'definition');
+  return d && typeof d === 'object'
+    ? (d as { runtime?: unknown; inputs?: ReadonlyArray<{ name: string; type: string }> })
+    : null;
+};
+const toolLastRun = (row: EntitySummary) => {
+  const r = field(row, 'lastRun');
+  return r && typeof r === 'object' && typeof (r as { state?: unknown }).state === 'string'
+    ? (r as ToolLastRun)
+    : null;
+};
 
 /**
  * One badge source → one slot, or null when the row simply has no such value.
@@ -429,6 +446,41 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
       const n = f && typeof f === 'object' ? Object.keys(f as object).length : 0;
       return n > 0 ? meta(`${n} fields`) : null;
     }
+    /*
+     * TOOL (Tools v2). The definition and `lastRun` ride the tool's summary
+     * (`TOOL_CONTENT_SQL`). The last run's outcome takes the status slot: it
+     * is the one fact on the row that changes on its own. A tool that has
+     * never run draws no status, as a chat at rest draws none.
+     */
+    case 'toolRuntime':
+      return meta(str(toolDefinition(row)?.runtime));
+    case 'toolInputs': {
+      const n = toolDefinition(row)?.inputs?.length ?? 0;
+      return n > 0 ? meta(`${n} ${n === 1 ? 'input' : 'inputs'}`) : null;
+    }
+    case 'toolSecrets': {
+      const declared = (toolDefinition(row)?.inputs ?? []).filter((input) => input.type === 'secret').map((input) => input.name);
+      if (!declared.length) return null;
+      const bindings = field(row, 'secretBindings');
+      const bound = Array.isArray(bindings)
+        ? declared.filter((name) => bindings.some((b) => (b as { inputName?: unknown }).inputName === name)).length
+        : 0;
+      return meta(`${bound}/${declared.length} ${declared.length === 1 ? 'secret' : 'secrets'} set`);
+    }
+    case 'toolLastRun': {
+      const run = toolLastRun(row);
+      return run ? { slot: 'status', word: runLabel(run).toLowerCase(), tone: runTone(run), dot: 'solid' } : null;
+    }
+    case 'toolLastRunAt': {
+      const run = toolLastRun(row);
+      const at = run ? run.exitedAt ?? run.startedAt : null;
+      return meta(at ? `ran ${relTime(at)}` : null);
+    }
+    case 'toolVersion': {
+      // The execution version, as the page and a run print it; never the concurrency token.
+      const version = num(field(row, 'version')), executionVersion = num(field(row, 'executionVersion'));
+      return version ? meta(`v${toolVersionOf({ version, executionVersion: executionVersion ?? version })}`) : null;
+    }
     default:
       return null;
   }
@@ -453,4 +505,6 @@ export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSo
   // container (migration 177) — a source listed here and nowhere else would
   // still be dead data; each of these four has a `renderBadge` arm above.
   'containerStatus', 'profile', 'provider', 'isolation', 'visibility',
+  // tool (Tools v2)
+  'toolRuntime', 'toolInputs', 'toolSecrets', 'toolLastRun', 'toolLastRunAt', 'toolVersion',
 ]);

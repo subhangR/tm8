@@ -1,8 +1,10 @@
 import { SkillCreateControl } from '../skills/SkillCreateControl';
+import { InstallStarters } from '../tools/InstallStarters';
+import { ToolCreateControl } from '../tools/ToolCreateControl';
 import type { CommandResult, EntityId, SpaceId } from '@tm8/contract';
 import type { KindConfig } from '../domain';
 import type { Seam } from '../data/seam';
-import { LoopCreateControl } from '../loops/LoopCreateControl';
+import { LoopCreateButton } from '../loops/LoopForm';
 import { creatableKind, placeholderTitleFor, type AuthoringCommands } from './commands';
 import { HeaderCreateControl } from './HeaderCreateControl';
 import { FileUploadCreateControl } from './FileUploadCreateControl';
@@ -40,6 +42,21 @@ export function EntityCreateControl({
 }) {
   const label = config.palette?.createLabel ?? '＋ New';
   if (config.createForm === 'skill-file') return <SkillCreateControl spaceId={spaceId} port={commands?.skills} onNotice={onNotice} />;
+  if (config.createForm === 'tool-definition') {
+    // A definition, not a title, makes one; the starters install beside it.
+    return (
+      <>
+        <ToolCreateControl
+          spaceId={spaceId}
+          port={commands?.tools}
+          label={label}
+          onNotice={onNotice}
+          onCreated={({ tool }) => onCreated?.(tool.id as EntityId, { patches: [] })}
+        />
+        <InstallStarters spaceId={spaceId} port={commands?.tools} />
+      </>
+    );
+  }
   if (config.createForm === 'file-upload') {
     // A kind whose substance IS its bytes cannot be created before them.
     return (
@@ -54,11 +71,12 @@ export function EntityCreateControl({
   }
   if (config.createForm === 'scheduled-work') {
     return (
-      <LoopCreateControl
+      <LoopCreateButton
         spaceId={spaceId}
-        commands={commands}
+        client={commands?.loops ?? null}
+        sources={commands?.loopForm ?? null}
         label={label}
-        onCreated={onCreated}
+        onCreated={(view) => onCreated?.(view.id, { patches: [] })}
       />
     );
   }

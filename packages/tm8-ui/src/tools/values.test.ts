@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseValue, runValues, initialValues } from './values';
+import { initialValues, parseValue, runDuration, runInvoker, runTone, runValues } from './values';
 import { fixtureTool } from './fixture';
 
 describe('typed run input validation', () => {
@@ -21,5 +21,35 @@ describe('typed run input validation', () => {
     expect(() => runValues(tool, initialValues(tool), {})).toThrow('url: a value is required');
     tool.config.url = 'https://example.test'; tool.secretBindings.push({ inputName: 'token', credentialId: '00000000-0000-4000-8000-000000000003', keyHint: '…1234' });
     expect(runValues(tool, initialValues(tool), {})).toMatchObject({ secrets: {} });
+  });
+});
+
+describe('run facts for the history table', () => {
+  const at = (seconds: number) => new Date(Date.UTC(2026, 9, 10, 12, 0, seconds)).toISOString();
+  it('formats a run’s duration from its own timestamps, or from now while it runs', () => {
+    expect(runDuration({ startedAt: at(0), exitedAt: '2026-10-10T12:00:00.850Z' })).toBe('850ms');
+    expect(runDuration({ startedAt: at(0), exitedAt: at(12) })).toBe('12s');
+    expect(runDuration({ startedAt: at(0), exitedAt: at(184) })).toBe('3m 4s');
+    expect(runDuration({ startedAt: at(0), exitedAt: at(3720) })).toBe('1h 2m');
+    expect(runDuration({ startedAt: at(0), exitedAt: null }, Date.parse(at(5)))).toBe('5s');
+    expect(runDuration({ startedAt: null, exitedAt: null })).toBe('—');
+  });
+  it('labels the invoker as loop, agent or human in that order of evidence', () => {
+    const ada = { id: 'a', kind: 'member' as const, displayName: 'Ada', isAgent: false };
+    const bot = { ...ada, displayName: 'Scout', isAgent: true };
+    expect(runInvoker({ parentSessionId: 'p', invoker: bot, triggeredBy: { id: 'l', title: 'Nightly' } })).toEqual({ kind: 'loop', label: 'Loop · Nightly' });
+    expect(runInvoker({ parentSessionId: null, invoker: ada, triggeredBy: { id: 'l', title: null } })).toEqual({ kind: 'loop', label: 'Loop' });
+    expect(runInvoker({ parentSessionId: 'p', invoker: ada, triggeredBy: null })).toEqual({ kind: 'agent', label: 'Agent · Ada' });
+    expect(runInvoker({ parentSessionId: null, invoker: bot, triggeredBy: null })).toEqual({ kind: 'agent', label: 'Agent · Scout' });
+    expect(runInvoker({ parentSessionId: 'p', invoker: null })).toEqual({ kind: 'agent', label: 'Agent' });
+    expect(runInvoker({ parentSessionId: null, invoker: ada, triggeredBy: null })).toEqual({ kind: 'human', label: 'Ada' });
+    expect(runInvoker({ parentSessionId: null, invoker: null })).toEqual({ kind: 'human', label: 'Unknown' });
+  });
+  it('tones only a clean exit as settled', () => {
+    expect(runTone({ state: 'running', exitCode: null })).toBe('run');
+    expect(runTone({ state: 'exited', exitCode: 0 })).toBe('idle');
+    expect(runTone({ state: 'exited', exitCode: 2 })).toBe('block');
+    expect(runTone({ state: 'timed_out', exitCode: null })).toBe('block');
+    expect(runTone({ state: 'killed', exitCode: null })).toBe('block');
   });
 });

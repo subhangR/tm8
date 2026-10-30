@@ -126,7 +126,7 @@ export interface WorkspaceViewProps {
   /** True while the one permitted spawn request is unsettled. */
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
-  onLaunchSubmit?(config: LaunchSelection): void;
+  onLaunchSubmit?(config: LaunchSelection): void | Promise<unknown>;
   /** D5 — hand the subject to the dispatcher instead of configuring a launch. */
   onLaunchDispatch?(request: DispatchSelection): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */

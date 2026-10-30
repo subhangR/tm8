@@ -17,8 +17,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createServer, type Server } from 'node:http';
 import { run } from '../src/run.js';
 import { nounHelp, rootHelp, searchHelp } from '../src/discovery/help.js';
-import { INTENT_ROUTES, matchIntent } from '../src/discovery/search.js';
-import { commandDiscovery } from '../src/discovery/operations.js';
+import { INTENT_ROUTES, matchIntent, rankAll, rankedLast } from '../src/discovery/search.js';
+import { commandDiscovery, type CommandDiscovery, type OperationDiscovery } from '../src/discovery/operations.js';
 import { CONTENT_STRING_CAP, boundEntityDetail, isEntityDetail } from '../src/entity-bounded.js';
 
 const ID = '55555555-5555-7555-8555-555555555555';
@@ -237,6 +237,96 @@ describe('help --query routes closeout intents to the exact command, first', () 
   it('the human render prints the example', async () => {
     expect(await run(['help', '--query', 'complete task'])).toBe(0);
     expect(out()).toContain('e.g. tm8 task complete <task-id>');
+  });
+});
+
+describe('help --query: stopping a run never answers tool run; only a plain stop answers session terminate (01a187ed)', () => {
+  /** Nothing but a stop verb, what runs, plain request words and when: `session terminate` first. */
+  const STOPS = [
+    'abort the run',
+    'stop the tool run',
+    'kill the running tool',
+    'cancel the run',
+    'halt the run now',
+    'terminate the stuck tool session',
+    'how do I stop a running tool',
+    'interrupt the run',
+    'stop the runaway tool immediately',
+    'kill the current run',
+  ];
+  /** A stop verb with a run word that is NOT a stop of a live session: never `session terminate` first. */
+  const NOT_SESSION_STOPS = [
+    'cancel the session invite',
+    'stop the tool from running twice',
+    "cancel the job's schedule",
+    'stop watching the run',
+    'stop the loop run',
+    'interrupt the chat turn',
+    'cancel a tool run that keeps its shell open',
+  ];
+  /** Asks NOT to start a run: never `tool run` first. */
+  const NOT_RUNS = [...STOPS, ...NOT_SESSION_STOPS, 'block the run now', 'skip the run now', 'prevent the run now', "don't run it now", 'do not run the tool', 'never run the tool twice'];
+
+  for (const q of STOPS) {
+    it(`"${q}" answers session terminate`, () => {
+      expect(matchIntent(q)?.intent, q).toBe('stop a running tool or session');
+      const top = searchHelp(q).matches[0];
+      expect(top?.command, q).toBe('session terminate');
+      expect(top?.example, q).toContain('tm8 session terminate <session-id> --yes');
+    });
+  }
+
+  for (const q of NOT_SESSION_STOPS) {
+    it(`"${q}" falls through to the ranker, never to session terminate`, () => {
+      expect(matchIntent(q)?.intent, q).not.toBe('stop a running tool or session');
+      expect(searchHelp(q).matches[0]?.command, q).not.toBe('session terminate');
+    });
+  }
+
+  it('"stop sharing the session" is not the stop route (the ranker\'s own answer predates this route)', () => {
+    expect(matchIntent('stop sharing the session')?.intent).not.toBe('stop a running tool or session');
+  });
+
+  it('no stop, block, skip, prevent or negated run is answered by tool run first', () => {
+    for (const q of NOT_RUNS) expect(searchHelp(q).matches[0]?.command, q).not.toBe('tool run');
+  });
+
+  it('in the combined answer, tool run is never ahead of another match for a stop, block, skip, prevent or negation', () => {
+    for (const q of NOT_RUNS) {
+      const commands = searchHelp(q).matches.map((m) => m.command);
+      const at = commands.indexOf('tool run');
+      expect(at === -1 || at === commands.length - 1, `${q}: ${commands.join(' | ')}`).toBe(true);
+    }
+  });
+
+  it('rankAll keeps a ranked-last operation out of first place even when it outscores every other row', () => {
+    // Synthetic rows: on today's catalog no negated query lets tool run outscore the rest, so the
+    // combined re-sort (operations + aliases by score) is pinned here, where it would.
+    const row = (operation: string, intentTags: string[]) =>
+      ({ operation, command: null, intentTags, summary: operation, notes: [], exposure: 'public' }) as unknown as OperationDiscovery;
+    const alias = (command: string, operation: string, intentTags: string[]) => ({
+      command: { command, operations: [operation], summary: command, notes: [], exposure: 'public' } as unknown as CommandDiscovery,
+      intentTags,
+    });
+    const runRow = row('tools.run', ['run', 'tool', 'script']);
+    const runsRow = row('tools.runs.list', ['run']);
+    const order = (q: string, ops: OperationDiscovery[], aliases: ReturnType<typeof alias>[] = []) =>
+      rankAll(q, ops, aliases, 5).map((e) => (e.kind === 'operation' ? e.entry.row.operation : e.entry.row.command));
+    expect(order("don't run the tool script", [runRow, runsRow])).toEqual(['tools.runs.list', 'tools.run']);
+    expect(order('run the tool script', [runRow, runsRow])[0]).toBe('tools.run');
+    // An alias over tools.run follows the same rule, and alone a ranked-last entry is dropped, never first.
+    expect(order('never run the tool script', [runsRow], [alias('tool go', 'tools.run', ['run', 'tool', 'script'])])).toEqual(['tools.runs.list', 'tool go']);
+    expect(order("don't run the tool script", [runRow])).toEqual([]);
+    expect(rankedLast(['abort', 'run'], 'tools.run')).toBe(true);
+    expect(rankedLast(['run', 'url-check', 'tool'], 'tools.run')).toBe(false);
+    expect(rankedLast(['abort', 'run'], 'tools.runs.list')).toBe(false);
+  });
+
+  it('running a tool still answers tool run first', () => {
+    for (const q of ['run the url-check tool', 'run a tool', 'run the tool with inputs', 'run the tool with no inputs']) {
+      expect(matchIntent(q), q).toBeUndefined();
+      expect(searchHelp(q).matches[0]?.command, q).toBe('tool run');
+    }
   });
 });
 

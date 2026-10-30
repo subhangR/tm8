@@ -13,6 +13,12 @@
 // space's teammates, read under RLS with their headers, budgeted by
 // `rosterIndex` (or the profile's `contextBudgets.teammates`), with the rows
 // past the read declared in the group's `omitted` count.
+//
+// Every launch in a space that has tools gets a `tools` group (Tools v2 PR-E,
+// design doc 01a182cb §5): the space's tools, read under RLS, most recently
+// run first, then by name, each with its selection header and `tm8 tool help
+// <name>` as its pointer, budgeted by `toolIndex`, the rest declared with
+// `tm8 tool list`.
 
 import {
   BYTE_BUDGETS,
@@ -21,6 +27,7 @@ import {
   INDEX_DERIVED_HEADER_CHARS,
   loadPointerFor,
   serializeMemoryEntry,
+  toolLoadPointer,
   utf8Bytes,
   type ContextBudgetSettings,
   type ContextIndexGroupName,
@@ -37,7 +44,7 @@ import {
   type SelectionHeader,
 } from '@tm8/contract';
 import { redactSecretTokens } from './secret-redaction.js';
-import type { ContextVia, DispatcherRoster, ManifestSkillContext, SpawnContext } from './types.js';
+import type { ContextVia, DispatcherRoster, ManifestSkillContext, SpaceTools, SpawnContext } from './types.js';
 
 /**
  * Where a launch's `<context_index>` came from, as its manifest records it.
@@ -85,6 +92,15 @@ export const DISPATCHER_ROSTER_READ_MAX = 64;
 export const ROSTER_FETCH = 'tm8 entity query --kind team_member';
 
 /**
+ * Tools the `tools` group reads at most (design doc 01a182cb §5): the
+ * group is a pointer to the space's directory, not the directory itself.
+ */
+export const TOOL_INDEX_READ_MAX = 8;
+
+/** The command that lists every tool; the `tools` group's omitted entries point at it. */
+export const TOOL_INDEX_FETCH = 'tm8 tool list';
+
+/**
  * The ids whose headers the index renders: the selected references, the
  * tasks' linked rows and attached files, the equipped skills, the injected
  * memories (a memory that collapses is routed by its `subject_scope`, §10 Q1
@@ -101,6 +117,7 @@ export function contextHeaderIds(context: SpawnContext): string[] {
     ...(context.teamMember.memoryIds ?? []),
     ...(context.roster?.members ?? []).map((row) => row.entityId),
     ...(context.teammates ?? []).map((row) => row.entityId),
+    ...(context.tools?.tools ?? []).map((row) => row.entityId),
   ])];
 }
 
@@ -162,6 +179,8 @@ export function contextIndexCaps(
           { groups: ['teammates'] as ContextIndexGroupName[], cap: teammates },
         ]),
     ...(budgets.skills !== undefined ? [{ groups: ['skills'] as ContextIndexGroupName[], cap: budgets.skills }] : []),
+    // The space's tools: a node default with no profile knob (Tools v2 PR-E).
+    { groups: ['tools'] as ContextIndexGroupName[], cap: BYTE_BUDGETS.toolIndex },
   ];
 }
 
@@ -393,6 +412,17 @@ export function rosterEntry(
 }
 
 /**
+ * One tool's index entry (Tools v2 PR-E): its name and header are untrusted
+ * text, its pointer is its help by name. No `bytes`: the header's figure is
+ * the entity a `tm8 entity context` would load, not what `tm8 tool help`
+ * prints, and an unknown size is left out rather than misstated.
+ */
+export function toolIndexEntry(row: SpaceTools['tools'][number], header: SelectionHeader | undefined): PromptContextEntry {
+  const { bytes: _entityBytes, ...text } = withHeader(header, row.name);
+  return { id: row.entityId, kind: 'tool', via: 'space', load: toolLoadPointer(row.name), ...text };
+}
+
+/**
  * A DISPATCHER ignores `selection.teammateIds` (coordinator ruling, launch
  * card v3 Decision 7): its teammates group stays the full space roster. The
  * ignored set leaves the context, with its `not-selected` teammate drops, and
@@ -510,6 +540,16 @@ export function contextIndexCandidates(input: ContextIndexCandidatesInput): Prom
       : { name: 'teammates', entries: teammates, omitted: 0, ...(firstTask ? { fetch: connections(firstTask) } : {}) },
     { name: 'skills', entries: skills, omitted: 0, fetch: connections(self) },
   ];
+  // The space's tools, last: emitted only when the space has some.
+  const tools = context.tools;
+  if (tools && (tools.tools.length > 0 || tools.total > 0)) {
+    groups.push({
+      name: 'tools',
+      entries: tools.tools.map((row) => toolIndexEntry(row, headers.get(row.entityId))),
+      omitted: Math.max(0, tools.total - tools.tools.length),
+      fetch: TOOL_INDEX_FETCH,
+    });
+  }
   return groups;
 }
 
@@ -589,7 +629,7 @@ export interface LaunchIndexFitInput {
  * its own sub-budget first, lowest-ranked entry first; if the index is still
  * over what is left, groups above their `minEntries` shrink from the
  * lowest-ranked entry across groups; only then do the minimums give way,
- * teammates first and memories last. It never refuses: every whole-entry drop
+ * the space's tools first, then teammates, and memories last. It never refuses: every whole-entry drop
  * is in `drops` with `level: 'entry'` (`indexDroppedOf`).
  */
 export function fitLaunchContextIndex(input: LaunchIndexFitInput): FitContextIndexResult {
@@ -597,10 +637,13 @@ export function fitLaunchContextIndex(input: LaunchIndexFitInput): FitContextInd
     groups: [...input.candidates],
     available: input.available,
     caps: contextIndexCaps(input.mode, input.budgets),
-    minEntries: Object.fromEntries(
-      CONTEXT_INDEX_GIVE_WAY_ORDER.map((group) => [group, contextIndexMinEntries(group)]),
-    ),
-    giveWay: CONTEXT_INDEX_GIVE_WAY_ORDER,
+    minEntries: {
+      ...Object.fromEntries(CONTEXT_INDEX_GIVE_WAY_ORDER.map((group) => [group, contextIndexMinEntries(group)])),
+      // Like references: one tool is kept while groups compete for room.
+      tools: 1,
+    },
+    // The space's tools give way first: `tm8 tool list` names every one of them.
+    giveWay: ['tools', ...CONTEXT_INDEX_GIVE_WAY_ORDER],
   });
 }
 

@@ -1,3 +1,7 @@
+import {
+  LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
+  LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
+} from '@tm8/contract';
 import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
 import {
   WorkspaceCommandInputSchema,
@@ -255,6 +259,15 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'tools.secrets.bind': ToolSecretBindInputSchema,
   'tools.secrets.unbind': ToolSecretUnbindInputSchema,
   'tools.run': ToolRunInputSchema,
+  'loops.create': LoopCreateInputSchema,
+  'loops.update': LoopUpdateInputSchema,
+  'loops.enable': LoopEnableInputSchema,
+  'loops.disable': LoopDisableInputSchema,
+  'loops.pause': LoopPauseInputSchema,
+  'loops.resume': LoopResumeInputSchema,
+  'loops.runNow': LoopRunNowInputSchema,
+  'loops.runs.stop': LoopRunStopInputSchema,
+  'loops.schedule.preview': LoopSchedulePreviewInputSchema,
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

@@ -57,6 +57,17 @@ describe('the New tab', () => {
     expect(screen.queryByTestId('tws-chooser-new-pull_request')).toBeNull();
   });
 
+  it('New tool sits under More and opens the tool draft in place of the New tab', () => {
+    const { dispatch } = newTab();
+    fireEvent.click(screen.getByTestId('tws-chooser-more'));
+    const item = screen.getByTestId('tws-chooser-new-tool');
+    expect(item.textContent).toContain('New tool');
+    fireEvent.click(item);
+    expect(opened(dispatch)).toContainEqual({
+      command: 'workspace.drafts.open', args: { kind: 'tool', replaceTabId: 'tab-new' }, source: 'click',
+    });
+  });
+
   it('a pick from More opens that draft in place of the New tab, and the menu closes', () => {
     const { dispatch } = newTab();
     fireEvent.click(screen.getByTestId('tws-chooser-more'));

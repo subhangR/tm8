@@ -34,6 +34,7 @@ import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
+  jevKeyUsable,
   JEV_UNWIRED_REASON,
   modelApplyRefusal,
   modelLabel,
@@ -476,6 +477,8 @@ export function LaunchComposerPopup({
     writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
   }, [subject.id]);
 
+  /** The press's hold on Jev: released by the hook when the launch rejects; by `succeed` when the card stays up. */
+  const jevHold = useRef<{ unseal(): void } | null>(null);
   const fail = (error: unknown) => {
     setPending(false);
     setNodeRefusal(
@@ -487,7 +490,8 @@ export function LaunchComposerPopup({
   const succeed = () => {
     committed.current = true;
     clearDraft(subject.id);
-    onDismiss?.();
+    /* A host with no dismissal keeps the card up and interactive. */
+    if (onDismiss) onDismiss(); else jevHold.current?.unseal();
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
@@ -555,8 +559,12 @@ export function LaunchComposerPopup({
        key, so the node's ledger replays the session instead of starting a
        second one; any change to what is launched mints a fresh key. */
     const input = inputWith(spawnKey.current.keyFor(JSON.stringify(inputWith(''))));
-    Promise.resolve()
-      .then(() => onSpawn(input))
+    const run = Promise.resolve().then(() => onSpawn(input));
+    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
+       is held, never applied under it; the hook shows it if the launch is
+       refused, fails or times out (lane E). */
+    jevHold.current = jev.seal(run);
+    run
       .then(() => {
         if (remember && launched.teamMemberId) {
           writePicks(launched.teamMemberId, {
@@ -615,9 +623,9 @@ export function LaunchComposerPopup({
     if (!read) return;
     let alive = true;
     read().then((view) => {
-      if (!alive || view.store === 'absent') return;
-      const key = view.keys.find((k) => k.provider === 'typesafe');
-      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+      const usable = jevKeyUsable(view);
+      if (!alive || usable === null) return;
+      setJevKey(usable ? 'yes' : 'none');
     }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
     return () => { alive = false; };
   }, []);
@@ -913,7 +921,15 @@ export function LaunchComposerPopup({
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
-        connectors={(
+        connectors={(<>
+          {/* THE DEFAULTS COULD NOT BE READ: what the card asks for, it offers
+              here (lane E). Moves into the card's notice slot with lane A. */}
+          {selection.defaultsLine?.retry ? (
+            <p className="lcd-note" role="status" data-testid="launch-defaults-retry-line">
+              {selection.defaultsLine.text}{' '}
+              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
+            </p>
+          ) : null}
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
              and skills, never the launcher's personal Claude connectors. */
           <McpPicker
@@ -928,7 +944,7 @@ export function LaunchComposerPopup({
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
           />
-        )}
+        </>)}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -1001,7 +1017,7 @@ export function LaunchComposerPopup({
         onSubmit={onLaunch}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal}
+        notice={preview ? null : nodeRefusal ?? (selection.defaultsLine?.retry ? null : selection.defaultsLine?.text ?? null)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}

@@ -17,7 +17,7 @@
  * undiscoverable, which is the failure this whole surface exists to prevent —
  * but recommending them first would be answering a question with a dead end.
  */
-import type { OperationDiscovery } from './operations.js';
+import type { CommandDiscovery, OperationDiscovery } from './operations.js';
 
 /**
  * Words that carry no intent. Without this list, "what can I do with all of
@@ -57,13 +57,24 @@ const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 
 /** "other space", "cross space", "linked spaces" → one hyphenated token. */
 const SPACE_PHRASE = /\b(other|another|cross|linked)[\s_]+spaces?\b/g;
+/** "set up" is one verb; split, "up" is a stopword and "set" alone reads as editing (review of #1405). */
+const SET_UP_PHRASE = /\bset[\s_-]+up\b/g;
+/** "get rid of" is one verb, removing: neither "get" nor "of" rides along into what is removed. */
+const GET_RID_PHRASE = /\bget[\s_-]+rid(?:[\s_-]+of)?\b/g;
 
-export function tokenize(query: string): string[] {
-  const base = query
+/** The query's words in order, stopwords KEPT: an `only` route reads every word ("remove me FROM the loop" is not "remove the loop"). */
+export function queryWords(query: string): string[] {
+  return query
     .toLowerCase()
     .replace(SPACE_PHRASE, (_m, w: string) => `${w}-space`)
+    .replace(SET_UP_PHRASE, 'setup')
+    .replace(GET_RID_PHRASE, 'rid')
     .split(/[^a-z0-9-]+/)
-    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+    .filter((t) => t.length > 1);
+}
+
+export function tokenize(query: string): string[] {
+  const base = queryWords(query).filter((t) => !STOPWORDS.has(t));
   return [...new Set(base.flatMap((t) => [t, ...(SYNONYMS[t] ?? [])]))];
 }
 
@@ -86,18 +97,35 @@ export interface Scored {
   /** The tokens that actually matched — rendered as the match `reason`. */
   hits: string[];
 }
+/** An alias command scored by its own words: `rankCommands`. */
+export interface ScoredCommand {
+  row: CommandDiscovery;
+  score: number;
+  hits: string[];
+}
+/** What the scorer reads: an operation row, or an alias command with its tags. */
+export interface Searchable {
+  intentTags: readonly string[];
+  summary: string;
+  notes: readonly string[];
+  exposure: OperationDiscovery['exposure'];
+}
 
-function summaryWords(row: OperationDiscovery): Set<string> {
+function summaryWords(row: Searchable): Set<string> {
   return new Set(row.summary.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean));
 }
 
-function noteWords(row: OperationDiscovery): Set<string> {
+function noteWords(row: Searchable): Set<string> {
   return new Set(
     row.notes.flatMap((n) => n.toLowerCase().split(/[^a-z0-9-]+/)).filter(Boolean),
   );
 }
 
 export function score(tokens: readonly string[], row: OperationDiscovery): Scored {
+  return { row, ...scoreText(tokens, row) };
+}
+
+export function scoreText(tokens: readonly string[], row: Searchable): { score: number; hits: string[] } {
   const tags = new Set(row.intentTags);
   const words = summaryWords(row);
   const notes = noteWords(row);
@@ -129,7 +157,26 @@ export function score(tokens: readonly string[], row: OperationDiscovery): Score
   }
 
   if (row.exposure === 'internal' || row.exposure === 'reserved') total *= UNINVOCABLE_FACTOR;
-  return { row, score: total, hits };
+  return { score: total, hits };
+}
+
+/**
+ * Alias commands (`tool versions`, `task axis`, `message reply`) have no operation row of their
+ * own, so `rank` never sees their summary or notes. Score them by the same weights, with their
+ * path words and tags as intent tags; ties keep the catalog's command order.
+ */
+export function rankCommands(
+  query: string,
+  rows: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): ScoredCommand[] {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+  return rows
+    .map(({ command, intentTags }) => ({ row: command, ...scoreText(tokens, { intentTags, summary: command.summary, notes: command.notes, exposure: command.exposure }) }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 /**
@@ -145,19 +192,71 @@ export function rank(
   const tokens = tokenize(query);
   if (tokens.length === 0) return [];
   const order = new Map(rows.map((r, i) => [r.operation, i]));
-  return rows
+  const scored = rows
     .map((row) => score(tokens, row))
     .filter((s) => s.score > 0)
     .sort(
       (a, b) =>
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
-    )
-    .slice(0, limit);
+    );
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+}
+
+/**
+ * Operations the ranker never answers FIRST for this query: they rank after every other match
+ * and, when nothing else matched, are dropped rather than lead. ONE predicate for `rank()` and
+ * for `rankAll()`'s combined operation + alias ranking, so neither can undo the other. `tools.run`
+ * STARTS a run, so a query that stops, prevents or negates one ("abort the run", "skip the run
+ * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
+ * RANKED_LAST holds for every query.
+ */
+export function rankedLast(tokens: readonly string[], operation: string): boolean {
+  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)));
+}
+
+/**
+ * `loop run-now` and `session terminate` fire or end something whatever the verb ("cancel the run
+ * now", "stop sharing the session", "end it"), so they are never the ranker's first answer: only their
+ * routes ("run the nightly loop now", "terminate the work session") answer them first (review of #1405,
+ * rounds 6-7). `--operation` suggestions still find them by name.
+ */
+const RANKED_LAST: ReadonlySet<string> = new Set(['loops.runNow', 'execution.terminate']);
+
+/** Stable: the entries `last` names go after every other one and never lead; alone, they are dropped. */
+function keepRankedLast<T>(items: readonly T[], last: (item: T) => boolean): T[] {
+  const lead = items.filter((item) => !last(item));
+  return lead.length === 0 ? [] : [...lead, ...items.filter(last)];
+}
+
+/** One entry of `rankAll()`: an operation row or an alias command, with its score. */
+export type RankedEntry =
+  | { kind: 'operation'; score: number; entry: Scored }
+  | { kind: 'alias'; score: number; entry: ScoredCommand };
+
+/**
+ * Operation rows and alias commands in one ranking, as `tm8 help --query` answers. The sort is
+ * stable, so an alias never displaces an operation it ties with and catalog order holds. The
+ * ranked-last rule applies to the combined list as well: re-sorting by score alone would put a
+ * `rankedLast` operation first again whenever it outscores the rest.
+ */
+export function rankAll(
+  query: string,
+  operations: readonly OperationDiscovery[],
+  aliases: readonly { command: CommandDiscovery; intentTags: readonly string[] }[],
+  limit: number,
+): RankedEntry[] {
+  const tokens = tokenize(query);
+  const combined: RankedEntry[] = [
+    ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
+    ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
+  ].sort((a, b) => b.score - a.score);
+  return keepRankedLast(combined, (e) =>
+    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
-export function matchReason(scored: Scored): string {
+export function matchReason(scored: Scored | ScoredCommand): string {
   const hits = [...new Set(scored.hits)].slice(0, 4);
   return hits.length > 0
     ? `matches ${hits.join(', ')} — ${scored.row.summary.toLowerCase()}`
@@ -186,10 +285,125 @@ export interface IntentRoute {
   all: readonly (readonly string[])[];
   /** Any shared token vetoes the route. */
   none?: readonly string[];
+  /**
+   * An allowlist over the query's WORDS, stopwords included: each must be in
+   * `all`, here, or a plain request word ("how do I", "the", "my"), or the route
+   * does not match. An answer that deletes, fires or ends something live uses
+   * it, because a denylist of what a human might name can never be complete:
+   * "remove me FROM the loop" differs from "remove the loop" only in its
+   * stopwords (#1405, round 5), and "cancel the session invite" is not a stop.
+   */
+  only?: readonly string[];
+  /** Positive evidence over the query's words, for an answer a word list cannot decide alone. */
+  when?: (words: readonly string[]) => boolean;
   candidates: readonly { path: readonly string[]; example: string }[];
 }
 
 const CRITERIA_WORDS = ['criteria', 'criterion', 'acceptance', 'checklist', 'checkbox', 'checkboxes'];
+
+/** A loop's fields, as a human names them: with an editing verb they are `loop edit`, never a delete. */
+const LOOP_ATTRIBUTE_WORDS = [
+  'schedule', 'timezone', 'time', 'cadence', 'prompt', 'instructions', 'title', 'name', 'teammate', 'runner',
+  'tool', 'inputs', 'model', 'retry', 'retries', 'runtime', 'concurrency', 'subject', 'memory', 'memories',
+  'config', 'workdir', 'project', 'profile', 'credential',
+];
+
+/** Removing a whole thing. With a loop and nothing else named, the loop's delete; otherwise an edit. */
+const LOOP_REMOVAL_WORDS = ['delete', 'remove', 'archive', 'destroy', 'trash', 'drop', 'erase', 'purge', 'wipe', 'rid'];
+/** Words that say WHICH loop, never WHAT of it: the only words a loop's delete may carry besides the verb. */
+const WHICH_LOOP_WORDS = ['nightly', 'daily', 'weekly', 'hourly', 'monthly', 'old', 'stale', 'unused', 'test', 'broken', 'obsolete'];
+
+/** "Run it now" — the run-now route's words. */
+const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
+/** Stopping a live run. */
+const LOOP_STOP_WORDS = ['stop', 'cancel', 'kill', 'abort', 'end', 'terminate', 'halt', 'interrupt', 'quit', 'cease', 'shut', 'shutdown'];
+
+/** Stopping something live. */
+const STOP_WORDS = ['stop', 'stopping', 'cancel', 'cancelling', 'canceling', 'kill', 'killing', 'abort', 'aborting', 'halt', 'halting', 'terminate', 'terminating', 'interrupt'];
+/** What a stop may name for `session terminate`: a run, the tool running, or its session. */
+const RUN_WORDS = ['run', 'runs', 'running', 'tool', 'tools', 'session', 'sessions'];
+/**
+ * A query with any of these does not ask to START a run: the ranker never answers `tool run` first.
+ * `rankedLast` reads tokenize()'s tokens, so these must stay OUT of STOPWORDS ("don't" is `don`).
+ */
+const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
+  ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
+  'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
+]);
+/** The plain words a request carries that name nothing: an `only` route always allows them. */
+const PLAIN_WORDS: ReadonlySet<string> = new Set([
+  'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
+  'would', 'should', 'will', 'how', 'do', 'does', 'want', 'need', 'to', 'and', 'is', 'are', 'am', 'just', 'let', 'go', 'ahead',
+]);
+/** Words a request may open with before its verb: "how do I…", "can you…", "I want to…". */
+const REQUEST_WORDS: ReadonlySet<string> = new Set([
+  'how', 'do', 'does', 'can', 'could', 'would', 'will', 'please', 'we', 'you', 'want', 'need', 'like', 'to', 'let',
+  'lets', 'help', 'me', 'us', 'just', 'go', 'ahead', 'and',
+]);
+/** An object that already exists: after make/add/schedule it is steered, not set up ("make the loop run hourly"). */
+const DEFINITE_WORDS: ReadonlySet<string> = new Set(['the', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'its', 'their']);
+/** Between a verb and "loop", these make the verb's object something else ("add a task TO the loop"). */
+const PREPOSITIONS: ReadonlySet<string> = new Set([
+  'to', 'for', 'of', 'from', 'with', 'in', 'on', 'into', 'onto', 'at', 'by', 'about', 'off', 'out', 'over', 'via',
+]);
+/** Verbs that set up something new. make/add/schedule also steer what exists, so those need a new object. */
+const LOOP_CREATE_VERBS = ['create', 'setup', 'build', 'automate', 'make', 'add', 'schedule'];
+const CREATE_VERBS_IF_NEW = ['make', 'add', 'schedule'];
+/** Setting up recurring work with no loop named (the first of these opens the request). */
+const SET_UP_VERBS = ['schedule', 'create', 'set', 'setup', 'make', 'add', 'new', 'run', 'start', 'automate', 'repeat'];
+/** …but "run/start THE nightly report" runs one that exists ("schedule the report nightly" still sets one up). */
+const SET_UP_VERBS_IF_NEW = ['run', 'start'];
+
+/** The index of the request's verb: past "how do I", "can you", "I want to". */
+function verbAt(words: readonly string[]): number {
+  let i = 0;
+  while (i < words.length && REQUEST_WORDS.has(words[i]!)) i++;
+  return i;
+}
+
+/**
+ * Does the query ask to CREATE a loop? Positive evidence, as for delete and
+ * run-now: its verb opens the request, a make/add/schedule is not followed by
+ * "the"/"my" (that steers a loop that exists: "make the loop run hourly", "add
+ * the loop to a story"), and only adjectives stand between the verb and "loop"
+ * ("add a task TO the loop" adds a task). Or "new … loop" not after "the"
+ * ("start a new loop"), or the CLI's own order ("loop create").
+ */
+function asksForANewLoop(words: readonly string[]): boolean {
+  const reachesLoop = (from: number): boolean => {
+    for (let j = from; j < Math.min(words.length, from + 4); j++) {
+      if (words[j] === 'loop' || words[j] === 'loops') return true;
+      if (PREPOSITIONS.has(words[j]!)) return false;
+    }
+    return false;
+  };
+  const i = verbAt(words), verb = words[i] ?? '';
+  if (LOOP_CREATE_VERBS.includes(verb) && !(CREATE_VERBS_IF_NEW.includes(verb) && DEFINITE_WORDS.has(words[i + 1] ?? ''))
+    && reachesLoop(i + 1)) return true;
+  if (verb === 'loop' && ['create', 'setup', 'new'].includes(words[i + 1] ?? '')) return true;
+  return words.some((word, k) => word === 'new' && !DEFINITE_WORDS.has(words[k - 1] ?? '') && reachesLoop(k + 1));
+}
+
+/** Does the query open with setting up recurring work ("schedule a teammate"), not reading it ("view the schedule")? */
+function leadsWithSetUp(words: readonly string[]): boolean {
+  const i = verbAt(words), verb = words[i] ?? '';
+  return SET_UP_VERBS.includes(verb) && !(SET_UP_VERBS_IF_NEW.includes(verb) && DEFINITE_WORDS.has(words[i + 1] ?? ''));
+}
+
+/** "end/lift/remove THE pause": a pause named as a thing (after the/its/loop), not "…and pause it". */
+function namesAPause(words: readonly string[]): boolean {
+  return words.some((word, k) => word === 'pause' && ['the', 'its', 'this', 'that', 'loop'].includes(words[k - 1] ?? ''));
+}
+
+/** Besides the stop verb, the thing stopped and plain words, a stop guard's phrasing may say only these. */
+const STOP_ONLY = ['run', 'running', 'now', 'immediately', 'current', 'stuck', 'runaway'];
+
+/** Words that steer or read a loop that exists; any one keeps a query off `loop create`. */
+const LOOP_STEERING_WORDS = [
+  'pause', 'resume', 'stop', 'disable', 'enable', 'delete', 'remove', 'list', 'show', 'preview', 'edit', 'change',
+  'runs', 'history', 'cancel', 'archive', 'loops', 'schedules', 'status',
+  'now', 'fire', 'trigger', 'again', 'once', 'immediately',
+];
 
 export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
@@ -264,6 +478,210 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     ],
   },
   {
+    intent: 'stop a running tool or session',
+    // Scored, "abort the run" answered `tool run` first: `run` is one of its tags and nothing
+    // tags the stop verbs (task 01a187ed). A run is a work session, so stopping one is
+    // `session terminate`. That ends a live session, so the query may say nothing else: a stop
+    // verb, what runs, plain request words, and when ("cancel the session invite" falls through).
+    all: [STOP_WORDS, RUN_WORDS],
+    none: ['loop', 'loops', 'chat', 'chats', 'turn', 'turns'],
+    only: ['now', 'immediately', 'current', 'stuck', 'runaway'],
+    candidates: [
+      {
+        path: ['session', 'terminate'],
+        example: 'tm8 session terminate <session-id> --yes  (a tool run is a work session: `tm8 tool runs <tool>` lists its id; --stop --note <why> records why)',
+      },
+  /*
+   * LOOPS, steering before setting up. A query that names a loop with a
+   * steering verb is that verb's command (run-now, enable, edit) — never
+   * `loop create`, which would arm a second loop that keeps firing (review of
+   * #1405). These come first because the set-up routes below match on words
+   * a steering query also has ("run", "set", "schedule").
+   */
+    ],
+  },
+  {
+    // A STOP WITH NO LOOP NAMED ("cancel the run now", "stop it now"): stopping is never firing, and
+    // the ranker's 'run'/'now' tags would answer `loop run-now`. What is named stops by its own command,
+    // and, as for the loop's delete, only a phrasing that asks for nothing but that stop (`only`): never
+    // "end the session's task", "cancel the session invite" (round 7). Terminating cannot be undone.
+    intent: 'stop a session',
+    all: [LOOP_STOP_WORDS, ['session', 'sessions']],
+    none: ['loop', 'loops'],
+    // "work": a work session is the entity's own name.
+    only: [...STOP_ONLY, 'work'],
+    candidates: [{ path: ['session', 'terminate'], example: 'tm8 session terminate <work-session-id> --stop --yes' }],
+  },
+  {
+    intent: 'stop a chat turn',
+    all: [LOOP_STOP_WORDS, ['chat', 'chats', 'turn', 'turns']],
+    none: ['loop', 'loops', 'session', 'sessions'],
+    only: STOP_ONLY,
+    candidates: [{ path: ['chat', 'stop'], example: 'tm8 chat stop <chat-id>' }],
+  },
+  {
+    intent: 'stop a container',
+    all: [LOOP_STOP_WORDS, ['container', 'containers', 'machine', 'machines']],
+    none: ['loop', 'loops', 'session', 'sessions', 'chat', 'chats'],
+    only: STOP_ONLY,
+    candidates: [{ path: ['container', 'stop'], example: 'tm8 container stop <container-id> --expect-version <n>' }],
+  },
+  {
+    intent: 'stop a run (no loop named)',
+    all: [LOOP_STOP_WORDS, ['run', 'running', 'runs', 'now', 'immediately']],
+    // An upload or a handoff has its own answer in the ranker (and run-now never ranks first on a stop).
+    none: ['loop', 'loops', 'session', 'sessions', 'chat', 'chats', 'turn', 'turns', 'container', 'containers', 'machine',
+      'machines', 'upload', 'uploads', 'handoff', 'handoffs'],
+    candidates: [{
+      path: ['loop', 'stop'],
+      example: 'tm8 loop stop <run-id>   (a session: tm8 session terminate <work-session-id>; a chat turn: tm8 chat stop <chat-id>)',
+    }],
+  },
+  {
+    // First: ending a pause is resuming, whichever verb says it ("remove the pause from the loop").
+    intent: "end a loop's pause (resume it)",
+    all: [['loop', 'loops'], ['pause'], [...LOOP_STOP_WORDS, ...LOOP_REMOVAL_WORDS, 'lift', 'clear', 'unset', 'undo']],
+    when: namesAPause,
+    candidates: [{ path: ['loop', 'resume'], example: 'tm8 loop resume <id|title> --expect-version <n>' }],
+  },
+  {
+    intent: 'change a loop (its schedule, timezone, instructions or runner)',
+    all: [
+      ['loop'],
+      // Clearing a field is an edit too ("remove the subject from the loop"): never the whole loop's delete.
+      ['set', 'change', 'edit', 'update', 'retime', 'reschedule', 'add', 'remove', 'clear', 'drop', 'unset', 'delete'],
+      LOOP_ATTRIBUTE_WORDS,
+    ],
+    // "add a teammate to the loop" edits it; "add a new loop" makes one.
+    none: ['new', 'create', 'make', 'another'],
+    candidates: [{ path: ['loop', 'edit'], example: "tm8 loop edit <id|title> --schedule '<expr>' --expect-version <n>" }],
+  },
+  {
+    // Before run-now: stopping a run must never be answered with firing another one.
+    intent: 'stop a loop run',
+    all: [['loop', 'loops'], LOOP_STOP_WORDS, ['run', 'running', 'runs']],
+    none: ['pause', 'disable', 'delete', 'remove', 'new', 'create'],
+    candidates: [{ path: ['loop', 'stop'], example: 'tm8 loop stop <run-id>   (the run ids: tm8 loop runs <id|title>)' }],
+  },
+  {
+    // A run is kept with its loop and cannot be deleted on its own: deleting "the loop run" must never
+    // delete the loop. The non-destructive answer is the run list (a live run ends with loop stop).
+    intent: "delete a loop's run (not possible: read them)",
+    all: [['loop', 'loops'], [...LOOP_REMOVAL_WORDS, 'clear'], ['run', 'runs', 'running']],
+    candidates: [{ path: ['loop', 'runs'], example: 'tm8 loop runs <id|title>   (a run stays with its loop; tm8 loop stop <run-id> ends a live one)' }],
+  },
+  {
+    // Removing a loop is the ordinary entity delete (its runs go with it; its tasks and sessions stay).
+    // DESTRUCTIVE, so it answers only a phrasing that names nothing but the loop: a removal verb,
+    // loop/loops, which loop (`only`) and plain request words. Any other word, stopwords included
+    // ("remove me FROM the loop"), is the next route's: a change, never a delete.
+    intent: 'delete a loop',
+    all: [['loop', 'loops'], LOOP_REMOVAL_WORDS],
+    only: WHICH_LOOP_WORDS,
+    candidates: [{ path: ['entity', 'delete'], example: 'tm8 entity delete <loop-id>' }],
+  },
+  {
+    // Removing something FROM a loop (a pause, its cron, its header, me): a change, not a delete.
+    intent: 'remove something from a loop',
+    all: [['loop', 'loops'], LOOP_REMOVAL_WORDS],
+    candidates: [{ path: ['loop', 'edit'], example: 'tm8 loop edit <id|title> --expect-version <n>   (the loop itself: tm8 entity delete <loop-id>)' }],
+  },
+  {
+    // Stopping the LOOP itself (no run named): nothing more fires. Never run-now.
+    intent: 'stop a loop firing (disable it)',
+    all: [['loop', 'loops'], LOOP_STOP_WORDS],
+    none: ['run', 'running', 'runs', 'new', 'create'],
+    candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
+  },
+  {
+    // FIRES A RUN, so the delete route's allowlist: "run/fire/trigger the (nightly) loop (now|again|once)"
+    // and nothing else. "suspend the loop now", "clear the loop's trigger" and "start the loop now" are
+    // the routes' below; whatever no route claims ends at the last loop route, never the ranker.
+    intent: 'run a loop now',
+    all: [['loop', 'loops'], LOOP_RUN_NOW_WORDS],
+    only: WHICH_LOOP_WORDS,
+    candidates: [{ path: ['loop', 'run-now'], example: 'tm8 loop run-now <id|title>' }],
+  },
+  {
+    intent: 'start (enable) a loop',
+    all: [['loop', 'loops'], ['start', 'enable', 'arm', 'activate']],
+    none: ['new', 'create', 'make', 'add', 'schedule'],
+    candidates: [{ path: ['loop', 'enable'], example: 'tm8 loop enable <id|title> --expect-version <n>' }],
+  },
+  {
+    // Steering words answer their own verb as routes, not through the ranker, whose 'now'/'again'
+    // tags lean on run-now.
+    intent: 'pause a loop',
+    all: [['loop', 'loops'], ['pause', 'suspend', 'freeze', 'hold']],
+    // Clearing a pause is not pausing.
+    none: ['clear', 'unset', 'lift'],
+    candidates: [{ path: ['loop', 'pause'], example: 'tm8 loop pause <id|title> --until <iso|+<n>{m|h|d}> --expect-version <n>' }],
+  },
+  {
+    intent: 'resume a paused loop',
+    all: [['loop', 'loops'], ['resume', 'unpause', 'unfreeze']],
+    candidates: [{ path: ['loop', 'resume'], example: 'tm8 loop resume <id|title> --expect-version <n>' }],
+  },
+  {
+    intent: 'disable a loop',
+    all: [['loop', 'loops'], ['disable', 'deactivate']],
+    candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
+  },
+  {
+    // Before `list teammates`: "schedule a teammate" is a loop, not a roster read.
+    // Only SETTING UP recurring work routes here: a cadence word AND a set-up
+    // verb ("schedule" is both). A query that names a loop is the routes'
+    // above and below: with a loop, run/start/set steer it. Steering or
+    // reading words veto; a one-off "send a daily report" has no set-up verb.
+    intent: 'schedule recurring work (a loop)',
+    all: [
+      ['schedule', 'scheduled', 'recurring', 'recur', 'cron', 'periodically', 'nightly', 'hourly', 'daily', 'weekly'],
+      ['schedule', 'create', 'set', 'setup', 'make', 'add', 'new', 'run', 'start', 'automate', 'repeat'],
+    ],
+    none: [...LOOP_STEERING_WORDS, 'loop'],
+    // …and the set-up verb opens the request: "view the schedule" reads one.
+    when: leadsWithSetUp,
+    candidates: [
+      { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
+    ],
+  },
+  {
+    // Reading schedules with no loop named ("view the schedule", "what is my schedule"): the loops are
+    // the only schedules tm8 has. Without this the ranker's 'schedule' tag answers `loop create`.
+    intent: 'read the schedules (loops)',
+    all: [['schedule', 'schedules', 'scheduled', 'cron', 'crons']],
+    none: ['preview', 'loop', 'loops'],
+    candidates: [{ path: ['loop', 'list'], example: 'tm8 loop list   (each loop with its schedule and next run)' }],
+  },
+  {
+    // A loop named with a creating verb whose object is a NEW loop (asksForANewLoop). run, start
+    // and set are not creating verbs here: with a loop they steer one (the routes above).
+    intent: 'create a loop',
+    all: [['loop'], [...LOOP_CREATE_VERBS, 'new']],
+    // "make a loop that runs every day" is a create: "runs" reads a loop's history only without a creating verb.
+    none: LOOP_STEERING_WORDS.filter(word => word !== 'runs'),
+    when: asksForANewLoop,
+    candidates: [
+      { path: ['loop', 'create'], example: 'tm8 loop create <title> --schedule <expr> --teammate <name|id> --prompt <text>' },
+    ],
+  },
+  {
+    // An editing verb with no field named ("edit the loop", "clear the loop's trigger").
+    intent: 'edit a loop',
+    all: [['loop'], ['edit', 'change', 'update', 'modify', 'rename', 'retitle', 'reconfigure', 'adjust', 'tweak', 'set', 'unset', 'clear']],
+    candidates: [{ path: ['loop', 'edit'], example: 'tm8 loop edit <id|title> --expect-version <n>' }],
+  },
+  {
+    intent: 'preview a loop schedule',
+    all: [['loop', 'loops'], ['preview']],
+    candidates: [{ path: ['loop', 'preview'], example: "tm8 loop preview --schedule '<expr>' --timezone <zone>" }],
+  },
+  {
+    intent: "read a loop's runs",
+    all: [['loop', 'loops'], ['runs', 'history', 'log', 'logs']],
+    candidates: [{ path: ['loop', 'runs'], example: 'tm8 loop runs <id|title>' }],
+  },
+  {
     intent: 'list teammates',
     all: [['teammate', 'agents', 'personas']],
     none: ['chat', 'skill', 'skills', 'equip', 'profile', 'interaction-profile', 'spawn', 'launch'],
@@ -278,16 +696,32 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
       { path: ['link', 'list'], example: 'tm8 link list   then   tm8 --space <alias> entity query --kind task' },
     ],
   },
+  {
+    // THE LAST LOOP ROUTES. Whatever else names a loop is read: never created, fired or deleted.
+    // Without them the 13 loop rows tie on the 'loop' tag and catalog order answers `loop create`.
+    intent: 'a loop (show it)',
+    all: [['loop']],
+    candidates: [{ path: ['loop', 'show'], example: 'tm8 loop show <id|title>' }],
+  },
+  {
+    intent: 'loops (list them)',
+    all: [['loops']],
+    candidates: [{ path: ['loop', 'list'], example: 'tm8 loop list' }],
+  },
 ];
 
 /** The first route whose token groups all match the query, or undefined. */
 export function matchIntent(query: string): IntentRoute | undefined {
   const tokens = new Set(tokenize(query));
   if (tokens.size === 0) return undefined;
+  const words = queryWords(query);
   return INTENT_ROUTES.find(
     (r) =>
       r.all.every((group) => group.some((t) => tokens.has(t))) &&
-      !(r.none ?? []).some((t) => tokens.has(t)),
+      !(r.none ?? []).some((t) => tokens.has(t)) &&
+      (r.only === undefined ||
+        words.every((w) => PLAIN_WORDS.has(w) || r.only!.includes(w) || r.all.some((group) => group.includes(w)))) &&
+      (r.when === undefined || r.when(words)),
   );
 }
 

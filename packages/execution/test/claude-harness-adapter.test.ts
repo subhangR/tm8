@@ -75,6 +75,22 @@ describe('Claude shared-port conformance', () => {
     expect(texts.join('')).toContain(JSON.stringify(sent));
   });
 
+  // Regression: HarnessSessionBase.reserve refused any turn with attachment
+  // refs ("This chat cannot take file attachments yet"), so a turn that named
+  // a file never reached Claude. The refs are tm8 ids the text already lists.
+  it('dispatches a turn that carries attachment refs', async () => {
+    const data = input(material()),
+      session = await open(data),
+      record = new Recorder(session);
+    expect(
+      await session.submit({ ...command(data.config, 'see [file f1]'), attachmentRefs: ['f1'] }),
+    ).toMatchObject({ delivery: 'sent' });
+    await record.terminal();
+    expect(record.events.find((e) => e.payload.kind === 'terminal')?.payload).toMatchObject({
+      outcome: 'completed',
+    });
+  });
+
   it('keeps CLI recipe, validates native init and emits paired tools and one provider terminal', async () => {
     const data = input(material()),
       session = await open(data),

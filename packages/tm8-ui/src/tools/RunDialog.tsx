@@ -4,12 +4,15 @@ import { useDismissable } from '../panels/useDismissable';
 import type { ToolPort, ToolSourceChange } from './port';
 import { InputValue } from './InputValue';
 import { apiAccessNotice, initialValues, runValues } from './values';
+import { localError, toolErrorOf, type ToolErrorView } from './errors';
+import { ToolErrorAlert } from './ToolErrorAlert';
 
-export function RunDialog({ tool, port, onClose, onOpenSession }: { tool: ToolView; port: ToolPort; onClose(): void; onOpenSession(id: string): void }) {
+/** `onRunError` fires after the server refused or failed a launch; a failed launch is still recorded as a killed run. */
+export function RunDialog({ tool, port, onClose, onOpenSession, onRunError }: { tool: ToolView; port: ToolPort; onClose(): void; onOpenSession(id: string): void; onRunError?(failure: unknown): void }) {
   const [values, setValues] = useState(() => initialValues(tool));
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ToolErrorView | null>(null);
   const [change, setChange] = useState<ToolSourceChange | null>(null);
   const [checking, setChecking] = useState(true);
   const [sourceError, setSourceError] = useState('');
@@ -36,11 +39,12 @@ export function RunDialog({ tool, port, onClose, onOpenSession }: { tool: ToolVi
     {checking && <p role="status">Checking source changes…</p>}
     {sourceError && <p role="alert">{sourceError}</p>}
     {access !== 'none' && <p role="status" className="tool-notice">{apiAccessNotice(access)}</p>}
-    <form onSubmit={event => { event.preventDefault(); if (busy || checking || sourceError) return; setError('');
+    <form onSubmit={event => { event.preventDefault(); if (busy || checking || sourceError) return; setError(null);
       let resolved: ReturnType<typeof runValues>;
-      try { resolved = runValues(tool, values, secrets); } catch (failure) { setError(failure instanceof Error ? failure.message : 'Check the inputs.'); return; }
+      try { resolved = runValues(tool, values, secrets); } catch (failure) { setError(localError(failure instanceof Error ? failure.message : 'Check the inputs.')); return; }
       setBusy(true); setSecrets({});
-      void port.run({ toolId: tool.id, expectedVersion: tool.version, clientMutationId: `tool-run-${crypto.randomUUID()}`, keepOpen: true, ...resolved }).then(run => { onOpenSession(run.sessionId); onClose(); }, () => { setError('The tool could not be started. Check input values, secret access and permissions, then try again.'); setBusy(false); });
+      // The server's own refusal (cap, missing inputs, a secret it will not lend, a failed launch) is the message.
+      void port.run({ toolId: tool.id, expectedVersion: tool.version, clientMutationId: `tool-run-${crypto.randomUUID()}`, keepOpen: true, ...resolved }).then(run => { onOpenSession(run.sessionId); onClose(); }, failure => { setError(toolErrorOf(failure, 'run')); setBusy(false); onRunError?.(failure); });
     }}>
       {tool.definition.inputs.map(input => <label key={input.name} className="tool-field"><span>{input.name}{input.required ? ' · required' : ''}</span>
         {input.description && <small>{input.description}</small>}
@@ -48,7 +52,7 @@ export function RunDialog({ tool, port, onClose, onOpenSession }: { tool: ToolVi
           onChange={value => input.type === 'secret' ? setSecrets(previous => ({ ...previous, [input.name]: value })) : setValues(previous => ({ ...previous, [input.name]: value }))} />
         {input.type === 'secret' && tool.secretBindings.some(binding => binding.inputName === input.name) && <small>Leave blank to use the saved secret.</small>}
       </label>)}
-      {error && <p role="alert">{error}</p>}
+      <ToolErrorAlert error={error} />
       <p>The terminal stays open as a shell after the tool exits. Close the tab when you’re finished.</p>
       <div className="tool-actions"><button type="button" className="pn-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="pn-btn pn-btn--primary" disabled={busy || checking || Boolean(sourceError)}>{busy ? 'Starting…' : 'Run tool'}</button></div>
     </form>

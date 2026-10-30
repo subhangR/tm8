@@ -60,7 +60,7 @@ import type { ContextBudgets, SkillPreviewResult } from '@tm8/contract';
  * rather than nesting a second modal dialog inside the first — one surface,
  * one dialog, which is what a screen reader is entitled to.
  */
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   CredentialProviderName,
   CredentialsSpaceListView,
@@ -175,7 +175,8 @@ export interface LaunchSheetProps {
    * unreadable ⇒ no sentence.
    */
   loadSpaceReadiness?(spaceId: string): Promise<CredentialsSpaceReadinessView>;
-  onLaunch(config: LaunchSelection): void;
+  /** May return the launch's settlement; the sheet releases what its press held when it settles. */
+  onLaunch(config: LaunchSelection): void | Promise<unknown>;
   /**
    * D5 — route the subject through the space's resident dispatcher instead of
    * configuring the launch here. Takes ONLY the subject, mirroring
@@ -306,6 +307,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
     agentTool: agentToolId || null,
     interactionProfileId: profileId || null,
   });
+  /* One press at a time while a launch is in flight (lane E). */
+  const pressing = useRef(false);
   const selectionCandidates = useMemo(() => ({
     memories: memories?.map(memoryCandidateRow),
     skills: props.skillCandidates,
@@ -1086,7 +1089,20 @@ export function LaunchSheet(props: LaunchSheetProps) {
           waits rather than launch that group on its defaults and drop the
           person's removals. Said here, not only in a tooltip. */}
       {selection.launchBlock ? (
-        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">{selection.launchBlock}</div>
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-wait">
+          {selection.launchBlock}
+        </div>
+      ) : null}
+      {/* One line about the defaults the groups draw, said once for the sheet —
+          not when the block above already says it — and Retry whenever the
+          read failed, blocking or not. */}
+      {selection.defaultsLine ? (
+        <div className="ls__section ls__rowsub" role="status" data-testid="launch-selection-defaults-note">
+          {selection.defaultsLine.text}
+          {selection.defaultsLine.retry ? (
+            <button type="button" className="ls__cancel" data-testid="launch-selection-retry" onClick={selection.defaultsLine.retry}>Retry</button>
+          ) : null}
+        </div>
       ) : null}
 
       <footer className="ls__foot">
@@ -1165,9 +1181,12 @@ export function LaunchSheet(props: LaunchSheetProps) {
                edited group, by hand or by an applied Jev pick, is its exact
                set. No group edited ⇒ no `selection`, so the launch loads
                exactly what it always has. */
+            if (pressing.current) return;
             const jevFields = jev.toSpawnFields();
             const selectionFields = composeLaunchSelection(selection.outcomes(), jevFields.defaultReasons);
-            props.onLaunch({
+            let settled: unknown;
+            let thrown: { error: unknown } | null = null;
+            try { settled = props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
               agentToolId: agentToolId || null,
@@ -1182,7 +1201,17 @@ export function LaunchSheet(props: LaunchSheetProps) {
               ...selectionFields,
               ...(jevFields.jevRunId ? { jevRunId: jevFields.jevRunId } : {}),
               ...(Object.keys(contextBudgets).length > 0 ? { contextBudgets } : {}),
-            });
+            }); } catch (error) { thrown = { error }; }
+            /* THE PRESS HOLDS JEV: the flight is the host's settlement (a host
+               that returns none has no flight; one that throws has failed).
+               The hook shows held answers on a rejection; a sheet still up
+               after a success is interactive again, so it shows them too. */
+            const inFlight = thrown !== null || (!!settled && typeof (settled as Promise<unknown>).then === 'function');
+            const flight = thrown ? Promise.reject(thrown.error) : inFlight ? (settled as Promise<unknown>) : Promise.resolve();
+            pressing.current = inFlight;
+            const hold = jev.seal(flight);
+            flight.then(() => { pressing.current = false; hold.unseal(); }, () => { pressing.current = false; });
+            if (thrown) throw thrown.error;
           }}
         >
           {launching ? 'Launching…' : 'Launch ▸'}

@@ -1,8 +1,9 @@
-import { TOOL_DEFAULT_TIMEOUT_SECONDS, ToolDefinitionSchema, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
+import { TOOL_DEFAULT_TIMEOUT_SECONDS, TOOL_STARTERS, ToolDefinitionSchema, toolStarterDefinition, type EntityHeaderResult, type ToolDefinition, type ToolRun, type ToolView } from '@tm8/contract';
 import { readJsonSource, readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { isAgentContext } from '../credentials.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { ApiError, exitCodeFor } from '../errors.js';
+import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_PROTOCOL, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
@@ -10,14 +11,30 @@ import { assertKnownOptions, headerTextOptions, requireArg } from './entity.js';
 import { inputFlag, parseToolArgs, parseToolValue, refuseLiteralToolSecrets, renderToolHelp, type ToolHelp } from './tool-args.js';
 import { readToolSecret } from './tool-secret.js';
 import { attachToolRun } from './tool-terminal.js';
+import { unifiedDiff } from './tool-diff.js';
+import { existingTool, renderInstall, renderStarters, requireStarter, selectStarters, type StarterInstallItem } from './tool-starters.js';
+import { changedFields, FOLDED_VERSIONS_NOTE, isDefinitionVersion, renderDiff, renderVersions, snapshotSource, versionRef, versionRows,
+  type EntityVersionItem, type ToolDiffResult, type ToolVersionsPage } from './tool-history.js';
+import { renderToolList, renderToolRuns, type ToolListPage, type ToolRunsPage } from './tool-views.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const client = (cmd: CommandContext) => clientFor({ ...cmd.ctx, fresh: true });
-const mutation = (cmd: CommandContext) => ({ clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+/** A fresh client and a command's mutation envelope; `tm8 loop` shares both. */
+export const client = (cmd: CommandContext) => clientFor({ ...cmd.ctx, fresh: true });
+export const mutation = (cmd: CommandContext) => ({ clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   ...(cmd.ctx.actor ? { actorId: cmd.ctx.actor.value } : {}) });
 const emit = (cmd: CommandContext, data: unknown): ExitCode => {
   cmd.out.data(data, value => JSON.stringify(value, null, 2)); return EXIT_OK;
 };
+/**
+ * `entities.header.set` on a tool. The node stored the header only when it answers with an
+ * AUTHORED one (version > 0): a node that does not admit the kind answers 200 with a
+ * `header_not_stored` warning and stores nothing, which must not read as success.
+ */
+async function setToolHeader(cmd: CommandContext, toolId: string, body: Record<string, unknown>): Promise<{ stored: true } | { stored: false; reason: string }> {
+  const result = await observedInvoke<EntityHeaderResult>(client(cmd), 'entities.header.set', { params: { id: toolId }, body });
+  if (result.header && result.header.version > 0) return { stored: true };
+  return { stored: false, reason: result.warnings?.map(warning => `${warning.code}: ${warning.message}`).join('; ') || 'the node answered without an authored header' };
+}
 function argumentsCount(cmd: CommandContext, min: number, max = min): void {
   if (cmd.args.length < min || cmd.args.length > max || (cmd.path[1] !== 'run' && cmd.passthrough.length)) {
     throw new CliError(`tm8 ${cmd.path.join(' ')} expects ${min === max ? min : `${min}–${max}`} arguments; see its help`, EXIT_USAGE);
@@ -58,7 +75,7 @@ async function fileSource(raw: string, option: string): Promise<string> {
   if (!raw.startsWith('@') || raw.length === 1) throw new CliError(`--${option} must use @file`, EXIT_USAGE);
   return readTextSource(raw);
 }
-async function definition(cmd: CommandContext, previous?: ToolDefinition): Promise<ToolDefinition> {
+async function definition(cmd: CommandContext, previous?: ToolDefinition, name?: string): Promise<ToolDefinition> {
   let spec: Record<string, unknown> = {};
   const path = cmd.options.value('spec');
   if (path !== undefined) {
@@ -74,7 +91,7 @@ async function definition(cmd: CommandContext, previous?: ToolDefinition): Promi
   const parsed = ToolDefinitionSchema.safeParse({
     description: '', help: '', inputs: [], tm8Access: 'none', timeoutSeconds: TOOL_DEFAULT_TIMEOUT_SECONDS,
     ...previous, ...spec,
-    name: previous?.name ?? requireArg(cmd, 0, '<name>'),
+    name: name ?? previous?.name ?? requireArg(cmd, 0, '<name>'),
     runtime: cmd.options.value('runtime') ?? previous?.runtime,
     source: sourcePath !== undefined ? await fileSource(sourcePath, 'source') : previous?.source,
     ...(cmd.options.value('description') !== undefined ? { description: cmd.options.value('description') } : {}),
@@ -83,19 +100,21 @@ async function definition(cmd: CommandContext, previous?: ToolDefinition): Promi
   return parsed.data;
 }
 async function toolCreate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['runtime', 'source', 'spec', 'description', 'when-to-use', 'summary', 'keyword', 'mutation-id']);
-  argumentsCount(cmd, 1);
+  assertKnownOptions(cmd, ['from-starter', 'runtime', 'source', 'spec', 'description', 'when-to-use', 'summary', 'keyword', 'mutation-id']);
+  const starterName = cmd.options.value('from-starter'), starter = starterName === undefined ? undefined : requireStarter(starterName);
+  argumentsCount(cmd, starter ? 0 : 1, 1);
   const body = mutation(cmd);
+  // A starter supplies every field; the name argument and each option override it.
+  const created = await definition(cmd, starter && toolStarterDefinition(starter), starter && (cmd.args[0] ?? starter.name));
   let tool: ToolView = await observedInvoke(client(cmd), 'tools.create', {
-    params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition: await definition(cmd) },
+    params: { spaceId: requireSpace(cmd.ctx) }, body: { ...body, definition: created },
   });
   // Selection headers are the universal entity surface, separate from the
   // strict tool-definition DTO. A stable mutation id makes retries safe.
-  const header = headerTextOptions(cmd);
-  if (header) {
-    await observedInvoke(client(cmd), 'entities.header.set', { params: { id: tool.id }, body: {
-      ...body, clientMutationId: `${body.clientMutationId}:header`, ...header,
-    } });
+  const header = { ...(starter ? { whenToUse: starter.whenToUse, summary: starter.summary } : {}), ...headerTextOptions(cmd) };
+  if (Object.keys(header).length) {
+    const outcome = await setToolHeader(cmd, tool.id, { ...body, clientMutationId: `${body.clientMutationId}:header`, ...header });
+    if (!outcome.stored) cmd.out.warn(`${tool.definition.name} was created but its selection header was not stored: ${outcome.reason}`);
     tool = await observedInvoke(client(cmd), 'tools.get', { params: { toolId: tool.id } });
   }
   return emit(cmd, tool);
@@ -117,7 +136,8 @@ async function toolShow(cmd: CommandContext): Promise<ExitCode> {
 }
 async function toolList(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['words', 'limit', 'cursor']); argumentsCount(cmd, 0);
-  return emit(cmd, await observedInvoke(client(cmd), 'tools.list', { params: { spaceId: requireSpace(cmd.ctx) }, query: pageQuery(cmd) }));
+  const page = await observedInvoke<ToolListPage>(client(cmd), 'tools.list', { params: { spaceId: requireSpace(cmd.ctx) }, query: pageQuery(cmd) });
+  cmd.out.data(page, value => renderToolList(value, cmd.options.value('words'))); return EXIT_OK;
 }
 async function helpFor(cmd: CommandContext, tool: ToolView): Promise<ToolHelp> {
   const help = await observedInvoke<ToolHelp>(client(cmd), 'tools.help', { params: { toolId: tool.id } });
@@ -180,18 +200,163 @@ async function toolRun(cmd: CommandContext): Promise<ExitCode> {
   // Emit the id before attaching: a timed-out caller can inspect this run later.
   cmd.out.bytes(Buffer.from(`${result.sessionId}\n`));
   const code = await attachToolRun(cmd, result.sessionId, keepOpen);
-  if (keepOpen) cmd.out.warn(`shell left open; close with: tm8 session terminate ${result.sessionId}`);
+  if (keepOpen) cmd.out.warn(`shell left open; close with: tm8 session terminate ${result.sessionId} --yes`);
   return code;
 }
 async function toolRuns(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['limit', 'cursor']); argumentsCount(cmd, 1);
   const tool = await loadTool(cmd);
-  return emit(cmd, await observedInvoke(client(cmd), 'tools.runs.list', { params: { toolId: tool.id }, query: pageQuery(cmd) }));
+  const page = await observedInvoke<ToolRunsPage>(client(cmd), 'tools.runs.list', { params: { toolId: tool.id }, query: pageQuery(cmd) });
+  cmd.out.data(page, value => renderToolRuns(value, tool.definition.name)); return EXIT_OK;
 }
 async function toolRunShow(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['output']); argumentsCount(cmd, 1);
   const result = await observedInvoke<ToolRun>(client(cmd), 'tools.runs.get', { params: { sessionId: requireArg(cmd, 0, '<session-id>') } });
   cmd.out.data(result, value => cmd.options.bool('output') ? value.outputTail : JSON.stringify(value, null, 2)); return EXIT_OK;
+}
+const versionsPage = (cmd: CommandContext, toolId: string, query: Record<string, string>): Promise<{ items: EntityVersionItem[]; nextCursor: string | null }> =>
+  observedInvoke(client(cmd), 'entities.versions', { params: { id: toolId }, query });
+/** Every stored write, newest first. Tool histories are short, and the version cursor is the Server's to mint. */
+async function allVersions(cmd: CommandContext, toolId: string): Promise<EntityVersionItem[]> {
+  const stored: EntityVersionItem[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await versionsPage(cmd, toolId, { limit: '200', ...(cursor ? { cursor } : {}) });
+    stored.push(...page.items); cursor = page.nextCursor;
+  } while (cursor);
+  return stored;
+}
+function pageLimit(cmd: CommandContext): number | undefined {
+  const limit = cmd.options.integer('limit');
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw new CliError('--limit must be a positive integer', EXIT_USAGE);
+  return limit;
+}
+async function toolVersions(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['all', 'limit', 'cursor']); argumentsCount(cmd, 1);
+  const all = cmd.options.bool('all');
+  if (!all && cmd.options.has('cursor')) throw new CliError('--cursor pages every stored write; combine it with --all', EXIT_USAGE);
+  const tool = await loadTool(cmd);
+  const base = { toolId: tool.id, name: tool.definition.name, currentVersion: tool.version, currentExecutionVersion: tool.executionVersion, all };
+  let result: ToolVersionsPage;
+  if (all) {
+    // One Server page of stored writes; its oldest row is compared with the first snapshot past it.
+    const page = await versionsPage(cmd, tool.id, pageQuery(cmd));
+    const older = page.nextCursor ? (await versionsPage(cmd, tool.id, { limit: '1', cursor: page.nextCursor })).items[0] : undefined;
+    result = { ...base, items: versionRows(page.items, older), nextCursor: page.nextCursor, hidden: 0, truncated: 0 };
+  } else {
+    // Definition versions only: classifying a row needs its neighbours, so the whole history is read.
+    const limit = pageLimit(cmd), stored = await allVersions(cmd, tool.id), rows = versionRows(stored, undefined, true);
+    const items = limit === undefined ? rows : rows.slice(0, limit);
+    result = { ...base, items, nextCursor: null, hidden: stored.length - rows.length, truncated: rows.length - items.length };
+  }
+  cmd.out.data(result, renderVersions); return EXIT_OK;
+}
+function versionOption(cmd: CommandContext, option: 'from' | 'to'): number | undefined {
+  const raw = cmd.options.value(option);
+  if (raw === undefined) return undefined;
+  const version = /^v?[0-9]+$/.test(raw) ? Number(raw.replace(/^v/, '')) : Number.NaN;
+  if (!Number.isSafeInteger(version) || version < 1) throw new CliError(`--${option} expects a version number such as 3`, EXIT_USAGE);
+  return version;
+}
+async function toolDiff(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['from', 'to']); argumentsCount(cmd, 1);
+  const from = versionOption(cmd, 'from'), to = versionOption(cmd, 'to');
+  const tool = await loadTool(cmd), name = tool.definition.name;
+  // An explicit version is any stored write, found by walking newest-first history until both ends
+  // are known or passed. An omitted end is a DEFINITION version, which only the whole history can tell.
+  const stored: EntityVersionItem[] = [];
+  const definitions = (): EntityVersionItem[] => stored.filter((item, index) => isDefinitionVersion(item, stored[index + 1]));
+  const resolve = () => {
+    const newer = to !== undefined ? stored.find(item => item.version === to) : definitions()[0];
+    const older = from !== undefined ? stored.find(item => item.version === from)
+      : newer && definitions().find(item => item.version < newer.version);
+    return { newer, older };
+  };
+  const passed = (version: number | undefined, found: unknown): boolean => version !== undefined && !found && stored.at(-1)!.version < version;
+  let cursor: string | null = null;
+  do {
+    const page = await versionsPage(cmd, tool.id, { limit: '200', ...(cursor ? { cursor } : {}) });
+    stored.push(...page.items); cursor = page.nextCursor;
+    if (from === undefined || to === undefined) continue;
+    const { newer, older } = resolve();
+    if (!stored.length || (newer && older) || passed(to, newer) || passed(from, older)) break;
+  } while (cursor);
+  const { newer, older } = resolve();
+  const missing = (version: number): CliError => {
+    const nearest = [[...stored].reverse().find(item => item.version > version), stored.find(item => item.version < version)]
+      .flatMap(item => item ? [`v${item.version}`] : []);
+    return new CliError(`${name} v${version} has no stored snapshot${nearest.length ? ` (nearest stored: ${nearest.join(', ')})` : ''}; ${FOLDED_VERSIONS_NOTE}`, EXIT_NOT_FOUND);
+  };
+  if (!stored.length) throw new CliError(`${name} has no stored versions`, EXIT_NOT_FOUND);
+  if (!newer) throw missing(to!);
+  if (!older) throw from !== undefined ? missing(from) : new CliError(`${name} has no stored definition version older than v${newer.version} to compare with`, EXIT_NOT_FOUND);
+  const before = snapshotSource(older), after = snapshotSource(newer);
+  if (before === null || after === null) throw new CliError(`A stored snapshot of ${name} carries no source`, EXIT_PROTOCOL);
+  const ref = (item: EntityVersionItem) => versionRef(item, stored[stored.indexOf(item) + 1]);
+  const result: ToolDiffResult = { toolId: tool.id, name, from: ref(older), to: ref(newer), changed: changedFields(newer, older),
+    diff: unifiedDiff(before, after, { from: `${name}@v${older.version}`, to: `${name}@v${newer.version}` }) };
+  cmd.out.data(result, renderDiff); return EXIT_OK;
+}
+async function toolsByName(cmd: CommandContext): Promise<Map<string, ToolView>> {
+  const tools = new Map<string, ToolView>();
+  let cursor: string | null = null;
+  do {
+    const page: { items: ToolView[]; nextCursor: string | null } = await observedInvoke(client(cmd), 'tools.list', {
+      params: { spaceId: requireSpace(cmd.ctx) }, query: { limit: '200', ...(cursor ? { cursor } : {}) },
+    });
+    for (const item of page.items) tools.set(item.definition.name, item);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return tools;
+}
+async function toolStartersList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 0);
+  const tools = await toolsByName(cmd);
+  cmd.out.data({ items: TOOL_STARTERS.map(starter => ({ ...starter, existing: existingTool(starter, tools.get(starter.name)) })) }, renderStarters);
+  return EXIT_OK;
+}
+async function toolStartersInstall(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['only', 'mutation-id']); argumentsCount(cmd, 0);
+  const starters = selectStarters(cmd.options.values('only')), body = mutation(cmd), tools = await toolsByName(cmd);
+  const items: StarterInstallItem[] = [];
+  let exit: ExitCode = EXIT_OK;
+  for (const starter of starters) {
+    const existing = tools.get(starter.name);
+    if (existing) { items.push({ name: starter.name, status: 'skipped', reason: 'exists', toolId: existing.id }); continue; }
+    // One mutation id per starter: a retry with the same --mutation-id replays, never duplicates.
+    const clientMutationId = `${body.clientMutationId}:${starter.name}`;
+    let tool: ToolView;
+    try {
+      tool = await observedInvoke(client(cmd), 'tools.create', { params: { spaceId: requireSpace(cmd.ctx) },
+        body: { ...body, clientMutationId, definition: toolStarterDefinition(starter) } });
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      // A name taken since the listing, or by a tool this caller cannot read, is the same skip.
+      if (error.code === 'invariant_violation' && /already has this name/.test(error.message)) {
+        items.push({ name: starter.name, status: 'skipped', reason: 'exists', toolId: null }); continue;
+      }
+      items.push({ name: starter.name, status: 'failed', error: { code: error.code, message: error.message } });
+      if (exit === EXIT_OK) exit = exitCodeFor(error);
+      continue;
+    }
+    let header: 'set' | 'not_stored' | 'failed' = 'set';
+    try {
+      const outcome = await setToolHeader(cmd, tool.id, {
+        ...body, clientMutationId: `${clientMutationId}:header`, whenToUse: starter.whenToUse, summary: starter.summary,
+      });
+      if (!outcome.stored) {
+        header = 'not_stored';
+        cmd.out.warn(`${starter.name} was created but its selection header was not stored: ${outcome.reason}`);
+      }
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      // The tool exists either way; a missing header is a notice, as in the UI.
+      header = 'failed';
+      cmd.out.warn(`${starter.name} was created but its selection header was not set: ${error.code}: ${error.message}`);
+    }
+    items.push({ name: starter.name, status: 'created', toolId: tool.id, version: tool.version, header });
+  }
+  cmd.out.data({ items }, renderInstall); return exit;
 }
 export const TOOL_COMMANDS: CommandModule[] = [
   { path: ['tool', 'create'], run: toolCreate }, { path: ['tool', 'edit'], run: toolEdit },
@@ -199,4 +364,6 @@ export const TOOL_COMMANDS: CommandModule[] = [
   { path: ['tool', 'config', 'set'], run: cmd => toolConfig(cmd, false) }, { path: ['tool', 'config', 'unset'], run: cmd => toolConfig(cmd, true) },
   { path: ['tool', 'secret', 'set'], run: cmd => toolSecret(cmd, false) }, { path: ['tool', 'secret', 'unset'], run: cmd => toolSecret(cmd, true) },
   { path: ['tool', 'run'], run: toolRun }, { path: ['tool', 'runs'], run: toolRuns }, { path: ['tool', 'run-show'], run: toolRunShow },
+  { path: ['tool', 'versions'], run: toolVersions }, { path: ['tool', 'diff'], run: toolDiff },
+  { path: ['tool', 'starters', 'list'], run: toolStartersList }, { path: ['tool', 'starters', 'install'], run: toolStartersInstall },
 ];
