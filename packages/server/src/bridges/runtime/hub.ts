@@ -175,6 +175,23 @@ export class BridgeRuntimeHub {
     return { runtimeId: link.runtimeId };
   }
 
+  /**
+   * B1b-7 (`bridges.connections.remove`): stop one connection on the runtime
+   * holding it; `logout` unlinks the device and wipes its sealed keys. Sent to
+   * `runtimeId` when that runtime is connected, else to every connected runtime
+   * (a runtime ignores a connection it does not hold). False when none is.
+   */
+  async disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean> {
+    const held = opts.runtimeId ? this.runtimes.get(opts.runtimeId) : undefined;
+    const targets = held && held.sink.isOpen ? [held] : [...this.runtimes.values()].filter((r) => r.sink.isOpen);
+    for (const link of targets) {
+      this.send(link.runtimeId, { type: 'disconnect', connectionId, ...(opts.logout ? { logout: true } : {}) });
+    }
+    // The allowlist is derived in SQL: once the connection's bridges end, this pass pushes it emptied.
+    this.kick();
+    return targets.length > 0;
+  }
+
   /** The owner's live group list (§4.3 picker, D28): asked of the runtime, never stored. */
   async listConversations(runtimeId: string, connectionId: string, requestId: string, timeoutMs = 15_000): Promise<ConversationsFrame> {
     return this.request(runtimeId, requestId, { type: 'conversation.list', requestId, connectionId }, timeoutMs) as Promise<ConversationsFrame>;

@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import type { EntityId, SpaceId } from './contract.js';
+import type { ConversationItem } from './bridge-runtime-protocol.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -284,6 +285,23 @@ export interface BridgeConnectionWithdrawResult {
   pausedBridgeIds: EntityId[];
 }
 
+export interface BridgeConnectionRemoveInput { clientMutationId: string; connectionId?: string }
+/**
+ * `runtime: 'logged_out'`: the runtime was told to log the device out and wipe
+ * its keys. `'offline'`: no runtime was connected; it never reconnects a
+ * removed connection, and the owner can unlink the device from the phone.
+ */
+export interface BridgeConnectionRemoveResult {
+  connection: BridgeConnectionView;
+  /** Every bridge on the connection that was live, now ended. */
+  endedBridgeIds: EntityId[];
+  /** Every space credential that offered it, now revoked. */
+  revokedCredentialIds: EntityId[];
+  runtime: 'logged_out' | 'offline';
+}
+/** The owner's live group list (§4.3, D28): asked of the runtime on each call, never stored. */
+export interface BridgeConversationListResult { connectionId: string; items: ConversationItem[] }
+
 /**
  * The QR or pairing code for a `bridges.connections.begin`, pushed by the
  * server to the begin caller's own human sockets only (selected by their
@@ -426,6 +444,10 @@ export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWith
   clientMutationId: z.string().min(1),
   connectionId: Id.optional(),
   spaceId: Id,
+}).strict();
+export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemoveInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
 }).strict();
 export const BridgeConnectionOfferSchema: z.ZodType<BridgeConnectionOffer> = z.object({
   credentialId: Id, spaceId: Id, visibility: z.enum(['private', 'public']),
