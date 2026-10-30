@@ -951,7 +951,8 @@ function bridgeState(over: Partial<BridgeState>): BridgeState {
     kind: 'bridge',
     provider: 'whatsapp',
     connectionId: '0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494',
-    connectionCredentialId: null,
+    // 405 (B1b-5, D32): every bridge rides a space credential for its number.
+    connectionCredentialId: '019f0000-0000-7000-8000-0000000000c1',
     conversation: { externalId: '1203630xxxx@g.us', kind: 'group', title: 'Infra', memberCount: 14 },
     /* Target ids are UUIDs: the contract's bridge arm validates them. The
        chat and channel here are the bridge's own targets, not fixture rows. */
