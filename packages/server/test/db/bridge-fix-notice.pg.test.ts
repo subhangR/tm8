@@ -18,6 +18,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { createDb } from '../../src/db/client.js';
 import type { Db } from '../../src/db/types.js';
+import { bridgesWorkerClaims } from '../../src/bridges/outbox.js';
+import { runBridgeFixSweepTick } from '../../src/scheduler/jobs/bridge-fix-sweep.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
@@ -110,6 +112,12 @@ async function linkPr(task: string, number: number): Promise<string> {
 }
 const prFacts = (pr: string, state: string | null, ci: string | null) =>
   db.tx(human(), q => q.rpc('apply_pull_request_facts', [pr, null, state, null, ci]));
+
+/** The bridges worker's sweep tick (404 §4). */
+const sweep = () => db.rpc<{ closeouts: number; retries: number }>(bridgesWorkerClaims(), 'internal.bridge_fix_sweep', []);
+/** Moves a report's close-out window into the past. */
+const ageCloseout = (task: string) => inTx(null, c =>
+  c.query(`update public.bridge_fix_closeouts set done_at = now() - interval '11 minutes' where task_id = $1`, [task]));
 
 beforeAll(async () => {
   scratch = await createW1ScratchDatabase('bridges_fix');
@@ -268,6 +276,11 @@ describe('F: a bug completed without a PR says what was done (D72)', () => {
     // A bridge's own message on the task is never "what was done".
     await inTx(null, c => post(c, task, 'tm8: noise', infra));
     await db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, `f-done-${randomUUID()}`]));
+    // 404 §3: the notice waits for a close-out; with none in the window the
+    // sweep posts the newest message from before the done move.
+    expect(await noticesFor(task)).toEqual([]);
+    await ageCloseout(task);
+    await sweep();
     const notices = await noticesFor(task);
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ kind: 'done_without_pr', parent_id: r, author_id: teammate,
@@ -281,6 +294,8 @@ describe('F: a bug completed without a PR says what was done (D72)', () => {
     await endTurn(chatGaming);
     await db.tx(human(), async q => q.rpc('set_task_gate', [task, await version(task), 'none', null, `f-gate-${randomUUID()}`]));
     await db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, `f-done-${randomUUID()}`]));
+    await ageCloseout(task);
+    await sweep();
     expect((await noticesFor(task))[0]?.body).toBe('Done: Typo on the rules page (closed without a pull request).');
   });
 });
@@ -388,5 +403,119 @@ describe('F: review regressions', () => {
     }
     await prFacts(pr, 'merged', 'passing');
     expect(await noticesFor(task)).toHaveLength(2);
+  });
+});
+
+describe('F follow-ups (404)', () => {
+  /** A fresh report from an Infra chat turn, labelled bug. */
+  async function freshReport(title: string, ext: string): Promise<{ task: string; report: string }> {
+    const r = await report(infra, title.toLowerCase(), ext);
+    await startTurn(chatInfra, infra, r, ext);
+    const task = await inTx({ bearer: bearerInfra }, c => newTask(c, title, { bug: true }));
+    await endTurn(chatInfra);
+    return { task, report: r };
+  }
+  const pendingOf = (task: string) => scratch.query<{ status: string; attempts: number; last_error: string | null }>(
+    'select status, attempts, last_error from public.bridge_fix_pending where task_id = $1', [task]);
+  /** A PR merge whose commit runs as a work session (399's answerer guard refuses it). */
+  const mergeAsWorker = (pr: string, ci: string | null = null) => inTx({ session: worker }, c =>
+    c.query('update public.pull_requests set state = $2, ci_status = $3 where entity_id = $1', [pr, 'merged', ci]));
+
+  it('§1 a cancelled report whose PR merges later posts nothing', async () => {
+    const { task } = await freshReport('Cancelled bug', 'wamid.F1');
+    const pr = await linkPr(task, 901);
+    await inTx(null, c => c.query(`update public.tasks set work_status = 'cancelled' where entity_id = $1`, [task]));
+    expect((await scratch.query<{ c: string }>('select status_category c from public.entities where id = $1', [task]))[0]!.c)
+      .toBe('cancelled');
+    await prFacts(pr, 'merged', 'passing');
+    await sweep();
+    expect(await noticesFor(task)).toEqual([]);
+  });
+
+  it('§3 the first close-out after the done move is what was done, not an older message', async () => {
+    const { task, report: r } = await freshReport('Cache stale', 'wamid.F3');
+    await db.tx(human(), async q => q.rpc('set_task_gate', [task, await version(task), 'none', null, `f-gate-${randomUUID()}`]));
+    await inTx(null, c => post(c, task, 'Looking at the TTLs.'));
+    await db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, `f-done-${randomUUID()}`]));
+    expect(await noticesFor(task)).toEqual([]);
+    await inTx({ session: worker }, c => post(c, task, 'Dropped the TTL to 60 s and purged the CDN.'));
+    const notices = await noticesFor(task);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ kind: 'done_without_pr', parent_id: r,
+      body: 'Done: Cache stale. Dropped the TTL to 60 s and purged the CDN.' });
+    expect(await scratch.query('select 1 from public.bridge_fix_closeouts where task_id = $1', [task])).toEqual([]);
+  });
+
+  it('§2 a notice refused by the answerer guard is recorded and posts when the answer settles', async () => {
+    const { task, report: r } = await freshReport('Queue stuck', 'wamid.F2');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 902);
+    await mergeAsWorker(pr);
+    expect(await noticesFor(task)).toEqual([]);
+    expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'retrying', attempts: 1 })]);
+    expect((await pendingOf(task))[0]!.last_error).toMatch(/answer/);
+    await db.tx(human(), q => q.rpc('settle_bridge_answer', [r]));
+    const notices = await noticesFor(task);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ kind: 'merged', parent_id: r });
+    expect(await pendingOf(task)).toEqual([]);
+  });
+
+  it('§2 the sweep retries a refused notice without waiting for the answer', async () => {
+    const { task, report: r } = await freshReport('Emails late', 'wamid.F4');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 903);
+    await mergeAsWorker(pr);
+    expect(await noticesFor(task)).toEqual([]);
+    // The scheduler job's own tick (sweep.bridge-fix-notices).
+    expect(await runBridgeFixSweepTick({ db })).toMatchObject({ affected: expect.any(Number) });
+    expect(await noticesFor(task)).toHaveLength(1);
+    expect(await pendingOf(task)).toEqual([]);
+  });
+
+  it('§2 after 5 failed attempts it gives up with an fyi, and later events post nothing', async () => {
+    const { task, report: r } = await freshReport('Search 404s', 'wamid.F5');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 904);
+    for (const ci of [null, 'pending', 'passing', 'pending', 'passing']) await mergeAsWorker(pr, ci);
+    expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'given_up', attempts: 5 })]);
+    const fyi = await scratch.query<{ level: string; status: string; reason: string }>(
+      `select level, status, reason from public.attention_requests where entity_id = $1 and signal_key like 'bridge.fix_notice_failed:%'`, [task]);
+    expect(fyi).toEqual([expect.objectContaining({ level: 'fyi', status: 'open' })]);
+    expect(fyi[0]!.reason).toContain('Search 404s');
+    await db.tx(human(), q => q.rpc('settle_bridge_answer', [r]));
+    await sweep();
+    expect(await noticesFor(task)).toEqual([]);
+  });
+
+  it('§2 the age bound: a failure 30 minutes after the first gives up too', async () => {
+    const { task, report: r } = await freshReport('Uploads fail', 'wamid.F6');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 905);
+    await mergeAsWorker(pr);
+    await inTx(null, c => c.query(`update public.bridge_fix_pending set first_at = now() - interval '31 minutes' where task_id = $1`, [task]));
+    await mergeAsWorker(pr, 'passing');
+    expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'given_up', attempts: 2 })]);
+  });
+
+  it('§2 a wait on a report cancelled or deleted afterwards is dropped by the sweep, not swept forever', async () => {
+    const { task, report: r } = await freshReport('Login loop', 'wamid.F7');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 906);
+    await mergeAsWorker(pr);
+    expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'retrying' })]);
+    await inTx(null, c => c.query(`update public.tasks set work_status = 'cancelled' where entity_id = $1`, [task]));
+    await sweep();
+    expect(await pendingOf(task)).toEqual([]);
+    expect(await noticesFor(task)).toEqual([]);
+
+    const gone = await freshReport('Avatar blank', 'wamid.F8');
+    await db.tx(human(), async q => q.rpc('set_task_gate', [gone.task, await version(gone.task), 'none', null, `f-gate-${randomUUID()}`]));
+    await db.tx(human(), async q => q.rpc('complete_task', [gone.task, await version(gone.task), [ownerMember], null, `f-done-${randomUUID()}`]));
+    await inTx(null, c => c.query('update public.entities set deleted_at = now() where id = $1', [gone.task]));
+    await ageCloseout(gone.task);
+    await sweep();
+    expect(await scratch.query('select 1 from public.bridge_fix_closeouts where task_id = $1', [gone.task])).toEqual([]);
+    expect(await noticesFor(gone.task)).toEqual([]);
   });
 });

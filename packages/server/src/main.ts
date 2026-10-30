@@ -65,6 +65,7 @@ import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-bin
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
+import { createBridgeFixSweepJob } from './scheduler/jobs/bridge-fix-sweep.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1357,6 +1358,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Bridges F (404): the fix-notice waits that need a clock (D70, D72).
+    scheduler.register(createBridgeFixSweepJob({ db }));
     // §5.6 (346): MCP call audit rows past the node's retention window.
     scheduler.register(
       createMcpAuditRetentionJob({
