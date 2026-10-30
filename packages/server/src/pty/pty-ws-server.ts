@@ -43,7 +43,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
-import type { PtyHostService } from '@tm8/execution';
+import type { PtyHostService, TerminalWait } from '@tm8/execution';
 
 import type { WsSocket } from '../events/ws-connection.js';
 import { CLOSE_CODE } from '../events/ws-frame.js';
@@ -112,6 +112,14 @@ export interface PtyWsServerOptions {
    * `recheckCredentialStreams` closes nothing.
    */
   credentialRecheck?: PtyCredentialRecheck;
+  /**
+   * Waits, bounded, for the terminal of a session whose boot is still running
+   * (`SpawnService.awaitTerminal`): `execution.spawn` answers at admission
+   * (392), before the PTY exists, so an attach right after it must not be
+   * refused as a ghost; a boot that fails meanwhile is refused (409) with its
+   * reason. Absent (tests), a missing PTY is refused at once.
+   */
+  awaitTerminal?: (sessionId: string) => Promise<TerminalWait>;
   logger?: PtyWsLogger;
   /** Forwarded to each connection's heartbeat; injectable so tests need not wait 30s. */
   heartbeatMs?: number;
@@ -422,8 +430,19 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // discarded — the authoritative getReplay below must stay synchronous with
     // the subscribe join (see the ordering invariant).
     if (!pty.getReplay(sessionId, 0)) {
-      refuse(socket, 404, 'Not Found', 'no live PTY for session');
-      return;
+      // A session still booting here has no PTY yet (`execution.spawn` answers
+      // at admission, 392): wait for it, bounded, before deciding. A boot that
+      // fails meanwhile is refused at once with its own reason, never a hang.
+      const wait = opts.awaitTerminal ? await opts.awaitTerminal(sessionId) : null;
+      if (wait?.failure) {
+        refuse(socket, 409, 'Conflict', `the session failed to start: ${wait.failure}`);
+        return;
+      }
+      if (socket.destroyed) return;
+      if (!pty.getReplay(sessionId, 0)) {
+        refuse(socket, 404, 'Not Found', 'no live PTY for session');
+        return;
+      }
     }
 
     const lease = admission.admit(clientKey, subjectIdentity);
