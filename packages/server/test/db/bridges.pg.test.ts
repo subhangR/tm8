@@ -134,6 +134,17 @@ describe('bridges.create (§3.4, D20, D25, D28)', () => {
     expect(edges.map(e => e.dst_id)).toEqual([chatA]);
   });
 
+  it('hydrates the bridge through internal.entity_content, with no secret on it', async () => {
+    // Any later migration that REPLACES entity_content from an older body drops
+    // the bridge arm silently and this becomes '{}' (caught on B0b's 397).
+    const [row] = await scratch.query<{ c: Record<string, unknown> }>('select internal.entity_content($1) as c', [infra.entity.id]);
+    expect(row!.c).toMatchObject({
+      provider: 'whatsapp', connection_id: connection, external_conversation_id: '120363@g.us',
+      target_kind: 'chat', target_id: chatA, purpose: 'Infra on-call',
+    });
+    expect(Object.keys(row!.c).filter((k) => /secret|token|sealed|password|auth/i.test(k))).toEqual([]);
+  });
+
   it('bridge_view answers nothing to a reader outside the bridge\'s space', async () => {
     const [row] = await as(outsiderIdentity, q => q.query<{ v: unknown }>('select internal.bridge_view($1) as v', [infra.entity.id]));
     expect(row!.v).toBeNull();

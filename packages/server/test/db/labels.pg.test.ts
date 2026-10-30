@@ -10,7 +10,8 @@
  *   - archiving `bug` keeps it on the entities that carry it, hides it from the
  *     unarchived list, refuses adding it again, and a label is never deleted;
  *   - names are unique per space, case-insensitively, archived included;
- *   - a label filter is served by `entities_labels_gin` (EXPLAIN).
+ *   - a label filter is served by `entities_labels_gin` (EXPLAIN);
+ *   - 397's internal.entity_content keeps every arm 395 had (bridge) beside label.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -231,6 +232,27 @@ describe('397 labels', () => {
       .rejects.toThrow(/archived label named Regression/);
     // The other space has its own `bug`: uniqueness is per space.
     expect(await labelId(fixture.otherSpaceId, 'bug')).not.toBe(await labelId(fixture.spaceId, 'bug'));
+  });
+
+  it('keeps every earlier entity_content arm: bridge (395) beside label (397)', async () => {
+    // 397 REPLACES internal.entity_content. A body copied from an older definer
+    // drops the arms added since, silently: that kind's content becomes '{}'.
+    const rows = await database.query<{ def: string }>(
+      `select pg_get_functiondef('internal.entity_content(uuid)'::regprocedure) def`);
+    const arms = [...rows[0]!.def.matchAll(/when '([a-z_]+)' then/g)].map((m) => m[1]);
+    // The 34 arms of 395's body (the latest definer before 397), plus label.
+    const ARMS_395 = [
+      'artifact', 'bridge', 'channel', 'chat', 'collection', 'commit', 'container', 'craft',
+      'credential', 'doc', 'drawing', 'file', 'form', 'graph', 'interaction_profile', 'loop',
+      'mcp_server', 'member', 'memory', 'message', 'project', 'pull_request', 'server', 'skill',
+      'space_link', 'spell', 'story', 'style', 'task', 'team_member', 'tool', 'voice_channel',
+      'work_session', 'worktree',
+    ];
+    expect(arms).toEqual(expect.arrayContaining([...ARMS_395, 'label']));
+    const bug = await labelId(fixture.spaceId, 'bug');
+    const content = await database.query<{ c: Record<string, unknown> }>(
+      `select internal.entity_content($1::uuid) c`, [bug]);
+    expect(content[0]!.c).toMatchObject({ name: 'bug' });
   });
 
   it('serves a label filter from entities_labels_gin', async () => {

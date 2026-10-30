@@ -43,8 +43,9 @@
 -- row and its initial version, and nothing in anyone's feed. The creator is
 -- the space's owner member.
 --
--- SHARED-OBJECT NOTICE (…/304/318/322/325): §4 REPLACES
--- `internal.entity_content`. Its body is 325's VERBATIM plus one `label` arm.
+-- SHARED-OBJECT NOTICE (…/304/318/322/325/395): §4 REPLACES
+-- `internal.entity_content`. Its body is 395's VERBATIM (325's plus B0a's
+-- `bridge` arm) plus one `label` arm.
 -- Omitting an arm is SILENT: that kind's content resolves to '{}'.
 -- =============================================================================
 
@@ -174,8 +175,8 @@ for each row execute function internal.guard_entity_labels();
 
 -- -----------------------------------------------------------------------------
 -- 4. Content hydration. See the SHARED-OBJECT NOTICE above. Body copied from
---    325 verbatim (the latest definer on main); the `label` arm is the only
---    addition.
+--    395 verbatim (the latest definer on main: 325's body plus B0a's `bridge`
+--    arm); the `label` arm is the only addition.
 -- -----------------------------------------------------------------------------
 create or replace function internal.entity_content(target uuid)
 returns jsonb language plpgsql stable set search_path = public, internal, pg_temp as $$
@@ -244,6 +245,8 @@ begin
         || jsonb_build_object('config', coalesce((select jsonb_object_agg(c.input_name,c.value) from public.tool_config c where c.tool_id=target),'{}'::jsonb),
           'secretBindings', coalesce((select jsonb_agg(jsonb_build_object('inputName',b.input_name,'credentialId',b.credential_id,'boundBy',b.bound_by,'boundAt',b.bound_at)) from public.tool_secret_bindings b where b.tool_id=target),'[]'::jsonb))
         into content from public.tools tl where tl.entity_id=target;
+      -- 395 (Bridges B0a): the detail row. No secret lives on it.
+      when 'bridge' then select to_jsonb(br) - 'entity_id' into content from public.bridges br where br.entity_id = target;
       -- 397: the label's name, colour, description and archive mark.
       when 'label' then select to_jsonb(lb) - 'entity_id' - 'space_id' into content from public.labels lb where lb.entity_id = target;
       else content := '{}'::jsonb;
