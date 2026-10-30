@@ -140,6 +140,12 @@ export interface LaunchCardV3Props extends LaunchCardShellProps {
    * reads its catalog and readiness while hidden and reports a later count.
    */
   connectors?: { node: ReactNode; count: number };
+  /**
+   * A wait that holds Launch without being a refusal ("Checking connectors…"):
+   * Launch is disabled with it as its title, and nothing else draws it here —
+   * the part of the card that is waiting says so itself.
+   */
+  waiting?: string | null;
   verb: LaunchVerb;
   onVerbChange(next: LaunchVerb): void;
 
@@ -1084,9 +1090,9 @@ export function dispatchTitle(verb: LaunchVerb, control: DispatchControl): strin
 }
 
 function Actions(props: LaunchCardV3Props) {
-  const { verb, dispatch, onLaunch, busy, refusal } = props;
+  const { verb, dispatch, onLaunch, busy, refusal, waiting = null } = props;
   const { open, toggle, close, menuProps, stop } = useLaunchCardMenu();
-  const blocked = busy || Boolean(refusal);
+  const blocked = busy || Boolean(refusal) || Boolean(waiting);
   const alive = dispatch?.dispatchers?.filter((d) => d.alive) ?? [];
   const live = alive.length > 0;
   const many = alive.length > 1;
@@ -1146,7 +1152,7 @@ function Actions(props: LaunchCardV3Props) {
         className="lcd-btn lcd-btn--go"
         data-testid="nsx-send"
         aria-disabled={blocked}
-        title={refusal ?? `Launch ${aKind(verb)} yourself, exactly as set up on this card`}
+        title={refusal ?? waiting ?? `Launch ${aKind(verb)} yourself, exactly as set up on this card`}
         onClick={stop(() => { if (!blocked) onLaunch(); })}
       >
         {busy ? 'Launching…' : 'Launch'} <span className="lcd-kbd" aria-hidden="true">⌘↵</span>

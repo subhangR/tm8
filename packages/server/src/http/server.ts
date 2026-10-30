@@ -6,7 +6,9 @@
  *   1. mint a requestId (before anything can fail, so every response has one)
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
- *      outside the envelope: it is infrastructure, not an operation
+ *      outside the envelope: it is infrastructure, not an operation. So are
+ *      the phone's two `/.well-known/` app-association files (./well-known.ts),
+ *      answered here so that the static handler's SPA fallback never does
  *   4. narrowly matched support transports (the `/p/` artifact-preview
  *      route — capability-token auth, never cookie identity — and the raw
  *      FileUploadGrant PUT)
@@ -62,6 +64,7 @@ import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-up
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import { BRIDGE_RUNTIME_PATH_PREFIX, type BridgeRuntimeRoute } from '../bridges/runtime/routes.js';
+import { createWellKnownRoute } from './well-known.js';
 import { MCP_ENDPOINT_PATH, type McpEndpointRoute } from '../mcp/endpoint.js';
 import type { ReadAdmission } from './read-admission.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
@@ -216,6 +219,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const authRateLimiter = opts.authRateLimiter === undefined
     ? new AuthRateLimiter(config.authRateLimits ?? {})
     : opts.authRateLimiter;
+  // Built from config alone, so every frame has it: no composition can leave
+  // these paths to the SPA fallback.
+  const wellKnown = createWellKnownRoute(config.mobileApp);
 
   const http = createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -378,6 +384,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         });
         return;
       }
+
+      // s-lld §3: the phone's app-association files, infrastructure for the
+      // reason `/health` is. Apple's CDN and Android's verifier fetch them with
+      // no credentials and accept only a 200 of bare JSON, so no identity is
+      // resolved, and they come AHEAD OF THE STATIC HANDLER: its SPA fallback
+      // answers the extension-less AASA path with index.html and a 200.
+      if (wellKnown.serve(method, pathname, res, requestId)) return;
 
       // NOTE: the interim `GET /pty/output` 500ms scrollback poll used to live
       // here. It was replaced by the real push stream — the PTY WebSocket in

@@ -625,6 +625,20 @@ const ROWS: Record<OperationName, Row> = {
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
     ],
   },
+  'meta.get': {
+    cmd: ['node', 'meta'],
+    syn: 'tm8 node meta',
+    sum: 'Report what this Server speaks: its contract version, catalog digest, event schema version, the operations it mounts, and the oldest client versions it serves',
+    authz: 'server',
+    input: 'none',
+    tags: ['meta', 'version', 'contract', 'catalog', 'digest', 'features', 'capabilities', 'compatibility', 'minimum', 'client', 'node'],
+    notes: [
+      'answers without any credential, on purpose: a client reads it before it signs in, to learn whether this Server serves its version',
+      'a credential that is sent must still be valid: an expired or revoked token is refused like on every operation, so a signed-out client sends none',
+      'features lists every catalog operation with status v1 that this Server mounts; one that is not listed is never served here, and a listed one can still answer 501 with a reason while a switch it needs is off (TM8_CONTAINERS, for example)',
+      'catalogSha256 is the digest `tm8 help` prints after `catalog sha256:`; when the two differ, this CLI and the Server were built from different catalogs',
+    ],
+  },
   // ── node accounts (G6, migration 232) ──────────────────────────────────
   'accounts.disable': {
     cmd: ['node', 'account', 'disable'],
@@ -2215,20 +2229,22 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>]',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>] [--tree-depth <1|2> [--per-parent <count>]]',
     sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
-    tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
+    tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work', 'tree', 'children', 'subtasks', 'nested'],
     notes: [
       '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
       '--status is the task work status (open|pulled|working|in_review|done|blocked|cancelled); a pull request\'s or session\'s own state is not a query filter',
+      '--tree-depth 1|2 also returns the children of each row on the page (and, at 2, their children) in the same request, each level in `tree.levels`: the rows a --kind query with filters.parentIn would return, whatever their status; --per-parent <1-200> keeps the first n children of each row (default 200), a level holds at most 200 rows (`capped` says when that cut), and a row whose children are not all shown reads `▸ N more` from its childCount',
     ],
     examples: [
       'tm8 entity query --kind task --assignee <actor-id> --status working',
       'tm8 entity query --space <space-id> --kind story --roots',
       'tm8 entity query --kind story --parent <story-id>',
+      'tm8 entity query --kind task --roots --tree-depth 2 --per-parent 20',
     ],
   },
   'collections.addItem': {
@@ -3719,8 +3735,8 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     tags: ['artifact', 'preview', 'view', 'run'],
     notes: [
-      'this prints exactly what the Server returns (session id, token, expiry); it never opens a browser',
-      'a usable preview URL does not exist until the preview-origin isolation decision lands (design §9.1-§9.3); until then only the session fields are returned',
+      'this prints exactly what the Server returns (session id, token, expiry, and `previewUrl` when the node serves previews); it never opens a browser',
+      '`previewUrl` is the app origin `/p/` route on a default loopback node, or the node preview origin (TM8_PREVIEW_HOST/PORT, or TM8_PREVIEW_PUBLIC_ORIGIN when published) — design §9.2, §12.2; a node with TM8_PREVIEW_ENABLED=0 returns the session fields only',
     ],
   },
   'artifacts.export': {
@@ -4368,6 +4384,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   // `spaces.styleDefault.*` keep their family nouns; their commands are
   // `style use` and `style default`. generator.ts nounForOperation says the same.
   styles: 'style',
+  // `meta.get` (TM8 Mobile S2): the command is `tm8 node meta`, so the noun is
+  // `node`. generator.ts nounForOperation says the same.
+  meta: 'node',
 };
 
 function nounFor(operation: OperationName): string {
@@ -4498,7 +4517,10 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:fc5a9c1905b29e95469f6963589c93ced45dac742a9a3a4477330c301518134e' /* +1 execution.bootState (404): the regenerated manifest digest. MEASURED. */;
+  // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
+  // Re-measured on the merge of main 625165032 (+13 loops.*, #1413) into the S2 lane: 397 rows, meta.get once — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
+  // Re-measured on TM8 Mobile server batch 1, fourth build (S2 meta.get on main a991cf6ca, which carries Bridges B0a's 12 bridges.* rows): 410 rows — RECOMPUTED from JSON.stringify(OPERATIONS) on the batch head (merge of S2 47d56d78c into 9e6352403, server batch 1 fourth build) by the Merger.
+  'sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba';
 
 export const GRAMMAR_VERSION = '2';
 

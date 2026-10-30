@@ -5,10 +5,10 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  ActivityItemSchema, EntityDetailSchema, EntitySummarySchema, HomeSnapshotSchema,
+  ActivityItemSchema, CollectionResultSchema, EntityDetailSchema, EntitySummarySchema, HomeSnapshotSchema,
   LeaderboardRowSchema, MessageViewSchema, NotificationItemSchema, pageOf,
   SpaceNavigationSchema, SpaceSettingsSchema, SpaceSummarySchema, TaskAxisSchema,
-  type EntityDetail, type SpaceNavigation,
+  type CollectionResult, type EntityDetail, type SpaceNavigation,
 } from '@tm8/contract';
 import { api, expectError } from '../src/client.js';
 import { buildWorld, expectValid, type World } from '../src/world.js';
@@ -103,6 +103,32 @@ describe('collections & threads', () => {
       spaceId: w.spaceId, kinds: ['task'], subtreeOf: w.epic, groupBy: 'axis:type',
     }) as { groups?: { key: string }[] };
     expect(byAxis.groups?.map((g) => g.key)).toEqual(expect.arrayContaining(['code', 'design']));
+  });
+
+  it('tree (S5): the page and its children in one trip are the rows the step reads return', async () => {
+    const page = { spaceId: w.spaceId, kinds: ['task'], parentId: null };
+    const roots = expectValid<CollectionResult>(CollectionResultSchema, await api.command('collections.query', page), 'roots');
+    const parentIds = roots.page.items.filter((row) => (row.childCount ?? 0) > 0).map((row) => row.id);
+    expect(parentIds).toContain(w.epic);
+    const kids = expectValid<CollectionResult>(CollectionResultSchema, await api.command('collections.query', {
+      spaceId: w.spaceId, kinds: ['task'], filters: { parentIn: parentIds }, limit: 200,
+    }), 'children');
+
+    const one = expectValid<CollectionResult>(CollectionResultSchema, await api.command('collections.query', {
+      ...page, tree: { depth: 2, perParent: 20 },
+    }), 'tree');
+    expect(one.query.tree).toEqual({ depth: 2, perParent: 20 });
+    expect(one.page.items.map((row) => row.id)).toEqual(roots.page.items.map((row) => row.id));
+    const [level1, level2] = one.tree?.levels ?? [];
+    expect(level1?.parentIds).toEqual(parentIds);
+    expect(level1?.items.map((row) => row.id)).toEqual(kids.page.items.map((row) => row.id));
+    expect(level1?.items.map((row) => row.id)).toEqual(expect.arrayContaining([w.t101, w.t102, w.t103]));
+    expect(level2).toEqual({ depth: 2, parentIds: [], items: [], capped: false }); // the epic's children have none
+
+    // The bounds are refused at the door, and a graph read refuses tree rather than ignoring it.
+    await expectError(api.command('collections.query', { ...page, tree: { depth: 3 } }), 'invalid_input');
+    await expectError(api.command('collections.query', { ...page, tree: { depth: 1, perParent: 201 } }), 'invalid_input');
+    await expectError(api.command('graph.query', { spaceId: w.spaceId, tree: { depth: 1 } }), 'invalid_input');
   });
 
   it('readyToPull excludes blocked tasks', async () => {

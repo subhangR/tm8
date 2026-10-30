@@ -15,10 +15,10 @@ const pinned: RequestIdentity =
   ({ kind: 'bearer', identityId: 'h', authKind: 'browser', sessionId: 's', sessionSpaceId: 'a' }) as RequestIdentity;
 
 describe('gateSessionMayCall', () => {
-  it('allows the first-space ops, auth.* (including auth.space.enter) and node admin', () => {
+  it('allows the first-space ops, auth.* (including auth.space.enter), meta.get and node admin', () => {
     for (const op of ['identity.get', 'spaces.list', 'spaces.create', 'spaces.invites.redeem',
       'auth.invite.resolve', 'auth.space.enter', 'auth.session.get', 'auth.logout',
-      'node.credentials.status', 'serverConnections.list']) {
+      'meta.get', 'node.credentials.status', 'serverConnections.list']) {
       expect(gateSessionMayCall(op), op).toBe(true);
     }
   });
@@ -32,7 +32,7 @@ describe('gateSessionMayCall', () => {
   it('refuses every space operation, including spaces.get and the other invite ops', () => {
     for (const op of ['spaces.get', 'spaces.home', 'spaces.invites.create', 'spaces.invites.list',
       'identity.profile.update', 'entities.get', 'entities.query', 'projects.list', 'events.poll',
-      'authx.fake', 'nodes.fake', 'gatex.fake', 'spaces.projects.create']) {
+      'authx.fake', 'nodes.fake', 'gatex.fake', 'spaces.projects.create', 'meta.getx', 'metax.get']) {
       expect(gateSessionMayCall(op), op).toBe(false);
     }
   });
@@ -60,6 +60,10 @@ describe('assertSpaceGate', () => {
     expect(() => assertSpaceGate('enforce', gate(), 'auth.space.enter')).not.toThrow();
     expect(() => assertSpaceGate('enforce', pinned, 'entities.get')).not.toThrow();
     expect(() => assertSpaceGate('enforce', pinned, undefined)).not.toThrow();
+  });
+  it('enforce: a gate session reads meta.get, which an anonymous caller may read too', () => {
+    expect(() => assertSpaceGate('enforce', gate(), 'meta.get')).not.toThrow();
+    expect(() => assertSpaceGate('enforce', gate('cli'), 'meta.get')).not.toThrow();
   });
   it('enforce: a gate session reaches gate.folders.list and gate.folders.create (L6)', () => {
     expect(() => assertSpaceGate('enforce', gate(), 'gate.folders.list')).not.toThrow();

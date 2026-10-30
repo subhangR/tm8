@@ -1,4 +1,4 @@
-import { McpPicker, usePickerGate } from '../mcp/McpPicker';
+import { CHECKING_CONNECTORS, McpPicker, usePickerGate } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -546,7 +546,8 @@ export function LaunchComposerPopup({
   const [timedOut, setTimedOut] = useState<null | 'checking' | 'found' | 'none' | 'unknown'>(null);
   const openedAt = useRef(new Date().toISOString());
 
-  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  /* A pick is part of the draft: closing the card keeps it, like the notes. */
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>(draft?.mcpSelections);
   const [mcpGate, onMcpGate] = usePickerGate();
   /* How many connectors the picker offers (its `onCount`): the slot hides at 0. */
   const [mcpCount, setMcpCount] = useState(0);
@@ -555,6 +556,10 @@ export function LaunchComposerPopup({
 
   const uploading = uploads.filter((u) => u.status === 'uploading').length;
   const verdict = canLaunch(config, { projects: projectOptions, capacity });
+  /* A restored or first-frame pick WAITING on the picker's own read holds
+     Launch, but it is a wait the chip row already says, not a refusal: the
+     card does not draw it a second time (and a block for a few hundred ms). */
+  const mcpWait = mcpGate.problem === CHECKING_CONNECTORS ? mcpGate.problem : null;
   const refusal = timedOut === 'checking'
     ? 'Checking whether the launch that timed out started…'
     : timedOut === 'found'
@@ -564,20 +569,20 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* The connector picker's sentence: a pick `bind` would refuse, or an
          explicit pick still waiting on this mount's own catalog read. */
-      : mcpGate.problem ?? more.pluginsBlock ?? selection.launchBlock
+      : (mcpWait ? null : mcpGate.problem) ?? more.pluginsBlock ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
   const committed = useRef(false);
-  const draftNow = useRef({ notes, edits: selection.edits, added: selection.added });
-  draftNow.current = { notes, edits: selection.edits, added: selection.added };
+  const draftNow = useRef({ notes, edits: selection.edits, added: selection.added, mcpSelections });
+  draftNow.current = { notes, edits: selection.edits, added: selection.added, mcpSelections };
   /* AN EDIT AFTER A COMMIT is a new draft: a host that keeps the card
      mounted after a handoff got no draft for what was typed after it. */
-  useEffect(() => { committed.current = false; }, [notes, selection.edits, selection.added]);
+  useEffect(() => { committed.current = false; }, [notes, selection.edits, selection.added, mcpSelections]);
   useEffect(() => () => {
     if (committed.current) return;
     const d = draftNow.current;
-    writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
+    writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added, ...(d.mcpSelections !== undefined ? { mcpSelections: d.mcpSelections } : {}) });
   }, [subject.id]);
 
   /** The press's hold on Jev: released by the hook when the launch rejects; by `succeed` when the card stays up. */
@@ -661,7 +666,7 @@ export function LaunchComposerPopup({
   };
 
   const commit = () => {
-    if (!onSpawn || phaseNow.current !== 'idle' || refusal || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
+    if (!onSpawn || phaseNow.current !== 'idle' || refusal || mcpWait || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
     setTimedOut(null);
     setNodeRefusal(null);
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
@@ -1059,9 +1064,12 @@ export function LaunchComposerPopup({
               <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
             </p>
           ) : null}
-          {/* §10.5: the launch grid, with D4's note — `Full` restores plugins
-              and skills, never the launcher's personal Claude connectors. The
-              picker stays mounted at count 0: it reports its own count. */}
+          {/* §10.5 in one line: the compact chips, seeded from the scope's
+              last-known catalog so a reopened card is its final height on the
+              first frame, with the full list one press away and D4's note in
+              it — `Full` restores plugins and skills, never the launcher's
+              personal Claude connectors. The picker stays mounted at count 0:
+              it reports its own count. */}
           <McpPicker
             teamMemberId={config.teamMemberId ?? undefined}
             targetId={subject.id}
@@ -1070,7 +1078,7 @@ export function LaunchComposerPopup({
             onReady={onMcpGate}
             onCount={setMcpCount}
             disabled={pending}
-            layout="grid"
+            layout="compact"
             notice={bind.harnessSurface === 'inherit'
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
@@ -1148,6 +1156,7 @@ export function LaunchComposerPopup({
         onSubmit={commit}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
+        waiting={mcpWait}
         notice={nodeRefusal ?? (selection.defaultsLine?.retry ? null : selection.defaultsLine?.text ?? null)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}

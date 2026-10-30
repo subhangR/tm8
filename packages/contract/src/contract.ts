@@ -1499,9 +1499,64 @@ export interface CollectionQuery {
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
   sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority'|'progress';
   cursor?: Cursor; limit?: number;
+  /**
+   * Additive (S5, mobile LLD §5.1 "one query per list"): the rows under this
+   * page, down to `depth` levels, in the same trip. Level 1 reads the children
+   * of the page's rows with `childCount > 0`; level 2 reads the children of
+   * level 1's. Each level is the rows the step query
+   * `{spaceId, kinds, filters: {parentIn: <those ids>}, sort, limit: 200}`
+   * returns (the three trips a list made before), cut to the first
+   * `perParent` rows of each parent in the same sort order. Children ride
+   * along whatever their status: the page's `filters` pick the page only.
+   * See `CollectionTreeOption` for the bounds; `CollectionResult.tree` holds
+   * the levels.
+   */
+  tree?: CollectionTreeOption;
 }
 
-export interface CollectionResult { query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[] }
+/**
+ * S5 tree bounds, enforced by `CollectionQuerySchema`. A level holds at most
+ * `COLLECTION_TREE_LEVEL_MAX` rows, so the next level's parents are never more
+ * than the 200 ids `filters.parentIn` allows; the page itself is bounded by
+ * `limit` (at most 200).
+ */
+export const COLLECTION_TREE_MAX_DEPTH = 2;
+export const COLLECTION_TREE_LEVEL_MAX = 200;
+
+export interface CollectionTreeOption {
+  /** How many levels under the page to read: 1 or 2. Deeper rows stay unread; their parent's `childCount` says how many. */
+  depth: 1 | 2;
+  /**
+   * At most this many children of each parent, 1 to 200. Default 200: no cut
+   * beyond the level's own 200, which is exactly what the step query returns.
+   * The echoed `query` carries the resolved value.
+   */
+  perParent?: number;
+}
+
+export interface CollectionResult {
+  query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[];
+  /** Present exactly when the query asked for `tree`: one level per depth, 1 first. */
+  tree?: CollectionTree;
+}
+export interface CollectionTree { levels: CollectionTreeLevel[] }
+export interface CollectionTreeLevel {
+  depth: 1 | 2;
+  /**
+   * The rows whose children this level read: the rows one level up (the page
+   * for level 1) with `childCount > 0`. Empty when none has children; the
+   * level is then read from nothing and holds nothing.
+   */
+  parentIds: EntityId[];
+  /**
+   * The children, each with its own `childCount`, in the page's sort order:
+   * at most `perParent` per parent and at most `COLLECTION_TREE_LEVEL_MAX` in
+   * all. A parent's `childCount` minus its rows here is the number not shown.
+   */
+  items: EntitySummary[];
+  /** True when the level's 200-row bound cut rows the per-parent bound kept. */
+  capped: boolean;
+}
 export interface CollectionGroup {
   key: string; label: string; items: EntitySummary[]; nextCursor?: Cursor;
   /**
@@ -1512,7 +1567,8 @@ export interface CollectionGroup {
    */
   total?: number;
 }
-export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
+/** `tree` is a collection page's: a graph lens has no page for it to hang from, and `GraphQuerySchema` refuses it. */
+export interface GraphQuery extends Omit<CollectionQuery, 'tree'> { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
 export interface GraphResult { nodes: EntitySummary[]; edges: GraphEdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }
 
@@ -2759,6 +2815,62 @@ export interface AuthClaimStatusResult {
    * exists. Optional so an older node's answer still parses; absent means true.
    */
   tokenRequired?: boolean;
+}
+
+/**
+ * `meta.get` (GET /v2/meta) — what this node speaks, so a client can learn it
+ * in one read instead of probing operation by operation (TM8 Mobile s-lld §4,
+ * version signals), and a node can tell a client it is too old, in words,
+ * before that client signs in.
+ *
+ * ANONYMOUS-READABLE BY DESIGN, like `auth.claim.status` and `/health`. A client
+ * asks while it adds a server, before it has sent a password, and the answer
+ * decides whether it may sign in at all ("This app is too old for <node>").
+ * Requiring a credential would put that check after the password it exists to
+ * stop. Every field is a fact about the build and how this node composed it,
+ * identical for every caller: no member, space, session or setting is in it.
+ *
+ * NOT `.strict()` on the wire (`MetaGetResultSchema`): the reader may be older
+ * than the node, and an old client must still parse a newer node's answer,
+ * because learning that it is too old is why it asks.
+ */
+export interface MetaGetResult {
+  /** `CONTRACT_VERSION`, the same value `/health` reports. */
+  contractVersion: string;
+  /**
+   * Lowercase hex SHA-256 of `JSON.stringify(OPERATIONS)`: the digest every
+   * `tm8 help` shard prints after `catalog sha256:`. Equal digests mean equal
+   * catalogs, row for row, flags included.
+   */
+  catalogSha256: string;
+  /** `WORKSPACE_EVENT_SCHEMA_VERSION`: the `schemaVersion` this node's events carry. */
+  eventSchemaVersion: number;
+  /**
+   * The operations this node mounts, in catalog order: every catalog row whose
+   * status is `v1` and that has a handler here (a socket row: the server frame's
+   * upgrade path). A row that is not listed is never served here: a `reserved`
+   * or unmounted row answers 501 `not_implemented`, and a row this node's
+   * catalog lacks answers 404. A listed row can still refuse when called, 501
+   * included: a few families mount every row and answer `not_implemented`, with
+   * a reason, while a switch they need is off on this node (`TM8_CONTAINERS=off`,
+   * no tool runtime, no LiveKit), so a client keeps its per-operation 501 cache.
+   * Derived from the catalog and the handler registry on every read, never kept
+   * by hand. Names, not `OperationName`s: a newer node lists operations an older
+   * reader's catalog does not know.
+   */
+  features: string[];
+  /**
+   * The oldest version of each client this node serves. The key is the product
+   * token of the client's `x-tm8-client` value, the text before its first `/`
+   * (`tm8-mobile` in `tm8-mobile/1.2.3 (ios; build 42)`). The value is
+   * `MAJOR.MINOR.PATCH`, compared number by number with the version after that
+   * `/`. A client the map does not name has no minimum here.
+   *
+   * THE REFUSAL IS THE CLIENT'S. The node states the minimum here and nowhere
+   * else: it never parses `x-tm8-client` and refuses no request for its version.
+   * A client older than its entry stops before it signs in and says why.
+   */
+  minClients: Record<string, string>;
 }
 
 /**
