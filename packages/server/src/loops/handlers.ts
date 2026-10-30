@@ -26,6 +26,17 @@ function loopRouteId(ctx: RequestContext, field: 'spaceId' | 'loopId'): string {
   return id;
 }
 
+/**
+ * Bridges L (D26, 406): targets, mode and the admin's quiet-hours exemption,
+ * written by `set_loop_bridge_fields` in the create's or update's own
+ * transaction. Undefined fields are left as they are.
+ */
+async function writeBridgeFields(q: Querier, loopId: string, d: { targets?: unknown; mode?: string; quietHoursExempt?: boolean }): Promise<void> {
+  await q.rpc('set_loop_bridge_fields', [
+    loopId, d.targets === undefined ? null : JSON.stringify(d.targets), d.mode ?? null, d.quietHoursExempt ?? null,
+  ]);
+}
+
 async function currentSchedule(q: Querier, loopId: string): Promise<ScheduleState> {
   const [row] = await q.query<ScheduleState>(
     `select l.schedule, l.timezone, l.enabled, l.next_run_at as "nextRunAt", l.last_error as "lastError"
@@ -115,6 +126,7 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           d.concurrency ?? 'skip', d.maxRuntimeSeconds ?? null,
           d.retry?.attempts ?? 0, d.retry?.delaySeconds ?? 300, write.lastError ?? null,
         ]);
+        await writeBridgeFields(q, result.entity.id, d);
         await assertToolPersona(q, result.entity.id);
         return loadLoopView(q, result.entity.id);
       });
@@ -139,6 +151,8 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
           retryAttempts: d.retry?.attempts, retryDelaySeconds: d.retry?.delaySeconds,
           ...deadlinePatch(current, after),
         });
+        if (d.targets !== undefined || d.mode !== undefined || d.quietHoursExempt !== undefined
+          || d.action !== undefined) await writeBridgeFields(q, loopId, d);
         await assertToolPersona(q, loopId);
         return loadLoopView(q, loopId);
       });
@@ -152,8 +166,8 @@ export function registerLoopHandlers(registry: HandlerRegistry, deps: FacadeDeps
         throw new CollabError('invalid_input', 'enabled must be true or false');
       }
       const actionParam = ctx.query.get('action');
-      if (actionParam !== null && !['spawn', 'dispatch', 'tool'].includes(actionParam)) {
-        throw new CollabError('invalid_input', 'action must be spawn, dispatch or tool');
+      if (actionParam !== null && !['spawn', 'dispatch', 'tool', 'post'].includes(actionParam)) {
+        throw new CollabError('invalid_input', 'action must be spawn, dispatch, tool or post');
       }
       const enabled = enabledParam === null ? null : enabledParam === 'true';
       const action = actionParam as LoopAction | null;

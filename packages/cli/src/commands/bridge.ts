@@ -232,13 +232,19 @@ async function bridgeHandleClaim(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['unread', 'since', 'thread', 'limit']); argumentsCount(cmd, 1);
+  assertKnownOptions(cmd, ['unread', 'since', 'latest', 'before', 'thread', 'limit']); argumentsCount(cmd, 1);
   const query: Record<string, string> = {};
   const unread = cmd.options.bool('unread');
   const since = cmd.options.value('since');
-  if (unread && since) throw usage('pass --unread or --since, not both');
+  const latest = cmd.options.bool('latest');
+  const before = cmd.options.value('before');
+  if ([unread, Boolean(since), latest, Boolean(before)].filter(Boolean).length > 1) {
+    throw usage('pass one of --unread, --since, --latest or --before');
+  }
   if (unread) query.unread = 'true';
   if (since) query.since = since;
+  if (latest) query.latest = 'true';
+  if (before) query.before = before;
   const thread = cmd.options.value('thread'); if (thread) query.thread = thread;
   const limit = cmd.options.integer('limit');
   if (limit !== undefined) {
@@ -254,6 +260,7 @@ async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
       const reply = m.parentMessageId ? ` ↳${m.parentMessageId}` : '';
       return `${m.createdAt} ${m.id}${reply} ${who}${via}: ${m.body.replace(/\s+/g, ' ')}`;
     });
+    if (p.olderCursor) lines.push(`older: tm8 bridge log ${p.bridgeId} --before ${p.olderCursor}`);
     if (p.more) lines.push(`more: tm8 bridge log ${p.bridgeId} --since ${p.lastMessageId}`);
     return lines.join('\n');
   });

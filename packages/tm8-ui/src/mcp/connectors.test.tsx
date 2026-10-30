@@ -200,3 +200,19 @@ describe('S7 — the Discover card has one button, and B22/B25 decides which', (
     expect(screen.queryByRole('button', { name: 'Add to Space' })).toBeNull();
   });
 });
+
+describe('an administrator\'s custom connector', () => {
+  it('registers approved, so the admin is never asked to approve their own connector', async () => {
+    const live = port();
+    render(<McpProvider port={live}>
+      <ConnectorsTable catalog={{ servers: [], defaults: [], canRegister: true, canAttach: true }} port={live}
+        admin busy={false} run={async action => { await action(); }} refresh={() => {}} loading={false}
+        tab="yours" setTab={() => {}} sheet={{ kind: 'custom' }} setSheet={() => {}} />
+    </McpProvider>);
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'local_test' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: 'http://127.0.0.1:8787/mcp' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Register connector' }));
+    await waitFor(() => expect(live.register).toHaveBeenCalledWith(expect.objectContaining({ approved: true })));
+    expect(live.request).not.toHaveBeenCalled();
+  });
+});

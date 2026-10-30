@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { loopAuthorityGuard } from '../loops/authority.js';
 import { registerBridgeHandlers, type BridgeHandlerOptions } from '../bridges/handlers.js';
 import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
@@ -108,9 +109,12 @@ import { registerServerHandlers } from './handlers/w2/servers.js';
 import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
+import type { BridgeCommandHook } from '../bridges/runtime/command-hook.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly tools?: ToolRuntime;
+  /** Bridges B1b-4: the command executor main.ts builds once; it becomes `FacadeDeps.bridgeCommands`. */
+  readonly bridgeCommands?: BridgeCommandHook;
   /**
    * Loops PR2: the executor port `loops.runNow` fires through and
    * `loops.runs.stop` stops through — the SAME instance the scheduler job
@@ -239,6 +243,7 @@ export function registerFacadeHandlers(
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
     remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
+    ...(deps.bridgeCommands ? { bridgeCommands: deps.bridgeCommands } : {}),
   };
 
   /**
@@ -262,6 +267,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
+  // Bridges L (D26): a bridge loop's worker asks its owner before what cannot be undone.
+  registry.addGuard(loopAuthorityGuard(facade));
   // Bridges B0a (395): the bridges.* catalog doors.
   registerBridgeHandlers(registry, facade, deps.bridges);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside

@@ -143,6 +143,14 @@ describe('tm8 bridge (B0a)', () => {
     expect(await run(['bridge', 'log', BRIDGE, '--unread', '--limit', '20'])).toBe(0);
     expect(requests.at(-1)!.query.get('unread')).toBe('true');
     expect(await run(['bridge', 'log', BRIDGE, '--unread', '--since', CHAT])).toBe(2);
+    // The newest page and scroll-back: one way to choose the page.
+    expect(await run(['bridge', 'log', BRIDGE, '--latest', '--limit', '20'])).toBe(0);
+    expect(requests.at(-1)!.query.get('latest')).toBe('true');
+    expect(requests.at(-1)!.query.get('unread')).toBeNull();
+    expect(await run(['bridge', 'log', BRIDGE, '--before', CHAT])).toBe(0);
+    expect(requests.at(-1)!.query.get('before')).toBe(CHAT);
+    expect(await run(['bridge', 'log', BRIDGE, '--latest', '--unread'])).toBe(2);
+    expect(await run(['bridge', 'log', BRIDGE, '--before', CHAT, '--since', CHAT])).toBe(2);
   });
 
   it('entity create bridge names the bridge door', async () => {

@@ -220,7 +220,10 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
     {sheet?.kind === 'custom' && <section className="mcp-card">
       <h3>{admin ? 'Custom connector' : 'Request a connector'}</h3>
       <ConnectorForm mode={admin ? 'manage' : 'request'} busy={busy} onSave={(input, note) => run(async () => {
-        if (admin) await port.register(input); else await port.request({ definition: input }, note);
+        // An administrator registering a connector IS the approval: without it
+        // the definition defaults to unapproved and the admin is asked to
+        // approve their own connector. A member's copy still goes to request.
+        if (admin) await port.register({ ...input, approved: true }); else await port.request({ definition: input }, note);
         setSheet(null);
       }, admin ? 'Connector registered.' : 'Request sent to the administrators.')} />
       <button type="button" onClick={() => setSheet(null)}>Cancel</button>

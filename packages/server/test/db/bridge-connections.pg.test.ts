@@ -56,7 +56,7 @@ const bridgeRow = async (id: string) => (await scratch.query<{ credential_id: st
 beforeAll(async () => {
   scratch = await createW1ScratchDatabase('bridge_conns');
   const files = migrationFiles();
-  const cut = files.findIndex(f => f.startsWith('405_bridge_connection_credentials'));
+  const cut = files.findIndex(f => f.startsWith('408_bridge_connection_credentials'));
   expect(cut).toBeGreaterThan(0);
   // Up to B0a first, so a bridge created the B0a way (no credential) is there for 400's backfill.
   scratch.apply(files.slice(0, cut));

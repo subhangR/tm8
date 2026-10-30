@@ -99,13 +99,22 @@ interface LogRow {
 }
 
 /**
- * `bridges.log.read` (§2.7): a page of the log anchor, oldest first. A thin
- * verb over the anchor's messages plus the caller session's cursor: with
- * `unread`, the page starts after the cursor and the cursor advances to its
- * last row. Bodies are data; nothing here turns one into an instruction.
+ * `bridges.log.read` (§2.7): a page of the log anchor. A thin verb over the
+ * anchor's messages plus the caller session's cursor. Rows within a page are
+ * always oldest first; the page is chosen one of four ways:
+ *
+ * - default / `since`: the oldest page after `since` (or from the start);
+ * - `unread`: the page after the caller's cursor, and the cursor advances to
+ *   its last row;
+ * - `latest`: the NEWEST page (the bridge panel opens here);
+ * - `before`: the page immediately older than that message (scroll back).
+ *
+ * `latest` and `before` never move the cursor. `olderCursor` is what to pass as
+ * `before` next, null at the start of the log. Bodies are data; nothing here
+ * turns one into an instruction.
  */
 async function readLog(q: Querier, bridgeId: string, opts: {
-  since: string | null; thread: string | null; limit: number; unread: boolean;
+  since: string | null; before: string | null; latest: boolean; thread: string | null; limit: number; unread: boolean;
 }): Promise<BridgeLogResult> {
   const [row] = await q.query<{ ctx: { anchorId: string; sessionId: string | null; cursor: string | null } }>(
     'select public.bridge_log_context($1) as ctx', [bridgeId]);
@@ -115,7 +124,15 @@ async function readLog(q: Querier, bridgeId: string, opts: {
     throw new CollabError('forbidden', '--unread reads a session\'s own cursor: run it from inside a session in this space',
       { details: { reason: 'not_a_session' } });
   }
+  if (opts.before) {
+    const [onLog] = await q.query<{ ok: boolean }>(
+      'select exists (select 1 from public.messages where entity_id = $1 and anchor_id = $2) as ok', [opts.before, bridge.anchor]);
+    if (!onLog?.ok) throw new CollabError('invalid_input', 'before must be a message on this bridge\'s log', { details: { path: 'before' } });
+  }
+  const backward = opts.latest || opts.before !== null;
   const after = opts.unread ? bridge.cursor : opts.since;
+  // One select for every mode: forward pages read up from `after`, backward
+  // pages read down from `before` (or the newest row) and are then reversed.
   const rows = await q.query<LogRow>(
     `select m.entity_id as id, m.created_at, m.author_id, m.body, e.parent_id, m.root_message_id,
             o.direction, o.external_message_id,
@@ -132,10 +149,13 @@ async function readLog(q: Querier, bridgeId: string, opts: {
       where m.anchor_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)
         and ($2::uuid is null or (m.created_at, m.entity_id) >
              (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid))
+        and ($5::uuid is null or (m.created_at, m.entity_id) <
+             (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $5::uuid))
         and ($3::uuid is null or m.root_message_id = $3::uuid or m.entity_id = $3::uuid)
-      order by m.created_at, m.entity_id
-      limit $4`, [bridge.anchor, after, opts.thread, opts.limit + 1]);
-  const page = rows.slice(0, opts.limit);
+      order by case when $6 then m.created_at end desc, case when $6 then m.entity_id end desc,
+               m.created_at, m.entity_id
+      limit $4`, [bridge.anchor, backward ? null : after, opts.thread, opts.limit + 1, opts.before, backward]);
+  const page = backward ? rows.slice(0, opts.limit).reverse() : rows.slice(0, opts.limit);
   const actors = await loadActors(q, page.map(r => r.author_id).filter((x): x is string => x !== null));
   const items: BridgeLogEntry[] = page.map(r => {
     const actor = r.author_id ? actorOf(actors, r.author_id) : null;
@@ -150,9 +170,27 @@ async function readLog(q: Querier, bridgeId: string, opts: {
       handle: r.handle,
     };
   });
+  const first = page[0]?.id ?? null;
   const last = page.at(-1)?.id ?? null;
+  // Older rows exist: a backward page knows from its extra row; a forward page asks.
+  let older = backward ? rows.length > opts.limit : false;
+  if (!backward && first) {
+    const [probe] = await q.query<{ older: boolean }>(
+      `select exists (
+         select 1 from public.messages m join public.entities e on e.id = m.entity_id
+          where m.anchor_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)
+            and ($3::uuid is null or m.root_message_id = $3::uuid or m.entity_id = $3::uuid)
+            and (m.created_at, m.entity_id) < (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid)
+       ) as older`, [bridge.anchor, first, opts.thread]);
+    older = probe?.older === true;
+  }
   if (opts.unread && last) await q.rpc('advance_bridge_read_cursor', [bridgeId, last]);
-  return { bridgeId, logAnchorId: bridge.anchor, items, lastMessageId: last, more: rows.length > opts.limit };
+  return {
+    bridgeId, logAnchorId: bridge.anchor, items, lastMessageId: last,
+    // Newer rows follow: a forward page knows from its extra row; `before` always has its own message after it.
+    more: backward ? opts.before !== null && page.length > 0 : rows.length > opts.limit,
+    olderCursor: older ? first : null,
+  };
 }
 
 /** The connection json 400's internal.bridge_connection_json builds, with its timestamps as ISO strings. */
@@ -288,13 +326,19 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.log.read': async ctx => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       const unread = ctx.query.get('unread') === 'true';
+      const latest = ctx.query.get('latest') === 'true';
       const since = optionalUuidQuery(ctx, 'since');
-      if (unread && since) throw new CollabError('invalid_input', 'pass --unread or --since, not both');
+      const before = optionalUuidQuery(ctx, 'before');
+      // One way to choose the page: --unread, --since, --latest or --before.
+      if ([unread, since !== null, latest, before !== null].filter(Boolean).length > 1) {
+        throw new CollabError('invalid_input', 'pass one of --unread, --since, --latest or --before');
+      }
       const thread = optionalUuidQuery(ctx, 'thread');
       const limit = Math.min(limitOf(ctx.query.get('limit')), BRIDGE_LOG_LIMIT_MAX);
-      // --unread moves the caller's cursor, so it runs as a write transaction.
+      // --unread moves the caller's cursor, so it runs as a write transaction;
+      // --latest and --before never move it.
       const run = unread ? command : read;
-      return run(ctx, q => readLog(q, bridgeId, { since, thread, limit, unread }));
+      return run(ctx, q => readLog(q, bridgeId, { since, before, latest, thread, limit, unread }));
     },
     'bridges.connections.list': async ctx => {
       const provider = ctx.query.get('provider');
