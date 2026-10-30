@@ -258,11 +258,42 @@ describe('the newest page and scroll-back (bridges.log.read --latest / --before)
       .toEqual(['hello 2', 'hello 3', 'hello 4', 'hello 5', 'hello 6']);
   });
 
+  it('pages at the boundaries: an empty page, exactly n, n+1', async () => {
+    // Nothing older than the first message: an empty page at the start.
+    const oldest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?limit=1`)).items[0].id;
+    const empty = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${oldest}`));
+    expect(empty).toMatchObject({ items: [], olderCursor: null, lastMessageId: null });
+    // Seven messages on the log ('hello 0' … 'hello 6'): exactly n leaves nothing older, n+1 leaves one.
+    const all = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=7`));
+    expect(all.items).toHaveLength(7);
+    expect(all.olderCursor).toBeNull();
+    const six = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=6`));
+    expect(six.items).toHaveLength(6);
+    expect(six.olderCursor).toBe(six.items[0].id);
+    expect(bodies(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${six.olderCursor}&limit=6`)))).toEqual(['hello 0']);
+  });
+
   it('takes one way to choose the page, and a before on this log', async () => {
     for (const q of ['latest=true&unread=true', `latest=true&since=${ids[0]}`, `before=${ids[1]}&unread=true`, `before=${ids[1]}&latest=true`]) {
       refused(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?${q}`), 400, 'invalid_input');
     }
     refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${randomUUID()}`), 400, 'invalid_input');
+  });
+
+  it('is stable under equal timestamps: ties break by id, with no row lost or repeated', async () => {
+    const tied = [randomUUID(), randomUUID(), randomUUID()].sort();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      for (const [n, id] of tied.entries()) {
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'message',$3)", [id, space, member]);
+        await c.query(`insert into public.messages(entity_id,anchor_id,author_id,body,created_at)
+          values($1,$2,$3,$4, now() + interval '1 hour')`, [id, bridgeId, member, `tie ${n}`]);
+      }
+    });
+    const newest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=2`));
+    expect(newest.items.map((m: any) => m.id)).toEqual([tied[1], tied[2]]);
+    const back = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${newest.olderCursor}&limit=2`));
+    expect(back.items.map((m: any) => m.id)).toEqual([ids[4], tied[0]]);
   });
 });
 
