@@ -67,7 +67,8 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // 30 -> 31 (296): metadata-only MCP catalog definitions.
     // 31 -> 32 (304): `design`, an ordered set of pages (Craft → Designs).
     // 33 -> 34 (395): `bridge`, a provider conversation bound to a target.
-    expect(CORE_KINDS.length).toBe(34);
+    // 34 -> 35 (397): `label`, a space-wide tag put on any entity (D27).
+    expect(CORE_KINDS.length).toBe(35);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -339,11 +340,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // 200 (▶ on a session continues it). It is not a product preference to be
     // re-argued per kind, and it should only ever change when the backend
     // does. (`graph` and `loop` were briefly here on inherited rationale;
-    // owner ruling 2026-08-17 launches both.) `bridge` (395) is the one
-    // exception the server makes itself: its capability row is
-    // `spawnable: false` (BRIDGE-ENTITY-DESIGN §3.1) — you do not run a
-    // bridge; agents answer through its target.
-    expect(notLaunchable).toEqual(['bridge']);
+    // owner ruling 2026-08-17 launches both.)
+    // `bridge` (395) is the one exception the server makes itself:
+    // `spawnable: false`. `label` (397) is a tag on other entities: nothing to run.
+    expect(notLaunchable).toEqual(['bridge', 'label']);
   });
 
   it('4c. task keeps Run FIRST and its own row ordering', () => {

@@ -2759,6 +2759,34 @@ const ROWS: readonly KindConfig[] = [
     panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'STYLE' }] },
   },
 
+  /*
+   * -- label (397: a space-wide tag — name, colour, description; D27) --
+   *
+   * MINIMAL BY DESIGN, like `style`: the row registers the kind so lists,
+   * panels and the rail can show a label. Labels are made, renamed and
+   * archived through `tm8 label` (`labels.*`, the only door — generic create
+   * is refused) and, later, a Settings section; so no quick create, no edit
+   * sheet, no `primaries`, and no launch. A label is archived, never deleted.
+   */
+  {
+    kind: 'label',
+    label: 'Label',
+    labelPlural: 'Labels',
+    icon: '⌂',
+    iconArt: KIND_ART.label,
+    slug: 'labels',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⌂', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'createdBy' }] },
+    }),
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'LABEL' }] },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,
@@ -2820,7 +2848,8 @@ const ROWS: readonly KindConfig[] = [
  */
 // `bridge` (BRIDGE-ENTITY-DESIGN §3.1, `spawnable: false`): you do not RUN a
 // bridge — agents answer through its target, and workers post on it by handle.
-const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>(['bridge']);
+// `label` (397): a tag on other entities — there is nothing to run.
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>(['bridge', 'label']);
 
 /**
  * `run` — the launch action, in every place that renders one.

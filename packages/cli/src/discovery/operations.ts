@@ -174,6 +174,10 @@ const ROWS: Record<OperationName, Row> = {
   'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool, newest first', authz: 'entity', input: 'none', side: 'none', notes: ['--cursor continues with older runs', 'Each run carries its invoker, and triggeredBy when a loop fired it'] },
   'tools.runs.get': { cmd: ['tool', 'run-show'], syn: 'tm8 tool run-show <session-id> [--output]', sum: 'Read a recorded tool run', authz: 'session', input: 'none', side: 'none' },
   // loops (design 01a182d4 §4.1): discoverable now; the `tm8 loop` verbs land with PR4.
+  'labels.list': { cmd: ['label', 'list'], syn: 'tm8 label list [--archived]', sum: 'List the Space\'s labels (name, colour, id, version); bug is in every Space', authz: 'space', input: 'none', side: 'none', tags: ['label', 'tag', 'bug'], notes: ['--archived includes archived labels; an archived label stays on the entities that carry it and leaves every picker', 'filter entities by label with `tm8 entity query --label <name|id>...` (all of) or `--label-any <name|id>...` (any of)'] },
+  'labels.create': { cmd: ['label', 'create'], syn: 'tm8 label create <name> [--colour <#rrggbb>] [--description <text>] [--mutation-id <id>]', sum: 'Create a label in the Space', authz: 'space', input: 'bound', side: 'durable', tags: ['label', 'tag', 'bug'], notes: ['names are unique per Space, case-insensitively, archived labels included', 'put it on an entity with `tm8 task create … --label <name>` or `tm8 entity update <id> --add-label <name> --expect-version <n>`'], examples: ['tm8 label create <name> --colour <#rrggbb>'] },
+  'labels.update': { cmd: ['label', 'update'], syn: 'tm8 label update <name|label-id> --expect-version <n> [--name <name>] [--colour <#rrggbb>] [--description <text>] [--restore] [--mutation-id <id>]', sum: 'Rename, recolour or describe a label, or restore an archived one', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['label', 'tag', 'rename'], notes: ['--restore brings an archived label back (address it by id: names resolve among unarchived labels only)', 'read the version with `tm8 label list` (v<n> on each row)'] },
+  'labels.archive': { cmd: ['label', 'archive'], syn: 'tm8 label archive <name|label-id> --expect-version <n> [--mutation-id <id>]', sum: 'Archive a label: it stays on the entities that carry it and leaves every picker', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['label', 'tag', 'delete', 'archive'], notes: ['a label is archived, never deleted', 'read the version with `tm8 label list` (v<n> on each row)'] },
   'loops.create': { cmd: ['loop', 'create'], syn: 'tm8 loop create <title> --schedule <every <n>{m|h|d}|cron> [--timezone <iana>] (--teammate <id|name> | --dispatch | --tool <name|id> [--teammate <persona>] [--input <name>=<value>...] | --post [--teammate <id|name>]) [--target <bridge-id|group>[=<text>]...] [--interactive|--one-shot] [--quiet-hours-exempt on|off] [--subject <entity-id>] [--prompt <text|@file|->] [--model <m>] [--agent-tool <t>] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--launch-project <id>] [--workdir project|worktree|scratch] [--base-ref <ref>] [--memory <id>...] [--credential-source member|space|node] [--interaction-profile <id>] [--concurrency skip|queue|replace] [--max-runtime <seconds>] [--retry <n>] [--retry-delay <seconds>] [--disabled] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a scheduled loop (spawn, dispatch or tool action)', authz: 'space', input: 'bound', side: 'durable', tags: ['loop', 'schedule', 'cron', 'recurring'], notes: ['--teammate and --tool take a name or an id; names resolve through the Space\'s teammates and tools', 'with --tool, --teammate names the persona the tool runs as; one is required when the tool reaches tm8 (tm8Access read|write)', '--input is typed by the tool\'s declared inputs; every required input needs a value unless the tool\'s config or a default covers it; a secret input is refused (bind it with tm8 tool secret set)', '--max-runtime 60-86400 seconds, --retry 0-5 attempts, --retry-delay 30-3600 seconds', 'loops are created enabled; --disabled stores the definition without arming it', 'selection headers go through entities.header.set after the create, like tm8 tool create', '--target names a group the loop posts to (a bridge id or its name in tm8 bridge list); text after = is that group\'s message (--post) or its own instruction; a --post loop starts no session and posts each target\'s text, signed with the teammate', '--interactive keeps the worker for the conversation and closes it after 30 minutes with nothing addressed to it; --concurrency replace ends the previous live run', 'a loop with targets runs only as the member who armed it: if they leave it is suspended until an admin re-arms it (tm8 loop enable); only an admin sets --quiet-hours-exempt on'], examples: ['tm8 loop create <title> --schedule \'0 2 * * *\' --timezone <iana> --teammate <name|id> --prompt @<file>', 'tm8 loop create <title> --schedule \'0 9 * * 1-5\' --teammate <name> --target Infra="post yesterday\'s merged PRs" --target Gaming="post the open bugs" --concurrency replace'] },
   'loops.update': { cmd: ['loop', 'edit'], syn: 'tm8 loop edit <id|title> --expect-version <n> [--title <text>] [--schedule <expr>] [--timezone <iana>] [--teammate <id|name>] [--dispatch] [--tool <name|id>] [--clear-tool] [--input <name>=<value>...] [--clear-inputs] [--post] [--target <bridge-id|group>[=<text>]...] [--clear-targets] [--interactive|--one-shot] [--quiet-hours-exempt on|off] [--subject <entity-id|none>] [--prompt <text|@file|->] [--model <m|none>] [--agent-tool <t|none>] [--reasoning-effort low|medium|high|xhigh|max|ultra|none] [--access-mode safe|acceptEdits|auto|plan|fullAccess|none] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--launch-project <id|none>] [--workdir project|worktree|scratch|none] [--base-ref <ref|none>] [--memory <id|none>...] [--credential-source member|space|node|none] [--interaction-profile <id|none>] [--concurrency skip|queue|replace] [--max-runtime <seconds|none>] [--retry <n>] [--retry-delay <seconds>] [--mutation-id <id>]', sum: 'Edit a loop definition; a schedule or timezone change recomputes the next run', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion', tags: ['loop', 'schedule', 'cron', 'recurring'], notes: ['only the flags given change: launch flags and --input overlay the stored config and inputs; none unsets a launch setting; header edits use tm8 entity header set', 'no runner flag is needed: --teammate, --dispatch or --tool change what runs; on a tool loop --teammate alone changes the persona it runs as, and --teammate with --clear-tool makes it a spawn loop', 'a loop that leaves the tool action drops its inputs; one that becomes a tool loop drops its launch settings and runs as the --teammate given (or no persona)', 'a loop\'s version moves each time it fires: on version_conflict read it again with tm8 loop show and retry'], examples: ['tm8 loop edit <id> --schedule \'every 30m\' --expect-version <n>'] },
   'loops.get': { cmd: ['loop', 'show'], syn: 'tm8 loop show <id|title>', sum: 'Read a loop: definition, schedule summary and next runs, state and run health', authz: 'entity', input: 'none', side: 'none', tags: ['loop', 'schedule', 'cron', 'recurring'], examples: ['tm8 loop show <loop-id>'] },
@@ -1656,7 +1660,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.create': {
     cmd: ['entity', 'create'],
-    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--label <name|label-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
     authz: 'space',
     input: 'bound',
@@ -1671,6 +1675,7 @@ const ROWS: Record<OperationName, Row> = {
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
       "craft content shape: {description} (title rides the envelope). A craft is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another craft): create the page, then `tm8 collection add <craft-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A craft never contains itself or a craft above it. Read the pages with `tm8 entity context <craft-id>`. DEPRECATED alias: the old kind name `design` is still accepted as input (never output) until 2027-01-08",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
+      '--label <name|label-id> (repeatable) puts labels on the new entity in the same call; names match an unarchived label of the Space case-insensitively (`tm8 label list`). A bug is a task labelled bug: `tm8 task create "<title>" --label bug`',
       'a header applies to team_member, doc, artifact, drawing, file, task, collection, story, tool and loop (a tool is created with `tm8 tool create` and a loop with `tm8 loop create`, whose --when-to-use/--summary/--keyword write it); on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
     examples: [
@@ -1685,7 +1690,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
-    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--status <status>] [--mutation-id <id>]',
+    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--status <status>] [--add-label <name|label-id>...] [--remove-label <name|label-id>...] [--mutation-id <id>]',
     sum: 'Change an entity title, content or a story\'s status under an optimistic version guard',
     authz: 'entity',
     input: 'bound',
@@ -1695,6 +1700,7 @@ const ROWS: Record<OperationName, Row> = {
       '--status <status> sets content.status. On a STORY it is the status door: to_do | in_progress | done | cancelled, or a state name of the story\'s workflow. The ruled workflow moves apply (to_do ⇄ in_progress → done, to_do → done, any → cancelled, done/cancelled → to_do; done → in_progress is refused, reopen through to_do); a refused move answers transition_not_allowed',
       'a story\'s status is MANUAL: it is never derived from its contents. Its progress / taskProgress (in `tm8 entity context <story-id>`) are the derived signal, and the context points at this command when they disagree with the status',
       'a task moves through `tm8 task transition` / `tm8 task complete`, not --status',
+      '--add-label / --remove-label (repeatable, a name or an id) change the entity\'s labels under the same --expect-version; any kind takes labels; an archived label can be removed but not added',
     ],
     examples: [
       'tm8 entity update <story-id> --expect-version <n> --status in_progress',
@@ -2229,8 +2235,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── collections / graph / placements / undo ──────────────────────────────
   'collections.query': {
     cmd: ['entity', 'query'],
-    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--limit <count>] [--cursor <cursor>] [--tree-depth <1|2> [--per-parent <count>]]',
-    sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--parent <entity-id|none>] [--roots] [--status <status>...] [--assignee <actor-id>...] [--ready] [--title-contains <text>] [--words <text>] [--label <name|label-id>...] [--label-any <name|label-id>...] [--limit <count>] [--cursor <cursor>] [--tree-depth <1|2> [--per-parent <count>]]',    sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
     authz: 'space',
     input: 'bound',
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work', 'tree', 'children', 'subtasks', 'nested'],
@@ -2239,12 +2244,14 @@ const ROWS: Record<OperationName, Row> = {
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
       '--status is the task work status (open|pulled|working|in_review|done|blocked|cancelled); a pull request\'s or session\'s own state is not a query filter',
       '--tree-depth 1|2 also returns the children of each row on the page (and, at 2, their children) in the same request, each level in `tree.levels`: the rows a --kind query with filters.parentIn would return, whatever their status; --per-parent <1-200> keeps the first n children of each row (default 200), a level holds at most 200 rows (`capped` says when that cut), and a row whose children are not all shown reads `▸ N more` from its childCount',
+      '--label (repeatable) keeps entities carrying ALL of the labels; --label-any keeps entities carrying ANY of them; names resolve case-insensitively, archived labels included',
     ],
     examples: [
       'tm8 entity query --kind task --assignee <actor-id> --status working',
       'tm8 entity query --space <space-id> --kind story --roots',
       'tm8 entity query --kind story --parent <story-id>',
       'tm8 entity query --kind task --roots --tree-depth 2 --per-parent 20',
+      'tm8 entity query --kind task --label bug',
     ],
   },
   'collections.addItem': {
@@ -4313,6 +4320,7 @@ const ROWS: Record<OperationName, Row> = {
 const NOUN_BY_FAMILY: Record<string, string> = {
   tools: 'tool',
   loops: 'loop',
+  labels: 'label',
   mcp: 'mcp',
   workspace: 'workspace',
   identity: 'identity',
@@ -4441,6 +4449,7 @@ function exposureFor(operation: OperationName): Exposure {
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
+  /* +4 labels.* (397, Bridges B0b): RECOMPUTED from JSON.stringify(OPERATIONS). MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
      JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
@@ -5138,17 +5147,19 @@ const COMMAND_ALIASES = new Map<string, {
   }],
   ['task create', {
     path: ['task', 'create'],
-    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
+    syntax: 'tm8 task create <title> [--space <space-id|link-alias>] [--parent <task-id|none>] [--position <n>] [--content <json-source>] [--criterion <text>...] [--estimate <n>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--label <name|label-id>...] [--when-to-use <text>] [--summary <text>] [--keyword <k>...] [--mutation-id <id>]',
     summary: 'Create a task — alias of `tm8 entity create task`',
     notes: [
       'sugar over entities.create with kind task; every `entity create` flag works unchanged',
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}}',
       '--criterion <text> (repeatable, ids ac1, ac2… in order) and --estimate <n> (1-100) are optional sugar for acceptanceCriteria and pointsEstimate; tick each criterion as it is met with `tm8 task tick`',
+      '--label <name|label-id> (repeatable) labels the task; a bug is a task labelled bug (`tm8 label list` shows the Space\'s labels)',
       'in a linked Space: `tm8 --space <alias> task create "<title>"`',
     ],
     examples: [
       'tm8 task create "<title>" --parent <task-id>',
       'tm8 task create "<title>" --criterion "<testable outcome>" --estimate 3',
+      'tm8 task create "<title>" --label bug',
       'tm8 --space <alias> task create "<title>" --content \'{"description":"<text>"}\'',
     ],
   }],

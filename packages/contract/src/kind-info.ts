@@ -34,6 +34,7 @@ export const KIND_GROUPS: ReadonlyArray<{ group: KindGroup; title: string }> = [
 
 export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
   tool: { group: 'runtime', summary: 'a reusable bash or python script with declared inputs and recorded runs', createWith: ['tool create'] },
+  label: { group: 'work', summary: 'a space-wide tag (name, colour) put on any entity; `bug` marks a bug; archived, never deleted', createWith: ['label create'] },
   mcp_server: { group: 'runtime', summary: 'an approved external tool connector; credentials are separate', createWith: ['mcp server create'] },
   task: {
     group: 'work',

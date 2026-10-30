@@ -1,6 +1,7 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
 import { BridgeDeliverySchema, BridgeEntitySchema, MessageBridgeViewSchema } from './bridges.js';
+import { ENTITY_LABELS_MAX, EntityLabelsPatchSchema, LabelEntitySchema } from './labels.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -253,6 +254,8 @@ export const CoreEntityKindSchema = z.enum([
   'craft',
   // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
   'bridge',
+  // Labels (397). Not in `CreatableEntityKind`: `labels.create` is its door.
+  'label',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -781,6 +784,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   CraftStateSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  // 397 — a label's name, colour, description and archive mark.
+  LabelEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -978,6 +983,8 @@ function entitySummaryShape() {
     // in this phase AND the truth a pre-column node reports. See the field's
     // docblock on `EntitySummary`.
     category: StatusCategorySchema.optional(),
+    // 397: label ids, spread when non-empty (see `EntitySummary.labels`).
+    labels: z.array(EntityIdSchema).optional(),
   };
 }
 
@@ -1228,6 +1235,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   CraftContentSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  LabelEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -1396,6 +1404,10 @@ const CollectionFiltersSchema = z.object({
   titleContains: z.string().trim().min(1).max(200).optional(),
   // Every word, in title or description (collections.ts). Same trim rule.
   words: z.string().trim().min(1).max(200).optional(),
+  // Labels (397): all of / any of these label ids. Non-empty: an empty
+  // all-of matches everything and an empty any-of matches nothing.
+  labels: z.array(EntityIdSchema).min(1).max(32).optional(),
+  labelsAny: z.array(EntityIdSchema).min(1).max(32).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -3137,7 +3149,7 @@ export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge', 'label']),
   CustomEntityKindSchema,
 ]));
 
@@ -3153,6 +3165,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   attachTo: attachToSchema.optional(),
   connections: uniqueArray(InitialConnectionInputSchema).optional(),
   header: HeaderTextInputSchema.optional(),
+  labels: z.array(EntityIdSchema).min(1).max(ENTITY_LABELS_MAX).optional(),
 }).strict() as z.ZodType<CreateEntityInput>;
 
 export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
@@ -3160,6 +3173,7 @@ export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
   expectedVersion: z.number().finite(),
   title: z.string().optional(),
   content: z.record(z.unknown()).optional(),
+  labels: EntityLabelsPatchSchema.optional(),
 }).strict();
 
 // artifacts — command inputs (TM8-ARTIFACTS-DESIGN §8.1). The manifest is the

@@ -54,6 +54,7 @@
  * caller who still passes one gets the ordinary unknown-option refusal quoting
  * the real syntax — which is now the honest answer.
  */
+import { resolveLabelIds } from './label.js';
 import { CoreEntityKindSchema, normalizeKindAlias, WorkStatusSchema } from '@tm8/contract';
 
 import { readJsonSource } from '../args.js';
@@ -727,8 +728,7 @@ function refuseUnknownQueryValues(kinds: readonly string[], status: readonly str
  */
 async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
-  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor', 'tree-depth', 'per-parent']);
-
+  assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'label', 'label-any', 'limit', 'cursor', 'tree-depth', 'per-parent']);
   const kinds = cmd.options.values('kind').map(normalizeKindAlias);
   const subtreeOf = cmd.options.value('subtree');
   /* `--parent <id|none>` names the DIRECT parent (`CollectionQuery.parentId`);
@@ -768,6 +768,12 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const words = cmd.options.value('words');
   if (titleContains !== undefined) filters.titleContains = titleContains;
   if (words !== undefined) filters.words = words;
+  // 397: all of (--label) / any of (--label-any); archived labels still match
+  // the entities that carry them, so names resolve among them too.
+  const allLabels = cmd.options.values('label');
+  const anyLabels = cmd.options.values('label-any');
+  if (allLabels.length > 0) filters.labels = await resolveLabelIds(cmd, allLabels, { includeArchived: true });
+  if (anyLabels.length > 0) filters.labelsAny = await resolveLabelIds(cmd, anyLabels, { includeArchived: true });
 
   const body: Record<string, unknown> = { spaceId: requireSpace(cmd.ctx) };
   if (kinds.length > 0) body.kinds = kinds;
@@ -898,7 +904,7 @@ export function taskContentFlags(cmd: CommandContext, kind: string, content: unk
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
-    'no-session-link', 'criterion', 'estimate', ...HEADER_TEXT_OPTIONS,
+    'no-session-link', 'criterion', 'estimate', 'label', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = normalizeKindAlias(requireArg(cmd, 0, '<kind>'));
   // A space style is born only by `styles.push` (284): the Server refuses a
@@ -937,6 +943,9 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (connections.length > 0) body.connections = connections;
   const header = headerTextOptions(cmd);
   if (header !== undefined) body.header = header;
+  // 397: `--label <name|id>` (repeatable); names resolve through labels.list.
+  const labelRefs = cmd.options.values('label');
+  if (labelRefs.length > 0) body.labels = await resolveLabelIds(cmd, labelRefs);
 
   const data = await withErrorReceipt(cmd, errorInput(cmd, 'entity.create', { mutationId }), () =>
     observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
@@ -951,7 +960,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'mutation-id']);
+  assertKnownOptions(cmd, ['expect-version', 'title', 'content', 'status', 'add-label', 'remove-label', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
   const expectedVersion = cmd.options.integer('expect-version');
   if (expectedVersion === undefined) {
@@ -973,9 +982,20 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     body.content = { ...(body.content as Record<string, unknown> | undefined), status };
   }
 
-  if (title === undefined && content === undefined && status === undefined) {
+  // 397: label names or ids, added and removed under the same version.
+  const addLabels = cmd.options.values('add-label');
+  const removeLabels = cmd.options.values('remove-label');
+  if (addLabels.length > 0 || removeLabels.length > 0) {
+    body.labels = {
+      ...(addLabels.length > 0 ? { add: await resolveLabelIds(cmd, addLabels) } : {}),
+      // An archived label can always be removed (397 D2), so its name resolves.
+      ...(removeLabels.length > 0 ? { remove: await resolveLabelIds(cmd, removeLabels, { includeArchived: true }) } : {}),
+    };
+  }
+
+  if (title === undefined && content === undefined && status === undefined && body.labels === undefined) {
     throw new CliError('`tm8 entity update` needs something to change', EXIT_USAGE, {
-      hint: 'pass --title, --content or --status',
+      hint: 'pass --title, --content, --status, --add-label or --remove-label',
     });
   }
 

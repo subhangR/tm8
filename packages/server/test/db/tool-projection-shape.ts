@@ -72,3 +72,17 @@ export async function addBridgeProjectionShape(database: W1ScratchDatabase): Pro
     grant execute on function internal.bridge_message_badges(uuid[]) to tm8_app;
     reset role;`);
 }
+
+/**
+ * 397 adds `entities.labels` and the `label` kind's detail table, and current
+ * readers select `e.labels` and left-join `public.labels`. Historical fixtures
+ * that stop before 397 mirror only that read shape; no label rows are tested.
+ */
+export async function addLabelProjectionShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    alter table public.entities add column if not exists labels uuid[] not null default '{}';
+    create table if not exists public.labels(entity_id uuid primary key, space_id uuid, name text,
+      colour text, description text, archived_at timestamptz);
+    grant select on public.labels to tm8_app;
+    reset role;`);
+}

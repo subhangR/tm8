@@ -2,27 +2,27 @@
   "schemaVersion": "tm8.conformance.w1.v1",
   "catalogDigest": "sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba",
   "catalog": {
-    "total": 410,
-    "v1": 408,
+    "total": 414,
+    "v1": 412,
     "reserved": 2,
-    "http": 408,
+    "http": 412,
     "ws": 1,
-    "registerableV1Http": 406,
+    "registerableV1Http": 410,
     "methods": {
-      "GET": 138,
-      "POST": 202,
-      "PATCH": 23,
+      "GET": 139,
+      "POST": 204,
+      "PATCH": 24,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 145,
-      "command": 263,
+      "read": 146,
+      "command": 266,
       "stream": 2
     },
-    "uniqueNames": 410,
-    "uniqueBindings": 409
+    "uniqueNames": 414,
+    "uniqueBindings": 413
   },
   "reservedOperations": [
     "search.query",
@@ -456,6 +456,34 @@
         "operation": "bridges.listen",
         "method": "POST",
         "path": "/v2/bridges/:bridgeId/listen",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/labels",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/labels",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.update",
+        "method": "PATCH",
+        "path": "/v2/labels/:labelId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.archive",
+        "method": "POST",
+        "path": "/v2/labels/:labelId/archive",
         "status": "registered",
         "source": "server-router"
       },
@@ -3274,7 +3302,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 378
+    "unimplementedV1Http": 382
   },
   "schemas": {
     "additive": {
@@ -4038,6 +4066,70 @@
         "intentTags": [
           "bridges",
           "listen"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.list",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.list",
+        "intentTags": [
+          "labels",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.create",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.create",
+        "intentTags": [
+          "labels",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.update",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.update",
+        "intentTags": [
+          "labels",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.archive",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.archive",
+        "intentTags": [
+          "labels",
+          "archive"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -11448,6 +11540,39 @@
         },
         "migration": {
           "strategy": "craft-detail"
+        }
+      },
+      "label": {
+        "kind": "label",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "labels"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "label-detail"
         }
       },
       "style": {

@@ -1,6 +1,7 @@
 import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
   BridgeHandleClaimInputSchema, BridgeListenInputSchema,
+  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,
   LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
   LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
 } from '@tm8/contract';
@@ -261,6 +262,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'tools.secrets.bind': ToolSecretBindInputSchema,
   'tools.secrets.unbind': ToolSecretUnbindInputSchema,
   'tools.run': ToolRunInputSchema,
+  'labels.create': LabelCreateInputSchema,
+  'labels.update': LabelUpdateInputSchema,
+  'labels.archive': LabelArchiveInputSchema,
   'loops.create': LoopCreateInputSchema,
   'loops.update': LoopUpdateInputSchema,
   'loops.enable': LoopEnableInputSchema,

@@ -11,6 +11,7 @@ import type {
   Page,
   StatusCategory,
 } from '@tm8/contract';
+import { LABEL_DEFAULT_COLOUR } from '@tm8/contract';
 import { ada, noor, forge, scout } from './actors';
 import { FORM_FIXTURE_FORMS, FORM_FIXTURE_IDS } from '../forms/fixtures';
 import { STORY_FIXTURE } from '../story/fixture';
@@ -1279,6 +1280,20 @@ export const styleMidnight = summary({
 });
 
 /**
+ * The seeded `bug` label (397, D29: a bug is a task labelled `bug`). Its
+ * colour is the contract's default rather than a literal: a fixture carrying
+ * colour values would put raw colour literals in `src/` (§14).
+ */
+export const labelBug = summary({
+  id: 'label-bug',
+  kind: 'label',
+  title: 'bug',
+  excerpt: 'Something is broken',
+  createdBy: ada,
+  state: { kind: 'label', name: 'bug', colour: LABEL_DEFAULT_COLOUR, description: 'Something is broken', archivedAt: null },
+});
+
+/**
  * Forms — question sets an agent asked a human (migration 209). The five
  * fixture forms live in `forms/fixtures.ts` with their responses (the forms
  * seam serves those); here they become rows, so every state the questionnaire
@@ -1520,6 +1535,7 @@ export const fixtureSummaries: EntitySummary[] = [
   profileHouseStyle, credentialTeamKey, mcpCalendar, toolFixture, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   storyAsAnEntity,
   styleMidnight,
+  labelBug,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -2060,6 +2076,10 @@ export const fixtureDetails: Record<string, EntityDetail> = {
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {
     content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  }),
+
+  [labelBug.id]: detail(labelBug, {
+    content: { kind: 'label', name: 'bug', colour: LABEL_DEFAULT_COLOUR, description: 'Something is broken', archivedAt: null },
   }),
 
   [styleMidnight.id]: detail(styleMidnight, {
