@@ -233,7 +233,10 @@ create table public.bridge_command_confirms (
   command            jsonb not null check (jsonb_typeof(command) = 'object'),
   created_at         timestamptz not null default now(),
   expires_at         timestamptz not null,
-  used_at            timestamptz
+  used_at            timestamptz,
+  -- The YES that took it: the same YES taking again (a re-run after a crash)
+  -- gets the same command back, so the confirmed work converges, never lost.
+  used_by_message_id uuid
 );
 create index bridge_command_confirms_sender_idx
   on public.bridge_command_confirms(bridge_id, sender_external_id, created_at desc) where used_at is null;
@@ -292,34 +295,38 @@ $$;
 revoke all on function public.bridge_command_confirm_open_for(uuid, text, text) from public;
 grant execute on function public.bridge_command_confirm_open_for(uuid, text, text) to tm8_app;
 
--- Takes the confirm a sender's YES answers: the quoted notice when
--- there is a quote, else the sender's newest open confirm on this bridge.
--- Returns the stored command, or null (none, expired, someone else's, used).
+-- Takes the confirm a sender's YES answers: the notice the YES quotes (a YES
+-- that quotes nothing confirms nothing), from the same sender, within its 2
+-- minutes, once. Idempotent per YES message: the YES that took it gets the same
+-- command back on a re-run. Returns the stored command, or null.
 create or replace function public.bridge_command_confirm_take(
-  p_bridge_id uuid, p_sender_external_id text, p_reply_to_external_id text)
+  p_bridge_id uuid, p_sender_external_id text, p_reply_to_external_id text, p_taking_message_id uuid)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   c public.bridge_command_confirms;
   v_notice uuid;
 begin
   perform internal.require_bridge_commands_worker();
-  if p_reply_to_external_id is not null then
-    v_notice := internal.bridge_notice_for_reply(p_bridge_id, p_reply_to_external_id);
-    if v_notice is null then return null; end if;
-  end if;
+  if p_reply_to_external_id is null or p_taking_message_id is null then return null; end if;
+  v_notice := internal.bridge_notice_for_reply(p_bridge_id, p_reply_to_external_id);
+  if v_notice is null then return null; end if;
   select * into c from public.bridge_command_confirms
-   where bridge_id = p_bridge_id and sender_external_id = p_sender_external_id
-     and used_at is null and expires_at > now()
-     and (v_notice is null or notice_message_id = v_notice)
-   order by created_at desc
-   limit 1
+   where notice_message_id = v_notice and bridge_id = p_bridge_id and sender_external_id = p_sender_external_id
    for update;
   if c.notice_message_id is null then return null; end if;
-  update public.bridge_command_confirms set used_at = now() where notice_message_id = c.notice_message_id;
+  if c.used_at is not null then
+    if c.used_by_message_id = p_taking_message_id then
+      return c.command || jsonb_build_object('noticeMessageId', c.notice_message_id);
+    end if;
+    return null;
+  end if;
+  if c.expires_at <= now() then return null; end if;
+  update public.bridge_command_confirms set used_at = now(), used_by_message_id = p_taking_message_id
+   where notice_message_id = c.notice_message_id;
   return c.command || jsonb_build_object('noticeMessageId', c.notice_message_id);
 end
 $$;
-revoke all on function public.bridge_command_confirm_take(uuid, text, text) from public;
-grant execute on function public.bridge_command_confirm_take(uuid, text, text) to tm8_app;
+revoke all on function public.bridge_command_confirm_take(uuid, text, text, uuid) from public;
+grant execute on function public.bridge_command_confirm_take(uuid, text, text, uuid) to tm8_app;
 
 analyze public.bridge_command_confirms;

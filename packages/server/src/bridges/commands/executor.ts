@@ -123,7 +123,8 @@ interface StoredConfirm { verb: 'work' | 'stop'; args: string; body: string[]; e
 
 interface ListRow {
   id: string; kind: string; title: string; status: string | null; created_at: Date | string;
-  created_by: string; handle: string | null; origins: Array<{ sender?: { memberId?: string }; command?: string | null }>;
+  created_by: string; handle: string | null;
+  origins: Array<{ sender?: { memberId?: string }; command?: string | null; providerMessageId?: string | null }>;
 }
 
 const GUEST_FIRST = 'link your number first: ask a space admin in tm8 to link it. /whoami to check';
@@ -356,7 +357,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     if (items.length > MAX_WORKERS_PER_COMMAND) {
       throw new Refusal(`${items.length} items is over this bridge's limit of ${MAX_WORKERS_PER_COMMAND} workers per command — nothing started`);
     }
-    const live = (await provenance(cmd, ['work_session'], 200)).filter(r => LIVE_SESSION.has(r.status ?? '')).length;
+    // A re-run of this same command must not count its own workers against it.
+    const self = cmd.origin('/work').providerMessageId;
+    const live = (await provenance(cmd, ['work_session'], 200))
+      .filter(r => LIVE_SESSION.has(r.status ?? '') && !r.origins.some(o => o.providerMessageId === self)).length;
     if (live + items.length > MAX_LIVE_WORKERS_PER_BRIDGE) {
       throw new Refusal(`${live} workers are running from this group; ${items.length} more is over the limit of ${MAX_LIVE_WORKERS_PER_BRIDGE} — nothing started`);
     }
@@ -457,23 +461,40 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return rows[0] ?? null;
   }
 
+  /** The reason this command records; a session ended with it was ended by this command (a re-run). */
+  const stopReason = (cmd: Command) =>
+    `stopped from ${PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider} by ${cmd.sender.displayName || 'a member'}`;
+
+  async function endedReasons(claims: DbClaims, ids: string[]): Promise<Map<string, string | null>> {
+    if (ids.length === 0) return new Map();
+    const rows = await ports.db.query<{ id: string; ended_reason: string | null }>(claims,
+      'select entity_id::text id, ended_reason from public.work_sessions where entity_id = any($1::uuid[])', [ids]);
+    return new Map(rows.map(r => [r.id, r.ended_reason]));
+  }
+
   async function stop(cmd: Command, args: string, confirmed: boolean): Promise<Answer> {
     const claims = requireLinked(cmd);
     const ref = parseWorkerRef(args);
     if (!ref) throw new Refusal('usage: /stop <worker>, /stop mine or /stop all');
+    const reason = stopReason(cmd);
+    const isLive = (r: ListRow) => LIVE_SESSION.has(r.status ?? '');
     let targets: ListRow[];
     if (ref.kind === 'all' || ref.kind === 'mine') {
       if (ref.kind === 'all') requireAdminTier(cmd);
-      targets = (await provenance(cmd, ['work_session']))
-        .filter(r => LIVE_SESSION.has(r.status ?? ''))
-        .filter(r => ref.kind === 'all' || mine(cmd, r));
-      if (targets.length === 0) return { text: 'no workers to stop' };
+      const candidates = (await provenance(cmd, ['work_session'])).filter(r => ref.kind === 'all' || mine(cmd, r));
+      const live = candidates.filter(isLive);
       if (!confirmed) {
+        if (live.length === 0) return { text: 'no workers to stop' };
         return {
-          text: `stop ${targets.length} worker${targets.length === 1 ? '' : 's'}? reply YES within 2 min`,
+          text: `stop ${live.length} worker${live.length === 1 ? '' : 's'}? reply YES within 2 min`,
           confirm: { verb: 'stop', args, body: [], externalMessageId: cmd.input.externalMessageId, messageId: cmd.input.messageId },
         };
       }
+      // A re-run after a crash: the workers this command already ended still
+      // need their task blocked and noted.
+      const ended = await endedReasons(claims, candidates.filter(r => !isLive(r)).map(r => r.id));
+      targets = candidates.filter(r => isLive(r) || ended.get(r.id) === reason);
+      if (targets.length === 0) return { text: 'no workers to stop' };
     } else {
       const row = await resolveWorker(cmd, ref);
       if (!row) throw new Refusal(`no worker "${stripTail(args)}" from this group — /workers to list them`);
@@ -486,22 +507,25 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
             : error;
         }
       }
-      if (!LIVE_SESSION.has(row.status ?? '')) return { text: `${named(row)} already ${sessionWord(row.status)}` };
+      if (!isLive(row) && (await endedReasons(claims, [row.id])).get(row.id) !== reason) {
+        return { text: `${named(row)} already ${sessionWord(row.status)}` };
+      }
       targets = [row];
     }
-    const by = cmd.sender.displayName || 'a member';
-    const reason = `stopped from ${PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider} by ${by}`;
     const stopped: string[] = [];
     const failed: string[] = [];
     for (const row of targets) {
       try {
-        await ports.stopWorker(claims, row.id, { reason, clientMutationId: `${cmd.key}:stop:${row.id}` });
+        if (isLive(row)) await ports.stopWorker(claims, row.id, { reason, clientMutationId: `${cmd.key}:stop:${row.id}` });
         const t = await workerTask(cmd, row.id);
-        if (t && OPEN_TASK.has(t.status) && t.status !== 'blocked') {
+        if (t && OPEN_TASK.has(t.status)) {
           // set_work_state keeps a note only on the caller's own working_on
           // claim, and the stopper is not working on the task; so the reason
-          // is posted on the task, as the stopper, beside the transition.
-          await ports.db.rpc(claims, 'set_work_state', [t.id, 'blocked', null, null, null, `${cmd.key}:block:${t.id}`, false, false]);
+          // is posted on the task, as the stopper, beside the transition. Both
+          // writes are keyed on this command, so a re-run lands on the same two.
+          if (t.status !== 'blocked') {
+            await ports.db.rpc(claims, 'set_work_state', [t.id, 'blocked', null, null, null, `${cmd.key}:block:${t.id}`, false, false]);
+          }
           // messages.post's own door: anchors, body, parent, mentions, attachments,
           // source session, actor, mutation id, chat mode, source chat.
           await ports.db.rpc(claims, 'w2_post_message_batch', [
@@ -590,8 +614,9 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
   }
 
   async function yes(cmd: Command): Promise<Answer | null> {
+    // Idempotent per YES message: a re-run of this YES gets the same command back.
     const stored = await exec(q => q.rpc<StoredConfirm | null>('bridge_command_confirm_take', [
-      cmd.input.bridgeId, cmd.input.senderExternalId, cmd.input.replyTo?.externalMessageId ?? null,
+      cmd.input.bridgeId, cmd.input.senderExternalId, cmd.input.replyTo?.externalMessageId ?? null, cmd.input.messageId,
     ]));
     if (!stored || typeof stored !== 'object' || !('verb' in stored)) {
       // The door only lets a YES through when it quotes an open confirm of this
@@ -672,12 +697,12 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     };
   }
 
-  async function answer(cmd: Command, reply: Answer): Promise<void> {
+  async function answer(cmd: Command, reply: Answer, keySuffix = ''): Promise<void> {
     const notice = await ports.postNotice(ports.db, {
       bridgeId: cmd.input.bridgeId,
       text: reply.text,
       replyToMessageId: cmd.input.messageId,
-      idempotencyKey: `cmd:${cmd.input.bridgeId}:${cmd.input.externalMessageId}`,
+      idempotencyKey: `cmd:${cmd.input.bridgeId}:${cmd.input.externalMessageId}${keySuffix}`,
     });
     if (reply.confirm) {
       await exec(q => q.rpc('bridge_command_confirm_open', [
@@ -742,7 +767,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         if (error instanceof Refusal) reply = { text: error.message };
         else if (error instanceof CollabError && ANSWERABLE.has(error.code)) reply = { text: `couldn't do that: ${safeReason(error)}` };
         else {
-          await answer(cmd, { text: 'that didn\'t work on our side — try again in a minute' }).catch(() => undefined);
+          // Its own key, so a re-run that then succeeds still answers.
+          await answer(cmd, { text: 'that didn\'t work on our side — try again in a minute' }, ':fault').catch(() => undefined);
           throw error;
         }
       } finally {
