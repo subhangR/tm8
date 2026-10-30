@@ -1,12 +1,15 @@
 -- =============================================================================
--- ROLLBACK for 391_mobile_auth_kind.sql — NOT a migration (db/migrate.mjs never
--- reads this directory). Run by hand, as the migration owner, only to undo 391:
+-- ROLLBACK for the mobile auth kind migration (db/migrations/NNN_mobile_auth_kind.sql,
+-- TM8 Mobile S4; filed as 391 and renumbered above main's top at merge: rename this
+-- file with it) — NOT a migration (db/migrate.mjs never reads this directory). Run
+-- by hand, as the migration owner, only to undo it:
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/391_mobile_auth_kind.down.sql
---   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '391_mobile_auth_kind.sql'"
+--   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/NNN_mobile_auth_kind.down.sql
+--   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename like '%\_mobile\_auth\_kind.sql'"
 --
 -- Puts back the seventeen definitions verbatim and the two CHECK constraints
--- without 'mobile'. It REFUSES while any auth_sessions row has kind 'mobile' or
+-- without 'mobile' (auth_sessions_kind_check as 395_bridge_schema.sql left it,
+-- bridge_runtime included). It REFUSES while any auth_sessions row has kind 'mobile' or
 -- any chat_turns row recorded it: revoking and deleting those sessions signs
 -- every phone out, which is the operator's decision, not this script's.
 -- =============================================================================
@@ -29,7 +32,7 @@ alter table public.auth_sessions
   drop constraint if exists auth_sessions_kind_check;
 alter table public.auth_sessions
   add constraint auth_sessions_kind_check
-  check (kind in ('browser', 'cli', 'agent', 'agent_runtime', 'link'));
+  check (kind in ('browser', 'cli', 'agent', 'agent_runtime', 'link', 'bridge_runtime'));
 
 alter table public.chat_turns
   drop constraint if exists chat_turns_requested_by_auth_kind_check;

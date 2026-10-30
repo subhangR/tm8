@@ -733,7 +733,7 @@ describe('actions.list — credential, space_link and server verbs (task 01a0e24
     cred_can_usage: true, cred_status: 'active', cred_shape: 'login',
   };
 
-  describe('`human` mirrors require_human_auth_kind() (083, widened by 391): browser|cli|mobile, fail closed', () => {
+  describe('`human` mirrors require_human_auth_kind() (083, widened by S4): browser|cli|mobile, fail closed', () => {
     it.each([
       ['browser', true],
       ['cli', true],

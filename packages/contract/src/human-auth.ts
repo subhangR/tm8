@@ -6,7 +6,7 @@ export type HumanAuthKind = (typeof KINDS)[number];
 /**
  * THE human-session allow-list: the auth kinds a human-only door admits.
  *
- * It mirrors `internal.require_human_auth_kind()` (083, widened by 391), which
+ * It mirrors `internal.require_human_auth_kind()` (083, widened by *_mobile_auth_kind.sql), which
  * passes only `browser`, `cli` and `mobile` (the TM8 Mobile app) and fails
  * closed on a missing, empty or unrecognised kind. It does NOT answer "is this
  * a person". A `link` session (250/251) acts in the target space AS a member

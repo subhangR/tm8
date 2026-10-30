@@ -2499,7 +2499,7 @@ export function commandAcceptsClientMutationId(opName: string): boolean {
  * How a session authenticates thereafter. `agent` and `agent_runtime` are
  * internal mints, never accepted by `auth.login`. `link` (W6, 250) is a
  * member's stored session for a linked space, minted by `spaceLinks.login`.
- * `mobile` (391) is the TM8 Mobile app: a human bearer client like `cli`
+ * `mobile` (*_mobile_auth_kind.sql) is the TM8 Mobile app: a human bearer client like `cli`
  * (90 days, never a cookie), admitted by every human-only door.
  */
 export type AuthSessionKindView = 'browser' | 'cli' | 'mobile' | 'agent' | 'agent_runtime' | 'link';

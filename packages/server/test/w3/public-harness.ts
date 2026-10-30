@@ -80,15 +80,23 @@ export interface W3PublicServer {
  * registration function, or call a handler. If an operation is absent from
  * `bootstrap()`/`main()` composition, its public response stays the production
  * Server's honest 501 and the W3 gate catches the missing wiring.
+ *
+ * `migrations` is the order the scratch database is migrated in: the lexical
+ * chain unless a suite needs the order main will run (a lane migration that
+ * the merge renumbers above main's top, e.g. mobile-auth-kind-chain.ts).
  */
-export async function startW3PublicServer(label: string, extra: Omit<BootstrapOptions, 'config'> = {}): Promise<W3PublicServer> {
+export async function startW3PublicServer(
+  label: string,
+  extra: Omit<BootstrapOptions, 'config'> = {},
+  migrations: readonly string[] = migrationFiles(),
+): Promise<W3PublicServer> {
   const database = await createW1ScratchDatabase(`w3_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-w3-'));
   let production: BootstrappedServer | undefined;
   let config: ReturnType<typeof loadConfig> | undefined;
 
   try {
-    database.apply(migrationFiles());
+    database.apply(migrations);
     const configured = loadConfig({
       ...process.env,
       TM8_BIND: '127.0.0.1',

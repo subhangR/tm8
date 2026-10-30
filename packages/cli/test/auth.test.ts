@@ -46,7 +46,7 @@ const SESSION = {
 
 const TOKEN = 'tm8s_sess-1.secret-value-1';
 
-/** A TM8 Mobile sign-in as `auth.sessions.list` returns it (391). */
+/** A TM8 Mobile sign-in as `auth.sessions.list` returns it (*_mobile_auth_kind.sql). */
 const MOBILE_LISTING = {
   sessionId: '00000000-0000-4000-8000-0000000000c1',
   kind: 'mobile',

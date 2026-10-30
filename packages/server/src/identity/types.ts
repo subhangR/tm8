@@ -96,7 +96,7 @@ export type PasswordAlgorithm = 'scrypt';
 
 /**
  * S8: browser sessions back the cookie/CSRF posture (S6); the other kinds are
- * bearer-token clients. `mobile` (391) is the TM8 Mobile app, a human client
+ * bearer-token clients. `mobile` (*_mobile_auth_kind.sql) is the TM8 Mobile app, a human client
  * like `cli`. `agent` is a work-session worker. `agent_runtime` is a
  * chat thread's headless runtime, carrying its requesting human's authority
  * while authoring as the selected teammate.

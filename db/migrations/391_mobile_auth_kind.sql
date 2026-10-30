@@ -1,5 +1,15 @@
 -- =============================================================================
--- 391 — AUTH KIND 'mobile': the TM8 Mobile app signs in as itself.
+-- AUTH KIND 'mobile': the TM8 Mobile app signs in as itself (TM8 Mobile S4).
+--
+-- ORDER. Filed on its lane as 391. The space coordinator's ordering rule renumbers
+-- a migration numbered below main's top to main's max+1 at merge, so this file runs
+-- AFTER 395_bridge_schema.sql on prod and on a fresh database alike. That order is
+-- required: 395 re-adds auth_sessions_kind_check from the pre-mobile list plus
+-- 'bridge_runtime', so this file must be the CHECK's last writer. Its CHECK is
+-- 395's list with 'mobile' added: all seven kinds, which is also safe on a node
+-- that already ran 395 and holds bridge_runtime sessions. The tests find this file
+-- by its name, never its number, and apply it in the merged order
+-- (packages/server/test/mobile-auth-kind-chain.ts).
 --
 -- The phone is a human client. It has signed in as `cli` (decide doc Q6) because
 -- only `browser` and `cli` pass the human-only doors. This migration makes
@@ -36,7 +46,7 @@
 --   internal.mcp_provenance                    347      MCP provenance: a human root
 --
 --   constraint                                                 definer
---   public.auth_sessions auth_sessions_kind_check              250
+--   public.auth_sessions auth_sessions_kind_check              395 (250, then 395's bridge_runtime)
 --   public.chat_turns chat_turns_requested_by_auth_kind_check  123
 --
 -- THE CHANGE IS THE LITERAL AND NOTHING ELSE (the 387 convention). Each body is
@@ -57,7 +67,7 @@
 -- empty or unknown kind (083 still fails closed). issue_tool_session_human_session
 -- still mints its tool-run token as kind 'cli'; it now accepts a mobile parent.
 --
--- Rollback (by hand): db/rollback/391_mobile_auth_kind.down.sql
+-- Rollback (by hand): db/rollback/<this file's name>.down.sql
 -- =============================================================================
 
 set role tm8_graph_owner;
@@ -69,7 +79,7 @@ alter table public.auth_sessions
   drop constraint if exists auth_sessions_kind_check;
 alter table public.auth_sessions
   add constraint auth_sessions_kind_check
-  check (kind in ('browser', 'cli', 'mobile', 'agent', 'agent_runtime', 'link'));
+  check (kind in ('browser', 'cli', 'mobile', 'agent', 'agent_runtime', 'link', 'bridge_runtime'));
 
 alter table public.chat_turns
   drop constraint if exists chat_turns_requested_by_auth_kind_check;
@@ -1398,7 +1408,7 @@ begin
     perform set_config('tm8.auth_kind', k, true);
     begin
       perform internal.require_human_auth_kind();
-      raise exception '391: require_human_auth_kind admitted %', quote_literal(k);
+      raise exception 'mobile auth kind: require_human_auth_kind admitted %', quote_literal(k);
     exception when insufficient_privilege then
       null;
     end;
@@ -1412,7 +1422,7 @@ begin
        select 1 from regexp_matches(p.prosrc, '\(([^()]*''cli''[^()]*)\)', 'g') m(list)
         where m.list[1] like '%''browser''%' and m.list[1] not like '%''mobile''%');
   if leftover is not null then
-    raise exception '391: a kind list still names browser and cli without mobile: %', leftover;
+    raise exception 'mobile auth kind: a kind list still names browser and cli without mobile: %', leftover;
   end if;
 
   select string_agg(c.conrelid::regclass::text || ' ' || c.conname, ', ') into leftover
@@ -1420,7 +1430,7 @@ begin
    where pg_get_constraintdef(c.oid) like '%''cli''%'
      and pg_get_constraintdef(c.oid) not like '%''mobile''%';
   if leftover is not null then
-    raise exception '391: a CHECK still names cli without mobile: %', leftover;
+    raise exception 'mobile auth kind: a CHECK still names cli without mobile: %', leftover;
   end if;
 end
 $verify$;

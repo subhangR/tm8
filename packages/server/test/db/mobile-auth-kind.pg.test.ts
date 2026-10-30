@@ -11,6 +11,12 @@
  * the catalog: no live function or CHECK names 'browser' and 'cli' without
  * 'mobile' (the static twin is test/mobile-auth-kind-migration.test.ts).
  *
+ * The scratch database is migrated in the order main will run: the lane files
+ * the S4 migration as 391 and the merge renumbers it above main's top, after
+ * 395_bridge_schema.sql re-adds auth_sessions_kind_check without 'mobile'
+ * (`asMerged`, test/mobile-auth-kind-chain.ts). At the lane's own numbering
+ * a mobile session could not be stored on a fresh database.
+ *
  * Nothing here logs a token.
  */
 import { randomUUID } from 'node:crypto';
@@ -39,7 +45,9 @@ import type { Db, DbClaims } from '../../src/db/types.js';
 import { generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { DEFAULT_SESSION_TTL_MS } from '../../src/identity/index.js';
 import { hashSpacePassword, SESSION_TTL_MS } from '../../src/identity/pg-auth.js';
+import { asMerged } from '../mobile-auth-kind-chain.js';
 import { startW3PublicServer, type W3PublicServer } from '../w3/public-harness.js';
+import { migrationFiles } from './w1-pg.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const LABEL = 'TM8 Mobile · iPhone';
@@ -116,7 +124,7 @@ const ownerClaims = (authKind: string): DbClaims => ({
 } as DbClaims);
 
 beforeAll(async () => {
-  server = await startW3PublicServer('mobile_kind');
+  server = await startW3PublicServer('mobile_kind', {}, asMerged(migrationFiles()));
   db = createDb(server.database.url, { max: 4 });
   const token = (await readFile(join(server.dataDir, 'setup-token'), 'utf8')).trim();
   claim = await send<AuthClaimResult>('POST', '/v2/auth/claim', { token, ...OWNER, kind: 'mobile' });
@@ -366,5 +374,12 @@ describe('end state: every kind list that names browser and cli names mobile', (
       'auth_sessions auth_sessions_kind_check',
       'chat_turns chat_turns_requested_by_auth_kind_check',
     ]));
+  });
+
+  it('in the order main runs the chain, S4 is the last writer of auth_sessions_kind_check: all seven kinds, bridge_runtime kept', async () => {
+    const [row] = await server.rows<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'auth_sessions_kind_check'`);
+    expect(row!.def).toBe("CHECK ((kind = ANY (ARRAY['browser'::text, 'cli'::text, 'mobile'::text, 'agent'::text, "
+      + "'agent_runtime'::text, 'link'::text, 'bridge_runtime'::text])))");
   });
 });

@@ -402,7 +402,7 @@ async function linkAB(): Promise<SpaceLink> {
 // ---------------------------------------------------------------------------
 
 describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; follow-up 01a0db78-f1ab)', () => {
-  it('internal.require_human_auth_kind() admits the human kinds only: browser, cli and mobile (391), fail-closed', async () => {
+  it('internal.require_human_auth_kind() admits the human kinds only: browser, cli and mobile (S4), fail-closed', async () => {
     const [row] = await database.query<{ src: string }>(
       `select prosrc as src from pg_proc where oid = 'internal.require_human_auth_kind()'::regprocedure`);
     expect(row!.src).toMatch(/kind is null or kind not in \('browser', 'cli', 'mobile'\)/);
@@ -454,7 +454,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     });
   });
 
-  it('open_space_link_token and mark_space_link_stale: explicit kind allow-list browser, cli, mobile and agent (391), not gate callers', async () => {
+  it('open_space_link_token and mark_space_link_stale: explicit kind allow-list browser, cli, mobile and agent (S4), not gate callers', async () => {
     const found = new Set((await database.query<{ signature: string }>(GATE_CALLERS_SQL)).map((r) => r.signature));
     for (const signature of Object.keys(EXPLICIT_KIND_ALLOW_LIST)) {
       expect(found.has(signature)).toBe(false);

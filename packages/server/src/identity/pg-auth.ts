@@ -51,7 +51,7 @@ const DAY = 24 * HOUR;
  * The ONE session TTL table. `link` is a member's stored session for a space
  * link's target (251, K10), minted by `DbSpaceLinkStore`; it used to be read
  * from `identity/service.ts`'s copy of this table, the only thing production
- * still imported from that unwired module. `mobile` (391) is the TM8 Mobile
+ * still imported from that unwired module. `mobile` (*_mobile_auth_kind.sql) is the TM8 Mobile
  * app's sign-in: a human bearer session that lives as long as `cli`.
  */
 export const SESSION_TTL_MS = {
