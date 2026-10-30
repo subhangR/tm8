@@ -1,4 +1,4 @@
-import type { McpAuditListResult, McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpServerDefinition, McpSessionProvenance, McpTestResult, McpUnavailableTool } from '@tm8/contract';
+import type { McpAuditListResult, McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpLocalConfigsResult, McpServerDefinition, McpSessionProvenance, McpTestResult, McpUnavailableTool } from '@tm8/contract';
 /** UI-only values. Account metadata never contains provider credentials. */
 export interface McpSelection { serverId: string; credentialId?: string }
 export interface McpAccount {
@@ -83,6 +83,8 @@ export interface McpPort {
   importConfig(json: string, trustedCode: boolean): Promise<string>;
   /** The rows a person ticked in the §10.1 import preview, already parsed and stripped of secrets. */
   importMany(definitions: McpServerDefinition[]): Promise<void>;
+  /** The tm8 host's own `~/.claude.json` and `~/.codex/config.toml`, translated, secrets dropped. Space admins only. */
+  localConfigs?(): Promise<McpLocalConfigsResult>;
   attach(targetId: string, serverId: string): Promise<void>;
   detach(targetId: string, serverId: string): Promise<void>;
   test(selection: McpSelection): Promise<McpTestReport>;

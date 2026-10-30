@@ -249,6 +249,10 @@ const ROWS: Record<OperationName, Row> = {
       '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
       '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
       'human sessions only; a link caller is refused by the RPC itself']},
+  'mcp.servers.local': {cmd:null,sum:'Read the tm8 host’s own Claude Code and Codex MCP configs, translated for import with every secret dropped',authz:'space',input:'none',
+    tags:['mcp','connector','import','claude','codex'],
+    notes:['Connector-settings API: the one-click "From Claude Code / Codex" import. On your own machine use `tm8 mcp import --from claude|codex`, which reads the same files',
+      'space administrators in a human session only: the files belong to the account the tm8 server runs as']},
   'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
     tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
     notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
@@ -4520,7 +4524,7 @@ export const CATALOG_DIGEST =
   // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured on the merge of main 625165032 (+13 loops.*, #1413) into the S2 lane: 397 rows, meta.get once — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   // Re-measured on TM8 Mobile server batch 1, fourth build (S2 meta.get on main a991cf6ca, which carries Bridges B0a's 12 bridges.* rows): 410 rows — RECOMPUTED from JSON.stringify(OPERATIONS) on the batch head (merge of S2 47d56d78c into 9e6352403, server batch 1 fourth build) by the Merger.
-  'sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba';
+  'sha256:d210cec0eb3ad4b7a6c728d22017871f1376ce04417e55836600a92f2f9143b5';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -48,7 +48,11 @@ const MCP_OP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.p
     throw error;
   }
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new CliError('--input must contain an object',EXIT_USAGE);
-  const body:Record<string,unknown>={...parsed};
+  // The facade validates the BODY, and every `mcp.*` DTO except `request`
+  // names its path id there too (the UI sends both). Without this every
+  // `tm8 mcp server update|test|delete|create|import` and `mcp resolve`
+  // answered 400 `serverId`/`spaceId` Required.
+  const body:Record<string,unknown>={...parsed,...(spec.read||spec.op==='mcp.servers.request'?{}:params)};
   if(!spec.read && spec.op!=='mcp.resolve'&&spec.op!=='mcp.oauth.callback'){
     body.clientMutationId=resolveMutationId(cmd.options.value('mutation-id'));
     if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;

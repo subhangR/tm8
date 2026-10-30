@@ -145,6 +145,10 @@ export const OPERATIONS = [
   // thin pass-through of `public.mcp_session_provenance`, which owns the whole
   // rule — the debug view must not re-derive §6 from parts it can see.
   { name: 'mcp.sessions.provenance', method: 'GET', path: '/v2/mcp/sessions/:sessionId/provenance', kind: 'read', status: 'v1', humanOnly: true },
+  // The tm8 host's own Claude Code and Codex MCP configs, translated and
+  // stripped of secrets, for the connector settings' one-click import. Space
+  // admins only: the files are the host account's, not the caller's.
+  { name: 'mcp.servers.local', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers/local', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },

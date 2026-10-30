@@ -37,7 +37,11 @@ async function invoke(args:string[]){const {parsed,ctx,out}=context(args);const 
 it('routes catalog target permissions and versioned definition updates',async()=>{
  await invoke(['mcp','server','list','--target',ID]);expect(requests.at(-1)?.path).toBe(`/v2/spaces/${SPACE}/mcp/servers?targetId=${ID}`);
  await invoke(['mcp','server','update',ID,'--expected-version','2','--input','{"definition":{"name":"fixture"}}']);
- expect(requests.at(-1)).toMatchObject({method:'PATCH',path:`/v2/mcp/servers/${ID}`,body:{expectedVersion:2,definition:{name:'fixture'}}});
+ expect(requests.at(-1)).toMatchObject({method:'PATCH',path:`/v2/mcp/servers/${ID}`,body:{serverId:ID,expectedVersion:2,definition:{name:'fixture'}}});
+ // The facade validates the body, so the path id has to ride there too.
+ await invoke(['mcp','server','test',ID]);expect(requests.at(-1)?.body).toMatchObject({serverId:ID});
+ await invoke(['mcp','server','import','--input','{"definitions":[]}']);expect(requests.at(-1)?.body).toMatchObject({spaceId:SPACE});
+ await invoke(['mcp','resolve']);expect(requests.at(-1)?.body).toEqual({spaceId:SPACE});
 });
 it('requires credential file/stdin sources and redacts malformed secret JSON errors',async()=>{
  const before=requests.length;

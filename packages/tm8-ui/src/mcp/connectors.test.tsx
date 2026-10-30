@@ -216,3 +216,56 @@ describe('an administrator\'s custom connector', () => {
     expect(live.request).not.toHaveBeenCalled();
   });
 });
+
+describe('import from this machine — the tm8 host\'s Claude Code and Codex configs', () => {
+  const local = {
+    sources: [
+      { format: 'claude' as const, path: '~/.claude.json', found: true, problems: [{ sourceName: 'broken', sourcePointer: 'mcpServers.broken', reason: 'no url and no command' }],
+        candidates: [
+          { definition: { name: 'docs', transport: 'http' as const, url: 'https://mcp.example.com/mcp', envKeys: [], headerKeys: ['Authorization'], auth: { type: 'api_key' as const, headerName: 'Authorization', prefix: 'Bearer' }, approved: false },
+            sourceName: 'docs', sourcePointer: 'mcpServers.docs', format: 'claude' as const, requiresStdioTrust: false, notes: [], droppedSecret: true },
+          { definition: { name: 'calendar', transport: 'http' as const, url: 'https://calendar.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' as const }, approved: false },
+            sourceName: 'calendar', sourcePointer: 'mcpServers.calendar', format: 'claude' as const, requiresStdioTrust: false, notes: [], droppedSecret: false },
+        ] },
+      { format: 'codex' as const, path: '~/.codex/config.toml', found: false, candidates: [], problems: [] },
+    ],
+  };
+  function renderImport(admin: boolean, p: McpPort) {
+    render(<McpProvider port={p}>
+      <ConnectorsTable catalog={{ servers: [server()], defaults: [], canRegister: true, canAttach: true }} port={p}
+        admin={admin} busy={false} run={async action => { await action(); }} refresh={() => {}} loading={false}
+        tab="yours" setTab={() => {}} sheet={{ kind: 'import' }} setSheet={() => {}} />
+    </McpProvider>);
+  }
+
+  it('previews the host config, skips what the Space already has, and imports default-on', async () => {
+    const p = port({ localConfigs: vi.fn(async () => local) });
+    renderImport(true, p);
+    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }));
+    await screen.findByText('From ~/.claude.json on the tm8 host.');
+    // The calendar endpoint is already a connector in this Space: a red row, never ticked.
+    expect(screen.getByText(/already registered as Calendar/)).toBeTruthy();
+    expect(screen.getByText('no url and no command')).toBeTruthy();
+    expect(screen.getByText('Secrets not imported')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1 connector' }));
+    await waitFor(() => expect(p.importMany).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(p.importMany).mock.calls[0]?.[0]).toEqual([expect.objectContaining({ name: 'docs', defaultOn: true })]);
+  });
+
+  it('says so when the host has no config, and lets the import stay off by default', async () => {
+    const p = port({ localConfigs: vi.fn(async () => local) });
+    renderImport(true, p);
+    fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
+    await screen.findByText('No Codex config on the tm8 host at ~/.codex/config.toml.');
+    fireEvent.change(screen.getByLabelText(/MCP configuration/), { target: { value: '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n' } });
+    fireEvent.click(screen.getByLabelText('Turn on in every chat and session'));
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1 connector' }));
+    await waitFor(() => expect(p.importMany).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(p.importMany).mock.calls[0]?.[0]).toEqual([expect.objectContaining({ name: 'context7', defaultOn: false })]);
+  });
+
+  it('offers the host import to Space admins only', () => {
+    renderImport(false, port({ localConfigs: vi.fn(async () => local) }));
+    expect(screen.queryByRole('button', { name: 'Claude Code' })).toBeNull();
+  });
+});

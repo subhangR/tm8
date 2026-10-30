@@ -10,33 +10,59 @@
  * THE PREVIEW IS THE POINT. Secrets are dropped, not imported, so the row says
  * so and the person connects an account afterwards; an entry tm8 cannot read is
  * a red row naming the reason rather than a sentence that rejects the whole
- * file. The parsing itself is `previewMcpConfig` in `adapter.ts`, which is pure
+ * file. The parsing itself is `previewMcpText` in `adapter.ts`, which is pure
  * and holds no React.
  */
 import { useState } from 'react';
-import { previewMcpConfig, type McpImportRow } from './adapter';
+import type { McpLocalConfigsResult, McpServerDefinition } from '@tm8/contract';
+import { localImportRows, previewMcpText, type McpImportRow } from './adapter';
 import { McpUiError } from './errors';
 import './connectors.css';
 
-export function ImportMcpJson({ busy, onImport }: {
+const LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
+
+export function ImportMcpJson({ busy, onImport, local, existing = [] }: {
   busy: boolean;
-  onImport(rows: McpImportRow[], trustLocal: boolean): Promise<void>;
+  onImport(rows: McpImportRow[], trustLocal: boolean, defaultOn: boolean): Promise<void>;
+  /** `mcp.servers.local`, offered to Space admins: the tm8 host's own Claude Code and Codex configs. */
+  local?: () => Promise<McpLocalConfigsResult>;
+  /** The Space's connectors, so a host import marks what is already registered. */
+  existing?: readonly { id: string; definition: McpServerDefinition }[];
 }) {
   const [text, setText] = useState('');
   const [rows, setRows] = useState<McpImportRow[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [trustLocal, setTrustLocal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [defaultOn, setDefaultOn] = useState(true);
+  const [hostNote, setHostNote] = useState<string | null>(null);
+
+  function show(parsed: McpImportRow[]) {
+    setRows(parsed);
+    // Pre-tick what can actually be imported; a red row is never ticked.
+    setPicked(new Set(parsed.filter(row => row.definition).map(row => row.key)));
+  }
+
+  async function fromHost(format: 'claude' | 'codex') {
+    setText(''); setError(null); setHostNote(null); setRows(null);
+    try {
+      const source = (await local!()).sources.find(s => s.format === format);
+      if (!source?.found) { setHostNote(`No ${LABEL[format]} config on the tm8 host at ${source?.path ?? 'its default path'}.`); return; }
+      if (source.error) { setError(source.error); return; }
+      setHostNote(`From ${source.path} on the tm8 host.`);
+      show(localImportRows(source, existing));
+    } catch (failure) {
+      setError(failure instanceof McpUiError ? failure.message : 'The tm8 host\u2019s configs could not be read.');
+    }
+  }
 
   function preview(source: string) {
     setText(source);
     setError(null);
+    setHostNote(null);
     if (!source.trim()) { setRows(null); return; }
     try {
-      const parsed = previewMcpConfig(source);
-      setRows(parsed);
-      // Pre-tick what can actually be imported; a red row is never ticked.
-      setPicked(new Set(parsed.filter(row => row.definition).map(row => row.key)));
+      show(previewMcpText(source, existing));
     } catch (failure) {
       setRows(null);
       setError(failure instanceof McpUiError ? failure.message : 'This file could not be read.');
@@ -47,11 +73,17 @@ export function ImportMcpJson({ busy, onImport }: {
   const needsTrust = importable.some(row => row.transport === 'stdio');
   return <div className="mcp-import">
     <p>Connectors in the Claude app or a <code>.mcp.json</code> file aren&rsquo;t used by tm8 chats or sessions, whatever the harness. Import them here, then connect an account to each one.</p>
-    <label className="mcp-import__field">MCP configuration JSON
+    {local && <div className="mcp-actions" role="group" aria-label="Import from the tm8 host">
+      <span>From this machine:</span>
+      <button type="button" disabled={busy} onClick={() => void fromHost('claude')}>Claude Code</button>
+      <button type="button" disabled={busy} onClick={() => void fromHost('codex')}>Codex</button>
+    </div>}
+    {hostNote && <p role="status" className="mcp-note">{hostNote}</p>}
+    <label className="mcp-import__field">MCP configuration (JSON, or Codex TOML)
       <textarea value={text} onChange={e => preview(e.target.value)} placeholder={'{"mcpServers": {}}'} spellCheck={false} />
     </label>
     <label className="mcp-import__file"><span>Or choose a file</span>
-      <input type="file" accept=".json,application/json" onChange={async e => {
+      <input type="file" accept=".json,.toml,application/json" onChange={async e => {
         const file = e.target.files?.[0];
         // The file is read in the browser and never uploaded: `mcp.servers.import`
         // takes the parsed definitions, so the secrets in it never leave the tab.
@@ -85,10 +117,11 @@ export function ImportMcpJson({ busy, onImport }: {
         </tbody>
       </table>
       {needsTrust && <label><span><input type="checkbox" checked={trustLocal} onChange={e => setTrustLocal(e.target.checked)} /> I trust the local commands I ticked to run code on the tm8 host.</span></label>}
-      <p className="mcp-note">Imported connectors arrive unapproved and with no account. Keys and tokens in the file are left behind.</p>
+      <label><span><input type="checkbox" checked={defaultOn} onChange={e => setDefaultOn(e.target.checked)} /> Turn on in every chat and session</span></label>
+      <p className="mcp-note">Imported connectors arrive with no account. Keys and tokens in the file are left behind. Any chat or session can still turn one off.</p>
       <div className="mcp-actions">
         <button type="button" disabled={busy || importable.length === 0 || (needsTrust && !trustLocal)}
-          onClick={() => void onImport(importable, trustLocal)}>
+          onClick={() => void onImport(importable, trustLocal, defaultOn)}>
           Import {importable.length} connector{importable.length === 1 ? '' : 's'}
         </button>
       </div>
