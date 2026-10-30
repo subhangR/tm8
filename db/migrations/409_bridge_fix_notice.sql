@@ -1,12 +1,13 @@
 -- =============================================================================
--- 403 — Bridges F: the fix notice (D24, D70-D72). (Provisional number; the
+-- 409 — Bridges F: the fix notice (D24, D70-D72). (Provisional number; the
 -- bridges merger assigns the final one.)
+-- (Authored as 403; renumbered to 409 at merge by the bridges merger: 403/404 are main's launch-lane migrations. B0b's labels are 408.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- D24, D27, D29, D30, D31 and this file's D70-D72; build step F in §7.2,
 -- acceptance F in §7.3. Task 01a189d7-8ba7. Builds on 398 (B1b-2: the outbox,
 -- message_origins, bridge_signed) and 399 (B1b-3: the provenance recorder,
--- session_bridge_origins, bridge_stamp), and reads 391's labels (B0b).
+-- session_bridge_origins, bridge_stamp), and reads 408's labels (B0b).
 --
 -- WHAT THIS FILE DOES
 --   §1  the origins of a task are its 399 provenance: every origins[] item on
@@ -91,7 +92,7 @@ end
 $$;
 revoke all on function internal.bridge_reporting_chat(uuid) from public;
 
--- Is the task labelled with its space's `bug` label (391, D27)? An archived
+-- Is the task labelled with its space's `bug` label (408, D27)? An archived
 -- `bug` still counts on the tasks it is on.
 create or replace function internal.bridge_task_is_bug(p_task uuid)
 returns boolean language sql stable set search_path = public, internal, pg_temp as $$

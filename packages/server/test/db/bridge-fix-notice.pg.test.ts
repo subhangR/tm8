@@ -1,5 +1,5 @@
 /**
- * Bridges F (migration 403): the fix notice, at the SQL level. §7.3 F:
+ * Bridges F (migration 409): the fix notice, at the SQL level. §7.3 F:
  *
  * - A bug reported in Infra and again in Gaming is one task labelled `bug`,
  *   with two origin edges (399's authored_from -> bridge, one per group, D71)
