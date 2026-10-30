@@ -18,6 +18,7 @@
 /** The verbs this slice executes (v2 §8, B1b). */
 export const BRIDGE_VERBS = [
   'work', 'task', 'help', 'whoami', 'workers', 'stop', 'status', 'tasks', 'docs', 'link',
+  'who', 'bridge', 'mute', 'unmute', 'new',
 ] as const;
 export type BridgeVerb = (typeof BRIDGE_VERBS)[number];
 
@@ -26,8 +27,7 @@ export type BridgeVerb = (typeof BRIDGE_VERBS)[number];
  * sender gets "not available yet" rather than a did-you-mean to something else.
  */
 export const BRIDGE_PLANNED_VERBS = [
-  'tell', 'result', 'retry', 'start', 'remember', 'memories', 'forget', 'remind', 'loop', 'loops',
-  'bridge', 'mute', 'unmute', 'new', 'who', 'queue',
+  'tell', 'result', 'retry', 'start', 'remember', 'memories', 'forget', 'remind', 'loop', 'loops', 'queue',
 ] as const;
 export type BridgePlannedVerb = (typeof BRIDGE_PLANNED_VERBS)[number];
 
@@ -229,4 +229,16 @@ export function titleOf(text: string, max = 80): string {
 /** §4.6: the bodies that confirm, when they quote an open confirm notice of the same sender. */
 export function isConfirmText(text: string): boolean {
   return /^(yes|y|ok|okay)$/i.test(stripTail(text));
+}
+
+/** `/mute 1h`, `30m`, `2d`, `1h30m` → milliseconds; null when unreadable. At most a week. */
+export function parseDuration(text: string): number | null {
+  const t = stripTail(text).toLowerCase().replace(/\s+/g, '');
+  if (!/^(\d+(m|min|mins|h|hr|hrs|d|day|days))+$/.test(t)) return null;
+  let ms = 0;
+  for (const [, n, unit] of t.matchAll(/(\d+)(m|min|mins|h|hr|hrs|d|day|days)/g)) {
+    const u = unit!.startsWith('d') ? 86_400_000 : unit!.startsWith('h') ? 3_600_000 : 60_000;
+    ms += Number(n) * u;
+  }
+  return ms > 0 && ms <= 7 * 86_400_000 ? ms : null;
 }
