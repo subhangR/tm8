@@ -24,6 +24,8 @@
  */
 import { managedPortFromSeam } from '../../managed/port';
 import { createFixtureLoopsClient, fixtureLoopViewOf } from '../../loops/fixture';
+import { bridgesPortFromSeam, catalogServes } from '../../bridges/api';
+import { createFixtureBridgesClient, fixtureBridgeViewOf } from '../../bridges/fixture';
 import { loopFormSourcesOf } from '../../loops/sources';
 import {
   type ContainerProfile,
@@ -6308,5 +6310,11 @@ export function createFixtureSeam(): FixtureSeam {
     [...summaries.values()].flatMap((row) => fixtureLoopViewOf(row) ?? []),
   );
   seam.commands.loopForm = loopFormSourcesOf(seam);
+  // Seeded from the fixture bridge entities, so Settings → Bridges and the bridge panel agree with the entity rows.
+  seam.commands.bridges = bridgesPortFromSeam(
+    createFixtureBridgesClient([...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? [])),
+    seam,
+    catalogServes,
+  );
   return seam;
 }

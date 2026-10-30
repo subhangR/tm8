@@ -1290,6 +1290,11 @@ export type ContentBlockKind =
   | 'loop-header'
   | 'loop-definition'
   | 'loop-runs'
+  // The bridge page (BRIDGE-ENTITY-DESIGN §4.4): the header (status pill as
+  // Pause/Resume, the ⋯ menu) and the Conversation · People · Routing ·
+  // Memory · Loops · Health tabs over ONE `bridges.get` read. One block, not
+  // six, so the header and the Routing tab can never show two versions.
+  | 'bridge-page'
   // Forms (209, FORMS-DESIGN §10): the questionnaire — Fill / Build /
   // Responses over the forms seam (`src/forms`). Named for what it draws, not
   // for the kind, for the same §15.2 reason `canvas` is.
@@ -1650,7 +1655,7 @@ export interface EditFieldSpec {
 
 /** A kind's Settings home: the section that manages it, and the link's words. */
 export interface SettingsHome {
-  section: 'space-credentials' | 'space-links' | 'connectors';
+  section: 'space-credentials' | 'space-links' | 'connectors' | 'bridges';
   label: string;
 }
 

@@ -1115,6 +1115,12 @@ export interface Seam {
     /** The loop form's picker reads — a view over this seam's own nouns, like `managed`. */
     loopForm?: import("../loops/sources").LoopFormSources;
     /**
+     * `bridges.*` (BRIDGE-ENTITY-DESIGN §3.4, B0a) plus the seam reads the
+     * bridge surfaces need around it: Settings → Bridges and the bridge panel.
+     * Optional like `loops`: without it both say the surface is not wired.
+     */
+    bridges?: import("../bridges/api").BridgesPort;
+    /**
      * The managed panel's port (task 01a0e24d): credential, space link and
      * server verbs by OPERATION name, gated by `actions.list`. Optional like
      * `skills`: a seam without it renders every verb refused-with-reason.

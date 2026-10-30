@@ -2,6 +2,7 @@ import { createMcpPort } from '../../mcp/adapter';
 import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
 import { createToolPort } from '../../tools/adapter';
 import { createLoopsClient } from '../../loops/api';
+import { bridgesPortFromSeam, catalogServes, createBridgesClient } from '../../bridges/api';
 import { loopFormSourcesOf } from '../../loops/sources';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
@@ -699,6 +700,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   seam.commands.managed = managedPortFromSeam(seam);
   seam.commands.tools = createToolPort(http, seam);
   seam.commands.loops = createLoopsClient(http);
+  seam.commands.bridges = bridgesPortFromSeam(createBridgesClient(http), seam, catalogServes);
   seam.commands.loopForm = loopFormSourcesOf(seam);
   return seam;
 }
