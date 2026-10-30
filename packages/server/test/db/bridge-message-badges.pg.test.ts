@@ -234,36 +234,50 @@ describe('bridges.log.read carries trust (409, for the bridge panel)', () => {
 });
 
 describe('the badge read\'s pre-filter (409, D75)', () => {
-  /** Function calls made inside one badge read, counted by Postgres itself. */
-  async function callsFor(ids: string[]) {
+  /**
+   * Which ids reach the per-id reads. Inside a savepoint that is always rolled
+   * back, 398's bridge_origin_of and bridge_message_delivery are swapped for
+   * versions that raise, naming the id; the badge read then either returns
+   * (no id got past the pre-filter) or raises with the first id that did.
+   * (Postgres's own function-call counters miss calls plpgsql makes through
+   * its cached expression state, so they cannot answer this.)
+   */
+  async function perIdReads(ids: string[]): Promise<string | null> {
     return scratch.transaction(async c => {
-      await c.query(`set local track_functions = 'all'`);
-      await c.query('select internal.bridge_message_badges($1::uuid[])', [ids]);
-      const { rows } = await c.query<{ fn: string; calls: string }>(
-        `select f::text as fn, coalesce(pg_stat_get_xact_function_calls(f::regprocedure::oid), 0) as calls
-           from unnest(array['internal.bridge_message_badges(uuid[])', 'internal.entity_readable(uuid)',
-                             'internal.bridge_origin_of(uuid)', 'internal.bridge_message_delivery(uuid[])']) f`);
-      return Object.fromEntries(rows.map(r => [r.fn.replace(/^internal\.|\(.*$/g, ''), Number(r.calls)]));
+      await c.query('savepoint probe');
+      try {
+        // This connection carries no identity claims; every id reads as readable here.
+        await c.query(`create or replace function internal.entity_readable(target uuid) returns boolean
+          language sql stable as 'select true'`);
+        await c.query(`create or replace function internal.bridge_origin_of(p_message uuid) returns public.message_origins
+          language plpgsql as $$ begin raise exception 'per-id read: %', p_message using errcode = 'P0001'; end $$`);
+        await c.query(`create or replace function internal.bridge_message_delivery(p_ids uuid[]) returns jsonb
+          language plpgsql as $$ begin raise exception 'per-id read: %', p_ids[1] using errcode = 'P0001'; end $$`);
+        await c.query('select internal.bridge_message_badges($1::uuid[])', [ids]);
+        return null;
+      } catch (e) {
+        const m = /per-id read: (\S+)/.exec(String((e as Error).message));
+        if (!m) throw e;
+        return m[1]!;
+      } finally {
+        await c.query('rollback to savepoint probe');
+      }
     });
   }
 
   it('a page no bridge touched never reaches the per-id reads', async () => {
     const plain = [await postAs(ownerMember, chat, 'plain one'), await postAs(ownerMember, chat, 'plain two'),
       await postAs(ownerMember, chat, 'plain three')];
-    expect(await callsFor(plain)).toEqual({
-      bridge_message_badges: 1, entity_readable: 0, bridge_origin_of: 0, bridge_message_delivery: 0 });
+    expect(await perIdReads(plain)).toBeNull();
   });
 
-  it('a mixed page reads only its bridged ids, the twin of a routed copy included', async () => {
-    const r = await inbound(frame({ body: 'mixed page' }));
+  it('a bridged id does reach them, the routed copy (a batch twin) included; the badge is unchanged', async () => {
+    const r = await inbound(frame({ body: '@tm8 mixed page' }));
+    expect(r.copyId).toBeTruthy();
     const plain = await postAs(ownerMember, chat, 'plain beside a bridged one');
-    // The plain id costs nothing: the mixed page makes exactly the calls the
-    // bridged id makes alone, and that is more than none.
-    const alone = await callsFor([r.copyId!]);
-    expect(await callsFor([plain, r.copyId!])).toEqual(alone);
-    expect(alone.entity_readable).toBeGreaterThanOrEqual(1);
-    expect(alone.bridge_origin_of).toBeGreaterThanOrEqual(1);
-    // The badge itself is unchanged by the filter.
+    expect(await perIdReads([r.copyId!])).toBe(r.copyId);
+    expect(await perIdReads([plain, r.messageId])).toBe(r.messageId);
+    // The probe rolled back: the real reads are in place again.
     const got = await badges([plain, r.copyId!]);
     expect(got.has(plain)).toBe(false);
     expect(got.get(r.copyId!)).toEqual(inboundView({ participant: 'Rahul', trust: 'guest' }));
