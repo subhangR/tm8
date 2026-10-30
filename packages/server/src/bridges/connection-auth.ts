@@ -17,6 +17,7 @@
 import {
   BridgeConnectionAuthFrameSchema, type AuthFrame, type BridgeConnectionAuthFlow, type BridgeConnectionAuthFrame,
 } from '@tm8/contract';
+import type { DbClaims } from '../db/types.js';
 import { fanOutToIdentity, type IdentityAddress, type SubscriptionRegistry } from '../events/subscriptions.js';
 
 /** The runtime hub as begin needs it (B1b-2's BridgeRuntimeHub). */
@@ -24,9 +25,11 @@ export interface BridgeRuntimeLink {
   /**
    * Send `connect` (stateKey and allowlist filled by the hub) to the live
    * runtime for the provider; null when no runtime of that provider is
-   * connected. The hub records `bridge_connections.runtime_id` itself.
+   * connected. The hub records `bridge_connections.runtime_id` itself, under
+   * `claims`: the begin caller's OWN claims, never the bridges worker's, so
+   * 398's bridge_runtime_connect admits only the connection's human owner.
    */
-  connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }): Promise<{ runtimeId: string } | null>;
+  connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }, claims: DbClaims): Promise<{ runtimeId: string } | null>;
 }
 
 /** How long a begin waits for its runtime before the pending entry lapses on its own. */

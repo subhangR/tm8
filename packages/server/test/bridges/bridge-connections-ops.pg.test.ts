@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BridgeConnectionViewSchema, type AuthFrame } from '@tm8/contract';
 import { createDb } from '../../src/db/index.js';
-import type { Db } from '../../src/db/types.js';
+import type { Db, DbClaims } from '../../src/db/types.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { createFacadeServer, type FacadeServer } from '../../src/http/server.js';
 import { createSessionIdentityResolver, createSocketIdentityResolver } from '../../src/http/identity-resolver.js';
@@ -39,9 +39,11 @@ const owner = async () => ({ identityId, accountId: account, username: identityI
 const subscriptions = new SubscriptionRegistry();
 const relay = new ConnectionAuthRelay(subscriptions);
 const connects: string[] = [];
+const connectClaims: DbClaims[] = [];
 const runtime: BridgeRuntimeLink = {
-  async connect({ connectionId }) {
+  async connect({ connectionId }, claims) {
     connects.push(connectionId);
+    connectClaims.push(claims);
     // The runtime answers with its auth frame as soon as it is asked.
     const frame: AuthFrame = { connectionId, pairingCode: PAIRING, expiresAt: new Date(Date.now() + 60_000).toISOString() };
     setTimeout(() => relay.relay(frame), 20);
@@ -140,6 +142,9 @@ describe('bridges.connections.begin (§2.5, §7.3 item 8)', () => {
     expect(JSON.stringify(result)).not.toContain(PAIRING);
     connectionId = result.connection.id;
     expect(connects).toEqual([connectionId]);
+    // The hub is handed the begin caller's own claims, never the bridges worker's.
+    expect(connectClaims[0]).toMatchObject({ identityId, authKind: 'cli' });
+    expect(connectClaims[0]).not.toHaveProperty('backgroundJob');
 
     await until(() => mine.frames.some(f => f.includes(PAIRING)));
     expect(JSON.parse(mine.frames.find(f => f.includes(PAIRING))!)).toMatchObject(

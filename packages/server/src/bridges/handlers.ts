@@ -317,9 +317,10 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       // Armed before the connect, so a QR the runtime sends at once is not dropped.
       connectionAuth.expect(connection.id, { identityId: claims.identityId, autoOwner: ctx.identity.kind === 'auto-owner' });
       try {
+        // The caller's own claims: the hub binds runtime_id as the number's owner, never as the worker.
         const linked = await runtime.connect({
           provider: 'whatsapp', connectionId: connection.id, ...(input.authFlow ? { authFlow: input.authFlow } : {}),
-        });
+        }, claims);
         if (!linked) {
           connectionAuth.settle(connection.id);
           return { connection, runtime: 'offline' };
