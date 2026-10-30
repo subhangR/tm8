@@ -39,12 +39,14 @@ it('round trips generic entity create/read/update and SQL content',async()=>{
  const rows=await scratch.query<{content:{definition:{name:string}}}>('select internal.entity_content($1) as content',[entity.id]);
  expect(rows[0]!.content.definition.name).toBe('generic');
 });
-it('requires admin for create, update and generic delete; ordinary members can read',async()=>{
+it('any member creates, updates and deletes a connector, and it is approved on arrival (405)',async()=>{
  const c=await create('policy');const id=c.entity.id;
- await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify(definition('denied')),null,randomUUID()]))).rejects.toBeTruthy();
- await expect(as(memberIdentity,q=>q.rpc('update_mcp_server_entity',[id,c.entity.version,JSON.stringify(definition('policy')),null,randomUUID()]))).rejects.toBeTruthy();
- await expect(as(memberIdentity,q=>q.rpc('delete_entity',[id,null,randomUUID()]))).rejects.toBeTruthy();
- expect((await as(memberIdentity,q=>loadMcpServer(q,id))).allowed.manage).toBe(false);
+ const made=await as(memberIdentity,q=>q.rpc<{entity:{id:string;version:number}}>('create_mcp_server_entity',[spaceId,JSON.stringify({...definition('memberadded'),approved:false}),null,randomUUID()]));
+ expect((await as(memberIdentity,q=>loadMcpServer(q,made.entity.id))).definition.approved).toBe(true);
+ await as(memberIdentity,q=>q.rpc('update_mcp_server_entity',[id,c.entity.version,JSON.stringify({...definition('policy'),enabled:false}),null,randomUUID()]));
+ expect((await as(memberIdentity,q=>loadMcpServer(q,id))).allowed.manage).toBe(true);
+ await as(memberIdentity,q=>q.rpc('delete_entity',[made.entity.id,null,randomUUID()]));
+ await as(memberIdentity,q=>q.rpc('delete_entity',[id,null,randomUUID()]));
 });
 it('SQL rejects secret maps, reserved/colliding names, unknown auth and transport mismatch',async()=>{
  for(const patch of [{name:null},{auth:{type:'api_key',headerName:null},headerKeys:['Authorization']},{env:{KEY:'fixture-secret'}},{headers:{Authorization:'fixture-secret'}},{name:'tm8'},{auth:{type:'none',secret:'fixture-secret'}},{command:'bash'},{headerKeys:['X-Key']},{url:'https://u:p@example.test/mcp'}]) {
@@ -63,7 +65,9 @@ it('SQL admits a preregistered client secret only as a TM8_MCP_CLIENT_SECRET_ va
  ]) await expect(create('secret-env-reject-'+randomUUID().slice(0,8),oauth(auth))).rejects.toBeTruthy();
 });
 it('equips defaults require approval; an account-less space resolves nothing; [] disables',async()=>{
- const c=await create('default');const denied=await create('unapproved',{approved:false});
+ const c=await create('default');const denied=await create('unapproved');
+ // 405 approves every connector on arrival; switching approval off is now the only way to hold one back.
+ await as(ownerIdentity,q=>q.rpc('update_mcp_server_entity',[denied.entity.id,denied.entity.version,JSON.stringify({...definition('unapproved'),approved:false}),null,randomUUID()]));
  const task=await as(ownerIdentity,q=>q.rpc<{entity:{id:string}}>('create_task',[spaceId,'MCP task']));
  await as(memberIdentity,q=>q.rpc('write_edge',[task.entity.id,c.entity.id,'equips','{}',null,randomUUID()]));
  await expect(as(memberIdentity,q=>q.rpc('write_edge',[task.entity.id,denied.entity.id,'equips','{}',null,randomUUID()]))).rejects.toBeTruthy();
