@@ -1312,6 +1312,30 @@ $$;
 revoke all on function public.set_bridge_listen(uuid, text) from public;
 grant execute on function public.set_bridge_listen(uuid, text) to tm8_app;
 
+-- bridges.log.read: where the log is (the channel for a channel target, else
+-- the bridge, §2.2), the calling session in this space (null for a member
+-- without one), and that session's cursor. Definer so the app role need not
+-- call internal.caller_work_session; readability is checked first.
+create or replace function public.bridge_log_context(p_bridge_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare b public.bridges; v_session uuid;
+begin
+  if not internal.entity_readable(p_bridge_id) then raise exception 'bridge not found' using errcode = 'P0002'; end if;
+  select br.* into b from public.bridges br
+    join public.entities e on e.id = br.entity_id and e.deleted_at is null
+   where br.entity_id = p_bridge_id;
+  if b.entity_id is null then raise exception 'bridge not found' using errcode = 'P0002'; end if;
+  v_session := internal.caller_work_session(b.space_id);
+  return jsonb_build_object(
+    'anchorId', case when b.target_kind = 'channel' then b.target_id else b.entity_id end,
+    'sessionId', v_session,
+    'cursor', (select c.last_message_id from public.bridge_read_cursors c
+                where c.bridge_id = p_bridge_id and c.session_id = v_session));
+end
+$$;
+revoke all on function public.bridge_log_context(uuid) from public;
+grant execute on function public.bridge_log_context(uuid) to tm8_app;
+
 -- bridges.log.read --unread: advance the caller session's cursor to the last
 -- message it was shown. Only ever forward, and only to a message on the
 -- bridge's log anchor.

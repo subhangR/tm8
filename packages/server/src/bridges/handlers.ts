@@ -100,13 +100,9 @@ interface LogRow {
 async function readLog(q: Querier, bridgeId: string, opts: {
   since: string | null; thread: string | null; limit: number; unread: boolean;
 }): Promise<BridgeLogResult> {
-  const [bridge] = await q.query<{ anchor: string; caller: string | null; cursor: string | null }>(
-    `select case when b.target_kind = 'channel' then b.target_id else b.entity_id end as anchor,
-            internal.caller_work_session(b.space_id) as caller,
-            (select c.last_message_id from public.bridge_read_cursors c
-              where c.bridge_id = b.entity_id and c.session_id = internal.caller_work_session(b.space_id)) as cursor
-       from public.bridges b join public.entities e on e.id = b.entity_id
-      where b.entity_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)`, [bridgeId]);
+  const [row] = await q.query<{ ctx: { anchorId: string; sessionId: string | null; cursor: string | null } }>(
+    'select public.bridge_log_context($1) as ctx', [bridgeId]);
+  const bridge = row ? { anchor: row.ctx.anchorId, caller: row.ctx.sessionId, cursor: row.ctx.cursor } : null;
   if (!bridge) throw new CollabError('not_found', 'Bridge is unavailable');
   if (opts.unread && !bridge.caller) {
     throw new CollabError('forbidden', '--unread reads a session\'s own cursor: run it from inside a session in this space',
