@@ -125,6 +125,45 @@ describe('PTY WebSocket', () => {
     expect(raw).toContain('no live PTY for session');
   });
 
+  it('an attach that arrives while the session is still booting waits for its PTY and streams it (392)', async () => {
+    // `execution.spawn` answers at admission, before the PTY exists; the
+    // launching page attaches at once. It must get the terminal, not a 404.
+    const live = new PtyHostService({ logger: quiet });
+    host = live;
+    const server = createPtyWsServer({
+      pty: live,
+      awaitTerminal: async (sessionId) => {
+        await new Promise((r) => setTimeout(r, 50));
+        live.spawn({ sessionId, command: 'echo booted-output; sleep 2', cwd: CWD, env: {} });
+        return { live: true, failure: null };
+      },
+    });
+    const sock = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=s-booting&offset=0'), sock, Buffer.alloc(0));
+    await new Promise((r) => setTimeout(r, 700));
+
+    const frames = decodeServerFrames(sock.written());
+    expect(texts(frames).map((f) => f.type)).toContain('attached');
+    expect(Buffer.concat(bins(frames).map((b) => b.payload)).toString('utf8')).toContain('booted-output');
+  });
+
+  it('a boot that fails during the wait is refused at once with its reason, BEFORE the 101 (392)', async () => {
+    host = new PtyHostService({ logger: quiet });
+    const server = createPtyWsServer({
+      pty: host,
+      awaitTerminal: async () => ({ live: false, failure: 'agent process exited during the boot settlement window' }),
+    });
+    const sock = new FakeSocket();
+    const started = Date.now();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=s-failed&offset=0'), sock, Buffer.alloc(0));
+
+    const raw = sock.written().toString('utf8');
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(raw).not.toContain('101 Switching Protocols');
+    expect(raw).toContain('409 Conflict');
+    expect(raw).toContain('the session failed to start: agent process exited during the boot settlement window');
+  });
+
   it('refuses the attach when the authorizer says no, BEFORE the 101', async () => {
     host = new PtyHostService({ logger: quiet });
     const server = createPtyWsServer({

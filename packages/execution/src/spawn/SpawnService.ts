@@ -427,6 +427,12 @@ function throwIfStopped(stopped: SpawnError | null): void {
 /** The ordinary case: whatever the posture asked for, the node can give it. */
 const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
 
+/** What a wait for a booting session's terminal found: live, or the boot's failure (null: none, or the bound passed). */
+export interface TerminalWait {
+  live: boolean;
+  failure: string | null;
+}
+
 /** How long `prompt` waits for the PTY of a session still booting here before refusing. */
 const PROMPT_BOOT_WAIT_MS = 30_000;
 
@@ -765,10 +771,11 @@ export class SpawnService {
   private readonly bootingSessions = new Set<string>();
 
   /**
-   * Prompts waiting for a booting session's terminal (`awaitBootedTerminal`),
-   * woken when the boot spawns its PTY or ends without one.
+   * Callers waiting for a booting session's terminal (`awaitBootedTerminal`):
+   * prompts and PTY attaches. Woken when the boot spawns its PTY, the moment it
+   * fails (with the reason), or when it ends.
    */
-  private readonly terminalWaiters = new Map<string, Array<() => void>>();
+  private readonly terminalWaiters = new Map<string, Array<(failure: string | null) => void>>();
 
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
@@ -2497,6 +2504,9 @@ export class SpawnService {
         },
       };
     } catch (error) {
+      // Whoever waits on this terminal hears the failure now, not after the
+      // cleanup below, and is never told a PTY about to be killed is live.
+      this.wakeTerminalWaiters(sessionId, error instanceof Error ? error.message : String(error));
       // The row exists and the graph believes a session is spawning. Leaving it
       // there would burn a slot against the concurrency cap forever, so mark it
       // failed — the same write moves its boot phase to `failed` and says why —
@@ -3811,7 +3821,7 @@ export class SpawnService {
     if (!message || message.length === 0) {
       throw new SpawnError('prompt message must not be empty', 'invalid_input');
     }
-    if (!this.pty.hasSession(sessionId) && !(await this.awaitBootedTerminal(sessionId))) {
+    if (!this.pty.hasSession(sessionId) && !(await this.awaitBootedTerminal(sessionId)).live) {
       throw new SpawnError(
         `work session ${sessionId} has no live terminal to prompt`,
         'conflict',
@@ -3840,27 +3850,39 @@ export class SpawnService {
 
   /**
    * Wait, bounded, for the PTY of a session whose boot this process is running
-   * (392: `execution.spawn` answers before it exists). True once the terminal
-   * is live; false at once for a session that is not booting here, and false
-   * when its boot ends without one or the bound passes.
+   * (392: `execution.spawn` answers before it exists). Live once the terminal
+   * is; not live at once for a session that is not booting here, and not live
+   * when its boot fails (with the reason), ends without one, or the bound passes.
    */
-  private async awaitBootedTerminal(sessionId: string): Promise<boolean> {
-    if (!this.bootingSessions.has(sessionId)) return this.pty.hasSession(sessionId);
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, PROMPT_BOOT_WAIT_MS);
+  private async awaitBootedTerminal(sessionId: string): Promise<TerminalWait> {
+    if (!this.bootingSessions.has(sessionId)) return { live: this.pty.hasSession(sessionId), failure: null };
+    const failure = await new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), PROMPT_BOOT_WAIT_MS);
       timer.unref?.();
       const waiters = this.terminalWaiters.get(sessionId) ?? [];
-      waiters.push(() => { clearTimeout(timer); resolve(); });
+      waiters.push((reason) => { clearTimeout(timer); resolve(reason); });
       this.terminalWaiters.set(sessionId, waiters);
     });
-    return this.pty.hasSession(sessionId);
+    return failure === null ? { live: this.pty.hasSession(sessionId), failure: null } : { live: false, failure };
   }
 
-  /** Wake every prompt waiting on this session's terminal; see `awaitBootedTerminal`. */
-  private wakeTerminalWaiters(sessionId: string): void {
+  /**
+   * Whether this session has a live terminal, waiting (bounded, as a prompt
+   * does) when its boot is still running here: `execution.spawn` answers at
+   * admission (392), so a client may attach before the PTY exists. A boot that
+   * fails meanwhile ends the wait at once with its reason; a session this
+   * process is not booting answers at once from the PTY map.
+   */
+  async awaitTerminal(sessionId: string): Promise<TerminalWait> {
+    if (this.pty.hasSession(sessionId)) return { live: true, failure: null };
+    return this.awaitBootedTerminal(sessionId);
+  }
+
+  /** Wake every caller waiting on this session's terminal; see `awaitBootedTerminal`. */
+  private wakeTerminalWaiters(sessionId: string, failure: string | null = null): void {
     const waiters = this.terminalWaiters.get(sessionId);
     this.terminalWaiters.delete(sessionId);
-    for (const wake of waiters ?? []) wake();
+    for (const wake of waiters ?? []) wake(failure);
   }
 
   /**

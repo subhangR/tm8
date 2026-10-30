@@ -17,6 +17,7 @@ export {
   type SessionLiveCause,
   type SessionLiveListener,
   type SpawnServiceOptions,
+  type TerminalWait,
 } from './SpawnService.js';
 export {
   DEFAULT_AGENT_TOOL,

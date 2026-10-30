@@ -152,6 +152,23 @@ describe('SpawnService.admit — answer at admission, boot behind it', () => {
     expect(graph.bootPhaseReports.map((r) => r.bootPhase)).toEqual(['lane']);
   });
 
+  it('a terminal waiter hears a failing boot at once, with its reason (392)', async () => {
+    // A PTY attach that arrived at admission waits on this; the boot failing
+    // must end the wait now, not at the 30 s bound.
+    let open!: () => void;
+    graph.bootPhaseGates.set('lane', new Promise<void>((resolve) => { open = resolve; }));
+    graph.refuseBootPhase = 'lane';
+
+    const { admission, boot } = await service.admit(AUTH, REQUEST);
+    const waited = service.awaitTerminal(admission.sessionId);
+    const started = Date.now();
+    open();
+    await boot;
+
+    await expect(waited).resolves.toEqual({ live: false, failure: expect.stringContaining('stopped while it was starting') });
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it('a stop that reaches failSession is recognised as already ended: one write, no retries', async () => {
     service = new SpawnService({
       graph,

@@ -844,6 +844,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const ptyWs = execution
     ? createPtyWsServer({
         pty: execution.pty,
+        awaitTerminal: (sessionId) => execution.spawnService.awaitTerminal(sessionId),
         admission: wsAdmission,
         ...(ptyAuthorize ? { authorize: ptyAuthorize } : {}),
         ...(db ? { credentialRecheck: createPtyCredentialRecheck(db) } : {}),
