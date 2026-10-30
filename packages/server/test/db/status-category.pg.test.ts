@@ -1,4 +1,4 @@
-import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape, addLabelProjectionShape } from './tool-projection-shape.js';
 /**
  * 147 against a real Postgres: the backfill, the two triggers, and the EVENT
  * COST of each — which is the part that is easy to get wrong and invisible in
@@ -386,6 +386,7 @@ describe.sequential('147 — entities.status_category', () => {
     await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
     await addBridgeProjectionShape(database);
+    await addLabelProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 302 adds session outcome fields selected by current entity readers.
     // This task-category fixture needs their shape, not the later backfill.

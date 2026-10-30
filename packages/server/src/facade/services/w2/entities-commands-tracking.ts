@@ -43,6 +43,7 @@ import {
   type PullInput,
   type ReactionInput,
   type TrackingRefreshInput,
+  type EntityLabelsPatch,
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
@@ -1061,12 +1062,22 @@ function normalizeReason(error: unknown): never {
   throw error;
 }
 
+/** 397: a label has its own doors, and is archived rather than deleted. */
+const LABEL_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
+  'entities.create': 'labels are created with `tm8 label create` (labels.create)',
+  'entities.patch': 'a label is edited with labels.update; to label an entity, patch it with `labels: {add, remove}`',
+  'entities.delete': 'a label is archived, not deleted: use `tm8 label archive` (labels.archive)',
+};
+
 function assertGenericLifecycle(kind: string, operation: string): void {
   if (kind === 'style' && STYLE_LIFECYCLE_REMEDY[operation]) {
     throw new CollabError('invariant_violation', STYLE_LIFECYCLE_REMEDY[operation]);
   }
   if (kind === 'bridge' && BRIDGE_LIFECYCLE_REMEDY[operation]) {
     throw new CollabError('forbidden', BRIDGE_LIFECYCLE_REMEDY[operation]);
+  }
+  if (kind === 'label' && LABEL_LIFECYCLE_REMEDY[operation]) {
+    throw new CollabError('invariant_violation', LABEL_LIFECYCLE_REMEDY[operation]);
   }
   if (RESTRICTED_LIFECYCLE_KINDS.has(kind)) {
     throw new CollabError('forbidden', `${operation} is owned by the ${kind} lifecycle`);
@@ -1142,6 +1153,23 @@ function assertPatchContentMembers(
     throw new CollabError('invalid_input',
       `${kind} patch changes nothing: it carries no title and no content member (accepted: ${accepted.join(', ')})`);
   }
+}
+
+/**
+ * 397: add and remove label ids under `expectedVersion` (NULL only for an
+ * entity born in this transaction). The SQL door checks every id.
+ */
+function setEntityLabels(
+  q: Querier, id: string, expectedVersion: number | null, actorId: string | null,
+  labels: EntityLabelsPatch, clientMutationId: string | null,
+): Promise<RpcCommandResult> {
+  return q.rpc<RpcCommandResult>('set_entity_labels', [id, expectedVersion, actorId,
+    labels.add ?? [], labels.remove ?? [], clientMutationId]);
+}
+
+/** The labels half of a combined create/patch gets its own ledger key. */
+function labelsMutationId(clientMutationId: string | null | undefined): string | null {
+  return clientMutationId ? `${clientMutationId}:labels` : null;
 }
 
 async function kindFor(q: Querier, id: string): Promise<string> {
@@ -1610,6 +1638,11 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
+      // 397: labels are part of the birth — no new version, no extra activity.
+      if (input.labels && input.labels.length > 0 && raw.entity?.id) {
+        await setEntityLabels(q, raw.entity.id, null, envelope.actorId ?? null,
+          { add: input.labels }, labelsMutationId(envelope.clientMutationId));
+      }
       await recordAuthoredFrom(q, ctx, raw.entity?.id);
       // An authored header rides the create's transaction: the entity and its
       // header land together or not at all (headers design §3.1). On a kind
@@ -1632,6 +1665,17 @@ export class W2EntitiesCommandsTrackingService {
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
         const kind = await kindFor(q, id);
+        // 397: a labels-only patch is not a body edit, so no kind's content
+        // arm (and no lifecycle refusal) applies: any live entity the caller
+        // can read takes labels. `set_entity_labels` owns every check.
+        const touchesBody = input.title !== undefined || Object.keys(content).length > 0;
+        if (input.labels && !touchesBody) {
+          const before = wantsReceipt(ctx) ? await receiptSnapshot(q, id) : undefined;
+          const raw = await setEntityLabels(q, id, input.expectedVersion, envelope.actorId ?? null,
+            input.labels, envelope.clientMutationId ?? null);
+          const receipt = before ? await buildReceipt(q, 'entity.update', raw, { before }) : undefined;
+          return receipt ?? commandResult(q, raw, owner.identityId);
+        }
         // `work_session` stays in RESTRICTED_LIFECYCLE_KINDS — create, move,
         // delete and restore are owned by the execution block and must keep
         // refusing. A rename is not lifecycle: it renames the LABEL a person
@@ -1880,6 +1924,13 @@ export class W2EntitiesCommandsTrackingService {
             raw = await q.rpc('update_custom_entity', [id, input.expectedVersion, input.title ?? null,
               envelope.actorId ?? null, content.fields === undefined ? null : JSON.stringify(content.fields),
               envelope.clientMutationId ?? null]);
+        }
+        // 397: labels beside a body edit apply after it, in the same
+        // transaction, with the version the CALLER sent: the door folds them
+        // into the version the body edit just made (one patch, one version).
+        if (input.labels) {
+          raw = await setEntityLabels(q, id, input.expectedVersion, envelope.actorId ?? null,
+            input.labels, labelsMutationId(envelope.clientMutationId));
         }
         const receipt = before ? await buildReceipt(q, 'entity.update', raw, { before }) : undefined;
         return receipt ?? commandResult(q, raw, owner.identityId);

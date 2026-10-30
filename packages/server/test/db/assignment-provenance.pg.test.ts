@@ -1,4 +1,4 @@
-import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape, addLabelProjectionShape } from './tool-projection-shape.js';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -433,6 +433,7 @@ describe.sequential('task assignment provenance (129)', () => {
     await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
     await addBridgeProjectionShape(database);
+    await addLabelProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
     // shape as the shims above — only the read columns, none of 302's rules.

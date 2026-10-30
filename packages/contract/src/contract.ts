@@ -20,6 +20,7 @@
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { McpSelection, McpServerEntity } from './mcp.js';
 import type { ToolEntity, ToolRun } from './tools.js';
+import type { EntityLabelsPatch, LabelEntity } from './labels.js';
 import type { LoopAction, LoopConcurrency } from './loops.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
@@ -108,7 +109,11 @@ export type CoreEntityKind =
   // Bridges (migration 395, BRIDGE-ENTITY-DESIGN §3.1): one provider
   // conversation bound to one chat, session or channel. Born only from
   // `bridges.create`; ended only by `bridges.remove`. See ./bridges.ts.
-  | 'bridge';
+  | 'bridge'
+  // Labels (migration 397, BRIDGE-ENTITY-DESIGN §3.8): a flat, space-level
+  // name/colour/description. Born only from `labels.create`; entities carry
+  // label ids on the envelope (`EntitySummary.labels`). See ./labels.ts.
+  | 'label';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -308,6 +313,15 @@ export interface EntitySummary {
    * that had to wait for a detail read would be wrong on every collapsed tile.
    */
   category?: StatusCategory;
+  /**
+   * The label ids this entity carries (397, `entities.labels`), in the order
+   * they were added. IDS, not names: a label is renamed in one place. Resolve
+   * them with `labels.list` (an archived label is still a valid id here).
+   *
+   * OPTIONAL and spread-when-non-empty: absent means no labels, which is also
+   * what a node that predates the column reports.
+   */
+  labels?: EntityId[];
 }
 
 /** Provenance for one task's current `assigned_to` edge. */
@@ -320,6 +334,7 @@ export interface TaskAssignment {
 export type CoreEntityState =
   | McpServerEntity
   | ToolEntity
+  | LabelEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
@@ -1071,6 +1086,7 @@ export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note
 export type CoreEntityContent =
   | McpServerEntity
   | ToolEntity
+  | LabelEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -1485,6 +1501,13 @@ export interface CollectionQuery {
      * word in it (only separators) falls back to the literal title match.
      */
     words?: string;
+    /**
+     * Additive (397, labels): entities carrying ALL of these label ids
+     * (`entities.labels @> …`, GIN-indexed). Kind-neutral.
+     */
+    labels?: EntityId[];
+    /** Additive (397): entities carrying ANY of these label ids (`&&`). */
+    labelsAny?: EntityId[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
@@ -3794,6 +3817,9 @@ export type CreatableEntityKind = Exclude<
   // `bridge` is born ONLY from `bridges.create` (395): a human space admin who
   // owns the connection, with the target checked and the edge written.
   | 'bridge'
+  // `label` is born ONLY from `labels.create` (397), which checks the name is
+  // free in the space; it is archived, never deleted.
+  | 'label'
 >;
 
 export interface CreateEntityInput extends CommandContext {
@@ -3812,6 +3838,11 @@ export interface CreateEntityInput extends CommandContext {
    * (team_member, doc, artifact, drawing, file, task, collection, story, tool, loop) accept it.
    */
   header?: HeaderTextInput;
+  /**
+   * Label ids to put on the new entity, written in the same transaction
+   * (397). Each must be a live, unarchived label in the same space.
+   */
+  labels?: EntityId[];
 }
 
 /** Atomic initial edge created in the same transaction as its source entity. */
@@ -3825,6 +3856,11 @@ export interface PatchEntityInput extends CommandContext {
   expectedVersion: number;
   title?: string;
   content?: Record<string, unknown>;
+  /**
+   * Label ids to add and remove (397), under the same `expectedVersion`. Any
+   * kind may carry labels; a labels-only patch needs no content arm.
+   */
+  labels?: EntityLabelsPatch;
 }
 
 /** POST /v2/entities/:entityId/attention-requests. */
