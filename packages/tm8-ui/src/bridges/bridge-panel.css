@@ -177,3 +177,36 @@
 /* Under lane P's roster, the posters sit on the roster's own inset (.brp's
    14px), not flush at the card edge. */
 .brg-people__posters { padding: 0 14px 12px; }
+
+/* --- the add-bridge wizard and the link dialog (§4.3, v2 §1.6) ------------ */
+.brg-wiz { width: min(720px, 100%); }
+.brg-wiz__steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; font-size: var(--pn-fs-sm); color: var(--pn-ink-4); }
+.brg-wiz__steps li { padding: 2px 8px; border-radius: var(--pn-r-pill); border: 1px solid var(--pn-line-2); }
+.brg-wiz__steps li[aria-current='step'] { color: var(--pn-ink); border-color: var(--pn-brand); font-weight: 600; }
+.brg-wiz__steps li[data-done] { color: var(--pn-run); }
+.brg-wiz__list { list-style: none; margin: 6px 0 10px; padding: 0; }
+.brg-wiz__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--pn-x-hairline-soft); font-size: var(--pn-fs-body); }
+.brg-wiz__row > .pn-btn { margin-left: auto; }
+.brg-wiz__name { font-weight: 600; }
+.brg-wiz__search { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 10px; margin: 6px 0; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); background: var(--pn-card); color: var(--pn-ink); }
+.brg-wiz__pick {
+  appearance: none; width: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; text-align: left;
+  font: inherit; font-size: var(--pn-fs-body); color: var(--pn-ink); background: none; border: 0; border-bottom: 1px solid var(--pn-x-hairline-soft);
+  padding: 8px 6px; cursor: pointer;
+}
+.brg-wiz__pick:hover:not(:disabled) { background: var(--pn-hover); }
+.brg-wiz__pick[aria-selected='true'] { background: var(--pn-brand-soft); }
+.brg-wiz__pick:disabled { color: var(--pn-ink-4); cursor: not-allowed; }
+.brg-warn { color: var(--pn-wait); font-size: var(--pn-fs-sm); }
+.brg-wiz__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.brg-wiz__card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-md); background: var(--pn-card); cursor: pointer; }
+.brg-wiz__card[data-selected] { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.brg-wiz__card input { position: absolute; opacity: 0; pointer-events: none; }
+.brg-wiz__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--pn-fs-body); }
+.brg-wiz__checks li[data-ok] { color: var(--pn-run); }
+.brg-link__qr { display: block; width: 220px; height: 220px; margin: 10px auto; image-rendering: pixelated; background: var(--pn-paper); border: 8px solid var(--pn-paper); outline: 1px solid var(--pn-line); }
+.brg-link__code { font-family: var(--pn-mono); font-size: var(--pn-fs-h2); letter-spacing: 0.12em; text-align: center; margin: 10px 0; }
+@media (max-width: 640px) {
+  .brg-dialog { padding: 14px; }
+  .brg-wiz__cards { grid-template-columns: 1fr; }
+}
