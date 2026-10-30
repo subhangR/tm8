@@ -10,6 +10,7 @@ import type { Db } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import type { RemoteInvokeForwarder } from '../remote/forwarder.js';
+import type { BridgeCommandHook } from '../bridges/runtime/command-hook.js';
 
 export interface FacadeDeps {
   readonly db: Db;
@@ -22,4 +23,10 @@ export interface FacadeDeps {
    * refuses every call with `remote_links_disabled` (remote/forwarder.ts).
    */
   readonly remoteInvokeForwarder?: RemoteInvokeForwarder;
+  /**
+   * Bridges (§2.3 step 2): the command executor (B1b-4). main.ts injects it;
+   * the runtime's inbound door and the watchdog read it from the same slot.
+   * Absent: nothing a group sends is a command.
+   */
+  readonly bridgeCommands?: BridgeCommandHook;
 }
