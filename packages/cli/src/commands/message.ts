@@ -43,7 +43,7 @@ import { plainExcerpt } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
+import { bridgeRefusalText, callerMutationId, successReceipt, type ReceiptOp } from '../receipt.js';
 import { errorInput, withErrorReceipt } from '../receipt-error.js';
 import { noticeStatusNudges } from '../status-nudge.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
@@ -619,6 +619,14 @@ function renderBatch(dto: unknown): string {
     // value a caller must not skim past.
     const label = status === 'undelivered' ? 'NOT DELIVERED' : status;
     lines.push(`  ${String(row.targetWorkSessionId ?? '')}  ${label}${reason}`.trimEnd());
+  }
+  // 398 (Bridges §2.7): the provider copy of a bridged post. Stored either
+  // way; a refusal says why, and `rate_limited` says when to try again.
+  const bridged = (dto as { bridgeDelivery?: unknown })?.bridgeDelivery;
+  for (const entry of Array.isArray(bridged) ? bridged : []) {
+    const row = entry as Record<string, unknown>;
+    const status = row.status === 'refused' ? `REFUSED ${bridgeRefusalText(row)}` : String(row.status ?? 'unknown');
+    lines.push(`  bridge ${String(row.bridgeId ?? '')}  ${status}`);
   }
   return lines.join('\n');
 }

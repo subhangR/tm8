@@ -348,6 +348,16 @@ export function bodyDigest(body: string): { bodyChars: number; bodySha256: strin
   };
 }
 
+/** "rate_limited, retry in 9m40s" — the reason and, when given, the wait. */
+export function bridgeRefusalText(d: Rec): string {
+  const reason = str(d.reason) ?? 'refused';
+  const ms = typeof d.retryAfterMs === 'number' ? d.retryAfterMs : undefined;
+  if (ms === undefined) return reason;
+  const s = Math.ceil(ms / 1000);
+  const wait = s >= 60 ? `${Math.floor(s / 60)}m${s % 60 ? `${s % 60}s` : ''}` : `${s}s`;
+  return `${reason}, retry in ${wait} (retryAfterMs ${ms})`;
+}
+
 function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receipt {
   const batch = rec(dto);
   const receipt: Receipt = { schemaVersion: SCHEMA_VERSION, ok: true, op };
@@ -383,7 +393,28 @@ function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
       ...(typeof d.detail === 'string' ? { detail: d.detail } : {}),
     }));
   }
+  // 398 (Bridges §2.7): the provider side of a bridged post. A refusal is a
+  // fact about the provider copy only — the message is stored — and it is
+  // never silent: `rate_limited` says when to try again.
+  let bridgeRefused: Rec[] = [];
+  if (Array.isArray(batch.bridgeDelivery)) {
+    const rows = batch.bridgeDelivery.filter(isRecord);
+    bridgeRefused = rows.filter((d) => d.status === 'refused');
+    receipt.bridge = capped(rows, 'bridge', receipt).map((d) => ({
+      message: d.messageId,
+      bridge: d.bridgeId,
+      status: d.status,
+      ...(typeof d.reason === 'string' ? { reason: d.reason } : {}),
+      ...(typeof d.retryAfterMs === 'number' ? { retryAfterMs: d.retryAfterMs } : {}),
+    }));
+  }
   receipt.warnings = warningsOf(dto, input);
+  for (const d of bridgeRefused) {
+    (receipt.warnings as ReceiptWarning[]).push({
+      code: 'bridge_refused',
+      message: bridgeRefusalText(d),
+    });
+  }
   // A stored batch whose live copy did not land is still `ok:true` — the write
   // succeeded — but it is never silent (§4.3 messages, D4.5).
   if (undelivered > 0) {
@@ -626,6 +657,10 @@ export function renderReceiptHuman(receipt: Receipt): string {
       // D3.2: an undelivered live copy is the one outcome a caller must not skim.
       const status = d.status === 'undelivered' ? 'NOT DELIVERED' : String(d.status);
       clauses.push(`${String(d.session)} ${status}${reason}`);
+    }
+    for (const d of (receipt.bridge as Rec[] | undefined) ?? []) {
+      const status = d.status === 'refused' ? `REFUSED ${bridgeRefusalText(d)}` : String(d.status);
+      clauses.push(`bridge ${String(d.bridge)} ${status}`);
     }
   } else {
     head.push(String(receipt.id ?? '?'));

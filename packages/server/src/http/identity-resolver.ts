@@ -135,6 +135,13 @@ export function createSessionIdentityResolver(
       // `DbSpaceLinkStore.use` calls in-process. No allow-list, ever. See
       // identity/link-bearer.ts.
       refuseLinkSessionOnTransport(session.kind);
+      // 398 (§2.5): the connector runtime's session reaches only its own doors
+      // (the routes and the push socket that set `context.bridgeRuntime`). On
+      // every other route — every catalog op, every upload, every socket — it
+      // is refused here, before anything else sees it.
+      if (session.kind === 'bridge_runtime' && context.bridgeRuntime !== true) {
+        throw new CollabError('forbidden', 'a bridge runtime session may only call the bridgeRuntime doors');
+      }
       return identityFromSession(session, raw, spaceSessions);
     }
 
