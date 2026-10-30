@@ -428,6 +428,8 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // namespace. Always present; its METHODS are feature-detected against
       // the catalog, so S4 adding the rows does not move this list.
       'attentionV2',
+      // B3 (402): bridges.links.begin.
+      'beginBridgeLink',
       'complete', 'createEdge', 'createEntity', 'createEntityKind', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which
@@ -518,6 +520,8 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // W4 (auth sessions, 2026-09-26): `auth.sessions.revoke`. The list READ
       // is `seam.authSessions`, not a command.
       'revokeAuthSession',
+      // B3 (402): bridges.links.revoke.
+      'revokeBridgeLink',
       // W2 (2026-08-16): the task-axis registry's writes, over the catalog
       // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
       // stops refusing with the measured-false AXES_UNREADABLE. The READ has

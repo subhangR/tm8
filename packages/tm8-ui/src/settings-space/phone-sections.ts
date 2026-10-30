@@ -24,7 +24,7 @@ export interface PhoneSettingsGroup {
 }
 
 export const PHONE_SETTINGS_GROUPS: readonly PhoneSettingsGroup[] = [
-  { title: 'You', ids: ['account', 'my-sessions'] },
+  { title: 'You', ids: ['account', 'my-sessions', 'linked-identities'] },
   { title: 'Space & people', ids: ['profile', 'members', 'invites', 'sessions', 'sharing'] },
   { title: 'Chat & models', ids: ['models', 'chat-defaults'] },
   {
@@ -70,6 +70,7 @@ export const PHONE_SECTION_ICONS: Record<SettingsSectionId, { glyph: string; ton
   overview: { glyph: '◫', tone: 'idle' },
   account: { glyph: '👤', tone: 'info' },
   'my-sessions': { glyph: '🔑', tone: 'info' },
+  'linked-identities': { glyph: '⇋', tone: 'info' },
   profile: { glyph: '⌂', tone: 'run' },
   members: { glyph: '👥', tone: 'run' },
   invites: { glyph: '✉', tone: 'run' },
@@ -138,6 +139,7 @@ function liveInvites(invites: readonly SpaceInviteView[] | null): number | null 
 export const PHONE_SECTION_HINTS: Partial<Record<SettingsSectionId, string>> = {
   account: 'Your name and how you appear',
   'my-sessions': 'Where you are signed in',
+  'linked-identities': 'Numbers that count as you',
   profile: 'Name and description',
   members: 'Who is in this space',
   invites: 'Links that let people join',
