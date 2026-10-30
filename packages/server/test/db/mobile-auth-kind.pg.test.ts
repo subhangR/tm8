@@ -303,6 +303,38 @@ describe.sequential('the doors the migration widened (RPC under claims)', () => 
     expect(Object.fromEntries(revoked.map((row) => [row.id, row.revoked]))).toEqual({ [inSpace]: true, [inOther]: false });
   });
 
+  it('stamp_loop_armed_by (384) arms a loop for a mobile bearer as for browser (armed_at, armed_by_*); an agent arms nothing and its edit disarms', async () => {
+    const spaceId = await ownSpace('loop');
+    const identity = claim.data!.account.identityId;
+    const [owner] = await server.rows<{ member: string }>(
+      'select entity_id::text as member from public.members where space_id = $1 and identity_id = $2', [spaceId, identity]);
+    const stampOf = async (loopId: string) => (await server.rows<{ member: string | null; identity: string | null; stamped: boolean }>(
+      `select armed_by_member_id::text as member, armed_by_identity_id::text as identity, armed_at is not null as stamped
+         from public.loops where entity_id = $1`, [loopId]))[0];
+    const arm = async (authKind: string): Promise<string> => (await db.tx(ownerClaims(authKind), (q) => q.rpc<{ entity: { id: string } }>(
+      'create_loop', [spaceId, `armed under ${authKind}`, null, 'every 1h', null, null, 'fire', '{}', true, null, null, null,
+        `mobile-loop-${randomUUID()}`]))).entity.id;
+    const editPrompt = async (authKind: string, loopId: string, prompt: string): Promise<void> => {
+      const [row] = await server.rows<{ version: number }>('select version from public.entities where id = $1', [loopId]);
+      await db.tx(ownerClaims(authKind), (q) => q.rpc('update_loop', [
+        loopId, row!.version, null, null, null, null, false, null, false, prompt, null, null, null, false, null, null, false,
+        `mobile-loop-${randomUUID()}`]));
+    };
+    const armed = { member: owner!.member, identity, stamped: true };
+    const unarmed = { member: null, identity: null, stamped: false };
+
+    const stamps: Record<string, unknown> = {};
+    for (const kind of ['browser', 'mobile', 'agent']) stamps[kind] = await stampOf(await arm(kind));
+    expect(stamps).toEqual({ browser: armed, mobile: armed, agent: unarmed });
+
+    // A content edit re-arms: from the phone it stamps a loop no human armed; an agent's edit clears it again.
+    const loopId = await arm('agent');
+    await editPrompt('mobile', loopId, 'rewritten on the phone');
+    expect(await stampOf(loopId)).toEqual(armed);
+    await editPrompt('agent', loopId, 'rewritten by an agent');
+    expect(await stampOf(loopId)).toEqual(unarmed);
+  });
+
   it('a mobile session token resolves and is refused once revoked (logout ends it)', async () => {
     const fresh = await send<AuthLoginResult>('POST', '/v2/auth/login', { ...OWNER, kind: 'mobile', label: LABEL });
     const token = fresh.data!.token;

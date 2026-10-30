@@ -804,100 +804,57 @@ begin
  return to_jsonb(session_row)-'token_hash';
 end $$;
 
--- internal.stamp_loop_armed_by: 343_mcp_provenance.sql verbatim.
+-- internal.stamp_loop_armed_by: 384_loops_first_class.sql verbatim.
 create or replace function internal.stamp_loop_armed_by() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare v_space uuid; v_member uuid; v_human boolean; v_content_changed boolean;
 begin
-  -- Fails closed on every non-human shape: an agent or agent_runtime bearer, a
-  -- link session, the in-process scheduler (no claim at all), and an
-  -- unrecognised kind are all "not a human bearer".
   v_human := coalesce(internal.claim_text('tm8.auth_kind'), '') in ('browser', 'cli')
              and coalesce(internal.claim_text('tm8.via_link'), '') = '';
 
   if tg_op = 'INSERT' then
-    if not v_human then return new; end if;
+    if not v_human then
+      new.armed_at := null;
+      return new;
+    end if;
   else
-    /*
-     * B26: armed_by NAMES THE HUMAN WHO LAST AUTHORISED THE LOOP'S CONTENT,
-     * which is stricter than B21's "never cleared" and is the fix for the
-     * lead's F2.
-     *
-     * The hole F2 found: `update_loop` requires only membership (091), so BOB's
-     * agent — or Bob himself — could rewrite the prompt, the persona or the
-     * subject of a loop ALICE armed, and the firing would run Bob's
-     * instructions on Alice's connections. Preserving the stamp across any
-     * write is therefore wrong; what matters is whether the CONTENT moved.
-     *
-     * So: a write that touches only SCHEDULING BOOKKEEPING preserves the stamp
-     * — that is the executor's own tick, which advances next_run_at and records
-     * the outcome through the same door on every firing. That list is closed and
-     * SUBTRACTED from the row rather than compared field by field, so a column
-     * added later counts as content until someone adds it to the list.
-     *
-     * Any other changed column re-stamps to the writer when the writer is a
-     * human bearer, and NULLS the stamp when it is not. A NULL means the next
-     * firing has no human provenance and is lent nothing, which fails closed
-     * until a human re-arms the loop.
-     *
-     * enabled false -> true is RESUMING, so it counts as content. true -> false
-     * only narrows, so it is allowed to keep the stamp.
-     */
-    /*
-     * INVERTED ON PURPOSE (B28): the comparison subtracts the BOOKKEEPING
-     * columns and asks whether anything else moved, rather than enumerating the
-     * content columns. Listing content would mean a column added to
-     * `public.loops` later — or one already there that nobody remembered — read
-     * as bookkeeping and silently PRESERVED the stamp, which is the direction
-     * that leaks. This way an unlisted column is content, so a new field is
-     * safe-by-default and only an explicit addition to the bookkeeping list can
-     * make it harmless.
-     *
-     * BOOKKEEPING is what the executor's tick writes through the same door on
-     * every firing: next_run_at, last_run_at, last_error, updated_at. That is
-     * the whole set on 091's table today — there are no lease or run-count
-     * columns — and `armed_by_*` are subtracted because this trigger is what
-     * writes them, so their own change must not count as content. `enabled` is
-     * subtracted and judged separately: false -> true is RESUMING, which is
-     * authorising the content again, while true -> false only narrows.
-     */
     v_content_changed :=
          (to_jsonb(new) - 'next_run_at' - 'last_run_at' - 'last_error' - 'updated_at'
-            - 'enabled' - 'armed_by_member_id' - 'armed_by_identity_id')
+            - 'enabled' - 'paused_until' - 'retry_attempt' - 'armed_at'
+            - 'armed_by_member_id' - 'armed_by_identity_id')
       is distinct from
          (to_jsonb(old) - 'next_run_at' - 'last_run_at' - 'last_error' - 'updated_at'
-            - 'enabled' - 'armed_by_member_id' - 'armed_by_identity_id')
+            - 'enabled' - 'paused_until' - 'retry_attempt' - 'armed_at'
+            - 'armed_by_member_id' - 'armed_by_identity_id')
       or (new.enabled and not old.enabled);
     if not v_content_changed then
-      -- Bookkeeping only (last_run_at, next_run_at, last_error, updated_at, or
-      -- a pause): whoever wrote it, the stamp stands.
       new.armed_by_member_id := old.armed_by_member_id;
       new.armed_by_identity_id := old.armed_by_identity_id;
+      new.armed_at := old.armed_at;
       return new;
     end if;
     if not v_human then
       new.armed_by_member_id := null;
       new.armed_by_identity_id := null;
+      new.armed_at := null;
       return new;
     end if;
   end if;
 
   select space_id into v_space from public.entities where id = new.entity_id;
   if v_space is null then return new; end if;
-  -- Pinned (227): a space-pinned session resolves a member only for its pin, so
-  -- this can never stamp a member of a Space the caller is not acting in.
   v_member := internal.current_member_id(v_space);
   if v_member is null then
-    -- A human bearer who is not a member of this Space cannot have authorised
-    -- the content either. Fail closed rather than leave a stale stamp.
     if tg_op <> 'INSERT' then
       new.armed_by_member_id := null;
       new.armed_by_identity_id := null;
     end if;
+    new.armed_at := null;
     return new;
   end if;
   new.armed_by_member_id := v_member;
   new.armed_by_identity_id := internal.identity_id();
+  new.armed_at := now();
   return new;
 end
 $$;

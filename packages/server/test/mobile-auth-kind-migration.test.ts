@@ -10,6 +10,8 @@
  *   2. it missed none: no function whose latest definition before S4 names
  *      'browser' and 'cli' in a list without 'mobile' is left as it was;
  *   3. nothing after S4 names 'browser' and 'cli' in a list without 'mobile'.
+ * Its hand-run rollback (db/rollback) is held to the same previous definitions,
+ * verbatim, so undoing S4 never reverts a later migration's body either.
  * The pg twin (`db/mobile-auth-kind.pg.test.ts`) asserts the same end state on
  * a migrated database. The S4 file is found by name, never by number, so a
  * renumber is one rename.
@@ -21,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const MIGRATIONS = join(ROOT, 'db/migrations');
+const ROLLBACK = join(ROOT, 'db/rollback');
 const FILES = readdirSync(MIGRATIONS).filter((file) => /^\d{3}_[a-z0-9_]+\.sql$/.test(file)).sort();
 const S4 = FILES.find((file) => file.endsWith('_mobile_auth_kind.sql'));
 
@@ -47,8 +50,8 @@ function stripComments(sql: string): string {
 }
 
 /** Each function definition and drop in `file`, in the order the file runs them. */
-function events(file: string): Event[] {
-  const text = stripComments(readFileSync(join(MIGRATIONS, file), 'utf8'));
+function events(file: string, dir: string = MIGRATIONS): Event[] {
+  const text = stripComments(readFileSync(join(dir, file), 'utf8'));
   const found: Event[] = [];
   for (const match of text.matchAll(DEFINE)) {
     DOLLAR.lastIndex = match.index + match[0].length;
@@ -91,8 +94,9 @@ function unwidened(sql: string): string[] {
 
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
 const withoutMobile = (text: string): string => text.replace(/,\s*'mobile'/g, '');
-const shape = (d: Definition): string => withoutMobile(
-  squash(d.header.toLowerCase().replace(/^create\s+function/, 'create or replace function')) + ' $$ ' + squash(d.body));
+const normalized = (d: Definition): string =>
+  squash(d.header.toLowerCase().replace(/^create\s+function/, 'create or replace function')) + ' $$ ' + squash(d.body);
+const shape = (d: Definition): string => withoutMobile(normalized(d));
 
 describe('the mobile auth kind migration', () => {
   it('exists, found by name', () => {
@@ -130,5 +134,16 @@ describe('the mobile auth kind migration', () => {
     const later = FILES.slice(FILES.indexOf(S4!) + 1)
       .flatMap((file) => unwidened(stripComments(readFileSync(join(MIGRATIONS, file), 'utf8'))).map((list) => `${file}: (${list})`));
     expect(later).toEqual([]);
+  });
+
+  it('its rollback puts back the previous definition of each of those functions, verbatim', () => {
+    const live = liveAfter(before);
+    const restored = events(S4!.replace(/\.sql$/, '.down.sql'), ROLLBACK)
+      .flatMap((event) => ('definition' in event ? [event.definition] : []));
+    expect(restored.map((definition) => definition.name).sort()).toEqual(mine.map((definition) => definition.name).sort());
+    const drift = restored
+      .filter((definition) => normalized(definition) !== normalized(live.get(definition.name)!))
+      .map((definition) => `${definition.name}: differs from ${live.get(definition.name)!.file} (re-copy that body verbatim)`);
+    expect(drift).toEqual([]);
   });
 });
