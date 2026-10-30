@@ -17,7 +17,7 @@ const port = view === 'member' ? fixturePort({ admin: false, delayMs: 150 })
   : fixturePort({ delayMs: 150 });
 if (view === 'error') port.participants = async () => { throw Object.assign(new Error('Bridge is unavailable'), { code: 'not_found' }); };
 if (view === 'refuse') {
-  port.update = async () => { throw Object.assign(new Error('this participant has linked their own number; only they can unlink it'), { code: 'conflict' }); };
+  port.update = async () => { throw Object.assign(new Error('this address is verified as someone else; they must unlink it first'), { code: 'conflict' }); };
 }
 
 createRoot(document.getElementById('root')!).render(

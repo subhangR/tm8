@@ -7,8 +7,10 @@
  * resolver would decide them (an identity link first, a space assertion next, a
  * member who left is a guest again); a member sees masked ids and no alternate
  * ids, an admin sees them in full; no row carries a link id or an identity id.
- * The write is an admin's and a human's: mute, assert, revoke, and
- * `already_linked` over a person's own link.
+ * The write is an admin's and a human's: mute, and the one assertion core's
+ * four rules (coordinator ruling): link_conflict only over someone else's
+ * verified link, the same person a no-op, revoke beside a verified link, no
+ * participant row needed; plus the cross-space refusal.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -25,6 +27,7 @@ vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
 let database: W1ScratchDatabase, db: Db, server: FacadeServer, base: string;
 const space = randomUUID(), persona = randomUUID(), chat = randomUUID(), worker = randomUUID(), connection = randomUUID();
 const ownerMember = randomUUID(), plainMember = randomUUID(), leftMember = randomUUID();
+const otherSpace = randomUUID(), otherMember = randomUUID();
 const ownerAccount = randomUUID(), plainAccount = randomUUID();
 const ownerIdentity = `bp-owner-${randomUUID()}`, plainIdentity = `bp-plain-${randomUUID()}`, leftIdentity = `bp-left-${randomUUID()}`;
 // Phone-shaped ids; the plain member's own number also has a LID alternate.
@@ -55,6 +58,10 @@ beforeAll(async () => {
       ($1,$4,$5,'owner','Owner'),($2,$4,$6,'member','Plain'),($3,$4,$7,'member','Leaver')`,
       [ownerMember, plainMember, leftMember, space, ownerIdentity, plainIdentity, leftIdentity]);
     await c.query("update public.members set status = 'left', left_at = now() where entity_id = $1", [leftMember]);
+    // Another space, where the plain member's identity is also a member.
+    await c.query("insert into public.spaces(id,name,created_by_identity) values($1,'Elsewhere',$2)", [otherSpace, plainIdentity]);
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'member',0,$1)", [otherMember, otherSpace]);
+    await c.query("insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,'owner','Plain')", [otherMember, otherSpace, plainIdentity]);
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'team_member',0,$3)", [persona, space, ownerMember]);
     await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity) values($1,$2,'Infra','','persona')", [persona, ownerMember]);
     await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'chat',0,$3)", [chat, space, ownerMember]);
@@ -159,35 +166,178 @@ describe('bridges.participants.list (D50)', () => {
   });
 });
 
-describe('bridges.participants.update (D52)', () => {
-  it('an admin mutes and unmutes; the answer is the row', async () => {
+const NEVER_SPOKE = '919999900000@s.whatsapp.net';
+const liveLinks = async (externalId: string) => database.transaction(async c => {
+  await c.query('set local role tm8_graph_owner');
+  return (await c.query(`select method, identity_id, space_id from public.bridge_identity_links
+                          where external_id = $1 and revoked_at is null order by method`, [externalId])).rows;
+});
+const reason = (result: { json: any }) => result.json.error?.details?.reason;
+
+describe('bridges.participants.update (D52; the one core, coordinator ruling)', () => {
+  it('an admin mutes and unmutes; the answer carries the row, and a repeat changes nothing', async () => {
     const muted = await patch(ownerBearer.token, GUEST, { muted: true });
     expect(muted.status, JSON.stringify(muted.json)).toBe(200);
-    expect(muted.json.data).toMatchObject({ externalId: GUEST, muted: true, trust: 'guest' });
-    expect((await patch(ownerBearer.token, GUEST, { muted: false })).json.data.muted).toBe(false);
+    expect(muted.json.data).toMatchObject({ bridgeId, externalId: GUEST, changed: true, participant: { externalId: GUEST, muted: true, trust: 'guest' } });
+    expect((await patch(ownerBearer.token, GUEST, { muted: true })).json.data.changed).toBe(false);
+    expect((await patch(ownerBearer.token, GUEST, { muted: false })).json.data.participant.muted).toBe(false);
   });
 
-  it('an admin asserts who a guest is, then revokes it', async () => {
+  it('asserts who a guest is, refuses another member over that assertion, then revokes it', async () => {
     const asserted = await patch(ownerBearer.token, GUEST, { memberId: plainMember });
     expect(asserted.status, JSON.stringify(asserted.json)).toBe(200);
-    expect(asserted.json.data).toMatchObject({ trust: 'asserted', memberId: plainMember, link: { method: 'admin' } });
+    expect(asserted.json.data).toMatchObject({ changed: true, participant: { trust: 'asserted', memberId: plainMember, link: { method: 'admin' } } });
     expect(byName((await roster(plainBearer.token)).items, 'Rahul')).toMatchObject({ trust: 'asserted', you: true });
+    expect((await patch(ownerBearer.token, GUEST, { memberId: plainMember })).json.data.changed).toBe(false);
+    const other = await patch(ownerBearer.token, GUEST, { memberId: ownerMember });
+    expect(other.status, JSON.stringify(other.json)).toBe(409);
+    expect(reason(other)).toBe('link_conflict');
 
     const revoked = await patch(ownerBearer.token, GUEST, { memberId: null });
-    expect(revoked.json.data).toMatchObject({ trust: 'guest', memberId: null });
+    expect(revoked.json.data).toMatchObject({ changed: true, participant: { trust: 'guest', memberId: null } });
+    expect((await patch(ownerBearer.token, GUEST, { memberId: null })).json.data.changed).toBe(false);
   });
 
-  it('refuses an assertion over a person\'s own link, and one naming a member who left', async () => {
-    const linked = await patch(ownerBearer.token, LINKED, { memberId: ownerMember });
-    expect(linked.status, JSON.stringify(linked.json)).toBe(409);
-    expect(linked.json.error.details?.reason).toBe('already_linked');
-    expect((await patch(ownerBearer.token, GUEST, { memberId: leftMember })).status).toBe(400);
-    expect((await patch(ownerBearer.token, 'nobody@s.whatsapp.net', { muted: true })).status).toBe(404);
+  it('(1) refuses link_conflict when a verified link names someone else', async () => {
+    const result = await patch(ownerBearer.token, LINKED_LID, { memberId: ownerMember });
+    expect(result.status, JSON.stringify(result.json)).toBe(409);
+    expect(reason(result)).toBe('link_conflict');
+  });
+
+  it('(2) asserting the same person as their verified link is a no-op', async () => {
+    const result = await patch(ownerBearer.token, LINKED_LID, { memberId: plainMember });
+    expect(result.status, JSON.stringify(result.json)).toBe(200);
+    expect(result.json.data.changed).toBe(false);
+    expect((await liveLinks(LINKED_LID)).map(l => l.method)).toEqual(['code']);
+  });
+
+  it('(3) revoking an admin assertion is allowed beside a verified link, and ends only the assertion', async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id, verified_at)
+                     values ('whatsapp', $1, $2, 'admin', $3, now())`, [LINKED_LID, plainIdentity, space]);
+    });
+    expect((await liveLinks(LINKED_LID)).map(l => l.method)).toEqual(['admin', 'code']);
+    const result = await patch(ownerBearer.token, LINKED_LID, { memberId: null });
+    expect(result.status, JSON.stringify(result.json)).toBe(200);
+    expect(result.json.data.changed).toBe(true);
+    expect((await liveLinks(LINKED_LID)).map(l => l.method)).toEqual(['code']);
+    expect(byName((await roster(ownerBearer.token)).items, 'Plain')).toMatchObject({ trust: 'linked' });
+  });
+
+  it('(4) needs no participant row to assert; mute does', async () => {
+    const result = await patch(ownerBearer.token, NEVER_SPOKE, { memberId: plainMember });
+    expect(result.status, JSON.stringify(result.json)).toBe(200);
+    expect(result.json.data).toMatchObject({ externalId: NEVER_SPOKE, changed: true, participant: null });
+    expect(await liveLinks(NEVER_SPOKE)).toEqual([{ method: 'admin', identity_id: plainIdentity, space_id: space }]);
+    expect((await patch(ownerBearer.token, NEVER_SPOKE, { muted: true })).status).toBe(404);
+  });
+
+  it('refuses a member of another space, a member who left, and an address that is not a person', async () => {
+    const cross = await patch(ownerBearer.token, GUEST, { memberId: otherMember });
+    expect(cross.status, JSON.stringify(cross.json)).toBe(404);
+    expect((await patch(ownerBearer.token, GUEST, { memberId: leftMember })).status).toBe(404);
+    expect((await patch(ownerBearer.token, '120363@g.us', { memberId: plainMember })).status).toBe(400);
+    expect(await liveLinks(GUEST)).toEqual([]);
   });
 
   it('is an admin\'s and a human\'s: a plain member and an agent are refused', async () => {
     expect((await patch(plainBearer.token, GUEST, { muted: true })).status).toBe(403);
     expect((await patch(agentBearer.token, GUEST, { muted: true })).status).toBe(403);
     expect(byName((await roster(ownerBearer.token)).items, 'Rahul').muted).toBe(false);
+  });
+});
+
+// Cross-space probes, written by #1439's reviewer (round 1) and folded in here.
+describe('cross-space: one space\'s admin and assertions never reach another', () => {
+  const spaceB = randomUUID(), personaB = randomUUID(), chatB = randomUUID();
+  const ownerInB = randomUUID(), adminB = randomUUID(), memberB = randomUUID();
+  const adminBIdentity = `bp-adminb-${randomUUID()}`, memberBIdentity = `bp-memberb-${randomUUID()}`;
+  const adminBAccount = randomUUID();
+  const adminBBearer = bearer(), ownerBBearer = bearer();
+  let bridgeB = '';
+  beforeAll(async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('insert into public.user_profiles(identity_id,display_name) values($1,$1),($2,$2)', [adminBIdentity, memberBIdentity]);
+      await c.query('insert into public.accounts(id,identity_id,username,display_name) values($1,$2,$2,$2)', [adminBAccount, adminBIdentity]);
+      await c.query("insert into public.spaces(id,name,created_by_identity) values($1,'Other',$2)", [spaceB, ownerIdentity]);
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$4,'member',0,$1),($2,$4,'member',0,$2),($3,$4,'member',0,$3)",
+        [ownerInB, adminB, memberB, spaceB]);
+      await c.query(`insert into public.members(entity_id,space_id,identity_id,role,display_name) values
+        ($1,$4,$5,'owner','OwnerB'),($2,$4,$6,'admin','AdminB'),($3,$4,$7,'member','MemberB')`,
+        [ownerInB, adminB, memberB, spaceB, ownerIdentity, adminBIdentity, memberBIdentity]);
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'team_member',0,$3)", [personaB, spaceB, ownerInB]);
+      await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity) values($1,$2,'InfraB','','persona')", [personaB, ownerInB]);
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'chat',0,$3)", [chatB, spaceB, ownerInB]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,'B main',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/bpb', gen_random_uuid(), $4, $5, $6)`,
+        [chatB, spaceB, personaB, ownerIdentity, ownerInB, `bpb-${randomUUID()}`]);
+      await c.query(`insert into public.auth_sessions(id,account_id,kind,space_id,token_hash,expires_at) values
+        ($1,$2,'cli',$3,$4,now()+interval '1 hour'),($5,$6,'cli',$3,$7,now()+interval '1 hour')`,
+        [adminBBearer.id, adminBAccount, spaceB, hashToken(adminBBearer.secret), ownerBBearer.id, ownerAccount, hashToken(ownerBBearer.secret)]);
+    });
+    const created = await request(ownerBBearer.token, 'POST', `/v2/spaces/${spaceB}/bridges`, {
+      clientMutationId: randomUUID(), connectionId: connection, targetId: chatB,
+      conversation: { externalId: '120364@g.us', kind: 'group', title: 'Other' }, teammateId: personaB,
+    });
+    expect([200, 201], JSON.stringify(created.json)).toContain(created.status);
+    bridgeB = created.json.data.id;
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at, message_count)
+        values ($1,$2,'Rahul',now(),now(),1)`, [bridgeB, GUEST]);
+    });
+  });
+  const links = async () => (await database.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    return (await c.query("select external_id, identity_id, space_id::text, revoked_at from public.bridge_identity_links where method='admin' order by verified_at")).rows;
+  }));
+
+  it('an admin of another space cannot touch this bridge', async () => {
+    const before = await links();
+    const r = await patch(adminBBearer.token, GUEST, { memberId: plainMember });
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(await links()).toEqual(before);
+    const read = await request(adminBBearer.token, 'GET', `/v2/bridges/${bridgeId}/participants`);
+    expect(read.status).not.toBe(200);
+  });
+  it('an admin of both, pinned to A, cannot write B through an A session', async () => {
+    const r = await request(ownerBearer.token, 'PATCH', `/v2/bridges/${bridgeB}/participants/${encodeURIComponent(GUEST)}`, { clientMutationId: randomUUID(), patch: { muted: true } });
+    expect(r.status).toBeGreaterThanOrEqual(400);
+  });
+  it('asserting a member of another space is refused', async () => {
+    const before = await links();
+    const r = await patch(ownerBearer.token, GUEST, { memberId: memberB });
+    expect(r.status, JSON.stringify(r.json)).toBe(404);
+    expect(await links()).toEqual(before);
+  });
+  it("an assertion in A does not count in B's bridge, on the same number", async () => {
+    const a = await patch(ownerBearer.token, GUEST, { memberId: plainMember });
+    expect(a.status, JSON.stringify(a.json)).toBe(200);
+    const inB = await request(ownerBBearer.token, 'GET', `/v2/bridges/${bridgeB}/participants`);
+    expect(inB.status).toBe(200);
+    expect(inB.json.data.items[0]).toMatchObject({ externalId: GUEST, trust: 'guest', memberId: null });
+    await patch(ownerBearer.token, GUEST, { memberId: null });
+  });
+  it('the activity row names the participant masked', async () => {
+    const rows = await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      return (await c.query("select summary::text as p from public.activity where entity_id = $1 order by created_at", [bridgeId])).rows;
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) for (const s of [GUEST, LINKED, ASSERTED]) expect(r.p).not.toContain(s);
+  });
+  it('a stale assertion can be revoked after the real owner links the number (review F2)', async () => {
+    // Admin asserts GUEST as plainMember; later the real owner links the number themselves.
+    expect((await patch(ownerBearer.token, GUEST, { memberId: plainMember })).status).toBe(200);
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query("insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id, verified_at) values ('whatsapp',$1,$2,'code',null,now())", [GUEST, ownerIdentity]);
+    });
+    const revoke = await patch(ownerBearer.token, GUEST, { memberId: null });
+    expect(revoke.status, JSON.stringify(revoke.json)).toBe(200);
+    expect(revoke.json.data).toMatchObject({ changed: true, participant: { trust: 'linked' } });
   });
 });

@@ -8,7 +8,7 @@
  * and admin-only at the facade and again in SQL (D52); a refusal is rendered as
  * the refusal the server gave.
  */
-import type { ActorSummary, BridgeParticipant, BridgeParticipantListResult } from '@tm8/contract';
+import type { ActorSummary, BridgeParticipantListResult, BridgeParticipantUpdateResult } from '@tm8/contract';
 import type { HttpClient } from '../../data/real/http';
 
 export interface BridgeParticipantPatch {
@@ -20,7 +20,7 @@ export interface BridgeParticipantPatch {
 export interface BridgePeoplePort {
   /** The roster, most recently seen first, with the viewer's admin bit. */
   participants(bridgeId: string): Promise<BridgeParticipantListResult>;
-  update(bridgeId: string, externalId: string, patch: BridgeParticipantPatch): Promise<BridgeParticipant>;
+  update(bridgeId: string, externalId: string, patch: BridgeParticipantPatch): Promise<BridgeParticipantUpdateResult>;
   /** The space's active members: the *This is…* picker. */
   members(spaceId: string): Promise<ActorSummary[]>;
 }
@@ -32,7 +32,7 @@ export function createBridgePeoplePort(http: HttpClient): BridgePeoplePort {
     participants: (bridgeId) =>
       http.call<BridgeParticipantListResult>('bridges.participants.list', { params: { bridgeId } }),
     update: (bridgeId, externalId, patch) =>
-      http.call<BridgeParticipant>('bridges.participants.update', {
+      http.call<BridgeParticipantUpdateResult>('bridges.participants.update', {
         params: { bridgeId, externalId }, body: { ...mutation(), patch },
       }),
     members: async (spaceId) =>

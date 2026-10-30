@@ -4,7 +4,7 @@
 import {
   BRIDGE_PROVIDERS,
   type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
-  type BridgeLogResult, type BridgeParticipant, type BridgeParticipantListResult, type BridgePolicy, type BridgeView, type BridgeWake,
+  type BridgeLogResult, type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult, type BridgePolicy, type BridgeView, type BridgeWake,
 } from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -220,11 +220,12 @@ async function bridgeParticipant(cmd: CommandContext): Promise<ExitCode> {
   const mute = choice(cmd, 'mute', ['on', 'off'] as const);
   if (mute) patch.muted = mute === 'on';
   if (Object.keys(patch).length === 0) throw usage('nothing to change', 'pass --member <member-id>, --unassert or --mute on|off');
-  const row = await observedInvoke<BridgeParticipant>(client(cmd), 'bridges.participants.update', {
+  const result = await observedInvoke<BridgeParticipantUpdateResult>(client(cmd), 'bridges.participants.update', {
     params: { bridgeId: requireArg(cmd, 0, '<bridge-id>'), externalId: requireArg(cmd, 1, '<external-id>') },
     body: { ...mutation(cmd), patch },
   });
-  cmd.out.data(row, renderParticipant);
+  cmd.out.data(result, r => `${r.changed ? 'updated' : 'already so; nothing changed'}`
+    + (r.participant ? `\n${renderParticipant(r.participant)}` : ` · ${r.externalId} has not spoken on this bridge yet`));
   return EXIT_OK;
 }
 

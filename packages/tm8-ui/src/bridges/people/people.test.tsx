@@ -60,11 +60,11 @@ describe('BridgePeopleTab', () => {
 
   it('shows a refusal as the server worded it', async () => {
     const port = fixturePort();
-    port.update = vi.fn(async () => { throw Object.assign(new Error('this participant has linked their own number'), { code: 'conflict' }); });
+    port.update = vi.fn(async () => { throw Object.assign(new Error('this address is verified as someone else; they must unlink it first'), { code: 'conflict' }); });
     render(<BridgePeopleTab bridgeId={FIXTURE_BRIDGE_ID} port={port} />);
     await screen.findByText('Rahul');
     fireEvent.click(within(rowOf('Rahul')).getByRole('button', { name: 'Mute' }));
-    expect((await screen.findByRole('alert')).textContent).toBe('Refused: this participant has linked their own number');
+    expect((await screen.findByRole('alert')).textContent).toBe('Refused: this address is verified as someone else; they must unlink it first');
   });
 
   it('filters linked from guests, and offers the host\'s invite on guest rows only', async () => {

@@ -228,13 +228,23 @@ export interface BridgeStateInput extends BridgeCommand { bridgeId?: EntityId; e
 export interface BridgeHandleClaimInput { spaceId?: SpaceId; title?: string }
 /**
  * `bridges.participants.update` (D52): human-only, space admin. `memberId`
- * asserts *This is <member>* (a space-scoped link); null revokes the
- * assertion. Refused `already_linked` while the person's own link resolves them.
+ * asserts *This is <member>* (a space-scoped link); null revokes this space's
+ * assertion. Refused `link_conflict` when a verified link, or this space's
+ * live assertion, names someone else. Mute needs a participant row; an
+ * assertion does not (B1c's import asserts before anyone has spoken).
  */
 export interface BridgeParticipantUpdateInput extends BridgeCommand {
   bridgeId?: EntityId;
   externalId?: string;
   patch: { muted?: boolean; memberId?: EntityId | null };
+}
+export interface BridgeParticipantUpdateResult {
+  bridgeId: EntityId;
+  externalId: string;
+  /** False when the call was a no-op (already so). */
+  changed: boolean;
+  /** The roster row after the change; null when nobody with this id has spoken yet. */
+  participant: BridgeParticipant | null;
 }
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 

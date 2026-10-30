@@ -6,7 +6,7 @@
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §2.4, §3.2,
 -- §3.4, §4.4 (People); D50-D51 (§8). Task 01a189db-34a6-7873-975e-9da024aa70ac.
 --
--- Predecessor: 395_bridge_schema.sql. Adds two functions; no table, no policy.
+-- Predecessor: 395_bridge_schema.sql. Adds functions only; no table, no policy.
 --
 -- WHY A DEFINER READ, NOT A SELECT UNDER RLS (D50). A participant's trust word
 -- needs the link that resolves it, and 395's policy on bridge_identity_links
@@ -25,13 +25,14 @@
 -- Readability is checked here (definer), as bridge_view does: a caller who
 -- cannot read the bridge entity gets null.
 --
--- THE WRITE (D52). public.update_bridge_participant: mute, and the admin's
--- assertion (*This is <member>*) or its revocation. Human-only and admin-only,
--- like 395's other identity-shaped doors: an assertion makes a number count as
--- a person, so no agent makes one. The assertion is space-scoped (§2.4) and is
--- refused `already_linked` while the participant resolves through the
--- person's own verified link, which an admin cannot override or revoke. The
--- activity row names the participant masked, never by its raw id.
+-- THE WRITE (D52). One owner (coordinator ruling, 2026-10-30: P owns
+-- bridges.participants.update; B1c's #1436 drops its copy). The assertion
+-- semantics live in ONE internal core, internal.bridge_assert_participant,
+-- with B1c's rules; B1c's Phase-1 import calls it server-side. The catalog
+-- door, public.update_bridge_participant, adds the human-only and
+-- space-admin checks and the mute. An assertion makes a number count as a
+-- person, so no agent makes one. The activity row names the participant
+-- masked, never by its raw id.
 -- =============================================================================
 
 set role tm8_graph_owner;
@@ -87,29 +88,113 @@ $$;
 revoke all on function internal.bridge_participants_view(uuid) from public;
 grant execute on function internal.bridge_participants_view(uuid) to tm8_app;
 
+-- A person's provider address (B1c's rule, shared): one address, no spaces;
+-- on WhatsApp a phone-number JID or a LID, never a group.
+create or replace function internal.bridge_valid_external_id(p_provider text, p_external_id text)
+returns void language plpgsql immutable set search_path = public, internal, pg_temp as $$
+begin
+  if p_external_id is null or char_length(p_external_id) not between 1 and 256 or p_external_id ~ '\s' then
+    raise exception 'externalId must be one provider address, without spaces' using errcode = '22023';
+  end if;
+  if p_provider = 'whatsapp' and p_external_id !~ '^[0-9]{5,20}@(s\.whatsapp\.net|lid)$' then
+    raise exception 'a WhatsApp link names a person: <digits>@s.whatsapp.net or <digits>@lid' using errcode = '22023';
+  end if;
+end
+$$;
+revoke all on function internal.bridge_valid_external_id(text, text) from public;
+
+-- THE ONE ASSERTION CORE (D52, coordinator ruling 2026-10-30). Both the
+-- catalog door below and B1c's Phase-1 import (server-side, as the importing
+-- admin) call this; neither re-implements it. It checks NO caller rights: the
+-- caller has. It needs no participant row (the import runs before anyone has
+-- spoken). p_member_id null revokes. Returns whether anything changed.
+--   assert   refused `link_conflict` when a verified (identity-scoped) link
+--            names someone else, or this space already asserts someone else;
+--            the same person as their verified link, or as the live
+--            assertion, is a no-op
+--   revoke   ends this space's assertion only, even beside a verified link;
+--            nothing to revoke is a no-op
+create or replace function internal.bridge_assert_participant(
+  p_space_id uuid, p_provider text, p_external_id text, p_member_id uuid, p_actor uuid
+) returns boolean language plpgsql set search_path = public, internal, pg_temp as $$
+declare
+  v_identity text;
+  live public.bridge_identity_links;
+  verified public.bridge_identity_links;
+begin
+  perform internal.bridge_valid_external_id(p_provider, p_external_id);
+  select * into live from public.bridge_identity_links
+   where provider = p_provider and external_id = p_external_id
+     and space_id = p_space_id and revoked_at is null
+   for update;
+
+  if p_member_id is null then
+    if live.id is null then return false; end if;
+    update public.bridge_identity_links set revoked_at = now() where id = live.id;
+    return true;
+  end if;
+
+  -- Only a member of THIS space: an admin of one space cannot make a number
+  -- count as someone in another (D5).
+  select m.identity_id into v_identity
+    from public.members m join public.entities e on e.id = m.entity_id
+   where m.entity_id = p_member_id and m.space_id = p_space_id
+     and m.status = 'active' and e.deleted_at is null;
+  if v_identity is null then
+    raise exception 'member not found in this space' using errcode = 'P0002';
+  end if;
+
+  select * into verified from public.bridge_identity_links
+   where provider = p_provider and external_id = p_external_id
+     and space_id is null and revoked_at is null;
+  if verified.id is not null then
+    if verified.identity_id <> v_identity then
+      perform internal.bridge_refuse('link_conflict',
+        'this address is verified as someone else; they must unlink it first');
+    end if;
+    return false;                                   -- already them, verified: nothing to assert
+  end if;
+  if live.id is not null then
+    if live.identity_id <> v_identity then
+      perform internal.bridge_refuse('link_conflict',
+        'this address is already asserted as another member here; revoke that first');
+    end if;
+    return false;
+  end if;
+  begin
+    insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id,
+                                             asserted_by_member_id, verified_at)
+    values (p_provider, p_external_id, v_identity, 'admin', p_space_id, p_actor, now());
+  exception when unique_violation then
+    perform internal.bridge_refuse('link_conflict', 'a concurrent assertion for this address won; read it and retry');
+  end;
+  return true;
+end
+$$;
+revoke all on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid) from public;
+grant execute on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid) to tm8_graph_owner;
+
+-- bridges.participants.update: the catalog door. Human-only and space-admin
+-- on top of the core. Mute needs the participant row; an assertion does not.
 create or replace function public.update_bridge_participant(
   p_bridge_id uuid, p_external_id text, p_patch jsonb,
   p_actor_id uuid default null, p_client_mutation_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
-  replay jsonb; actor uuid; b public.bridges; p public.bridge_participants; k text;
-  v_identity text; v_member uuid; v_ids text[]; v_fields jsonb := '{}'::jsonb;
+  replay jsonb; actor uuid; b public.bridges; k text;
+  v_changed boolean := false; v_fields jsonb := '{}'::jsonb;
 begin
   perform internal.require_human_auth_kind();
   b := internal.bridge_for_admin(p_bridge_id);
   perform internal.require_replay_principal(p_client_mutation_id);
   replay := internal.ledger_replay(p_client_mutation_id, 'bridges.participants.update');
   if replay is not null then
-    perform internal.require_replay_subject(replay #>> '{entity,id}', p_bridge_id::text, 'entity');
+    perform internal.require_replay_subject(replay ->> 'bridgeId', p_bridge_id::text, 'entity');
     return replay;
   end if;
   actor := internal.resolve_actor(p_actor_id, b.space_id);
   perform internal.bind_actor(actor);
 
-  select * into p from public.bridge_participants where bridge_id = p_bridge_id and external_id = p_external_id;
-  if p.bridge_id is null then
-    raise exception 'participant not found on this bridge' using errcode = 'P0002';
-  end if;
   if jsonb_typeof(p_patch) is distinct from 'object' or p_patch = '{}'::jsonb then
     raise exception 'patch must be a non-empty object' using errcode = '22023';
   end if;
@@ -124,46 +209,32 @@ begin
       raise exception 'muted must be a boolean' using errcode = '22023';
     end if;
     update public.bridge_participants set muted = (p_patch ->> 'muted')::boolean
-     where bridge_id = p_bridge_id and external_id = p_external_id;
-    v_fields := v_fields || jsonb_build_object('muted', (p_patch ->> 'muted')::boolean);
+     where bridge_id = p_bridge_id and external_id = p_external_id and muted is distinct from (p_patch ->> 'muted')::boolean;
+    if found then v_changed := true; v_fields := v_fields || jsonb_build_object('muted', (p_patch ->> 'muted')::boolean);
+    elsif not exists (select 1 from public.bridge_participants where bridge_id = p_bridge_id and external_id = p_external_id) then
+      raise exception 'participant not found on this bridge' using errcode = 'P0002';
+    end if;
   end if;
 
   if p_patch ? 'memberId' then
-    v_ids := array[p.external_id] || p.alt_external_ids;
-    -- The person's own verified link wins on inbound (the resolver's order),
-    -- so an assertion under it would say nothing; it is theirs to revoke.
-    if exists (select 1 from public.bridge_identity_links l
-                where l.provider = b.provider and l.external_id = any(v_ids)
-                  and l.revoked_at is null and l.space_id is null) then
-      perform internal.bridge_refuse('already_linked',
-        'this participant has linked their own number; only they can unlink it');
+    if jsonb_typeof(p_patch -> 'memberId') not in ('null', 'string') then
+      raise exception 'memberId must be a member id or null' using errcode = '22023';
     end if;
-    update public.bridge_identity_links l set revoked_at = now()
-     where l.provider = b.provider and l.external_id = any(v_ids)
-       and l.revoked_at is null and l.space_id = b.space_id;
-    if jsonb_typeof(p_patch -> 'memberId') = 'null' then
-      v_fields := v_fields || jsonb_build_object('assertion', 'revoked');
-    else
-      v_member := (p_patch ->> 'memberId')::uuid;
-      select mem.identity_id into v_identity
-        from public.members mem join public.entities e on e.id = mem.entity_id
-       where mem.entity_id = v_member and mem.space_id = b.space_id
-         and mem.status = 'active' and e.deleted_at is null;
-      if v_identity is null then
-        raise exception 'memberId must be an active member of this space' using errcode = '22023';
-      end if;
-      insert into public.bridge_identity_links(provider, external_id, identity_id, method, space_id,
-                                               asserted_by_member_id, verified_at)
-      values (b.provider, p.external_id, v_identity, 'admin', b.space_id, actor, now());
-      v_fields := v_fields || jsonb_build_object('assertion', 'asserted', 'memberId', v_member);
+    if internal.bridge_assert_participant(b.space_id, b.provider, p_external_id,
+                                          nullif(p_patch ->> 'memberId', '')::uuid, actor) then
+      v_changed := true;
+      v_fields := v_fields || jsonb_build_object('assertion', case when jsonb_typeof(p_patch -> 'memberId') = 'null' then 'revoked' else 'asserted' end);
     end if;
   end if;
 
+  if v_changed then
+    -- The participant is named masked: activity is readable by every member.
+    perform internal.record_activity(b.space_id, p_bridge_id, actor, 'updated', null,
+      jsonb_build_object('kind', 'bridge', 'op', 'bridges.participants.update',
+                         'participant', internal.bridge_mask(p_external_id)) || v_fields);
+  end if;
   return internal.ledger_record(p_client_mutation_id, 'bridges.participants.update',
-    internal.command_result(p_bridge_id, null,
-      internal.record_activity(b.space_id, p_bridge_id, actor, 'updated', null,
-        jsonb_build_object('kind', 'bridge', 'participant', internal.bridge_mask(p.external_id)) || v_fields),
-      array[p_bridge_id]));
+    jsonb_build_object('bridgeId', p_bridge_id, 'externalId', p_external_id, 'changed', v_changed));
 end
 $$;
 revoke all on function public.update_bridge_participant(uuid, text, jsonb, uuid, text) from public;

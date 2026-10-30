@@ -52,7 +52,7 @@ beforeAll(async () => {
       else if (url.pathname.endsWith('/handles') && req.method === 'POST') data = { spaceId: SPACE, handle: 'keen-otter', entityId: CHAT, kind: 'work_session', title: null, status: 'live', createdAt: view.createdAt };
       else if (url.pathname.endsWith('/listen')) data = { bridgeId: BRIDGE, sessionId: CHAT, wake: body.wake, ceiling: 'thread' };
       else if (url.pathname.endsWith('/participants')) data = { bridgeId: BRIDGE, spaceId: SPACE, admin: false, items: PEOPLE };
-      else if (url.pathname.includes('/participants/')) data = { ...PEOPLE[1], muted: body.patch?.muted ?? false };
+      else if (url.pathname.includes('/participants/')) data = { bridgeId: BRIDGE, externalId: decodeURIComponent(url.pathname.split('/').pop()!), changed: true, participant: { ...PEOPLE[1], muted: body.patch?.muted ?? false } };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -160,6 +160,7 @@ describe('tm8 bridge (B0a)', () => {
     const ext = '919811109494@s.whatsapp.net';
     expect(await run(['bridge', 'participant', BRIDGE, ext, '--mute', 'on'])).toBe(0);
     expect(requests.at(-1)).toMatchObject({ method: 'PATCH', path: `/v2/bridges/${BRIDGE}/participants/${encodeURIComponent(ext)}`, body: { patch: { muted: true } } });
+    expect(stdout).toContain('updated'); expect(stdout).toContain('muted');
     expect(await run(['bridge', 'participant', BRIDGE, ext, '--member', CHAT])).toBe(0);
     expect(requests.at(-1)!.body.patch).toEqual({ memberId: CHAT });
     expect(await run(['bridge', 'participant', BRIDGE, ext, '--unassert'])).toBe(0);

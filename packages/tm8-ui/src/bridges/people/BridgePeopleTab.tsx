@@ -15,8 +15,9 @@
  * id. The tab has no way to unmask and no code path that tries.
  *
  * ROW ACTIONS are an admin's (D52): *Mute*, *This is…* (assert a member) and
- * *Revoke assertion*. A verified link is the person's own, so no admin action
- * touches it. *Invite to space* belongs to B3 and arrives through
+ * *Revoke assertion*. A verified link is the person's own: *This is…* is not
+ * offered over it, and *Revoke assertion* ends only this space's assertion.
+ * *Invite to space* belongs to B3 and arrives through
  * `renderInvite`. *This is me* waits for `bridges.links.*`. A refusal is shown
  * as the server worded it.
  *
@@ -98,10 +99,10 @@ export function BridgePeopleTab({ bridgeId, port, onOpenEntity, renderInvite }: 
   const apply = useCallback(async (p: BridgeParticipant, patch: BridgeParticipantPatch, done: string) => {
     setBusy(p.externalId); setNotice(null);
     try {
-      const next = await port.update(bridgeId, p.externalId, patch);
-      setRows((prev) => prev?.map((r) => (r.externalId === p.externalId ? next : r)) ?? prev);
+      const { participant: next, changed } = await port.update(bridgeId, p.externalId, patch);
+      if (next) setRows((prev) => prev?.map((r) => (r.externalId === p.externalId ? next : r)) ?? prev);
       setAsserting(null);
-      setNotice({ tone: 'ok', text: done });
+      setNotice({ tone: 'ok', text: changed ? done : 'Already so; nothing changed.' });
     } catch (err) {
       setNotice({ tone: 'fail', text: failureOf(err) });
     } finally {

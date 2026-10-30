@@ -3,7 +3,7 @@
  * answers, used by the tab's tests and its browser check until B1b's inbound
  * fills real bridges. Ids are made up; numbers are not real.
  */
-import type { ActorSummary, BridgeParticipant, BridgeParticipantListResult } from '@tm8/contract';
+import type { ActorSummary, BridgeParticipant, BridgeParticipantListResult, BridgeParticipantUpdateResult } from '@tm8/contract';
 import type { BridgeParticipantPatch, BridgePeoplePort } from './port';
 
 export const FIXTURE_BRIDGE_ID = '0bad0000-0000-4000-8000-0000000000b1';
@@ -60,23 +60,28 @@ export function fixturePort(opts: { admin?: boolean; items?: BridgeParticipant[]
       return { bridgeId, spaceId: FIXTURE_SPACE_ID, admin, items };
     },
     members: async () => { await wait(); return FIXTURE_MEMBERS; },
-    update: async (_bridgeId, externalId, patch: BridgeParticipantPatch) => {
+    update: async (bridgeId, externalId, patch: BridgeParticipantPatch): Promise<BridgeParticipantUpdateResult> => {
       await wait();
       const current = items.find((p) => p.externalId === externalId);
       if (!current) throw Object.assign(new Error('participant not found on this bridge'), { code: 'not_found' });
       let next = { ...current };
       if (patch.muted !== undefined) next.muted = patch.muted;
-      if (patch.memberId !== undefined) {
-        if (current.trust === 'linked') {
-          throw Object.assign(new Error('this participant has linked their own number; only they can unlink it'), { code: 'conflict' });
-        }
+      // The core's rules (D52): a verified link wins and is never overwritten;
+      // revoking ends only an assertion.
+      if (patch.memberId !== undefined && current.trust !== 'linked') {
         const m = patch.memberId ? FIXTURE_MEMBERS.find((x) => x.id === patch.memberId) ?? null : null;
+        if (m && current.trust === 'asserted' && current.memberId !== m.id) {
+          throw Object.assign(new Error('this address is already asserted as another member here; revoke that first'), { code: 'conflict' });
+        }
         next = m
-          ? { ...next, trust: 'asserted', memberId: m.id, member: m, link: { method: 'admin', verifiedAt: new Date().toISOString() } }
+          ? { ...next, trust: 'asserted', memberId: m.id, member: m, link: current.link ?? { method: 'admin', verifiedAt: new Date().toISOString() } }
           : { ...next, trust: 'guest', memberId: null, member: null, link: null };
+      } else if (patch.memberId && patch.memberId !== current.memberId) {
+        throw Object.assign(new Error('this address is verified as someone else; they must unlink it first'), { code: 'conflict' });
       }
+      const changed = JSON.stringify(next) !== JSON.stringify(current);
       items = items.map((p) => (p.externalId === externalId ? next : p));
-      return next;
+      return { bridgeId, externalId, changed, participant: next };
     },
   };
 }

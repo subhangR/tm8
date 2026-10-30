@@ -14,7 +14,7 @@ import {
   BridgeRetargetInputSchema,
   BridgeStateInputSchema, BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
   type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
-  type BridgeLogEntry, type BridgeLogResult, type BridgeParticipant, type BridgeParticipantListResult,
+  type BridgeLogEntry, type BridgeLogResult, type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
   type BridgeRecentPoster, type BridgeView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
@@ -263,11 +263,11 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         throw new CollabError('invalid_input', 'body externalId does not match route');
       }
       return command(ctx, async q => {
-        await q.rpc('update_bridge_participant', [bridgeId, externalId, JSON.stringify(input.patch), input.actorId ?? null, input.clientMutationId]);
+        const result = await q.rpc<{ changed: boolean }>('update_bridge_participant',
+          [bridgeId, externalId, JSON.stringify(input.patch), input.actorId ?? null, input.clientMutationId]);
         // The caller is an admin (the door checked), so the roster names the row unmasked.
-        const row = (await readParticipants(q, bridgeId)).items.find(p => p.externalId === externalId);
-        if (!row) throw new CollabError('not_found', 'participant not found on this bridge');
-        return row;
+        const participant = (await readParticipants(q, bridgeId)).items.find(p => p.externalId === externalId) ?? null;
+        return { bridgeId, externalId, changed: result.changed, participant } satisfies BridgeParticipantUpdateResult;
       });
     }, 'bridges.participants.update is for a human space admin'),
     'bridges.handles.list': async ctx => read(ctx, async q => {
