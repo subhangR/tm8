@@ -263,6 +263,17 @@ describe('provenance (§2.8, D22, D30, D31; §7.3 item 11)', () => {
     expect((await toBridge(two, infra))!.props.origins.map(o => o['providerMessageId'])).toEqual(['wamid.m1', 'wamid.m3', 'wamid.m9']);
   });
 
+  it('keeps the creating path\'s w1 writer: the recorder restores it, never clears it', async () => {
+    const after = await inTx(s1, async c => {
+      await c.query(`select internal.w1_set_writer('message_recorder')`);
+      const doc = await newEntity(c, 'doc');
+      const { rows } = await c.query<{ w: string | null }>('select internal.w1_writer() w');
+      return { doc, writer: rows[0]!.w };
+    });
+    expect(after.writer).toBe('message_recorder');
+    expect(await toBridge(after.doc, infra)).toBeDefined();
+  });
+
   it('edges stay put when the entity moves', async () => {
     const parent = await inTx(null, c => newEntity(c, 'doc'));
     const before = await edgesOf(doc1);
