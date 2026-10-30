@@ -1,22 +1,17 @@
 /**
  * Settings owns the section frame and account-scoped explanation; provider
- * actions and their four connection verdicts live in the block shared with
- * Home. Expiry remains a separate health axis over a positive connection, as
- * introduced by main's layout pass, so the shared verdict vocabulary does not
- * need a contradictory fifth value.
+ * cards, their status badges (including Expired, a health axis over a positive
+ * connection — see `credential-status.ts`) and their actions live in the block
+ * shared with Home. This frame adds only a one-line tally above the cards.
  */
 import { useMemo, useState } from 'react';
-import type {
-  CredentialConnectionView,
-  CredentialsStatusView,
-} from '@tm8/contract';
+import type { CredentialsStatusView } from '@tm8/contract';
 import { SectionAbsent, SectionFrame } from '../settings-space';
 import { CredentialsProviderBlock } from './CredentialsProviderBlock';
 import { ServiceKeysBlock } from './ServiceKeysBlock';
+import { credentialBadgeOf } from './credential-status';
 import { presentationOf } from './provider-presentation';
 import {
-  verdictOf,
-  type ConnectionVerdict,
   type CredentialsPort,
   type CredentialsSharePort,
   type ServiceKeysPort,
@@ -60,64 +55,30 @@ interface ObservedStatus {
   value: CredentialsStatusView;
 }
 
-type CredentialHealth = 'ok' | 'expired';
-
-function healthOf(
-  entry: CredentialConnectionView,
-  verdict: ConnectionVerdict,
-): CredentialHealth {
-  if (verdict !== 'connected-named' && verdict !== 'connected-unnamed') return 'ok';
-  return entry.status === 'stale' || entry.status === 'revoked' ? 'expired' : 'ok';
-}
-
-function pillFor(
-  verdict: ConnectionVerdict,
-  health: CredentialHealth,
-): { word: string; modifier: string } {
-  if (verdict === 'unknown') return { word: 'Unknown', modifier: 'unknown' };
-  if (verdict === 'unavailable') return { word: 'Unavailable', modifier: 'unavailable' };
-  if (verdict === 'disconnected') return { word: 'Not connected', modifier: 'off' };
-  if (health === 'expired') return { word: 'Expired', modifier: 'expired' };
-  return { word: 'Connected', modifier: 'on' };
-}
-
 /**
- * Settings keeps main's at-a-glance health treatment without duplicating the
- * shared cards or their actions. In particular, a stored-but-stale connection
- * still says Connected in the shared connection sentence and Expired here:
- * those are deliberately two different questions.
+ * The one-line tally above the cards. It counts badge words, so it can never
+ * disagree with the cards below it.
  */
-function CredentialHealthSummary({ status }: { status: CredentialsStatusView }) {
-  return (
-    <div className="set-cred__health" aria-label="Credential health">
-      {status.providers.map((entry) => {
-        const verdict = verdictOf(entry, status.gitCredentialStore);
-        const health = healthOf(entry, verdict);
-        const pill = pillFor(verdict, health);
+function CredentialsTally({ status }: { status: CredentialsStatusView }) {
+  const badges = status.providers.map((entry) => ({
+    name: presentationOf(entry.provider).name,
+    badge: credentialBadgeOf(entry, status.gitCredentialStore),
+  }));
+  const connected = badges.filter(({ badge }) => badge.word === 'Connected').length;
+  const attention = badges
+    .filter(({ badge }) => badge.word === 'Expired' || badge.word === 'Unknown')
+    .map(({ name }) => name);
 
-        return (
-          <div className="set-cred__health-item" key={entry.provider}>
-            <span className="set-cred__health-name">
-              {presentationOf(entry.provider).name}
-            </span>
-            <span
-              className={`set-cred__pill set-cred__pill--${pill.modifier}`}
-              data-testid={`credential-pill-${entry.provider}`}
-            >
-              {pill.word}
-            </span>
-            {health === 'expired' ? (
-              <span
-                className="set-cred__why set-cred__health-why"
-                data-testid={`credential-expired-why-${entry.provider}`}
-              >
-                {`this login is recorded as ${entry.status} — it is still stored, and an agent launched with it will fail. Reconnect to refresh it.`}
-              </span>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
+  return (
+    <p className="set-cred__tally" data-testid="credentials-tally">
+      <span className="set-cred__tally-count">{connected}</span>
+      {` of ${badges.length} connected`}
+      {attention.length > 0 ? (
+        <span className="set-cred__tally-attention">
+          {` · ${attention.join(', ')} need${attention.length === 1 ? 's' : ''} attention`}
+        </span>
+      ) : null}
+    </p>
   );
 }
 
@@ -171,9 +132,7 @@ export function CredentialsSection({
         />
       ) : null}
 
-      {status && status.providers.length > 0 ? (
-        <CredentialHealthSummary status={status} />
-      ) : null}
+      {status && status.providers.length > 0 ? <CredentialsTally status={status} /> : null}
 
       <div className="set-cred__shared">
         <CredentialsProviderBlock port={observedPort} serverBaseUrl={serverBaseUrl} sharePort={sharePort} />

@@ -14,11 +14,14 @@ import type {
 } from '@tm8/contract';
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
 import { CREDENTIAL_PROVIDER_LABEL } from '../domain/launch';
+import { Pill } from '../kit/Pill';
+import { Timestamp } from '../kit/Timestamp';
+import { parseInstant, useNow } from '../kit/time';
 import { presentationOf, providerBinaryLabel } from './provider-presentation';
+import { credentialBadgeOf, isConnectedVerdict } from './credential-status';
 import { ShareCredentialPanel } from './ShareCredentialPanel';
 import {
   disconnectVerdictOf,
-  verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
   type CredentialsSharePort,
@@ -127,6 +130,9 @@ export function CredentialsProviderBlock({
     }
   }
 
+  const loginError =
+    pending && outcome?.kind === 'error' && outcome.provider === pending.provider ? outcome.message : null;
+
   return (
     <div className="cred-block" data-testid="credentials-provider-block">
       <p className="cred-intro">
@@ -150,7 +156,9 @@ export function CredentialsProviderBlock({
         </div>
       ) : null}
 
-      {outcome ? <OutcomeNotice outcome={outcome} /> : null}
+      {/* A failure that belongs to the open login terminal is shown inside
+          it, next to the buttons that can fix it, not above the grid. */}
+      {outcome && !loginError ? <OutcomeNotice outcome={outcome} onDismiss={() => setOutcome(null)} /> : null}
 
       {sharing && sharePort ? <ShareCredentialPanel
         key={`${sharePort.currentSpaceId}:${sharing}`}
@@ -166,6 +174,9 @@ export function CredentialsProviderBlock({
           serverBaseUrl={serverBaseUrl}
           busy={busy === pending.provider}
           onFinish={() => void finish(pending)}
+          error={loginError}
+          onCancel={() => { setPending(null); setOutcome(null); }}
+          onRestart={() => void connect(pending.provider)}
         />
       ) : null}
 
@@ -189,8 +200,14 @@ export function CredentialsProviderBlock({
 }
 
 /**
- * One provider. `verdictOf` owns the measurement interpretation; this renderer
- * owns only the sentence and action belonging to that verdict.
+ * One provider. `credentialBadgeOf` owns the measurement interpretation; this
+ * renderer owns the sentence and the actions belonging to that state.
+ *
+ * ONE PRIMARY ACTION, and only when there is something to do: Connect for a
+ * provider that is not (or may not be) signed in, Reconnect for an expired
+ * one. A healthy connection carries no filled button — Reconnect and
+ * Disconnect stay reachable but quiet, so the eye lands on the cards that
+ * need attention.
  */
 function ProviderCard({
   entry,
@@ -207,13 +224,19 @@ function ProviderCard({
   onDisconnect: () => void;
   onShare?: () => void;
 }) {
-  const verdict = verdictOf(entry, gitCredentialStore);
+  const badge = credentialBadgeOf(entry, gitCredentialStore);
+  const { verdict } = badge;
+  const connected = isConnectedVerdict(verdict);
   const presentation = presentationOf(entry.provider);
   const ProviderIcon = presentation.icon;
+  const needsAction = !connected || badge.expired;
+  const showAccount = verdict === 'connected-named';
+  const showConnectedAt = connected && Boolean(entry.connectedAt);
+  const showVerified = Boolean(entry.lastVerifiedAt);
 
   return (
     <article
-      className={`cred-card cred-card--${VERDICT_TONE[verdict]}`}
+      className={`cred-card cred-card--${VERDICT_TONE[verdict]}${badge.expired ? ' cred-card--expired' : ''}`}
       data-testid={`credential-card-${entry.provider}`}
       data-credential-state={VERDICT_TONE[verdict]}
     >
@@ -221,13 +244,24 @@ function ProviderCard({
         <span className="cred-card__mark">
           <ProviderIcon />
         </span>
-        <span className="cred-card__name">{presentation.name}</span>
-        <code className="cred-card__binary">{providerBinaryLabel(entry.provider)}</code>
+        <span className="cred-card__title">
+          <span className="cred-card__name">{presentation.name}</span>
+          <code className="cred-card__binary">{providerBinaryLabel(entry.provider)}</code>
+        </span>
+        <span className="cred-card__badge" data-testid={`credential-pill-${entry.provider}`}>
+          <Pill tone={badge.tone}>{badge.word}</Pill>
+        </span>
       </header>
 
       <div className="cred-card__state" data-testid={`credential-verdict-${entry.provider}`}>
         <VerdictLine verdict={verdict} login={entry.login} binary={presentation.binary} />
       </div>
+
+      {badge.expired ? (
+        <p className="cred-card__expired" data-testid={`credential-expired-why-${entry.provider}`}>
+          {`This login is recorded as ${entry.status} — it is still stored, and an agent launched with it will fail. Reconnect to refresh it.`}
+        </p>
+      ) : null}
 
       {/* The routing disclosure. It sits directly under the verdict because it
           is part of the same answer: "connected" and "used for these models
@@ -236,30 +270,32 @@ function ProviderCard({
 
       {/* A connected-null result is a complete probe answer, not an account
           name that is still loading. Only a real name earns an Account row. */}
-      {verdict === 'connected-named' ? (
-        <div className="cred-card__account">
-          <span>Account</span>
-          <span className="cred-card__account-value" data-testid={`credential-login-${entry.provider}`}>
-            {entry.login}
-          </span>
-        </div>
+      {showAccount || showConnectedAt || showVerified ? (
+        <dl className="cred-card__facts">
+          {showAccount ? (
+            <div className="cred-card__fact">
+              <dt>Account</dt>
+              <dd className="cred-card__account-value" data-testid={`credential-login-${entry.provider}`}>
+                {entry.login}
+              </dd>
+            </div>
+          ) : null}
+          {showConnectedAt ? (
+            <div className="cred-card__fact">
+              <dt>Connected</dt>
+              <dd><Timestamp at={entry.connectedAt} /></dd>
+            </div>
+          ) : null}
+          {showVerified ? (
+            <div className="cred-card__fact">
+              <dt>Verified</dt>
+              <dd><Timestamp at={entry.lastVerifiedAt} /></dd>
+            </div>
+          ) : null}
+        </dl>
       ) : null}
 
-      {entry.lastVerifiedAt ? (
-        <div className="cred-card__account">
-          <span>Verified</span>
-          <span className="cred-card__account-value">{entry.lastVerifiedAt}</span>
-        </div>
-      ) : null}
-
-      <div className="cred-card__actions">
-        {onShare && (verdict === 'connected-named' || verdict === 'connected-unnamed') ? <button
-          type="button"
-          className="cred-action"
-          disabled={busy}
-          onClick={onShare}
-          data-testid={`credential-share-${entry.provider}`}
-        >Share to</button> : null}
+      <footer className="cred-card__actions">
         {verdict === 'unavailable' ? (
           <span className="cred-install" data-testid={`credential-install-${entry.provider}`}>
             {presentation.binary === null ? (
@@ -272,23 +308,24 @@ function ProviderCard({
           </span>
         ) : (
           <>
-            <button
-              type="button"
-              className="cred-action cred-action--primary"
-              onClick={onConnect}
-              disabled={busy}
-              data-testid={`credential-connect-${entry.provider}`}
-            >
-              {verdict === 'connected-named' || verdict === 'connected-unnamed'
-                ? 'Reconnect'
-                : 'Connect'}
-            </button>
+            {onShare && connected ? (
+              <button
+                type="button"
+                className="cred-action cred-action--quiet"
+                disabled={busy}
+                onClick={onShare}
+                data-testid={`credential-share-${entry.provider}`}
+              >
+                Share to
+              </button>
+            ) : null}
+            <span className="cred-card__spacer" />
             {/* Unknown may already be connected. Keep the escape hatch that
                 can revoke it; only a measured disconnection hides Disconnect. */}
             {verdict === 'disconnected' ? null : (
               <button
                 type="button"
-                className="cred-action"
+                className="cred-action cred-action--quiet cred-action--danger"
                 onClick={onDisconnect}
                 disabled={busy}
                 data-testid={`credential-disconnect-${entry.provider}`}
@@ -296,9 +333,18 @@ function ProviderCard({
                 Disconnect
               </button>
             )}
+            <button
+              type="button"
+              className={needsAction ? 'cred-action cred-action--primary' : 'cred-action'}
+              onClick={onConnect}
+              disabled={busy}
+              data-testid={`credential-connect-${entry.provider}`}
+            >
+              {connected ? 'Reconnect' : 'Connect'}
+            </button>
           </>
         )}
-      </div>
+      </footer>
     </article>
   );
 }
@@ -389,12 +435,23 @@ function VerdictLine({
   }
 }
 
+/** The dismiss control every outcome notice carries in its corner. */
+function DismissNotice({ onDismiss }: { onDismiss?: () => void }) {
+  if (!onDismiss) return null;
+  return (
+    <button type="button" className="cred-notice__dismiss" aria-label="Dismiss" onClick={onDismiss}>
+      ×
+    </button>
+  );
+}
+
 /** What the last write actually did, including partial disconnect. */
-function OutcomeNotice({ outcome }: { outcome: Outcome }) {
+function OutcomeNotice({ outcome, onDismiss }: { outcome: Outcome; onDismiss?: () => void }) {
   if (outcome.kind === 'error') {
     const provider = presentationOf(outcome.provider);
     return (
-      <div className="cred-notice" data-testid="credential-outcome-error">
+      <div className="cred-notice cred-notice--error" data-testid="credential-outcome-error">
+        <DismissNotice onDismiss={onDismiss} />
         <span className="cred-notice__head">{`${provider.name} — that did not go through.`}</span>
         <span className="cred-notice__why">{outcome.message}</span>
       </div>
@@ -404,8 +461,10 @@ function OutcomeNotice({ outcome }: { outcome: Outcome }) {
   if (outcome.kind === 'finish') {
     const result = outcome.result;
     const provider = presentationOf(result.provider);
+    const tone = !result.connected ? 'error' : result.stored ? 'ok' : 'warn';
     return (
-      <div className="cred-notice" data-testid="credential-outcome-finish">
+      <div className={`cred-notice cred-notice--${tone}`} data-testid="credential-outcome-finish">
+        <DismissNotice onDismiss={onDismiss} />
         <span className="cred-notice__head">
           {result.connected
             ? `${provider.name} — signed in${result.login ? ` as ${result.login}` : ''}.`
@@ -428,8 +487,11 @@ function OutcomeNotice({ outcome }: { outcome: Outcome }) {
   const terminated =
     result.terminatedCredentialSessionIds.length + result.terminatedAgentSessionIds.length;
 
+  const tone = verdict === 'failed' ? 'error' : verdict === 'partial' ? 'warn' : 'ok';
+
   return (
-    <div className="cred-notice" data-testid={`credential-outcome-disconnect-${verdict}`}>
+    <div className={`cred-notice cred-notice--${tone}`} data-testid={`credential-outcome-disconnect-${verdict}`}>
+      <DismissNotice onDismiss={onDismiss} />
       <span className="cred-notice__head">
         {verdict === 'failed'
           ? `${provider.name} — not disconnected.`
@@ -460,8 +522,16 @@ function OutcomeNotice({ outcome }: { outcome: Outcome }) {
 /**
  * Login is an ordinary PTY work_session, hosted by the existing terminal
  * module. The test-build placeholder says plainly when live bytes are disabled.
- * Settings → Space credentials mounts this same panel for a space login, with
- * its own `lede` naming the credential being logged into.
+ * Settings → Space credentials and the managed credential block mount this
+ * same panel, with their own `lede` naming the credential being logged into.
+ *
+ * The panel carries its own lifecycle: waiting (with a live countdown to the
+ * terminal's expiry), expired, and an inline error from the last finish
+ * attempt. `onCancel`, `onRestart` and `error` are optional so hosts that
+ * predate them keep their behaviour.
+ *
+ * "I've finished signing in" stays offered after the countdown runs out: the
+ * server, not this clock, decides whether the session can still be harvested.
  */
 export function LoginTerminalPanel({
   login,
@@ -469,47 +539,134 @@ export function LoginTerminalPanel({
   busy,
   onFinish,
   lede,
+  error,
+  onCancel,
+  onRestart,
 }: {
   login: PendingLogin;
   serverBaseUrl?: string;
   busy: boolean;
   onFinish: () => void;
   lede?: string;
+  /** The last finish/start attempt's failure, shown inside the panel. */
+  error?: string | null;
+  /** Close the panel. The terminal is left to expire on its own. */
+  onCancel?: () => void;
+  /** Open a fresh login terminal for the same provider. */
+  onRestart?: () => void;
 }) {
   const provider = presentationOf(login.provider);
+  const ProviderIcon = provider.icon;
+  const now = useNow();
+  const expiresAt = parseInstant(login.expiresAt);
+  const expired = expiresAt !== null && expiresAt <= now;
+  const state = error ? 'error' : expired ? 'expired' : busy ? 'checking' : 'waiting';
+
   return (
-    <div className="cred-terminal" data-testid="credential-login-terminal">
-      <span className="cred-intro">
-        {lede ?? `Signing in to ${provider.name}. Follow the terminal prompts, then press “I’ve finished signing in”.`}
-      </span>
-      <span className="cred-notice__why" data-testid="credential-login-expiry">
-        {`This terminal runs \`${login.command}\` and expires at ${login.expiresAt}.`}
-      </span>
+    <section
+      className={`cred-terminal cred-terminal--${state}`}
+      data-testid="credential-login-terminal"
+      data-login-state={state}
+      aria-label={`Sign in to ${provider.name}`}
+      aria-busy={busy}
+    >
+      <header className="cred-terminal__head">
+        <span className="cred-card__mark">
+          <ProviderIcon />
+        </span>
+        <span className="cred-terminal__title">{`Sign in to ${provider.name}`}</span>
+        <Pill tone={state === 'error' ? 'block' : state === 'expired' ? 'wait' : 'brand'} dot={state === 'waiting' || state === 'checking' ? 'pulse' : undefined}>
+          {state === 'error' ? 'Needs attention' : state === 'expired' ? 'Expired' : state === 'checking' ? 'Checking' : 'Waiting for you'}
+        </Pill>
+      </header>
 
-      {isLiveTerminalEnabled() ? (
-        <LiveTerminal
-          sessionId={login.workSessionId}
-          serverBaseUrl={serverBaseUrl}
-          live
-          autoFocus
-        />
-      ) : (
-        <TerminalHost
-          ariaLabel={`${provider.name} login terminal`}
-          placeholder="the live terminal is disabled in this build, so this login cannot be completed here"
-        />
-      )}
+      <p className="cred-intro cred-terminal__lede">
+        {lede ?? 'This is a real terminal on this node. What you type goes to the sign-in program running in it, never through this page.'}
+      </p>
 
-      <button
-        type="button"
-        className="cred-action cred-action--primary"
-        onClick={onFinish}
-        disabled={busy}
-        data-testid="credential-finish-login"
-      >
-        I’ve finished signing in
-      </button>
-    </div>
+      <ol className="cred-terminal__steps">
+        <li>Open the link the terminal prints and sign in with your {provider.name} account.</li>
+        <li>If the browser shows a code, paste it into the terminal and press Enter.</li>
+        <li>Come back here and press <strong>I’ve finished signing in</strong>.</li>
+      </ol>
+
+      <p className="cred-terminal__meta" data-testid="credential-login-expiry">
+        <span>
+          Runs <code>{login.command}</code>
+        </span>
+        <span aria-hidden="true">·</span>
+        {expiresAt === null ? (
+          <span>{`expires at ${login.expiresAt}`}</span>
+        ) : expired ? (
+          <span className="cred-terminal__expiry--past">
+            expired <Timestamp at={login.expiresAt} />
+          </span>
+        ) : (
+          <span>
+            expires <Timestamp at={login.expiresAt} />
+          </span>
+        )}
+      </p>
+
+      <div className="cred-terminal__screen">
+        {isLiveTerminalEnabled() ? (
+          <LiveTerminal
+            sessionId={login.workSessionId}
+            serverBaseUrl={serverBaseUrl}
+            live
+            autoFocus
+          />
+        ) : (
+          <TerminalHost
+            ariaLabel={`${provider.name} login terminal`}
+            placeholder="the live terminal is disabled in this build, so this login cannot be completed here"
+          />
+        )}
+      </div>
+
+      {error ? (
+        <div className="cred-notice cred-notice--error" data-testid="credential-outcome-error">
+          <span className="cred-notice__head">{`${provider.name} — that did not go through.`}</span>
+          <span className="cred-notice__why">{error}</span>
+        </div>
+      ) : expired ? (
+        <div className="cred-notice cred-notice--warn" data-testid="credential-login-expired">
+          <span className="cred-notice__head">This sign-in terminal has expired.</span>
+          <span className="cred-notice__why">
+            If you finished signing in before it closed, you can still check. Otherwise start a new terminal.
+          </span>
+        </div>
+      ) : null}
+
+      <footer className="cred-terminal__actions">
+        {onCancel ? (
+          <button type="button" className="cred-action cred-action--quiet" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+        ) : null}
+        <span className="cred-card__spacer" />
+        {onRestart && (expired || error) ? (
+          <button
+            type="button"
+            className="cred-action"
+            onClick={onRestart}
+            disabled={busy}
+            data-testid="credential-restart-login"
+          >
+            Start again
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="cred-action cred-action--primary"
+          onClick={onFinish}
+          disabled={busy}
+          data-testid="credential-finish-login"
+        >
+          I’ve finished signing in
+        </button>
+      </footer>
+    </section>
   );
 }
 
