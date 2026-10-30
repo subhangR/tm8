@@ -7,7 +7,8 @@
 -- open B1b migrations (399, 400, 401) touch.
 --
 -- WHAT THIS FILE DOES
---   §1  bridge_link_attempts (failed /link tries, D59) and bridge_invite_pins
+--   §1  bridge_link_codes keeps a salted digest, never the code (D58);
+--       bridge_link_attempts (failed /link tries, D59) and bridge_invite_pins
 --       (an invite minted for one participant, §2.4 "Invite");
 --   §2  the member's own doors: begin_bridge_link (mint TM8-XXXXXX, human
 --       only), my_bridge_links (Account → Linked identities) and
@@ -30,6 +31,24 @@ set role tm8_graph_owner;
 -- -----------------------------------------------------------------------------
 -- §1. Tables.
 -- -----------------------------------------------------------------------------
+
+-- D58: 395 stored the code itself. A code is a bearer proof for ten minutes,
+-- so a dump or a stray read must not yield one: keep sha256(salt || code)
+-- with sixteen random bytes of salt per row, and show the plain code once, in
+-- begin's answer, to the human who minted it. No door has written a code yet,
+-- so any row here is unusable and goes.
+delete from public.bridge_link_codes;
+alter table public.bridge_link_codes drop constraint bridge_link_codes_pkey;
+alter table public.bridge_link_codes drop column code;
+alter table public.bridge_link_codes
+  add column id     uuid primary key default internal.new_id(),
+  add column salt   bytea not null check (octet_length(salt) = 16),
+  add column digest bytea not null check (octet_length(digest) = 32);
+create index bridge_link_codes_recent_idx on public.bridge_link_codes(created_at desc);
+create index bridge_link_codes_identity_idx on public.bridge_link_codes(identity_id, created_at desc);
+-- The identity reads its own rows' facts (395's policy), never salt or digest.
+revoke select on public.bridge_link_codes from tm8_app;
+grant select (id, identity_id, provider, created_at, expires_at, used_at) on public.bridge_link_codes to tm8_app;
 
 -- D59: a failed /link try, per sender. Five in an hour lock the sender out of
 -- /link for the rest of that hour, valid code or not. No app grant.
@@ -62,8 +81,7 @@ alter table public.bridge_invite_pins enable row level security;
 -- §2. The member's own doors.
 -- -----------------------------------------------------------------------------
 
--- D58: six characters from 32 (no 0/O, 1/I), about 10^9 codes; 395's check
--- admits four to eight.
+-- D58: six characters from 32 (no 0/O, 1/I), about 10^9 codes.
 create or replace function internal.bridge_new_link_code() returns text
 language plpgsql volatile set search_path = public, internal, pg_temp as $$
 declare
@@ -79,6 +97,23 @@ end
 $$;
 revoke all on function internal.bridge_new_link_code() from public;
 
+create or replace function internal.bridge_link_code_digest(p_salt bytea, p_code text) returns bytea
+language sql immutable set search_path = public, internal, pg_temp as $$
+  select sha256(p_salt || convert_to(upper(btrim(p_code)), 'UTF8'))
+$$;
+revoke all on function internal.bridge_link_code_digest(bytea, text) from public;
+
+-- The rows a typed code is matched against: every code minted in the last
+-- day. Each row's digest is computed and compared, whichever matches, so the
+-- work does not depend on where (or whether) the code is found.
+create or replace function internal.bridge_link_code_match(p_code text)
+returns setof public.bridge_link_codes language sql stable set search_path = public, internal, pg_temp as $$
+  select c.* from public.bridge_link_codes c
+   where c.created_at > now() - interval '1 day'
+     and c.digest = internal.bridge_link_code_digest(c.salt, p_code)
+$$;
+revoke all on function internal.bridge_link_code_match(text) from public;
+
 -- bridges.links.begin: a code for the caller's own identity, ten minutes, one
 -- use. Human only: an agent cannot mint a proof of its owner. A new code ends
 -- the caller's earlier unused codes for the provider.
@@ -87,6 +122,8 @@ returns jsonb language plpgsql security definer set search_path = public, intern
 declare
   identity text;
   v_row public.bridge_link_codes;
+  v_code text;
+  v_salt bytea;
   recent integer;
 begin
   perform internal.require_human_auth_kind();
@@ -103,16 +140,16 @@ begin
   update public.bridge_link_codes set expires_at = least(expires_at, now())
    where identity_id = identity and provider = p_provider and used_at is null and expires_at > now();
   loop
-    begin
-      insert into public.bridge_link_codes(code, identity_id, provider, expires_at)
-      values (internal.bridge_new_link_code(), identity, p_provider, now() + interval '10 minutes')
-      returning * into v_row;
-      exit;
-    exception when unique_violation then
-      -- A collision with an old code: draw again.
-    end;
+    v_code := internal.bridge_new_link_code();
+    -- A code that matches a recent one would make a /link ambiguous: draw again.
+    exit when not exists (select 1 from internal.bridge_link_code_match(v_code));
   end loop;
-  return jsonb_build_object('code', v_row.code, 'provider', v_row.provider,
+  v_salt := uuid_send(gen_random_uuid());
+  insert into public.bridge_link_codes(identity_id, provider, expires_at, salt, digest)
+  values (identity, p_provider, now() + interval '10 minutes', v_salt, internal.bridge_link_code_digest(v_salt, v_code))
+  returning * into v_row;
+  -- The only place the plain code ever appears (D58).
+  return jsonb_build_object('code', v_code, 'provider', v_row.provider,
                             'expiresAt', v_row.expires_at, 'createdAt', v_row.created_at);
 end
 $$;
@@ -132,7 +169,7 @@ $$;
 revoke all on function internal.bridge_link_json(public.bridge_identity_links) from public;
 
 -- bridges.links.list: the caller's own live links and their live code, if
--- any. Identity-scoped links always; an admin's assertion about the caller
+-- any (its expiry, never the code: D58). Identity-scoped links always; an admin's assertion about the caller
 -- only when the session is not pinned to another space (227, as 395's RLS).
 create or replace function public.my_bridge_links()
 returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
@@ -147,7 +184,7 @@ begin
        where l.identity_id = identity and l.revoked_at is null
          and (l.space_id is null or pinned is null or l.space_id = pinned)), '[]'::jsonb),
     'pending', coalesce((
-      select jsonb_agg(jsonb_build_object('code', c.code, 'provider', c.provider,
+      select jsonb_agg(jsonb_build_object('id', c.id, 'provider', c.provider,
                                           'expiresAt', c.expires_at, 'createdAt', c.created_at)
                        order by c.created_at desc)
         from public.bridge_link_codes c
@@ -218,8 +255,13 @@ begin
   if v_code !~ '^TM8-[A-Z0-9]{4,8}$' then
     fail := 'bad_code';
   else
-    select * into c from public.bridge_link_codes where bridge_link_codes.code = v_code for update;
-    if c.code is null then fail := 'bad_code';
+    select m.* into c from internal.bridge_link_code_match(v_code) m
+     order by (m.used_at is null and m.expires_at > now()) desc, m.created_at desc limit 1;
+    if c.id is not null then
+      perform 1 from public.bridge_link_codes where id = c.id for update;
+      select * into c from public.bridge_link_codes where id = c.id;
+    end if;
+    if c.id is null then fail := 'bad_code';
     elsif c.used_at is not null then fail := 'used';
     elsif c.expires_at <= now() then fail := 'expired';
     elsif c.provider <> b.provider then fail := 'wrong_provider';
@@ -238,7 +280,7 @@ begin
     -- does not take a number from another account. The code stays unused.
     return jsonb_build_object('ok', false, 'reason', 'linked_elsewhere');
   end if;
-  update public.bridge_link_codes set used_at = now() where bridge_link_codes.code = c.code;
+  update public.bridge_link_codes set used_at = now() where id = c.id;
   if existing.id is not null then
     return jsonb_build_object('ok', true, 'already', true, 'link', internal.bridge_link_json(existing),
                               'identityId', existing.identity_id);
@@ -346,4 +388,4 @@ create trigger space_invites_bridge_pin after update of use_count on public.spac
 
 reset role;
 
-analyze public.bridge_link_attempts, public.bridge_invite_pins;
+analyze public.bridge_link_codes, public.bridge_link_attempts, public.bridge_invite_pins;
