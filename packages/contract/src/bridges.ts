@@ -21,6 +21,30 @@ export type BridgeConnectionStatus = 'linked' | 'connecting' | 'logged_out' | 'o
 /** A worker's wake level, and the bridge's ceiling for it (§2.7). */
 export type BridgeWake = 'directed' | 'thread' | 'all';
 
+/**
+ * Why the outbox refused to carry a post to the provider (§2.3, §2.7, D23,
+ * D28). The message stays in tm8; only the provider copy is refused.
+ */
+export type BridgeRefusalReason =
+  | 'bridge_paused' | 'bridge_ended' | 'direction_in' | 'worker_posting_off'
+  | 'rate_limited' | 'not_connected' | 'credential_text';
+
+/**
+ * The `bridge.delivery` badge of a message that crosses a bridge (§2.3): the
+ * delivery ledger's words, plus `refused` for a post the outbox turned away.
+ * `rate_limited` carries `retryAfterMs` (§2.7: never silently queued).
+ */
+export interface BridgeDelivery {
+  messageId: string;
+  bridgeId: string;
+  status: 'pending' | 'sent' | 'failed_retryable' | 'failed_permanent' | 'refused';
+  reason?: BridgeRefusalReason;
+  retryAfterMs?: number;
+  externalMessageId?: string;
+  detail?: string;
+  at: string;
+}
+
 export const BRIDGE_PURPOSE_MAX = 300;
 export const BRIDGE_STYLE_MAX = 300;
 export const BRIDGE_HANDLE_TITLE_MAX_WORDS = 4;

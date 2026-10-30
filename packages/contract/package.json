@@ -12,6 +12,10 @@
     "./workspace": {
       "types": "./dist/workspace/index.d.ts",
       "default": "./dist/workspace/index.js"
+    },
+    "./bridge-runtime": {
+      "types": "./dist/bridge-runtime-protocol.d.ts",
+      "default": "./dist/bridge-runtime-protocol.js"
     }
   },
   "scripts": {

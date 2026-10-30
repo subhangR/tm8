@@ -4080,6 +4080,14 @@ export interface MessageBatchResult {
    */
   delivery?: MessageDeliveryDisposition[];
   /**
+   * 398 (Bridges): the provider delivery of each message in this batch that a
+   * bridge carries or refused, read after commit. `refused` names the reason
+   * (`bridge_paused`, `direction_in`, `worker_posting_off`, `rate_limited`
+   * with `retryAfterMs`, …): the message is stored in tm8 either way. Absent
+   * when no message of the batch crosses a bridge.
+   */
+  bridgeDelivery?: import('./bridges.js').BridgeDelivery[];
+  /**
    * Advisories on a stored batch, e.g. `task_still_working` (P0g): the sending
    * session holds an anchored task that is still `working`. Absent when none.
    */

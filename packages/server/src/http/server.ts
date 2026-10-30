@@ -61,6 +61,7 @@ import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
+import { BRIDGE_RUNTIME_PATH_PREFIX, type BridgeRuntimeRoute } from '../bridges/runtime/routes.js';
 import { MCP_ENDPOINT_PATH, type McpEndpointRoute } from '../mcp/endpoint.js';
 import type { ReadAdmission } from './read-admission.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
@@ -112,6 +113,13 @@ export interface FacadeServerOptions {
    * re-serialized one has a different digest.
    */
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
+  /**
+   * 398 (Bridges B1b-2): the connector runtime's doors, `POST
+   * /v2/bridge-runtime/<route>`. Not catalog operations (see routes.ts); they
+   * resolve their own identity, admitting only a `bridge_runtime` session,
+   * and read their own body. Dispatched before `readJsonBody`.
+   */
+  readonly bridgeRuntimeRoute?: BridgeRuntimeRoute;
   /**
    * §7.1 / G14: the remote MCP endpoint, `POST /mcp`. Not a catalog operation —
    * it speaks JSON-RPC, not the DEV-6 envelope — and it resolves its own bearer,
@@ -263,6 +271,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       void Promise.resolve().then(() => resolveIdentity(req.headers, {
         remoteAddress: req.socket.remoteAddress,
         disableAutoOwner: config.disableAutoOwner === true,
+        // 398: the connector runtime's push socket is the one upgrade a
+        // bridge_runtime session may open; the upgrade target routes it to the hub.
+        bridgeRuntime: new URL(req.url ?? '/', 'http://tm8.invalid').searchParams.has('bridgeRuntime'),
       })).then(identity => {
         requireWriteApiScope(identity);
         return upgrades.handleUpgrade(req, socket, head);
@@ -439,6 +450,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // authenticates it by signature instead. Before readJsonBody, deliberately.
       if (method === 'POST' && pathname === VOICE_WEBHOOK_PATH && opts.voiceWebhookRoute) {
         if (await opts.voiceWebhookRoute(req, res, { requestId })) return;
+      }
+
+      // 398: the runtime's frames. The route resolves its own bearer (the only
+      // place a bridge_runtime session is admitted) and reads its own body.
+      if (method === 'POST' && pathname.startsWith(BRIDGE_RUNTIME_PATH_PREFIX) && opts.bridgeRuntimeRoute) {
+        if (await opts.bridgeRuntimeRoute(req, res, { requestId })) return;
       }
 
       // W9c: no transport identity either: the route resolves its own bearer
