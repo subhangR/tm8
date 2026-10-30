@@ -133,7 +133,7 @@ import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { loadDesignContextForTask } from './spawn-design.js';
-import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
+import { toCommandResultOnTwoClients, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
@@ -2466,28 +2466,6 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Every execution.* command result goes through the SAME assembler the reads
- * use, and this is the whole point of the function.
- *
- * `internal.command_result` hands back the DATABASE's shape: `to_jsonb(e)` on
- * the entities row, so snake_case columns (`space_id`, `created_at`) and none
- * of the derived truth — no title, state, badges, capabilities, connections or
- * hierarchy. Returning that straight to the wire is what made a spawned
- * work_session fail the contract schema on `spaceId` and render as an untitled
- * session that client-side grouping silently dropped.
- *
- * The fix is reuse, not a second mapping. `toCommandResult` also rebuilds
- * `patches` into real EntitySummary DTOs — which the raw jsonb likewise
- * returns snake_case, so fixing only `entity` would have left the same bug one
- * field deeper.
- *
- * It runs in its own transactions AFTER the command rather than inside the
- * RPC's: holding a transaction open across a process spawn is its own
- * problem. For `execution.spawn` that is after ADMISSION (379), so the client
- * sees the session as it then is — `spawning`, its boot phase — and follows
- * the rest of the boot through the ordinary entity events.
- */
-/**
  * The spawn receipt's posture rows (`ExecutionSpawnLaunch`), rebuilt from a
  * recorded manifest by the same `spawnLaunchFacts` the boot reports them with.
  * `execution.spawn` answers at admission (379), before the credentials are
@@ -2512,6 +2490,28 @@ function launchReceiptOf(
   };
 }
 
+/**
+ * Every execution.* command result goes through the SAME assembler the reads
+ * use, and this is the whole point of the function.
+ *
+ * `internal.command_result` hands back the DATABASE's shape: `to_jsonb(e)` on
+ * the entities row, so snake_case columns (`space_id`, `created_at`) and none
+ * of the derived truth — no title, state, badges, capabilities, connections or
+ * hierarchy. Returning that straight to the wire is what made a spawned
+ * work_session fail the contract schema on `spaceId` and render as an untitled
+ * session that client-side grouping silently dropped.
+ *
+ * The fix is reuse, not a second mapping. `toCommandResult` also rebuilds
+ * `patches` into real EntitySummary DTOs — which the raw jsonb likewise
+ * returns snake_case, so fixing only `entity` would have left the same bug one
+ * field deeper.
+ *
+ * It runs in its own transactions AFTER the command rather than inside the
+ * RPC's: holding a transaction open across a process spawn is its own
+ * problem. For `execution.spawn` that is after ADMISSION (379), so the client
+ * sees the session as it then is — `spawning`, its boot phase — and follows
+ * the rest of the boot through the ordinary entity events.
+ */
 /** How a process closed after its work completed is recorded (Spec D1 §4.1). */
 const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: string } = {
   endedKind: 'exited_clean',
@@ -2531,9 +2531,7 @@ async function assembleCommandResult(
   raw: unknown,
   viewerIdentityId: string,
 ): Promise<unknown> {
-  // Two clients: the entity's detail is built beside the rest (toCommandResult).
-  return db.tx(claims, (q) => db.tx(claims, (detailOn) =>
-    toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId, { detailOn })));
+  return toCommandResultOnTwoClients(db, claims, (raw ?? {}) as RpcCommandResult, viewerIdentityId);
 }
 
 /**

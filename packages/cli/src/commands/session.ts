@@ -665,7 +665,6 @@ async function bootedLaunchReceipt(cmd: CommandContext, sessionId: string): Prom
   }
 }
 
-
 /**
  * The checkout path a spawned worktree session works in — the one receipt
  * fact the spawn result does not carry (the worktree rides it as a SUMMARY,

@@ -11,7 +11,7 @@ import {
   type Hierarchy,
   type Page,
 } from '@tm8/contract';
-import type { Querier } from '../../db/types.js';
+import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor } from '../context.js';
@@ -342,29 +342,49 @@ interface RpcCommandResult {
  * summaries, capabilities — are assembled HERE, by the same code that serves
  * the reads. That is the whole L3 bargain: a client that just created a task
  * and a client that just fetched one are looking at identical objects.
- *
- * `detailOn` is a second client for the entity's DETAIL. The detail (row,
- * summary, hierarchy, connections) and the rest (patches, edge) are
- * independent reads of rows the command already committed, so with a second
- * client they run side by side instead of one after the other on `q` — one
- * `Querier` cannot run two queries at once. Measured on `execution.spawn`
- * (379, load ~80): detail 400-700 ms, patches another 40-175 ms of the same
- * chain. Without it the result is assembled exactly as before.
  */
 async function toCommandResult(
   q: Querier,
   raw: RpcCommandResult,
   viewerIdentityId: string,
-  opts: { detailOn?: Querier } = {},
 ): Promise<CommandResult> {
   const entityId = raw.entity?.id;
-  const detailOn = opts.detailOn;
-  const [parallelDetail, rest] = await Promise.all([
-    entityId && detailOn ? buildDetail(detailOn, entityId, viewerIdentityId) : Promise.resolve(undefined),
-    patchesAndEdge(q, raw, viewerIdentityId),
-  ]);
-  const entity = parallelDetail ?? (entityId ? await buildDetail(q, entityId, viewerIdentityId) : undefined);
+  const entity = entityId ? await buildDetail(q, entityId, viewerIdentityId) : undefined;
+  return shapeCommandResult(raw, entity, await patchesAndEdge(q, raw, viewerIdentityId));
+}
 
+/**
+ * `toCommandResult` on two pooled clients. The entity's DETAIL (row, summary,
+ * hierarchy, connections) and the rest (patches, edge) are independent reads
+ * of rows the command already committed, so they run side by side instead of
+ * one after the other on one client — one `Querier` cannot run two queries at
+ * once. Measured on `execution.spawn` (379, load ~80): detail 400-700 ms,
+ * patches another 40-175 ms of the same chain.
+ *
+ * Two SIBLING transactions, never one nested in the other: a nested checkout
+ * holds its first client while it waits for the second, so a saturated pool
+ * stalls every such caller until the checkout timeout.
+ */
+async function toCommandResultOnTwoClients(
+  db: Db,
+  claims: DbClaims,
+  raw: RpcCommandResult,
+  viewerIdentityId: string,
+): Promise<CommandResult> {
+  const entityId = raw.entity?.id;
+  if (!entityId) return db.tx(claims, (q) => toCommandResult(q, raw, viewerIdentityId));
+  const [entity, rest] = await Promise.all([
+    db.tx(claims, (q) => buildDetail(q, entityId, viewerIdentityId)),
+    db.tx(claims, (q) => patchesAndEdge(q, raw, viewerIdentityId)),
+  ]);
+  return shapeCommandResult(raw, entity, rest);
+}
+
+function shapeCommandResult(
+  raw: RpcCommandResult,
+  entity: EntityDetail | undefined,
+  rest: { patches: CommandResult['patches']; edge: EdgeView | undefined },
+): CommandResult {
   return {
     ...(entity ? { entity } : {}),
     ...(rest.edge ? { edge: rest.edge } : {}),
@@ -430,4 +450,4 @@ async function patchesAndEdge(
 // entities.activity
 // ---------------------------------------------------------------------------
 
-export { toCommandResult, type RpcCommandResult };
+export { toCommandResult, toCommandResultOnTwoClients, type RpcCommandResult };
