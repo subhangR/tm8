@@ -329,3 +329,42 @@ describe('F: what is not a report', () => {
     expect(edges[0]!.props.origins.map(o => o['providerMessageId'])).toEqual(['wamid.INFRA7']);
   });
 });
+
+describe('F: review regressions', () => {
+  it('a loop firing in a chat turn is not a report: the task it creates is not gated', async () => {
+    await db.tx(human(), q => q.rpc('add_bridge_origin', [chatInfra, JSON.stringify({ bridgeId: infra, loopId: randomUUID() })]));
+    const task = await inTx({ bearer: bearerInfra }, c => newTask(c, 'Weekly digest follow-up'));
+    await endTurn(chatInfra);
+    expect(await gateOf(task)).toBe('none');
+    expect((await scratch.query('select 1 from public.bridge_fix_reports where task_id = $1', [task]))).toEqual([]);
+  });
+
+  it('a failing notice never fails the triggering write, and the next event retries', async () => {
+    const r = await report(infra, 'webhooks dropped', 'wamid.INFRA8');
+    await startTurn(chatInfra, infra, r, 'wamid.INFRA8');
+    const task = await inTx({ bearer: bearerInfra }, c => newTask(c, 'Webhooks dropped', { bug: true }));
+    await endTurn(chatInfra);
+    const [{ def }] = await scratch.query<{ def: string }>(
+      `select pg_get_functiondef('internal.bridge_fix_check(uuid)'::regprocedure) def`) as [{ def: string }];
+    await scratch.query(`create or replace function internal.bridge_fix_check(p_task uuid) returns integer
+      language plpgsql security definer set search_path = public, internal, pg_temp as $$
+      begin raise exception 'injected notice failure'; end $$`);
+    let pr = '';
+    try {
+      // tracks edge, merge, and a re-report all commit despite the check raising.
+      pr = await linkPr(task, 801);
+      await prFacts(pr, 'merged', null);
+      const rg = await report(gaming, 'webhooks gone here too', 'wamid.GAMING8');
+      await startTurn(chatGaming, gaming, rg, 'wamid.GAMING8');
+      await inTx({ bearer: bearerGaming }, c => post(c, task, 'Gaming sees it too.'));
+      await endTurn(chatGaming);
+      expect((await scratch.query<{ state: string }>('select state from public.pull_requests where entity_id = $1', [pr]))[0]!.state)
+        .toBe('merged');
+      expect(await noticesFor(task)).toEqual([]);
+    } finally {
+      await scratch.query(def);
+    }
+    await prFacts(pr, 'merged', 'passing');
+    expect(await noticesFor(task)).toHaveLength(2);
+  });
+});

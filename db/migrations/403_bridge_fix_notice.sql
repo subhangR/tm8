@@ -76,14 +76,16 @@ create policy bridge_fix_reports_select on public.bridge_fix_reports for select 
 grant select on public.bridge_fix_reports to tm8_app;
 
 -- The holder of the caller's origins when it is a chat with a live turn's
--- origins: "a task created from a group report" (D24, D71).
+-- origins: "a task created from a group report" (D24, D71). A loop firing
+-- (an origin with no providerMessageId) is not a report.
 create or replace function internal.bridge_reporting_chat(p_space uuid)
 returns uuid language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 declare holder uuid := internal.bridge_caller_holder(p_space);
 begin
   if holder is null then return null; end if;
   if not exists (select 1 from public.entities where id = holder and kind = 'chat') then return null; end if;
-  if not exists (select 1 from public.session_bridge_origins where holder_id = holder) then return null; end if;
+  if not exists (select 1 from public.session_bridge_origins
+                  where holder_id = holder and provider_message_id is not null) then return null; end if;
   return holder;
 end
 $$;
@@ -311,7 +313,11 @@ language plpgsql security definer set search_path = public, internal, pg_temp as
 declare task uuid;
 begin
   for task in select distinct ed.src_id from public.edges ed where ed.dst_id = new.entity_id and ed.type = 'tracks' loop
-    perform internal.bridge_fix_check(task);
+    begin
+      perform internal.bridge_fix_check(task);
+    exception when others then
+      raise warning 'bridge fix check for task %: %', task, sqlerrm;
+    end;
   end loop;
   return null;
 end
@@ -329,6 +335,9 @@ create or replace function internal.bridge_fix_on_edge() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare src public.entities; m public.messages; turn_origins jsonb;
 begin
+  -- The whole body runs under a savepoint: nothing here may fail the write
+  -- (a tracks edge, a provenance stamp, a re-report) that queued it.
+  begin
   select * into src from public.entities where id = new.src_id and deleted_at is null;
   if src.id is null then return null; end if;
   if new.type = 'tracks' then
@@ -356,7 +365,8 @@ begin
   -- not a report of this bug (D30).
   select coalesce(jsonb_agg(o.value), '[]'::jsonb) into turn_origins
     from jsonb_array_elements(coalesce(new.props -> 'origins', '[]'::jsonb)) o
-    join public.entities via on via.id::text = o.value ->> 'viaSessionId' and via.kind = 'chat';
+    join public.entities via on via.id::text = o.value ->> 'viaSessionId' and via.kind = 'chat'
+   where nullif(o.value ->> 'providerMessageId', '') is not null;
   if jsonb_array_length(turn_origins) = 0 then return null; end if;
   insert into public.bridge_fix_reports(task_id, via) values (m.anchor_id, 're_report') on conflict do nothing;
   perform internal.bridge_fix_arm(m.anchor_id);
@@ -364,6 +374,10 @@ begin
   -- the check for the task.
   perform internal.bridge_stamp(m.anchor_id, turn_origins);
   return null;
+  exception when others then
+    raise warning 'bridge fix on edge % -> %: %', new.src_id, new.dst_id, sqlerrm;
+    return null;
+  end;
 end
 $$;
 revoke all on function internal.bridge_fix_on_edge() from public;
@@ -376,7 +390,13 @@ create constraint trigger edges_bridge_fix after insert or update on public.edge
 create or replace function internal.bridge_fix_on_entity() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 begin
-  if new.kind = 'task' then perform internal.bridge_fix_check(new.id); end if;
+  if new.kind = 'task' then
+    begin
+      perform internal.bridge_fix_check(new.id);
+    exception when others then
+      raise warning 'bridge fix check for task %: %', new.id, sqlerrm;
+    end;
+  end if;
   return null;
 end
 $$;
