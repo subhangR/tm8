@@ -555,6 +555,24 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(await notes()).toBe(1);
   });
 
+  it('a fault settles back to pending; the retry succeeds with one effect', async () => {
+    const tasks = await bridgeTasks();
+    failNextOrigin = true; // a transient fault inside the task transaction
+    const { messageId } = await command('rahul', '/task fault then retry');
+    const state = async () => (await asOwner(c => c.query(
+      'select command_state from public.message_origins where message_id = $1', [messageId]))).rows[0].command_state;
+    expect(await state()).toBe('pending');
+    expect(await bridgeTasks()).toBe(tasks);
+    expect(notices.filter(n => n.replyToMessageId === messageId).map(n => n.text)).toEqual(['that hit a problem on our side — retrying']);
+    await executor.run(messageId); // what the sweep does
+    expect(await state()).toBe('done');
+    expect(await bridgeTasks()).toBe(tasks + 1);
+    expect(notices.filter(n => n.replyToMessageId === messageId).map(n => n.text)).toEqual(
+      ['that hit a problem on our side — retrying', 'task #1 created: Fault then retry']);
+    await executor.run(messageId); // settled: nothing more
+    expect(await bridgeTasks()).toBe(tasks + 1);
+  });
+
   it('F4: a /work re-run does not count its own workers against the live cap', async () => {
     await endWorkers();
     const body = ['/work', ...Array.from({ length: 3 }, (_, i) => `f4 item ${i}`)].join('\n');
