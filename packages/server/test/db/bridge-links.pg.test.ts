@@ -192,6 +192,44 @@ describe('bridges.links.list and revoke (§4.6)', () => {
   });
 });
 
+describe('a code as the group typed it (B3 follow-up, D59)', () => {
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const other = (ch: string) => ALPHABET[(ALPHABET.indexOf(ch) + 7) % ALPHABET.length]!;
+  const sender = () => `91900${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}@s.whatsapp.net`;
+  const live = async (code: string) => (await scratch.query<{ n: number }>(
+    `select count(*)::int as n from internal.bridge_link_code_match($1) where used_at is null`, [code]))[0]!.n;
+
+  it('an en-dash or a space for the hyphen still links: separators are normalized', async () => {
+    for (const mangle of [(c: string) => c.replace('-', '\u2013'), (c: string) => c.replace('-', ' '),
+      (c: string) => `tm8 \u2013 ${c.slice(4, 7).toLowerCase()} ${c.slice(7)}`]) {
+      const { code } = await begin(plainIdentity);
+      expect(await redeem(sender(), mangle(code))).toMatchObject({ ok: true, already: false, identityId: plainIdentity });
+      expect(await live(code)).toBe(0);
+    }
+  });
+
+  it('a near miss burns the live code it names: a wrong, a dropped or two swapped characters', async () => {
+    for (const mangle of [(c: string) => c.slice(0, 6) + other(c[6]!) + c.slice(7),
+      (c: string) => c.slice(0, 8) + c.slice(9), (c: string) => c.slice(0, 5) + c[6] + c[5] + c.slice(7),
+      (c: string) => `${c.slice(0, 3)}\u2014${c.slice(4, 9)}O`]) {
+      const { code } = await begin(ownerIdentity);
+      const typed = mangle(code);
+      if (typed.replace(/[^0-9A-Za-z]/g, '') === code.replace('-', '')) continue; // a swap of two equal characters is the code
+      expect(await redeem(sender(), typed)).toMatchObject({ ok: false, reason: 'bad_code', burned: true });
+      expect(await live(code)).toBe(0);
+      expect(await redeem(sender(), code)).toMatchObject({ ok: false, reason: 'used' });
+    }
+  });
+
+  it('further than two edits is not a near miss: nothing is burned and the code still links', async () => {
+    const { code } = await begin(plainIdentity);
+    const far = code.slice(0, 4) + [...code.slice(4, 8)].map(other).join('') + code.slice(8);
+    expect(await redeem(sender(), far)).toEqual({ ok: false, reason: 'bad_code' });
+    expect(await live(code)).toBe(1);
+    expect(await redeem(sender(), code)).toMatchObject({ ok: true });
+  });
+});
+
 describe('Invite to space (D60)', () => {
   const invite = (identity: string, maxUses = 1) =>
     as(identity, q => q.rpc<{ invite: { id: string; code: string } }>('create_invite',
@@ -223,6 +261,20 @@ describe('Invite to space (D60)', () => {
     const [pin] = await scratch.query<{ completed: boolean }>(
       'select completed_at is not null as completed from public.bridge_invite_pins where invite_id = $1', [inv.id]);
     expect(pin!.completed).toBe(true);
+  });
+
+  it('revoking the pinned invite ends the link it made: the admin takes back a number the wrong person claimed', async () => {
+    const number = '919000000003@s.whatsapp.net';
+    await scratch.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+      values ($1,$2,'Third',now(),now())`, [bridgeId, number]);
+    const { invite: inv } = await invite(ownerIdentity);
+    await as(ownerIdentity, q => q.rpc('pin_bridge_invite', [inv.id, bridgeId, number]));
+    await as(`b3-claimer-${randomUUID()}`, q => q.rpc('redeem_invite', [inv.code, randomUUID(), null]));
+    const linked = () => scratch.query(`select 1 from public.bridge_identity_links where external_id = $1 and revoked_at is null`, [number]);
+    expect(await linked()).toHaveLength(1);
+    await as(ownerIdentity, q => q.rpc('revoke_invite', [inv.id, randomUUID()]));
+    expect(await linked()).toEqual([]);
+    expect(await resolve(number)).toMatchObject({ kind: 'bridge', trust: 'guest' });
   });
 
   it('an unpinned invite links nobody; a participant already linked cannot be pinned', async () => {

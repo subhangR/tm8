@@ -93,8 +93,9 @@ export function InviteToSpace({ spaceId, bridgeId, participant, createInvite, jo
             <button type="button" className="bri-invite__act" onClick={() => void copy()}>{copied ? 'copied' : 'copy'}</button>
           </div>
           <span className="bri-invite__note">
-            Send it to them yourself; tm8 does not message them. It works once. When they join with it, their messages
-            from {maskedNumber(participant.externalId)} count as them.
+            Send it to them privately, not in the group: whoever joins with it first gets this number. tm8 does not
+            message them. It works once. When they join with it, their messages from{' '}
+            {maskedNumber(participant.externalId)} count as them. Revoking the invite unlinks the number again.
           </span>
           <div className="bri-invite__row">
             <button type="button" className="bri-invite__act bri-invite__act--quiet" onClick={() => { setOpen(false); setLink(null); }}>
@@ -106,8 +107,8 @@ export function InviteToSpace({ spaceId, bridgeId, participant, createInvite, jo
         <>
           <span className="bri-invite__head">Invite {who} to this space?</span>
           <span className="bri-invite__note">
-            You get a one-use join link to share with them yourself. tm8 never messages them. When they join with it,
-            {` ${maskedNumber(participant.externalId)}`} is linked to their account.
+            You get a one-use join link to send them privately, not in the group. tm8 never messages them. When they
+            join with it, {` ${maskedNumber(participant.externalId)}`} is linked to their account.
           </span>
           {error ? <span className="bri-invite__error" role="alert" data-testid="bridge-invite-error">{error}</span> : null}
           <div className="bri-invite__row">

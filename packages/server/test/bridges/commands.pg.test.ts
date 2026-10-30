@@ -630,6 +630,15 @@ describe('the rest of the slice', () => {
     expect(await from('919000000073@s.whatsapp.net', `/link ${mayaCode}`)).toMatch(/already used/);
     await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_link_redeem', [bridgeId, newPhone, mayaCode]))
       .rejects.toMatchObject({ code: 'forbidden' });
+    // B3 follow-up (D59): a code split and autocorrected on the phone still links;
+    // a near miss of a live code burns it.
+    const ownerCode = await mint(people.owner.identity);
+    const split = `TM8 \u2013 ${ownerCode.slice(4, 7)} ${ownerCode.slice(7)}`;
+    expect(await from('919000000074@s.whatsapp.net', `/link ${split} thanks`)).toMatch(/^linked ✓/);
+    const mayaAgain = await mint(people.maya.identity);
+    const typo = `${mayaAgain.slice(0, 9)}${mayaAgain[9] === 'A' ? 'B' : 'A'}`;
+    expect(await from('919000000075@s.whatsapp.net', `/link ${typo}`)).toMatch(/not a valid code.*used up now/);
+    expect(await from('919000000076@s.whatsapp.net', `/link ${mayaAgain}`)).toMatch(/already used/);
   });
   it('/status names one worker; unknown and planned verbs are answered', async () => {
     const { reply: list } = await command('rahul', '/workers all');
