@@ -139,9 +139,7 @@ begin
     'text', m.body,
     'edited', m.edited_at is not null or m.redacted_at is not null,
     'replyTo', case when o.external_reply_to_id is null then null
-                    else jsonb_build_object('externalMessageId', o.external_reply_to_id) end,
-    -- B1b-2's state (398): the executor tells the group once when it ends failed.
-    'commandState', o.command_state);
+                    else jsonb_build_object('externalMessageId', o.external_reply_to_id) end);
 end
 $$;
 revoke all on function public.bridge_command_input(uuid) from public;
@@ -222,28 +220,6 @@ end
 $$;
 revoke all on function public.bridge_command_guest_list(uuid, text[], integer) from public;
 grant execute on function public.bridge_command_guest_list(uuid, text[], integer) to tm8_app;
-
--- A guest's /result: the latest message a worker of THIS bridge authored,
--- when every member of the space may read it (visibility 'space').
-create or replace function public.bridge_command_guest_result(p_bridge_id uuid, p_session_id uuid)
-returns setof text language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
-begin
-  perform internal.require_bridge_commands_worker();
-  if not exists (select 1 from public.edges where src_id = p_session_id and dst_id = p_bridge_id and type = 'authored_from') then
-    return;
-  end if;
-  return query
-    select m.body from public.edges ed
-      join public.messages m on m.entity_id = ed.src_id
-      join public.entities me on me.id = m.entity_id
-     where ed.type = 'authored_from' and ed.dst_id = p_session_id
-       and m.redacted_at is null and me.deleted_at is null and me.visibility = 'space'
-     order by m.created_at desc
-     limit 1;
-end
-$$;
-revoke all on function public.bridge_command_guest_result(uuid, uuid) from public;
-grant execute on function public.bridge_command_guest_result(uuid, uuid) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §4. Confirms (v2 §4.6, §5). A confirm is INTENT, never an approval (D9):
