@@ -7,7 +7,8 @@
  * refused before SQL); target_has_bridge on create and retarget as a 409 with
  * its reason; the views parse as the contract; a worker session claims one
  * handle, sets its listen level and reads the log with its own cursor; the
- * generic entities.create refuses the kind.
+ * generic entities.create refuses the kind. Bridges R (403): `/remember`
+ * proposals are listed by any session and resolved only by a human (D29, D62).
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -203,6 +204,41 @@ describe('a worker session on the bridge (D21, D23)', () => {
     // A member without a session reads by --since, never by cursor.
     expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log`)).items).toHaveLength(2);
     refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?unread=true`), 403, 'forbidden');
+  });
+});
+
+describe('/remember proposals (Bridges R, 403: D29, D62)', () => {
+  let proposal = '';
+  it('any session lists them; canDecide is the caller\'s own', async () => {
+    proposal = randomUUID();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      // The owner is a verified linked member of the group: a participant with a code link.
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+        values ($1,'+911111','Owner',now(),now())`, [bridgeId]);
+      await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, verified_at)
+        values ('whatsapp','+911111',$1,'code',now())`, [identityId]);
+      await c.query(`insert into public.bridge_memory_proposals(id, space_id, bridge_id, statement, proposed_by, proposer_trust,
+          proposer_name, provider_message_id, expires_at)
+        values ($1,$2,$3,'Deploy windows are Tue/Thu',$4,'linked','Owner','wamid.http-1', now() + interval '14 days')`,
+        [proposal, space, bridgeId, member]);
+    });
+    const mine = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals?status=pending`));
+    expect(mine.items).toEqual([expect.objectContaining({ id: proposal, status: 'pending', canDecide: true, proposerTrust: 'linked' })]);
+    const agents = ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals`));
+    expect(agents.items[0]).toMatchObject({ id: proposal, canDecide: false });
+    refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals?status=maybe`), 400, 'invalid_input');
+  });
+
+  it('an agent cannot resolve one (humanOnly); a human linked member accepts it into a memory', async () => {
+    refused(await request(agent.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false), 403, 'forbidden');
+    refused(await request(human.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'drop', statement: 'x' }, false), 400, 'invalid_input');
+    refused(await request(human.token, 'POST', `/v2/bridges/${randomUUID()}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false), 404, 'not_found');
+    const done = ok(await request(human.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false));
+    expect(done).toMatchObject({ id: proposal, status: 'accepted', canDecide: false });
+    expect(done.memoryId).toEqual(expect.any(String));
+    const [edge] = await database.query(`select 1 from public.edges where src_id = $1 and dst_id = $2 and type = 'remembers'`, [bridgeId, done.memoryId]);
+    expect(edge).toBeTruthy();
   });
 });
 
