@@ -16,14 +16,32 @@
  * (taxonomy/envelope/501-honesty assertions pass, v1 semantics red).
  */
 import { RESERVED_OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
-import type { OperationHandler } from '../http/types.js';
+import type { OperationHandler, RequestContext } from '../http/types.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
 import { refuseLinkBearerOp } from '../identity/link-bearer.js';
 
 const RESERVED = new Set<string>(RESERVED_OPERATIONS.map((op) => op.name));
 
+/**
+ * A check every dispatch passes before its handler, after the link-bearer and
+ * scope refusals. `applies` is synchronous and cheap (no I/O), so an
+ * operation it does not apply to keeps its handler's own timing; `check`
+ * refuses by throwing. Bridges L's authority gate (loops/authority.ts) is one.
+ */
+export interface OperationGuard {
+  applies(name: OperationName, ctx: RequestContext): boolean;
+  check(name: OperationName, ctx: RequestContext): Promise<void>;
+}
+
 export class HandlerRegistry {
   protected readonly handlers = new Map<OperationName, OperationHandler>();
+  private readonly guards: OperationGuard[] = [];
+
+  /** Install a guard every operation passes through (see {@link OperationGuard}). */
+  addGuard(guard: OperationGuard): this {
+    this.guards.push(guard);
+    return this;
+  }
 
   /**
    * Bind an implementation to a catalog operation.
@@ -77,7 +95,12 @@ export class HandlerRegistry {
       // one by hand) is not a link bearer: it passes through, as before.
       refuseLinkBearerOp(name, ctx);
       if (op.kind !== 'read') requireWriteApiScope(ctx.identity);
-      return handler(ctx);
+      const applying = this.guards.filter((guard) => guard.applies(name, ctx));
+      if (applying.length === 0) return handler(ctx);
+      return (async () => {
+        for (const guard of applying) await guard.check(name, ctx);
+        return handler(ctx);
+      })();
     };
   }
 

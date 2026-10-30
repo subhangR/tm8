@@ -142,6 +142,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'trust-css',           // style use — allow the named space style's css
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
+  'post', 'interactive', 'one-shot', 'clear-targets', // tm8 loop create|edit (Bridges L)
   'include-ended',       // tm8 bridge list
   // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
   // particular has to be listed or it would eat the next token and turn a

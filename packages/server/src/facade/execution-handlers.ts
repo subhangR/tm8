@@ -3127,6 +3127,14 @@ export function createLoopExecutorPort(deps: {
       // one place both the scheduled job and Run now fire through, rather than
       // run as a spawn (its persona) or a dispatch. The run records the reason.
       if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
+      // Bridges L (D26): a post loop starts no session and derives no task. Each
+      // target's text goes through the outbox; paused, held and refused groups
+      // are recorded on the run, and the run settles at delivery.
+      if (loop.action === 'post') {
+        if (!runId) throw new CollabError('invalid_input', 'a post loop fires only as a claimed run');
+        await db.tx(claims, q => q.rpc('loop_post_targets', [loop.entityId, runId]));
+        return { taskId: null, sessionId: null };
+      }
       // §3.4: the ACTION picks the branch, never the runner, so the port agrees
       // with the job, Run now and the projection by construction. A spawn loop
       // that lost its runner (team_member_id is `on delete set null`) is
@@ -3190,8 +3198,9 @@ export function createLoopExecutorPort(deps: {
           accessMode: (loop.config?.['accessMode'] as never) ?? null,
           title: loop.title,
           // The loop's instruction is launch-manifest context, not a runtime
-          // prompt — the same channel `--context` uses.
-          promptExtra: loop.prompt === '' ? null : loop.prompt,
+          // prompt — the same channel `--context` uses. A bridge loop's targets
+          // (D26) ride with it: each group's instruction, state and recent log.
+          promptExtra: loopLaunchContext(loop.prompt, await loadLoopTargets(db, claims, loop.entityId, runId ?? null)),
           clientMutationId: `loop-fire:${firingKey}`,
         }, {
           /*
@@ -3301,6 +3310,51 @@ export function createLoopExecutorPort(deps: {
       );
     },
   };
+}
+
+/** One target of a bridge loop as its worker sees it at launch (401's loop_fire_targets). */
+export interface LoopTargetContext {
+  bridgeId: string;
+  name: string;
+  purpose: string | null;
+  instruction: string | null;
+  state: 'live' | 'paused' | 'quiet' | 'ended';
+  recent: Array<{ messageId: string; at: string; from: string; text: string }>;
+}
+
+/** The targets, and for a claimed run the `paused`/`pending` result per group. */
+async function loadLoopTargets(db: Db, claims: DbClaims, loopId: string, runId: string | null): Promise<LoopTargetContext[]> {
+  return db.tx(claims, q => q.rpc<LoopTargetContext[]>('loop_fire_targets', [loopId, runId, 15]));
+}
+
+const TARGET_STATE_NOTE: Record<LoopTargetContext['state'], string> = {
+  live: 'post here',
+  paused: 'PAUSED: do not post here this run',
+  quiet: 'in quiet hours: an unprompted post is held and only your newest is sent when they end; replies go at once',
+  ended: 'REMOVED: do not post here',
+};
+
+/**
+ * The launch context of a bridge loop's worker (v2 §2.2): the loop's own
+ * instruction, then each target group with its own instruction, its state and
+ * its recent log, and how to post (`tm8 message send --to <bridge>`). Null
+ * when there is neither a prompt nor a target.
+ */
+export function loopLaunchContext(prompt: string, targets: readonly LoopTargetContext[]): string | null {
+  if (targets.length === 0) return prompt === '' ? null : prompt;
+  const lines: string[] = [];
+  if (prompt !== '') lines.push(prompt, '');
+  lines.push('Groups this loop updates (post with `tm8 message send --to <bridge-id> "<text>"`; it is signed with your handle):');
+  for (const t of targets) {
+    lines.push('', `## ${t.name || 'group'} — bridge ${t.bridgeId} (${TARGET_STATE_NOTE[t.state]})`);
+    if (t.purpose) lines.push(`Purpose: ${t.purpose}`);
+    if (t.instruction) lines.push(`Instruction for this group: ${t.instruction}`);
+    if (t.recent.length) {
+      lines.push('Recent messages:');
+      for (const m of t.recent) lines.push(`- [${m.at}] ${m.from}: ${m.text.replace(/\s+/g, ' ')}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /** Run history is the loop's inbound edge set; best-effort, never fatal. */

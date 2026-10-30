@@ -29,7 +29,7 @@ import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../facade
 import { toCollabError } from '../facade/execution-handlers.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import type { RequestContext } from '../http/types.js';
-import type { DueLoop, LoopExecutorPort } from '../scheduler/jobs/loops.js';
+import { replacePreviousRuns, settlesAtDelivery, type DueLoop, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { claimLoopRun, errorText, recordLoopLaunch, recordLoopLaunchFailure, retryOnce, settleLoopRun } from './bookkeeping.js';
 import { listLoopRuns, loadLoopRun } from './runs.js';
 
@@ -134,6 +134,10 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
           details: { reason: 'needs_arming', loopId: loop.entityId },
         });
       }
+      // D26 `replace`: a new run ends the previous live one, so it is no overlap.
+      if (loop.concurrency === 'replace') {
+        await replacePreviousRuns({ db, port: executor, worker: claims, loop, actAsIdentity: loop.actAsIdentity });
+      }
       const claim = await claimLoopRun(db, claims, {
         loopId: loop.entityId,
         now,
@@ -177,7 +181,7 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
         return replayed;
       }
       const loopClaims = executor.claimsForLoop(loop, loop.actAsIdentity);
-      let launched: { taskId: string | null; sessionId: string };
+      let launched: { taskId: string | null; sessionId: string | null };
       try {
         launched = await executor.fire(loop, loopClaims, now, runId);
       } catch (error) {
@@ -193,7 +197,7 @@ export function registerLoopRunHandlers(registry: HandlerRegistry, deps: FacadeD
       // launch failure, or the caller is invited to start a second session.
       try {
         await retryOnce(() => recordLoopLaunch(db, claims, runId, launched));
-        if (loop.action === 'dispatch') await retryOnce(() => settleLoopRun(db, claims, runId, 'completed', null));
+        if (settlesAtDelivery(loop.action)) await retryOnce(() => settleLoopRun(db, claims, runId, 'completed', null));
       } catch (cause) {
         console.warn(`[tm8:loops] Run now of loop ${loop.entityId} started session ${launched.sessionId} but run ${runId} could not record it: ${errorText(cause)}`);
         // Retryable on purpose: the same clientMutationId replays this claim and
