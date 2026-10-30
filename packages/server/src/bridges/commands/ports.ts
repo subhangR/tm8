@@ -77,7 +77,7 @@ export interface BridgeCommandPorts {
   react?(db: Db, input: { bridgeId: string; messageId: string; emoji: string; idempotencyKey?: string }): Promise<BridgeDeliveryResult>;
   /** pending -> running (or a stale running row); false when settled or held fresh. */
   claim(messageId: string): Promise<boolean>;
-  settle(messageId: string, outcome: 'done' | 'failed'): Promise<void>;
+  settle(messageId: string, outcome: 'done' | 'failed' | 'pending'): Promise<void>;
   recordOrigin(q: Querier, entityId: string, origin: BridgeCommandOrigin): Promise<void>;
   spawnWorker(claims: DbClaims, request: SpawnWorkerRequest): Promise<{ sessionId: string }>;
   stopWorker(claims: DbClaims, sessionId: string, input: { reason: string; clientMutationId: string }): Promise<void>;

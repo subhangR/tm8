@@ -25,7 +25,8 @@
  * the inbound tx and calls run(messageId) after commit; run() claims it, loads
  * it, executes, answers and settles it. sweep() (called by B1b-2's watchdog)
  * re-runs commands a crash left pending or running. A refusal is an answer
- * and settles `done`; a fault answers "couldn't" and settles `failed`.
+ * and settles `done`; a fault settles back to `pending`, so 398's claim retries
+ * it and turns it `failed` after its attempts run out.
  */
 import { CollabError } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
@@ -775,8 +776,9 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         if (error instanceof Refusal) reply = { text: error.message };
         else if (error instanceof CollabError && ANSWERABLE.has(error.code)) reply = { text: `couldn't do that: ${safeReason(error)}` };
         else {
-          // Its own key, so a re-run that then succeeds still answers.
-          await answer(cmd, { text: 'that didn\'t work on our side — try again in a minute' }, ':fault').catch(() => undefined);
+          // Once per command (its own key), so the answer of a retry that then
+          // succeeds still goes out under the command's key.
+          await answer(cmd, { text: 'that hit a problem on our side — retrying' }, ':fault').catch(() => undefined);
           throw error;
         }
       } finally {
@@ -792,13 +794,15 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         ports.logger?.warn(`bridge command ${messageId}: claim failed: ${errorText(error)}`);
         return; // still pending: the sweep retries it.
       }
-      let outcome: 'done' | 'failed' = 'done';
+      // A fault goes back to pending: 398's claim retries it (the sweep) and
+      // turns it failed after its attempts run out. A refusal is an answer: done.
+      let outcome: 'done' | 'pending' = 'done';
       try {
         const input = await exec(q => q.rpc<BridgeCommandInput | null>('bridge_command_input', [messageId]));
         if (input && typeof input === 'object' && 'bridgeId' in input) await this.execute(input);
       } catch (error) {
-        outcome = 'failed';
-        ports.logger?.warn(`bridge command ${messageId} failed: ${errorText(error)}`);
+        outcome = 'pending';
+        ports.logger?.warn(`bridge command ${messageId} faulted, left for a retry: ${errorText(error)}`);
       }
       try {
         await ports.settle(messageId, outcome);
