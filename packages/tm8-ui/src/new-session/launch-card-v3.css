@@ -2,9 +2,15 @@
  * THE LAUNCH CARD v3 (mock 01a0df08) — on top of launch-card.css, which
  * still owns the shell: bands, pickers, menus, drawer, narrow-width steps.
  *
- * SIZE. 56% of the popup layer's width (80% − 30%, decision 10), same 82%
- * height, in the layer's container units — never `vw`, which a zoomed
- * `.cv2-root` would multiply.
+ * SIZE. 56% of the popup layer's width (80% − 30%, decision 10), in the
+ * layer's container units — never `vw`, which a zoomed `.cv2-root` would
+ * multiply. CONTENT-SIZED in height (owner, task 01a182d2: "the session
+ * launch panel is a bit big"): as tall as what it holds, never more than the
+ * layer. The rhythm is 4/8px: bands 48, chips 28, gutters 8/12/16.
+ *
+ * MENUS HANG PAST THE CARD. A 300px card cannot hold a 420px menu, so v3
+ * lets them overflow over the scrim; `useFitInside` keeps them inside the
+ * viewport instead.
  *
  * NOTHING OVERFLOWS (owner): every row is one line that scrolls or
  * ellipsizes, and long unbroken text wraps anywhere.
@@ -15,7 +21,57 @@
      take the palette's info and run hues. No raw colours (hex-ban). */
   --lcd3-jev: var(--pn-pr-merged);
   --lcd3-jev-soft: var(--pn-pr-merged-soft);
-  width: clamp(min(640px, calc(100cqw - 24px)), 56cqw, 1100px);
+  width: clamp(min(640px, calc(100cqw - 24px)), 56cqw, 920px);
+  height: auto;
+  max-height: calc(100cqh - 48px);
+  overflow: visible;
+}
+
+/* The shell's bands, tightened to the 4/8 rhythm. */
+.lcd--v3 .lcd-band { padding: 8px var(--g); }
+.lcd--v3 .lcd-band--top { min-height: 48px; }
+.lcd--v3 .lcd-band--bot { min-height: 52px; }
+/* The stage stacks: the center, then the refusal in flow — a content-sized
+   center has no empty space for a floating one to sit over. */
+.lcd--v3 .lcd-stage { flex: 0 1 auto; flex-direction: column; min-height: 0; }
+.lcd--v3 .lcd-stage:has(> .lcd-drawer[data-open]) { min-height: min(440px, calc(100cqh - 176px)); }
+/* MORE THAN FITS (long notes, connectors, the drawer, a short viewport): the
+   card's max-height shrinks the stage, the center and then the BODY (notes +
+   connectors), which scrolls. Plain flexbox, no measuring: the bands never
+   leave the card, and the title row and the strip — where every menu is
+   anchored — are never inside a scroller, so no menu is clipped. */
+.lcd--v3 .lcd3-center { flex: 0 1 auto; min-height: 0; }
+.lcd3-body { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 36px; overflow-y: auto; }
+.lcd--v3 .lcd-refusal { position: static; margin: 0 var(--g) 8px; box-shadow: none; }
+/* One accent: focus is the brand ring the shell's controls use, everywhere —
+   the autofocused notes box included. */
+.lcd--v3 :is(button, textarea, input):focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* -------------------------------------------------------- launching */
+
+/* THE PRESS IN FLIGHT: the shell draws this line instead of its bands. */
+.lcd3-launching {
+  /* Focus is parked here (not a control): no ring on a status line. */
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  height: 56px;
+  padding: 0 var(--g);
+  color: var(--pn-ink-2);
+  font-size: 14px;
+}
+.lcd3-launching__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.lcd3-detach { margin-left: auto; }
+.lcd3-spinner {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--pn-line-2);
+  border-top-color: var(--pn-brand);
+  border-radius: 50%;
+  animation: lcd3-spin 0.8s linear infinite;
 }
 
 .lcd3-wrap { white-space: normal !important; }
@@ -54,7 +110,7 @@
 .lcd3-titlerow {
   position: relative;
   flex: none;
-  padding: clamp(14px, 2.2cqh, 22px) var(--g) 6px;
+  padding: 12px var(--g) 4px;
 }
 .lcd3-titleline { display: flex; align-items: center; gap: 8px; min-width: 0; }
 
@@ -62,10 +118,10 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: 1px dashed var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-xs);
   background: none;
   cursor: pointer;
   color: var(--pn-ink-3) !important;
@@ -80,25 +136,26 @@
   align-items: center;
   gap: 10px;
   max-width: 100%;
-  padding: 4px 10px 4px 6px;
+  margin-left: -6px;
+  padding: 4px 8px 4px 6px;
   border: 0;
-  border-radius: var(--pn-r-md);
+  border-radius: var(--pn-r-sm);
   background: none;
   cursor: pointer;
   color: var(--pn-ink) !important;
-  font: 500 clamp(19px, 2.4cqh, 24px)/1.25 var(--pn-serif) !important;
+  font: 500 18px/1.3 var(--pn-serif) !important;
 }
 .lcd3-subject:hover, .lcd3-subject[aria-expanded='true'] { background: var(--pn-hover); }
 .lcd3-subject__k {
   display: grid;
   flex: none;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--pn-r-xs);
   background: var(--pn-brand-soft);
   color: var(--pn-brand);
-  font: 14px var(--pn-ui);
+  font: 13px var(--pn-ui);
 }
 .lcd3-subject__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -163,12 +220,18 @@
 }
 
 .lcd3-notes {
-  flex: 1;
+  flex: none;
   width: auto;
   min-height: 0;
   margin: 0 var(--g);
+  padding: 4px 0 8px;
   overflow-wrap: anywhere;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.6;
 }
+.lcd--v3 .mcp-launch-slot { margin: 0 var(--g) 4px; }
+.lcd--v3 .mcp-launch-slot[hidden] { display: none; }
 
 /* ------------------------------------------------------------- the strip */
 
@@ -179,9 +242,10 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 8px var(--g) 12px;
+  padding: 4px var(--g) 12px;
 }
-.lcd3-attach { flex: none; }
+.lcd3-attach { flex: none; height: 28px; padding: 0 12px; }
+.lcd3-suggestn { color: var(--pn-ink-3); }
 .lcd3-lane--strip { gap: 6px; }
 
 .lcd3-grp {
@@ -189,8 +253,8 @@
   align-items: center;
   gap: 6px;
   max-width: 260px;
-  height: 30px;
-  padding: 0 11px;
+  height: 28px;
+  padding: 0 12px;
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
   background: var(--pn-surface);
@@ -296,8 +360,9 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
   border: 1px dashed var(--lcd3-jev);
   border-radius: 50%;
   background: none;
@@ -316,12 +381,16 @@
 
 @keyframes lcd3-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .lcd3-jev[data-status='busy'], .lcd3-dispatch[data-live] { animation: none; }
+  .lcd3-jev[data-status='busy'], .lcd3-dispatch[data-live], .lcd3-spinner { animation: none; }
 }
 
 /* ------------------------------------------------------------ dispatch */
 
 .lcd3-dispatch { gap: 8px; }
+/* Dispatch is the secondary go: a quiet ghost beside Launch. */
+.lcd3-ghost { height: 32px; padding: 0 12px; border-color: transparent; background: none; color: var(--pn-ink-2) !important; }
+.lcd3-ghost:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+.lcd--v3 .lcd-btn--go { height: 32px; }
 .lcd3-dispatch[data-live] {
   border-color: color-mix(in srgb, var(--pn-run) 60%, transparent);
   color: var(--pn-run) !important;
@@ -336,50 +405,6 @@
 .lcd3-ddot[data-on] { background: var(--pn-run); box-shadow: 0 0 6px var(--pn-run); }
 .lcd3-ddot[data-unknown] { border: 1px dashed var(--pn-ink-3); background: none; }
 .lcd3-dispmenu { right: 0; left: auto; }
-
-/* ------------------------------------------------------------ previews */
-
-.lcd3-preview {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: color-mix(in srgb, var(--pn-paper) 55%, transparent);
-  backdrop-filter: blur(2px);
-}
-.lcd3-preview__card {
-  width: min(720px, 100%);
-  max-height: 100%;
-  overflow: auto;
-  padding: 18px 20px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-lg);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-pop);
-}
-.lcd3-preview h2 { margin: 0 0 4px; font: 500 21px var(--pn-serif); }
-.lcd3-preview__sub { margin-bottom: 12px; color: var(--pn-ink-3); font-size: 13px; overflow-wrap: anywhere; }
-.lcd3-preview__notice { margin: 10px 0 0; color: var(--pn-block); font-size: 12.5px; overflow-wrap: anywhere; }
-.lcd3-preview__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.lcd3-sec { margin: 8px 0; border: 1px solid var(--pn-line); border-radius: var(--pn-r-md); }
-.lcd3-sec__h {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--pn-line);
-  color: var(--pn-brand);
-  font: 600 12px var(--pn-mono);
-}
-.lcd3-sec__hint { color: var(--pn-ink-3); font: 400 11.5px var(--pn-ui); text-align: right; }
-.lcd3-sec__b { padding: 6px 12px; font-size: 13px; }
-.lcd3-prow { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 0; }
-.lcd3-prow__t { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
-.lcd3-prow code { margin-left: auto; overflow: hidden; color: var(--pn-ink-3); font: 11px var(--pn-mono); text-overflow: ellipsis; white-space: nowrap; }
-.lcd3-none { color: var(--pn-ink-3); }
-.lcd3-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---------------------------------------------- narrow: shed text, keep controls */
 
@@ -403,5 +428,5 @@
 /* THE PHONE: the popup layer's own bottom-sheet rule (launch-card.css) sets
    the width; this sheet loads after it, so it has to say it again. */
 @container lcpop (max-width: 600px) {
-  .lcd--v3 { width: 100%; }
+  .lcd--v3 { width: 100%; height: auto; max-height: 92cqh; }
 }
