@@ -140,6 +140,8 @@ describe('a worker in the group, end to end through the real server (B1b-8 ac1, 
         [connection, ownerAccount]);
     });
     const human = { identityId: ownerIdentity, authKind: 'browser' as const, requestId: randomUUID() };
+    // D32 (#1427): a bridge rides its connection's offered credential in the space.
+    await db.tx(human, (q) => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
     const policy = JSON.stringify({ trigger: 'mention', direction: 'both', outbound: 'replies', whoMayTrigger: 'anyone', voice: 'named', style: null });
     for (const [group, chat] of [[GROUP_A, chatA], [GROUP_B, chatB]] as const) {
       const created = await db.tx(human, (q) => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, group,
