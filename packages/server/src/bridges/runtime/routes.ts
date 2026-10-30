@@ -49,6 +49,8 @@ export interface BridgeRuntimeRouteOptions {
   /** B1b-4's executor. Absent: nothing is a command. */
   readonly commands?: () => BridgeCommandHook | undefined;
   readonly connectionAuth?: BridgeConnectionAuthPort;
+  /** Fetches inbound media into file entities after commit (402 §4). */
+  readonly media?: { kick(): Promise<number> };
   /** Starts a queued chat turn (the orchestrator's wake). */
   readonly wakeChat?: (chatId: string, requesterIdentityId: string) => void;
   /** A media frame carries base64 bytes; everything else is small. */
@@ -208,5 +210,6 @@ async function inbound(
     void hook.run(messageId).catch((err) => o.log?.(`[bridges] command ${messageId} failed: ${(err as Error).message}`));
   }
   if (result.status === 'stored' && result.wakeChat) o.wakeChat?.(result.wakeChat.chatId, result.wakeChat.identityId);
+  if (result.status === 'stored' && Array.isArray(frame.media) && frame.media.length > 0) void o.media?.kick();
   return { status: result.status === 'refused' ? 409 : 200, body: result };
 }

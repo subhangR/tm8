@@ -19,6 +19,10 @@
 --       (poll, voter), its selected option hashes, or the sealed payload the
 --       server opens with the poll's stored messageSecret. 398's inbound
 --       acknowledged and dropped both; §2's restated body routes them here.
+--   §4  media as files (§2.3 step 3): inbound records one bridge_media row per
+--       media item; the bridges worker fetches the bytes from the runtime
+--       (media.fetch, D39 handles), writes them to the blob store and attaches
+--       a file entity to the log message; failures retry, then stop.
 --
 -- CORRECTION TO 395's HEADER (fix-forward; 395 is applied and checksummed, so
 -- it is not edited). 395 says it touches no object of Mobile's 391, but its §2
@@ -185,6 +189,13 @@ begin
   values (log_id, b.entity_id, conn.id, 'in', ext, conv, sender, reply_ext, ts,
           case when p_command then 'pending' end, sender_name,
           nullif(coalesce(p_frame -> 'media', '[]'::jsonb), '[]'::jsonb));
+  -- §4 (B1b-8): each media item becomes a file attached to this log message,
+  -- fetched from the runtime after commit (§2.3 step 3).
+  insert into public.bridge_media(message_id, idx, bridge_id, handle, kind, mime, file_name)
+  select log_id, (m.ord - 1)::int, b.entity_id, m.item ->> 'handle', coalesce(m.item ->> 'kind', 'document'),
+         m.item ->> 'mime', m.item ->> 'fileName'
+    from jsonb_array_elements(coalesce(p_frame -> 'media', '[]'::jsonb)) with ordinality m(item, ord)
+   where m.item ->> 'handle' is not null and m.item ->> 'handle' <> '';
 
   -- A command is stored, never routed (§2.3 step 2).
   if p_command then
@@ -368,5 +379,115 @@ begin
 end
 $$;
 revoke all on function internal.bridge_store_poll_vote(public.bridges, uuid, jsonb) from public;
+
+
+-- -----------------------------------------------------------------------------
+-- §4. Media as files (§2.3 step 3). One row per inbound media item; the worker
+--     fetches, the blob store holds the bytes, and the file entity is attached
+--     to the log message exactly as a message attachment is: an attached_to
+--     edge, whose trigger keeps the message's attachment manifest.
+-- -----------------------------------------------------------------------------
+create table public.bridge_media (
+  message_id  uuid not null references public.messages(entity_id) on delete cascade,
+  idx         integer not null check (idx >= 0),
+  bridge_id   uuid not null references public.bridges(entity_id) on delete cascade,
+  -- SERVER-ONLY: the runtime's fetch handle (the message's media keys, D39).
+  handle      text not null,
+  kind        text not null,
+  mime        text,
+  file_name   text,
+  status      text not null default 'pending' check (status in ('pending', 'fetching', 'done', 'failed')),
+  attempts    integer not null default 0,
+  file_id     uuid references public.entities(id) on delete set null,
+  last_error  text,
+  next_at     timestamptz not null default now(),
+  created_at  timestamptz not null default now(),
+  primary key (message_id, idx)
+);
+create index bridge_media_due_idx on public.bridge_media(next_at) where status in ('pending', 'fetching');
+alter table public.bridge_media enable row level security;
+-- No policy and no grant: the worker's definer doors are the only readers.
+
+-- The worker takes due items for these runtimes; a fetch a crash abandoned is
+-- due again after two minutes. Answers what the media.fetch frame needs.
+create or replace function internal.bridge_media_take(p_runtime_ids text[], p_limit integer) returns jsonb
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare r record; items jsonb := '[]'::jsonb;
+begin
+  perform internal.require_bridges_worker();
+  for r in
+    select bm.message_id, bm.idx, bm.handle, bm.kind, bm.mime, bm.file_name, b.space_id, b.connection_id,
+           b.external_conversation_id, c.runtime_id
+      from public.bridge_media bm
+      join public.bridges b on b.entity_id = bm.bridge_id
+      join public.bridge_connections c on c.id = b.connection_id
+     where bm.next_at <= now()
+       and (bm.status = 'pending' or (bm.status = 'fetching' and bm.next_at <= now()))
+       and c.runtime_id = any(p_runtime_ids) and c.status = 'linked' and b.ended_at is null
+     order by bm.created_at
+     limit greatest(least(p_limit, 20), 1)
+     for update of bm skip locked
+  loop
+    update public.bridge_media set status = 'fetching', attempts = attempts + 1, next_at = now() + interval '2 minutes'
+     where message_id = r.message_id and idx = r.idx;
+    items := items || jsonb_build_array(jsonb_build_object(
+      'messageId', r.message_id, 'idx', r.idx, 'handle', r.handle, 'kind', r.kind, 'mime', r.mime,
+      'fileName', r.file_name, 'spaceId', r.space_id, 'connectionId', r.connection_id,
+      'conversationId', r.external_conversation_id, 'runtimeId', r.runtime_id));
+  end loop;
+  return items;
+end
+$$;
+revoke all on function internal.bridge_media_take(text[], integer) from public;
+grant execute on function internal.bridge_media_take(text[], integer) to tm8_app;
+
+-- The bytes are in the blob store: create the file entity (authored like the
+-- message) and attach it to the log message. Idempotent per (message, idx).
+create or replace function internal.bridge_media_attach(
+  p_message uuid, p_idx integer, p_storage_path text, p_size bigint, p_sha256 text, p_mime text
+) returns uuid language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare bm public.bridge_media; m public.messages; e public.entities; v_file uuid; v_name text;
+begin
+  perform internal.require_bridges_worker();
+  select * into bm from public.bridge_media where message_id = p_message and idx = p_idx for update;
+  if bm.message_id is null then raise exception 'bridge media not found' using errcode = 'P0002'; end if;
+  if bm.status = 'done' then return bm.file_id; end if;
+  select * into m from public.messages where entity_id = p_message;
+  select * into e from public.entities where id = p_message;
+  v_name := left(coalesce(nullif(btrim(bm.file_name), ''), bm.kind || '-' || (p_idx + 1)), 200);
+  perform internal.bind_actor(m.author_id);
+  v_file := internal.create_envelope(e.space_id, 'file', m.author_id, null, null, null);
+  insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256)
+  values (v_file, v_name, coalesce(nullif(p_mime, ''), bm.mime, 'application/octet-stream'), p_size, p_storage_path, p_sha256);
+  perform internal.record_initial_version(v_file, m.author_id);
+  perform internal.w1_set_writer('message_attachment');
+  insert into public.edges(space_id, src_id, dst_id, type, created_by)
+  values (e.space_id, v_file, p_message, 'attached_to', m.author_id);
+  perform internal.w1_set_writer('');
+  -- The attached_to edge's own trigger (w2_sync_message_attachments_insert)
+  -- rewrites the message's attachment manifest, which emits message.updated.
+  update public.bridge_media set status = 'done', file_id = v_file, last_error = null
+   where message_id = p_message and idx = p_idx;
+  return v_file;
+end
+$$;
+revoke all on function internal.bridge_media_attach(uuid, integer, text, bigint, text, text) from public;
+grant execute on function internal.bridge_media_attach(uuid, integer, text, bigint, text, text) to tm8_app;
+
+-- A fetch that failed: retried with backoff up to five attempts, or stopped
+-- at once when the runtime says it can never succeed (too large, gone).
+create or replace function internal.bridge_media_fail(p_message uuid, p_idx integer, p_reason text, p_retry boolean)
+returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_bridges_worker();
+  update public.bridge_media
+     set status = case when p_retry and attempts < 5 then 'pending' else 'failed' end,
+         next_at = now() + make_interval(secs => 30 * power(2, attempts)),
+         last_error = left(coalesce(p_reason, 'failed'), 300)
+   where message_id = p_message and idx = p_idx and status <> 'done';
+end
+$$;
+revoke all on function internal.bridge_media_fail(uuid, integer, text, boolean) from public;
+grant execute on function internal.bridge_media_fail(uuid, integer, text, boolean) to tm8_app;
 
 reset role;
