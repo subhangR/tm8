@@ -679,7 +679,7 @@ export const CORE_KIND_DISPOSITIONS = {
   // Space styles (migration 284, styles spec v8). A published, read-only theme:
   // born only from `styles.push`, so not generically creatable or editable.
   // Picked from the account menu, never filed into from the generic menu.
-  // Labels (migration 397, BRIDGE-ENTITY-DESIGN §3.8). Born and edited only
+  // Labels (migration 408, BRIDGE-ENTITY-DESIGN §3.8). Born and edited only
   // through `labels.*`; archived, never deleted. Entities carry their ids on
   // the envelope (`entities.labels`), not as edges.
   label: core('label', 'labels', {

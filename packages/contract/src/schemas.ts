@@ -254,7 +254,7 @@ export const CoreEntityKindSchema = z.enum([
   'craft',
   // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
   'bridge',
-  // Labels (397). Not in `CreatableEntityKind`: `labels.create` is its door.
+  // Labels (408). Not in `CreatableEntityKind`: `labels.create` is its door.
   'label',
 ]);
 
@@ -784,7 +784,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   CraftStateSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
-  // 397 — a label's name, colour, description and archive mark.
+  // 408 — a label's name, colour, description and archive mark.
   LabelEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
@@ -983,7 +983,7 @@ function entitySummaryShape() {
     // in this phase AND the truth a pre-column node reports. See the field's
     // docblock on `EntitySummary`.
     category: StatusCategorySchema.optional(),
-    // 397: label ids, spread when non-empty (see `EntitySummary.labels`).
+    // 408: label ids, spread when non-empty (see `EntitySummary.labels`).
     labels: z.array(EntityIdSchema).optional(),
   };
 }
@@ -1404,7 +1404,7 @@ const CollectionFiltersSchema = z.object({
   titleContains: z.string().trim().min(1).max(200).optional(),
   // Every word, in title or description (collections.ts). Same trim rule.
   words: z.string().trim().min(1).max(200).optional(),
-  // Labels (397): all of / any of these label ids. Non-empty: an empty
+  // Labels (408): all of / any of these label ids. Non-empty: an empty
   // all-of matches everything and an empty any-of matches nothing.
   labels: z.array(EntityIdSchema).min(1).max(32).optional(),
   labelsAny: z.array(EntityIdSchema).min(1).max(32).optional(),

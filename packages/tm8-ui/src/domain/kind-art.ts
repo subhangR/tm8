@@ -316,7 +316,7 @@ export const KIND_ART = {
   ],
 
   /**
-   * A tag — a `label` is a name and a colour put on other entities (397).
+   * A tag — a `label` is a name and a colour put on other entities (408).
    * The punched hole is what keeps it from reading as `bridge`'s arc or as a
    * plain arrow at 16px.
    */

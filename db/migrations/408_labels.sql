@@ -1,5 +1,6 @@
 -- =============================================================================
--- 397 — LABELS (Bridges B0b; BRIDGE-ENTITY-DESIGN v4 §3.8, D27).
+-- 408 — LABELS (Bridges B0b; BRIDGE-ENTITY-DESIGN v4 §3.8, D27).
+-- (Authored as 391, then 397; renumbered to 408 at merge by the bridges merger: next free above main's 406 and #1434's 407.)
 --
 -- A label is a flat, space-level entity: a name (unique per space, case-
 -- insensitive), a colour and a description. Bugs are tasks labelled `bug`
@@ -247,7 +248,7 @@ begin
         into content from public.tools tl where tl.entity_id=target;
       -- 395 (Bridges B0a): the detail row. No secret lives on it.
       when 'bridge' then select to_jsonb(br) - 'entity_id' into content from public.bridges br where br.entity_id = target;
-      -- 397: the label's name, colour, description and archive mark.
+      -- 408: the label's name, colour, description and archive mark.
       when 'label' then select to_jsonb(lb) - 'entity_id' - 'space_id' into content from public.labels lb where lb.entity_id = target;
       else content := '{}'::jsonb;
     end case;
@@ -584,7 +585,7 @@ begin
   select count(*) into memberless from public.spaces sp
    where not exists (select 1 from public.members m where m.space_id = sp.id);
   if memberless > 0 then
-    raise notice '397: % space(s) have no member and get no bug label', memberless;
+    raise notice '408: % space(s) have no member and get no bug label', memberless;
   end if;
   for s in select id from public.spaces loop
     perform internal.seed_space_labels(s.id, (

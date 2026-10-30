@@ -74,9 +74,9 @@ export async function addBridgeProjectionShape(database: W1ScratchDatabase): Pro
 }
 
 /**
- * 397 adds `entities.labels` and the `label` kind's detail table, and current
+ * 408 adds `entities.labels` and the `label` kind's detail table, and current
  * readers select `e.labels` and left-join `public.labels`. Historical fixtures
- * that stop before 397 mirror only that read shape; no label rows are tested.
+ * that stop before 408 mirror only that read shape; no label rows are tested.
  */
 export async function addLabelProjectionShape(database: W1ScratchDatabase): Promise<void> {
   await database.query(`set role tm8_graph_owner;

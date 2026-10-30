@@ -862,7 +862,7 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // 395: a bridge's content is the same derived facts as its state.
       return { ...state };
     case 'label':
-      // 397: a label's content is its state.
+      // 408: a label's content is its state.
       return { kind: 'label', name: 'bug', colour: '#d73a4a', description: '', archivedAt: null };
     default:
       // pull_request | commit | file | spell | skill — the open content variant

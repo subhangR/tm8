@@ -125,7 +125,7 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   bridge: { nouns: ['bridge'], commands: ['message send', 'message reply', 'message list', 'form create'] },
   // 284: a space style is written only by `tm8 style push`; the noun owns it.
   style: { nouns: ['style'], commands: [] },
-  // 397: `tm8 label` owns a label; entities carry them through `entity update --label`.
+  // 408: `tm8 label` owns a label; entities carry them through `entity update --label`.
   label: { nouns: ['label'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
   tool: { nouns: ['tool'], commands: [] },

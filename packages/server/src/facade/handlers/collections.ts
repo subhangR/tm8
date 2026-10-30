@@ -347,7 +347,7 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
   }
 
-  // Labels (397): all of (`@>`) and any of (`&&`), kind-neutral. Both are
+  // Labels (408): all of (`@>`) and any of (`&&`), kind-neutral. Both are
   // operators `entities_labels_gin` serves, so a label filter is an index
   // probe rather than a scan of the space.
   if (f.labels && f.labels.length > 0) {

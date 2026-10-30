@@ -1280,7 +1280,7 @@ export const styleMidnight = summary({
 });
 
 /**
- * The seeded `bug` label (397, D29: a bug is a task labelled `bug`). Its
+ * The seeded `bug` label (408, D29: a bug is a task labelled `bug`). Its
  * colour is the contract's default rather than a literal: a fixture carrying
  * colour values would put raw colour literals in `src/` (§14).
  */

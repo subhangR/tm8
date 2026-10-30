@@ -210,7 +210,7 @@ interface SummaryRow {
   created_by: string;
   /** 147; optional keeps pre-147 row fixtures source-compatible. */
   status_category?: string | null;
-  /** 397; optional keeps pre-397 row fixtures source-compatible. */
+  /** 408; optional keeps pre-397 row fixtures source-compatible. */
   labels?: string[] | null;
   likes: number | null;
   dislikes: number | null;
@@ -455,7 +455,7 @@ select
   -- omitting it here would make a live status change move a row on refresh but
   -- not on the socket, which reads as a caching bug for a week.
   e.status_category,
-  -- 397: MIRRORS entity-read.ts ENTITY_COLUMNS.
+  -- 408: MIRRORS entity-read.ts ENTITY_COLUMNS.
   e.labels,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,

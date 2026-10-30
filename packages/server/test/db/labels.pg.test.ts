@@ -1,5 +1,5 @@
 /**
- * 397 against a real Postgres: LABELS (BRIDGE-ENTITY-DESIGN §3.8, D27).
+ * 408 against a real Postgres: LABELS (BRIDGE-ENTITY-DESIGN §3.8, D27).
  *
  * Pinned here (§7.3 item 14 and the B0b acceptance):
  *   - every space has `bug`: one seeded on its owner's arrival and one born
@@ -11,7 +11,7 @@
  *     unarchived list, refuses adding it again, and a label is never deleted;
  *   - names are unique per space, case-insensitively, archived included;
  *   - a label filter is served by `entities_labels_gin` (EXPLAIN);
- *   - 397's internal.entity_content keeps every arm 395 had (bridge) beside label.
+ *   - 408's internal.entity_content keeps every arm 395 had (bridge) beside label.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -108,14 +108,14 @@ afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('397 labels', () => {
+describe('408 labels', () => {
   it('seeds bug in a space on its owner’s arrival, and in a space born through create_space', async () => {
     const seeded = await database.query<{ name: string; colour: string; archived_at: unknown; created_by: string }>(
       `select l.name, l.colour, l.archived_at, e.created_by::text created_by
          from public.labels l join public.entities e on e.id = l.entity_id where l.space_id = $1`, [fixture.spaceId]);
     expect(seeded).toEqual([{ name: 'bug', colour: '#d73a4a', archived_at: null, created_by: fixture.memberId }]);
 
-    const born = await asApp((q) => q(`select public.create_space('Born after 397') r`), 'labels-397-newcomer');
+    const born = await asApp((q) => q(`select public.create_space('Born after 408') r`), 'labels-397-newcomer');
     const spaceId = ((born[0]!.r as { space: { id: string } }).space.id);
     const names = await database.query<{ name: string }>(`select name from public.labels where space_id = $1`, [spaceId]);
     expect(names.map((r) => r.name)).toEqual(['bug']);
@@ -234,13 +234,13 @@ describe('397 labels', () => {
     expect(await labelId(fixture.otherSpaceId, 'bug')).not.toBe(await labelId(fixture.spaceId, 'bug'));
   });
 
-  it('keeps every earlier entity_content arm: bridge (395) beside label (397)', async () => {
-    // 397 REPLACES internal.entity_content. A body copied from an older definer
+  it('keeps every earlier entity_content arm: bridge (395) beside label (408)', async () => {
+    // 408 REPLACES internal.entity_content. A body copied from an older definer
     // drops the arms added since, silently: that kind's content becomes '{}'.
     const rows = await database.query<{ def: string }>(
       `select pg_get_functiondef('internal.entity_content(uuid)'::regprocedure) def`);
     const arms = [...rows[0]!.def.matchAll(/when '([a-z_]+)' then/g)].map((m) => m[1]);
-    // The 34 arms of 395's body (the latest definer before 397), plus label.
+    // The 34 arms of 395's body (the latest definer before 408), plus label.
     const ARMS_395 = [
       'artifact', 'bridge', 'channel', 'chat', 'collection', 'commit', 'container', 'craft',
       'credential', 'doc', 'drawing', 'file', 'form', 'graph', 'interaction_profile', 'loop',

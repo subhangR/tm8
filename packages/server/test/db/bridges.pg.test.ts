@@ -136,7 +136,7 @@ describe('bridges.create (§3.4, D20, D25, D28)', () => {
 
   it('hydrates the bridge through internal.entity_content, with no secret on it', async () => {
     // Any later migration that REPLACES entity_content from an older body drops
-    // the bridge arm silently and this becomes '{}' (caught on B0b's 397).
+    // the bridge arm silently and this becomes '{}' (caught on B0b's 408).
     const [row] = await scratch.query<{ c: Record<string, unknown> }>('select internal.entity_content($1) as c', [infra.entity.id]);
     expect(row!.c).toMatchObject({
       provider: 'whatsapp', connection_id: connection, external_conversation_id: '120363@g.us',
