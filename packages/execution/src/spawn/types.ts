@@ -980,7 +980,7 @@ export interface TransitionInput {
   endedKind?: WorkSessionEndedKind | null;
   endedReason?: string | null;
   /**
-   * A boot's progress report (398), with `status` the row's current one
+   * A boot's progress report (404), with `status` the row's current one
    * (`spawning`). The terminal phases are not reported: `live` and `failed`
    * follow from the status in the same write.
    */
@@ -1513,7 +1513,7 @@ export interface Tm8Manifest {
     /**
      * Which link of the precedence chain chose `accessMode`. Recorded so the
      * spawn receipt's posture rows (`spawnLaunchFacts`) can be rebuilt from
-     * the manifest once the boot has run: a launch answered at admission (398)
+     * the manifest once the boot has run: a launch answered at admission (404)
      * carries no receipt of its own. Absent on manifests written before it.
      */
     accessModeSource?: SpawnAccessModeSource;

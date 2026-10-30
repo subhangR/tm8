@@ -125,7 +125,7 @@ describe('PTY WebSocket', () => {
     expect(raw).toContain('no live PTY for session');
   });
 
-  it('an attach that arrives while the session is still booting waits for its PTY and streams it (398)', async () => {
+  it('an attach that arrives while the session is still booting waits for its PTY and streams it (404)', async () => {
     // `execution.spawn` answers at admission, before the PTY exists; the
     // launching page attaches at once. It must get the terminal, not a 404.
     const live = new PtyHostService({ logger: quiet });
@@ -147,7 +147,7 @@ describe('PTY WebSocket', () => {
     expect(Buffer.concat(bins(frames).map((b) => b.payload)).toString('utf8')).toContain('booted-output');
   });
 
-  it('a boot that fails during the wait is refused at once with its reason, BEFORE the 101 (398)', async () => {
+  it('a boot that fails during the wait is refused at once with its reason, BEFORE the 101 (404)', async () => {
     host = new PtyHostService({ logger: quiet });
     const server = createPtyWsServer({
       pty: host,

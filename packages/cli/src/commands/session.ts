@@ -575,7 +575,7 @@ const SPAWN_WAIT_MS = 180_000;
 const SPAWN_POLL_MS = 400;
 
 /**
- * Follow an admitted launch until its session is running (398).
+ * Follow an admitted launch until its session is running (404).
  *
  * `execution.spawn` answers at ADMISSION — the row exists, `spawning`, boot
  * phase `admitted` — and the server boots the session afterwards, recording

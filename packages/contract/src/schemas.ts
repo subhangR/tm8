@@ -374,7 +374,7 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
-/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 398. */
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 404. */
 export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
   z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
@@ -702,7 +702,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
-    // 398: the last phase the launch's boot reached, and when. Absent on a
+    // 404: the last phase the launch's boot reached, and when. Absent on a
     // node (or a row) that records no boot. Named here for the reason above.
     bootPhase: WorkSessionBootPhaseSchema.optional(),
     bootPhaseAt: z.string().optional(),

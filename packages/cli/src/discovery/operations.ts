@@ -3217,7 +3217,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.bootState': {
     // No command of its own: `tm8 session spawn` polls it while it waits for
-    // the session it was answered at admission for (398).
+    // the session it was answered at admission for (404).
     cmd: null,
     sum: "Read how far a session's boot has got: status, boot phase and when it was reached, and why it ended",
     authz: 'entity',
@@ -4498,7 +4498,7 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:fc5a9c1905b29e95469f6963589c93ced45dac742a9a3a4477330c301518134e' /* +1 execution.bootState (398): the regenerated manifest digest. MEASURED. */;
+  'sha256:fc5a9c1905b29e95469f6963589c93ced45dac742a9a3a4477330c301518134e' /* +1 execution.bootState (404): the regenerated manifest digest. MEASURED. */;
 
 export const GRAMMAR_VERSION = '2';
 

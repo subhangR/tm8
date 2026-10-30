@@ -279,7 +279,7 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
-  /** 398. Optional so pre-398 row fixtures stay source-compatible. */
+  /** 404. Optional so pre-404 row fixtures stay source-compatible. */
   ws_boot_phase?: string | null;
   ws_boot_phase_at?: Date | string | null;
   ws_outcome?: string | null;
@@ -1477,7 +1477,7 @@ export class PgEntityProjector implements EntityProjector {
             : { sharingSetAt: iso(r.ws_sharing_set_at) }),
           startedAt: iso(r.ws_started_at),
           exitedAt: iso(r.ws_exited_at),
-          // 398 — the boot facts, the same helper as entity-read.
+          // 404 — the boot facts, the same helper as entity-read.
           ...bootPhaseFacts(r),
           // The lane facts (107) — MIRRORS entity-read.ts stateOf: an
           // explicit null branch renders no claim; the mode key is spread

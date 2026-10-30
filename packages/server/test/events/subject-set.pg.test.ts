@@ -202,8 +202,8 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
       add column outcome text not null default 'open', add column outcome_at timestamptz,
       add column outcome_by uuid, add column receipt_message_id uuid,
       add column outcome_source text, add column outcome_note text`);
-    // 398 (boot phase): the session readers select `ws.boot_phase` and
-    // `ws.boot_phase_at`. 398 rewrites work_session_transition over 302,
+    // 404 (boot phase): the session readers select `ws.boot_phase` and
+    // `ws.boot_phase_at`. 404 rewrites work_session_transition over 302,
     // which this partial chain lacks, so only the two columns are mirrored.
     await database.query(`alter table public.work_sessions
       add column boot_phase text, add column boot_phase_at timestamptz`);

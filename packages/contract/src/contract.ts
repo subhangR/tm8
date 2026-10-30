@@ -6540,7 +6540,7 @@ export interface ExecutionSpawnResult extends CommandResult {
   /**
    * What the new session actually launched with — the RESOLVED posture, not
    * an echo of the request, which may name none of it. ABSENT AT ADMISSION
-   * (398): `execution.spawn` answers before the boot resolves the credentials,
+   * (404): `execution.spawn` answers before the boot resolves the credentials,
    * so a current server never carries it here. Read it from `execution.launch`
    * (`SessionLaunchRecord.launch`) once the session's manifest is recorded —
    * by the time it is `running`. Only a server older than admission answers
@@ -7649,14 +7649,14 @@ export interface SessionLaunchRecord {
    * The spawn receipt's posture rows — the resolved access mode and where it
    * came from, the credential each provider ran on, the parent — rebuilt from
    * the recorded manifest, exactly as `execution.spawn` reported them when it
-   * answered only once the session ran (398). Absent when no manifest was
+   * answered only once the session ran (404). Absent when no manifest was
    * recorded, and on a manifest that predates the access-mode source.
    */
   launch?: ExecutionSpawnLaunch;
 }
 
 /**
- * `execution.bootState` (398): how far a session's boot has got, read from its
+ * `execution.bootState` (404): how far a session's boot has got, read from its
  * row. `bootPhase`/`bootPhaseAt` are absent on a row written before boot
  * phases; `endedReason` says why a session that ended, ended.
  */
@@ -8514,7 +8514,7 @@ export interface EntityContextV2View {
   /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
   outcome?: string | null;
   receiptMessageId?: string | null;
-  /** 398: the last phase the launch's boot reached (`WorkSessionBootPhase`), while it boots or when it failed. */
+  /** 404: the last phase the launch's boot reached (`WorkSessionBootPhase`), while it boots or when it failed. */
   bootPhase?: string | null;
   tasks?: EntityContextRef[];
   /**

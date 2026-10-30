@@ -1325,7 +1325,7 @@ describe('composeManifest launch block without Jev', () => {
     const launch = composeManifest(args).launch;
     expect(Object.keys(launch).sort()).toEqual([
       'accessMode',
-      // 398: recorded so the spawn receipt can be rebuilt once the boot ran.
+      // 404: recorded so the spawn receipt can be rebuilt once the boot ran.
       'accessModeSource',
       'command',
       'commandNetwork',
