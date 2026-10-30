@@ -187,4 +187,29 @@ describe('bridge rolling summary (S)', () => {
     expect(view.summary!.state.openAsks.some(a => a.excerpt.includes('rotate the staging database password'))).toBe(true);
     expect(view.summary!.onWhat).toEqual([{ taskId: task, title: 'Rotate staging password', status: 'working', assignees: ['Ben Owner'] }]);
   });
+
+  const row = async () => (await database.transaction(async c => (await c.query(
+    'select policy_version, covered_messages, through_message_id from public.bridge_chat_summaries where bridge_id = $1', [bridgeId])).rows))[0];
+
+  it('a deleted cursor message still leaves the newer log reachable', async () => {
+    const { through_message_id: through } = await row();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query('update public.entities set deleted_at = now() where id = $1', [through]);
+    });
+    const group = await readGroupContext(db, claims, chat, 16_384);
+    expect((group!.content as { recent: { messages: unknown[] } }).recent.messages).toHaveLength(TAIL_MESSAGES);
+    const view: BridgeDetailView = await call('GET', `/v2/bridges/${bridgeId}`);
+    expect(view.summary!.unsummarizedMessages).toBe(TAIL_MESSAGES);
+  });
+
+  it('a summary under another policy is folded again from the start and replaced', async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query("update public.bridge_chat_summaries set policy_version = 'tm8-bridge-summary-v0' where bridge_id = $1", [bridgeId]);
+    });
+    await readGroupContext(db, claims, chat, 16_384);
+    // 2,070 posted, one deleted above, the tail left verbatim.
+    expect(await row()).toMatchObject({ policy_version: 'tm8-bridge-summary-v1', covered_messages: 2069 - TAIL_MESSAGES });
+  });
 });

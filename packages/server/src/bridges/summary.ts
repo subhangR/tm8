@@ -211,7 +211,16 @@ interface LogRow {
 
 const iso = (value: Date | string) => new Date(value).toISOString();
 
-async function readLogAfter(q: Querier, anchorId: string, after: string | null, limit: number): Promise<LogMessage[]> {
+/**
+ * The cursor: a log message id, and the stored summary's `through_created_at`
+ * for when that message is no longer readable (deleted after the fold), so the
+ * log after it stays reachable.
+ */
+interface Cursor { readonly id: string | null; readonly at: string | null }
+const CURSOR_AFTER = `($2::uuid is null or (m.created_at, m.entity_id) >
+             (coalesce((select m2.created_at from public.messages m2 where m2.entity_id = $2::uuid), $3::timestamptz), $2::uuid))`;
+
+async function readLogAfter(q: Querier, anchorId: string, after: Cursor, limit: number): Promise<LogMessage[]> {
   const rows = await q.query<LogRow>(
     `select m.entity_id as id, m.created_at, m.author_id, left(m.body, ${READ_BODY}) as body, e.parent_id, m.root_message_id,
             o.direction, o.external_sender_id as sender,
@@ -221,10 +230,9 @@ async function readLogAfter(q: Querier, anchorId: string, after: string | null, 
        left join public.message_origins o on o.message_id = m.entity_id
        left join public.bridge_participants p on p.bridge_id = o.bridge_id and p.external_id = o.external_sender_id
       where m.anchor_id = $1 and e.deleted_at is null
-        and ($2::uuid is null or (m.created_at, m.entity_id) >
-             (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid))
+        and ${CURSOR_AFTER}
       order by m.created_at, m.entity_id
-      limit $3`, [anchorId, after, limit]);
+      limit $4`, [anchorId, after.id, after.at, limit]);
   const actors = await loadActors(q, [...new Set(rows.flatMap(r => (r.author_id ? [r.author_id] : [])))]);
   return rows.map(r => ({
     id: r.id, createdAt: iso(r.created_at),
@@ -256,8 +264,10 @@ export async function readOnWhat(q: Querier, bridgeId: string): Promise<OnWhat[]
 interface BridgeRow { id: string; target_kind: string; title: string | null; purpose: string | null; anchor: string }
 interface SummaryRow {
   policy_version: string; through_message_id: string | null; covered_messages: number;
-  state: SummaryState; refreshed_at: Date | string;
+  state: SummaryState; refreshed_at: Date | string; through_at: string | null;
 }
+type Stored = StoredSummary & { readonly cursor: Cursor };
+const START: Cursor = { id: null, at: null };
 
 async function bridgeOf(q: Querier, where: 'chat' | 'bridge', id: string): Promise<BridgeRow | null> {
   const [row] = await q.query<BridgeRow>(
@@ -269,22 +279,23 @@ async function bridgeOf(q: Querier, where: 'chat' | 'bridge', id: string): Promi
   return row ?? null;
 }
 
-async function storedSummary(q: Querier, bridgeId: string): Promise<StoredSummary | null> {
+async function storedSummary(q: Querier, bridgeId: string): Promise<Stored | null> {
   const [row] = await q.query<SummaryRow>(
-    `select policy_version, through_message_id, covered_messages, state, refreshed_at
+    `select policy_version, through_message_id, covered_messages, state, refreshed_at,
+            through_created_at::text as through_at
        from public.bridge_chat_summaries where bridge_id = $1`, [bridgeId]);
   // A summary folded under another policy is folded again from the start.
   if (!row || row.policy_version !== SUMMARY_POLICY) return null;
   return { policyVersion: row.policy_version, throughMessageId: row.through_message_id,
-    coveredMessages: Number(row.covered_messages), state: row.state, refreshedAt: iso(row.refreshed_at) };
+    coveredMessages: Number(row.covered_messages), state: row.state, refreshedAt: iso(row.refreshed_at),
+    cursor: { id: row.through_message_id, at: row.through_at } };
 }
 
-async function unsummarizedCount(q: Querier, anchorId: string, after: string | null): Promise<number> {
+async function unsummarizedCount(q: Querier, anchorId: string, after: Cursor): Promise<number> {
   const [row] = await q.query<{ n: number }>(
     `select count(*)::int as n from public.messages m join public.entities e on e.id = m.entity_id
       where m.anchor_id = $1 and e.deleted_at is null
-        and ($2::uuid is null or (m.created_at, m.entity_id) >
-             (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid))`, [anchorId, after]);
+        and ${CURSOR_AFTER}`, [anchorId, after.id, after.at]);
   return Number(row?.n ?? 0);
 }
 
@@ -295,18 +306,20 @@ async function unsummarizedCount(q: Querier, anchorId: string, after: string | n
 export async function assembleGroupContext(q: Querier, chatId: string, maxBytes: number): Promise<GroupContextRecord | null> {
   const bridge = await bridgeOf(q, 'chat', chatId);
   if (!bridge) return null;
-  let summary = await storedSummary(q, bridge.id);
-  const after = summary?.throughMessageId ?? null;
-  const pending = await unsummarizedCount(q, bridge.anchor, after);
+  const row = await storedSummary(q, bridge.id);
+  let summary: StoredSummary | null = row;
+  const stored = row?.cursor ?? START;
+  const after = stored.id;
+  const pending = await unsummarizedCount(q, bridge.anchor, stored);
   // The newest window is all a no-fold turn needs: tail + up to a threshold's worth.
-  let unsummarized = await readLogAfter(q, bridge.anchor, after, Math.min(pending, TAIL_MESSAGES + REFRESH_MESSAGES));
+  let unsummarized = await readLogAfter(q, bridge.anchor, stored, Math.min(pending, TAIL_MESSAGES + REFRESH_MESSAGES));
   const beyondTail = (list: readonly LogMessage[]) => list.slice(0, Math.max(0, list.length - TAIL_MESSAGES));
   const beyondBytes = beyondTail(unsummarized).reduce((n, m) => n + Buffer.byteLength(m.body, 'utf8'), 0);
   if (needsRefresh(pending, beyondBytes)) {
     // Fold everything but the tail, a page at a time, oldest first.
     let state = summary?.state ?? EMPTY_SUMMARY;
     let covered = summary?.coveredMessages ?? 0;
-    let cursor = after;
+    let cursor = stored;
     let left = pending - TAIL_MESSAGES;
     const hash = createHash('sha256').update(`${SUMMARY_POLICY}\n${after ?? ''}\n${canonicalJson(state)}`);
     while (left > 0) {
@@ -316,12 +329,12 @@ export async function assembleGroupContext(q: Querier, chatId: string, maxBytes:
       for (const m of page) hash.update(`${m.id}\n`);
       covered += page.length;
       left -= page.length;
-      cursor = page.at(-1)!.id;
+      cursor = { id: page.at(-1)!.id, at: null };
     }
-    const stored = await q.rpc<boolean>('public.store_bridge_chat_summary', [
-      bridge.id, after, cursor, covered, SUMMARY_POLICY, JSON.stringify(state), hash.digest('hex')]);
-    summary = { policyVersion: SUMMARY_POLICY, throughMessageId: cursor, coveredMessages: covered, state,
-      refreshedAt: stored ? new Date().toISOString() : summary?.refreshedAt ?? new Date().toISOString() };
+    const won = await q.rpc<boolean>('public.store_bridge_chat_summary', [
+      bridge.id, after, cursor.id, covered, SUMMARY_POLICY, JSON.stringify(state), hash.digest('hex')]);
+    summary = { policyVersion: SUMMARY_POLICY, throughMessageId: cursor.id, coveredMessages: covered, state,
+      refreshedAt: won ? new Date().toISOString() : summary?.refreshedAt ?? new Date().toISOString() };
     unsummarized = await readLogAfter(q, bridge.anchor, cursor, TAIL_MESSAGES + REFRESH_MESSAGES);
   }
   return renderGroupContext({ bridgeId: bridge.id, title: bridge.title ?? '', purpose: bridge.purpose,
@@ -343,7 +356,7 @@ export async function readBridgeChatSummary(q: Querier, bridgeId: string): Promi
     coveredMessages: summary?.coveredMessages ?? 0,
     throughMessageId: summary?.throughMessageId ?? null,
     refreshedAt: summary?.refreshedAt ?? null,
-    unsummarizedMessages: await unsummarizedCount(q, bridge.anchor, summary?.throughMessageId ?? null),
+    unsummarizedMessages: await unsummarizedCount(q, bridge.anchor, summary?.cursor ?? START),
     state: summary?.state ?? EMPTY_SUMMARY,
     onWhat: await readOnWhat(q, bridgeId),
   };

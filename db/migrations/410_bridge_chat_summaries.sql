@@ -44,7 +44,8 @@ grant select on public.bridge_chat_summaries to tm8_app;
 
 -- The one write: the turn assembly stores what it folded. Compare-and-set on
 -- the previous cursor, so a fold computed from a stale row never moves the
--- summary backwards; a lost race answers false and the caller uses its own
+-- summary backwards (a row under another policy is refolded from the start
+-- and replaced); a lost race answers false and the caller uses its own
 -- fold for this turn only. The caller must be able to read the bridge (the
 -- fold was read under the same claims).
 create or replace function public.store_bridge_chat_summary(
@@ -56,6 +57,7 @@ declare
   e public.entities;
   through_at timestamptz;
   current_through uuid;
+  current_policy text;
   found_row boolean;
 begin
   e := internal.live_entity(p_bridge_id, 'bridge');
@@ -71,9 +73,12 @@ begin
       raise exception 'the summary cursor must be a message on the bridge log' using errcode = '22023';
     end if;
   end if;
-  select true, s.through_message_id into found_row, current_through
+  select true, s.through_message_id, s.policy_version into found_row, current_through, current_policy
     from public.bridge_chat_summaries s where s.bridge_id = p_bridge_id for update;
-  if found_row and current_through is distinct from p_previous_through then return false; end if;
+  -- A row folded under another policy counts as absent: the caller folded from the start.
+  if found_row and current_policy = p_policy and current_through is distinct from p_previous_through then
+    return false;
+  end if;
   insert into public.bridge_chat_summaries(bridge_id, chat_id, policy_version, through_message_id,
     through_created_at, covered_messages, state, source_digest, refreshed_at)
   values (p_bridge_id, b.target_id, p_policy, p_through, through_at, p_covered, p_state, p_digest, now())
