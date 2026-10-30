@@ -125,6 +125,9 @@ beforeAll(async () => {
     await newSession(c, s1, 'Infra fixer');
     await newSession(c, bystander, 'Bystander');
   });
+  // D32 (#1427): a bridge rides its connection's offered credential in the space.
+  await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() },
+    q => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
   const create = (externalId: string, title: string, target: string) => db.tx(
     { identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() },
     q => q.rpc<{ entity: { id: string } }>('create_bridge', [

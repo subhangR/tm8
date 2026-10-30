@@ -77,6 +77,9 @@ beforeAll(async () => {
   base = server.url;
   const db = server.db!;
 
+  // D32 (#1427): a bridge rides its connection's offered credential in the space.
+  await db.rpc({ identityId: identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b4w-offer' }, 'offer_bridge_connection',
+    [connection, space, 'public', null, `b1b4w-${randomUUID()}`]);
   const created = await db.rpc<{ entity: { id: string } }>(
     { identityId: identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b4w-create' }, 'create_bridge',
     [space, connection, GROUP, JSON.stringify({ kind: 'group', title: 'Infra', memberCount: 3 }), chat, '{}', persona,
