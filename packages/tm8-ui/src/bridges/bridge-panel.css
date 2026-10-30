@@ -21,7 +21,7 @@
 .brg-set__grouphead { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--set-gutter, 18px) 6px; }
 .brg-set__rows { list-style: none; margin: 0; padding: 0; }
 .brg-set__conn {
-  display: grid; grid-template-columns: auto 90px minmax(110px, 1fr) auto minmax(90px, auto) auto;
+  display: grid; grid-template-columns: auto minmax(90px, max-content) minmax(110px, 1fr) auto minmax(90px, auto) auto auto;
   align-items: center; gap: 10px; padding: 7px var(--set-gutter, 18px);
   border-top: 1px solid var(--pn-x-hairline-soft); font-size: var(--pn-fs-body);
 }
@@ -210,3 +210,6 @@
   .brg-dialog { padding: 14px; }
   .brg-wiz__cards { grid-template-columns: 1fr; }
 }
+
+.brg-set__conn .brg-set__menu { position: relative; }
+.brg-set__provider { white-space: nowrap; }

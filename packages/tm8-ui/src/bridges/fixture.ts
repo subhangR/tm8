@@ -124,6 +124,8 @@ export function createFixtureBridgesClient(
   seed: readonly BridgeView[] = [],
   /** Resolves a target id to its row, so a created bridge names its target. */
   targetOf: (id: string) => EntitySummary | undefined = () => undefined,
+  /** A created bridge, so a fixture seam can list it as an entity the way a server would. */
+  onCreated: (view: BridgeView) => void = () => {},
 ): BridgesClient & {
   readonly bridges: Map<string, BridgeView>;
   readonly connectionsById: Map<string, BridgeConnectionView>;
@@ -186,6 +188,7 @@ export function createFixtureBridgesClient(
       bridges.set(id, view);
       logs.set(id, []);
       handles.set(id, []);
+      onCreated(view);
       return view;
     },
     connections: {
