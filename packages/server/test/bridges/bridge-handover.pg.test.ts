@@ -201,14 +201,14 @@ const handoverRow = async (id: string) =>
 const bridgeRow = async () => (await owner<{ connection_id: string; credential_id: string }>(
   'select connection_id::text, credential_id::text from public.bridges where entity_id = $1', [bridge]))[0]!;
 const attention = (key: string) => owner<{ status: string; assignee_id: string | null; reason: string; entity_id: string }>(
-  'select status, assignee_id::text, reason, entity_id::text from public.attention_requests where signal_key = $1', [key]);
+  'select status, assignee_id::text, reason, entity_id::text from public.attention_requests where signal_key = $1 order by created_at desc', [key]);
 
 describe('H1. offer', () => {
   it('refuses a member who neither owns the number nor admins the space, and the owner\'s agent', async () => {
     const chen = await offer('chen');
     expect(chen.status, JSON.stringify(chen.body)).toBe(403);
     const agent = await refusal(db.tx(claims('asha', 'agent'), q => q.rpc('offer_bridge_handover', [bridge, connB, randomUUID()])));
-    expect(agent.code).toBe('42501');
+    expect(agent.code).toBe('forbidden');
     expect(await owner('select 1 from public.bridge_handovers')).toHaveLength(0);
   });
 
@@ -234,7 +234,7 @@ describe('H2. accept: the receiving number\'s owner, and only with the group on 
     const chen = await settle('accept', h.id, 'chen');
     expect(chen.status).toBe(403);
     const agent = await refusal(db.tx(claims('bina', 'agent'), q => q.rpc('accept_bridge_handover', [h.id, [GROUP], randomUUID()])));
-    expect(agent.code).toBe('42501');
+    expect(agent.code).toBe('forbidden');
     const notIn = await settle('accept', h.id, 'bina');
     expect(notIn.status, JSON.stringify(notIn.body)).toBe(409);
     expect(notIn.body.error.details.reason).toBe('not_in_group');
@@ -367,12 +367,16 @@ describe('H5. the guards still hold outside an accept', () => {
   });
 
   it('#1443\'s owner_not_member arm (carried in 411\'s restatement): the NEW number\'s owner left, resume is refused', async () => {
-    await owner('update public.bridges set paused_at = now() where entity_id = $1', [bridge]);
-    await owner(`update public.members set status = 'left' where entity_id = $1`, [people.bina.member]);
+    // Leaving needs the member's live credentials revoked first: the withdraw also pauses the bridge.
+    const w = await call(`/v2/me/bridge-connections/${connB}/withdraw`, 'bina', { clientMutationId: randomUUID(), spaceId });
+    expect(w.status, JSON.stringify(w.body)).toBe(200);
+    await owner(`update public.members set status = 'left', left_at = now() where entity_id = $1`, [people.bina.member]);
     const resume = await refusal(owner('update public.bridges set paused_at = null where entity_id = $1', [bridge]));
     expect(resume.detail ?? '').toContain('owner_not_member');
-    await owner(`update public.members set status = 'active' where entity_id = $1`, [people.bina.member]);
+    await owner(`update public.members set status = 'active', left_at = null where entity_id = $1`, [people.bina.member]);
+    await db.tx(claims('bina'), q => q.rpc('offer_bridge_connection', [connB, spaceId, 'public', null, randomUUID()]));
     await owner('update public.bridges set paused_at = null where entity_id = $1', [bridge]);
+    expect(await bridgeRow()).toEqual({ connection_id: connB, credential_id: credB });
   });
 });
 
