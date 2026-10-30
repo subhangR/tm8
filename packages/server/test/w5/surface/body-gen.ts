@@ -56,6 +56,7 @@ const CANDIDATES: readonly unknown[] = [
   'c:w5surface', // the `c:<name>` custom-kind namespace
   'w5surface',
   'text/plain',
+  'en-US', // a BCP 47 tag (392: a push device's `locale`); letters only, so the `w5surface` hint is refused
   1,
   true,
   {},

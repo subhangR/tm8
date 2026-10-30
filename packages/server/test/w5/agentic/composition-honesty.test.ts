@@ -130,6 +130,11 @@ const CREDENTIAL_SEAM = new Set<OperationName>([
   'servers.adopt',
   'servers.remove',
   'servers.probe',
+  // TM8 Mobile S1 (392): devices.* seal the push token under the node key, so
+  // they mount only with the credential root (facade/index.ts), same seam.
+  'devices.register',
+  'devices.update',
+  'devices.unregister',
 ]);
 
 class StubDb implements Db {
