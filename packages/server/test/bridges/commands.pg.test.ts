@@ -608,7 +608,7 @@ describe('/remember (Bridges R, 403: D29, D61)', () => {
     const before = await memories();
     const { messageId, reply } = await command('rahul', '/remember the VPN config lives in the wiki');
     const yes = await command('rahul', 'YES', reply!.externalId);
-    expect(yes.reply).toBeUndefined();
+    expect(yes.reply?.text ?? '').toBe('nothing to confirm — it expired or was already done'); // never an acceptance
     await command('owner', '/remember accept');
     expect((await proposals(messageId))[0]).toMatchObject({ status: 'pending', memory_id: null });
     expect(await memories()).toBe(before);
