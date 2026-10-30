@@ -214,10 +214,14 @@ beforeAll(async () => {
   // alternative is to create the new signature BESIDE an older one and make
   // every positional call ambiguous — the exact hazard this skip list exists
   // for — so failing loudly is the behaviour we want from the real chain.)
+  // 396 (authored_from origin index) stands on 308 the same way: it drops
+  // 308's two-argument story_walk_skips by exact signature. Skipped with them;
+  // covered by authored-from-origin-396.pg.test.ts on the real chain.
   database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)
     && !f.endsWith('_direct_story_spawn.sql') && !f.endsWith('_canonical_edges.sql')
     && !f.endsWith('_canonical_edges_rows.sql') && !f.endsWith('_session_teammate_participates_only.sql')
-    && !f.endsWith('_launched_by.sql') && !f.endsWith('_loop_firing_provenance.sql')));
+    && !f.endsWith('_launched_by.sql') && !f.endsWith('_loop_firing_provenance.sql')
+    && !f.endsWith('_authored_from_origin_index.sql')));
   fixture = await seedPre131(database);
   database.apply([migration]);
 });
