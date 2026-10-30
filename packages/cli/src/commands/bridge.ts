@@ -8,7 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath,
   type BridgeConnectionAuthFrame, type BridgeConnectionBeginResult, type BridgeConnectionListResult,
   type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
-  type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
+  type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
   type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
 } from '@tm8/contract';
 import { requireSpace, type CliContext } from '../context.js';
@@ -467,11 +467,43 @@ async function connectionWithdraw(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+// Hand-over (D55): offer, then the receiving number's owner accepts in tm8.
+function renderHandover(r: BridgeHandoverResult): string {
+  const h = r.handover;
+  const lines = [`hand-over ${h.id} · ${h.status} · connection ${h.fromConnectionId} → ${h.toConnectionId}`];
+  if (h.status === 'offered') lines.push(`the receiving number's owner accepts with: tm8 bridge handover accept ${h.id}`);
+  if (r.readdressed) lines.push(`${r.readdressed} queued post${r.readdressed === 1 ? '' : 's'} now go out on the new number`);
+  return `${lines.join('\n')}\n${renderBridge(r.bridge)}`;
+}
+
+async function handoverOffer(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['to', 'mutation-id']); argumentsCount(cmd, 1);
+  const to = cmd.options.value('to');
+  if (!to) throw usage('--to <connection-id> is required: the receiving member\'s connection, offered to this Space', 'tm8 bridge connection list');
+  cmd.out.data(await observedInvoke<BridgeHandoverResult>(client(cmd), 'bridges.handover.offer', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, body: { ...mutation(cmd), toConnectionId: to },
+  }), renderHandover);
+  return EXIT_OK;
+}
+
+async function handoverSettle(cmd: CommandContext,
+  operation: 'bridges.handover.accept' | 'bridges.handover.decline' | 'bridges.handover.withdraw'): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  cmd.out.data(await observedInvoke<BridgeHandoverResult>(client(cmd), operation, {
+    params: { handoverId: requireArg(cmd, 0, '<handover-id>') }, body: mutation(cmd),
+  }), renderHandover);
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'list'], run: connectionList },
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },
   { path: ['bridge', 'connection', 'withdraw'], run: connectionWithdraw },
+  { path: ['bridge', 'handover', 'offer'], run: handoverOffer },
+  { path: ['bridge', 'handover', 'accept'], run: cmd => handoverSettle(cmd, 'bridges.handover.accept') },
+  { path: ['bridge', 'handover', 'decline'], run: cmd => handoverSettle(cmd, 'bridges.handover.decline') },
+  { path: ['bridge', 'handover', 'withdraw'], run: cmd => handoverSettle(cmd, 'bridges.handover.withdraw') },
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
   { path: ['bridge', 'get'], run: cmd => bridgeShow(cmd, true) },

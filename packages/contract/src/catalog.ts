@@ -108,6 +108,13 @@ export const OPERATIONS = [
   { name: 'bridges.connections.begin', method: 'POST', path: '/v2/me/bridge-connections', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.connections.offer', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/offer', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.connections.withdraw', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
+  // Q7/Q8 (D55, D56; 410): hand a bridge to another member's connection. All
+  // human-only (D9: never from a group). accept asks the receiving number's
+  // runtime for its live group list before the one-transaction move.
+  { name: 'bridges.handover.offer', method: 'POST', path: '/v2/bridges/:bridgeId/handover', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.accept', method: 'POST', path: '/v2/bridge-handovers/:handoverId/accept', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.decline', method: 'POST', path: '/v2/bridge-handovers/:handoverId/decline', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.withdraw', method: 'POST', path: '/v2/bridge-handovers/:handoverId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },

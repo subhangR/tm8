@@ -597,7 +597,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     registerFacadeHandlers(registry, {
       ...(tools ? { tools } : {}),
       // Bridges B1b-5: the QR relay. B1b-2 adds `runtime: <BridgeRuntimeHub>` beside it.
-      bridges: { connectionAuth: bridgeConnectionAuth },
+      bridges: {
+        connectionAuth: bridgeConnectionAuth,
+        // D55: accept asks the receiving number's runtime for its live groups.
+        // The hub is built below; this runs only at request time, after it.
+        listConversations: (runtimeId, connectionId, requestId) => bridgeHub
+          ? bridgeHub.listConversations(runtimeId, connectionId, requestId)
+          : Promise.reject(new CollabError('upstream_unavailable', 'no bridge runtime on this node')),
+      },
       // The same instance as the `bridgeCommands` slot below.
       ...(bridgeCommandExecutor ? { bridgeCommands: bridgeCommandExecutor } : {}),
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
