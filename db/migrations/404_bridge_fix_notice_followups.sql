@@ -100,10 +100,11 @@ declare
   w public.bridge_fix_closeouts; p public.bridge_fix_pending;
 begin
   select * into e from public.entities where id = p_task and kind = 'task' and deleted_at is null;
-  if e.id is null then return 0; end if;
-  -- 404 §1: a cancelled report is never announced.
-  if e.status_category = 'cancelled' then
+  -- 404 §1: a deleted or cancelled report is never announced, and nothing
+  -- waits for it (a wait left behind would be swept forever).
+  if e.id is null or e.status_category = 'cancelled' then
     delete from public.bridge_fix_closeouts where task_id = p_task;
+    delete from public.bridge_fix_pending where task_id = p_task and status = 'retrying';
     return 0;
   end if;
   if not exists (select 1 from public.bridge_fix_reports where task_id = p_task) then
@@ -134,8 +135,10 @@ begin
     body := case when done_text is not null then format('Done: %s. %s', t.title, done_text)
                  else format('Done: %s (closed without a pull request).', t.title) end;
   else
-    -- Reopened before its close-out: the window starts again on the next done.
+    -- Reopened before its close-out or its retry: both start again on the
+    -- next done.
     delete from public.bridge_fix_closeouts where task_id = p_task;
+    delete from public.bridge_fix_pending where task_id = p_task and status = 'retrying';
     return 0;
   end if;
 
@@ -259,8 +262,9 @@ begin
       raise warning 'bridge fix sweep, close-out for task %: %', task, sqlerrm;
     end;
   end loop;
-  for task in select distinct p.task_id from public.bridge_fix_pending p
-               where p.status = 'retrying' limit 100 loop
+  for task in select p.task_id from public.bridge_fix_pending p
+               where p.status = 'retrying'
+               group by p.task_id order by min(p.last_at) limit 100 loop
     begin
       perform internal.bridge_fix_check(task);
       retries := retries + 1;

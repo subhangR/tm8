@@ -475,4 +475,25 @@ describe('F follow-ups (404)', () => {
     await mergeAsWorker(pr, 'passing');
     expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'given_up', attempts: 2 })]);
   });
+
+  it('§2 a wait on a report cancelled or deleted afterwards is dropped by the sweep, not swept forever', async () => {
+    const { task, report: r } = await freshReport('Login loop', 'wamid.F7');
+    await db.tx(human(), q => q.rpc('set_bridge_answerer', [r, chatInfra]));
+    const pr = await linkPr(task, 906);
+    await mergeAsWorker(pr);
+    expect(await pendingOf(task)).toEqual([expect.objectContaining({ status: 'retrying' })]);
+    await inTx(null, c => c.query(`update public.tasks set work_status = 'cancelled' where entity_id = $1`, [task]));
+    await sweep();
+    expect(await pendingOf(task)).toEqual([]);
+    expect(await noticesFor(task)).toEqual([]);
+
+    const gone = await freshReport('Avatar blank', 'wamid.F8');
+    await db.tx(human(), async q => q.rpc('set_task_gate', [gone.task, await version(gone.task), 'none', null, `f-gate-${randomUUID()}`]));
+    await db.tx(human(), async q => q.rpc('complete_task', [gone.task, await version(gone.task), [ownerMember], null, `f-done-${randomUUID()}`]));
+    await inTx(null, c => c.query('update public.entities set deleted_at = now() where id = $1', [gone.task]));
+    await ageCloseout(gone.task);
+    await sweep();
+    expect(await scratch.query('select 1 from public.bridge_fix_closeouts where task_id = $1', [gone.task])).toEqual([]);
+    expect(await noticesFor(gone.task)).toEqual([]);
+  });
 });
