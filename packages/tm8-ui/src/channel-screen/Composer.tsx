@@ -7,6 +7,7 @@ import { AttachmentChips, ComposerCard, skillReference, useRichInput, type Trigg
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
+import { BridgeReplyTarget, bridgeProviderLabel } from '../bridges/bridge-marks';
 
 export type { ComposerMentionOption } from './channel-tags';
 
@@ -135,6 +136,18 @@ export function Composer({
   const disconnected = connection?.phase === 'offline' || connection?.phase === 'polling';
   const composingReply = Boolean(replyTo || threadRoot);
   const replyAuthor = replyTo ? (replyTo.state.author ?? replyTo.createdBy) : null;
+  /*
+   * §4.5, D76: the parent this reply posts under, and the bridge it crossed.
+   * A reply to a bridged message crosses by default, so the composer says
+   * *Reply in WhatsApp*; *Reply here only* posts with `hereOnly` and the
+   * server's outbound rule keeps it in tm8. Each new parent starts at the
+   * default, so the switch never carries over to a reply it was not set for.
+   */
+  const parent = replyTo ?? threadRoot;
+  const parentBridge = parent?.bridge ?? null;
+  const [hereOnly, setHereOnly] = useState(false);
+  useEffect(() => { setHereOnly(false); }, [parent?.id]);
+  const replyCrosses = parentBridge !== null && !hereOnly;
 
   /**
    * The hook owns the trigger grammar and the staged-upload machine; this
@@ -279,6 +292,7 @@ export function Composer({
         ...(attachmentIds.length ? { attachmentIds } : {}),
         ...(mentionIds.length ? { mentionIds: [...new Set(mentionIds)] } : {}),
         ...(tagTargetIds.length ? { tagTargetIds: [...new Set(tagTargetIds)] } : {}),
+        ...(parentBridge && hereOnly ? { hereOnly: true } : {}),
       });
       // Cleared ONLY on success. The reply target clears with it: the next
       // message is a new thought unless the user says otherwise.
@@ -287,6 +301,7 @@ export function Composer({
       setAttachedEntities([]);
       setSelectedMentions([]);
       onCancelReply();
+      setHereOnly(false);
     } catch (e) {
       /*
        * The refusal is held HERE, beside the text that failed (T5-5's
@@ -373,6 +388,10 @@ export function Composer({
             <span aria-hidden>✕</span>
           </button>
         </div>
+      ) : null}
+
+      {parentBridge ? (
+        <BridgeReplyTarget bridge={parentBridge} hereOnly={hereOnly} onChange={setHereOnly} />
       ) : null}
 
       {/* Staged uploads and the paste refusal are the shared chips —
@@ -541,7 +560,7 @@ export function Composer({
             ref={textarea}
             className="chs-composer__input"
             aria-label={`Message ${anchorNoun}`}
-            placeholder={`Message ${anchorNoun}…`}
+            placeholder={replyCrosses ? `Reply in ${bridgeProviderLabel(parentBridge.provider)}…` : `Message ${anchorNoun}…`}
             /* The textarea IS the picker's text input, so it carries the
                active-row pointer. `aria-expanded` is deliberately absent: it is
                not an allowed attribute on role=textbox, and promoting this to

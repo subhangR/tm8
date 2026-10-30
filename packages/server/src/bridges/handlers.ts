@@ -144,6 +144,7 @@ async function readLog(q: Querier, bridgeId: string, opts: {
         : null,
       handle: r.handle,
       delivery: badges.get(r.id)?.delivery ?? null,
+      trust: badges.get(r.id)?.trust ?? null,
     };
   });
   const last = page.at(-1)?.id ?? null;

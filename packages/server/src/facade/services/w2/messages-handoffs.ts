@@ -515,6 +515,9 @@ export class W2MessagesHandoffsService {
       ]);
       // 328: the Coordinator's team rides the TURN, never the body.
       await stampChatTurnTeam(q, result.messageIds, input.team);
+      // §4.5, D76: *Reply here only*, marked before commit, which is when the
+      // deferred outbound rule (398, 409) reads it.
+      if (input.hereOnly) await q.rpc('mark_bridge_here_only', [result.messageIds]);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
       // explicit pokes (099), and — since 121 — every LIVE session with a

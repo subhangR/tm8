@@ -96,3 +96,33 @@
 .cv2-root button.bridged-from:hover { color: var(--pn-ink); border-color: var(--pn-ink-3); }
 .cv2-root .bridged-from__status { color: var(--pn-wait); }
 .cv2-root .bridged-from__status[data-status='ended'] { color: var(--pn-ink-3); }
+
+/* The composer's reply target (§4.5, D76): two pressed-state buttons. */
+.cv2-root .bridge-reply {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: var(--pn-surface);
+  font-size: var(--pn-fs-tick);
+}
+.cv2-root .bridge-reply__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.cv2-root .bridge-reply__option:hover { color: var(--pn-ink); }
+.cv2-root .bridge-reply__option[aria-pressed='true'] {
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink);
+  font-weight: 600;
+}

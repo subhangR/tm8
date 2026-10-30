@@ -196,6 +196,8 @@ export interface BridgeLogEntry {
   handle: string | null;
   /** The outbound delivery badge (sent, queued, failed, refused), when this message crosses. */
   delivery: BridgeDelivery | null;
+  /** Inbound only: how far the sender is taken at their word, as `MessageBridgeView.trust` reads it. */
+  trust: BridgeTrust | null;
 }
 export interface BridgeLogResult {
   bridgeId: EntityId;

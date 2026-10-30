@@ -7,6 +7,11 @@
  * alike (batch twins). An outbound one carries 398's delivery badge: pending,
  * then sent on settle; a refused post carries the refusal. A message no bridge
  * touched has no entry, and a reader outside the space sees nothing.
+ *
+ * 409 (the B2-ticks follow-up): `bridges.log.read` rows carry the same trust
+ * word; a page no bridge touched is answered by the pre-filter alone (D75);
+ * and *Reply here only* (§4.5, D76) never reaches bridge_outbox, held on the
+ * server path, `messages.post` itself, not only in the composer.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -15,6 +20,11 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 import { createDb } from '../../src/db/client.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import { bridgeMessageBadges } from '../../src/db/bridge-badges.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import type { RequestContext } from '../../src/http/types.js';
+import { registerBridgeHandlers } from '../../src/bridges/handlers.js';
+import { registerW2MessagesHandoffsHandlers } from '../../src/facade/handlers/w2/messages-handoffs.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 240_000 });
 
@@ -180,5 +190,134 @@ describe('the delivery tick (§2.3, D64, D65: 398\'s badge)', () => {
     } finally {
       await owner(`update public.bridges set paused_at = null where entity_id = $1`, [infra]);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 409: the B2-ticks follow-up.
+// -----------------------------------------------------------------------------
+let registry: HandlerRegistry | null = null;
+function call<T>(op: 'bridges.log.read' | 'messages.post', opts: { params?: Record<string, string>; body?: unknown }): Promise<T> {
+  if (!registry) {
+    registry = new HandlerRegistry();
+    const deps = { db, config: {}, owner: async () => ({ identityId: ownerIdentity, accountId: ownerAccount,
+      username: 'b2t-owner', isNodeAdmin: false, isOwner: false }) } as unknown as FacadeDeps;
+    registerBridgeHandlers(registry, deps);
+    registerW2MessagesHandoffsHandlers(registry, deps);
+  }
+  const ctx = {
+    opName: op, params: opts.params ?? {}, body: opts.body ?? {}, query: new URLSearchParams(), headers: {},
+    requestId: randomUUID(), method: op === 'messages.post' ? 'POST' : 'GET', path: '/test',
+    identity: { kind: 'bearer', identityId: ownerIdentity, authKind: 'browser' },
+  } as unknown as RequestContext;
+  return registry.get(op)!(ctx) as Promise<T>;
+}
+
+describe('bridges.log.read carries trust (409, for the bridge panel)', () => {
+  it('each row reads the trust MessageBridgeView reads: guest, linked, asserted, and null outbound', async () => {
+    const guest = await inbound(frame({ body: 'from a guest' }));
+    const linked = await inbound(frame({ sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
+    const asserted = await inbound(frame({ sender: { externalId: ASSERTED_JID, altId: null, name: 'Priya 2', fromMe: false } }));
+    const out = await postAs(ownerMember, infra, 'posted on the log');
+    const log = await call<{ items: Array<{ id: string; trust: string | null }> }>('bridges.log.read',
+      { params: { bridgeId: infra } });
+    const trust = new Map(log.items.map(i => [i.id, i.trust]));
+    const views = await badges([guest.messageId, linked.messageId, asserted.messageId, out]);
+    expect(trust.get(guest.messageId)).toBe('guest');
+    expect(trust.get(linked.messageId)).toBe('linked');
+    expect(trust.get(asserted.messageId)).toBe('asserted');
+    expect(trust.get(out)).toBeNull();
+    for (const id of [guest.messageId, linked.messageId, asserted.messageId, out]) {
+      expect(trust.get(id)).toBe(views.get(id)!.trust);
+    }
+  });
+});
+
+describe('the badge read\'s pre-filter (409, D75)', () => {
+  /** Function calls made inside one badge read, counted by Postgres itself. */
+  async function callsFor(ids: string[]) {
+    return scratch.transaction(async c => {
+      await c.query(`set local track_functions = 'all'`);
+      await c.query('select internal.bridge_message_badges($1::uuid[])', [ids]);
+      const { rows } = await c.query<{ fn: string; calls: string }>(
+        `select f::text as fn, coalesce(pg_stat_get_xact_function_calls(f::regprocedure::oid), 0) as calls
+           from unnest(array['internal.bridge_message_badges(uuid[])', 'internal.entity_readable(uuid)',
+                             'internal.bridge_origin_of(uuid)', 'internal.bridge_message_delivery(uuid[])']) f`);
+      return Object.fromEntries(rows.map(r => [r.fn.replace(/^internal\.|\(.*$/g, ''), Number(r.calls)]));
+    });
+  }
+
+  it('a page no bridge touched never reaches the per-id reads', async () => {
+    const plain = [await postAs(ownerMember, chat, 'plain one'), await postAs(ownerMember, chat, 'plain two'),
+      await postAs(ownerMember, chat, 'plain three')];
+    expect(await callsFor(plain)).toEqual({
+      bridge_message_badges: 1, entity_readable: 0, bridge_origin_of: 0, bridge_message_delivery: 0 });
+  });
+
+  it('a mixed page reads only its bridged ids, the twin of a routed copy included', async () => {
+    const r = await inbound(frame({ body: 'mixed page' }));
+    const plain = await postAs(ownerMember, chat, 'plain beside a bridged one');
+    // The plain id costs nothing: the mixed page makes exactly the calls the
+    // bridged id makes alone, and that is more than none.
+    const alone = await callsFor([r.copyId!]);
+    expect(await callsFor([plain, r.copyId!])).toEqual(alone);
+    expect(alone.entity_readable).toBeGreaterThanOrEqual(1);
+    expect(alone.bridge_origin_of).toBeGreaterThanOrEqual(1);
+    // The badge itself is unchanged by the filter.
+    const got = await badges([plain, r.copyId!]);
+    expect(got.has(plain)).toBe(false);
+    expect(got.get(r.copyId!)).toEqual(inboundView({ participant: 'Rahul', trust: 'guest' }));
+  });
+});
+
+describe('Reply here only never enqueues to bridge_outbox (409, §4.5, D76)', () => {
+  const crossed = async (id: string) => ({
+    outbox: (await owner<{ n: number }>('select count(*)::int as n from public.bridge_outbox where message_id = $1', [id]))[0]!.n,
+    refusals: (await owner<{ n: number }>('select count(*)::int as n from public.bridge_delivery_refusals where message_id = $1', [id]))[0]!.n,
+  });
+  const reply = async (parent: string, body: string, hereOnly?: boolean) => {
+    const result = await call<{ messages: Array<{ id: string }> }>('messages.post', { body: {
+      clientMutationId: randomUUID(), anchorIds: [infra], parentMessageId: parent, body,
+      ...(hereOnly === undefined ? {} : { hereOnly }) } });
+    return result.messages[0]!.id;
+  };
+
+  it('a reply to a bridged message crosses by default (the control)', async () => {
+    const r = await inbound(frame({ body: 'anyone on call?' }));
+    const id = await reply(r.messageId, 'me');
+    expect(await crossed(id)).toEqual({ outbox: 1, refusals: 0 });
+    expect((await badges([id])).get(id)).toMatchObject({ direction: 'out', delivery: { status: 'pending' } });
+    const explicit = await reply(r.messageId, 'me too', false);
+    expect(await crossed(explicit)).toEqual({ outbox: 1, refusals: 0 });
+  });
+
+  it('the same reply with hereOnly stays in tm8: no outbox row, no refusal, no badge', async () => {
+    const r = await inbound(frame({ body: 'anyone on call? (2)' }));
+    const id = await reply(r.messageId, 'noting this here only', true);
+    expect(await crossed(id)).toEqual({ outbox: 0, refusals: 0 });
+    expect((await badges([id])).has(id)).toBe(false);
+    const [stored] = await owner<{ parent_id: string }>('select parent_id from public.entities where id = $1', [id]);
+    expect(stored!.parent_id).toBe(r.messageId);
+  });
+
+  it('hereOnly holds on a log-anchor post too, and while the bridge is paused records no refusal', async () => {
+    const top = await call<{ messages: Array<{ id: string }> }>('messages.post', { body: {
+      clientMutationId: randomUUID(), anchorIds: [infra], body: 'a note on the log', hereOnly: true } });
+    expect(await crossed(top.messages[0]!.id)).toEqual({ outbox: 0, refusals: 0 });
+    await owner(`update public.bridges set paused_at = now() where entity_id = $1`, [infra]);
+    try {
+      const r = await inbound(frame({ body: 'paused?' })).catch(() => null);
+      const parent = r?.messageId ?? top.messages[0]!.id;
+      const id = await reply(parent, 'kept here', true);
+      expect(await crossed(id)).toEqual({ outbox: 0, refusals: 0 });
+    } finally {
+      await owner(`update public.bridges set paused_at = null where entity_id = $1`, [infra]);
+    }
+  });
+
+  it('mark_bridge_here_only marks only a message of the calling transaction', async () => {
+    const earlier = await postAs(ownerMember, infra, 'already committed');
+    expect(await human(q => q.rpc<number>('mark_bridge_here_only', [[earlier]]))).toBe(0);
+    expect(await owner('select 1 from public.bridge_here_only where message_id = $1', [earlier])).toEqual([]);
   });
 });
