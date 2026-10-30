@@ -99,7 +99,7 @@ begin
       'participant', participant,
       'trust', trust,
       'delivery', case when coalesce(o.direction, 'out') = 'out' and delivery is not null
-                       then delivery - 'messageId' - 'bridgeId' - 'externalMessageId' end));
+                       then delivery end));
   end loop;
   return out;
 end

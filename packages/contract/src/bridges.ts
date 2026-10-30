@@ -149,28 +149,6 @@ export interface BridgeHandleListResult { items: BridgeHandleAppearance[] }
 
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
-/**
- * The `bridge.delivery` badge (§2.3, 398's `internal.bridge_message_delivery`):
- * the outbox ledger's state for a message that crosses to the provider, or why
- * the outbox refused it. `dispatching` reads as `pending` (398). There is no
- * `delivered` or `read`: the runtime protocol has no receipt frame (D64).
- */
-export const BRIDGE_DELIVERY_STATUSES = ['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused'] as const;
-export type BridgeDeliveryStatus = typeof BRIDGE_DELIVERY_STATUSES[number];
-export type BridgeDeliveryRefusal =
-  | 'bridge_paused' | 'bridge_ended' | 'direction_in' | 'worker_posting_off'
-  | 'rate_limited' | 'not_connected' | 'credential_text';
-export interface BridgeDelivery {
-  status: BridgeDeliveryStatus;
-  /** Set when `status` is `refused`. */
-  reason?: BridgeDeliveryRefusal;
-  /** The provider's last words on a failed send (`failed_*`), display only. */
-  detail?: string;
-  retryAfterMs?: number;
-  /** Settled (sent, failed for good) or queued / refused at. */
-  at: string;
-}
-
 /** How far a bridged sender is taken at their word (§2.4, D4). */
 export type BridgeTrust = 'linked' | 'asserted' | 'guest';
 
@@ -189,7 +167,11 @@ export interface MessageBridgeView {
   participant: string | null;
   /** Inbound only: linked (verified), asserted (an admin's *This is…*), guest (unlinked, authored by the bridge). */
   trust: BridgeTrust | null;
-  /** Outbound only: the outbox ledger's state, or the refusal. */
+  /**
+   * Outbound only: the outbox ledger's state, or the refusal (398's badge).
+   * There is no `delivered` or `read`: the runtime protocol carries no
+   * receipts (D64).
+   */
   delivery: BridgeDelivery | null;
 }
 
@@ -268,12 +250,15 @@ const Hhmm = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'must be HH:MM'
 
 export const BridgeProviderSchema = z.enum(BRIDGE_PROVIDERS);
 export const BridgeDeliverySchema: z.ZodType<BridgeDelivery> = z.object({
-  status: z.enum(BRIDGE_DELIVERY_STATUSES),
-  reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off',
-    'rate_limited', 'not_connected', 'credential_text']).optional(),
-  detail: z.string().optional(),
+  messageId: z.string().min(1),
+  bridgeId: z.string().min(1),
+  status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
+  reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
+    'not_connected', 'credential_text']).optional(),
   retryAfterMs: z.number().int().nonnegative().optional(),
-  at: z.string(),
+  externalMessageId: z.string().min(1).optional(),
+  detail: z.string().min(1).optional(),
+  at: z.string().min(1),
 }).strict();
 export const MessageBridgeViewSchema: z.ZodType<MessageBridgeView> = z.object({
   bridgeId: Id,

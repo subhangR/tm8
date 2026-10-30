@@ -17,7 +17,7 @@
  */
 import type {
   BridgeDelivery,
-  BridgeDeliveryRefusal,
+  BridgeRefusalReason,
   BridgeProvider,
   BridgeTrust,
   MessageBridgeView,
@@ -123,7 +123,7 @@ export interface BridgeDeliveryWords {
   timed: boolean;
 }
 
-const REFUSAL_WORDS: Record<BridgeDeliveryRefusal, string> = {
+const REFUSAL_WORDS: Record<BridgeRefusalReason, string> = {
   bridge_paused: 'bridge paused',
   bridge_ended: 'bridge removed',
   direction_in: 'bridge is read-only',
