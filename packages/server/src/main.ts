@@ -44,6 +44,7 @@ import {
   WorkspaceEventPublisher,
 } from './events/index.js';
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import type { LoopExecutorPort } from './scheduler/jobs/loops.js';
 import type { ExecutionRuntime } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
@@ -323,6 +324,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
+  // One node id for every row this process records against itself: its work
+  // sessions, worktree allocations and ghost candidates, and its tool runs
+  // (ToolRuntime below). `<host>:<port>` is the default, but the desktop app's
+  // ephemeral port would change it on every launch, orphaning all of them. See
+  // `desktopNodeId`.
+  const nodeId = isDesktopProfile() && dataDir ? desktopNodeId(dataDir) : `${config.host}:${config.port}`;
+
   /**
    * The execution block builds its OWN PtyHostService and hands it back.
    *
@@ -343,10 +351,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         config,
         dataDir,
         owner,
-        // The default is `<host>:<port>`, which the desktop app's ephemeral
-        // port would change on every launch — orphaning its own worktree
-        // allocations and its own ghost sessions. See `desktopNodeId`.
-        ...(isDesktopProfile() && dataDir ? { nodeId: desktopNodeId(dataDir) } : {}),
+        nodeId,
       })
     : undefined;
 
@@ -526,6 +531,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // §7.1 / G14: handed over by `registerMcpRuntimeHandlers`, built from the same
   // proxy ports as `mcp.proxy.request`, and mounted on the HTTP frame below.
   let mcpEndpointRoute: McpEndpointRoute | undefined;
+  // The loop executor port, when this node can fire a loop (see below).
+  let loopExecutor: LoopExecutorPort | undefined;
+  // Tools v2 PR-C: also handed to the loop executor below, so a loop can run a tool.
+  let tools: ToolRuntime | undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -534,14 +543,35 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
-    const tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
-      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
+    tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
+      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId }) : undefined;
     if (tools && owner) {
       const o = await owner();
       await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });
     }
+    /**
+     * Loops (design 01a182d4 §3.3): ONE executor port, shared by the scheduler
+     * job below and by `loops.runNow` / `loops.runs.stop`, so a manual run
+     * fires and stops through exactly the path a scheduled one does. The
+     * delivery seam is the same one `execution.dispatch` gets: without it a
+     * null-runner loop still STORES its request on the task — the dispatcher
+     * finds it on its next wake — but nothing is pushed at a live terminal.
+     */
+    loopExecutor = execution && owner
+      ? createLoopExecutorPort({
+          db,
+          pty: execution.pty,
+          spawnService: execution.spawnService,
+          resolveOwner: owner,
+          nodeId: execution.nodeId,
+          // Tools v2 PR-C: the scheduled-run entry point a tool loop fires.
+          ...(tools ? { tools } : {}),
+          ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
+        })
+      : undefined;
     registerFacadeHandlers(registry, {
       ...(tools ? { tools } : {}),
+      ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
       mcp: {
         dataDir,
         callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
@@ -1026,24 +1056,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // retention jobs registered alongside are the W1 stubs (each reports
     // `skipped` and touches nothing).
     scheduler = createDefaultScheduler(
-      execution
-        ? {
-            loops: {
-              db,
-              port: createLoopExecutorPort({
-                db,
-                pty: execution.pty,
-                spawnService: execution.spawnService,
-                resolveOwner: owner,
-                // The same seam `execution.dispatch` gets. Without it a
-                // null-runner loop still STORES its request on the task — the
-                // dispatcher finds it on its next wake — but nothing is pushed
-                // at a live terminal.
-                ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
-              }),
-            },
-          }
-        : {},
+      loopExecutor ? { loops: { db, port: loopExecutor } } : {},
     );
     // 306 (P0e): the tracking jobs span EVERY space. They run as the node's
     // owner, who is a member of its own spaces only, so before 306 every PR

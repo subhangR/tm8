@@ -221,7 +221,17 @@ beforeAll(async () => {
   await asOwner(async (c) => {
     ids.story = await entity(c, ids.space!, 'story');
     await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Story header', 'Story description')`, [ids.story]);
+    ids.loop = await entity(c, ids.space!, 'loop');
+    await c.query(`insert into public.loops(entity_id, title, schedule, action, prompt) values ($1, 'Nightly sweep', 'every 1d', 'dispatch', 'sweep')`, [ids.loop]);
   });
+  // A tool is born through its own writer (tools.create), as the owner.
+  ids.tool = await asCaller(async (q) => (await q.query<{ r: Row }>(
+    `select public.create_tool_entity($1, $2::jsonb, null, null) r`,
+    [ids.space, JSON.stringify({
+      name: 'url-probe', description: 'Checks that URLs answer', help: '', runtime: 'bash',
+      source: 'echo ok', inputs: [], tm8Access: 'none', timeoutSeconds: 60,
+    })],
+  ))[0]!.r.entity.id as string);
 }, 300_000);
 
 afterAll(async () => {
@@ -252,6 +262,24 @@ describe('set_entity_header / clear_entity_header', () => {
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ kind: 'story', whenToUse: 'Open when planning the story', summary: 'Authored summary', keywords: ['planning'], source: 'authored', stale: false });
     await clearHeader(ids.story!, 1);
     expect((await resolve([ids.story!])).get(ids.story!)).toMatchObject({ summary: 'Story description', source: 'derived' });
+  });
+
+  it('authors, resolves and clears a tool header (tm8 tool create --when-to-use writes it), named by the definition, with a description fallback', async () => {
+    expect((await resolve([ids.tool!])).get(ids.tool!)).toMatchObject({
+      kind: 'tool', name: 'url-probe', whenToUse: null, summary: 'Checks that URLs answer', source: 'derived',
+    });
+    const result = await setHeader(ids.tool!, { expected: 0, whenToUse: 'Open when checking that an endpoint answers', summary: 'Probes URLs' });
+    expect(result.warnings).toBeUndefined();
+    expect(result.header).toMatchObject({ whenToUse: 'Open when checking that an endpoint answers', summary: 'Probes URLs', version: 1 });
+    expect((await resolve([ids.tool!])).get(ids.tool!)).toMatchObject({
+      kind: 'tool', name: 'url-probe', whenToUse: 'Open when checking that an endpoint answers', summary: 'Probes URLs', source: 'authored', stale: false,
+    });
+    await clearHeader(ids.tool!, 1);
+    expect((await resolve([ids.tool!])).get(ids.tool!)).toMatchObject({ whenToUse: null, summary: 'Checks that URLs answer', source: 'derived' });
+  });
+
+  it('names a loop by its title, with its schedule, action and instruction as the summary (loops PR1)', async () => {
+    expect((await resolve([ids.loop!])).get(ids.loop!)).toMatchObject({ kind: 'loop', name: 'Nightly sweep', summary: 'every 1d · dispatch · sweep' });
   });
 
   it('writes a header without touching the entity version, and records an activity instead of an entity.upsert', async () => {
@@ -316,6 +344,13 @@ describe('set_entity_header / clear_entity_header', () => {
     expect((await ownerSql(`select version, keywords from public.entity_headers where entity_id = $1`, [ids.task]))[0]).toEqual(before);
     // An explicit stale version is still a conflict, even when the write would be a no-op.
     await refused(setHeader(ids.task!, { expected: 99 }), '40001');
+  });
+
+  it('never loses a stored kind: every kind 216/292 allowed, plus tool and loop (390, the union rule), is still allowed', async () => {
+    // A literal list, not SELECTION_HEADER_KINDS: a later whole-body redefinition of
+    // internal.header_kind_allowed that drops a kind fails here even if the contract list moves with it.
+    const kinds = ['team_member', 'doc', 'artifact', 'drawing', 'file', 'task', 'collection', 'story', 'tool', 'loop'];
+    expect(await ownerSql(`select k, internal.header_kind_allowed(k) ok from unnest($1::text[]) k`, [kinds])).toEqual(kinds.map((k) => ({ k, ok: true })));
   });
 
   it('stores exactly the kinds resolveHeaders lets an authored row override; any other is a no-op with a warning', async () => {

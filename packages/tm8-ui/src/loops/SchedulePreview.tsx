@@ -1,0 +1,79 @@
+import { useEffect, useState } from 'react';
+import type { SpaceId } from '@tm8/contract';
+import type { LoopSchedulePreview, LoopsClient } from './api';
+import { absolute } from './format';
+
+/** How long typing must pause before the server is asked. */
+export const PREVIEW_DEBOUNCE_MS = 300;
+
+export type PreviewState =
+  | { phase: 'idle' }
+  | { phase: 'loading' }
+  /** `stale`: a newer expression is debouncing or loading; this answer is for the previous one. */
+  | { phase: 'ready'; preview: LoopSchedulePreview; stale: boolean }
+  | { phase: 'error'; message: string };
+
+/** An answer the caller already holds — the edit form's `loops.get` carries its stored schedule's preview. */
+export interface KnownPreview { schedule: string; timezone: string; preview: LoopSchedulePreview }
+
+/**
+ * The server's reading of a schedule while a human types: debounced, and
+ * a late answer for an older expression never overwrites a newer one. An
+ * expression the caller's `known` answer is for is not asked again.
+ */
+export function useSchedulePreview(
+  client: Pick<LoopsClient, 'schedulePreview'> | null,
+  spaceId: SpaceId,
+  schedule: string,
+  timezone: string,
+  known?: KnownPreview,
+): PreviewState {
+  const answered = known && known.schedule === schedule && known.timezone === timezone ? known.preview : null;
+  const [state, setState] = useState<PreviewState>(() => (answered ? { phase: 'ready', preview: answered, stale: false } : { phase: 'idle' }));
+  useEffect(() => {
+    if (answered) { setState({ phase: 'ready', preview: answered, stale: false }); return; }
+    if (!client || schedule.trim() === '') { setState({ phase: 'idle' }); return; }
+    let live = true;
+    setState(previous => (previous.phase === 'ready' ? { ...previous, stale: true } : { phase: 'loading' }));
+    const timer = setTimeout(() => {
+      client.schedulePreview(spaceId, schedule, timezone, 5).then(
+        preview => { if (live) setState({ phase: 'ready', preview, stale: false }); },
+        (error: unknown) => {
+          if (live) setState({ phase: 'error', message: error instanceof Error ? error.message : 'The preview was refused.' });
+        },
+      );
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, [client, spaceId, schedule, timezone, answered]);
+  return state;
+}
+
+export function SchedulePreviewPanel({ state, timezone }: { state: PreviewState; timezone: string }) {
+  return (
+    <div className={`loop-form__preview${state.phase === 'ready' && state.stale ? ' loop-form__preview--stale' : ''}`}
+      data-testid="loop-schedule-preview" aria-live="polite" aria-busy={state.phase === 'loading' || (state.phase === 'ready' && state.stale)}>
+      {state.phase === 'idle' ? <p className="loop-form__muted">Pick a schedule to see when it runs.</p> : null}
+      {state.phase === 'loading' || (state.phase === 'ready' && state.stale) ? <p className="loop-form__muted">Checking the schedule…</p> : null}
+      {state.phase === 'error' ? <p className="au-dialog__missing" role="alert">{state.message}</p> : null}
+      {state.phase === 'ready' && !state.preview.valid ? (
+        <p className="au-dialog__missing" role="alert" data-testid="loop-schedule-problem">
+          {state.preview.problem ?? 'The server cannot read this schedule.'}
+        </p>
+      ) : null}
+      {state.phase === 'ready' && state.preview.valid ? (
+        <>
+          <p className="loop-form__summary" data-testid="loop-schedule-summary">{state.preview.summary}</p>
+          {state.preview.next.length > 0 ? (
+            <ol className="loop-form__next" aria-label="Next runs">
+              {state.preview.next.map(instant => (
+                <li key={instant}>
+                  <time dateTime={instant} title={absolute(instant)}>{absolute(instant, timezone)}</time>
+                </li>
+              ))}
+            </ol>
+          ) : <p className="loop-form__muted">No upcoming runs.</p>}
+        </>
+      ) : null}
+    </div>
+  );
+}

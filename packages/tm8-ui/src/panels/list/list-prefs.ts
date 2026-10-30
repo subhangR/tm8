@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { EntitySummary } from '@tm8/contract';
+import { treeParentOf } from '../../domain/launched-by';
 
 /**
  * LIST PREFERENCES THE PINNED-ONLY RAIL'S SETTINGS MENU OWNS (Subhang,
@@ -10,6 +11,12 @@ import type { EntitySummary } from '@tm8/contract';
  *
  * Group by works on the rows already loaded (a page at a time), so a group's
  * count is the count on screen, not the kind's total.
+ *
+ * SUB-ITEMS ARE ON BY DEFAULT, ALWAYS (Subhang, 2026-10-28, task 01a18331:
+ * "it should be by default on always for all entities"). Hiding them is a
+ * look for this page only and is NOT stored: a stored "off" outlived the
+ * moment it was chosen and left the sessions list flat with nobody knowing
+ * why. A `subItems: false` already in storage from before is ignored.
  */
 export type ListGroupBy = 'none' | 'status' | 'priority' | 'assignee';
 
@@ -36,7 +43,9 @@ export interface ListPrefs {
 const DEFAULTS: ListPrefs = { groupBy: 'none', subItems: true };
 const STORAGE_PREFIX = 'tm8.list.prefs.v1.';
 const listeners = new Set<() => void>();
-const cache = new Map<string, { raw: string | null; prefs: ListPrefs }>();
+const cache = new Map<string, { raw: string | null; subItems: boolean; prefs: ListPrefs }>();
+/** Kinds whose sub-items are hidden on this page. Never stored — see above. */
+const subItemsHidden = new Set<string>();
 
 function read(kind: string): ListPrefs {
   let raw: string | null = null;
@@ -45,28 +54,32 @@ function read(kind: string): ListPrefs {
   } catch {
     raw = null;
   }
+  const subItems = !subItemsHidden.has(kind);
   const hit = cache.get(kind);
-  if (hit && hit.raw === raw) return hit.prefs;
-  let prefs = DEFAULTS;
+  if (hit && hit.raw === raw && hit.subItems === subItems) return hit.prefs;
+  let groupBy: ListGroupBy = 'none';
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<ListPrefs>;
-      const groupBy = groupOptionsFor(kind).some((o) => o.id === parsed.groupBy) ? (parsed.groupBy as ListGroupBy) : 'none';
-      prefs = { groupBy, subItems: parsed.subItems !== false };
+      if (groupOptionsFor(kind).some((o) => o.id === parsed.groupBy)) groupBy = parsed.groupBy as ListGroupBy;
     } catch {
-      prefs = DEFAULTS;
+      groupBy = 'none';
     }
   }
-  cache.set(kind, { raw, prefs });
+  const prefs = groupBy === DEFAULTS.groupBy && subItems ? DEFAULTS : { groupBy, subItems };
+  cache.set(kind, { raw, subItems, prefs });
   return prefs;
 }
 
 function write(kind: string, prefs: ListPrefs): void {
+  if (prefs.subItems) subItemsHidden.delete(kind);
+  else subItemsHidden.add(kind);
+  const stored = JSON.stringify({ groupBy: prefs.groupBy });
   try {
-    window.localStorage.setItem(STORAGE_PREFIX + kind, JSON.stringify(prefs));
+    window.localStorage.setItem(STORAGE_PREFIX + kind, stored);
   } catch {
     // No storage ⇒ the choice lasts as long as the page.
-    cache.set(kind, { raw: JSON.stringify(prefs), prefs });
+    cache.set(kind, { raw: stored, subItems: prefs.subItems, prefs });
   }
   for (const listener of listeners) listener();
 }
@@ -98,10 +111,18 @@ export function useListPrefs(kind: string): ListPrefs & {
   );
 }
 
-/** Rows whose parent is not in the set — the tree's roots, children dropped. */
+/**
+ * Rows whose tree parent is not in the set — the tree's roots, children dropped.
+ * The tree parent is `treeParentOf`'s, the one the tree nests by: a launched
+ * session has no `parentId`, so reading `parentId` alone kept every launched
+ * session as a root and "Show sub-items" off drew the session list flat.
+ */
 export function rootsOnly(rows: readonly EntitySummary[]): EntitySummary[] {
   const ids = new Set(rows.map((row) => row.id));
-  return rows.filter((row) => row.parentId === null || !ids.has(row.parentId));
+  return rows.filter((row) => {
+    const up = treeParentOf(row);
+    return up === null || !ids.has(up);
+  });
 }
 
 const STATUS_ORDER = ['open', 'pulled', 'working', 'in_review', 'blocked', 'done', 'cancelled'];

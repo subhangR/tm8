@@ -88,8 +88,8 @@ describe('the sheet cannot reach the desktop', () => {
   it('is bound to the component that draws the markup, not to the barrel', () => {
     // `authoring/index.ts` imports `authoring.css` on the reasoning that a host
     // taking one symbol gets the whole vocabulary — and a DEEP-PATH import
-    // bypasses the barrel entirely (#455). `loops/LoopCreateControl.tsx` wears
-    // `.au-dialog` for the whole `scheduled-work` CREATE form and imports
+    // bypasses the barrel entirely (#455). `loops/LoopForm.tsx` wears
+    // `.au-dialog` for the whole `scheduled-work` CREATE and EDIT form and imports
     // `../authoring/commands` directly, so it has never pulled the barrel.
     expect(dialog).toContain("import './authoring-phone.css'");
   });

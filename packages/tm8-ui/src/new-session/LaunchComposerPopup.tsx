@@ -35,6 +35,7 @@ import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
+  jevKeyUsable,
   JEV_UNWIRED_REASON,
   modelApplyRefusal,
   modelLabel,
@@ -585,15 +586,26 @@ export function LaunchComposerPopup({
     writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
   }, [subject.id]);
 
+  /** The press's hold on Jev: released by the hook when the launch rejects; by `succeed` when the card stays up. */
+  const jevHold = useRef<{ unseal(): void } | null>(null);
   const fail = (error: unknown) => {
     refuse(String((error as { message?: string })?.message ?? error) || 'the node refused this launch and gave no reason');
   };
-  const succeed = () => {
+  /**
+   * The press settled well, or a host took it (`handedOff`). THE JEV HOLD
+   * (lane E): a press that settles here returns the card to idle, and the card
+   * may still be up (a host with no dismissal, or one that keeps it mounted),
+   * so what Jev answered meanwhile is shown. A handoff dismissed the card and
+   * the host owns what follows: the hold goes with the card. A REJECTED press
+   * never reaches here — the hook releases its hold itself, detached or not.
+   */
+  const succeed = (handedOff = false) => {
     committed.current = true;
     clearDraft(subject.id);
     /* Detached, the card is already closed. */
     if (phaseNow.current !== 'detached') onDismiss?.();
     moveTo('idle');
+    if (!handedOff) jevHold.current?.unseal();
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
@@ -714,11 +726,15 @@ export function LaunchComposerPopup({
       return;
     }
     const run = Promise.resolve().then(() => onSpawn(input));
+    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
+       is held, never applied under it; the hook shows it if the launch is
+       refused, fails or times out (lane E) — a detached press included. */
+    jevHold.current = jev.seal(run);
     /* A host that takes it owns the progress and the failure, so the spawn's
        errors are not drawn here — the card is gone by the time they arrive. */
     if (taken) {
       run.then(keepPicks, () => { /* the host's to show */ });
-      succeed();
+      succeed(true);
       return;
     }
     run
@@ -772,9 +788,9 @@ export function LaunchComposerPopup({
     if (!read) return;
     let alive = true;
     read().then((view) => {
-      if (!alive || view.store === 'absent') return;
-      const key = view.keys.find((k) => k.provider === 'typesafe');
-      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+      const usable = jevKeyUsable(view);
+      if (!alive || usable === null) return;
+      setJevKey(usable ? 'yes' : 'none');
     }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
     return () => { alive = false; };
   }, []);
@@ -1038,7 +1054,17 @@ export function LaunchComposerPopup({
       <LaunchCardV3
         scrim
         onAdvancedOpen={wantPlugins}
-        connectors={{ count: mcpCount, node: (
+        /* The defaults' Retry line rides in this slot (lane E), so it counts
+           as something drawn: the slot hides at 0. */
+        connectors={{ count: mcpCount + (selection.defaultsLine?.retry ? 1 : 0), node: (<>
+          {/* THE DEFAULTS COULD NOT BE READ: what the card asks for, it offers
+              here (lane E). */}
+          {selection.defaultsLine?.retry ? (
+            <p className="lcd-note" role="status" data-testid="launch-defaults-retry-line">
+              {selection.defaultsLine.text}{' '}
+              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
+            </p>
+          ) : null}
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
              and skills, never the launcher's personal Claude connectors. */
           <DrawnCount onCount={setMcpCount}><McpPicker
@@ -1053,7 +1079,7 @@ export function LaunchComposerPopup({
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
           /></DrawnCount>
-        ) }}
+        </>) }}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -1126,7 +1152,7 @@ export function LaunchComposerPopup({
         onSubmit={commit}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={nodeRefusal}
+        notice={nodeRefusal ?? (selection.defaultsLine?.retry ? null : selection.defaultsLine?.text ?? null)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}

@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 
-import { NO_SELECTION_EDITS, readyDefaults, type LaunchContextRow } from '../domain/launch-selection';
+import { NO_SELECTION_EDITS, unconfirmedDefaults, readyDefaults, type LaunchContextRow } from '../domain/launch-selection';
 import { LAUNCH_DEFAULTS } from '../views/launch-fixtures';
 import { addToEdits, buildStrip, stripChipTitle, stripKindOf } from './launch-strip';
 
@@ -82,6 +82,13 @@ describe('addToEdits', () => {
     expect(out.references?.edit).toEqual({ removed: [], added: ['d-2'] });
     expect(out.memories?.edit).toEqual({ removed: [], added: ['m-2'] });
     expect(out.references?.rows.map((r) => r.id)).toEqual(['d-2']);
+  });
+
+  it('re-ticks a removed default the same way while the defaults are still being confirmed (drawn from cache)', () => {
+    const confirming = { ...defaults, references: unconfirmedDefaults(LAUNCH_DEFAULTS.references, 'pending') };
+    const edits = { ...NO_SELECTION_EDITS, references: { removed: ['ent-doc-spec' as EntityId], added: [] } };
+    const out = addToEdits(confirming, edits, [row('ent-doc-spec', 'doc')], () => 'references');
+    expect(out.references?.edit).toEqual({ removed: [], added: [] });
   });
 });
 

@@ -70,6 +70,46 @@ export function absTime(value: string | number | Date | null | undefined): strin
   return dateFormat({ dateStyle: 'full', timeStyle: 'short' }, t);
 }
 
+/** One formatter per zone: a loop's preview draws five instants each time typing pauses. */
+const zonedFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+function zonedFormat(timeZone: string): Intl.DateTimeFormat | null {
+  let format = zonedFormats.get(timeZone);
+  if (format === undefined) {
+    try {
+      format = new Intl.DateTimeFormat(undefined, {
+        weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone, timeZoneName: 'short',
+      });
+    } catch {
+      format = null;
+    }
+    zonedFormats.set(timeZone, format);
+  }
+  return format;
+}
+
+/**
+ * The full date and time in a NAMED zone — a loop's next runs are read on its
+ * own wall clock (loops, design 01a182d4 §3.1), not the viewer's. A zone this
+ * runtime cannot read is drawn in UTC, labelled UTC: never as an unlabelled
+ * local time that would read as the loop's own.
+ */
+export function zonedTime(value: string | number | Date | null | undefined, timeZone: string): string {
+  const t = parseInstant(value);
+  if (t === null) return '';
+  const format = zonedFormat(timeZone) ?? zonedFormat('UTC');
+  return format ? format.format(new Date(t)) : new Date(t).toISOString();
+}
+
+/** The viewer's IANA zone, or UTC when the runtime cannot say. */
+export function browserTimeZone(): string {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 /**
  * 'HH:MM' local — the channel rail's per-row clock. `seconds` adds ':SS' for
  * the debug surfaces, which read a transcript rather than a conversation.

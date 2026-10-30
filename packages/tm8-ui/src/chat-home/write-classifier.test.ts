@@ -102,14 +102,14 @@ describe('every operation the MCP groups expose is classified as its group says'
   const reads = readLists.flatMap(guidesOf);
 
   it('reads the group lists it checks', () => {
-    expect(actLists).toEqual(expect.arrayContaining(['ACT_GUIDES', 'CONTAINER_GUIDES']));
-    expect(readLists).toEqual(['READ_GUIDES']);
+    expect(actLists).toEqual(expect.arrayContaining(['ACT_GUIDES', 'CONTAINER_GUIDES', 'LOOP_ACT_GUIDES']));
+    expect(readLists).toEqual(['READ_GUIDES', 'LOOP_READ_GUIDES']);
     for (const list of [...actLists, ...readLists]) {
       expect(callsIn(list), list).toBeGreaterThan(0);
       expect(guidesOf(list).length, list).toBe(callsIn(list));
     }
-    expect(act).toEqual(expect.arrayContaining(['entities.create', 'forms.transition', 'containers.fork']));
-    expect(reads).toEqual(expect.arrayContaining(['entities.get', 'graph.query']));
+    expect(act).toEqual(expect.arrayContaining(['entities.create', 'forms.transition', 'containers.fork', 'loops.runNow']));
+    expect(reads).toEqual(expect.arrayContaining(['entities.get', 'graph.query', 'loops.schedule.preview']));
   });
 
   it('classifies every tm8_act operation as a write', () => {

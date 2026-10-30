@@ -20,6 +20,7 @@
  * that no longer exists falls back to the first one, exactly as before.
  */
 import type { MenuTarget } from '../shell';
+import { browserStorage } from '../data/browser-store';
 
 /** Bumped when the stored shape changes; a miss means the old value is ignored. */
 const KEY_PREFIX = 'tm8.last-place.v1';
@@ -44,19 +45,6 @@ interface LastPlace {
 
 const EMPTY: LastPlace = { spaceId: null, targets: {} };
 
-/**
- * Storage is guarded on READ as well as write: a disabled-storage policy throws
- * on `getItem`, and boot must not die for a convenience.
- */
-function storage(): Storage | null {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage;
-  } catch {
-    return null;
-  }
-}
-
 function isTarget(value: unknown): value is LastTarget {
   if (typeof value !== 'object' || value === null) return false;
   const { type, ref, kind } = value as Record<string, unknown>;
@@ -67,7 +55,7 @@ function isTarget(value: unknown): value is LastTarget {
 }
 
 function read(nodeKey: string): LastPlace {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return EMPTY;
   try {
     const raw = store.getItem(`${KEY_PREFIX}.${nodeKey}`);
@@ -88,7 +76,7 @@ function read(nodeKey: string): LastPlace {
 }
 
 function write(nodeKey: string, place: LastPlace): void {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return;
   try {
     store.setItem(`${KEY_PREFIX}.${nodeKey}`, JSON.stringify(place));
@@ -132,7 +120,7 @@ export function writeLastTarget(nodeKey: string, spaceId: string, target: LastTa
  * where you were on another.
  */
 export function clearLastPlace(nodeKey: string): void {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return;
   try {
     store.removeItem(`${KEY_PREFIX}.${nodeKey}`);
