@@ -15,7 +15,7 @@ import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStor
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
 import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, recordMcpTestCall, recordMcpTestCallSafely, type McpCallAuditEntry, type McpTestAuditEntry } from './audit.js';
-import { GOOGLE_OAUTH_ISSUER } from '@tm8/contract';
+import { GOOGLE_OAUTH_ISSUER, McpToolSchema } from '@tm8/contract';
 import { GoogleFirstPartyHost, googleScopesFor } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
 import { FirstPartyRefused } from './first-party/host.js';
@@ -245,7 +245,8 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
     try{
      const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};
      await recordMcpTestCallSafely(deps.db,auth,testRow({outcome:'succeeded',responseBytes:byteSize(listed)}));
-     result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};
+     // Normalized here, so the stored health holds only the fields tm8 knows (spec-added keys are stripped).
+     result={ready:true,reason:'ready',tools:listed.tools.map(tool=>McpToolSchema.parse(tool)),checkedAt:new Date().toISOString()};
     }catch(error){
      const denyReason=mcpDenyReason(error);
      await recordMcpTestCallSafely(deps.db,auth,testRow(denyReason?{outcome:'denied',denyReason}:{outcome:'failed'}));
