@@ -2,7 +2,7 @@
  * Bridges S (§7.3 S, D73, D74) against a scratch database with every migration
  * applied: a group chat whose bridge log holds 2,000 messages gets a group
  * record within budget that still names the open asks; the fold is stored
- * (migration 410) and moves forward only; members see it on `bridges.get`;
+ * (migration 400) and moves forward only; members see it on `bridges.get`;
  * who is on what comes live from `authored_from → bridge` tasks.
  */
 import { randomUUID } from 'node:crypto';

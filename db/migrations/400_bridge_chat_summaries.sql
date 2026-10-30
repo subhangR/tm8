@@ -1,5 +1,5 @@
 -- =============================================================================
--- 410 (provisional; the merger assigns the final number) — Bridges S: one
+-- 400 (authored as 410, provisional; renumbered to 400 at merge by the bridges merger) — Bridges S: one
 -- rolling summary per group chat.
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §7.2 step S,

@@ -9,7 +9,7 @@
  * than the unsummarized part, plus that part verbatim (at least the last
  * `TAIL_MESSAGES`). When the unsummarized part passes `REFRESH_MESSAGES` beyond
  * the tail or `REFRESH_BYTES`, the turn assembly folds it into the summary and
- * stores it (`bridge_chat_summaries`, migration 410), so the record stays
+ * stores it (`bridge_chat_summaries`, migration 400), so the record stays
  * bounded however long the group runs.
  *
  * The fold is the LLD's phase-one deterministic extractive reducer
