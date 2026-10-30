@@ -835,8 +835,9 @@ begin
            last_error = left(coalesce(p_frame #>> '{failed,reason}', 'failed'), 300)
      where id = ob.id;
   end if;
-  -- The badge rides the message: touching it re-emits it to its readers.
-  update public.entities set updated_at = clock_timestamp() where id = ob.message_id and deleted_at is null;
+  -- The badge rides the message: a messages UPDATE emits message.updated (an
+  -- entities.updated_at touch alone emits nothing, 254).
+  update public.messages set updated_at = clock_timestamp() where entity_id = ob.message_id;
   select * into ob from public.bridge_outbox where id = ob.id;
   return jsonb_build_object('outboxId', ob.id, 'status', ob.status);
 end
@@ -1200,7 +1201,7 @@ begin
       when not (r.conv = any(internal.bridge_allowlist_ids(r.connection_id))) then 'not_connected' end;
     if reason is not null then
       update public.bridge_outbox set status = 'failed_permanent', settled_at = now(), last_error = reason where id = r.id;
-      update public.entities set updated_at = clock_timestamp() where id = r.message_id and deleted_at is null;
+      update public.messages set updated_at = clock_timestamp() where entity_id = r.message_id;
       continue;
     end if;
     update public.bridge_outbox set status = 'dispatching', attempts = attempts + 1, dispatched_at = now() where id = r.id;
