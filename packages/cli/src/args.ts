@@ -81,6 +81,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'story-page',          // entity get: explicit full story page
   'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
+  'latest',              // bridge log --latest — the newest page
   'until-match',         // event watch --until-match
   'events',              // event changes --events — thin rows instead of the digest
   'overwrite',           // file download --overwrite

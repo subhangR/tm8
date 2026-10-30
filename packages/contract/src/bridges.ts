@@ -186,7 +186,7 @@ export interface BridgeHandleListResult { items: BridgeHandleAppearance[] }
 
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
-/** One row of `bridges.log.read`: a message on the bridge's log anchor, oldest first. */
+/** One row of `bridges.log.read`: a message on the bridge's log anchor. Rows within a page are oldest first. */
 export interface BridgeLogEntry {
   id: EntityId;
   createdAt: string;
@@ -215,6 +215,12 @@ export interface BridgeLogResult {
   lastMessageId: EntityId | null;
   /** True when more messages follow this page. */
   more: boolean;
+  /**
+   * Pass as `before` to read the page just older than this one (the id of this
+   * page's oldest row). Null when this page starts at the beginning of the log
+   * (or is empty).
+   */
+  olderCursor: EntityId | null;
 }
 
 interface BridgeCommand { clientMutationId: string; actorId?: EntityId }
