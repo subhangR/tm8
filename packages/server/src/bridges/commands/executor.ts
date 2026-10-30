@@ -60,6 +60,7 @@ export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'lin
   work: 'linked', task: 'linked', stop: 'linked',
   who: 'reader', bridge: 'everyone',
   mute: 'admin', unmute: 'admin', new: 'admin',
+  start: 'linked', retry: 'linked', tell: 'linked', result: 'reader',
 };
 
 const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
@@ -622,6 +623,99 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: 'unmuted' };
   }
 
+  /** A task by `#n` from the sender's last list, or a title prefix, among this bridge's tasks. */
+  async function resolveTask(cmd: Command, args: string): Promise<ListRow | null> {
+    const text = stripTail(args).trim();
+    if (text === '') return null;
+    const rows = await provenance(cmd, ['task']);
+    const index = /^#?(\d{1,3})$/.exec(text);
+    if (index) {
+      const id = fromList(cmd, Number(index[1]));
+      return id ? rows.find(r => r.id === id) ?? null : null;
+    }
+    const prefix = text.toLowerCase();
+    return rows.find(r => r.title.toLowerCase().startsWith(prefix)) ?? null;
+  }
+
+  /** Spawn one worker on one task (/start, /retry's new launch), handle at request time. */
+  async function launchOn(cmd: Command, claims: DbClaims, task: { id: string; title: string }, verb: string, cmid: string) {
+    const teammate = await resolveTeammate(cmd, claims, undefined);
+    const { sessionId } = await ports.spawnWorker(claims, {
+      spaceId: cmd.input.spaceId, teamMemberId: teammate, taskId: task.id, projectId: null, effort: null,
+      title: titleOf(task.title, 80), clientMutationId: cmid, origins: [cmd.origin(verb)],
+    });
+    const handle = await ports.workerHandle(claims, cmd.input.bridgeId, sessionId).catch(() => null);
+    return { sessionId, handle: handle?.handle ?? null };
+  }
+
+  /** /start #n (§4.4): a worker on an existing task from this group, the /work path. */
+  async function start(cmd: Command, args: string): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    const task = await resolveTask(cmd, args);
+    if (!task) throw new Refusal('usage: /start #n from /tasks, or the start of a task\'s title');
+    if (task.status === 'done' || task.status === 'cancelled') throw new Refusal(`"${task.title}" is ${taskWord(task.status)}`);
+    const launched = await launchOn(cmd, claims, task, '/start', `${cmd.key}:spawn:start`);
+    remember(cmd, [launched.sessionId]);
+    return { text: `${launched.handle ? `${task.title} (${launched.handle})` : task.title} — starting` };
+  }
+
+  /** /retry <worker> (§4.4): resume the ended session, else a new launch on the same task. */
+  async function retry(cmd: Command, args: string): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    const ref = parseWorkerRef(args);
+    if (!ref || ref.kind === 'all' || ref.kind === 'mine') throw new Refusal('usage: /retry <worker> — a handle, or #n from /workers');
+    const row = await resolveWorker(cmd, ref);
+    if (!row) throw new Refusal(`no worker "${stripTail(args)}" from this group — /workers all to list them`);
+    if (LIVE_SESSION.has(row.status ?? '')) return { text: `${named(row)} is still ${sessionWord(row.status)}` };
+    try {
+      await ports.resumeWorker(claims, row.id, { clientMutationId: `${cmd.key}:resume` });
+      return { text: `${named(row)} resumed` };
+    } catch (error) {
+      ports.logger?.debug?.(`bridge ${cmd.input.bridgeId}: /retry could not resume ${row.id}: ${errorText(error)}`);
+    }
+    const t = await workerTask(cmd, row.id);
+    if (!t) throw new Refusal(`${named(row)} can't be resumed and has no task to start again`);
+    const launched = await launchOn(cmd, claims, t, '/retry', `${cmd.key}:spawn:retry`);
+    return { text: `${named(row)} couldn't resume — started ${launched.handle ?? 'a new worker'} on "${t.title}"` };
+  }
+
+  /** /result <worker> (§4.4): its latest report, ≤ 10 lines, never secret-shaped text (§4.8). */
+  async function result(cmd: Command, args: string): Promise<Answer> {
+    requireReader(cmd);
+    const ref = parseWorkerRef(args);
+    if (!ref || ref.kind === 'all' || ref.kind === 'mine') throw new Refusal('usage: /result <worker> — a handle, or #n from /workers');
+    const row = await resolveWorker(cmd, ref);
+    if (!row) throw new Refusal(`no worker "${stripTail(args)}" from this group — /workers all to list them`);
+    const rows = cmd.claims
+      ? await ports.db.query<{ body: string }>(cmd.claims,
+        `select m.body from public.edges ed join public.messages m on m.entity_id = ed.src_id
+          where ed.type = 'authored_from' and ed.dst_id = $1 and m.redacted_at is null
+          order by m.created_at desc limit 1`, [row.id])
+      : await exec(q => q.query<{ body: string }>('select body from public.bridge_command_guest_result($1, $2) as body',
+        [cmd.input.bridgeId, row.id]));
+    const body = rows[0]?.body;
+    if (!body) return { text: `${named(row)} hasn't reported yet` };
+    if (looksSecret(body)) return { text: `${named(row)}'s latest report looks like it holds a secret — read it in tm8` };
+    const lines = body.split('\n').map(l => l.trimEnd()).filter(l => l !== '');
+    const shown = lines.slice(0, MAX_LIST_LINES);
+    if (lines.length > shown.length) shown.push('… more in tm8');
+    return { text: [`${named(row)}:`, ...shown].join('\n') };
+  }
+
+  /** /tell <worker> <text> (§4.4): directs this message to the worker (B1b-3's bridge_tell: origin + answerer). */
+  async function tell(cmd: Command, args: string, body: string[]): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    const [first = '', ...rest] = args.split(/\s+/);
+    const text = [rest.join(' '), ...body].join('\n').trim();
+    if (first === '' || text === '') throw new Refusal('usage: /tell <worker> <message>');
+    const handle = first.replace(/^@/, '').toLowerCase();
+    const session = await ports.db.rpc<string | null>(claims, 'bridge_tell', [
+      cmd.input.bridgeId, cmd.input.messageId, handle, JSON.stringify(cmd.origin('/tell').sender),
+    ]);
+    if (!session) throw new Refusal(`no live worker called ${handle} — /workers to list them`);
+    return { text: `told ${handle}` };
+  }
+
   async function yes(cmd: Command): Promise<Answer | null> {
     // Idempotent per YES message: a re-run of this YES gets the same command back.
     const stored = await exec(q => q.rpc<StoredConfirm | null>('bridge_command_confirm_take', [
@@ -682,6 +776,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'unmute': return unmute(cmd);
       // Retarget is human-only by design (D28): an admin does it in tm8.
       case 'new': return { text: 'starting a fresh chat for this group is done in tm8: open the bridge → Retarget' };
+      case 'start': return start(cmd, parsed.args);
+      case 'retry': return retry(cmd, parsed.args);
+      case 'result': return result(cmd, parsed.args);
+      case 'tell': return tell(cmd, parsed.args, parsed.body);
     }
   }
 
@@ -717,6 +815,26 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       await exec(q => q.rpc('bridge_command_confirm_open', [
         notice.messageId, cmd.input.bridgeId, cmd.input.senderExternalId, JSON.stringify(reply.confirm),
       ]));
+    }
+  }
+
+  /**
+   * 398's claim turns a command `failed` once its attempts run out (and
+   * answers false): the group is told once, on its own key, so "retrying" is
+   * never the last word.
+   */
+  async function tellFailed(messageId: string): Promise<void> {
+    try {
+      const input = await exec(q => q.rpc<(BridgeCommandInput & { commandState?: string | null }) | null>('bridge_command_input', [messageId]));
+      if (!input || input.commandState !== 'failed') return;
+      await ports.postNotice(ports.db, {
+        bridgeId: input.bridgeId,
+        text: 'couldn\'t do that after several tries — please send it again later',
+        replyToMessageId: input.messageId,
+        idempotencyKey: `cmd:${input.bridgeId}:${input.externalMessageId}:failed`,
+      });
+    } catch (error) {
+      ports.logger?.warn(`bridge command ${messageId}: could not post the final notice: ${errorText(error)}`);
     }
   }
 
@@ -789,7 +907,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
 
     async run(messageId: string): Promise<void> {
       try {
-        if (!(await ports.claim(messageId))) return;
+        if (!(await ports.claim(messageId))) {
+          await tellFailed(messageId);
+          return;
+        }
       } catch (error) {
         ports.logger?.warn(`bridge command ${messageId}: claim failed: ${errorText(error)}`);
         return; // still pending: the sweep retries it.
@@ -817,6 +938,12 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       return due.length;
     },
   };
+}
+
+/** Credential-shaped text (398's internal.bridge_text_looks_secret, mirrored): never quoted into a group. */
+const SECRET_SHAPED = /(tm8[a-z]?_[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xox[abpr]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+function looksSecret(text: string): boolean {
+  return SECRET_SHAPED.test(text);
 }
 
 function errorText(error: unknown): string {

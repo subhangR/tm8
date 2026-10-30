@@ -38,6 +38,7 @@ export function createBridgeCommands(deps: {
     },
     spawnWorker: workers.spawnWorker,
     stopWorker: workers.stopWorker,
+    resumeWorker: workers.resumeWorker,
     // B1b-3: mints the session's space handle (D23) and records it appeared on this bridge.
     workerHandle: async (claims, bridgeId, sessionId) => {
       const raw = await db.rpc<{ handle?: string; title?: string | null } | null>(claims, 'bridge_poster_handle', [bridgeId, sessionId]);

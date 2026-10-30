@@ -81,6 +81,8 @@ export interface BridgeCommandPorts {
   recordOrigin(q: Querier, entityId: string, origin: BridgeCommandOrigin): Promise<void>;
   spawnWorker(claims: DbClaims, request: SpawnWorkerRequest): Promise<{ sessionId: string }>;
   stopWorker(claims: DbClaims, sessionId: string, input: { reason: string; clientMutationId: string }): Promise<void>;
+  /** `session resume`: the same session, relaunched (/retry). */
+  resumeWorker(claims: DbClaims, sessionId: string, input: { clientMutationId: string }): Promise<{ sessionId: string }>;
   workerHandle(claims: DbClaims, bridgeId: string, sessionId: string): Promise<{ handle: string; title: string | null } | null>;
   readonly logger?: { warn(message: string): void; debug?(message: string): void };
   readonly now?: () => Date;
