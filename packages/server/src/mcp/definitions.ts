@@ -283,7 +283,10 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
   registry.register('mcp.servers.delete',async ctx=>{
     const input=McpServerDeleteInputSchema.parse({...(ctx.body as Record<string, unknown>),serverId:requireUuidParam(ctx,'serverId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
-      await q.query('select id from public.entities where id=$1 for update',[input.serverId]);
+      // Serialize with definition edits and credential writes on the advisory
+      // lock they already take (297). NOT `select ... for update`: tm8_app has
+      // no UPDATE privilege on public.entities, so that refused every delete.
+      await q.query('select pg_advisory_xact_lock(hashtextextended($1::text,297))',[input.serverId]);
       const server=await loadMcpServer(q,input.serverId);
       if(!server.allowed.manage) throw new CollabError('forbidden','Only space members can delete MCP connectors');
       if(server.version!==input.expectedVersion) throw new CollabError('version_conflict','MCP connector changed');
