@@ -1333,7 +1333,11 @@ export type ContentBlockKind =
   // its facts, and the per-item verbs `actions.list` says are live. The spec is
   // `PanelConfig.managed`, because verb slots are a list and block params are
   // scalars.
-  | 'managed';
+  | 'managed'
+  // …and the CONNECTOR block: an `mcp_server` entity's own page — status,
+  // tools, connections, configuration, used-by and recent calls — drawn from
+  // the MCP catalog read (mcp/ConnectorEntityBlock), not from the envelope.
+  | 'mcp-connector';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;

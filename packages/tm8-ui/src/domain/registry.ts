@@ -2078,7 +2078,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt'] },
     settingsHome: { section: 'connectors', label: 'Manage connectors and accounts' },
     list: baseList({ quickCreate: false, tile: { badges: [] } }),
-    panel: { archetype: 'generic', blocks: [{ block: 'settings-home' }, COLLECTIONS_BLOCK] },
+    /* The connector itself (status, tools, connections, configuration, used
+       by, recent calls); its own small "Manage connectors" link replaces the
+       full-width `settings-home` door. */
+    panel: { archetype: 'generic', blocks: [{ block: 'mcp-connector' }, COLLECTIONS_BLOCK] },
   },
 
   /*

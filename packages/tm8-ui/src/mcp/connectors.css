@@ -319,30 +319,42 @@
   font-size: 0.9em;
 }
 
-/* The drawer is a panel in the flow rather than a fixed overlay: the section
-   body is the one scroller (SECTION-CONTRACT §3), and a second scrolling
-   surface pinned over it would take the overflow and clip this one. */
+/* --- the connector detail: drawer AND entity page ------------------------
+
+   ONE BODY, TWO HOSTS. `ConnectorDetail` is drawn inside the Connectors page's
+   drawer and as the `mcp_server` entity page, so everything below is scoped to
+   `.mcp-detail` and styles its own controls rather than leaning on
+   `.mcp-settings button` (36px, page-level) — the entity page has no
+   `.mcp-settings` around it, and the drawer must not inherit the page's
+   full-width form grammar. The measures follow the settings canvas: 12.5px
+   body, 11.5px controls at 26px, the kit eyebrow for section titles, brass
+   for the one affirmative per band. */
+
 .mcp-drawer {
   margin: 16px var(--set-gutter, 18px);
-  padding: 14px;
+  padding: 12px 16px 14px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md, 8px);
-  background: var(--pn-surface-2, color-mix(in srgb, var(--pn-ink) 3%, transparent));
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
 }
 
 .mcp-drawer__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pn-line);
 }
 
 .mcp-drawer__head h3 {
   margin: 0;
-  font-size: 1.05em;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .mcp-drawer__head p {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
 }
 
 .mcp-drawer__close {
@@ -350,76 +362,608 @@
   padding: 0 6px;
   border: 0;
   background: transparent;
-  color: var(--pn-ink-2);
-  font-size: 1.2em;
+  color: var(--pn-ink-3);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
 }
 
-.mcp-drawer__group {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--pn-line);
+.mcp-drawer__close:hover {
+  color: var(--pn-ink);
 }
 
-.mcp-drawer__group h4 {
-  margin: 0 0 8px;
-  font-size: 0.95em;
+/* The settings page's 36px button rule is more specific than a bare class, so
+   the drawer's close is restated against it. */
+.mcp-settings .mcp-drawer .mcp-drawer__close {
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
 }
 
-.mcp-drawer__group--danger {
-  border-top-color: color-mix(in srgb, var(--pn-danger, var(--pn-ink)) 35%, transparent);
+.mcp-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--pn-ink);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
-.mcp-connection {
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px dashed var(--pn-line);
-}
-
-.mcp-facts {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 2px 12px;
-  margin: 0 0 8px;
-}
-
-.mcp-facts dt {
-  color: var(--pn-ink-2);
-  font-size: 0.9em;
-}
-
-.mcp-facts dd {
+.mcp-detail p {
   margin: 0;
 }
 
-.mcp-toggle {
-  display: block;
-  margin: 6px 0;
-  font-weight: 400;
+.mcp-detail code {
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
 }
 
-.mcp-scope {
-  margin: 8px 0;
-  padding: 8px;
-  border: 1px solid var(--pn-line);
+/* Controls. Every button in the body is the quiet outline chip; one per band
+   may be `--primary` (brass, the settings canvas's affirmative), the ruinous
+   ones `--danger`. Specificity is raised by the `.mcp-detail` scope so the
+   settings page's `.mcp-settings button` cannot win inside the drawer. */
+.mcp-detail button,
+.mcp-entity button,
+.mcp-settings .mcp-detail button {
+  box-sizing: border-box;
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.mcp-tool--unavailable {
+.mcp-detail button:hover:not(:disabled),
+.mcp-entity button:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+.mcp-detail button:disabled,
+.mcp-entity button:disabled {
+  color: var(--pn-ink-4);
+  cursor: not-allowed;
+}
+
+.mcp-detail button:focus-visible,
+.mcp-entity button:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.mcp-detail .mcp-btn--primary,
+.mcp-settings .mcp-detail .mcp-btn--primary {
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+.mcp-detail .mcp-btn--primary:hover:not(:disabled) {
+  background: rgba(var(--pn-brand-rgb), 0.2);
+}
+
+.mcp-detail .mcp-btn--quiet,
+.mcp-settings .mcp-detail .mcp-btn--quiet {
+  border-color: transparent;
+  background: transparent;
   color: var(--pn-ink-2);
 }
 
-.mcp-confirm {
-  margin-top: 12px;
-  padding: 10px 12px;
+.mcp-detail .mcp-btn--danger,
+.mcp-settings .mcp-detail .mcp-btn--danger {
+  border-color: color-mix(in srgb, var(--pn-block) 40%, transparent);
+  background: var(--pn-card);
+  color: var(--pn-block);
+}
+
+.mcp-detail .mcp-btn--danger:hover:not(:disabled) {
+  background: var(--pn-block-soft);
+}
+
+.mcp-detail input:not([type='checkbox']):not([type='radio']),
+.mcp-detail select {
+  box-sizing: border-box;
+  height: 26px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.mcp-detail input[type='checkbox'],
+.mcp-detail input[type='radio'] {
+  margin: 0;
+  accent-color: var(--pn-brand);
+}
+
+.mcp-detail .mcp-actions {
+  gap: 6px;
+}
+
+/* The status bar: the pill, how fresh it is, and the one probe. */
+.mcp-detail__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 8px;
+}
+
+.mcp-detail__grow {
+  flex: 1;
+}
+
+.mcp-detail__desc {
+  margin-bottom: 4px;
+  color: var(--pn-ink-2);
+}
+
+.mcp-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill, 999px);
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mcp-state--sm {
+  padding: 0 7px;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.mcp-state--ok {
+  border-color: color-mix(in srgb, var(--pn-run) 35%, transparent);
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+
+/* The caution ramp, legal in this file only (see `.mcp-status--warn`). */
+.mcp-state--warn {
+  border-color: color-mix(in srgb, var(--pn-wait) 40%, transparent);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+
+.mcp-state--wait,
+.mcp-state--off {
+  color: var(--pn-ink-2);
+}
+
+/* The health result in words, under the pill: a rule down the left in the
+   caution tone, so it reads as the pill's explanation rather than a banner. */
+.mcp-health {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--pn-wait);
+  border-radius: 0 var(--pn-r-sm, 6px) var(--pn-r-sm, 6px) 0;
+  background: var(--pn-wait-soft);
+  font-size: 12px;
+}
+
+.mcp-health p + p {
+  color: var(--pn-ink-2);
+}
+
+/* Sections: a hairline, the eyebrow title with its actions on the same line. */
+.mcp-sec {
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-sec__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  margin-bottom: 6px;
+}
+
+.mcp-sec__head h4 {
+  flex: 1;
+  margin: 0;
+  font: inherit;
+}
+
+.mcp-sec__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mcp-sec > .mcp-note + .mcp-note {
+  margin-top: 4px;
+}
+
+/* One connection: who and when on the left, its verbs on the right. */
+.mcp-conn {
+  padding: 8px 10px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-surface);
+}
+
+.mcp-conn + .mcp-conn,
+.mcp-conn + .mcp-note {
+  margin-top: 6px;
+}
+
+.mcp-conn__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-conn__who {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.mcp-conn__scopes {
+  margin-top: 4px;
+}
+
+.mcp-conn__scopes summary {
+  cursor: pointer;
+}
+
+.mcp-controls {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--pn-line);
+}
+
+/* Label, control, its own Save: one row, never full width. */
+.mcp-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.mcp-inline__label {
+  width: 64px;
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: 11.5px;
+}
+
+.mcp-inline select {
+  width: 200px;
+}
+
+.mcp-inline input:not([type='checkbox']) {
+  flex: 0 1 260px;
+}
+
+.mcp-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 0 70px;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-members label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+/* Adding an account: a compact two-column grid of label and field. */
+.mcp-add-account {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-surface);
+}
+
+.mcp-add-account label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mcp-add-account label > span {
+  width: 92px;
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: 11.5px;
+}
+
+.mcp-add-account label > input:not([type='radio']) {
+  flex: 0 1 280px;
+}
+
+.mcp-seg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-seg legend {
+  float: left;
+  width: 92px;
+  margin-right: 6px;
+  padding: 0;
+  color: var(--pn-ink-3);
+  font-size: 11.5px;
+}
+
+.mcp-seg label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tools: name in mono, the description beside it, the schema one click down. */
+.mcp-detail .mcp-tools {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+}
+
+.mcp-detail .mcp-tools > li + li {
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-detail .mcp-tools summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mcp-detail .mcp-tools summary::-webkit-details-marker {
+  display: none;
+}
+
+.mcp-detail .mcp-tools summary::before {
+  content: '▸';
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: 9px;
+}
+
+.mcp-detail .mcp-tools details[open] > summary::before {
+  content: '▾';
+}
+
+.mcp-detail .mcp-tools summary:hover {
+  background: var(--pn-hover);
+}
+
+.mcp-detail .mcp-tools summary code {
+  flex: none;
+  font-weight: 600;
+}
+
+.mcp-tool__desc {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-detail .mcp-tools details[open] .mcp-tool__desc {
+  white-space: normal;
+}
+
+.mcp-detail .mcp-tools details > :not(summary) {
+  margin: 0 10px 8px 25px;
+}
+
+.mcp-tool--unavailable {
+  color: var(--pn-ink-3);
+}
+
+.mcp-params {
+  width: calc(100% - 35px);
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.mcp-calls {
+  width: 100%;
+}
+
+.mcp-params th,
+.mcp-params td {
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft, var(--pn-line));
+  text-align: left;
+  vertical-align: top;
+}
+
+.mcp-params th {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+}
+
+.mcp-req {
+  margin-left: 6px;
+  color: var(--pn-wait);
+  font-size: 10px;
+}
+
+/* Details: aligned key/value. */
+.mcp-facts {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.mcp-facts dt {
+  color: var(--pn-ink-3);
+  font-size: 11.5px;
+}
+
+.mcp-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+
+.mcp-sec > .mcp-toggle {
+  margin-top: 8px;
+}
+
+/* Used by. */
+.mcp-used {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-entity .mcp-used__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+/* The danger zone: the settings bulkhead (block wash, block rule), in small. */
+.mcp-danger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 30%, transparent);
+  border-left: 3px solid var(--pn-block);
+  border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-block-soft);
+}
+
+.mcp-danger > div:first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.mcp-danger strong {
+  color: var(--pn-block);
+  font-size: 12px;
+}
+
+.mcp-confirm {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md, 8px);
   background: var(--pn-paper);
+  box-shadow: var(--pn-sh-sm);
 }
 
 .mcp-confirm--danger {
-  border-color: color-mix(in srgb, var(--pn-danger, var(--pn-ink)) 45%, transparent);
+  border-color: color-mix(in srgb, var(--pn-block) 45%, transparent);
+}
+
+/* The edit form inside Details uses the form's own grammar, compacted. */
+.mcp-detail .mcp-form {
+  margin: 0;
+}
+
+/* --- the entity page ----------------------------------------------------- */
+
+.mcp-entity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-entity__bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mcp-link,
+.mcp-entity .mcp-link,
+.mcp-settings .mcp-link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand-2);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcp-entity .mcp-link:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.mcp-flash {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-run-soft);
+  color: var(--pn-ink);
+  font-size: 12px;
+}
+
+.mcp-flash--error {
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
 }
 
 /* --- import ------------------------------------------------------------- */
@@ -461,4 +1005,270 @@
    so the one declaration colours the ring too. */
 .mcp-badge--warn {
   color: var(--pn-wait);
+}
+
+/* --- the settings page, compacted --------------------------------------
+
+   `mcp.css`'s `.mcp-settings button` is the picker's 36px touch button; on
+   this page it made every row verb, the import link and the drawer a column
+   of slabs. Restated here at the settings canvas's measure. `connectors.css`
+   is imported after `mcp.css` everywhere both load, so equal specificity
+   wins by order. The phone rule in `mcp.css` (44px) still applies below
+   600px, where touch targets matter more than density. */
+.mcp-settings {
+  font-size: 12.5px;
+}
+
+.mcp-settings button {
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+}
+
+.mcp-settings > p:first-child {
+  margin-bottom: 4px;
+}
+
+.mcp-settings .mcp-tabs {
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.mcp-settings .mcp-tabs > button {
+  min-height: 0;
+  padding: 3px 11px;
+  border-color: var(--pn-line);
+  border-radius: var(--pn-r-pill, 999px);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-weight: 600;
+}
+
+.mcp-settings .mcp-tabs > button[aria-pressed='true'] {
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+.mcp-settings .mcp-search input {
+  height: 26px;
+  font-size: 12px;
+}
+
+.mcp-settings .mcp-filter > summary {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.mcp-settings .mcp-table th,
+.mcp-settings .mcp-table td {
+  padding: 7px 12px;
+}
+
+.mcp-settings .mcp-table th {
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: var(--pn-track-mega);
+}
+
+.mcp-settings .mcp-table td {
+  color: var(--pn-ink-2);
+}
+
+/* The row's name is a link-like button, not a bordered slab. */
+.mcp-settings .mcp-row__open {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font-size: 12.5px;
+}
+
+.mcp-settings .mcp-row__open:hover {
+  background: transparent;
+}
+
+.mcp-settings .mcp-status {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.mcp-settings .mcp-status .mcp-note {
+  overflow: hidden;
+  max-width: 16em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-settings .mcp-status > button {
+  min-height: 22px;
+  padding: 1px 8px;
+}
+
+.mcp-settings .mcp-strict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11.5px;
+}
+
+.mcp-settings .mcp-strict button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand-2);
+}
+
+.mcp-settings .mcp-flash {
+  margin: 6px 0;
+}
+
+.mcp-sheet {
+  margin: 10px 0;
+  padding: 14px 16px;
+}
+
+.mcp-sheet > h3:first-child {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+/* --- the connector form -------------------------------------------------- */
+
+/* Label on the left, field on the right, capped at a readable width: the
+   form used to stretch every input across the card. */
+.mcp-cform {
+  gap: 8px;
+  max-width: 640px;
+  margin: 0;
+}
+
+.mcp-cform > label:not(.mcp-cform__check),
+.mcp-cform details > label {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--pn-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mcp-cform input:not([type='checkbox']):not([type='radio']),
+.mcp-cform select,
+.mcp-cform textarea {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.mcp-cform input:not([type='checkbox']):not([type='radio']),
+.mcp-cform select {
+  height: 28px;
+}
+
+.mcp-cform textarea {
+  min-height: 0;
+}
+
+.mcp-cform input::placeholder,
+.mcp-cform textarea::placeholder {
+  color: var(--pn-ink-4);
+}
+
+.mcp-cform .mcp-cform__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 150px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.mcp-cform .mcp-cform__check input {
+  flex: none;
+  width: auto;
+  margin: 0;
+  accent-color: var(--pn-brand);
+}
+
+.mcp-cform__hint,
+.mcp-cform__warn {
+  margin: 0 0 0 150px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.mcp-cform__hint {
+  color: var(--pn-ink-3);
+}
+
+.mcp-cform__warn {
+  padding: 6px 10px;
+  border-left: 2px solid var(--pn-wait);
+  border-radius: 0 var(--pn-r-sm, 6px) var(--pn-r-sm, 6px) 0;
+  background: var(--pn-wait-soft);
+  color: var(--pn-ink);
+}
+
+.mcp-cform__warn button,
+.mcp-settings .mcp-cform__warn button,
+.mcp-detail .mcp-cform__warn button {
+  min-height: 0;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-brand-2);
+  font-size: 11.5px;
+  text-decoration: underline;
+}
+
+.mcp-cform details {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.mcp-cform details > .mcp-cform__hint {
+  margin-left: 0;
+}
+
+.mcp-cform__foot {
+  display: flex;
+  gap: 6px;
+  margin-left: 150px;
+}
+
+.mcp-cform .mcp-btn--primary,
+.mcp-settings .mcp-cform .mcp-btn--primary {
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+
+.mcp-cform .mcp-btn--quiet,
+.mcp-settings .mcp-cform .mcp-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pn-ink-2);
+}
+
+@media (max-width: 600px) {
+  .mcp-cform > label:not(.mcp-cform__check),
+  .mcp-cform details > label {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .mcp-cform .mcp-cform__check,
+  .mcp-cform__hint,
+  .mcp-cform__warn,
+  .mcp-cform__foot {
+    margin-left: 0;
+  }
 }
