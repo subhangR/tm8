@@ -329,4 +329,7 @@ $$;
 revoke all on function public.bridge_command_confirm_take(uuid, text, text, uuid) from public;
 grant execute on function public.bridge_command_confirm_take(uuid, text, text, uuid) to tm8_app;
 
+reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
 analyze public.bridge_command_confirms;
