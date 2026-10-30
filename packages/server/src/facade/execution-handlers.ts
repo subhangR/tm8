@@ -459,9 +459,15 @@ export class DbGraphPort implements GraphPort {
     // not recognise, an unreadable root) leaves the last cached references in
     // place and the spawn proceeds — RLS on the transaction below is what
     // decides whether this spawn is allowed at all.
+    //
+    // D2: it is also off the admission path. A full scan upserts every skill
+    // file (5–10 s at ~100 home skills), so the launch serves the references
+    // the last scan wrote and refreshes them in the background
+    // (`SkillScanDebouncer.serve`); only a space with no scan at all waits for
+    // its first. `skillsScannedAt` names the scan the briefing's set came from.
     let skillsScannedAt: string | null = null;
     try {
-      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true })).scannedAt;
+      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, { ...(input.projectId ? { root: input.projectId } : { homesOnly: true }), serveStale: true })).scannedAt;
     } catch (error) {
       console.warn(`[tm8:skills] pre-spawn scan skipped for space ${input.spaceId}: ${error instanceof Error ? error.message : String(error)}`);
     }
