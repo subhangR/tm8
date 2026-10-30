@@ -37,7 +37,15 @@ async function invoke(args:string[]){const {parsed,ctx,out}=context(args);const 
 it('routes catalog target permissions and versioned definition updates',async()=>{
  await invoke(['mcp','server','list','--target',ID]);expect(requests.at(-1)?.path).toBe(`/v2/spaces/${SPACE}/mcp/servers?targetId=${ID}`);
  await invoke(['mcp','server','update',ID,'--expected-version','2','--input','{"definition":{"name":"fixture"}}']);
- expect(requests.at(-1)).toMatchObject({method:'PATCH',path:`/v2/mcp/servers/${ID}`,body:{expectedVersion:2,definition:{name:'fixture'}}});
+ expect(requests.at(-1)).toMatchObject({method:'PATCH',path:`/v2/mcp/servers/${ID}`,body:{serverId:ID,expectedVersion:2,definition:{name:'fixture'}}});
+ // The server validates the body against a strict DTO that names the path ids
+ // before any handler reads the path, so a body without them is refused.
+ await invoke(['mcp','server','test',ID]);
+ expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/mcp/servers/${ID}/test`,body:{serverId:ID}});
+ await invoke(['mcp','server','create','--input','{"definition":{"name":"fixture"}}']);
+ expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/spaces/${SPACE}/mcp/servers`,body:{spaceId:SPACE,definition:{name:'fixture'}}});
+ await invoke(['mcp','credential','revoke',ID]);
+ expect(requests.at(-1)?.body).toMatchObject({credentialId:ID});
 });
 it('requires credential file/stdin sources and redacts malformed secret JSON errors',async()=>{
  const before=requests.length;
@@ -73,7 +81,7 @@ it('connect chooses its door from the connector, and never takes a secret in arg
  await invoke(['mcp','connect',ID]);
  expect(requests.at(-2)?.path).toBe(`/v2/mcp/servers/${ID}`);
  expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/mcp/servers/${ID}/oauth/begin`});
- expect((requests.at(-1)!.body as {label?:string}).label).toBe('notion account');
+ expect(requests.at(-1)?.body).toMatchObject({serverId:ID,label:'notion account'});
  // `--shared` on OAuth needs oauth.begin to carry a scope through the redirect
  // (§5.4), and #1315's 342_mcp_oauth_pending now provides exactly that: the
  // durable pending row carries the scope, so `scope` joined
@@ -92,7 +100,7 @@ it('connect chooses its door from the connector, and never takes a secret in arg
  const path=join(temp,'connect.json');await writeFile(path,JSON.stringify({secret:'fixture-secret'}),{mode:0o600});
  await invoke(['mcp','connect',ID,'--shared','--input',`@${path}`]);
  expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/mcp/servers/${ID}/credentials`,
-  body:{secret:'fixture-secret',scope:'space',label:'internaldocs account'}});
+  body:{serverId:ID,secret:'fixture-secret',scope:'space',label:'internaldocs account'}});
 
  // A connector with no auth needs no connection, and says so instead of
  // inventing a door.

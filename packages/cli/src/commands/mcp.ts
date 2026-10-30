@@ -56,6 +56,15 @@ const MCP_OP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.p
   const version=cmd.options.value('expected-version');
   if(version!==undefined){const n=Number(version);if(!Number.isInteger(n)||n<1)throw new CliError('--expected-version must be a positive integer',EXIT_USAGE);body.expectedVersion=n;}
   const credential=cmd.options.value('credential');if(credential)body.credentialId=credential;
+  // The ids ride the path AND the body. Every body DTO here is strict and names
+  // them (McpServerTestInputSchema, McpOAuthBeginInputSchema, McpServerCreateInputSchema…),
+  // and the server validates the body before any handler reads the path, so a
+  // body without them is refused as "Required". `request` is the one that keeps
+  // its Space on the path only.
+  if(!spec.read){
+    if(spec.param&&body[spec.param]===undefined)body[spec.param]=params[spec.param];
+    if(spec.space&&spec.op!=='mcp.servers.request'&&body.spaceId===undefined)body.spaceId=params.spaceId;
+  }
   const query:Record<string,string>={};
   for(const flag of ['limit','cursor']){const value=cmd.options.value(flag);if(value!==undefined)query[flag]=value;}
   const target=cmd.options.value('target');if(target)query.targetId=target;
@@ -149,7 +158,7 @@ async function mcpConnect(cmd:CommandContext):Promise<ExitCode> {
     let parsed:unknown;
     try{parsed=await readJsonSource(source);}catch{throw new CliError('Unable to read credential JSON input',EXIT_USAGE);}
     if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new CliError('--input must contain an object',EXIT_USAGE);
-    const body:Record<string,unknown>={label,...parsed,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
+    const body:Record<string,unknown>={label,...parsed,serverId,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
       scope:shared?'space':'member'};
     if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
     const data=await observedInvoke<unknown>(client,'mcp.credentials.create',{params:{serverId},body});
@@ -160,7 +169,7 @@ async function mcpConnect(cmd:CommandContext):Promise<ExitCode> {
   // (#1315) added it, so a scope chosen here survives the redirect and `--shared`
   // asks for a SPACE credential below. The shape probe that guarded this before
   // 342 landed is gone rather than left dead: it could no longer fire.
-  const body:Record<string,unknown>={label,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
+  const body:Record<string,unknown>={label,serverId,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
     ...(shared?{scope:'space'}:{})};
   if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
   const data=await observedInvoke<unknown>(client,'mcp.oauth.begin',{params:{serverId},body});
