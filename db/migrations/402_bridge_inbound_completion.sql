@@ -194,7 +194,11 @@ begin
     sender_display, media)
   values (log_id, b.entity_id, conn.id, 'in', ext, conv, sender, reply_ext, ts,
           case when p_command then 'pending' end, sender_name,
-          nullif(coalesce(p_frame -> 'media', '[]'::jsonb), '[]'::jsonb));
+          -- F2: descriptive fields only; the fetch handle (media keys, D39) lives in bridge_media.
+          nullif((select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                    'kind', m ->> 'kind', 'mime', m ->> 'mime', 'fileName', m ->> 'fileName',
+                    'caption', m ->> 'caption', 'size', m -> 'size'))), '[]'::jsonb)
+                    from jsonb_array_elements(coalesce(p_frame -> 'media', '[]'::jsonb)) m), '[]'::jsonb));
   -- §4 (B1b-8): each media item becomes a file attached to this log message,
   -- fetched from the runtime after commit (§2.3 step 3).
   insert into public.bridge_media(message_id, idx, bridge_id, handle, kind, mime, file_name)
@@ -398,6 +402,12 @@ end
 $$;
 revoke all on function internal.bridge_store_poll_vote(public.bridges, uuid, jsonb) from public;
 
+
+-- #1442 review F2: the runtime's fetch handles (the message's media keys, D39)
+-- live only in bridge_media, server-only. §2's inbound writes message_origins
+-- .media with descriptive fields alone, and the app role no longer reads the
+-- column (398 granted it); every other column stays readable.
+revoke select (media) on public.message_origins from tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §4. Media as files (§2.3 step 3). One row per inbound media item; the worker

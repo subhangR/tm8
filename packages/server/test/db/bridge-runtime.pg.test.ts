@@ -183,19 +183,26 @@ describe('internal.bridge_signed is VOLATILE: a worker signature writes through 
 describe('402 (B1b-8): review fixes N1 and N3 on 398', () => {
   it('N1: a routed message hands add_bridge_origin the participant display STRING (D22)', async () => {
     const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.add_bridge_origin(uuid,jsonb)')::text as r`))[0]!.r;
-    if (real) return;   // B1b-3's real door is covered by its own suite
-    await owner(`create table if not exists public.b1b8_origins(holder uuid, origin jsonb)`);
-    await owner(`create function public.add_bridge_origin(p_holder uuid, p_origin jsonb) returns jsonb language plpgsql volatile as $f$
-      begin insert into public.b1b8_origins values (p_holder, p_origin); return p_origin; end $f$`);
+    if (!real) {
+      // A tree without 399 (B1b-3): record what inbound would hand the door.
+      await owner(`create table if not exists public.b1b8_origins(holder uuid, origin jsonb)`);
+      await owner(`create function public.add_bridge_origin(p_holder uuid, p_origin jsonb) returns jsonb language plpgsql volatile as $f$
+        begin insert into public.b1b8_origins values (p_holder, p_origin); return p_origin; end $f$`);
+    }
     try {
       const r = await inbound(frame({ body: '@tm8 origin please', sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
       expect(r.routed).toBe(true);
-      const [row] = await owner<{ holder: string; origin: { sender: { participant: unknown }; providerMessageId: string } }>(
-        `select holder, origin from public.b1b8_origins order by ctid desc limit 1`);
-      expect(row!.holder).toBe(chatA);
-      expect(row!.origin.sender.participant).toBe('Priya');
+      const [ext] = await owner<{ e: string }>('select external_message_id as e from public.message_origins where message_id = $1', [r.messageId]);
+      const [row] = real
+        // The real door (399) stores the origin on the target chat, keyed by the provider id.
+        ? await owner<{ participant: unknown }>(`select sender -> 'participant' as participant from public.session_bridge_origins
+            where holder_id = $1 and provider_message_id = $2`, [chatA, ext!.e])
+        : await owner<{ participant: unknown }>(`select origin #> '{sender,participant}' as participant from public.b1b8_origins
+            where holder = $1 and origin ->> 'providerMessageId' = $2`, [chatA, ext!.e]);
+      expect(row).toBeDefined();
+      expect(row!.participant).toBe('Priya');
     } finally {
-      await owner(`drop function public.add_bridge_origin(uuid, jsonb)`);
+      if (!real) await owner(`drop function public.add_bridge_origin(uuid, jsonb)`);
     }
   });
 
@@ -478,6 +485,11 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     const [out] = await owner<{ direction: string; provider_payload: unknown }>(
       'select direction, provider_payload from public.message_origins where message_id = $1', [answer]);
     expect(out).toMatchObject({ direction: 'out', provider_payload: { conversation: 'Infra Bot: Deployed at 10:40.' } });
+    // F2 (402): nor do the runtime's media items (fetch handles, media keys) in message_origins.media.
+    const media = await refusal(human(q => q.query('select media from public.message_origins limit 1')));
+    expect(media.code).toBeDefined();
+    const ok = await human(q => q.query('select external_message_id from public.message_origins limit 1'));
+    expect(Array.isArray(ok)).toBe(true);
     // provider_payload never reaches the app role.
     const leak = await refusal(human(q => q.query('select provider_payload from public.message_origins limit 1')));
     expect(leak.code).toBeDefined();
