@@ -11,9 +11,10 @@
 // that already holds is a no-op on the server.
 import { randomUUID } from 'node:crypto';
 import type { BridgeListResult, BridgeParticipant, BridgePolicy, BridgeView } from '@tm8/contract';
+import { ApiError } from '../errors.js';
 import { requireSpace } from '../context.js';
 import { readTextSource } from '../args.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { CliError, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { observedInvoke } from '../discovery/observe.js';
 import type { CommandContext } from '../run.js';
 import { assertKnownOptions } from './entity.js';
@@ -157,11 +158,19 @@ export function mask(jid: string): string {
   return `…${user.slice(-4)}${at < 0 ? '' : jid.slice(at)}`;
 }
 
+/** P's `bridges.participants.update` reply (#1439): `participant` is null for someone who hasn't spoken. */
+interface ParticipantUpdateReply {
+  bridgeId: string; externalId: string; changed: boolean; participant: BridgeParticipant | null;
+}
+
+/** One link row's outcome: written, already so, or refused by the server for this row alone. */
+export type LinkOutcome = 'asserted' | 'unchanged' | 'member_not_active' | 'invalid_address';
+
 interface ImportResult {
   dryRun: boolean;
   bridges: Array<{
     channel: string; bridgeId: string | null; created: boolean;
-    links: Array<{ externalId: string; memberId: string; trust: string | null }>;
+    links: Array<{ externalId: string; memberId: string; outcome: LinkOutcome | 'planned'; message?: string }>;
   }>;
 }
 
@@ -193,7 +202,7 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   const result: ImportResult = { dryRun, bridges: [] };
   if (dryRun) {
     result.bridges = plan.map(p => ({ channel: p.channel, bridgeId: null, created: false,
-      links: p.links.map(l => ({ externalId: l.externalId, memberId: l.memberId, trust: null })) }));
+      links: p.links.map(l => ({ externalId: l.externalId, memberId: l.memberId, outcome: 'planned' as const })) }));
     cmd.out.data(result, () => `dry run, nothing written:\n${renderPlan(plan)}`);
     return EXIT_OK;
   }
@@ -210,6 +219,7 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   });
   if (moved.length) throw usage(`nothing was imported:\n  ${moved.join('\n  ')}`);
   const lines: string[] = [];
+  let failure: ExitCode | undefined;
   for (const p of plan) {
     let bridge = found.get(p.channel);
     let created = false;
@@ -226,16 +236,28 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     lines.push(`${p.channel}: bridge ${bridge.id} ${created ? 'created' : 'already there'} · ${bridge.status}`);
     const links: ImportResult['bridges'][number]['links'] = [];
     for (const l of p.links) {
-      // P's door (D52): an admin assertion; the same one again is a no-op, so a rerun is safe.
-      const r = await observedInvoke<BridgeParticipant>(api, 'bridges.participants.update', {
-        params: { bridgeId: bridge.id, externalId: l.externalId },
-        body: { clientMutationId: randomUUID(), patch: { memberId: l.memberId } },
-      });
-      links.push({ externalId: l.externalId, memberId: l.memberId, trust: r.trust });
-      lines.push(`  link ${mask(l.externalId)} → member ${r.memberId ?? l.memberId}: ${r.trust}`);
+      // P's door (D52): an admin assertion; the same one again answers changed:false, so a rerun is safe.
+      // A refusal that concerns this row only (404 member not active here, 400 not a person's address)
+      // is reported on the row and the run goes on; anything else stops it.
+      try {
+        const r = await observedInvoke<ParticipantUpdateReply>(api, 'bridges.participants.update', {
+          params: { bridgeId: bridge.id, externalId: l.externalId },
+          body: { clientMutationId: randomUUID(), patch: { memberId: l.memberId } },
+        });
+        const outcome: LinkOutcome = r.changed ? 'asserted' : 'unchanged';
+        links.push({ externalId: l.externalId, memberId: l.memberId, outcome });
+        lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: ${outcome}`);
+      } catch (err) {
+        if (!(err instanceof ApiError) || (err.code !== 'not_found' && err.code !== 'invalid_input')) throw err;
+        const outcome: LinkOutcome = err.code === 'not_found' ? 'member_not_active' : 'invalid_address';
+        links.push({ externalId: l.externalId, memberId: l.memberId, outcome, message: err.message });
+        lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: REFUSED ${outcome} (${err.message})`);
+        failure ??= outcome === 'member_not_active' ? EXIT_NOT_FOUND : EXIT_USAGE;
+      }
     }
     result.bridges.push({ channel: p.channel, bridgeId: bridge.id, created, links });
   }
+  if (failure !== undefined) lines.push('some links were refused: fix them and rerun; the rest is already in place');
   cmd.out.data(result, () => lines.join('\n'));
-  return EXIT_OK;
+  return failure ?? EXIT_OK;
 }

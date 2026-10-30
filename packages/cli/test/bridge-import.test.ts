@@ -18,6 +18,7 @@ const RAHUL = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb';
 const ASHA = 'cccccccc-cccc-7ccc-8ccc-cccccccccccc';
 const CONNECTION = '44444444-4444-7444-8444-444444444444';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
+const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', BAD = '910000000005@s.whatsapp.net';
 const PN = '910000000001@s.whatsapp.net', LID = '100000000000001@lid', TRUSTED = '910000000002@s.whatsapp.net';
 
 const base = { spaceId: SPACE, mainChats: {}, purposes: {}, members: {}, ownerMember: OWNER };
@@ -126,11 +127,21 @@ describe('tm8 bridge import-config (fake server)', () => {
         if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: bridges };
         else if (url.pathname.endsWith('/bridges') && req.method === 'POST') { const v = viewFor(body); bridges.push(v); data = v; }
         else if (url.pathname.includes('/participants/')) {
-          // No participant rows exist yet: the import runs before anyone has spoken.
+          // P's reply (#1439): no participant rows exist yet, so participant is null.
           const externalId = decodeURIComponent(url.pathname.split('/').at(-1)!);
+          if (body.patch.memberId === GONE) {
+            res.writeHead(404, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: 'not_found', message: 'member not found in this space', requestId: 'test', retryable: false } }));
+            return;
+          }
+          if (externalId === BAD) {
+            res.writeHead(400, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: 'invalid_input', message: 'a WhatsApp link names a person', requestId: 'test', retryable: false } }));
+            return;
+          }
+          const changed = asserted.get(externalId) !== body.patch.memberId;
           asserted.set(externalId, body.patch.memberId);
-          data = { externalId, altExternalIds: [], masked: false, displayName: null, avatarRef: null, muted: false,
-            firstSeenAt: 'x', lastSeenAt: 'x', messageCount: 0, trust: 'asserted', memberId: body.patch.memberId, member: null };
+          data = { bridgeId: BRIDGE, externalId, changed, participant: null };
         }
         res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
       });
@@ -177,13 +188,31 @@ describe('tm8 bridge import-config (fake server)', () => {
     ]);
     expect(stdout).toContain('bridge 11111111-1111-7111-8111-111111111111 created');
     expect(stdout.match(/: asserted/g)).toHaveLength(3);
-    expect(links.every(r => Object.keys(r.body.patch).join() === 'memberId')).toBe(true);
+    expect(links.every(r => Object.keys(r.body.patch).join() === 'memberId' && typeof r.body.clientMutationId === 'string')).toBe(true);
 
     requests = []; stdout = '';
     expect(await run(args)).toBe(0);
     expect(requests.filter(r => r.method === 'POST')).toEqual([]);
     expect(requests.filter(r => r.method === 'PATCH')).toHaveLength(3);
     expect(stdout).toContain('already there');
+    expect(stdout).not.toMatch(/: asserted/);
+    expect(stdout.match(/: unchanged/g)).toHaveLength(3);
+  });
+
+  it('reports a 404 (member not active) and a 400 (not a person) on their rows, writes the rest, and exits non-zero', async () => {
+    const extra = ['--member', `${TRUSTED}=${GONE}`];
+    const withBad: Phase1Config = { ...config, trustedSenders: [...(config.trustedSenders ?? []), BAD] };
+    const file = `${FIXTURE}.bad.json`;
+    (await import('node:fs')).writeFileSync(file, JSON.stringify(withBad));
+    try {
+      const a = args.map(x => (x === FIXTURE ? file : x)).filter((x, i, all) => !(x.startsWith(`${TRUSTED}=`) || (x === '--member' && all[i + 1]?.startsWith(`${TRUSTED}=`))));
+      expect(await run([...a, ...extra, '--member', `${BAD}=${RAHUL}`])).toBe(5);
+    } finally { (await import('node:fs')).rmSync(file); }
+    expect(stdout).toContain('…0001@s.whatsapp.net → member');
+    expect(stdout).toMatch(/…0002@s\.whatsapp\.net → member dddddddd-[^:]*: REFUSED member_not_active/);
+    expect(stdout).toMatch(/…0005@s\.whatsapp\.net → member bbbbbbbb-[^:]*: REFUSED invalid_address/);
+    expect(stdout).toContain('some links were refused');
+    expect(requests.filter(r => r.method === 'PATCH')).toHaveLength(4);
   });
 
   it('refuses before any write when the bridge exists on another target', async () => {
