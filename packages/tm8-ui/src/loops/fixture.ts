@@ -19,6 +19,7 @@ export function fixtureLoopView(id: EntityId, spaceId: SpaceId, definition: Loop
     teamMemberId: null, subjectId: null, toolId: null, toolInputs: {}, prompt: '',
     config: {}, concurrency: 'skip', maxRuntimeSeconds: null,
     ...definition,
+    targets: definition.targets ?? [], mode: definition.mode ?? 'one-shot', quietHoursExempt: definition.quietHoursExempt ?? false,
     retry: { attempts: 0, delaySeconds: 300, ...definition.retry },
   };
   return {
@@ -116,7 +117,7 @@ export function createFixtureLoopsClient(seed: readonly LoopView[] = []): LoopsC
         trigger: 'manual', requestedBy: FIXTURE_ACTOR, action: loop.definition.action, attempt: 1,
         status: 'running', skipReason: null, error: null, taskId: null, sessionId: null,
         startedAt: null, endedAt: null, durationMs: null, exitCode: null, outputTail: null,
-        actedAs: FIXTURE_ACTOR, endedKind: null, usage: null,
+        actedAs: FIXTURE_ACTOR, endedKind: null, usage: null, targets: [],
       };
       runs.set(run.id, run);
       return { run };

@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { loopAuthorityGuard } from '../loops/authority.js';
 import { registerBridgeHandlers } from '../bridges/handlers.js';
 import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
@@ -260,6 +261,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
+  // Bridges L (D26): a bridge loop's worker asks its owner before what cannot be undone.
+  registry.addGuard(loopAuthorityGuard(facade));
   // Bridges B0a (395): the bridges.* catalog doors.
   registerBridgeHandlers(registry, facade);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside

@@ -24,6 +24,7 @@ import {
   encodeCursor,
   type ActorSummary,
   type LoopRun,
+  type LoopRunTarget,
   type LoopRunStatus,
   type LoopRunsSummary,
 } from '@tm8/contract';
@@ -84,6 +85,8 @@ export interface LoopRunRow {
   usage_input_tokens: string | number | null;
   usage_output_tokens: string | number | null;
   usage_cost_usd: number | null;
+  /** Bridges L: what the run did in each target group (401's loop_run_targets). */
+  targets?: Array<{ bridgeId: string; result: LoopRunTarget['result']; reason: string | null; messageId: string | null }> | null;
 }
 
 /**
@@ -105,7 +108,10 @@ export function loopRunRowsSql(withOutputTail: boolean): string {
          (ws.usage #>> '{transcript,totals,inputTokens}')::bigint::text as usage_input_tokens,
          (ws.usage #>> '{transcript,totals,outputTokens}')::bigint::text as usage_output_tokens,
          (ws.usage #>> '{harness,costUsd}')::double precision as usage_cost_usd,
-         am.entity_id as acted_as_member_id
+         am.entity_id as acted_as_member_id,
+         (select coalesce(jsonb_agg(jsonb_build_object('bridgeId', t.bridge_id, 'result', t.result,
+                    'reason', t.reason, 'messageId', t.message_id) order by t.bridge_id), '[]'::jsonb)
+            from public.loop_run_targets t where t.run_id = r.id) as targets
     from public.loop_runs r
     -- A dispatch run's session is the space's long-lived dispatcher, shared by
     -- every request: its start, end and usage are not the run's. The run is
@@ -168,6 +174,7 @@ export function projectLoopRun(row: LoopRunRow, actors: Map<string, ActorSummary
           source: costUsd !== null && Number.isFinite(costUsd) ? 'harness' : null,
         }
       : null,
+    targets: row.targets ?? [],
   });
 }
 
