@@ -1854,6 +1854,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     to: WorkSessionStatusSchema,
     endedKind: WorkSessionEndedKindSchema.nullable(),
     endedReason: z.string().nullable(),
+    endedByNode: z.string().min(1).optional(),
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
@@ -4472,6 +4473,7 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   capacity: z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
+    ghosts: z.number().int().nonnegative().optional(),
   }).strict(),
   // Nullable, never optional: "the mark cannot be established" is an ANSWER
   // this read has to be able to give, and an absent field is the shape a

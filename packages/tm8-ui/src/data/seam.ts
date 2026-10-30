@@ -362,7 +362,8 @@ export interface LivenessSnapshot {
   /** Stable per node process. A change between snapshots ⇒ node restarted ⇒ every previously live PTY is gone. */
   nodeBootId: string;
   checkedAt: string;
-  capacity?: { used: number; total: number };
+  /** `ghosts`: how many of `used` are dead rows on this node (403); absent from a node that does not say. */
+  capacity?: { used: number; total: number; ghosts?: number };
   /**
    * The durable event high-water mark for this space WITHIN THIS BOOT, or null
    * when the node could not establish it (unbound identity, non-member). A

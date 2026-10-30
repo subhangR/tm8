@@ -13,6 +13,8 @@
  * reaps: a session has to be seen without a process on two ticks at least
  * `staleAfterMs` apart.
  */
+import type { NodeEndingSweepReport } from '@tm8/execution';
+
 import type { JobContext, JobOutcome, ScheduledJob } from '../types.js';
 
 export const LOST_SESSION_REAPER_JOB_NAME = 'execution.lost-session-reaper';
@@ -21,25 +23,81 @@ export const LOST_SESSION_REAPER_JOB_NAME = 'execution.lost-session-reaper';
 export const DEFAULT_LOST_AFTER_MS = 10 * 60_000;
 
 export interface LostSessionReaperOptions {
-  reap(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
+  reap(staleAfterMs: number): Promise<NodeEndingSweepReport>;
   staleAfterMs?: number;
   intervalMs?: number;
+}
+
+/**
+ * The one line every tick of a node-ending job logs (403), the reaper's and
+ * the auto-close's alike. EVERY tick: before 403 the reaper could not see
+ * ghosts outside its identity's spaces, reported `skipped`, and said nothing
+ * for weeks while 19 dead rows held the cap. `notRecorded` is counted apart
+ * from `retired` and `refused`, so a pass whose writes all came back
+ * `recorded: false` is visible too. Its level is `tickLogLevel`'s.
+ */
+export interface NodeSweepTickLine {
+  candidates: number;
+  retired: number;
+  notRecorded: number;
+  refused: number;
+  /** The first five refusals, verbatim. */
+  problems: string[];
+}
+
+export function nodeSweepTickLine(report: NodeEndingSweepReport): NodeSweepTickLine {
+  return {
+    candidates: report.candidates,
+    retired: report.retired,
+    notRecorded: report.notRecorded,
+    refused: report.errors.length,
+    problems: report.errors.slice(0, 5).map((e) => e.message),
+  };
+}
+
+/**
+ * warn on any refusal, or when writes came back not recorded and nothing was
+ * retired (the silent-failure shape); info when there was anything to see;
+ * debug for an all-zero tick, so a quiet node does not write 1440 identical
+ * lines a day.
+ */
+export function tickLogLevel(line: NodeSweepTickLine): 'warn' | 'info' | 'debug' {
+  if (line.refused > 0 || (line.notRecorded > 0 && line.retired === 0)) return 'warn';
+  return line.candidates > 0 || line.retired > 0 || line.notRecorded > 0 ? 'info' : 'debug';
+}
+
+/** Log one tick's line at its level, and turn the report into the job's outcome. */
+function finishTick(
+  jobName: string,
+  report: NodeEndingSweepReport,
+  idleReason: string,
+  log?: (message: string, line: NodeSweepTickLine) => void,
+): JobOutcome {
+  const line = nodeSweepTickLine(report);
+  log?.(`${jobName}: tick`, line);
+  if (line.retired === 0 && line.refused === 0 && line.notRecorded === 0) {
+    return { skipped: true, reason: idleReason };
+  }
+  return {
+    affected: line.retired,
+    detail: { retired: line.retired, notRecorded: line.notRecorded, failed: line.refused },
+  };
+}
+
+/** The job's logger, at the line's level. */
+function logAtLevel(ctx: JobContext): (message: string, line: NodeSweepTickLine) => void {
+  return (message, line) => {
+    ctx.logger[tickLogLevel(line)](message, line);
+  };
 }
 
 /** One tick, exported so tests and `scheduler.runNow` drive it without a timer. */
 export async function runLostSessionReaperTick(
   options: LostSessionReaperOptions,
-  log?: (message: string) => void,
+  log?: (message: string, line: NodeSweepTickLine) => void,
 ): Promise<JobOutcome> {
-  const { reaped, errors } = await options.reap(options.staleAfterMs ?? DEFAULT_LOST_AFTER_MS);
-  if (errors.length > 0) {
-    log?.(`${LOST_SESSION_REAPER_JOB_NAME}: ${errors.length} problem(s): ${
-      errors.slice(0, 5).map((e) => e.message).join('; ')}`);
-  }
-  if (reaped === 0 && errors.length === 0) {
-    return { skipped: true, reason: 'no session has been without a process long enough' };
-  }
-  return { affected: reaped, detail: { reaped, failed: errors.length } };
+  const report = await options.reap(options.staleAfterMs ?? DEFAULT_LOST_AFTER_MS);
+  return finishTick(LOST_SESSION_REAPER_JOB_NAME, report, 'no session has been without a process long enough', log);
 }
 
 export function lostAfterMsFromEnv(env: NodeJS.ProcessEnv = process.env): number {
@@ -56,7 +114,7 @@ export function createLostSessionReaperJob(options: LostSessionReaperOptions): S
     runOnStart: false,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      return runLostSessionReaperTick(options, (m) => { ctx.logger.warn(m); });
+      return runLostSessionReaperTick(options, logAtLevel(ctx));
     },
   };
 }
@@ -69,10 +127,20 @@ export const COMPLETED_AUTO_CLOSE_JOB_NAME = 'execution.completed-auto-close';
  * never). Lives beside the reaper: both are the node tidying processes whose
  * work no longer needs them, and both only ever write process facts.
  */
-export function createCompletedAutoCloseJob(options: {
-  close(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+export interface CompletedAutoCloseOptions {
+  close(): Promise<NodeEndingSweepReport>;
   intervalMs?: number;
-}): ScheduledJob {
+}
+
+/** One tick, exported so tests drive it without a timer. */
+export async function runCompletedAutoCloseTick(
+  options: CompletedAutoCloseOptions,
+  log?: (message: string, line: NodeSweepTickLine) => void,
+): Promise<JobOutcome> {
+  return finishTick(COMPLETED_AUTO_CLOSE_JOB_NAME, await options.close(), 'no completed session idle past its window', log);
+}
+
+export function createCompletedAutoCloseJob(options: CompletedAutoCloseOptions): ScheduledJob {
   return {
     name: COMPLETED_AUTO_CLOSE_JOB_NAME,
     intervalMs: options.intervalMs ?? 60_000,
@@ -80,15 +148,7 @@ export function createCompletedAutoCloseJob(options: {
     runOnStart: false,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      const { closed, errors } = await options.close();
-      if (errors.length > 0) {
-        ctx.logger.warn(`${COMPLETED_AUTO_CLOSE_JOB_NAME}: ${errors.length} problem(s): ${
-          errors.slice(0, 5).map((e) => e.message).join('; ')}`);
-      }
-      if (closed === 0 && errors.length === 0) {
-        return { skipped: true, reason: 'no completed session idle past its window' };
-      }
-      return { affected: closed, detail: { closed, failed: errors.length } };
+      return runCompletedAutoCloseTick(options, logAtLevel(ctx));
     },
   };
 }

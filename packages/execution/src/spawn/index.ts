@@ -93,7 +93,7 @@ export {
   type AgentCredentialHomePort,
   type AgentCredentialProvider,
 } from './agent-credentials.js';
-export { SpawnError } from './types.js';
+export { emptySweep, SpawnError } from './types.js';
 export { DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_FETCH, TOOL_INDEX_READ_MAX } from './context-index.js';
 export {
   codexMcpHomesRoot,
@@ -196,7 +196,10 @@ export type {
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
-  GhostReconcileReport,
+  NodeEndingSweepReport,
+  NodeEndedKind,
+  NodeSessionEnding,
+  SessionUsageFacts,
 } from './types.js';
 
 export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';
