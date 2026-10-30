@@ -23,6 +23,12 @@
 --       media item; the bridges worker fetches the bytes from the runtime
 --       (media.fetch, D39 handles), writes them to the blob store and attaches
 --       a file entity to the log message; failures retry, then stop.
+--   §5  delivery to sessions (§2.2, §2.7, D30): a session target gets its
+--       routed copy; B1b-3's bridge_message_audience names the directed (and
+--       thread/all-listening) workers. internal.bridge_inbound_deliveries
+--       answers the dispatch routes once per (message, session), records the
+--       answerer for a directed delivery and adds the bridge origin to every
+--       directed or routed session (add_bridge_origin, deduped there).
 --
 -- CORRECTION TO 395's HEADER (fix-forward; 395 is applied and checksummed, so
 -- it is not edited). 395 says it touches no object of Mobile's 391, but its §2
@@ -242,6 +248,18 @@ begin
                            'sender', jsonb_build_object('participant', author #>> '{participant,displayName}',
                              'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end),
                            'command', null)::text);
+    end if;
+  elsif triggered and allowed and b.target_kind = 'work_session' then
+    -- §5 (B1b-8): a session target gets the routed copy anchored on it; the
+    -- worker delivers it after commit (§2.2: the stored-first PTY delivery).
+    select * into target_e from public.entities where id = b.target_id;
+    if target_e.deleted_at is null then
+      copy_id := internal.new_id();
+      insert into public.entities(id, space_id, kind, parent_id, position, created_by, visibility)
+      values (copy_id, b.space_id, 'message', null, null, (author ->> 'actorId')::uuid, target_e.visibility);
+      insert into public.messages(entity_id, anchor_id, root_message_id, author_id, body, message_batch_id)
+      values (copy_id, b.target_id, null, (author ->> 'actorId')::uuid, body, batch);
+      routed := true;
     end if;
   end if;
   if routed then
@@ -490,4 +508,130 @@ $$;
 revoke all on function internal.bridge_media_fail(uuid, integer, text, boolean) from public;
 grant execute on function internal.bridge_media_fail(uuid, integer, text, boolean) to tm8_app;
 
+
+-- -----------------------------------------------------------------------------
+-- §5. Delivery to sessions (§2.2, §2.7, D30). The server delivers after commit
+--     through the same stored-first PTY path every message uses; this answers
+--     the routes. B1b-3's doors are called only when its migration is present.
+-- -----------------------------------------------------------------------------
+create table public.bridge_inbound_deliveries (
+  message_id   uuid not null references public.messages(entity_id) on delete cascade,
+  session_id   uuid not null references public.entities(id) on delete cascade,
+  reason       text not null,
+  delivered_at timestamptz not null default now(),
+  primary key (message_id, session_id)
+);
+alter table public.bridge_inbound_deliveries enable row level security;
+-- No policy and no grant: written and read only by the definer below.
+
+
 reset role;
+
+-- §5's two functions write 076's session_message_reply_routes, which is owned
+-- by the migration owner and under RLS. Like 214's form_delivery_route they are
+-- therefore owned by the migration owner (created after `reset role`); both
+-- are gated on the bridges worker or called only by a gated definer.
+-- One dispatch route (message-dispatch.ts DispatchableRoute), as 214's
+-- form_delivery_route builds it, plus the bridge origin element (B1b-3's
+-- bridge_origin_facts) the incoming-message envelope renders.
+create or replace function internal.bridge_route_json(p_message uuid, p_session uuid, p_directed boolean)
+returns jsonb language plpgsql set search_path = public, internal, pg_temp as $$
+declare m public.messages; anchor_kind text; facts jsonb;
+begin
+  select * into m from public.messages where entity_id = p_message;
+  select e.kind into anchor_kind from public.entities e where e.id = m.anchor_id;
+  insert into public.session_message_reply_routes(
+    target_message_id, target_work_session_id, source_anchor_id, source_message_id, addressing_kind)
+  values (p_message, p_session, m.anchor_id, p_message, 'anchored_message')
+  on conflict do nothing;
+  if to_regprocedure('public.bridge_origin_facts(uuid,uuid,boolean)') is not null then
+    execute 'select public.bridge_origin_facts($1, $2, $3)' into facts using p_message, p_session, p_directed;
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object(
+    'targetMessageId', p_message,
+    'targetWorkSessionId', p_session,
+    'messageBatchId', m.message_batch_id,
+    'senderActorId', m.author_id,
+    'senderActorKind', (select e.kind from public.entities e where e.id = m.author_id),
+    'sourceAnchorId', m.anchor_id,
+    'sourceAnchorKind', anchor_kind,
+    'sourceMessageId', p_message,
+    'threadRootMessageId', coalesce(m.root_message_id, p_message),
+    'body', m.body,
+    'addressingKind', 'anchored_message',
+    'bridgeOrigin', facts,
+    'rollingControlMaxBytes', coalesce((
+      select (pin.resolved_snapshot #>> '{agentProjection,promptPolicy,rollingControlMaxBytes}')::integer
+        from public.work_session_interaction_pins pin
+       where pin.work_session_id = p_session order by pin.pin_revision desc limit 1), 16384),
+    'sessionInputAllowed', coalesce((
+      select case
+        when jsonb_array_length(coalesce(
+          pin.resolved_snapshot #> '{agentProjection,promptPolicy,allowedInjectionKinds}', '[]'::jsonb)) = 0 then true
+        else coalesce((pin.resolved_snapshot #> '{agentProjection,promptPolicy,allowedInjectionKinds}')
+                        ? 'tm8.session-input', false) end
+        from public.work_session_interaction_pins pin
+       where pin.work_session_id = p_session order by pin.pin_revision desc limit 1), true)))
+    || jsonb_build_object('threadParentMessageId', null, 'attachments', m.attachments, 'contextAnchors', '[]'::jsonb);
+end
+$$;
+revoke all on function internal.bridge_route_json(uuid, uuid, boolean) from public;
+
+-- The routes one stored inbound message owes, each at most once. Directed and
+-- routed deliveries add the bridge origin to the session (D30: what prompted
+-- the work); a directed one also makes that session the message's answerer.
+create or replace function internal.bridge_inbound_deliveries(p_message uuid) returns jsonb
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  o public.message_origins; b public.bridges; m public.messages; copy uuid; s record; routes jsonb := '[]'::jsonb;
+  origin jsonb; author jsonb;
+begin
+  perform internal.require_bridges_worker();
+  select * into o from public.message_origins where message_id = p_message and direction = 'in';
+  if o.message_id is null or o.command_state is not null then return routes; end if;
+  select * into b from public.bridges where entity_id = o.bridge_id;
+  select * into m from public.messages where entity_id = p_message;
+  author := case when o.external_sender_id is null then null
+                 else internal.bridge_resolve_author(b.entity_id, o.external_sender_id) end;
+  origin := jsonb_strip_nulls(jsonb_build_object(
+    'bridgeId', b.entity_id, 'messageId', p_message, 'providerMessageId', o.external_message_id,
+    'sender', jsonb_build_object(
+      'participant', coalesce(author #>> '{participant,displayName}', o.sender_display),
+      'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end),
+    'command', null));
+
+  -- A session target: its routed copy (the batch twin anchored on it).
+  if b.target_kind = 'work_session' and o.routed then
+    select t.entity_id into copy from public.messages t
+     where t.message_batch_id = m.message_batch_id and t.anchor_id = b.target_id limit 1;
+    if copy is not null then
+      insert into public.bridge_inbound_deliveries(message_id, session_id, reason) values (p_message, b.target_id, 'routed')
+      on conflict do nothing;
+      if found then
+        routes := routes || jsonb_build_array(internal.bridge_route_json(copy, b.target_id, false));
+        perform internal.bridge_try('public.add_bridge_origin', 'uuid,jsonb', b.target_id::text, origin::text);
+      end if;
+    end if;
+  end if;
+
+  -- Workers: directed (@handle, a reply to its post, its /work thread) and
+  -- those listening at thread/all (B1b-3, §2.7). Un-directed and not listening:
+  -- nothing is pushed; the reader counts it as unread.
+  if to_regprocedure('public.bridge_message_audience(uuid,uuid)') is not null then
+    for s in execute 'select session_id, reason from public.bridge_message_audience($1, $2)' using b.entity_id, p_message loop
+      continue when s.session_id = b.target_id;
+      insert into public.bridge_inbound_deliveries(message_id, session_id, reason) values (p_message, s.session_id, s.reason)
+      on conflict do nothing;
+      continue when not found;
+      routes := routes || jsonb_build_array(internal.bridge_route_json(p_message, s.session_id, s.reason = 'directed'));
+      if s.reason = 'directed' then
+        perform internal.bridge_try('public.set_bridge_answerer', 'uuid,uuid', p_message::text, s.session_id::text);
+        perform internal.bridge_try('public.add_bridge_origin', 'uuid,jsonb', s.session_id::text, origin::text);
+      end if;
+    end loop;
+  end if;
+  return routes;
+end
+$$;
+revoke all on function internal.bridge_inbound_deliveries(uuid) from public;
+grant execute on function internal.bridge_inbound_deliveries(uuid) to tm8_app;

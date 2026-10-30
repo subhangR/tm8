@@ -122,6 +122,7 @@ import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
+import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
 import { bridgeWatchdogJob } from './scheduler/jobs/bridge-watchdog.js';
 import { LOCAL_KEY_ID, localKeyProvider } from './credentials/key-provider.js';
@@ -922,6 +923,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const bridgeMedia = db && bridgeHub && blobStore
     ? new BridgeMediaFetcher({ db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line) })
     : undefined;
+  // 402 §5: session targets and directed workers, through the same delivery
+  // loop every message uses. Absent with no execution runtime: stored only.
+  const bridgeDeliver = db && delivery
+    ? createBridgeSessionDelivery({ db, delivery: delivery.messageDelivery as unknown as MessageDeliveryPort })
+    : undefined;
   const bridgeRuntimeRoute = db && bridgeHub
     ? createBridgeRuntimeRoute({
         db,
@@ -930,6 +936,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         hub: bridgeHub,
         commands: () => bridgeCommands,
         ...(bridgeMedia ? { media: bridgeMedia } : {}),
+        ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
         log: (line) => console.warn(line),
       })

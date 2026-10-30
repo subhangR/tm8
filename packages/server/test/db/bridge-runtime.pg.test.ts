@@ -398,6 +398,35 @@ describe('inbound (§2.3, D14, D20, ac1, ac3)', () => {
   });
 });
 
+describe('402 (B1b-8): delivery to sessions (§2.2, D30)', () => {
+  it('a session target gets the routed copy, routed once, with the reply route recorded', async () => {
+    // The 'Ops' bridge on the second number targets a work session (created above).
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: '@tm8 restart the job',
+      sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
+    expect(r).toMatchObject({ status: 'stored', routed: true });
+    const [copy] = await owner<{ entity_id: string }>(`select entity_id from public.messages
+      where message_batch_id = (select message_batch_id from public.messages where entity_id = $1) and anchor_id = $2`, [r.messageId, session]);
+    expect(copy).toBeDefined();
+    const routes = await worker<Record<string, unknown>[]>('internal.bridge_inbound_deliveries', [r.messageId]);
+    expect(routes).toEqual([expect.objectContaining({
+      targetMessageId: copy!.entity_id, targetWorkSessionId: session, sourceAnchorId: session, sourceAnchorKind: 'work_session',
+      body: '@tm8 restart the job', senderActorId: linkedMember, addressingKind: 'anchored_message', sessionInputAllowed: true,
+    })]);
+    expect(await worker('internal.bridge_inbound_deliveries', [r.messageId])).toEqual([]);
+    const reply = await scratch.query(`select 1 from public.session_message_reply_routes where target_message_id = $1 and target_work_session_id = $2`,
+      [copy!.entity_id, session]);
+    expect(reply).toHaveLength(1);
+  });
+
+  it('a command and an un-routed message owe no route', async () => {
+    const cmd = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: '/status' }), true);
+    expect(await worker('internal.bridge_inbound_deliveries', [cmd.messageId])).toEqual([]);
+    const chatter = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: 'just chatting' }));
+    expect(chatter.routed).toBe(false);
+    expect(await worker('internal.bridge_inbound_deliveries', [chatter.messageId])).toEqual([]);
+  });
+});
+
 describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
   let answer = '';
   it("a chat turn's answer is queued signed with the teammate, quoting the routed message, and badged sent on settle (ac1)", async () => {
