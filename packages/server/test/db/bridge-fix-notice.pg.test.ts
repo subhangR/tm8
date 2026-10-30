@@ -113,7 +113,7 @@ async function linkPr(task: string, number: number): Promise<string> {
 const prFacts = (pr: string, state: string | null, ci: string | null) =>
   db.tx(human(), q => q.rpc('apply_pull_request_facts', [pr, null, state, null, ci]));
 
-/** The bridges worker's sweep tick (404 §4). */
+/** The bridges worker's sweep tick (410 §4). */
 const sweep = () => db.rpc<{ closeouts: number; retries: number }>(bridgesWorkerClaims(), 'internal.bridge_fix_sweep', []);
 /** Moves a report's close-out window into the past. */
 const ageCloseout = (task: string) => inTx(null, c =>
@@ -276,7 +276,7 @@ describe('F: a bug completed without a PR says what was done (D72)', () => {
     // A bridge's own message on the task is never "what was done".
     await inTx(null, c => post(c, task, 'tm8: noise', infra));
     await db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, `f-done-${randomUUID()}`]));
-    // 404 §3: the notice waits for a close-out; with none in the window the
+    // 410 §3: the notice waits for a close-out; with none in the window the
     // sweep posts the newest message from before the done move.
     expect(await noticesFor(task)).toEqual([]);
     await ageCloseout(task);
@@ -406,7 +406,7 @@ describe('F: review regressions', () => {
   });
 });
 
-describe('F follow-ups (404)', () => {
+describe('F follow-ups (410)', () => {
   /** A fresh report from an Infra chat turn, labelled bug. */
   async function freshReport(title: string, ext: string): Promise<{ task: string; report: string }> {
     const r = await report(infra, title.toLowerCase(), ext);

@@ -1,11 +1,12 @@
 -- =============================================================================
--- 404 — Bridges F follow-ups: a cancelled report is never "Fixed", a refused
+-- 410 — Bridges F follow-ups: a cancelled report is never "Fixed", a refused
 -- notice is retried and bounded, and the no-PR notice reads the close-out.
 -- (Provisional number; the bridges merger assigns the final one.)
+-- (Authored as 404; renumbered to 410 at merge by the bridges merger. F's fix notice is 409, B0b's labels 408.)
 --
 -- Design of record: BRIDGE-ENTITY-DESIGN.md D70 and D72 (amended here). Task
--- 01a18ba0-105f, the three review notes on #1437. Builds on 403; every
--- function replaced below is 403's own, from its reviewed body (7d48aedc9).
+-- 01a18ba0-105f, the three review notes on #1437. Builds on 409; every
+-- function replaced below is 409's own, from its reviewed body (7d48aedc9).
 --
 --   §1  CANCELLED (D70): a report in the cancelled category posts nothing, not
 --       on a merge and not on a later event.
@@ -75,7 +76,7 @@ revoke all on function internal.bridge_fix_retry_limit() from public;
 revoke all on function internal.bridge_fix_retry_age() from public;
 
 -- A message that can say what was done: by a member or a teammate, not blank,
--- not a bridge's copy or notice (403's rule).
+-- not a bridge's copy or notice (409's rule).
 create or replace function internal.bridge_fix_closeout_text(p_task uuid, p_after timestamptz)
 returns text language sql stable set search_path = public, internal, pg_temp as $$
   select left(btrim(m.body), 700)
@@ -91,7 +92,7 @@ $$;
 revoke all on function internal.bridge_fix_closeout_text(uuid, timestamptz) from public;
 
 -- -----------------------------------------------------------------------------
--- 403's check, with §1-§3. Body from 7d48aedc9; changes are marked 404.
+-- 409's check, with §1-§3. Body from 7d48aedc9; changes are marked 410.
 -- -----------------------------------------------------------------------------
 create or replace function internal.bridge_fix_check(p_task uuid)
 returns integer language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -100,7 +101,7 @@ declare
   w public.bridge_fix_closeouts; p public.bridge_fix_pending;
 begin
   select * into e from public.entities where id = p_task and kind = 'task' and deleted_at is null;
-  -- 404 §1: a deleted or cancelled report is never announced, and nothing
+  -- 410 §1: a deleted or cancelled report is never announced, and nothing
   -- waits for it (a wait left behind would be swept forever).
   if e.id is null or e.status_category = 'cancelled' then
     delete from public.bridge_fix_closeouts where task_id = p_task;
@@ -123,7 +124,7 @@ begin
     delete from public.bridge_fix_closeouts where task_id = p_task;
   elsif e.status_category = 'done' then
     v_kind := 'done_without_pr';
-    -- 404 §3: the first close-out after the done move, or, once the window
+    -- 410 §3: the first close-out after the done move, or, once the window
     -- has passed, the newest message from before it.
     insert into public.bridge_fix_closeouts(task_id) values (p_task) on conflict do nothing;
     select * into w from public.bridge_fix_closeouts where task_id = p_task;
@@ -145,7 +146,7 @@ begin
   for r in select * from internal.bridge_task_origins(p_task) loop
     select * into p from public.bridge_fix_pending
      where task_id = p_task and bridge_id = r.bridge_id and provider_message_id = r.provider_message_id;
-    -- 404 §2: a notice that gave up stays given up (its fyi is the record).
+    -- 410 §2: a notice that gave up stays given up (its fyi is the record).
     if p.status = 'given_up' then continue; end if;
     begin
       perform internal.bridge_fix_post(p_task, r.bridge_id, r.message_id, r.provider_message_id, v_kind, body);
