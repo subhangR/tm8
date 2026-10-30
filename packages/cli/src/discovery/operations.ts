@@ -4525,7 +4525,8 @@ export const CATALOG_DIGEST =
   // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured on the merge of main 625165032 (+13 loops.*, #1413) into the S2 lane: 397 rows, meta.get once — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   // Re-measured on TM8 Mobile server batch 1, fourth build (S2 meta.get on main a991cf6ca, which carries Bridges B0a's 12 bridges.* rows): 410 rows — RECOMPUTED from JSON.stringify(OPERATIONS) on the batch head (merge of S2 47d56d78c into 9e6352403, server batch 1 fourth build) by the Merger.
-  'sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba';
+  /* +4 bridges.connections.* (B1b-5, 405): RECOMPUTED over main b1e89eb03, equal to the regenerated manifest digest. MEASURED. */
+  'sha256:c984e1c913408de8219d2318e7def7a0a384b7d6de00279ab499769b4bb0a10e';
 
 export const GRAMMAR_VERSION = '2';
 
