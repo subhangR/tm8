@@ -62,8 +62,10 @@ describe('a running call is visible from its first part (L1 → L3 repro)', () =
     const [line] = lines(view.container);
     expect(line?.dataset.state).toBe('running');
     expect(line?.textContent).toContain('Reading tasks…');
-    // Human words only (R8).
-    expect(view.container.textContent).not.toContain('tm8');
+    // Human words only on the step line (R8). The run's MCP usage line names
+    // the SERVER (task 01a18e32), never the tool or operation until opened.
+    expect(line?.textContent).not.toContain('tm8');
+    expect(view.getByTestId('chat-mcp-toggle').textContent).toContain('Used tm8 MCP · 1 call');
     expect(view.container.textContent).not.toContain('entities.list');
   });
 
@@ -388,7 +390,7 @@ describe('a 150-tool-call turn is scannable', () => {
     // Exactly the top TWO verb groups (D15 §1), then the failure count.
     const sentence = head.cloneNode(true) as HTMLElement;
     sentence.querySelectorAll('[aria-hidden]').forEach((el) => el.remove());
-    expect(sentence.textContent).toBe('150 steps · read 38 files, ran 38 commands · 3 failed');
+    expect(sentence.textContent).toBe('150 steps · read 38 files, ran 38 commands · 3 failed · 37 tm8 MCP calls');
     // Collapsed: no step lines at all — just the header and the errlines, the
     // two identical shell failures folded into one line with a count (R6).
     expect(lines(view.container)).toHaveLength(0);

@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { McpServerCalls } from './mcp-calls';
+import { McpCalls } from './McpCalls';
 import {
   stepsIn,
   type RunSummary,
@@ -22,6 +24,8 @@ const ICON: Record<Extract<StepLine, { kind: 'step' }>['state'], string> = {
  *  summary and the only toggle for every run's list. */
 export interface TurnStepsHead {
   summary: RunSummary;
+  /** `3 tm8 MCP calls` across the whole turn, or empty. */
+  mcp?: string | undefined;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -42,13 +46,17 @@ export interface TurnStepsHead {
  * - Not a live region: the status row under the conversation is the only
  *   thing that announces, so nothing is said twice (D15 §2).
  * - Never a box, never a tool name, never a payload (R8). The words come from
- *   `turn-steps.ts`, the same module the status row reads.
+ *   `turn-steps.ts`, the same module the status row reads. The one exception
+ *   is the run's MCP usage (task 01a18e32): an open run ends in a
+ *   `Used tm8 MCP · N calls` line whose calls open to their raw input and
+ *   output — on request only, never by default.
  */
 export function TurnSteps({
   lines,
   head,
   open,
   live,
+  mcp = [],
 }: {
   lines: readonly StepLine[];
   /** Present on the turn's first run only. */
@@ -57,6 +65,8 @@ export function TurnSteps({
   open: boolean;
   /** The turn is still going. */
   live: boolean;
+  /** This run's MCP calls, by server. Drawn only while the run is open. */
+  mcp?: readonly McpServerCalls[] | undefined;
 }) {
   const [showAll, setShowAll] = useState(false);
   const listId = useId();
@@ -83,7 +93,8 @@ export function TurnSteps({
     const running = lines.filter((line) => line.kind === 'step' && line.state === 'running');
     visible = [...stopped, ...running];
   }
-  if (!head && visible.length === 0) return null;
+  const mcpShown = open && mcp.length > 0;
+  if (!head && visible.length === 0 && !mcpShown) return null;
   const hiddenSteps = stepsIn(lines.slice(0, hidden));
 
   return (
@@ -107,6 +118,7 @@ export function TurnSteps({
           {head.summary.retried > 0 ? (
             <span className="tch-steps__retried">{` · ${head.summary.retried} retried`}</span>
           ) : null}
+          {head.mcp ? <span className="tch-steps__mcp" data-testid="chat-steps-mcp">{` · ${head.mcp}`}</span> : null}
           <span className="tch-steps__caret" aria-hidden>{head.expanded ? '▾' : '▸'}</span>
         </button>
       ) : null}
@@ -148,6 +160,7 @@ export function TurnSteps({
           )}
         </ol>
       ) : null}
+      {mcpShown ? <McpCalls groups={mcp} /> : null}
     </section>
   );
 }
