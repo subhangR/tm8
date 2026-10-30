@@ -95,9 +95,31 @@ describe('bridges.links.begin (D58)', () => {
   it('a new code ends the earlier one: the list holds one pending code', async () => {
     const first = await begin(ownerIdentity);
     const second = await begin(ownerIdentity);
-    const mine = await as(ownerIdentity, q => q.rpc<{ pending: Code[] }>('my_bridge_links', []));
-    expect(mine.pending.map(p => p.code)).toEqual([second.code]);
+    const mine = await as(ownerIdentity, q => q.rpc<{ pending: Array<Record<string, unknown>> }>('my_bridge_links', []));
+    expect(mine.pending).toHaveLength(1);
+    expect(mine.pending[0]!['expiresAt']).toBe(second.expiresAt);
+    expect(mine.pending[0]).not.toHaveProperty('code');
     expect(await redeem('919000000099@s.whatsapp.net', first.code)).toMatchObject({ ok: false, reason: 'expired' });
+  });
+
+  it('stores a salted digest, never the code: no column of any row holds the plain text (D58)', async () => {
+    const minted = [await begin(plainIdentity), await begin(ownerIdentity)];
+    const rows = await scratch.query<{ row: string }>(
+      `select (to_jsonb(c) || jsonb_build_object('salt', encode(c.salt, 'escape'), 'digest', encode(c.digest, 'escape')))::text as row
+         from public.bridge_link_codes c`);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const { code } of minted) {
+      const bare = code.slice(4);
+      for (const { row } of rows) {
+        expect(row).not.toContain(code);
+        expect(row.toUpperCase()).not.toContain(bare);
+      }
+    }
+    const cols = await scratch.query<{ column_name: string }>(
+      `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'bridge_link_codes'`);
+    expect(cols.map(c => c.column_name)).not.toContain('code');
+    const e = await refusal(as(plainIdentity, q => q.query('select digest from public.bridge_link_codes')));
+    expect(e.code).toBe('forbidden');
   });
 
   it('codes are the identity\'s own: the app role reads none of another\'s', async () => {

@@ -360,3 +360,50 @@ export const BridgeHandleClaimInputSchema = z.object({
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
+
+// ---------------------------------------------------------------------------
+// B3 (402, §2.4, §4.6, D5, D58-D60): code and invite links.
+// ---------------------------------------------------------------------------
+
+/** A link code: `TM8-` and six characters, ten minutes, one use (D58). */
+export interface BridgeLinkCode { code: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+/** One of the caller's links: who a provider id IS (§2.4). */
+export interface BridgeIdentityLink {
+  id: string;
+  provider: BridgeProvider;
+  externalId: string;
+  /** '…0001': the last four characters only. */
+  masked: string;
+  method: 'code' | 'invite' | 'admin';
+  /** linked = identity-scoped (code, invite); asserted = an admin's, for one space (D5). */
+  trust: 'linked' | 'asserted';
+  spaceId: string | null;
+  spaceName: string | null;
+  verifiedAt: string;
+  revokedAt: string | null;
+}
+
+/** A live code, as the list shows it: never the code itself, which only begin answers (D58). */
+export interface BridgeLinkPending { id: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+export interface BridgeLinksList { items: BridgeIdentityLink[]; pending: BridgeLinkPending[] }
+
+export interface BridgeLinkBeginInput { provider: BridgeProvider; clientMutationId?: string }
+export interface BridgeLinkRevokeInput { linkId?: string; clientMutationId?: string }
+
+/** A participant pinned to `spaces.invites.create` (D60): redeeming links the joiner. */
+export interface BridgeInviteParticipant { bridgeId: EntityId; externalId: string }
+
+export const BridgeLinkBeginInputSchema = z.object({
+  provider: BridgeProviderSchema, clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeLinkRevokeInputSchema = z.object({
+  linkId: Id.optional(), clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeInviteParticipantSchema = z.object({
+  bridgeId: Id, externalId: z.string().min(1).max(256),
+}).strict();
+
+/** The `/link` code shape, as the parser and the CLI check it (395's column check). */
+export const BRIDGE_LINK_CODE_PATTERN = /^TM8-[A-Z0-9]{4,8}$/i;
