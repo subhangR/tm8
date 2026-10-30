@@ -116,11 +116,17 @@ test.describe('phone shell', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     await page.getByTestId('bridges-table').scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('41-phone-settings-table.png') });
-    // The phone shell opens a bridge in its generic mobile entity page, not the
-    // bridge page (follow-up: a mobile bridge page, §4.1 Mobile). Recorded here.
+    // §4.1 Mobile (01a18c2b-a0fe): the phone page of a bridge is the bridge page.
     await page.goto(`/e2e/admin-pages-harness.html#/s/sp-atelier/e/ent-bridge-infra`);
-    await expect(page.getByText('Infra').first()).toBeVisible({ timeout: 60_000 });
-    await page.screenshot({ path: info.outputPath('42-phone-entity-page.png') });
+    await expect(page.getByTestId('bridge-page')).toBeVisible({ timeout: 60_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: info.outputPath('42-phone-bridge-page.png') });
+    await page.getByRole('tab', { name: 'Routing' }).click();
+    await page.screenshot({ path: info.outputPath('43-phone-bridge-routing.png'), fullPage: true });
+    await page.getByRole('tab', { name: 'Health' }).click();
+    await page.screenshot({ path: info.outputPath('44-phone-bridge-health.png') });
+    await page.getByRole('button', { name: /^Status: live/ }).click();
+    await page.screenshot({ path: info.outputPath('45-phone-status-menu.png') });
   });
 });
 

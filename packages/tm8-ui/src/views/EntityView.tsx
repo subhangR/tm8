@@ -76,6 +76,7 @@ import { navStore } from '../stores/navStore';
 import { EntityFab, MessagesDoorProvider, MobileSheet, useMobileSurface, type MessagesDoor } from '../mobile';
 import { PhoneEntityList, openedFromList } from '../mobile-lists';
 import { MESSAGES_ON_PAGE, PhoneEntityPage, PhoneMessages, hasPhoneScreen } from '../mobile-pages';
+import { phoneBodyFor } from '../bridges/phone';
 import type { SortKey } from '../domain';
 import type { ListPick } from '../routes/types';
 import type { Notice } from '../shell/notices';
@@ -853,6 +854,8 @@ export function EntityView(props: EntityViewProps) {
         messages={messages}
         onOpenEntity={(id, entityKind) => props.onOpenEntityPage?.(id as EntityId, entityKind)}
         onViewAllMessages={viewAllMessages}
+        bodySlot={phoneBodyFor(detail, data.seam.commands.bridges, (id) =>
+          withEntityKind(id, (ref) => data.detailOf(ref)?.kind, (ref) => data.seam.entity(ref), (ref, entityKind) => props.onOpenEntityPage?.(ref, entityKind)))}
       />
     ) : null;
 

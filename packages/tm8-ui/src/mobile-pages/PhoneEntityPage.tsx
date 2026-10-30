@@ -40,6 +40,12 @@ export interface PhoneEntityPageProps {
   onOpenEntity: (id: string, kind: string) => void;
   /** Opens the full discussion; absent ⇒ every loaded message is listed. */
   onViewAllMessages?: () => void;
+  /**
+   * A kind's own page body, drawn under the hero in place of its text (the
+   * bridge page, §4.1 Mobile). The host decides from registry data
+   * (`phoneBodyFor`), so this page still never asks what a kind is.
+   */
+  bodySlot?: ReactNode;
 }
 
 /** The text an entity says about itself, whatever its content shape calls it. */
@@ -104,7 +110,7 @@ export function PhoneEntityPage(props: PhoneEntityPageProps): ReactNode {
           </span>
         </p>
       </header>
-      {body ? <div className="pp-body">{body}</div> : null}
+      {props.bodySlot ? <div className="pp-kindbody" data-testid="phone-kind-body">{props.bodySlot}</div> : body ? <div className="pp-body">{body}</div> : null}
       <section className="pp-sec" aria-label="Linked" data-testid="phone-linked">
         <h2 className="pp-sec__h">Linked</h2>
         {groups.length === 0 ? (

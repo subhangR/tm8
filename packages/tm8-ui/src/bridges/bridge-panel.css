@@ -213,3 +213,13 @@
 
 .brg-set__conn .brg-set__menu { position: relative; }
 .brg-set__provider { white-space: nowrap; }
+
+/* On a phone the header's menus open as a bottom sheet: anchored to the pill
+   they ran off the right edge at 390px (found by the phone-shell check). */
+@media (max-width: 640px) {
+  .brg-head .brg-menu {
+    position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; min-width: 0; z-index: 160;
+    padding: 8px; box-shadow: var(--pn-sh-pop);
+  }
+  .brg-head .brg-menu button { padding: 10px 8px; }
+}
