@@ -2,11 +2,11 @@ import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BridgeConnectionAuthFrame, BridgeConnectionView, BridgeDetailView } from '@tm8/contract';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../src/run.js';
-import { parseQuietHours, renderBridge, renderConnection, setConnectionAuthStreamForTests } from '../src/commands/bridge.js';
+import { parseQuietHours, renderBridge, renderConnection, setConnectionAuthStreamForTests, writeQrFile } from '../src/commands/bridge.js';
 import { nounHelp } from '../src/discovery/help.js';
 
 const SPACE = '33333333-3333-7333-8333-333333333333';
@@ -194,8 +194,8 @@ describe('tm8 bridge connection (B1b-5)', () => {
   });
 
   it('begin writes a QR to a private file and ignores another connection\'s frame', async () => {
-    const path = join(tmpdir(), `tm8-b1b5-test-${process.pid}.png`);
-    rmSync(path, { force: true });
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-b1b5-test-'));
+    const path = join(dir, 'qr.png');
     sent = [
       { type: 'bridge.connection.auth', connectionId: 'someone-else', pairingCode: 'NOPE-0000', expiresAt: '2026-10-30T05:10:00.000Z' },
       { type: 'bridge.connection.auth', connectionId: CONNECTION, qrPng: Buffer.from('png-bytes').toString('base64'), expiresAt: '2026-10-30T05:10:00.000Z' },
@@ -206,7 +206,50 @@ describe('tm8 bridge connection (B1b-5)', () => {
     expect(readFileSync(path, 'utf8')).toBe('png-bytes');
     expect(stderr).not.toMatch(/NOPE-0000/);
     expect(stderr).toMatch(new RegExp(`QR written to ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-    rmSync(path, { force: true });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('begin\'s default QR file is 0600 in a fresh 0700 directory', async () => {
+    sent = [{ type: 'bridge.connection.auth', connectionId: CONNECTION, qrPng: Buffer.from('png').toString('base64'), expiresAt: '2026-10-30T05:10:00.000Z' }];
+    connectionStatus = 'linked';
+    expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp'])).toBe(0);
+    const path = /QR written to (\S+)/.exec(stderr)![1]!;
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(statSync(join(path, '..')).mode & 0o777).toBe(0o700);
+    rmSync(join(path, '..'), { recursive: true, force: true });
+  });
+
+  it('begin refuses an existing --qr-file, a 0644 file or a symlink, before calling the server, and leaves it untouched', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-b1b5-test-'));
+    const planted = join(dir, 'planted.png'), target = join(dir, 'target.txt'), link = join(dir, 'link.png');
+    writeFileSync(planted, 'theirs', { mode: 0o644 });
+    writeFileSync(target, 'target', { mode: 0o644 });
+    symlinkSync(target, link);
+    sent = [{ type: 'bridge.connection.auth', connectionId: CONNECTION, qrPng: Buffer.from('png').toString('base64'), expiresAt: '2026-10-30T05:10:00.000Z' }];
+    for (const path of [planted, link]) {
+      expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp', '--qr-file', path])).toBe(2);
+      expect(stderr).toMatch(/already exists/);
+    }
+    expect(requests).toEqual([]);
+    expect(readFileSync(planted, 'utf8')).toBe('theirs');
+    expect(readFileSync(target, 'utf8')).toBe('target');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writeQrFile never follows a symlink planted after the check, and replaces only its own file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-b1b5-test-'));
+    const target = join(dir, 'target.txt'), path = join(dir, 'qr.png');
+    writeFileSync(target, 'target', { mode: 0o644 });
+    writeQrFile(path, Buffer.from('one'), 0);
+    rmSync(path);
+    symlinkSync(target, path);
+    writeQrFile(path, Buffer.from('two'), 1);
+    expect(readFileSync(target, 'utf8')).toBe('target');
+    expect(readFileSync(path, 'utf8')).toBe('two');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(() => writeQrFile(join(dir, 'target.txt'), Buffer.from('x'), 0)).toThrow(/already exists/);
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('begin says so when no runtime is running, and --no-wait opens no socket', async () => {

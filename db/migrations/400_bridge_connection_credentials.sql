@@ -342,6 +342,17 @@ create trigger space_credentials_bridge_pause
 -- §4. The bridge rides its offered credential (D32).
 -- -----------------------------------------------------------------------------
 
+-- The backfill's update runs with three of 395's bridges triggers off, and only
+-- for this statement block of the migration's own transaction:
+--   * bridges_guard refuses ANY update of a removed bridge ('this bridge was
+--     removed'), and a removed B0a bridge needs its credential_id like a live one;
+--   * bridges_snapshot is off on purpose: filling credential_id is a migration
+--     repair, not a change anyone made, so it records no entity version;
+--   * bridges_touch is off for the same reason: updated_at stays as it was.
+alter table public.bridges disable trigger bridges_guard;
+alter table public.bridges disable trigger bridges_snapshot;
+alter table public.bridges disable trigger bridges_touch;
+
 -- Backfill B0a's rows before the guard below fixes credential_id: one offer
 -- per (connection, space) a bridge already rides,
 -- owned by the connection's owner and created as the first bridge's creator.
@@ -372,7 +383,8 @@ begin
               r.owner_account_id, r.owner_identity, r.external_account_id, now(), r.owner_account_id,
               'public', false, false, r.connection_id);
     end if;
-    -- A tombstone is filled too: none of the bridge's fixed fields change.
+    -- Tombstones are filled too (none of a bridge's fixed fields change). That is
+    -- why the loop runs with the guards off, see below.
     update public.bridges set credential_id = new_id
      where connection_id = r.connection_id and space_id = r.space_id and credential_id is null;
   end loop;
@@ -420,6 +432,10 @@ $$;
 revoke all on function internal.bridge_credential_guard() from public;
 create trigger bridges_credential before insert or update on public.bridges
   for each row execute function internal.bridge_credential_guard();
+
+alter table public.bridges enable trigger bridges_guard;
+alter table public.bridges enable trigger bridges_snapshot;
+alter table public.bridges enable trigger bridges_touch;
 
 alter table public.bridges alter column credential_id set not null;
 

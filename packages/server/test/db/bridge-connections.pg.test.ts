@@ -25,7 +25,9 @@ const ownerAccount = randomUUID(), plainAccount = randomUUID(), strangerAccount 
 const chatA = randomUUID(), chatB = randomUUID(), chatC = randomUUID(), chatOther = randomUUID();
 const connection = randomUUID(), strangerConnection = randomUUID();
 const teammate = randomUUID(), otherTeammate = randomUUID();
-let legacyBridge = '';
+let legacyBridge = '', removedBridge = '';
+let removedBefore = { updatedAt: '', version: 0 };
+const chatRemoved = randomUUID();
 
 type Kind = 'browser' | 'cli' | 'agent';
 const as = <T>(identityId: string, fn: (q: Querier) => Promise<T>, authKind: Kind = 'browser') =>
@@ -78,7 +80,8 @@ beforeAll(async () => {
         values ($1,$2,'Teammate','worker','persona')`, [id, by]);
     }
     for (const [id, space, by, tm] of [[chatA, spaceId, ownerMember, teammate], [chatB, spaceId, ownerMember, teammate],
-      [chatC, spaceId, ownerMember, teammate], [chatOther, otherSpace, ownerOtherMember, otherTeammate]] as const) {
+      [chatC, spaceId, ownerMember, teammate], [chatRemoved, spaceId, ownerMember, teammate],
+      [chatOther, otherSpace, ownerOtherMember, otherTeammate]] as const) {
       await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [id, space, by]);
       await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
           chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
@@ -91,6 +94,14 @@ beforeAll(async () => {
   });
   legacyBridge = (await createBridge(ownerIdentity, spaceId, connection, 'legacy@g.us', chatA)).entity.id;
   expect((await bridgeRow(legacyBridge)).credential_id).toBeNull();
+  // A REMOVED B0a bridge too: 395's guard refuses any update of a tombstone, and 400 must still fill it.
+  const removed = await createBridge(ownerIdentity, spaceId, connection, 'removed@g.us', chatRemoved);
+  removedBridge = removed.entity.id;
+  await as(ownerIdentity, q => q.rpc('remove_bridge', [removedBridge, removed.entity.version, null, randomUUID()]));
+  const [before] = await scratch.query<{ ended_at: Date | null; updated_at: Date; version: number }>(
+    'select b.ended_at, b.updated_at, e.version from public.bridges b join public.entities e on e.id = b.entity_id where b.entity_id = $1', [removedBridge]);
+  expect(before!.ended_at).not.toBeNull();
+  removedBefore = { updatedAt: before!.updated_at.toISOString(), version: Number(before!.version) };
   scratch.apply(files.slice(cut));
 });
 afterAll(async () => { await db?.end(); await scratch?.destroy(); });
@@ -110,6 +121,24 @@ describe('400 over B0a rows (D32)', () => {
     const [col] = await scratch.query<{ is_nullable: string }>(
       `select is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'bridges' and column_name = 'credential_id'`);
     expect(col!.is_nullable).toBe('NO');
+  });
+
+  it('fills a removed B0a bridge as well, as a repair: no new version, updated_at unchanged, guards back on', async () => {
+    const [row] = await scratch.query<{ credential_id: string | null; ended_at: Date | null; updated_at: Date; version: number }>(
+      `select b.credential_id, b.ended_at, b.updated_at, e.version from public.bridges b join public.entities e on e.id = b.entity_id
+        where b.entity_id = $1`, [removedBridge]);
+    expect(row!.ended_at).not.toBeNull();
+    expect(row!.credential_id).toBe((await bridgeRow(legacyBridge)).credential_id);
+    expect({ updatedAt: row!.updated_at.toISOString(), version: Number(row!.version) }).toEqual(removedBefore);
+    const triggers = await scratch.query<{ tgname: string; tgenabled: string }>(
+      `select tgname, tgenabled from pg_trigger where tgrelid = 'public.bridges'::regclass and not tgisinternal order by tgname`);
+    expect(triggers.filter(t => t.tgenabled !== 'O')).toEqual([]);
+    expect(triggers.map(t => t.tgname)).toEqual(expect.arrayContaining(['bridges_guard', 'bridges_snapshot', 'bridges_touch', 'bridges_credential']));
+    // The guard is live again: the tombstone still refuses an update.
+    await expect(scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`update public.bridges set purpose = 'x' where entity_id = $1`, [removedBridge]);
+    })).rejects.toThrow(/removed/);
   });
 });
 

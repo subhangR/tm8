@@ -1,7 +1,7 @@
 // `tm8 bridge` (BRIDGE-ENTITY-DESIGN §3.5, B0a): every verb is one bridges.*
 // operation. Status and health are the server's derived facts; the CLI only
 // renders them. Speaking needs no verb here: `tm8 message reply|send` crosses.
-import { writeFileSync } from 'node:fs';
+import { lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -331,12 +331,41 @@ export function setConnectionAuthStreamForTests(factory: AuthStreamFactory | nul
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+function pathExists(path: string): boolean {
+  try { lstatSync(path); return true; } catch { return false; }
+}
+
+/**
+ * Write a QR so only this user can read it: a sibling created exclusively
+ * ('wx' is O_CREAT|O_EXCL, which also refuses a symlink in its place) at 0600,
+ * then renamed over the target. A rename replaces a symlink, never follows it.
+ * The first write refuses a target that appeared since the check.
+ */
+export function writeQrFile(path: string, bytes: Uint8Array, n: number): void {
+  if (n === 0 && pathExists(path)) throw usage(`${path} already exists; refusing to write the QR there`);
+  const tmp = `${path}.${process.pid}.${n}.tmp`;
+  writeFileSync(tmp, bytes, { flag: 'wx', mode: 0o600 });
+  try {
+    renameSync(tmp, path);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
 async function connectionBegin(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['provider', 'label', 'connection', 'pairing', 'qr-file', 'wait', 'no-wait', 'mutation-id']);
   argumentsCount(cmd, 0);
   const provider = choice(cmd, 'provider', BRIDGE_PROVIDERS);
   if (!provider) throw usage('--provider is required', 'whatsapp is the provider with a runtime today');
   const wait = !cmd.options.bool('no-wait');
+  // A QR is a credential for a minute (§7.3 item 8): never into a file someone else made or points at.
+  const qrFile = cmd.options.value('qr-file');
+  if (qrFile !== undefined && pathExists(qrFile)) {
+    throw usage(`--qr-file ${qrFile} already exists; name a new path (the QR is written only to a file this command creates)`);
+  }
+  let qrPath: string | undefined;
+  let qrWrites = 0;
   const waitSeconds = cmd.options.integer('wait') ?? 180;
   if (waitSeconds < 1 || waitSeconds > 1800) throw usage('--wait takes 1-1800 seconds');
   const pairing = cmd.options.value('pairing');
@@ -374,8 +403,8 @@ async function connectionBegin(cmd: CommandContext): Promise<ExitCode> {
         if (frame.pairingCode) {
           cmd.out.warn(`pairing code: ${frame.pairingCode} (expires ${frame.expiresAt}) — WhatsApp → Linked devices → Link with phone number`);
         } else if (frame.qrPng) {
-          const path = cmd.options.value('qr-file') ?? join(tmpdir(), `tm8-bridge-${id}-qr.png`);
-          writeFileSync(path, Buffer.from(frame.qrPng.replace(/^data:image\/png;base64,/, ''), 'base64'), { mode: 0o600 });
+          const path = qrPath ??= cmd.options.value('qr-file') ?? join(mkdtempSync(join(tmpdir(), 'tm8-bridge-qr-')), 'qr.png');
+          writeQrFile(path, Buffer.from(frame.qrPng.replace(/^data:image\/png;base64,/, ''), 'base64'), qrWrites++);
           cmd.out.warn(`QR written to ${path} (expires ${frame.expiresAt}) — WhatsApp → Linked devices → Link a device`);
         }
       }
