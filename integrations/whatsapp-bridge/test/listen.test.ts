@@ -39,6 +39,8 @@ describe('config: trigger, deliverTo, handle', () => {
       /itself redirected/,
     )
     assert.throws(() => load([SELF], { handle: 'two words' }), /handle must match/)
+    assert.throws(() => load([SELF], { handle: 'tm8.' }), /handle must match/)
+    assert.equal(load([SELF], { handle: 'tm8.uhn' }).handle, 'tm8.uhn')
   })
 })
 
@@ -48,6 +50,13 @@ describe('handle: bridges sharing a chat each answer only their own mention', ()
     assert.deepEqual(parseMentions('@strykr-backend look', 'strykr'), [{ kind: 'tm8', teammate: 'backend' }])
     assert.deepEqual(parseMentions('@tm8 look', 'strykr'), [{ kind: 'handle', handle: 'tm8' }])
     assert.deepEqual(parseMentions('@tm8 look'), [{ kind: 'tm8' }])
+  })
+  test('a dotted handle is one word: @tm8.uhn is not @tm8', () => {
+    assert.deepEqual(parseMentions('@tm8.uhn look', 'tm8.uhn'), [{ kind: 'tm8' }])
+    assert.deepEqual(parseMentions('@tm8.uhn-backend look', 'tm8.uhn'), [{ kind: 'tm8', teammate: 'backend' }])
+    assert.deepEqual(parseMentions('ping @tm8.uhn.', 'tm8.uhn'), [{ kind: 'tm8' }])
+    assert.deepEqual(parseMentions('@tm8.uhn look'), [{ kind: 'handle', handle: 'tm8.uhn' }])
+    assert.deepEqual(parseMentions('thanks @tm8.'), [{ kind: 'tm8' }])
   })
   test('with handle "strykr", @strykr routes in the self chat', async () => {
     const t = await withMain()

@@ -474,6 +474,8 @@ database, config and port, and each routes only its own channels.
 - **One group, one bridge.** A group in two bridges' configs gets every message routed twice.
 - **The self chat can be shared, with different `handle`s.** Each bridge answers only its own mention (`"handle": "strykr"` →
   `@strykr`, `@strykr-<teammate>`); `trigger: "all"` on a shared self chat would make every bridge answer, so don't.
+  A handle may carry one dotted part (`"handle": "tm8.uhn"` → `@tm8.uhn`): the dot is part of the mention, so a bridge with
+  handle `tm8` does not answer `@tm8.uhn`. A trailing dot (`thanks @tm8.`) still ends the sentence, not the handle.
 - **Bridges never answer each other.** Every bridge appends an invisible marker (`BRIDGE_MARK`, three zero-width characters) to
   what it sends. Another bridge sees those messages as the owner's own (same number), and the marker is how it knows to log and
   ignore them, including shadow-mode replies landing in the self chat.
