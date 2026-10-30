@@ -121,6 +121,10 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  */
 import type {
   CreateInviteInput,
+  BridgeIdentityLink,
+  BridgeLinkCode,
+  BridgeLinksList,
+  BridgeProvider,
   InvitePreview,
   InviteRedemption,
   RedeemInviteInput,
@@ -679,6 +683,8 @@ export interface Seam {
    * only — anyone else is refused by the server, and the section says so).
    */
   authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult>;
+  /** Account → Linked identities (`bridges.links.list`, B3): the caller's own links and live codes. */
+  bridgeLinks(): Promise<BridgeLinksList>;
   /** Per-kind chat defaults (`spaces.chatDefaults.get`, entity-chat §3.4): space-wide, any member reads. */
   chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView>;
   /**
@@ -1284,6 +1290,10 @@ export interface Seam {
      * session, the pinned sessions entered from it. Their sockets close.
      */
     revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult>;
+    /** `bridges.links.begin` (B3, D58): mint a one-use /link code; the code is in this answer only. */
+    beginBridgeLink(provider: BridgeProvider): Promise<BridgeLinkCode>;
+    /** `bridges.links.revoke` (B3): unlink one of the caller's provider ids. */
+    revokeBridgeLink(linkId: string): Promise<BridgeIdentityLink>;
     /**
      * The task-axis registry's writes (W2, 2026-08-16) — over catalog ops
      * that existed all along (`spaces.taskAxes.create|update|delete`): new

@@ -4468,6 +4468,8 @@ export interface CreateInviteInput extends CommandContext {
   role?: Exclude<SpaceMemberRole, 'owner'>;
   maxUses?: number;
   expiresAt?: string | null;
+  /** Bridges B3 (402, D60): a one-use invite for this bridge participant; redeeming it links the joiner. */
+  bridgeParticipant?: import('./bridges.js').BridgeInviteParticipant;
 }
 
 /**

@@ -157,6 +157,9 @@ const LIVE_VERBS = [
   // not-wired state and add no control to this sweep.
   /^Sign-ins & devices$/,
   /^Member sign-ins$/,
+  // B3: `bridges.links.list/begin/revoke` are real executors; the fake port
+  // passes no reader, so the body draws the not-wired state.
+  /^Linked identities$/,
   // 187's two space defaults — real `spaces.update` writes, one key each.
   /^Session sharing$/,
   /^(Everyone in the space|Only its owner|Everyone who can watch)$/,

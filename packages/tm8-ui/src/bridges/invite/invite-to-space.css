@@ -1,0 +1,70 @@
+/* ===========================================================================
+   INVITE TO SPACE — the People tab's guest-row action (InviteToSpace.tsx, B3).
+   Every class is prefixed `bri-invite`. Tokens only (src/hex-ban.test.ts).
+   =========================================================================== */
+
+.bri-invite__open,
+.bri-invite__act {
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.bri-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+  padding: 12px 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-paper);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+}
+
+.bri-invite__head {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.bri-invite__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.bri-invite__link {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--pn-mono);
+  font-size: 11.5px;
+  color: var(--pn-ink);
+  user-select: all;
+}
+
+.bri-invite__error {
+  color: var(--pn-block);
+}
+
+.bri-invite__act--quiet {
+  border-color: transparent;
+}
+
+.bri-invite__act--go {
+  color: var(--pn-brand-2);
+  font-weight: 600;
+  background: var(--pn-brand-soft);
+}
+
+.bri-invite__act:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
