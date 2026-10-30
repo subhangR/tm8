@@ -182,6 +182,17 @@ describe('the bridge_runtime session reaches its doors and nothing else (ac2, ac
     expect(opened).toBe(false);
   });
 
+  it("the owner's own session list keeps its human sessions and never shows the runtime's (398 replaces list_auth_sessions)", async () => {
+    const listed = await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, (q) =>
+      q.rpc<{ kind: string }[]>('list_auth_sessions', [null]));
+    const kinds = listed.map((s) => s.kind);
+    expect(kinds).toContain('browser');
+    expect(kinds).not.toContain('bridge_runtime');
+    const [live] = await database.query<{ n: number }>(`select count(*)::int as n from public.auth_sessions
+      where kind = 'bridge_runtime' and revoked_at is null`);
+    expect(live!.n).toBe(1);
+  });
+
   it('the doors refuse a human session', async () => {
     const r = await call('/v2/bridge-runtime/inbound', browserToken, { connectionId: connection });
     expect(r.status).toBe(403);

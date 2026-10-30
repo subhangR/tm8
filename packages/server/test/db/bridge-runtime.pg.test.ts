@@ -139,6 +139,23 @@ describe('the bridge_runtime session (§2.5, ac8)', () => {
   });
 });
 
+describe('shared functions keep their existing arms (398 replaces validate_message)', () => {
+  const insertMessage = (author: string, anchor = infra) => scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    const id = randomUUID();
+    await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [id, spaceId, ownerMember]);
+    await c.query(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$3,'x')`, [id, anchor, author]);
+    return id;
+  });
+  it('members and teammates still author; a bridge of the space now may; any other kind is still refused', async () => {
+    expect(await insertMessage(ownerMember)).toBeTruthy();
+    expect(await insertMessage(teammate)).toBeTruthy();
+    expect(await insertMessage(infra)).toBeTruthy();
+    await expect(insertMessage(chatA)).rejects.toMatchObject({ code: '23514' });
+    await expect(insertMessage(session)).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
 describe('allowlists (§2.3, D28, D35, ac4, ac7)', () => {
   let lastVersion = 0;
   it('hello answers each connection with its live, unpaused conversations and a fresh version', async () => {
