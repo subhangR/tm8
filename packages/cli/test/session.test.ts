@@ -518,7 +518,7 @@ describe('session spawn', () => {
   });
 });
 
-// ── session spawn: following an admitted launch (379) ──────────────────────
+// ── session spawn: following an admitted launch (392) ──────────────────────
 
 describe('session spawn waits for the session it was answered at admission for', () => {
   const ok = (data: unknown, status = 200) => ({ status, body: { data, requestId: 'req_t' } });

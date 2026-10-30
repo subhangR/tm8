@@ -195,7 +195,7 @@ export interface CredentialContainmentResult {
 export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
 
 /**
- * The ended reason a failed launch writes (379). A launch answered at
+ * The ended reason a failed launch writes (392). A launch answered at
  * admission has no HTTP error to show its caller, so the row says why.
  */
 export const LAUNCH_FAILED_PREFIX = 'Failed to launch: ';
@@ -1765,7 +1765,7 @@ export class SpawnService {
    * and a worktree launch holds a reservation whose path the row records.
    *
    * The boot then runs on in this process — lane → briefing → agent → live —
-   * and records each phase on the row as it is reached (379), so a caller that
+   * and records each phase on the row as it is reached (392), so a caller that
    * answered at admission follows it through the ordinary `entity.upsert`.
    * `boot` NEVER REJECTS: a boot that fails has already recorded the failure on
    * the row (status `failed`, boot phase `failed`, an ended reason) and cleaned
@@ -2477,7 +2477,7 @@ export class SpawnService {
 
       // --- live ---------------------------------------------------------------
       // `running` now means both process survival and first-turn submission;
-      // the same write moves the boot phase to `live` (379).
+      // the same write moves the boot phase to `live` (392).
       await timer.time('transitionRunning', () => this.graph.transition(auth, { sessionId, status: 'running' }));
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
@@ -2637,7 +2637,7 @@ export class SpawnService {
   }
 
   /**
-   * Record that the boot reached `phase` (379), on the row, where the launching
+   * Record that the boot reached `phase` (392), on the row, where the launching
    * page and `tm8 session spawn` read it through the ordinary `entity.upsert`.
    *
    * NEVER REJECTS, so a report can be in flight while the next phase's work
@@ -3689,7 +3689,7 @@ export class SpawnService {
          does not clear the PREVIOUS run's ended kind and reason, so without
          its own reason the row would repeat the old crash. The UI reads this
          prefix (`RESUME_FAILED_PREFIX` in tm8-ui session-outcome.ts). A launch
-         that fails says so too (379): it answered at admission, so the row is
+         that fails says so too (392): it answered at admission, so the row is
          the only place its caller can learn why. */
       endedReason: `${phase === 'resume' ? RESUME_FAILED_PREFIX : LAUNCH_FAILED_PREFIX}${detail}`,
     };
@@ -3840,7 +3840,7 @@ export class SpawnService {
 
   /**
    * Wait, bounded, for the PTY of a session whose boot this process is running
-   * (379: `execution.spawn` answers before it exists). True once the terminal
+   * (392: `execution.spawn` answers before it exists). True once the terminal
    * is live; false at once for a session that is not booting here, and false
    * when its boot ends without one or the bound passes.
    */

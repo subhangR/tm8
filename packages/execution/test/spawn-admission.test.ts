@@ -1,4 +1,4 @@
-// Admit fast (379): `SpawnService.admit` answers once the launch is ADMITTED —
+// Admit fast (392): `SpawnService.admit` answers once the launch is ADMITTED —
 // its row written, its worktree reserved — and the boot runs on behind it,
 // recording lane → briefing → agent on the row before `running` makes it live.
 //

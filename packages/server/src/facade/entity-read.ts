@@ -599,7 +599,7 @@ export interface EntityRow {
   ws_receipt_message_id?: string | null;
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
-  /** Boot facts (379); optional for the same fixture-compatibility reason. */
+  /** Boot facts (392); optional for the same fixture-compatibility reason. */
   ws_boot_phase?: string | null;
   ws_boot_phase_at?: Date | string | null;
   ws_offered_task_ids?: string[] | null;
@@ -841,15 +841,15 @@ const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
   'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
 ]);
 
-/** `work_sessions.boot_phase`'s CHECK verbatim — 379. */
+/** `work_sessions.boot_phase`'s CHECK verbatim — 392. */
 const BOOT_PHASES: ReadonlySet<string> = new Set<WorkSessionBootPhase>([
   'admitted', 'lane', 'briefing', 'agent', 'live', 'failed',
 ]);
 
 /**
- * The boot half of a session's state (379), from a projected row: the last
+ * The boot half of a session's state (392), from a projected row: the last
  * phase its launch reached and when. Projected only when the row records a
- * phase the contract knows — a row from before 379 says nothing, and a value
+ * phase the contract knows — a row from before 392 says nothing, and a value
  * outside the CHECK (which cannot be written) would fail the `.strict()` state
  * rather than render, so it is dropped instead. Shared by every read model that
  * serves the session state, so an event-borne summary and a read summary of the
@@ -2046,7 +2046,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           : { sharingSetAt: isoOrNull(row.ws_sharing_set_at) }),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
-        // 379: how far the launch's boot has got.
+        // 392: how far the launch's boot has got.
         ...bootPhaseFacts(row),
         // OMITTED, never defaulted, when the column has no value: the DTO
         // makes absence mean `agent`, so a node whose rows predate 082 keeps
