@@ -145,7 +145,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     label: 'Agents & People',
     // A teammate and the two libraries it draws on, then the humans and the
     // channels they talk in.
-    kinds: ['team_member', 'skill', 'memory', 'member', 'channel'],
+    // channels they talk in — and the bridges that bring another network's
+    // conversation in beside them (BRIDGE-ENTITY-DESIGN §4.1: Talk).
+    kinds: ['team_member', 'skill', 'memory', 'member', 'channel', 'bridge'],
   },
   {
     id: 'code',

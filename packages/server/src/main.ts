@@ -681,10 +681,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
     // stores its request on the task and answers `undelivered`.
-    execution?.register(
-      registry,
-      delivery ? { dispatchDelivery: delivery.messageDelivery } : {},
-    );
+    execution?.register(registry, {
+      ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
+      // The capacity read's `ghosts` uses the reaper's own stale window (403).
+      ghostStaleAfterMs: lostAfterMsFromEnv(),
+    });
   }
 
   // NOT a stand-in for the durable sequence — that misreading is why this
@@ -1303,6 +1304,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const ghosts = await execution.reconcileGhosts();
     if (ghosts.retired > 0) {
       console.log(`  reconciled: retired ${ghosts.retired} ghost session(s) left by a previous run`);
+    }
+    if (ghosts.notRecorded > 0) {
+      console.log(`  reconciled: ${ghosts.notRecorded} ghost session(s) had already ended before the write`);
     }
     // Printed for the same reason the worktree errors below are, and it is the
     // omission of exactly this that hid a node reconciling nothing on every boot:

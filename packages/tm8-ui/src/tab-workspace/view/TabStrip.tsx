@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -25,6 +26,9 @@ import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
 import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
+import { launchTabValues } from '../runtime/launchTabs';
+import { subscribeDrafts } from '../runtime/draftStore';
+import { useLaunchRecord } from '../../launch-handoff';
 import { pinFileTab, useFileTabFacts } from '../adapters/projectFile';
 import { FileTypeBadge } from '../../project-file/FileTypeBadge';
 import { baseName } from '../../project-file/paths';
@@ -84,8 +88,22 @@ export function useTabFacts(tab: TabRecord): {
   /** The hover text when it says more than `title — noun` (a file's project and path). */
   tooltip?: string;
 } {
-  const { gate } = useWorkspace();
+  const { gate, runtime } = useWorkspace();
   const file = useFileTabFacts(tab);
+  /* A LAUNCH TAB (task 01a182d2) reads as its launch — the session's title,
+     busy while it starts, an error once it fails — not as "New session". */
+  /* Subscribed, like the launch tab's body: a failure stored by another
+     window flips this label too. */
+  const draftId = tab.type === 'draft' && tab.holds === 'launch' ? tab.draftId : null;
+  const draftVersion = useSyncExternalStore(
+    subscribeDrafts,
+    () => (draftId ? `${String(runtime.drafts.revisionOf(draftId))}:${String(runtime.drafts.remoteVersionOf(draftId))}` : ''),
+  );
+  const launch = useMemo(
+    () => (draftId ? launchTabValues(runtime.drafts.get(draftId)) : null),
+    [runtime, draftId, draftVersion],
+  );
+  const launchState = useLaunchRecord(launch?.launchId)?.state ?? null;
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
   const { title: savedTitle, deleted, known } = useStore(
@@ -137,7 +155,14 @@ export function useTabFacts(tab: TabRecord): {
   let state: TabState = null;
   let shownTitle = tabTitle(tab, title);
   if (tab.type === 'draft') {
-    state = tab.dirty ? 'unsaved' : null;
+    if (launch) {
+      shownTitle = launch.launch.title || shownTitle;
+      /* With no record in this window (a reload, another window) the stored
+         values are the truth: failed, or not known to be running. */
+      state = launchState
+        ? (launchState === 'failed' ? 'error' : 'running')
+        : (launch.failure ? 'error' : null);
+    } else state = tab.dirty ? 'unsaved' : null;
   } else if (entityId) {
     const gone = deleted ? 'deleted' : known ? undefined : probe;
     if (gone) {

@@ -25,6 +25,9 @@ import type {
   CredentialBindingLaunch,
   TransitionInput,
   WorkSessionResumeInfo,
+  NodeEndedKind,
+  NodeSessionEnding,
+  SessionUsageFacts,
   WorkSessionStatus,
   WorktreeAllocationRow,
   WorktreeAllocationState,
@@ -359,12 +362,27 @@ export class FakeGraph implements GraphPort {
     return { entityId: input.sessionId, patches: [input.sessionId] };
   }
 
-  /** Rows startup reconciliation should find. Set by the test. */
-  nodeActiveSessions: Array<{ sessionId: string; status: WorkSessionStatus }> = [];
-  /** Node ids `listNodeActiveSessions` was asked about. */
+  /** Rows reconciliation and the reaper should find. Set by the test. */
+  nodeLiveSessions: Array<{ sessionId: string; status: WorkSessionStatus }> = [];
+  /** Node ids `listNodeLiveSessions` was asked about. */
   readonly nodeSessionQueries: string[] = [];
   /** When set, the listing REJECTS — the unreadable-graph case at boot. */
-  listNodeActiveSessionsError: Error | null = null;
+  listNodeLiveSessionsError: Error | null = null;
+  /** Every `recordNodeSessionEnding` write, as asked. */
+  readonly nodeEndings: Array<{
+    nodeId: string;
+    sessionId: string;
+    status: 'exited' | 'failed';
+    endedKind: NodeEndedKind;
+    endedReason: string;
+    error: string;
+  }> = [];
+  /** What the node ending returns for the usage read; null = no transcript facts. */
+  nodeUsageFacts: SessionUsageFacts | null = null;
+  /** Every `recordNodeSessionUsage` write. */
+  readonly nodeUsageWrites: Array<{ nodeId: string; sessionId: string; source: WorkSessionUsageSource }> = [];
+  /** Session ids whose node write should blow up. */
+  failNodeWriteFor = new Set<string>();
   /** Session ids whose `terminate` should blow up, to prove one bad row cannot
    *  stop the sweep. */
   failTerminateFor = new Set<string>();
@@ -374,14 +392,62 @@ export class FakeGraph implements GraphPort {
    *  still resolve so a failing write cannot hang the process exit. */
   failTransitionFor = new Set<string>();
 
-  async listNodeActiveSessions(
+  async listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
     this.authSeen.push(auth);
     this.nodeSessionQueries.push(nodeId);
-    if (this.listNodeActiveSessionsError) throw this.listNodeActiveSessionsError;
-    return this.nodeActiveSessions;
+    if (this.listNodeLiveSessionsError) throw this.listNodeLiveSessionsError;
+    return this.nodeLiveSessions;
+  }
+
+  /** Rows the completed auto-close should find. Set by the test. */
+  completedToClose: Array<{ sessionId: string; minutes: number }> = [];
+
+  async listCompletedSessionsToClose(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>> {
+    this.authSeen.push(auth);
+    this.nodeSessionQueries.push(nodeId);
+    return this.completedToClose;
+  }
+
+  /** Recorded as a transition too, so `statusesFor` reads both doors. */
+  async recordNodeSessionEnding(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      status: 'exited' | 'failed';
+      endedKind: NodeEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<NodeSessionEnding> {
+    this.authSeen.push(auth);
+    if (this.failNodeWriteFor.has(input.sessionId)) {
+      throw new Error(`injected node write failure for ${input.sessionId}`);
+    }
+    this.nodeEndings.push(input);
+    this.transitions.push({
+      sessionId: input.sessionId,
+      status: input.status,
+      error: input.error,
+      endedKind: input.endedKind,
+      endedReason: input.endedReason,
+    });
+    return { recorded: true, usageFacts: this.nodeUsageFacts };
+  }
+
+  async recordNodeSessionUsage(
+    auth: GraphAuth,
+    input: { nodeId: string; sessionId: string; usage: WorkSessionUsage; source: WorkSessionUsageSource },
+  ): Promise<boolean> {
+    this.authSeen.push(auth);
+    this.nodeUsageWrites.push({ nodeId: input.nodeId, sessionId: input.sessionId, source: input.source });
+    return true;
   }
 
   statusesFor(sessionId: string): string[] {

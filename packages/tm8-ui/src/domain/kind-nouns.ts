@@ -121,6 +121,8 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   },
   credential: { nouns: ['credential'], commands: ['space credential-readiness get', 'session spawn'] },
   space_link: { nouns: ['space-link'], commands: [] },
+  // 395: the CLI noun `bridge` owns create/update/pause/remove; agents talk on it with message verbs.
+  bridge: { nouns: ['bridge'], commands: ['message send', 'message reply', 'message list', 'form create'] },
   // 284: a space style is written only by `tm8 style push`; the noun owns it.
   style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
