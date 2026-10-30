@@ -118,6 +118,7 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
+import { createBridgeCommands } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
@@ -542,6 +543,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   let loopExecutor: LoopExecutorPort | undefined;
   // Tools v2 PR-C: also handed to the loop executor below, so a loop can run a tool.
   let tools: ToolRuntime | undefined;
+  /**
+   * Bridges B1b-4: the command executor (v2 §4), built once where the spawn
+   * service exists. The SAME instance fills the `bridgeCommands` slot below,
+   * which the runtime's inbound route and the watchdog's sweep read; without
+   * it nothing a group sends is a command.
+   */
+  const bridgeCommandExecutor = db && execution
+    ? createBridgeCommands({
+        db,
+        spawnService: execution.spawnService,
+        logger: { warn: (message) => console.warn(`[bridges] ${message}`) },
+      })
+    : undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -864,7 +878,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * Idle until a runtime connects. The command executor (B1b-4) is assigned to
    * `bridgeCommands`; until then nothing a group sends is a command.
    */
-  let bridgeCommands: BridgeCommandHook | undefined;
+  let bridgeCommands: BridgeCommandHook | undefined = bridgeCommandExecutor;
   const bridgeHub = db && config.databaseUrl
     ? new BridgeRuntimeHub({
         db,
