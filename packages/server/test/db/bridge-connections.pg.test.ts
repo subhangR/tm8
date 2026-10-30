@@ -171,6 +171,24 @@ describe('the spawn reader refuses it (§2.5, ADR 0297)', () => {
     }
   });
 
+  it('400 keeps every earlier server-only provider (318: typesafe, mcp, tool) refused by the spawn reader', async () => {
+    const [def] = await scratch.query<{ all: boolean; vendor: boolean }>(
+      `select bool_and(internal.is_server_only_credential_provider(p)) as all,
+              bool_or(internal.is_server_only_credential_provider(v)) as vendor
+         from unnest(array['typesafe','mcp','tool','whatsapp']) p, unnest(array['anthropic','openai','github']) v`);
+    expect(def).toEqual({ all: true, vendor: false });
+    for (const provider of ['typesafe', 'mcp', 'tool']) {
+      const e = await refusal(as(ownerIdentity, q => q.rpc('read_space_credential_for_spawn', [spaceId, provider, null])));
+      expect([provider, e.code, reasonOf(e)]).toEqual([provider, 'forbidden', 'server_only']);
+    }
+    const [checks] = await scratch.query<{ provider: string; shape: string }>(
+      `select pg_get_constraintdef(p.oid) as provider, pg_get_constraintdef(s.oid) as shape
+         from pg_constraint p, pg_constraint s
+        where p.conname = 'space_credentials_provider_check' and s.conname = 'space_credentials_provider_shape_check'`);
+    for (const p of ['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool', 'whatsapp']) expect(checks!.provider).toContain(`'${p}'`);
+    for (const pair of [`'tool'`, `'mcp'`, `'typesafe'`, `'connection'`]) expect(checks!.shape).toContain(pair);
+  });
+
   it('a session can never record one, and there is no service key to read', async () => {
     const [def] = await scratch.query<{ server_only: boolean }>(
       `select internal.is_server_only_credential_provider('whatsapp') as server_only`);
