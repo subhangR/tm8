@@ -7,6 +7,7 @@ import {
   encodeCursor,
   isCollabError,
   type AddMessageAttachmentsInput,
+  type BridgeDelivery,
   type DeleteMessageInput,
   type HandoffDeliveryStatus,
   type HandoffRecordStatus,
@@ -622,6 +623,13 @@ export class W2MessagesHandoffsService {
 
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
 
+    // 398 (Bridges §2.7): a bridged post's provider outcome is decided at
+    // commit (the outbound rule is a deferred trigger), so it is read back
+    // here, after it. A refusal never fails the post; it is told to the sender
+    // (`rate_limited` with its retryAfterMs), never silently queued.
+    const bridgeDelivery = await this.deps.db.rpc<BridgeDelivery[]>(
+      claims, 'internal.bridge_message_delivery', [stored.result.messageIds]);
+
     return {
       messageBatchId: stored.result.messageBatchId,
       messages: stored.messages,
@@ -635,6 +643,7 @@ export class W2MessagesHandoffsService {
       // target, because one post can name several sessions and they can
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
+      ...(Array.isArray(bridgeDelivery) && bridgeDelivery.length > 0 ? { bridgeDelivery } : {}),
       // Absent unless the sender holds an anchored task still `working` (P0g).
       ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
     };

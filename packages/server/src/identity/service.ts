@@ -165,6 +165,8 @@ export const DEFAULT_SESSION_TTL_MS: Record<AuthSessionKind, number> = {
   // A member's stored session for a space link's target (251, K10): pinned to
   // the target, revocable on its Sessions page, relogin in place.
   link: 90 * DAY,
+  // 398: the connector runtime's session, minted by the node per sidecar start.
+  bridge_runtime: 7 * DAY,
 };
 
 export const DEFAULT_OWNER_USERNAME = 'owner';
