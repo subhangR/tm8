@@ -38,6 +38,8 @@ import { accessLabel, limitedAccessCount, matchesFilter, matchesSearch, rowStatu
 import { useMcpCatalog } from './context';
 import { takeConnectedToast } from './oauth-callback';
 import { McpUiError } from './errors';
+import { connectorAdmin } from './ConnectorEntityBlock';
+import { useConnectorRun } from './useConnectorRun';
 import type { McpImportRow } from './adapter';
 import type { McpCatalog, McpPort, McpServer } from './port';
 import './mcp.css';
@@ -74,13 +76,14 @@ function StatusCell({ server, admin, busy, onConnect, onApprove, onTest }: {
   // S10: a partial grant stays `ready` — the connection works for what it
   // covers — so the gap is a badge beside the tick, not a different status.
   const limited = limitedAccessCount(row);
-  return <span className={`mcp-status mcp-status--${spec.tone}`}>
-    <span aria-hidden="true">{spec.icon}</span>
+  return <span className="mcp-status">
+    <span className={`mcp-state mcp-state--${spec.tone}`} title={label}>
+      <span aria-hidden="true">{spec.icon}</span>
+      <span className="mcp-status__text">{label}</span>
+    </span>
     {/* `ready` shows the provider's own account name where there is one — that
         is the whole of §10.0's "account label on hover", made visible. */}
-    <span className="mcp-status__text" title={row.account?.accountLabel ?? row.account?.label ?? label}>
-      {row.status === 'ready' ? row.account?.accountLabel ?? label : label}
-    </span>
+    {row.status === 'ready' && row.account && <span className="mcp-note" title={row.account.accountLabel ?? row.account.label}>{row.account.accountLabel ?? row.account.label}</span>}
     {limited > 0 && <span className="mcp-badge mcp-badge--warn" title={`${limited} tool${limited === 1 ? '' : 's'} need more access. Open the connector to reconnect.`}>Limited access</span>}
     {act === 'connect' && <button type="button" disabled={busy} onClick={onConnect}>Connect</button>}
     {act === 'reconnect' && <button type="button" disabled={busy} onClick={onConnect}>Reconnect</button>}
@@ -168,7 +171,6 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
   }, [port, tab, busy]);
 
   const servers = catalog?.servers ?? [];
-  const pending = useMemo(() => servers.filter(server => !server.approved), [servers]);
   const visible = useMemo(() => servers
     .filter(server => matchesSearch(server, query))
     .filter(server => matchesFilter(server, rowStatusOf(server).status, filter)),
@@ -217,16 +219,15 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
 
     {error && <p role="alert" className="mcp-error">Couldn&rsquo;t load connectors. <button type="button" onClick={refresh}>Retry</button></p>}
 
-    {sheet?.kind === 'custom' && <section className="mcp-card">
-      <h3>{admin ? 'Custom connector' : 'Request a connector'}</h3>
-      <ConnectorForm mode={admin ? 'manage' : 'request'} busy={busy} onSave={(input, note) => run(async () => {
-        // An administrator registering a connector IS the approval: without it
-        // the definition defaults to unapproved and the admin is asked to
-        // approve their own connector. A member's copy still goes to request.
+    {sheet?.kind === 'custom' && <section className="mcp-card mcp-sheet">
+      <h3>{admin ? 'Add a custom connector' : 'Request a connector'}</h3>
+      <ConnectorForm mode={admin ? 'manage' : 'request'} busy={busy} onCancel={() => setSheet(null)} onSave={(input, note) => run(async () => {
+        // Since 405 any member registers, and the connector is live at once.
+        // `approved: true` stays explicit for a node that predates it. Only a
+        // viewer the server does not let register still goes to request.
         if (admin) await port.register({ ...input, approved: true }); else await port.request({ definition: input }, note);
         setSheet(null);
-      }, admin ? 'Connector registered.' : 'Request sent to the administrators.')} />
-      <button type="button" onClick={() => setSheet(null)}>Cancel</button>
+      }, admin ? `${input.title} added. Connect an account to start using it.` : 'Request sent to the administrators.')} />
     </section>}
 
     {sheet?.kind === 'import' && <section className="mcp-card">
@@ -249,24 +250,13 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
     </>}
 
     {(tab === 'yours' || tab === 'admin') && <>
-      {tab === 'admin' && pending.length > 0 && <section className="mcp-banner mcp-banner--wait">
-        <p>{pending.length} connector{pending.length === 1 ? '' : 's'} awaiting approval.</p>
-        <ul className="mcp-requests">{pending.map(server => <li key={server.id}>
-          <strong>{server.title}</strong> <span className="mcp-note">{server.url ?? server.command}</span>
-          <div className="mcp-actions">
-            <button type="button" disabled={busy} onClick={() => void approve(server)}>Approve</button>
-            <button type="button" disabled={busy} onClick={() => void run(() => port.remove(server), `${server.title} rejected and removed.`)}
-              title={`Reject and remove ${server.title}? The requester isn't notified automatically.`}>Reject</button>
-          </div>
-        </li>)}</ul>
-      </section>}
 
       <table className="mcp-table">
         <thead><tr>
           <th scope="col">Connector</th><th scope="col">Type</th>
           {tab === 'yours'
             ? <><th scope="col">Access</th><th scope="col">Status</th></>
-            : <><th scope="col">Approved</th><th scope="col">Default on</th><th scope="col">Shared connection</th><th scope="col">External clients</th><th scope="col">Used by</th></>}
+            : <><th scope="col">Default on</th><th scope="col">Shared connection</th><th scope="col">External clients</th><th scope="col">Used by</th></>}
         </tr></thead>
         <tbody>
           {loading && !catalog && <SkeletonRows />}
@@ -293,16 +283,9 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
                     if (!result.ok) throw new McpUiError('This connector still did not answer. Open it to see the details.');
                   }, 'Connection tested.')} /></td>
               </> : <>
-                {/* §10.3's inline toggles. `approved` and `allowExternalClients`
-                    both change what the connector can reach, so each goes
-                    through the drawer's confirm path for the destructive half;
-                    approval itself only ever opens a connector up, and the
-                    §10.3 confirm it needs is the one on the fields that bump
-                    the fingerprint (auth, gates), which live in the drawer. */}
-                <td><label><span className="mcp-sr">Approved: {server.title}</span>
-                  <input type="checkbox" checked={server.approved} disabled={busy || !server.canApprove}
-                    onChange={e => void run(() => port.patch(server, { approved: e.target.checked }), e.target.checked ? 'Connector approved.' : 'Approval withdrawn.')} />
-                </label></td>
+                {/* §10.3's inline toggles. Approval left this list with 405:
+                    every connector a member adds is live, so the column only
+                    ever read "yes". */}
                 <td><label><span className="mcp-sr">On by default for everyone in this Space: {server.title}</span>
                   <input type="checkbox" checked={server.source?.defaultOn === true} disabled={busy || !server.canManage}
                     onChange={e => void run(() => port.patch(server, { defaultOn: e.target.checked }), 'Space default updated.')} />
@@ -361,24 +344,13 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
  */
 export function ConnectorsSection() {
   const { catalog, port, error, loading, refresh } = useMcpCatalog();
-  const [busy, setBusy] = useState(false);
   // §10.2's popup-blocked fallback finishes in a FULL PAGE NAVIGATION, so the
   // "connected as …" line cannot be handed over in React state. The callback
   // page parks the one authored sentence and this reads it once, on the way in.
-  const [message, setMessage] = useState<string | null>(() => takeConnectedToast());
-  const [failure, setFailure] = useState<string | null>(null);
+  const [parked] = useState(() => takeConnectedToast());
+  const { busy, run, message, failure, dismiss } = useConnectorRun(refresh, parked);
   const [tab, setTab] = useState<Tab>('yours');
   const [sheet, setSheet] = useState<Sheet>(null);
-
-  async function run(action: () => Promise<unknown>, success: string) {
-    if (busy) return;
-    setBusy(true); setFailure(null); setMessage(null);
-    try { await action(); setMessage(success); }
-    // Only AUTHORED copy crosses into the view: an upstream message can carry
-    // provider detail, and `McpUiError` is the marker for text this module wrote.
-    catch (error) { setFailure(error instanceof McpUiError ? error.message : 'The request could not be completed. Check your permissions and connection, then try again.'); }
-    finally { refresh(); setBusy(false); }
-  }
 
   if (!port) {
     return <SectionFrame title="Connectors" bodyTestId="connectors-body">
@@ -388,7 +360,7 @@ export function ConnectorsSection() {
   // S19: the list-level admin flag (`allowed.register` is `is_space_admin`),
   // widened by any single connector this viewer may approve or manage. Hiding
   // the tab is presentation; the server stays the boundary.
-  const admin = (catalog?.canRegister ?? false) || (catalog?.servers.some(server => server.canApprove || server.canManage) ?? false);
+  const admin = connectorAdmin(catalog);
   return <SectionFrame title="Connectors" bodyTestId="connectors-body" measure={false}
     action={<details className="mcp-add"><summary className="set-chip">+ Add</summary>
       <div>
@@ -399,8 +371,8 @@ export function ConnectorsSection() {
     </details>}>
     <section className="mcp-settings" aria-label="Connector management" aria-busy={busy}>
       <p>Connect tools so your chats and sessions can use them.</p>
-      {failure && <p role="alert" className="mcp-error">{failure}</p>}
-      {message && <p role="status">{message}</p>}
+      {failure && <p role="alert" className="mcp-flash mcp-flash--error">{failure} <button type="button" className="mcp-link" onClick={dismiss}>Dismiss</button></p>}
+      {message && <p role="status" className="mcp-flash">{message}</p>}
       <ConnectorsTable catalog={catalog} port={port} admin={admin} busy={busy} run={run} refresh={refresh}
         loading={loading} tab={tab} setTab={setTab} sheet={sheet} setSheet={setSheet} {...(error ? { error } : {})} />
     </section>

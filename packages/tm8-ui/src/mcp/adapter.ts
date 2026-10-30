@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
+import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpAuditListResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpAddOutcome, McpDefinition, McpPort, McpServer } from './port';
@@ -398,6 +398,10 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     /** §10.6. A pass-through: the server owns §6 and the view only renders it. */
     async sessionProvenance(sessionId) {
       return http.call<McpSessionProvenance>('mcp.sessions.provenance', { params: { sessionId } });
+    },
+    /** §5.6. The newest calls to one connector; the server scopes the rows to what this caller may read (`scope`). */
+    async audit(serverId, limit = 20) {
+      return http.call<McpAuditListResult>('mcp.audit.list', { params: { spaceId }, query: { serverId, limit } });
     },
     async members() {
       const members: { id: string; label: string }[] = [];
