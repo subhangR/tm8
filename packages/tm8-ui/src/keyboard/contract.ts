@@ -349,6 +349,7 @@ export const NEW_KINDS = [
   { kind: 'team_member', key: 'm', label: 'New teammate' },
   /* `u` as in utility: t is the task's, and `l` is left for the loop kind. */
   { kind: 'tool', key: 'u', label: 'New tool' },
+  { kind: 'loop', key: 'l', label: 'New loop' },
 ] as const;
 
 export type NewKind = (typeof NEW_KINDS)[number]['kind'];

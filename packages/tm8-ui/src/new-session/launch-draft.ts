@@ -1,6 +1,7 @@
 import type { SpawnSelectionGroup } from '@tm8/contract';
 
 import type { LaunchContextRow, LaunchSelectionEdits } from '../domain/launch-selection';
+import { browserStorage } from '../data/browser-store';
 
 /**
  * THE LAUNCH CARD'S DRAFT, per subject (owner's answer, form 01a0df2c): closing
@@ -19,16 +20,8 @@ export interface LaunchDraft {
 
 const DRAFTS_KEY = 'tm8.launch.drafts.v1';
 
-function store(): Storage | null {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
-  } catch {
-    return null;
-  }
-}
-
 function readAll(): Record<string, LaunchDraft> {
-  const raw = store()?.getItem(DRAFTS_KEY);
+  const raw = browserStorage()?.getItem(DRAFTS_KEY);
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -40,7 +33,7 @@ function readAll(): Record<string, LaunchDraft> {
 
 function writeAll(all: Record<string, LaunchDraft>): void {
   try {
-    store()?.setItem(DRAFTS_KEY, JSON.stringify(all));
+    browserStorage()?.setItem(DRAFTS_KEY, JSON.stringify(all));
   } catch {
     /* quota or private mode: a lost draft is only a lost convenience */
   }

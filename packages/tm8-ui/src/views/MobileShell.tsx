@@ -189,7 +189,7 @@ export interface MobileShellProps {
   launchRefusal?: { cause: string; detail: string } | null;
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
-  onLaunchSubmit?(config: LaunchSelection): void;
+  onLaunchSubmit?(config: LaunchSelection): void | Promise<unknown>;
   onLaunchDispatch?(request: DispatchSelection): void;
 }
 

@@ -304,6 +304,22 @@ describe('Codex pinned-v2 conformance', () => {
         });
     }
   });
+  // Regression: HarnessSessionBase.reserve refused any turn with attachment
+  // refs ("This chat cannot take file attachments yet"), so a turn that named
+  // a file never reached Codex. The refs are tm8 ids the text already lists.
+  it('dispatches a turn that carries attachment refs', async () => {
+    const data = input(material()),
+      session = await open(data),
+      record = new Recorder(session);
+    expect(
+      await session.submit({ ...command(data.config, 'see [file f1]'), attachmentRefs: ['f1'] }),
+    ).toMatchObject({ delivery: 'sent' });
+    await record.terminal();
+    expect(record.events.find((e) => e.payload.kind === 'terminal')?.payload).toMatchObject({
+      outcome: 'completed',
+    });
+  });
+
   it('carries a tool result past the old 1 MiB frame bound and cuts it for the thread', async () => {
     const data = input(material()),
       session = await open(data),

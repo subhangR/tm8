@@ -2350,77 +2350,45 @@ const ROWS: readonly KindConfig[] = [
     ...KIND_CORE.loop,
     icon: '↻',
     createForm: 'scheduled-work',
+    /* Title only, so the Edit verb is offered; the edit dialog opens the loop
+       form itself (pickers + server schedule preview, `loops.update`), never
+       raw id or JSON fields. */
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Daily project sweep' },
-      {
-        target: 'content', source: 'schedule', label: 'Schedule', required: true,
-        placeholder: 'every 1d or 0 9 * * *', valueType: 'schedule',
-      },
-      {
-        target: 'content', source: 'teamMemberId', label: 'Runner entity ID',
-        placeholder: 'blank routes through Dispatcher', valueType: 'nullable-text',
-      },
-      {
-        target: 'content', source: 'subjectId', label: 'Subject entity ID',
-        placeholder: 'blank uses this loop', valueType: 'nullable-text',
-      },
-      {
-        target: 'content', source: 'prompt', label: 'Prompt',
-        placeholder: 'Instruction sent on every firing', multiline: true,
-      },
-      {
-        target: 'content', source: 'config', label: 'Spawn config (JSON)',
-        placeholder: '{"model":"…","accessMode":"…"}', multiline: true,
-        valueType: 'json-object',
-      },
     ],
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
     chip: { glyph: '↻', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
-      // The scheduled-work form writes the required schedule and first
-      // `nextRunAt`; the placeholder-only generic flow cannot create a loop.
+      // The loop form creates through `loops.create`; the placeholder-only
+      // generic flow cannot create a loop (a schedule is required).
       quickCreate: true,
+      surface: 'loops',
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
      * GENERIC, because a loop is the one kind a human OPERATES rather than
-     * reads: enable/disable and Run now are patch commands, and only the
-     * generic body is handed a command executor. `loop-controls` renders the
-     * schedule summary and those verbs together, so the fact and the control
-     * that changes it cannot drift apart.
+     * reads, and only the generic body is handed a command executor.
      *
-     * MERGE NOTE (integration): the memories/loops UI lane declared this panel
-     * `profile` — `bio`, a SCHEDULE `field-grid` and a `peer-rows` RUN HISTORY
-     * — while the controls lane declared it `generic` with `loop-controls`.
-     * Both were right about a fact the other dropped, and the archetype could
-     * not be both: `loop-controls` mutates, and `ProfileBody` is presentation
-     * that raises intent rather than holding an executor (its own header).
-     *
-     * So the body follows the VERBS and the read blocks came here instead:
-     * `peer-rows` is now drawn by `GenericBody` from the same extracted
-     * component `ProfileBody` and `SubtreeBody` use, and the two facts the
-     * profile grid carried — the null runner meaning "routed through the
-     * Dispatcher", and `lastError` beside `enabled` — moved into the controls
-     * summary itself. No fact either lane drew was dropped.
+     * The page (design 01a182d4 §6) is four kinds of block over ONE
+     * `loops.get` read: `loop-header` (status pill, next run, last error,
+     * armer, and the verbs beside the facts they change), the definition read
+     * back in words in three sections (no raw ids, no raw JSON — which is why
+     * the generic `fields` block is gone from this row), and `loop-runs`, the
+     * run history from `loops.runs.list`. That table replaced the `peer-rows`
+     * RUNS block: edges cannot say skipped, failed to launch or timed out.
+     * The `triggered_by` edges themselves still show under connections.
      */
     panel: {
       archetype: 'generic',
       primaries: ['edit'],
       blocks: [
-        { block: 'loop-controls', label: 'SCHEDULE' },
-        { block: 'fields', label: 'DETAILS' },
-        {
-          block: 'peer-rows',
-          label: 'RUNS',
-          params: {
-            edgeType: 'triggered_by',
-            direction: 'incoming',
-            count: true,
-            empty: 'No firings recorded yet. Each firing derives a task and edges back here, so this list IS the run history — an empty one means it has not fired.',
-          },
-        },
+        { block: 'loop-header' },
+        { block: 'loop-definition', label: 'WHAT IT RUNS', params: { section: 'what' } },
+        { block: 'loop-definition', label: 'SCHEDULE', params: { section: 'schedule' } },
+        { block: 'loop-definition', label: 'SETTINGS', params: { section: 'settings' } },
+        { block: 'loop-runs', label: 'RUNS' },
         COLLECTIONS_BLOCK,
       ],
     },

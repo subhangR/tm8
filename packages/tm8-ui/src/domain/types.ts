@@ -725,6 +725,12 @@ export type TileSignalSpec =
   | { from: 'presence'; field: string };
 
 export interface ListConfig {
+  /**
+   * A kind whose list is its own surface rather than the generic tile list.
+   * `loops`: the loops table (loops/LoopsList.tsx), whose columns read the
+   * `loops.list` view, which an entity summary does not carry.
+   */
+  surface?: 'loops';
   /** task: current / completed. */
   sections?: readonly ListSection[];
   /**
@@ -1278,9 +1284,14 @@ export type ContentBlockKind =
   | 'field-rows'
   | 'restrictions'
   | 'pin-provenance'
-  // Scheduled-work management. The block owns enable/disable and queue-now;
-  // its presence is registry data, so GenericBody never asks for a kind.
-  | 'loop-controls'
+  // The loop page (design 01a182d4 §6): the status header with its controls
+  // (Run now, Pause…, Enable|Disable, Edit, Delete), one section of the
+  // definition read back in words (`params.section`: what | schedule |
+  // settings), and the runs table over `loops.runs.list`. Registry data, so
+  // GenericBody never asks for a kind.
+  | 'loop-header'
+  | 'loop-definition'
+  | 'loop-runs'
   // Forms (209, FORMS-DESIGN §10): the questionnaire — Fill / Build /
   // Responses over the forms seam (`src/forms`). Named for what it draws, not
   // for the kind, for the same §15.2 reason `canvas` is.
@@ -1617,8 +1628,8 @@ export interface EditFieldSpec {
    *
    * `nullable-text` turns an empty draft into an explicit `null` (the loop
    * door's clear flag); `json-object` parses before Save and refuses arrays or
-   * invalid JSON visibly; `schedule` validates against the executor grammar
-   * and recomputes `nextRunAt` only when this field changed.
+   * invalid JSON visibly. (There is no `schedule` type: a loop is edited by its
+   * own form, and only the server computes a next run.)
    *
    * `date` IS A CALENDAR DAY, NOT A TIMESTAMP, and that is the server's shape
    * rather than a simplification made here: `tasks.due_date` is a `date`
@@ -1629,7 +1640,7 @@ export interface EditFieldSpec {
    * since `update_task_content` COALESCEs an absent `dueDate` to the stored
    * value (`handlers/entities.ts:682-685`).
    */
-  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule' | 'date';
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'date';
 }
 
 /** A kind's Settings home: the section that manages it, and the link's words. */

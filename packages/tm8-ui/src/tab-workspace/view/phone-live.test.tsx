@@ -261,8 +261,14 @@ describe('what the screen shows', () => {
     fireEvent.click(view.getByTestId('phone-live-ask-send'));
     await waitFor(() => expect(signalTo['term-1']).toBeTypeOf('function'));
     const emit = (signal: ScreenSignal) => act(() => signalTo['term-1']!(signal));
-    emit({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
-    expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    /* The render that registered term-1 also scheduled the new screen's reset
+       (PhoneLive's passive effect on the terminal id). A frame sent before that
+       effect has run is wiped by it, which is how this read "Unable to find
+       phone-live-frame" on a slow machine. Send the frame until it holds. */
+    await waitFor(() => {
+      signalTo['term-1']!({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
+      expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    });
     emit(userVar('tm8run', { title: 'Your cases', device: 'iPhone 16 Pro Max', run: 'live-1', planned: ['Search works', 'Cart badge'] }));
     emit(userVar('tm8step', { i: 0, name: 'Search works', state: 'run' }));
     let cases = view.getByTestId('phone-live-cases').querySelectorAll('li');
@@ -327,7 +333,13 @@ describe('testing an app build', () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
     await waitFor(() => expect(view.getByTestId('phone-live-sending').textContent).toMatch(/min left/));
-    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 6000 });
+    /* The pacing itself needs about 2.3 s: 933 KB of base64 at 400 KB per rolling
+       second. Everything else is the machine: on the scaffold merge at load ~25
+       this test took 14.7 s, so the old 6 s / 10 s caps reported a slow box as a
+       failure. These deadlines are measured, and like the package's own
+       (vite.config.ts testTimeout, test-setup.ts asyncUtilTimeout) they weaken
+       nothing: every assertion below still runs and still fails if wrong. */
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 30_000 });
     /* Every rolling second stays under 400 KB of input (the server closes the terminal past 512 KB). */
     for (let i = 2; i < sent.length - 1; i++) {
       const inWindow = sent.slice(2, sent.length - 1).filter((_, k) => sentAt[k + 2]! > sentAt[i]! - 1000 && sentAt[k + 2]! <= sentAt[i]!);
@@ -335,7 +347,7 @@ describe('testing an app build', () => {
     }
     const lines = sent.slice(2, -1).join('').replaceAll('term-1:', '').split('\r').filter(Boolean);
     expect(Buffer.concat(lines.map((l) => Buffer.from(l, 'base64')))).toEqual(Buffer.from(bytes));
-  }, 10_000);
+  }, 60_000);
 
   it('stops, instead of queueing the rest, when the connection drops mid-build', async () => {
     const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone\nlive-install: /w/bin/jm-install android')} />);

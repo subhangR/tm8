@@ -20,7 +20,6 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DbClaims } from '../../src/db/types.js';
 import { createLoopExecutorPort } from '../../src/facade/execution-handlers.js';
-import type { DueLoop } from '../../src/scheduler/jobs/loops.js';
 import { ToolRuntime } from '../../src/tools/runtime.js';
 import { addSpaceMember, claimsFor, ownerOfSpace, startWsE2eNode, type WsE2eNode } from '../events/ws-e2e-harness.js';
 
@@ -98,8 +97,7 @@ beforeAll(async () => {
     dataDir: node.dataDir, baseUrl: node.baseUrl, nodeId: 'scheduled-e2e' });
   const port = createLoopExecutorPort({ db: node.production.db!, pty: execution.pty, spawnService: execution.spawnService,
     resolveOwner: async () => { throw new Error('the due read is not under test'); }, tools: runtime });
-  firingClaims = (identityId, loopId) => port.claimsForLoop({ entityId: loopId, spaceId, title: '', schedule: 'every 1d',
-    teamMemberId: persona, subjectId: null, prompt: '', config: null, version: 1, actAsIdentity: identityId } satisfies DueLoop, identityId);
+  firingClaims = (identityId, loopId) => port.claimsForLoop({ entityId: loopId, spaceId }, identityId);
 });
 afterAll(async () => { await node?.close(); });
 

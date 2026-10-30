@@ -280,6 +280,17 @@ export interface JevSuggestions {
   undoAll(): void;
 
   toSpawnFields(): JevSpawnFields;
+  /**
+   * THE PRESS — call it with the launch's flight, right after reading
+   * `toSpawnFields`. From then on every answer that lands is HELD — its groups,
+   * ticks and run cost alike: Jev only ever SUGGESTS, and an answer for a
+   * launch already on its way must not change the card under it. If the
+   * flight REJECTS (refused, failed, timed out) the held answers are shown as
+   * if they had just landed, so nobody pays for the ask twice. Success is the
+   * caller's: a card that closes takes them away; one that stays calls
+   * `unseal()`. A later press supersedes an earlier one's hold.
+   */
+  seal(flight: Promise<unknown>): { unseal(): void };
 
 }
 
@@ -474,12 +485,15 @@ export function useJevSuggestions(args: {
   /* Which request each group's answer must come from. A slower, older answer
      that lands after a re-ask is dropped per group, never merged over the new. */
   const latest = useRef<Partial<Record<LaunchSuggestGroup, string>>>({});
+  /** Answers that landed while a press holds them (`seal`); null while nothing is held. */
+  const held = useRef<Array<() => void> | null>(null);
   const resetKey = args.resetKey;
   const lastReset = useRef(resetKey);
   useEffect(() => {
     if (lastReset.current === resetKey) return;
     lastReset.current = resetKey;
     latest.current = {};
+    held.current = null;
     setRunId(newJevId());
     setGroups(IDLE);
     setRun(null);
@@ -571,8 +585,14 @@ export function useJevSuggestions(args: {
       setTickRefusal(null);
     };
 
+    /* While the press holds answers (`seal`), a landing answer waits in
+       `held` — all of it, run cost included — until `unseal` or the card goes. */
+    const deliver = (show: () => void) => {
+      if (held.current) held.current.push(show);
+      else show();
+    };
     p.suggest(space, input).then(
-      (result) => {
+      (result) => deliver(() => {
         if (!mounted.current) return;
         // `run` is the server's running total; the larger answer is the later one.
         setRun((current) => (current && current.calls > result.run.calls ? current : result.run));
@@ -583,11 +603,11 @@ export function useJevSuggestions(args: {
             ? { ...answer, value: adjust(answer.value as ModelSuggestion) }
             : answer;
         }, result.contextIndex);
-      },
-      (error: unknown) => {
+      }),
+      (error: unknown) => deliver(() => {
         const reason = failureOf(error);
         settle(() => ({ status: 'failed', reason, cost: ZERO_COST }), null);
-      },
+      }),
     );
   }, [runId]);
 
@@ -896,6 +916,19 @@ export function useJevSuggestions(args: {
     return fields;
   }, [applied, groups, asked, runId]);
 
+  const seal = useCallback((flight: Promise<unknown>) => {
+    const queue: Array<() => void> = [];
+    held.current = queue;
+    const unseal = () => {
+      /* Only the press that held them releases them; a later press holds its own. */
+      if (held.current !== queue) return;
+      held.current = null;
+      for (const show of queue) show();
+    };
+    flight.then(undefined, unseal);
+    return { unseal };
+  }, []);
+
   return {
     runId,
     groups,
@@ -922,5 +955,6 @@ export function useJevSuggestions(args: {
     undo,
     undoAll,
     toSpawnFields,
+    seal,
   };
 }

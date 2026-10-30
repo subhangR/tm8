@@ -155,3 +155,27 @@ describe('matchesSearch', () => {
     expect(matchesSearch(r, '  ')).toBe(true);
   });
 });
+
+describe('phoneRowOf — a loop', () => {
+  const loop = (over: Partial<Extract<EntitySummary['state'], { kind: 'loop' }>> = {}) => summary({
+    id: 'l1', kind: 'loop', title: 'Nightly', activityAt: ago(HOUR), updatedAt: ago(HOUR),
+    state: {
+      kind: 'loop', action: 'dispatch', schedule: '0 9 * * *', timezone: 'Europe/London', enabled: true, pausedUntil: null,
+      teamMemberId: null, toolId: null, subjectId: null, nextRunAt: new Date(NOW + 3 * HOUR).toISOString(), lastRunAt: null, lastError: null,
+      ...over,
+    },
+  });
+
+  it('carries its schedule, zone and the server\'s next run on the meta line', () => {
+    expect(phoneRowOf(loop(), NOW)).toMatchObject({ meta: '0 9 * * * · Europe/London · next in 3h' });
+    expect(phoneRowOf(loop(), NOW).pill).toBeUndefined();
+  });
+
+  it('says disabled, paused and a last error with a pill', () => {
+    expect(phoneRowOf(loop({ enabled: false }), NOW)).toMatchObject({ meta: '0 9 * * * · Europe/London · disabled', pill: { label: 'disabled' } });
+    expect(phoneRowOf(loop({ pausedUntil: new Date(NOW + 2 * HOUR).toISOString() }), NOW))
+      .toMatchObject({ meta: '0 9 * * * · Europe/London · paused, resumes in 2h', pill: { label: 'paused' } });
+    // A park reason lives in lastError too ("schedule never matches within a year"): an error, not a failed run.
+    expect(phoneRowOf(loop({ lastError: 'schedule never matches within a year', nextRunAt: null }), NOW).pill).toEqual({ label: 'last error', tone: 'block' });
+  });
+});
