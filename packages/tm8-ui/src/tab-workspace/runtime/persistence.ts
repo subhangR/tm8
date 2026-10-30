@@ -212,7 +212,10 @@ function validRecord(id: TabId, v: unknown): TabRecord | null {
   if (v.type === 'draft') {
     if (!isId(v.draftId)) return null;
     const ordinal = isFinite(v.ordinal) && v.ordinal >= 1 ? Math.floor(v.ordinal) : 1;
-    return { id, type: 'draft', kind: v.kind, draftId: v.draftId, dirty: v.dirty === true, submitting: false, ordinal };
+    return {
+      id, type: 'draft', kind: v.kind, draftId: v.draftId, dirty: v.dirty === true, submitting: false, ordinal,
+      ...(v.holds === 'launch' ? { holds: 'launch' as const } : {}),
+    };
   }
   return null;
 }

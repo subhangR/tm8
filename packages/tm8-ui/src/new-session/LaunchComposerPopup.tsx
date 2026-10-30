@@ -1,6 +1,6 @@
-import { McpPicker } from '../mcp/McpPicker';
+import { McpPicker, usePickerGate } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
@@ -56,6 +56,7 @@ import { LaunchCardV3, VERBS, aKind, type JevButton, type LaunchCandidate, type 
 import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type StripRow } from './launch-strip';
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import type { LaunchStarted } from './launch-started';
+import { isLaunchTimeout, LAUNCH_TIMEOUT_WORDS } from '../launch-handoff/failure';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
 import { useOverlayHost } from '../kit/useOverlayHost';
@@ -546,10 +547,8 @@ export function LaunchComposerPopup({
   const openedAt = useRef(new Date().toISOString());
 
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
-  const [mcpReady, setMcpReady] = useState(true);
-  /* TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): McpPicker's
-     `onCount(n)` replaces the DrawnCount probe below, and lane F deletes it
-     in that change; until then the card counts the connector rows drawn. */
+  const [mcpGate, onMcpGate] = usePickerGate();
+  /* How many connectors the picker offers (its `onCount`): the slot hides at 0. */
   const [mcpCount, setMcpCount] = useState(0);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
@@ -563,14 +562,9 @@ export function LaunchComposerPopup({
       : !onSpawn
     ? 'Launching isn’t connected on this surface yet — the configuration is real; this screen does not dispatch it.'
     : !verdict.ok ? verdict.reason
-      /* An edited group's defaults are re-reading: wait, or that group would
-         launch on its defaults and drop the person's removals. */
-      /* Not ready with nothing drawn is the catalog still being read; not
-         ready with rows drawn is a picked connector with no account. Lane
-         F's gate sentence replaces both after its picker swap. */
-      : (!mcpReady
-        ? (mcpCount === 0 ? 'Reading connectors…' : 'Connectors: choose a connected account for each connector you picked.')
-        : null) ?? more.pluginsBlock ?? selection.launchBlock
+      /* The connector picker's sentence: a pick `bind` would refuse, or an
+         explicit pick still waiting on this mount's own catalog read. */
+      : mcpGate.problem ?? more.pluginsBlock ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -619,24 +613,24 @@ export function LaunchComposerPopup({
     setShaking(true);
     if (!sessionsSince) {
       setTimedOut('unknown');
-      setNodeRefusal('The node didn’t answer in time — the launch may have started. This surface can’t check, so look at the task’s sessions before launching again.');
+      setNodeRefusal(LAUNCH_TIMEOUT_WORDS.cannotCheck);
       return;
     }
     setTimedOut('checking');
-    setNodeRefusal('The node didn’t answer in time — the launch may have started. Checking…');
+    setNodeRefusal(LAUNCH_TIMEOUT_WORDS.checking);
     sessionsSince(subject.id, openedAt.current).then(
       ifCurrent(gen, (found: readonly { id: string; title: string }[]) => {
         if (found.length > 0) {
           setTimedOut('found');
-          setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
+          setNodeRefusal(LAUNCH_TIMEOUT_WORDS.started(found[0]!.title));
         } else {
           setTimedOut('none');
-          setNodeRefusal('No session started on this task. Launch again to retry.');
+          setNodeRefusal(LAUNCH_TIMEOUT_WORDS.none);
         }
       }),
       ifCurrent(gen, () => {
         setTimedOut('unknown');
-        setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
+        setNodeRefusal(LAUNCH_TIMEOUT_WORDS.checkFailed);
       }),
     );
   };
@@ -743,7 +737,7 @@ export function LaunchComposerPopup({
         succeed();
       }), ifCurrent(gen, (error: unknown) => {
         const e = error as { code?: string; message?: string };
-        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout(gen);
+        if (isLaunchTimeout(e)) afterTimeout(gen);
         else fail(error);
       }));
   };
@@ -1065,20 +1059,22 @@ export function LaunchComposerPopup({
               <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
             </p>
           ) : null}
-          /* §10.5: the launch grid, with D4's note — `Full` restores plugins
-             and skills, never the launcher's personal Claude connectors. */
-          <DrawnCount onCount={setMcpCount}><McpPicker
+          {/* §10.5: the launch grid, with D4's note — `Full` restores plugins
+              and skills, never the launcher's personal Claude connectors. The
+              picker stays mounted at count 0: it reports its own count. */}
+          <McpPicker
             teamMemberId={config.teamMemberId ?? undefined}
             targetId={subject.id}
             value={mcpSelections}
             onChange={setMcpSelections}
-            onReady={setMcpReady}
+            onReady={onMcpGate}
+            onCount={setMcpCount}
             disabled={pending}
             layout="grid"
             notice={bind.harnessSurface === 'inherit'
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
-          /></DrawnCount>
+          />
         </>) }}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
@@ -1179,36 +1175,4 @@ export function LaunchComposerPopup({
     </div>,
     overlay.host,
   );
-}
-
-
-/**
- * What in the picker is worth drawing the connectors block for: a connector
- * row, or an error/problem line (role=alert, with its Retry) — something to
- * act on. Its loading line is not.
- *
- * TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): this couples the
- * card to classes in lane F's files. It is deleted by F's swap to
- * `McpPicker onCount` in #1390, which merges after this.
- */
-const MCP_DRAWN_SELECTOR = '.mcp-toggles__rows > li, [role="alert"]';
-
-/**
- * How many things the picker drew that are worth the block (MCP_DRAWN_SELECTOR):
- * 0 while it draws none. A stand-in for lane F's `McpPicker onCount`. The
- * child stays MOUNTED at 0: it reads its catalog and readiness while hidden.
- */
-function DrawnCount({ onCount, children }: { onCount(n: number): void; children: ReactNode }) {
-  const ref = useRef<HTMLSpanElement | null>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const read = () => onCount(el.querySelectorAll(MCP_DRAWN_SELECTOR).length);
-    read();
-    if (typeof MutationObserver === 'undefined') return;
-    const observer = new MutationObserver(read);
-    observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [onCount]);
-  return <span ref={ref} style={{ display: 'contents' }}>{children}</span>;
 }

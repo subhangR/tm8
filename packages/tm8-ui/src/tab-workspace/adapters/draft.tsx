@@ -16,7 +16,8 @@
  *    substance;
  *  - `skill`: `SkillCreateControl` (the skill-file door);
  *  - `tool`: `ToolCreateControl` (the tool-definition door, `tools.create`);
- *  - `work_session`: the launch sheet (`NewSessionScreen`);
+ *  - `work_session`: the launch sheet (`NewSessionScreen`) — or, for a launch
+ *    tab, the pressed launch's page (`LaunchTabBody`);
  *  - `chat`: the chat-start flow (`ChatHomeSurface` in its solo composer).
  * `form` is the form builder (`FormDraftBody`, wired in the registry).
  * `artifact` and `project` have no create door in this client, so the
@@ -50,6 +51,7 @@ import { onDraftFocusRequest } from '../runtime/draftFocus';
 import type { DraftTabRecord, KindId } from '../runtime/types';
 import { useWorkspace } from '../view/context';
 import { getKindAdapter } from './registry';
+import { LaunchTabBody } from './LaunchTabBody';
 import '../view/creation.css';
 
 export interface DraftHostProps {
@@ -657,10 +659,19 @@ function ToolDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmittin
 }
 
 // ---------------------------------------------------------------------------
-// work_session: the launch sheet
+// work_session: the launch sheet — or a pressed launch's page
 // ---------------------------------------------------------------------------
 
-function LaunchDraftBody({ values, onValues, onCreated, onCancel, onSubmitting, tab }: DraftHostProps) {
+/**
+ * A `work_session` draft is one of two things, and its stored values say
+ * which: ＋ New → Session's launch sheet, or a LAUNCH TAB holding a pressed
+ * launch until its session exists (task 01a182d2, `runtime/launchTabs.ts`).
+ */
+function LaunchDraftBody(props: DraftHostProps) {
+  return props.tab.holds === 'launch' ? <LaunchTabBody tab={props.tab} /> : <NewSessionDraftBody {...props} />;
+}
+
+function NewSessionDraftBody({ values, onValues, onCreated, onCancel, onSubmitting, tab }: DraftHostProps) {
   const { gate, spaceId } = useWorkspace();
   const noop = useCallback(() => undefined, []);
   return (
