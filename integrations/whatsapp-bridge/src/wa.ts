@@ -46,7 +46,7 @@ export function textOf(m: proto.IMessage | null | undefined): string {
   return `[${Object.keys(m).find((k) => k !== 'messageContextInfo') ?? 'unknown'}]`
 }
 
-function unwrap(m: proto.IMessage): proto.IMessage {
+export function unwrap(m: proto.IMessage): proto.IMessage {
   return m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message ?? m.documentWithCaptionMessage?.message ?? m
 }
 
@@ -81,7 +81,7 @@ export function mediaOf(msg: proto.IMessage): Omit<InboundMedia, 'ref'> | null {
   return null
 }
 
-function contextInfoOf(m: proto.IMessage): proto.IContextInfo | null | undefined {
+export function contextInfoOf(m: proto.IMessage): proto.IContextInfo | null | undefined {
   const u = unwrap(m)
   return (
     u.extendedTextMessage?.contextInfo ?? u.imageMessage?.contextInfo ?? u.videoMessage?.contextInfo ?? u.documentMessage?.contextInfo ??
@@ -90,7 +90,7 @@ function contextInfoOf(m: proto.IMessage): proto.IContextInfo | null | undefined
 }
 
 /** WhatsApp plumbing that carries no user content. */
-function isPlumbing(m: proto.IMessage): boolean {
+export function isPlumbing(m: proto.IMessage): boolean {
   const keys = Object.keys(m).filter((k) => k !== 'messageContextInfo')
   if (keys.length === 0) return true
   if (m.protocolMessage || m.reactionMessage || m.pollUpdateMessage || m.keepInChatMessage) return true

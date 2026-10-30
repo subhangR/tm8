@@ -33,12 +33,14 @@
  * no `onSpawn` keeps Launch refused with its reason (R5 #9): the hand-off
  * lands a launch, it does not invent a launch surface.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { newLaunchMutationId, pluginFactsOf, type ProfileResolution } from '../domain';
 import { entityPatchInput } from '../authoring';
 import { memoryCandidateRow, REFERENCE_KINDS } from '../domain/launch-selection';
 import { attachmentsFor } from '../files/port';
+import { sharedRead } from '../data/shared-read';
+import { jevKeyUsable } from '../jev';
 import type { LaunchSources } from '../panels';
 import type { GateData } from './useGateData';
 import { useLaunchHandoff, type LaunchHandoff } from './useLaunchHandoff';
@@ -80,10 +82,26 @@ export function useSessionsSince(seam: GateData['seam']) {
   }, [seam]);
 }
 
+/**
+ * How long a reopened launch card reuses what the last open read for its
+ * plugin facts and Jev key — the window lane F's connector catalog uses too.
+ * Long enough that closing and reopening the card asks nothing; short enough
+ * that a plugin installed or a skill equipped a minute ago is read fresh.
+ */
+const LAUNCH_READ_FRESH_MS = 30_000;
+
 export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): LaunchPort {
   const { teammates: sourceTeammates, profiles, projects: sourceProjects, capacity, jev, loadSkillPreview } = data.launch;
   const { loadLaunchDefaults, memories, skillCandidates, referenceCandidates } = data.launch;
   const { onSpawn, onFullOptions } = options;
+  /* THE PORT'S READS AND WRITES ARE STABLE ACROSS GRAPH EVENTS. `data` is a new
+     object on every event; a callback keyed on it was a new function per event,
+     and so was the port built from it. The ones that only run when a person
+     acts (read a description, save an edit) read the latest `data` through
+     this ref instead — same answer, one identity for the life of the space. */
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const { ensureKind } = data;
 
   /**
    * Resolves the governing profile FOR A TEAMMATE — a resolver, not a value,
@@ -138,6 +156,7 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
    */
   const descriptionOf = useCallback(
     async (entityId: string): Promise<string | null> => {
+      const latest = dataRef.current;
       const read = (detail: unknown): string | null => {
         const description = (detail as { content?: { description?: unknown } } | undefined)
           ?.content?.description;
@@ -146,11 +165,11 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       /* The cache answers only when it actually CARRIES a description — a
          hydrated detail without content (or from before the latest edit) must
          fall through to a fresh read, not masquerade as "no description". */
-      const cached = read(data.detailOf(entityId));
+      const cached = read(latest.detailOf(entityId));
       if (cached !== null) return cached;
-      return read(await data.seam.entity(entityId as never).catch(() => undefined));
+      return read(await latest.seam.entity(entityId as never).catch(() => undefined));
     },
-    [data],
+    [],
   );
 
   /**
@@ -163,10 +182,11 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
    */
   const onUpdateEntity = useCallback(
     async (entityId: string, edits: { title?: string; description?: string }) => {
-      const commands = data.seam.commands;
+      const latest = dataRef.current;
+      const commands = latest.seam.commands;
       if (!commands) throw new Error('This node cannot edit entities, so the edits were not saved.');
-      const detail = data.detailOf(entityId)
-        ?? (await data.seam.entity(entityId as never).catch(() => undefined));
+      const detail = latest.detailOf(entityId)
+        ?? (await latest.seam.entity(entityId as never).catch(() => undefined));
       const version = detail?.version;
       if (version == null) {
         throw new Error('The task could not be read back, so the edits were not saved.');
@@ -188,21 +208,25 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
       }, version));
       /* The row's summary re-reads through the normal detail path, so the list
          shows the new name without waiting for the next event. */
-      data.refetchDetail(entityId);
+      latest.refetchDetail(entityId);
     },
-    [data],
+    [],
   );
 
   /* The ··· menu's plugin list rides on the skill preview the sheet already
-     reads, so there is one read of "what this launch could load", not two. */
-  const loadInstalledPlugins = useMemo(
-    () => loadSkillPreview
-      ? async (teamMemberId: string, taskIds?: readonly string[]) => pluginFactsOf(
-        await loadSkillPreview({ teamMemberId, ...(taskIds?.length ? { taskIds: taskIds.join(',') } : {}) }),
-      )
-      : undefined,
-    [loadSkillPreview],
-  );
+     reads, so there is one read of "what this launch could load", not two —
+     shared per teammate and tasks, and reused while fresh. */
+  const loadInstalledPlugins = useMemo(() => {
+    if (!loadSkillPreview) return undefined;
+    const facts = sharedRead(
+      async ({ teamMemberId, taskIds }: { teamMemberId: string; taskIds: readonly string[] }) => pluginFactsOf(
+        await loadSkillPreview({ teamMemberId, ...(taskIds.length ? { taskIds: taskIds.join(',') } : {}) }),
+      ),
+      ({ teamMemberId, taskIds }) => `${teamMemberId}|${taskIds.join(',')}`,
+      { freshForMs: LAUNCH_READ_FRESH_MS },
+    );
+    return (teamMemberId: string, taskIds?: readonly string[]) => facts({ teamMemberId, taskIds: taskIds ?? [] });
+  }, [loadSkillPreview]);
 
   /* The Run composer's per-group context (I9): the same defaults read and add
      pools the launch sheet takes, so the two surfaces send the same thing. */
@@ -210,9 +234,9 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
     () => ({
       ...(loadLaunchDefaults ? { load: loadLaunchDefaults } : {}),
       candidates: { memories: memories?.map(memoryCandidateRow), skills: skillCandidates, references: referenceCandidates },
-      hydrateReferences: () => { for (const kind of REFERENCE_KINDS) data.ensureKind(kind); },
+      hydrateReferences: () => { for (const kind of REFERENCE_KINDS) ensureKind(kind); },
     }),
-    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates, data],
+    [loadLaunchDefaults, memories, skillCandidates, referenceCandidates, ensureKind],
   );
 
   /* The launch card's attach row: an ANCHOR-LESS upload into the space
@@ -238,8 +262,22 @@ export function useLaunchPort(data: GateData, options: LaunchPortOptions = {}): 
 
   const sessionsSince = useSessionsSince(data.seam);
 
-  /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. */
-  const jevKeyStatus = useCallback(() => data.seam.credentials.serviceKeys(), [data.seam]);
+  /* ✦'s key: the member's stored TypeSafe key, else the node's fallback. A
+     usable key is reused while fresh; "no key" never is — the person may be
+     adding one in Settings right now, and the card must see it when they
+     come back. */
+  const viewerId = data.viewerActor?.id ?? null;
+  const { seam } = data;
+  const jevKeyStatus = useMemo(() => {
+    /* One reader per viewer (the memo's key): one person's usable key is never
+       another's verdict. It holds only the seam, not the data snapshot. */
+    const status = sharedRead(() => seam.credentials.serviceKeys(), () => 'status', {
+      freshForMs: LAUNCH_READ_FRESH_MS,
+      keep: (view) => jevKeyUsable(view) === true,
+    });
+    return () => status(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viewerId is the reader's identity, not a value it reads
+  }, [seam, viewerId]);
 
   /* THE HAND-OFF: the popup's press lands on the launching page at once; the
      host's own verb is the fallback for a launch it did not hand over. */

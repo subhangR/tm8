@@ -1495,13 +1495,15 @@ export function GateApp(props: GateAppProps = {}) {
   // D44: the sheet's Launch PERFORMS — one submit path for EVERY host of the
   // sheet (workspace centre AND the kind screens), so a refusal renders in
   // the sheet identically wherever it was opened.
-  const submitLaunch = (config: LaunchSelection) => {
-    if (launchInFlight.current) return;
+  /* Returns the launch's settlement, so the sheet can release what its press
+     held (lane E); the refusal itself is shown through `launchRefusal`. */
+  const submitLaunch = (config: LaunchSelection): Promise<void> | undefined => {
+    if (launchInFlight.current) return undefined;
     launchInFlight.current = true;
     setLaunching(true);
     setLaunchRefusal(null);
     const subject = data.detailOf(config.subjectId);
-    void data
+    return data
       .spawn(
         buildSpawnInput({
           clientMutationId: newLaunchMutationId(),

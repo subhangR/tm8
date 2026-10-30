@@ -10,9 +10,11 @@ import {
   groupDiff,
   groupIds,
   groupLock,
+  launchBlock,
   manualOutcome,
   NO_SELECTION_EDITS,
   toggleRow,
+  unknownDefaults,
   type GroupOutcome,
   type LaunchContextRow,
   type LaunchGroupDefaults,
@@ -248,5 +250,18 @@ describe('composeLaunchSelection — no override, reasons for asked-but-unapplie
 
   it('nothing edited, nothing applied: nothing sent', () => {
     expect(composeLaunchSelection(OMITTED).selection).toBeUndefined();
+  });
+});
+
+describe('launchBlock on unknown defaults (lane E)', () => {
+  const edited = { ...NO_SELECTION_EDITS, skills: { removed: ['sk-1' as never], added: [] } };
+  it('a FAILED read blocks an edited group with the retry wording, naming it', () => {
+    expect(launchBlock(unknownDefaults('x', { readFailed: true }), edited)).toMatch(/^Couldn’t confirm this launch’s skills defaults.*Retry/);
+  });
+  it('an idle unknown (no teammate) blocks an edited group with its own words, never a retry it cannot offer', () => {
+    expect(launchBlock(unknownDefaults('Pick a teammate to see what this launch loads by default.'), edited)).toBe('Pick a teammate to see what this launch loads by default.');
+  });
+  it('an untouched group never blocks', () => {
+    expect(launchBlock(unknownDefaults('x', { readFailed: true }), NO_SELECTION_EDITS)).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Shared setup for the launch card v3 suites: one popup renderer, the
- * two-step commit (Launch → preview → Launch), and a controllable upload.
+ * one-press commit, and a controllable upload.
  * Not a test file — vitest only collects `*.test.*`.
  */
 import type { ReactElement } from 'react';
@@ -49,13 +49,12 @@ export function renderPopup(
     ...over,
   };
   const view = render(<div className="cv2-root">{wrap(<LaunchComposerPopup {...props} />)}</div>);
-  /** Launch opens the preview; its Launch commits. */
+  /** Launch commits on its first press. */
   const spawn = async () => {
     const calls = onSpawn.mock.calls.length;
     /* A teammate change re-reads the defaults, and Launch rightly waits for them. */
     await waitFor(() => expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false'));
     fireEvent.click(view.getByTestId('nsx-send'));
-    fireEvent.click(await view.findByTestId('lcd3-preview-confirm'));
     await waitFor(() => expect(onSpawn.mock.calls.length).toBe(calls + 1));
     return onSpawn.mock.calls[onSpawn.mock.calls.length - 1]![0];
   };

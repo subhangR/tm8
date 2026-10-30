@@ -30,7 +30,7 @@ import { useGateData } from './useGateData';
 import type { GateData } from './useGateData';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
 import type { DetailReasons } from '../panels';
-import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { LAUNCH_CAPACITY, LAUNCH_DEFAULTS, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 /** Only the slice `useLaunchPort` reads; the rest of GateData is irrelevant here. */
 const gateDataStub = () => ({
@@ -273,5 +273,43 @@ describe('the kind screen mounts the FULL launch sheet', () => {
   it('mounts NO sheet when the shell holds none — the fallback state is clean', () => {
     const view = render(<TasksHost launchSubjectId={null} />);
     expect(view.queryByTestId('launch-sheet')).toBeNull();
+  });
+});
+
+/*
+ * THE PORT'S LOADERS SURVIVE GRAPH EVENTS (lane E of "Tm8 Session Launch
+ * Improvements"). `entities` changes on every event, and the launch memo that
+ * derives the roster from it used to build the loaders too — a new
+ * `loadLaunchDefaults`, skill preview and plugin loader per event, so every
+ * open launch card saw a "new" port mid-open. The loaders are now built once
+ * per seam, space and node; only the data derived from `entities` moves.
+ */
+describe('the launch port across graph events', () => {
+  it('keeps every loader’s identity when an event changes the store', async () => {
+    const seam = createFixtureSeam();
+    Object.assign(seam.commands, {
+      launchDefaults: { defaults: vi.fn(async () => LAUNCH_DEFAULTS) },
+      skills: { preview: vi.fn(async () => ({ installed: [], skills: [] })) },
+    });
+    const { result } = renderHook(() => {
+      const data = useGateData({ leftKind: 'task', rightKind: 'work_session', seam });
+      return { data, port: useLaunchPort(data) };
+    });
+    await waitFor(() => expect(result.current.data.ready).toBe(true));
+    const before = result.current;
+    const row = Object.values(before.data.domain.store.getState().entities)[0]!;
+
+    act(() => { before.data.domain.store.getState().ingestSummaries([{ ...row, title: `${row.title} (edited)`, version: row.version + 1 }]); });
+
+    const after = result.current;
+    expect(after.data.domain.store.getState().entities[row.id]?.title).toBe(`${row.title} (edited)`);
+    expect(after.data.launch.loadLaunchDefaults).toBeDefined();
+    expect(after.data.launch.loadLaunchDefaults).toBe(before.data.launch.loadLaunchDefaults);
+    expect(after.data.launch.loadSkillPreview).toBe(before.data.launch.loadSkillPreview);
+    expect(after.data.launch.jev).toBe(before.data.launch.jev);
+    expect(after.port.selection?.load).toBe(before.port.selection?.load);
+    expect(after.port.loadInstalledPlugins).toBe(before.port.loadInstalledPlugins);
+    expect(after.port.descriptionOf).toBe(before.port.descriptionOf);
+    expect(after.port.onUpdateEntity).toBe(before.port.onUpdateEntity);
   });
 });

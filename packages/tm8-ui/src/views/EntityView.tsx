@@ -154,7 +154,7 @@ export interface EntityViewProps {
   launchRefusal?: { cause: string; detail: string } | null;
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
-  onLaunchSubmit?(config: LaunchSelection): void;
+  onLaunchSubmit?(config: LaunchSelection): void | Promise<unknown>;
   /** D5 — hand the subject to the dispatcher without forwarding launch config. */
   onLaunchDispatch?(request: DispatchSelection): void;
   /**

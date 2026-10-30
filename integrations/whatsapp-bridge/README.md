@@ -17,6 +17,18 @@ the tm8 message; outbound: `POST /say-media`); see OPERATIONS.md › Media.
 Run it with Docker: `./scripts/deploy.sh`. Everything operational (config, logs, re-link, tokens, groups, backup) is in
 [OPERATIONS.md](OPERATIONS.md).
 
+## The connector runtime (Phase 2, B1a)
+
+`src/runtime-main.ts` (`npm run runtime`) is the same Baileys code as a **connector runtime**
+(docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §2.5, D35–D39). It runs every linked number on the node in one process,
+as a `bridge_runtime` session, and speaks the frames in `src/runtime/protocol.ts` to tm8-server. It routes nothing and
+stores nothing except each number's sealed keys. It reads and sends only in the conversations on the allowlist the
+server pushes (D28). The Phase-1 bridge above keeps running until the B1c cutover.
+
+- `src/runtime/protocol.ts` frames · `allowlist.ts` the allowlist and outbound guard · `connection.ts` one number
+- `runtime.ts` the connections and frame handling · `link.ts` HTTP up, WebSocket down · `sealed-auth.ts` keys at rest
+- env: `TM8_SERVER_URL`, `TM8_BRIDGE_RUNTIME_TOKEN_FILE`, `WA_RUNTIME_ID`, `WA_RUNTIME_DATA_DIR`
+
 ## In the tm8 repo
 
 This directory is a standalone package, deliberately outside the bun workspace (`packages/*`, `apps/*`, `tools/*`): it

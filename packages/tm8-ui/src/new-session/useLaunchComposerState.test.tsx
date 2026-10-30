@@ -33,6 +33,34 @@ describe('useLaunchComposerState — plugin picks (F3)', () => {
     expect(input.plugins).toEqual(['mcp-only@x']);
   });
 
+  it('reads nothing while the plugin facts are not wanted yet, and reads them once they are', async () => {
+    const load = vi.fn(async () => facts);
+    const { result, rerender } = renderHook(({ wanted }) => useLaunchComposerState({
+      teammates, projects: [], loadInstalledPlugins: load, taskIds: ['task-1'], pluginsWanted: wanted,
+    }), { initialProps: { wanted: false } });
+    await act(async () => { await Promise.resolve(); });
+    expect(load).not.toHaveBeenCalled();
+    rerender({ wanted: true });
+    await waitFor(() => expect(result.current.bind.installedPlugins).toEqual(facts.installed));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds Launch only while a TICKED plugin’s facts are still being read', async () => {
+    let land: ((f: LaunchPluginFacts) => void) | null = null;
+    const load = vi.fn(() => new Promise<LaunchPluginFacts>((resolve) => { land = resolve; }));
+    const { result } = renderHook(() => useLaunchComposerState({
+      teammates, projects: [], loadInstalledPlugins: load, taskIds: ['task-1'], pluginsWanted: true,
+    }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(result.current.more.pluginsBlock).toBeNull(); // nothing ticked: an untouched row never holds a launch
+    act(() => result.current.bind.onPluginsChange?.(['sales@synced']));
+    expect(result.current.more.pluginsBlock).toBe('Reading plugins…');
+    await act(async () => { land!(facts); });
+    expect(result.current.more.pluginsBlock).toBeNull();
+    const input = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config: result.current.config });
+    expect(input.selection).toEqual({ skillIds: ['task-skill', 'persona-skill', 'sales-a'] });
+  });
+
   it('with no plugin→skill facts the pick rides `plugins` whole, as before', async () => {
     const load = vi.fn(async () => ({ installed: facts.installed }));
     const { result } = renderHook(() => useLaunchComposerState({ teammates, projects: [], loadInstalledPlugins: load }));

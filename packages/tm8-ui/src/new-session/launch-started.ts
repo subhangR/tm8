@@ -1,13 +1,5 @@
-/**
- * THE LAUNCH HAND-OFF SEAM (task 01a182bb, lanes A and B) — what the launch
- * popup tells its host the moment Launch is pressed, before the node answers.
- *
- * The popup (lane A) calls `onLaunchStarted` synchronously on the press; a
- * host that returns true takes over the progress display (the launching page,
- * lane B) and the popup dismisses at once. Both lanes create this file with the
- * identical type, so the merge is trivial.
- */
 import type { EntityId, ProjectId } from '@tm8/contract';
+
 import type { LaunchVerb } from './LaunchCardV3';
 
 export interface LaunchStarted {

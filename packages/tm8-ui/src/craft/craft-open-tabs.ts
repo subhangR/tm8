@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CraftWorkspace } from '@tm8/contract';
 import type { CraftWorkspacesPort } from '../data/seam';
+import { browserStorage, forgetKeysWithPrefix } from '../data/browser-store';
 
 const VERSION = 'v1';
 const KEY_PREFIX = `tm8.craft-open-tabs.${VERSION}`;
@@ -27,15 +28,6 @@ export const MAX_OPEN_CRAFTS = 30;
 
 export function craftTabsKey(nodeKey: string, spaceId: string, viewerId: string): string {
   return `${KEY_PREFIX}.${nodeKey}.${spaceId}.${viewerId}`;
-}
-
-/** Every access is guarded: private mode throws on write, a policy throws on read. */
-function storage(): Storage | null {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
-  } catch {
-    return null;
-  }
 }
 
 /** Dedupe (first wins), drop junk, cap. */
@@ -50,7 +42,7 @@ function normalise(ids: readonly unknown[]): string[] {
 }
 
 export function readOpenCrafts(key: string): string[] {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return [];
   try {
     const raw = store.getItem(key);
@@ -69,7 +61,7 @@ export function readOpenCrafts(key: string): string[] {
 
 function writeOpenCrafts(key: string, ids: readonly string[]): void {
   try {
-    storage()?.setItem(key, JSON.stringify({ ids }));
+    browserStorage()?.setItem(key, JSON.stringify({ ids }));
   } catch {
     /* quota or policy: the row still works for this page's life */
   }
@@ -97,19 +89,7 @@ export function neighbourAfterClose(ids: readonly string[], id: string): string 
 
 /** Sweep every viewer's rows on this node — explicit sign-out only. */
 export function clearCraftOpenTabs(nodeKey: string): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    const prefix = `${KEY_PREFIX}.${nodeKey}.`;
-    const doomed: string[] = [];
-    for (let i = 0; i < store.length; i += 1) {
-      const key = store.key(i);
-      if (key !== null && key.startsWith(prefix)) doomed.push(key);
-    }
-    for (const key of doomed) store.removeItem(key);
-  } catch {
-    /* storage refused: nothing stored, nothing to forget */
-  }
+  forgetKeysWithPrefix(`${KEY_PREFIX}.${nodeKey}.`);
 }
 
 /**
