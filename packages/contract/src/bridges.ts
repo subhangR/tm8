@@ -360,3 +360,55 @@ export const BridgeHandleClaimInputSchema = z.object({
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
+
+// ---------------------------------------------------------------------------
+// `/remember` proposals (D29, D61-D63; migration 403). A proposal is made from
+// the group by the command executor and decided only here, in tm8, by a human.
+// ---------------------------------------------------------------------------
+export const BRIDGE_MEMORY_PROPOSAL_STATUSES = ['pending', 'accepted', 'dropped', 'expired'] as const;
+export type BridgeMemoryProposalStatus = typeof BRIDGE_MEMORY_PROPOSAL_STATUSES[number];
+export const BRIDGE_MEMORY_PROPOSAL_TTL_DAYS = 14;
+
+export interface BridgeMemoryProposal {
+  id: string;
+  spaceId: SpaceId;
+  bridgeId: EntityId;
+  statement: string;
+  /** The member who sent `/remember`, and whether their link was verified (code, invite) or admin-asserted. */
+  proposedBy: EntityId;
+  proposerName: string;
+  proposerTrust: 'linked' | 'asserted';
+  /** The `/remember` message on the bridge's log, when known. */
+  messageId: EntityId | null;
+  /** The text names a secret (a password, a token): accept only if it holds none. */
+  mentionsSecret: boolean;
+  status: BridgeMemoryProposalStatus;
+  /** The memory an accept made. */
+  memoryId: EntityId | null;
+  decidedBy: EntityId | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  expiresAt: string;
+  /** Whether the caller may accept or drop it now (D62). */
+  canDecide: boolean;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+export interface BridgeMemoryProposalListResult { items: BridgeMemoryProposal[] }
+export interface BridgeMemoryProposalResolveInput {
+  bridgeId?: EntityId;
+  proposalId?: string;
+  decision: 'accept' | 'drop';
+  /** accept only: the corrected text to remember instead. */
+  statement?: string;
+  note?: string;
+}
+
+export const BridgeMemoryProposalResolveInputSchema = z.object({
+  bridgeId: Id.optional(),
+  proposalId: Id.optional(),
+  decision: z.enum(['accept', 'drop']),
+  statement: z.string().trim().min(1).max(4000).optional(),
+  note: z.string().trim().min(1).max(1000).optional(),
+}).strict().refine(i => i.decision === 'accept' || i.statement === undefined, 'statement is for accept only');

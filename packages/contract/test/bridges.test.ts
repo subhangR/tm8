@@ -74,9 +74,12 @@ describe('catalog (§3.4)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
+      // Bridges R (403): /remember proposals, listed and decided in tm8 (D29, D61-D63).
+      'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
     ]);
   });
   it('create, retarget and remove are human-only; the session doors are not', () => {
-    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove']);
+    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove',
+      'bridges.memories.proposals.resolve']);
   });
 });

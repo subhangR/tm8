@@ -65,6 +65,7 @@ import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-bin
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
+import { createBridgeMemoryProposalExpiryJob } from './scheduler/jobs/bridge-memory-proposal-expiry.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1354,6 +1355,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-oauth-pending-sweep' };
+        },
+      }),
+    );
+    // Bridges D63 (403): /remember proposals nobody decided expire after 14 days.
+    scheduler.register(
+      createBridgeMemoryProposalExpiryJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridge-memory-proposal-expiry' };
         },
       }),
     );

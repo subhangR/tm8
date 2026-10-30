@@ -300,6 +300,7 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'bridges.remove',
   'bridges.handles.claim',
   'bridges.listen',
+  'bridges.memories.proposals.resolve', // Bridges R (403)
   'loops.create',
   'loops.update',
   'loops.enable',
@@ -453,6 +454,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'bridges.remove': contract.BridgeStateInputSchema,
       'bridges.handles.claim': contract.BridgeHandleClaimInputSchema,
       'bridges.listen': contract.BridgeListenInputSchema,
+      'bridges.memories.proposals.resolve': contract.BridgeMemoryProposalResolveInputSchema,
       'loops.create': contract.LoopCreateInputSchema,
       'loops.update': contract.LoopUpdateInputSchema,
       'loops.enable': contract.LoopEnableInputSchema,

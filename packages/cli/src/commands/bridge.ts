@@ -4,7 +4,8 @@
 import {
   BRIDGE_PROVIDERS,
   type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
-  type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
+  type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgePolicy,
+  type BridgeView, type BridgeWake, BRIDGE_MEMORY_PROPOSAL_STATUSES,
 } from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -273,6 +274,46 @@ async function bridgeListen(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+function renderProposal(p: BridgeMemoryProposal): string {
+  const who = `${p.proposerName || p.proposedBy} (${p.proposerTrust === 'linked' ? 'verified link' : 'admin-asserted link'})`;
+  const state = p.status === 'pending'
+    ? `pending until ${p.expiresAt}${p.canDecide ? ' · you can accept or drop it' : ''}`
+    : `${p.status}${p.decidedAt ? ` ${p.decidedAt}` : ''}${p.memoryId ? ` → memory ${p.memoryId}` : ''}`;
+  return `${p.id} ${who} · ${state}${p.mentionsSecret ? '\n  ⚠ mentions a secret: accept only if it holds none' : ''}\n  "${p.statement.replace(/\s+/g, ' ')}"`;
+}
+
+// D29: `/remember` proposals are listed and decided here, in tm8, by a person.
+async function bridgeProposals(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['status', 'limit']); argumentsCount(cmd, 1);
+  const query: Record<string, string> = {};
+  const status = choice(cmd, 'status', BRIDGE_MEMORY_PROPOSAL_STATUSES); if (status) query.status = status;
+  const limit = cmd.options.integer('limit');
+  if (limit !== undefined) {
+    if (limit < 1 || limit > 200) throw usage('--limit must be between 1 and 200');
+    query.limit = String(limit);
+  }
+  const page = await observedInvoke<BridgeMemoryProposalListResult>(client(cmd), 'bridges.memories.proposals.list', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, query,
+  });
+  cmd.out.data(page, p => p.items.length ? p.items.map(renderProposal).join('\n') : 'no memory proposals');
+  return EXIT_OK;
+}
+
+async function bridgeProposalResolve(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['statement', 'note']); argumentsCount(cmd, 3);
+  const decision = requireArg(cmd, 2, 'accept|drop');
+  if (decision !== 'accept' && decision !== 'drop') throw usage('a proposal is resolved with accept or drop');
+  const statement = cmd.options.value('statement');
+  if (statement !== undefined && decision !== 'accept') throw usage('--statement corrects the text to accept; it is for accept only');
+  const note = cmd.options.value('note');
+  const result = await observedInvoke<BridgeMemoryProposal>(client(cmd), 'bridges.memories.proposals.resolve', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>'), proposalId: requireArg(cmd, 1, '<proposal-id>') },
+    body: { decision, ...(statement !== undefined ? { statement } : {}), ...(note !== undefined ? { note } : {}) },
+  });
+  cmd.out.data(result, renderProposal);
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
@@ -287,4 +328,6 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'handle', 'claim'], run: bridgeHandleClaim },
   { path: ['bridge', 'log'], run: bridgeLog },
   { path: ['bridge', 'listen'], run: bridgeListen },
+  { path: ['bridge', 'proposals'], run: bridgeProposals },
+  { path: ['bridge', 'proposal', 'resolve'], run: bridgeProposalResolve },
 ];
