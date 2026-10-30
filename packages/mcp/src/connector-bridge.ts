@@ -20,10 +20,12 @@ export function serveConnectorBridge(serverId:string,env:NodeJS.ProcessEnv=proce
       else {
         if(!['tools/list','tools/call'].includes(message.method??''))throw new Error();
         const response=await fetch(`${base}/v2/mcp/sessions/${encodeURIComponent(sessionId)}/servers/${serverId}`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({sessionId,serverId,message}),signal:AbortSignal.timeout(30000)});
-        if(!response.ok)throw new Error();
+        // Name the refusal (status, tm8 error code, request id) so a broken
+        // route reads as itself, not as a missing account. Never the message.
+        if(!response.ok){const wire=await response.json().catch(()=>null) as {error?:{code?:unknown};requestId?:unknown}|null;const why=[response.status,wire?.error?.code,wire?.requestId].filter(v=>typeof v==='string'||typeof v==='number').join(' ');throw new Error(why);}
         const body=await response.json() as {result?:unknown;data?:unknown};result=body.result??body.data??body;
       }
       process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\n');
-    }catch{process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,error:{code:-32000,message:'MCP connector unavailable; check account and session access'}})+'\n');}
+    }catch(error){const why=error instanceof Error && error.message?` (${error.message})`:'';process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,error:{code:-32000,message:`MCP connector unavailable${why}; check account and session access`}})+'\n');}
   });});
 }

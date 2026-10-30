@@ -9,6 +9,7 @@ import {
 } from '@tm8/contract';
 
 import { ConfigError, loadConfig } from '../src/http/config.js';
+import { INPUT_SCHEMAS } from '../src/facade/input-schemas.js';
 import { normalizeCommandInputForIdempotencyMode } from '../src/http/idempotency.js';
 
 const command = {
@@ -54,6 +55,32 @@ describe('idempotency test mode', () => {
     const normalized = normalizeCommandInputForIdempotencyMode(binding(name), body, false);
     const parsed = schema.safeParse(normalized);
     expect(parsed.success, JSON.stringify(parsed.success ? {} : parsed.error.issues)).toBe(true);
+  });
+
+  /**
+   * The same bug past the auth surface: `mcp.proxy.request` is `.strict()` with
+   * no `clientMutationId`, so on a ledger-off node every connector `tools/list`
+   * from a session or chat answered `Unrecognized key(s)` and the model saw no
+   * tools. Swept over every mounted command rather than a hand-kept list: any
+   * strict DTO the injector would break fails here by name.
+   */
+  it('never makes a command body fail its own schema by injecting an id', () => {
+    const broken: string[] = [];
+    for (const op of OPERATIONS as readonly OperationBinding[]) {
+      const schema = INPUT_SCHEMAS[op.name as keyof typeof INPUT_SCHEMAS];
+      if (op.kind !== 'command' || !schema) continue;
+      const parsed = schema.safeParse(normalizeCommandInputForIdempotencyMode(op, {}, false, schema));
+      if (!parsed.success && parsed.error.issues.some(
+        (issue) => issue.code === 'unrecognized_keys' && issue.keys.includes('clientMutationId'),
+      )) broken.push(op.name);
+    }
+    expect(broken).toEqual([]);
+  });
+
+  it('still injects an id for a strict command whose schema accepts one', () => {
+    const op = binding('entities.create');
+    const normalized = normalizeCommandInputForIdempotencyMode(op, {}, false, INPUT_SCHEMAS['entities.create']);
+    expect(normalized).toMatchObject({ clientMutationId: expect.any(String) });
   });
 
   it('gives every other command a fresh id while idempotency is disabled', () => {
