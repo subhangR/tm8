@@ -79,11 +79,12 @@ describe('Settings → Bridges', () => {
     await renderSection();
     const add = screen.getByTestId('bridges-add') as HTMLButtonElement;
     expect(add.disabled).toBe(true);
-    expect(add.title).toContain('bridges.connections.begin');
+    expect(add.title).toContain('bridges.connections.list');
     expect((screen.getByRole('button', { name: '+ Link a new account' }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
-    await renderSection({ served: ['bridges.connections.begin'] });
+    await renderSection({ served: ['bridges.connections.list', 'bridges.conversations.list', 'bridges.connections.begin'] });
     expect((screen.getByTestId('bridges-add') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: '+ Link a new account' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('pauses and resumes through the port, and says what pausing means', async () => {

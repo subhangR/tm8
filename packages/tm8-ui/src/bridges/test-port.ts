@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { BridgeView, CommandResult, EdgeView, EntitySummary } from '@tm8/contract';
-import { bridgeDeploys, bridgeInfra, bridgeRahul, chatLaunchPlan, memoryTokens } from '../fixtures/entities';
+import { bridgeDeploys, bridgeInfra, bridgeRahul, channelDesign, chatLaunchPlan, memoryTokens } from '../fixtures/entities';
 import { ada } from '../fixtures/actors';
 import type { BridgesPort } from './api';
 import { createFixtureBridgesClient, fixtureBridgeViewOf } from './fixture';
@@ -8,7 +8,7 @@ import { createFixtureBridgesClient, fixtureBridgeViewOf } from './fixture';
 /** A port over the fixture client, with the seam reads stubbed: what the bridge tests drive. */
 export function testPort(opts: { served?: readonly string[]; memories?: EdgeView[] } = {}) {
   const views = [bridgeInfra, bridgeDeploys, bridgeRahul].map((row) => fixtureBridgeViewOf(row)!);
-  const client = createFixtureBridgesClient(views);
+  const client = createFixtureBridgesClient(views, (id) => [chatLaunchPlan, channelDesign].find((t) => t.id === id));
   const served = new Set(opts.served ?? []);
   const edges = [...(opts.memories ?? [])];
   const ok: CommandResult = { patches: [] } as unknown as CommandResult;

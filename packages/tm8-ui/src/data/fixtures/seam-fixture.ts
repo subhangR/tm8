@@ -6311,10 +6311,10 @@ export function createFixtureSeam(): FixtureSeam {
   );
   seam.commands.loopForm = loopFormSourcesOf(seam);
   // Seeded from the fixture bridge entities, so Settings → Bridges and the bridge panel agree with the entity rows.
-  seam.commands.bridges = bridgesPortFromSeam(
-    createFixtureBridgesClient([...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? [])),
-    seam,
-    catalogServes,
+  const fixtureBridges = createFixtureBridgesClient(
+    [...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? []),
+    (id) => summaries.get(id as EntityId),
   );
+  seam.commands.bridges = bridgesPortFromSeam(fixtureBridges, seam, catalogServes, fixtureBridges.onConnectionAuth);
   return seam;
 }

@@ -700,7 +700,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   seam.commands.managed = managedPortFromSeam(seam);
   seam.commands.tools = createToolPort(http, seam);
   seam.commands.loops = createLoopsClient(http);
-  seam.commands.bridges = bridgesPortFromSeam(createBridgesClient(http), seam, catalogServes);
+  seam.commands.bridges = bridgesPortFromSeam(
+    createBridgesClient(http), seam, catalogServes, (cb) => connection.onBridgeConnectionAuth(cb),
+  );
   seam.commands.loopForm = loopFormSourcesOf(seam);
   return seam;
 }
