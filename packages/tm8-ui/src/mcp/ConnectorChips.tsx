@@ -76,7 +76,7 @@ export function ConnectorChips({ catalog, value, onChange, disabled = false, pro
       </button>
     ) : null}
     {problem ? <p className="mcp-error mcp-compact__line" role="alert">{problem}</p> : null}
-    {pending ? <p className="mcp-compact__line mcp-compact__quiet" role="status" data-testid="mcp-compact-checking">{pending}</p> : null}
+    {pending ? <p className="mcp-compact__line mcp-compact__quiet mcp-compact__wait" role="status" data-testid="mcp-compact-checking">{pending}</p> : null}
     {readError}
     {full ? (
       <div id={listId} className="mcp-compact__full">

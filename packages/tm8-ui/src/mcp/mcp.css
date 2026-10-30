@@ -667,6 +667,12 @@
   color: var(--pn-ink-3, var(--pn-ink-2));
 }
 
+/* A WAIT rides at the end of the chip row (wrapping only when the row is
+   full), so it clears when the read lands without the card changing height. */
+.mcp-compact__wait {
+  flex-basis: auto;
+}
+
 .mcp-compact__line button {
   padding: 0 4px;
   border: 0;
