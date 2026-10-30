@@ -210,7 +210,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  * graph read made the CLI report a TIMEOUT for a launch that was proceeding
  * normally and did produce a working session. Measured live 2026-08-24.
  *
- * `execution.spawn` answers at ADMISSION on a current server (392) and boots
+ * `execution.spawn` answers at ADMISSION on a current server (404) and boots
  * the session afterwards — `tm8 session spawn` then follows the row — so its
  * floor is only for a server that predates admission, which still answers
  * after the first turn settles, exactly like resume.

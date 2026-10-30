@@ -555,7 +555,7 @@ describe('W1 honest W2-only skeletons', () => {
       },
       owner,
     });
-    // `admit` is the launch boundary (392); `spawn()` runs through it too.
+    // `admit` is the launch boundary (404); `spawn()` runs through it too.
     const spawn = vi.spyOn(runtime.spawnService, 'admit').mockImplementation(async () => admittedSpawn());
     return { registry, owner, spawn, tx, db, q };
   }

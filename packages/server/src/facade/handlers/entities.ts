@@ -358,7 +358,7 @@ async function toCommandResult(
  * hierarchy, connections) and the rest (patches, edge) are independent reads
  * of rows the command already committed, so they run side by side instead of
  * one after the other on one client — one `Querier` cannot run two queries at
- * once. Measured on `execution.spawn` (392, load ~80): detail 400-700 ms,
+ * once. Measured on `execution.spawn` (404, load ~80): detail 400-700 ms,
  * patches another 40-175 ms of the same chain.
  *
  * Two SIBLING transactions, never one nested in the other: a nested checkout

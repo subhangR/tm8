@@ -1319,7 +1319,7 @@ export class DbGraphPort implements GraphPort {
       null, // p_client_mutation_id — an exit is not a client mutation
       input.endedKind ?? null, // p_ended_kind (171)
       input.endedReason ?? null, // p_ended_reason (171) — plain English
-      input.bootPhase ?? null, // p_boot_phase (392) — a booting launch's progress
+      input.bootPhase ?? null, // p_boot_phase (404) — a booting launch's progress
     ]);
   }
 
@@ -2502,7 +2502,7 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * The spawn receipt's posture rows (`ExecutionSpawnLaunch`), rebuilt from a
  * recorded manifest by the same `spawnLaunchFacts` the boot reports them with.
- * `execution.spawn` answers at admission (392), before the credentials are
+ * `execution.spawn` answers at admission (404), before the credentials are
  * resolved, so this is where a caller that waited for `running` reads them.
  * Nothing for a manifest without a launch block, or one written before the
  * access-mode source was recorded: a guessed `default` would misreport it.
@@ -2542,7 +2542,7 @@ function launchReceiptOf(
  *
  * It runs in its own transactions AFTER the command rather than inside the
  * RPC's: holding a transaction open across a process spawn is its own
- * problem. For `execution.spawn` that is after ADMISSION (392), so the client
+ * problem. For `execution.spawn` that is after ADMISSION (404), so the client
  * sees the session as it then is — `spawning`, its boot phase — and follows
  * the rest of the boot through the ordinary entity events.
  */
@@ -3605,7 +3605,7 @@ function registerHandlers(
    * build's output as though it were the text that agent received.
    */
   /**
-   * execution.bootState (392) — a session's boot from its row: status, boot
+   * execution.bootState (404) — a session's boot from its row: status, boot
    * phase, ended reason. Read under the caller's claims, so an unreadable
    * session is a not_found like a missing one. `tm8 session spawn` polls this
    * while it waits, instead of the full entity detail.
@@ -3982,7 +3982,7 @@ function registerHandlers(
 
     // ANSWERED AT ADMISSION: the row exists (`spawning`, boot phase
     // `admitted`) and the boot runs on in this process, recording each phase
-    // on the row, which is how the caller follows it from here (392). A boot
+    // on the row, which is how the caller follows it from here (404). A boot
     // that fails says so on the row, not in this response.
     // The boot starts once this answer is assembled (`answered`, settled in
     // the finally below), so the two do not compete for the pool.

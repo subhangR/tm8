@@ -1,5 +1,6 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
+import { BridgeEntitySchema } from './bridges.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -246,6 +247,8 @@ export const CoreEntityKindSchema = z.enum([
   // Crafts (304; renamed from design in 322): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'craft',
+  // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
+  'bridge',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -371,7 +374,7 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
-/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 392. */
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 404. */
 export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
   z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
@@ -423,13 +426,17 @@ export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
 
 export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   id: EntityIdSchema,
-  kind: z.enum(['member', 'team_member', 'work_session']),
+  kind: z.enum(['member', 'team_member', 'work_session', 'bridge']),
   displayName: z.string(),
   avatar: z.string().nullable().optional(),
   role: z.string().nullable().optional(),
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
-  via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
+  via: z.object({
+    sessionId: EntityIdSchema.optional(),
+    bridgeId: EntityIdSchema.optional(),
+    participant: z.object({ displayName: z.string(), avatar: z.string().nullable().optional() }).strict().optional(),
+  }).strict().optional(),
   memberStatus: z.enum(['left', 'removed']).optional(),
 }).strict();
 
@@ -695,7 +702,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
-    // 392: the last phase the launch's boot reached, and when. Absent on a
+    // 404: the last phase the launch's boot reached, and when. Absent on a
     // node (or a row) that records no boot. Named here for the reason above.
     bootPhase: WorkSessionBootPhaseSchema.optional(),
     bootPhaseAt: z.string().optional(),
@@ -782,6 +789,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
@@ -1232,6 +1241,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style's content: its state plus the description.
   z.object({
     kind: z.literal('style'),
@@ -3069,7 +3080,7 @@ export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge']),
   CustomEntityKindSchema,
 ]));
 

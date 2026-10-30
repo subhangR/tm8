@@ -579,6 +579,8 @@ RULE 2 shrinks to one line in the bridge's kind help, not a briefing: "*to start
 | V9 | Every widening change goes through one consequence dialog fed by a server dry run | per-setting ad hoc warnings | words computed from data, the same in UI and CLI |
 | V10 | Mobile linking uses the pairing code; QR moves to a second screen by a member-addressed hand-off | QR only | a phone cannot scan its own screen |
 
+v1's open questions Q7 (failover) and Q8 (hand-over), not to be confused with this document's Q7 and Q8 below, are decided in v1 §8: **D55** (hand-over yes, accepted in tm8 by the receiving number's owner) and **D56** (no automatic failover; a space admin recovers a bridge by a manual hand-over). Neither is ever run from WhatsApp.
+
 ---
 
 ## 7. Open questions (with recommendations)

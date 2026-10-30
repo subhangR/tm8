@@ -1,12 +1,13 @@
 import { McpPicker } from '../mcp/McpPicker';
 import type { McpSelection } from '../mcp/port';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
   CredentialsServiceKeysStatusView,
   EntityId,
   ExecutionDispatchResult,
+  ProjectId,
   ExecutionSpawnInput,
   SpawnSelectionGroup,
 } from '@tm8/contract';
@@ -34,6 +35,7 @@ import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
+  jevKeyUsable,
   JEV_UNWIRED_REASON,
   modelApplyRefusal,
   modelLabel,
@@ -51,9 +53,9 @@ import {
 } from '../launch-selection';
 import type { FileUploadTask } from '../files/upload';
 import { LaunchCardV3, VERBS, aKind, type JevButton, type LaunchCandidate, type LaunchVerb } from './LaunchCardV3';
-import { AgentPreview, DispatchPreview, type PreviewRow } from './LaunchPreview';
 import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type StripRow } from './launch-strip';
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
+import type { LaunchStarted } from './launch-started';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
 import { useOverlayHost } from '../kit/useOverlayHost';
@@ -67,8 +69,15 @@ import './new-session.css';
  * card v3 (mock 01a0df08, owner's decisions on task 01a0dee8) in a modal
  * layer. It replaced the v2 card outright (owner, form 01a0df25).
  *
- * The verb OPENS this; Launch or Dispatch commit it, each through a preview
- * of what goes. Two clicks at least, never one.
+ * The verb OPENS this; Launch (or ⌘↵) and Dispatch commit it on their FIRST
+ * press (owner, task 01a182d2: "remove second launch, and show it as loading
+ * page"). The card itself is the statement of what goes, so it draws only
+ * what this launch carries — no preview step repeating it with "None." rows.
+ *
+ * THE HANDOFF (`onLaunchStarted`): a host that draws its own progress takes
+ * the launch the moment it is pressed and the card dismisses at once; any
+ * other host keeps the card up, collapsed to one "Launching …" line, until
+ * the node answers.
  *
  * THE CARD IS A LAYER OVER THE TASK. The task's title and description are
  * read here (the subject chip's peek) and edited on the task — nothing is
@@ -87,11 +96,22 @@ import './new-session.css';
  * distinct dispatch), so a retry after a timeout replays the node's ledger
  * rather than starting a second session.
  *
- * DISMISSAL: Escape closes the preview, then a menu, then the drawer, then
- * the popup (the shell owns that order); the scrim and ✕ close it; a commit
- * closes it ONLY ON SUCCESS — a refusal keeps it up with the reason and a
+ * DISMISSAL: Escape closes a menu, then the drawer, then the popup (the
+ * shell owns that order); the scrim closes an open menu first, then the
+ * popup; ✕ closes it; a commit closes it ONLY ON SUCCESS (or at once when
+ * the host took the launch over) — a refusal keeps it up with the reason and a
  * shake (owner's ruling 2026-09-07).
  */
+
+/** Where a press is: see `phase` in the popup. */
+type PressPhase = 'idle' | 'launching' | 'dispatching' | 'detached';
+
+/**
+ * How long a press holds the card before ✕ and Escape may DETACH it: a
+ * spawn that hangs to its 180 s timeout must not lock the person behind the
+ * scrim, but a normal one answers well inside this.
+ */
+export const DETACH_AFTER_MS = 8000;
 
 /** `ExecutionDispatchInput.note`'s cap in the contract schema. */
 const DISPATCH_NOTE_MAX = 4000;
@@ -116,8 +136,17 @@ export interface LaunchComposerPopupProps {
   teammates: readonly PopupTeammate[];
   projects?: readonly LaunchProjectOption[];
   capacity?: LaunchCapacity;
+  /**
+   * A refusal that arrives after the person DETACHED the card (closed it
+   * mid-flight, after DETACH_AFTER_MS): the card is gone, so the host shows
+   * it (a toast). Absent ⇒ it reaches the person only through the session
+   * list.
+   */
+  onDetachedRefusal?(reason: string): void;
   /** Commits the spawn. ABSENT ⇒ Launch refuses with the unwired reason (R5 #9). */
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
+  /** Called synchronously when Launch is pressed, before the node answers. Return true to take over the progress display: the popup dismisses at once and the host owns everything after (progress, success, failure). Return false/undefined to keep the in-card "Launching…" state until onSpawn settles (today's behaviour, kept for hosts that do not implement it). */
+  onLaunchStarted?(launch: LaunchStarted): boolean | void;
   /** The subject's current description, for the read-only peek. */
   loadDescription?: () => Promise<string | null>;
   /** The viewer may edit the task: the peek offers "Edit on the task ↗" (closing onto it). */
@@ -224,6 +253,8 @@ export function LaunchComposerPopup({
   projects = [],
   capacity,
   onSpawn,
+  onLaunchStarted,
+  onDetachedRefusal,
   loadDescription,
   canEditSubject = false,
   onDismiss,
@@ -270,6 +301,10 @@ export function LaunchComposerPopup({
   /* The spawn's `taskIds`, so a plugin tick's exact skill set keeps what the
      subject equips (F3). Memoized: the hook keys its read on it. */
   const subjectTaskIds = useMemo(() => [subject.id], [subject.id]);
+  /* PLUGIN FACTS ARE READ WHEN THE ··· DRAWER FIRST OPENS — the only place the
+     Plugins row is drawn — never at open (lane E). */
+  const [pluginsWanted, setPluginsWanted] = useState(false);
+  const wantPlugins = useCallback(() => setPluginsWanted(true), []);
   const { config, projectOptions, bind, more } = useLaunchComposerState({
     teammates: teammateRows,
     projects: projectRows,
@@ -277,6 +312,7 @@ export function LaunchComposerPopup({
     ...(loadInstalledPlugins ? { loadInstalledPlugins } : {}),
     taskIds: subjectTaskIds,
     initialAccessMode: null,
+    pluginsWanted,
   });
 
   /* PER-TEAMMATE REMEMBERED PICKS: when the resolved teammate changes (the
@@ -438,7 +474,69 @@ export function LaunchComposerPopup({
     startUploads([failed.file]);
   };
 
-  const [pending, setPending] = useState(false);
+  /**
+   * THE PRESS, as one named state. `moveTo` is the only transition.
+   *   idle         the card is editable.
+   *   launching    a press is in flight: the card is the one-line row.
+   *   dispatching  the same, for Dispatch.
+   *   detached     the person closed the card mid-flight (after
+   *                DETACH_AFTER_MS): the press continues without it.
+   * A press leaves idle; a refusal, a timeout or an undelivered dispatch
+   * returns to idle (or, detached, goes to `onDetachedRefusal`); success, or
+   * a host taking the handoff, dismisses and returns to idle. The ref
+   * mirrors it SYNCHRONOUSLY, so a second press (or an Escape) in the same
+   * frame already sees the first one.
+   */
+  const [phase, setPhase] = useState<PressPhase>('idle');
+  const phaseNow = useRef<PressPhase>('idle');
+  const moveTo = (next: PressPhase) => { phaseNow.current = next; setPhase(next); };
+  const pending = phase !== 'idle';
+  /* A CHANGED SUBJECT is a new card GENERATION: a press belongs to the
+     generation that made it, and its late answer (success, refusal,
+     timeout) is ignored once the card has moved on. */
+  const generation = useRef(0);
+  const subjectSeen = useRef(subject.id);
+  useEffect(() => {
+    if (subjectSeen.current === subject.id) return;
+    subjectSeen.current = subject.id;
+    generation.current += 1;
+    moveTo('idle');
+    /* The old press's words and its timeout check belong to it: a check left
+       at 'checking' refused every launch of the new subject. */
+    setTimedOut(null);
+    setNodeRefusal(null);
+  }, [subject.id]);
+  /** `act`, run only while the press made in generation `gen` is still this card's. */
+  const ifCurrent = <A extends unknown[]>(gen: number, act: (...args: A) => void) => (...args: A) => {
+    if (gen === generation.current) act(...args);
+  };
+  /* DETACHABLE once a press has been in flight DETACH_AFTER_MS. */
+  const [detachable, setDetachable] = useState(false);
+  const detachableNow = useRef(false);
+  useEffect(() => {
+    detachableNow.current = false;
+    setDetachable(false);
+    if (phase !== 'launching' && phase !== 'dispatching') return;
+    const timer = setTimeout(() => { detachableNow.current = true; setDetachable(true); }, DETACH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  /* DISMISSAL: idle closes. In flight, the spawn still answers this card
+     (success closes it, a refusal reopens it with the reason), so Escape,
+     the scrim and ✕ do nothing — until DETACH_AFTER_MS, after which they
+     detach it: the card closes and the press continues without it. */
+  const dismiss = () => {
+    if (phaseNow.current === 'idle') { onDismiss?.(); return; }
+    if (phaseNow.current === 'detached' || !detachableNow.current) return;
+    moveTo('detached');
+    onDismiss?.();
+  };
+  /** A refusal for the person: on the card, or — detached — to the host. */
+  const refuse = (reason: string) => {
+    if (phaseNow.current === 'detached') { onDetachedRefusal?.(reason); moveTo('idle'); return; }
+    moveTo('idle');
+    setNodeRefusal(reason);
+    setShaking(true);
+  };
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
   /** One shake per refusal — cleared by its own animationend. */
@@ -449,6 +547,10 @@ export function LaunchComposerPopup({
 
   const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
+  /* TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): McpPicker's
+     `onCount(n)` replaces the DrawnCount probe below, and lane F deletes it
+     in that change; until then the card counts the connector rows drawn. */
+  const [mcpCount, setMcpCount] = useState(0);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
 
@@ -463,37 +565,57 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : (!mcpReady ? "Choose a connected account for each connector." : null) ?? selection.launchBlock
+      /* Not ready with nothing drawn is the catalog still being read; not
+         ready with rows drawn is a picked connector with no account. Lane
+         F's gate sentence replaces both after its picker swap. */
+      : (!mcpReady
+        ? (mcpCount === 0 ? 'Reading connectors…' : 'Connectors: choose a connected account for each connector you picked.')
+        : null) ?? more.pluginsBlock ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
   const committed = useRef(false);
   const draftNow = useRef({ notes, edits: selection.edits, added: selection.added });
   draftNow.current = { notes, edits: selection.edits, added: selection.added };
+  /* AN EDIT AFTER A COMMIT is a new draft: a host that keeps the card
+     mounted after a handoff got no draft for what was typed after it. */
+  useEffect(() => { committed.current = false; }, [notes, selection.edits, selection.added]);
   useEffect(() => () => {
     if (committed.current) return;
     const d = draftNow.current;
     writeDraft(subject.id, { notes: d.notes, edits: d.edits, added: d.added });
   }, [subject.id]);
 
+  /** The press's hold on Jev: released by the hook when the launch rejects; by `succeed` when the card stays up. */
+  const jevHold = useRef<{ unseal(): void } | null>(null);
   const fail = (error: unknown) => {
-    setPending(false);
-    setNodeRefusal(
-      String((error as { message?: string })?.message ?? error)
-        || 'the node refused this launch and gave no reason',
-    );
-    setShaking(true);
+    refuse(String((error as { message?: string })?.message ?? error) || 'the node refused this launch and gave no reason');
   };
-  const succeed = () => {
+  /**
+   * The press settled well, or a host took it (`handedOff`). THE JEV HOLD
+   * (lane E): a press that settles here returns the card to idle, and the card
+   * may still be up (a host with no dismissal, or one that keeps it mounted),
+   * so what Jev answered meanwhile is shown. A handoff dismissed the card and
+   * the host owns what follows: the hold goes with the card. A REJECTED press
+   * never reaches here — the hook releases its hold itself, detached or not.
+   */
+  const succeed = (handedOff = false) => {
     committed.current = true;
     clearDraft(subject.id);
-    onDismiss?.();
+    /* Detached, the card is already closed. */
+    if (phaseNow.current !== 'detached') onDismiss?.();
+    moveTo('idle');
+    if (!handedOff) jevHold.current?.unseal();
   };
 
   /* A SPAWN THAT TIMED OUT MAY HAVE STARTED. Until the node dedupes an
      in-flight retry, the card looks for the session before offering one. */
-  const afterTimeout = () => {
-    setPending(false);
+  const afterTimeout = (gen: number) => {
+    if (phaseNow.current === 'detached') {
+      refuse('The node didn’t answer in time — the launch may have started. Look at the task’s sessions before launching again.');
+      return;
+    }
+    moveTo('idle');
     setShaking(true);
     if (!sessionsSince) {
       setTimedOut('unknown');
@@ -503,7 +625,7 @@ export function LaunchComposerPopup({
     setTimedOut('checking');
     setNodeRefusal('The node didn’t answer in time — the launch may have started. Checking…');
     sessionsSince(subject.id, openedAt.current).then(
-      (found) => {
+      ifCurrent(gen, (found: readonly { id: string; title: string }[]) => {
         if (found.length > 0) {
           setTimedOut('found');
           setNodeRefusal(`It started: “${found[0]!.title}” is working on this task. Nothing more to launch.`);
@@ -511,19 +633,43 @@ export function LaunchComposerPopup({
           setTimedOut('none');
           setNodeRefusal('No session started on this task. Launch again to retry.');
         }
-      },
-      () => {
+      }),
+      ifCurrent(gen, () => {
         setTimedOut('unknown');
         setNodeRefusal('The node didn’t answer in time, and checking for the session failed too — look at the task’s sessions before launching again.');
-      },
+      }),
     );
   };
 
+  /** What the host is handed at the press: read off the very input sent. */
+  const launchStarted = (input: ExecutionSpawnInput): LaunchStarted => {
+    const mate = input.teamMemberId ? teammates.find((t) => t.id === input.teamMemberId) : undefined;
+    const projectId = input.projectId ?? null;
+    return {
+      clientMutationId: input.clientMutationId,
+      subjectId: subject.id as EntityId,
+      title: input.title ?? defaultTitle,
+      verb,
+      teammate: input.teamMemberId ? { id: input.teamMemberId as EntityId, name: mate?.label ?? input.teamMemberId } : null,
+      model: input.model ?? null,
+      effort: input.reasoningEffort ?? null,
+      accessMode: input.accessMode ?? null,
+      workdir: projectId === null || input.workdir?.mode === 'scratch'
+        ? { kind: 'scratch' }
+        : {
+          kind: 'project',
+          projectId: projectId as ProjectId,
+          mode: input.workdir?.mode === 'worktree' ? 'worktree' : 'project',
+          baseRef: input.workdir?.mode === 'worktree' ? input.workdir.baseRef ?? null : null,
+        },
+      notes: notes.trim(),
+    };
+  };
+
   const commit = () => {
-    if (!onSpawn || pending || refusal || timedOut === 'checking' || timedOut === 'found') return;
+    if (!onSpawn || phaseNow.current !== 'idle' || refusal || dispatcherRefusal || timedOut === 'checking' || timedOut === 'found') return;
     setTimedOut(null);
     setNodeRefusal(null);
-    setPending(true);
     /* PER-GROUP SEND (I9), read at commit time: an untouched group is
        omitted (its defaults load) with a reason; an edited group is its
        exact set. No group edited ⇒ no `selection`. */
@@ -555,24 +701,51 @@ export function LaunchComposerPopup({
        key, so the node's ledger replays the session instead of starting a
        second one; any change to what is launched mints a fresh key. */
     const input = inputWith(spawnKey.current.keyFor(JSON.stringify(inputWith(''))));
-    Promise.resolve()
-      .then(() => onSpawn(input))
-      .then(() => {
-        if (remember && launched.teamMemberId) {
-          writePicks(launched.teamMemberId, {
-            model: launched.model,
-            effort: launched.reasoningEffort,
-            accessMode: launched.accessMode,
-            ...(launched.target.kind === 'project' && launched.workdirMode ? { workdirMode: launched.workdirMode } : {}),
-          });
-        }
+    const keepPicks = () => {
+      if (remember && launched.teamMemberId) {
+        writePicks(launched.teamMemberId, {
+          model: launched.model,
+          effort: launched.reasoningEffort,
+          accessMode: launched.accessMode,
+          ...(launched.target.kind === 'project' && launched.workdirMode ? { workdirMode: launched.workdirMode } : {}),
+        });
+      }
+    };
+    /* ONE PRESS, ONE SPAWN: the phase leaves idle before anything else, and
+       `run` is the only call of `onSpawn` (on the next microtask, so the
+       handoff below is still asked first). */
+    moveTo('launching');
+    const gen = generation.current;
+    /* THE HANDOFF: asked synchronously, before the node is. A host that
+       throws is a refused launch, and nothing is sent. */
+    let taken = false;
+    try {
+      taken = onLaunchStarted?.(launchStarted(input)) === true;
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    const run = Promise.resolve().then(() => onSpawn(input));
+    /* THE PRESS HOLDS JEV: an answer landing while this launch is on its way
+       is held, never applied under it; the hook shows it if the launch is
+       refused, fails or times out (lane E) — a detached press included. */
+    jevHold.current = jev.seal(run);
+    /* A host that takes it owns the progress and the failure, so the spawn's
+       errors are not drawn here — the card is gone by the time they arrive. */
+    if (taken) {
+      run.then(keepPicks, () => { /* the host's to show */ });
+      succeed(true);
+      return;
+    }
+    run
+      .then(ifCurrent(gen, () => {
+        keepPicks();
         succeed();
-      })
-      .catch((error: unknown) => {
+      }), ifCurrent(gen, (error: unknown) => {
         const e = error as { code?: string; message?: string };
-        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout();
+        if (e?.code === 'upstream_unavailable' || /did not answer within/.test(String(e?.message ?? ''))) afterTimeout(gen);
         else fail(error);
-      });
+      }));
   };
 
   /* ---- THE VERB: the KIND of session ---- */
@@ -615,9 +788,9 @@ export function LaunchComposerPopup({
     if (!read) return;
     let alive = true;
     read().then((view) => {
-      if (!alive || view.store === 'absent') return;
-      const key = view.keys.find((k) => k.provider === 'typesafe');
-      setJevKey(key && (key.connected || key.nodeFallback) ? 'yes' : 'none');
+      const usable = jevKeyUsable(view);
+      if (!alive || usable === null) return;
+      setJevKey(usable ? 'yes' : 'none');
     }, () => { /* unknown stays unknown: ✦ stays in colour until an ask says no_key */ });
     return () => { alive = false; };
   }, []);
@@ -758,6 +931,13 @@ export function LaunchComposerPopup({
   }
   const stripJev: StripJev = {
     carried: { memories: jev.entity.memories.carried, skills: jev.entity.skills.carried, references: jev.entity.references.carried },
+    /* Everything Jev's Apply added, ticked or not: an unticked pick stays a
+       row (under Attach → Suggested), one click from coming back. */
+    picked: {
+      memories: jev.entity.memories.applied?.added ?? [],
+      skills: jev.entity.skills.applied?.added ?? [],
+      references: jev.entity.references.applied?.added ?? [],
+    },
     why: jevWhy,
   };
   const strip = buildStrip({ defaults: selection.defaults, edits: selection.edits, added: selection.added, jev: stripJev, teammates: jevTeammateRows });
@@ -812,8 +992,7 @@ export function LaunchComposerPopup({
       .sort((a, b) => STRIP_KINDS.findIndex((d) => d.kind === a.kind) - STRIP_KINDS.findIndex((d) => d.kind === b.kind))
     : undefined;
 
-  /* ---- DISPATCH and THE PREVIEWS ---- */
-  const [preview, setPreview] = useState<null | { kind: 'launch' } | { kind: 'dispatch' }>(null);
+  /* ---- DISPATCH ---- */
   const note = notes.trim();
   const dispatchRefusal = verb !== 'worker'
     ? `Dispatch can’t ask for ${aKind(verb)} yet — the node’s dispatch takes no session kind, so its dispatcher would start a worker. Launch it yourself, or switch to RUN.`
@@ -821,76 +1000,38 @@ export function LaunchComposerPopup({
       ? `Dispatch carries at most ${String(DISPATCH_NOTE_MAX)} characters of notes (these are ${String(note.length)}).`
       : null;
   const dispatch = () => {
-    if (!onDispatch || pending || dispatchRefusal) return;
+    if (!onDispatch || phaseNow.current !== 'idle' || dispatchRefusal) return;
     setNodeRefusal(null);
-    setPending(true);
+    moveTo('dispatching');
+    const gen = generation.current;
     Promise.resolve()
       .then(() => onDispatch(note || undefined, dispatchKey.current.keyFor(`${subject.id}\n${note}`)))
-      .then((result) => {
+      .then(ifCurrent(gen, (result: unknown) => {
         const r = result as Partial<ExecutionDispatchResult> | undefined;
         if (r?.delivery === 'undelivered') {
           /* Not a success: the request is stored on the task, but no
              dispatcher received it. Say so and keep the card up. */
-          setPending(false);
-          setNodeRefusal(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
+          refuse(`The request is stored on the task, but the node couldn’t deliver it to ${r.dispatcherSpawned ? 'the dispatcher it just started' : 'the dispatcher'}. Dispatching again sends the same request.`);
           return;
         }
         succeed();
-      })
-      .catch(fail);
+      }), ifCurrent(gen, fail));
   };
-  /** ⌘↵ and Launch: open the preview; inside it, commit. */
-  const onLaunch = () => {
-    if (preview?.kind === 'launch') { commit(); return; }
-    if (preview?.kind === 'dispatch') { dispatch(); return; }
-    if (refusal || dispatcherRefusal) return;
-    setNodeRefusal(null);
-    setPreview({ kind: 'launch' });
-  };
-
   const modelWord = (id: string) => catalog.find((m) => m.model === id)?.label ?? id;
-  const rowOf = (r: StripRow, noteText?: string): PreviewRow => ({
-    id: r.id, kind: stripKindOf(r.group, r.kind), title: r.title, ...(noteText ? { note: noteText } : {}),
-  });
-  const ticked = stripRows.filter((r) => r.ticked);
-  const runsAs = [
-    config.model ? modelWord(config.model) : 'the teammate’s model',
-    config.reasoningEffort ? effortLabel(config.reasoningEffort) : 'default effort',
-    accessLock ? 'Full access (forced for a dispatcher)' : config.accessMode ? accessModeLabel(config.accessMode) : 'the teammate’s default access',
-  ].join(' · ');
-  const previewNode = preview?.kind === 'launch' ? (
-    <AgentPreview
-      verb={verb}
-      subjectTitle={subject.title}
-      continuing={continuing}
-      runsAs={runsAs}
-      inFull={[]}
-      notes={notes}
-      memories={ticked.filter((r) => r.group === 'memories').map((r) => rowOf(r))}
-      skills={ticked.filter((r) => r.group === 'skills').map((r) => rowOf(r))}
-      references={ticked.filter((r) => r.group === 'references' && r.kind !== 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
-      files={ticked.filter((r) => r.group === 'references' && r.kind === 'file').map((r) => rowOf(r, `tm8 entity context ${r.id}`))}
-      leftOut={stripRows.filter((r) => !r.ticked).map((r) => rowOf(r, r.jev === 'left-out' ? `✦ ${r.jevWhy ?? 'left out by Jev'}` : 'unticked'))}
-      contextIndex={contextIndex}
-      onBack={() => setPreview(null)}
-      onConfirm={commit}
-      busy={pending}
-      notice={nodeRefusal}
-    />
-  ) : preview?.kind === 'dispatch' ? (
-    <DispatchPreview
-      verb={verb}
-      subjectTitle={subject.title}
-      target={null}
-      targetUnknown
-      notes={notes}
-      inFullCount={inFull.length}
-      onBack={() => setPreview(null)}
-      onConfirm={dispatch}
-      busy={pending}
-      notice={nodeRefusal}
-    />
-  ) : null;
+  /* THE LAUNCHING LINE: the card collapses to what was pressed, not a greyed form. */
+  const teammateWord = teammates.find((t) => t.id === config.teamMemberId)?.label ?? null;
+  /* DETACHED is still a flight: a host that keeps the popup mounted sees the
+     line (with no ✕) until the press settles and the card returns to idle. */
+  const launchingLine = phase === 'idle'
+    ? null
+    : phase === 'dispatching'
+      ? `Dispatching ${subject.title}`
+      : [
+        `Launching ${defaultTitle}`,
+        teammateWord,
+        config.model ? modelWord(config.model) : null,
+        config.reasoningEffort ? effortLabel(config.reasoningEffort) : null,
+      ].filter(Boolean).join(' · ');
 
   const restoredLine = restored
     ? describePicks(restored, { model: modelWord, access: accessModeLabel }) || null
@@ -910,13 +1051,23 @@ export function LaunchComposerPopup({
 
   return createPortal(
     <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
-      {/* The scrim IS the outside: any click on it is a click away. */}
-      <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
-        connectors={(
+        scrim
+        onAdvancedOpen={wantPlugins}
+        /* The defaults' Retry line rides in this slot (lane E), so it counts
+           as something drawn: the slot hides at 0. */
+        connectors={{ count: mcpCount + (selection.defaultsLine?.retry ? 1 : 0), node: (<>
+          {/* THE DEFAULTS COULD NOT BE READ: what the card asks for, it offers
+              here (lane E). */}
+          {selection.defaultsLine?.retry ? (
+            <p className="lcd-note" role="status" data-testid="launch-defaults-retry-line">
+              {selection.defaultsLine.text}{' '}
+              <button type="button" className="lcd-btn" data-testid="launch-defaults-retry" onClick={selection.defaultsLine.retry}>Retry</button>
+            </p>
+          ) : null}
           /* §10.5: the launch grid, with D4's note — `Full` restores plugins
              and skills, never the launcher's personal Claude connectors. */
-          <McpPicker
+          <DrawnCount onCount={setMcpCount}><McpPicker
             teamMemberId={config.teamMemberId ?? undefined}
             targetId={subject.id}
             value={mcpSelections}
@@ -927,8 +1078,8 @@ export function LaunchComposerPopup({
             notice={bind.harnessSurface === 'inherit'
               ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
               : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
-          />
-        )}
+          /></DrawnCount>
+        </>) }}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -948,12 +1099,12 @@ export function LaunchComposerPopup({
         worktreeBaseRef={more.worktreeBaseRef}
         onWorktreeBaseRefChange={more.onWorktreeBaseRefChange}
         {...(capacity ? { capacity } : {})}
-        onClose={() => onDismiss?.()}
+        onClose={dismiss}
         {...(upload ? { onFiles: startUploads } : {})}
         subject={subject}
         continuing={continuing}
         description={description}
-        {...(canEditSubject && onDismiss && !continuing ? { onEditSubject: () => onDismiss() } : {})}
+        {...(canEditSubject && onDismiss && !continuing ? { onEditSubject: dismiss } : {})}
         inFull={{
           items: inFull.map((r) => ({ id: r.id, kind: r.kind, title: r.title, bytes: null, over: false })),
           refusal: IN_FULL_REFUSAL,
@@ -979,11 +1130,11 @@ export function LaunchComposerPopup({
           refusal: dispatchRefusal,
           /* No read of the space's dispatcher sessions exists yet: unknown. */
           dispatchers: null,
-          onDispatch: () => { setNodeRefusal(null); setPreview({ kind: 'dispatch' }); },
+          onDispatch: () => dispatch(),
         } : null}
-        onLaunch={onLaunch}
-        preview={previewNode}
-        onClosePreview={() => { if (!preview) return false; setPreview(null); return true; }}
+        onLaunch={commit}
+        launching={launchingLine}
+        {...(detachable ? { onDetach: dismiss } : {})}
         models={catalog.map((entry) => ({
           id: entry.model,
           label: entry.label,
@@ -998,10 +1149,10 @@ export function LaunchComposerPopup({
         onEffortChange={bind.onEffortChange}
         accessMode={bind.accessMode}
         onAccessModeChange={bind.onAccessModeChange}
-        onSubmit={onLaunch}
+        onSubmit={commit}
         busy={pending}
         refusal={refusal ?? dispatcherRefusal}
-        notice={preview ? null : nodeRefusal}
+        notice={nodeRefusal ?? (selection.defaultsLine?.retry ? null : selection.defaultsLine?.text ?? null)}
         shaking={shaking}
         onShakeEnd={() => setShaking(false)}
         mode={bind.mode}
@@ -1030,3 +1181,34 @@ export function LaunchComposerPopup({
   );
 }
 
+
+/**
+ * What in the picker is worth drawing the connectors block for: a connector
+ * row, or an error/problem line (role=alert, with its Retry) — something to
+ * act on. Its loading line is not.
+ *
+ * TODO(lane F, task 01a182d2-9b15-79f3-8651-ab2af823b525): this couples the
+ * card to classes in lane F's files. It is deleted by F's swap to
+ * `McpPicker onCount` in #1390, which merges after this.
+ */
+const MCP_DRAWN_SELECTOR = '.mcp-toggles__rows > li, [role="alert"]';
+
+/**
+ * How many things the picker drew that are worth the block (MCP_DRAWN_SELECTOR):
+ * 0 while it draws none. A stand-in for lane F's `McpPicker onCount`. The
+ * child stays MOUNTED at 0: it reads its catalog and readiness while hidden.
+ */
+function DrawnCount({ onCount, children }: { onCount(n: number): void; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => onCount(el.querySelectorAll(MCP_DRAWN_SELECTOR).length);
+    read();
+    if (typeof MutationObserver === 'undefined') return;
+    const observer = new MutationObserver(read);
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [onCount]);
+  return <span ref={ref} style={{ display: 'contents' }}>{children}</span>;
+}

@@ -3,7 +3,7 @@
  * credential each provider ran on, and the parent — so `tm8 session spawn`'s
  * receipt can show what a child inherited.
  *
- * `execution.spawn` answers at ADMISSION (392), before the boot resolves the
+ * `execution.spawn` answers at ADMISSION (404), before the boot resolves the
  * credentials, so its answer carries no `launch` block; the boot records the
  * resolved posture in the manifest, and `execution.launch` rebuilds the very
  * same block from it — which is where a CLI that waited for `running` reads it.

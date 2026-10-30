@@ -218,7 +218,7 @@ describe('execution.spawn — a worker works where its chat or session does', ()
         isNodeAdmin: true, isOwner: true,
       }),
     });
-    // The handler answers at admission (392); the boot runs on behind it and
+    // The handler answers at admission (404); the boot runs on behind it and
     // is waited for before the test's directories are removed.
     const settled = trackBoots(runtime.spawnService);
     const handler = registry.get('execution.spawn' as OperationName)!;

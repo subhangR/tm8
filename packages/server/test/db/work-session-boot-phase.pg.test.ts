@@ -1,5 +1,5 @@
 /**
- * 392 — the boot of a launch, recorded on its row.
+ * 404 — the boot of a launch, recorded on its row.
  *
  * The state machine, against a real PostgreSQL, through the doors the server
  * really uses: `work_session_transition` as `tm8_app` with a member's claims,
@@ -23,7 +23,7 @@ const IDENTITY = 'boot-phase-owner';
 let database: W1ScratchDatabase;
 let spaceId: string;
 let memberId: string;
-/** A session that existed before 392 was applied. */
+/** A session that existed before 404 was applied. */
 let olderSessionId: string;
 
 type Client = import('pg').PoolClient;
@@ -95,7 +95,7 @@ async function rowOf(sessionId: string): Promise<BootRow> {
 beforeAll(async () => {
   database = await createW1ScratchDatabase('boot_phase');
   const files = migrationFiles();
-  const at = files.findIndex((file) => file.startsWith('392_'));
+  const at = files.findIndex((file) => file.startsWith('404_'));
   database.apply(files.slice(0, at));
   // A space, a member, and one session from before boot phases existed.
   ({ spaceId, memberId, olderSessionId } = await asOwner(async (c) => {
@@ -123,8 +123,8 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('392 — boot_phase', () => {
-  it('leaves a row from before 392 with no phase, and gives every new row `admitted`', async () => {
+describe('404 — boot_phase', () => {
+  it('leaves a row from before 404 with no phase, and gives every new row `admitted`', async () => {
     expect(await rowOf(olderSessionId)).toMatchObject({ boot_phase: null, boot_phase_at: null });
 
     const id = await asOwner(newSession);

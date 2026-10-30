@@ -37,6 +37,8 @@
  */
 import type { EntitySummary } from '@tm8/contract';
 
+import { browserStorage, forgetKeysWithPrefix } from './browser-store';
+
 /**
  * Bumped whenever the stored shape changes. A miss on this prefix means the old
  * payload is IGNORED, never coerced — deserialising a shape we no longer
@@ -75,24 +77,9 @@ export function nodeKeyOf(serverBaseUrl: string | undefined): string {
   return serverBaseUrl && serverBaseUrl.trim() !== '' ? serverBaseUrl.replace(/[^\w.-]+/g, '_') : 'local';
 }
 
-/**
- * EVERY localStorage access is guarded. Private-mode Safari throws on write,
- * a full quota throws on write, and a disabled-storage policy throws on READ.
- * None of those may reach boot: the cache is an accelerator, and an accelerator
- * that can break the workspace is worse than no accelerator.
- */
-function storage(): Storage | null {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage;
-  } catch {
-    return null;
-  }
-}
-
 /** The cached option set, or null when there is nothing trustworthy to seed. */
 export function readLaunchCache(nodeKey: string, spaceId: string): EntitySummary[] | null {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return null;
   try {
     const raw = store.getItem(keyFor(nodeKey, spaceId));
@@ -133,7 +120,7 @@ export function writeLaunchCache(
   spaceId: string,
   rows: readonly EntitySummary[],
 ): void {
-  const store = storage();
+  const store = browserStorage();
   if (!store) return;
   const keep = rows
     .filter((row) => CACHED_LAUNCH_KINDS.has(row.state.kind) && row.deletedAt === null)
@@ -168,19 +155,5 @@ export function writeLaunchCache(
  * the pass reached. Other nodes are untouched, matching `clearLastPlace`.
  */
 export function clearLaunchCache(nodeKey: string): void {
-  const store = storage();
-  if (!store) return;
-  try {
-    const prefix = `${KEY_PREFIX}.${nodeKey}.`;
-    // Snapshot the keys BEFORE removing any: `key(i)` walks a live index, and
-    // deleting mid-walk skips entries.
-    const doomed: string[] = [];
-    for (let i = 0; i < store.length; i += 1) {
-      const key = store.key(i);
-      if (key !== null && key.startsWith(prefix)) doomed.push(key);
-    }
-    for (const key of doomed) store.removeItem(key);
-  } catch {
-    // Storage refused. Nothing cached, nothing to forget.
-  }
+  forgetKeysWithPrefix(`${KEY_PREFIX}.${nodeKey}.`);
 }

@@ -1,5 +1,5 @@
 /**
- * A stand-in for `SpawnService.admit` (392) in handler tests that stub the
+ * A stand-in for `SpawnService.admit` (404) in handler tests that stub the
  * service boundary: the launch admitted, and a boot that has already ended
  * well. `spawn()` goes through `admit`, so stubbing this one method covers the
  * public handler and the in-process callers (the dispatcher) alike.

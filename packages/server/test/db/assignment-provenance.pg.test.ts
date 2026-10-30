@@ -1,4 +1,4 @@
-import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from './tool-projection-shape.js';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -432,6 +432,7 @@ describe.sequential('task assignment provenance (129)', () => {
     database.apply(['304_design_kind.sql']);
     await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
+    await addBridgeProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
     // shape as the shims above — only the read columns, none of 302's rules.
@@ -439,8 +440,8 @@ describe.sequential('task assignment provenance (129)', () => {
       add column outcome text not null default 'open', add column outcome_at timestamptz,
       add column outcome_by uuid, add column receipt_message_id uuid,
       add column outcome_source text, add column outcome_note text`);
-    // 392 (boot phase): the session readers select `ws.boot_phase` and
-    // `ws.boot_phase_at`. 392 rewrites work_session_transition over 302,
+    // 404 (boot phase): the session readers select `ws.boot_phase` and
+    // `ws.boot_phase_at`. 404 rewrites work_session_transition over 302,
     // which this partial chain lacks, so only the two columns are mirrored.
     await database.query(`alter table public.work_sessions
       add column boot_phase text, add column boot_phase_at timestamptz`);
