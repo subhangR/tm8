@@ -65,6 +65,15 @@ describe('bridge rolling summary', () => {
     expect(isAsk('lunch was great')).toBe(false);
   });
 
+  it('ignores links when detecting asks', () => {
+    expect(isAsk('deployed https://ci.example.com/run?id=42')).toBe(false);
+    expect(isAsk('notes at www.example.com/please-read?x=1')).toBe(false);
+    expect(isAsk('fyi see https://x.test/pls/review')).toBe(false);
+    expect(isAsk('can you check https://ci.example.com/run?id=42')).toBe(true);
+    expect(isAsk('is https://status.example.com right?')).toBe(true);
+    expect(isAsk('is it up at https://status.example.com?')).toBe(true);
+  });
+
   it('closes an ask on another member\'s reply in its thread, not on the asker\'s own follow-up', () => {
     const asked = foldSummary(EMPTY_SUMMARY, [msg(0, 'who can review the PR?')]);
     const followUp = foldSummary(asked, [msg(5, 'bumping this', { parentId: 'm0', rootId: 'm0' })]);
