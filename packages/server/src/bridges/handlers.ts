@@ -20,6 +20,7 @@ import { claimsFor, commandEnvelope, isUuid, limitOf, requireUuidParam } from '.
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
 import type { Querier } from '../db/types.js';
+import { readBridgeChatSummary } from './summary.js';
 import type { RequestContext } from '../http/types.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
@@ -196,7 +197,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.get': async ctx => read(ctx, async (q): Promise<BridgeDetailView> => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       const view = await loadBridgeView(q, bridgeId);
-      return { ...view, recentPosters: await recentPosters(q, bridgeId) };
+      return { ...view, recentPosters: await recentPosters(q, bridgeId), summary: await readBridgeChatSummary(q, bridgeId) };
     }),
     'bridges.create': requireHumanSession(async ctx => {
       const input = BridgeCreateInputSchema.parse(ctx.body);

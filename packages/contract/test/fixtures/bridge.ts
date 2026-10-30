@@ -39,4 +39,4 @@ export const FIXTURE_BRIDGE_VIEW: BridgeView = {
   updatedAt: '2026-10-29T22:00:00.000Z',
 };
 
-export const FIXTURE_BRIDGE_DETAIL: BridgeDetailView = { ...FIXTURE_BRIDGE_VIEW, recentPosters: [] };
+export const FIXTURE_BRIDGE_DETAIL: BridgeDetailView = { ...FIXTURE_BRIDGE_VIEW, recentPosters: [], summary: null };
