@@ -404,3 +404,6 @@ comment on function public.unregister_device(uuid, integer, text) is
   'id answers unregistered: false, exactly like a missing one.';
 
 reset role;
+
+-- Never-analyzed tables are estimated at 10 pages (225); 229's precedent.
+analyze public.devices;
