@@ -99,6 +99,20 @@ describe('AddProjectSheet', () => {
     expect('ensureWorkingDir' in input).toBe(false);
   });
 
+  it('shows the default beneath the node’s projects folder when the listing names one', async () => {
+    const p = port({
+      directories: vi.fn().mockResolvedValue({
+        roots: ['/'], path: '/var/lib/tm8/prod/projects', parentPath: '/var/lib/tm8/prod', separator: '/',
+        directories: [], truncated: false, projectsHome: '/var/lib/tm8/prod/projects',
+      }),
+    });
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'Docs Site' } });
+    const field = view.getByLabelText('Working directory') as HTMLInputElement;
+    await waitFor(() => expect(field.placeholder).toBe('/var/lib/tm8/prod/projects/docs-site'));
+    expect(view.getByTestId('project-default-dir').textContent).toContain('/var/lib/tm8/prod/projects/docs-site');
+  });
+
   it('a typed working directory is sent as is', async () => {
     const p = port();
     const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);

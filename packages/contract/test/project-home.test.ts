@@ -17,6 +17,13 @@ describe('the home default for a project working directory', () => {
     expect(projectHomeDisplayPath('')).toBeNull();
   });
 
+  it('shows the default beneath the node projects folder when it is known', () => {
+    expect(projectHomeDisplayPath('Docs Site', '/var/lib/tm8/prod/projects')).toBe('/var/lib/tm8/prod/projects/docs-site');
+    expect(projectHomeDisplayPath('Docs Site', '/srv/projects/')).toBe('/srv/projects/docs-site');
+    expect(projectHomeDisplayPath('Docs Site', null)).toBe('~/docs-site');
+    expect(projectHomeDisplayPath('!!!', '/srv/projects')).toBeNull();
+  });
+
   it('expands only a leading ~ or ~/', () => {
     expect(expandHomePath('~', '/home/me')).toBe('/home/me');
     expect(expandHomePath('~/work/tm8', '/home/me/')).toBe('/home/me/work/tm8');

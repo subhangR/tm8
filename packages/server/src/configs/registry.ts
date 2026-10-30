@@ -167,6 +167,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
+  { name: 'TM8_PROJECTS_HOME', group: 'Lane launch', summary: 'Parent folder of the folder a project created with no folder gets.', default: 'the home directory', definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
   { name: 'TM8_PROJECT_ROOTS', group: 'Lane launch', summary: 'Directories offered when linking a project.', default: null, definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
   { name: 'CLAUDE_CONFIG_DIR', group: 'Lane launch', summary: 'Claude Code config home a lane uses when no credential home is chosen.', default: '~/.claude', definedIn: SPAWN },
   { name: 'CODEX_HOME', group: 'Lane launch', summary: 'Codex config home a lane uses when no credential home is chosen; also scanned for skills.', default: '~/.codex', definedIn: SPAWN },
