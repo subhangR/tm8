@@ -3204,7 +3204,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.bootState': {
     // No command of its own: `tm8 session spawn` polls it while it waits for
-    // the session it was answered at admission for (379).
+    // the session it was answered at admission for (392).
     cmd: null,
     sum: "Read how far a session's boot has got: status, boot phase and when it was reached, and why it ended",
     authz: 'entity',
@@ -4407,7 +4407,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
-  /* +1 execution.bootState (379): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. */
+  /* +1 execution.bootState (392): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
      JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */

@@ -76,7 +76,7 @@ function fixture() {
     config: { host: '127.0.0.1', port: 4610, uiDir: undefined, maxBodyBytes: 1024, databaseUrl: undefined },
     owner,
   });
-  // `admit` is the launch boundary (379); `spawn()` runs through it too.
+  // `admit` is the launch boundary (392); `spawn()` runs through it too.
   const spawn = vi.spyOn(runtime.spawnService, 'admit').mockImplementation(async () => admittedSpawn());
   const resume = vi.spyOn(runtime.spawnService, 'resume').mockResolvedValue({ commandResult: {} } as never);
   const startShell = vi.spyOn(runtime.spawnService, 'startShell').mockResolvedValue({ commandResult: {} } as never);
