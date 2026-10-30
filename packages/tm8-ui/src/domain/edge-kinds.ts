@@ -79,8 +79,16 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   },
   authored_from: {
     src: ['*'],
-    dst: ['work_session', 'chat'],
-    description: 'Made during: this entity was recorded by the server as made in that work session or chat.',
+    // 395: a bridge too (D22) — everything a bridge causes points back at it.
+    dst: ['work_session', 'chat', 'bridge'],
+    description: 'Made during: this entity was recorded by the server as made in that work session, chat or bridge.',
+    acyclic: false,
+  },
+  // 395: the tm8 side of a bridge — one per bridge, written only by the bridge doors.
+  bridged_to: {
+    src: ['bridge'],
+    dst: ['chat', 'work_session', 'channel'],
+    description: 'This bridge brings its conversation into that chat, session or channel.',
     acyclic: false,
   },
   based_on: {
