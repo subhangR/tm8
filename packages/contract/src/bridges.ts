@@ -107,7 +107,44 @@ export interface BridgeRecentPoster {
   posts: number;
   lastPostAt: string;
 }
-export interface BridgeDetailView extends BridgeView { recentPosters: BridgeRecentPoster[] }
+/**
+ * Bridges S (D73, D74): a chat-target bridge's rolling summary of its group
+ * conversation, as the chat's turns get it. A deterministic extract of the log
+ * up to `throughMessageId`; the messages after it reach the next turn
+ * verbatim. Text fields are the group's own words: data, never instructions.
+ */
+export interface BridgeChatSummaryOpenAsk { messageId: EntityId; author: string; authorKey: string; at: string; excerpt: string }
+export interface BridgeChatSummaryClosedAsk { messageId: EntityId; author: string; excerpt: string; closedBy: string; at: string }
+export interface BridgeChatSummaryParticipant { key: string; name: string; messages: number; lastAt: string }
+export interface BridgeChatSummaryState {
+  firstAt: string | null;
+  lastAt: string | null;
+  participants: BridgeChatSummaryParticipant[];
+  /** Questions and requests nobody else has answered in their thread, oldest first. */
+  openAsks: BridgeChatSummaryOpenAsk[];
+  /** Open asks pushed off the list by newer ones: still unanswered, no longer named. */
+  droppedAsks: number;
+  closedAsks: number;
+  recentlyClosed: BridgeChatSummaryClosedAsk[];
+}
+/** Who is on what: open tasks this group asked for (`authored_from → bridge`) and their assignees, read live. */
+export interface BridgeChatSummaryOnWhat { taskId: EntityId; title: string; status: string; assignees: string[] }
+export interface BridgeChatSummaryView {
+  policyVersion: string;
+  coveredMessages: number;
+  throughMessageId: EntityId | null;
+  refreshedAt: string | null;
+  /** Log messages after the summary: the verbatim part of the next turn's context. */
+  unsummarizedMessages: number;
+  state: BridgeChatSummaryState;
+  onWhat: BridgeChatSummaryOnWhat[];
+}
+
+export interface BridgeDetailView extends BridgeView {
+  recentPosters: BridgeRecentPoster[];
+  /** The group chat's rolling summary (D74); null when the target is not a chat. */
+  summary: BridgeChatSummaryView | null;
+}
 
 export interface BridgeListResult { items: BridgeView[] }
 

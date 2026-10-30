@@ -107,6 +107,16 @@ export function renderBridge(b: BridgeView | BridgeDetailView): string {
       lines.push(`  ${r.displayName}${r.handle ? ` (${r.handle})` : ''} · ${r.actorKind} ${r.actorId} · ${r.posts} posts · last ${r.lastPostAt}`);
     }
   }
+  if ('summary' in b && b.summary) {
+    const s = b.summary;
+    lines.push(`summary: ${s.coveredMessages} messages through ${s.state.lastAt ?? '—'} · refreshed ${stamp(s.refreshedAt)}` +
+      ` · ${s.unsummarizedMessages} newer verbatim · ${s.state.closedAsks} asks closed`);
+    lines.push(s.state.openAsks.length ? 'open asks:' : 'open asks: none');
+    for (const a of s.state.openAsks) lines.push(`  ${a.at} ${a.author}: ${a.excerpt}`);
+    if (s.state.droppedAsks) lines.push(`  … ${s.state.droppedAsks} older open asks not named`);
+    lines.push(s.onWhat.length ? 'on what:' : 'on what: nothing open');
+    for (const w of s.onWhat) lines.push(`  ${w.assignees.join(', ') || 'unassigned'} · ${w.status} · ${w.title} (${w.taskId})`);
+  }
   return lines.join('\n');
 }
 
