@@ -606,7 +606,30 @@ describe('the rest of the slice', () => {
     expect((await command('guest', '/whoami')).reply!.text).toMatch(/^you're a guest here/);
     expect((await command('guest', '/help')).reply!.text).not.toContain('/work');
     expect((await command('rahul', '/help')).reply!.text).toContain('/work');
-    expect((await command('rahul', '/link TM8-4F7K')).reply!.text).toMatch(/isn't available yet/);
+  });
+  it('/link TM8-… (B3, D58/D59): a guest number links to the code\'s identity; a failed try burns a live code', async () => {
+    const from = async (phone: string, body: string) => {
+      const messageId = await inbound(phone, bridgeId, body);
+      await executor.run(messageId);
+      return notices.find(n => n.replyToMessageId === messageId)!.text;
+    };
+    const mint = async (identity: string) => (await db.rpc<{ code: string }>(
+      { ...memberClaims(identity), authKind: 'browser' }, 'begin_bridge_link', ['whatsapp'])).code;
+    const newPhone = '919000000071@s.whatsapp.net';
+    const rahulCode = await mint(people.rahul.identity);
+    expect(await from(newPhone, `/link ${rahulCode.toLowerCase()}`)).toMatch(/^linked ✓ — messages from this number now count as you/);
+    expect(await count(`select count(*) n from public.bridge_identity_links where external_id = $1 and identity_id = $2
+      and method = 'code' and space_id is null and revoked_at is null`, [newPhone, people.rahul.identity])).toBe(1);
+    expect(await from(newPhone, `/link ${rahulCode}`)).toMatch(/already used/);
+    expect(await from(newPhone, '/link')).toMatch(/^usage: \/link TM8-/);
+    expect(await from('919000000072@s.whatsapp.net', '/link TM8-ZZZZZZ')).toMatch(/not a valid code/);
+    // The number is rahul's proof: maya's code does not take it, and is burned
+    // because the whole group has now read it.
+    const mayaCode = await mint(people.maya.identity);
+    expect(await from(newPhone, `/link ${mayaCode}`)).toMatch(/linked to another tm8 account.*used up now/);
+    expect(await from('919000000073@s.whatsapp.net', `/link ${mayaCode}`)).toMatch(/already used/);
+    await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_link_redeem', [bridgeId, newPhone, mayaCode]))
+      .rejects.toMatchObject({ code: 'forbidden' });
   });
   it('/status names one worker; unknown and planned verbs are answered', async () => {
     const { reply: list } = await command('rahul', '/workers all');

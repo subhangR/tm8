@@ -583,6 +583,36 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: lines.join('\n') };
   }
 
+  /**
+   * /link TM8-XXXXXX (B3, §2.4, D58/D59): the code a member minted in Account →
+   * Linked identities. Anyone may send it; a guest is exactly who links. The
+   * door answers an outcome, never throws for a bad code, and burns a live code
+   * a failed try named (everyone in the group has read it).
+   */
+  async function link(cmd: Command, args: string): Promise<Answer> {
+    const code = stripTail(args).split(/\s+/)[0] ?? '';
+    if (!code) return { text: 'usage: /link TM8-XXXXXX — get a code in tm8: Account → Linked identities' };
+    const r = await exec(q => q.rpc<{ ok: boolean; reason?: string; already?: boolean; burned?: boolean }>(
+      'bridge_command_link_redeem', [cmd.input.bridgeId, cmd.input.senderExternalId, code]));
+    if (r.ok) {
+      return {
+        text: r.already
+          ? 'this number is already linked to you'
+          : 'linked ✓ — messages from this number now count as you in tm8, in every space you are in. Unlink any time in tm8: Account → Linked identities',
+      };
+    }
+    const fresh = r.burned ? ' That code is used up now: make a new one.' : '';
+    switch (r.reason) {
+      case 'rate_limited': return { text: `too many wrong codes from this number — try again in an hour.${fresh}` };
+      case 'expired': return { text: 'that code has expired — make a new one in tm8: Account → Linked identities' };
+      case 'used': return { text: 'that code was already used — make a new one in tm8: Account → Linked identities' };
+      case 'wrong_provider': return { text: `that code is for another network.${fresh}` };
+      case 'linked_elsewhere': return { text: `this number is linked to another tm8 account; unlink it there first.${fresh}` };
+      case 'bridge_ended': return { text: 'this group is no longer connected to tm8' };
+      default: return { text: 'that is not a valid code — copy it exactly from tm8: Account → Linked identities' };
+    }
+  }
+
   /** Today's /who (§4.4): the chat that answers here, and everyone's live workers. */
   async function who(cmd: Command): Promise<Answer> {
     const head = `chat: ${cmd.bridge.targetTitle ?? 'the group chat'} (tm8)`;
@@ -668,7 +698,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     switch (verb) {
       case 'help': return help(cmd, parsed.args);
       case 'whoami': return whoami(cmd);
-      case 'link': return { text: 'linking a number by code isn\'t available yet — ask a space admin in tm8 to link it' };
+      case 'link': return link(cmd, parsed.args);
       case 'task': return task(cmd, parsed.args);
       case 'work': return work(cmd, parsed.args, parsed.body, false);
       case 'workers': return workers(cmd, parsed.args);
