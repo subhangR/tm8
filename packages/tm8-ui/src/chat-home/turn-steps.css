@@ -158,3 +158,121 @@
   .tch-steps__line,
   .tch-steps__line[data-state='running'] .tch-steps__icon { animation: none; }
 }
+
+/* ── MCP USAGE (McpCalls.tsx) — task 01a18e32 ──────────────────────────────
+   `Used tm8 MCP · 3 calls ▸` at the foot of an open run, opening to each
+   call and, on a second press, its raw input and output. Quiet like the
+   step lines around it; the payload panes are the only boxed thing, and
+   only once asked for. */
+
+.tch-steps__mcp { color: var(--pn-ink-3); }
+
+.tch-mcp {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tch-mcp__toggle,
+.tch-mcp__call-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-fine);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-mcp__toggle:hover,
+.tch-mcp__call-toggle:hover { color: var(--pn-ink-2); }
+
+.tch-mcp__toggle:focus-visible,
+.tch-mcp__call-toggle:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tch-mcp__badge {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+.tch-mcp__calls {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
+.tch-mcp__call { min-width: 0; }
+
+.tch-mcp__call[data-state='running'] .tch-steps__icon {
+  color: var(--pn-run);
+  animation: tch-step-pulse 1.2s ease-in-out infinite;
+}
+
+.tch-mcp__call[data-state='error'] .tch-mcp__call-toggle,
+.tch-mcp__call[data-state='error'] .tch-steps__icon { color: var(--pn-block); }
+
+.tch-mcp__tool {
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+}
+
+.tch-mcp__op {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-mcp__payload {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px 22px;
+}
+
+.tch-mcp__label {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+  font-weight: 600;
+}
+
+.tch-mcp__pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-fine);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tch-mcp__pre[data-error='true'] { color: var(--pn-block); }
+
+.tch-mcp__pending {
+  margin: 0;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+}

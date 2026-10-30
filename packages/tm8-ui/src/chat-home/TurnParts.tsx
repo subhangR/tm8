@@ -5,6 +5,7 @@ import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ExplanationToolCard } from './ExplanationToolCard';
 import { LedgerTree } from './ledger-tree';
 import { buildChatLedger, foldChatLedger, kindWord, readCountPairs, type ChatLedger } from './ledger';
+import { mcpCallsIn, mcpUsageSummary } from './mcp-calls';
 import { isEntityIdLike } from './payload-walk';
 import { buildTurnReceipt, type TurnReceipt as TurnReceiptModel } from './turn-receipt';
 import { TurnReceipt } from './TurnReceipt';
@@ -95,8 +96,9 @@ export function TurnParts({
    *
    * Everything comes from the ledger fold (`ledger.ts`) — the same model the
    * sticky panel and the graph stage project — so the transcript can never
-   * disagree with them. No tool name, no box, no payload ever renders
-   * (`no-tool-boxes.test.tsx` pins all three bans).
+   * disagree with them. No tool name, no box, no payload renders by default
+   * (`no-tool-boxes.test.tsx` pins all three bans); the one door to them is
+   * a run's MCP usage line, opened on request (`McpCalls.tsx`).
    */
   const threadLedger = useMemo(() => {
     if (ledger) return ledger;
@@ -244,6 +246,18 @@ export function TurnParts({
       ),
     [segments, views, receiptSeqs],
   );
+  /* MCP usage, per run (drawn at the foot of its open step block) and summed
+     for the turn's header — task 01a18e32. */
+  const mcpByRun = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof mcpCallsIn>>();
+    for (const segment of segments) {
+      if (segment.kind !== 'run') continue;
+      const steps = segment.items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
+      out.set(segment.key, mcpCallsIn(steps, views));
+    }
+    return out;
+  }, [segments, views]);
+  const turnMcp = useMemo(() => mcpUsageSummary([...mcpByRun.values()].flat()), [mcpByRun]);
   // A turn whose only run is the one it is in reads as open; a press folds it.
   const turnExpanded = turnOpen ?? (currentRunKey !== null && runKeys.length === 1);
   const runOpen = (key: string): boolean => turnOpen ?? key === currentRunKey;
@@ -278,11 +292,12 @@ export function TurnParts({
           lines={buildStepLines(items, views, drawn)}
           head={
             key === runKeys[0]
-              ? { summary: turnSummary, expanded: turnExpanded, onToggle: () => setTurnOpen(!turnExpanded) }
+              ? { summary: turnSummary, mcp: turnMcp, expanded: turnExpanded, onToggle: () => setTurnOpen(!turnExpanded) }
               : undefined
           }
           open={runOpen(key)}
           live={turnLive}
+          mcp={mcpByRun.get(key)}
         />
       </Fragment>
     );
