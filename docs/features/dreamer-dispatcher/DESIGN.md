@@ -147,6 +147,8 @@ knows what is verified vs disputed.
 
 ### 4.4 Loop — first-class core kind (D6)
 
+> **Superseded.** Loops are now a first-class primitive with their own `loops.*` operations, `tm8 loop`, a run table and a UI: see [docs/features/loops/DESIGN.md](../loops/DESIGN.md) (design of record), [LOOPS.md](../loops/LOOPS.md) (user guide) and [VERIFY.md](../loops/VERIFY.md). The text below is the original D6 note, kept for history; where it disagrees (a separate run table now exists, the server computes every next run), the loops docs win.
+
 Table `public.loops` (entity_id PK → entities, kind `loop`):
 
 ```

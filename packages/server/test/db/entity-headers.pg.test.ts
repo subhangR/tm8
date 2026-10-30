@@ -221,6 +221,8 @@ beforeAll(async () => {
   await asOwner(async (c) => {
     ids.story = await entity(c, ids.space!, 'story');
     await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Story header', 'Story description')`, [ids.story]);
+    ids.loop = await entity(c, ids.space!, 'loop');
+    await c.query(`insert into public.loops(entity_id, title, schedule, action, prompt) values ($1, 'Nightly sweep', 'every 1d', 'dispatch', 'sweep')`, [ids.loop]);
   });
   // A tool is born through its own writer (tools.create), as the owner.
   ids.tool = await asCaller(async (q) => (await q.query<{ r: Row }>(
@@ -274,6 +276,10 @@ describe('set_entity_header / clear_entity_header', () => {
     });
     await clearHeader(ids.tool!, 1);
     expect((await resolve([ids.tool!])).get(ids.tool!)).toMatchObject({ whenToUse: null, summary: 'Checks that URLs answer', source: 'derived' });
+  });
+
+  it('names a loop by its title, with its schedule, action and instruction as the summary (loops PR1)', async () => {
+    expect((await resolve([ids.loop!])).get(ids.loop!)).toMatchObject({ kind: 'loop', name: 'Nightly sweep', summary: 'every 1d · dispatch · sweep' });
   });
 
   it('writes a header without touching the entity version, and records an activity instead of an entity.upsert', async () => {

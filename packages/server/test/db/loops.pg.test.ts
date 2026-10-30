@@ -595,7 +595,7 @@ describe('B2: a null-runner firing leaves a request the dispatcher can read', ()
     const fired = await port.fire(
       {
         entityId: loopId, spaceId: fixture.spaceId, title: 'Dispatcher-routed firing',
-        schedule: 'every 1d', teamMemberId: null, subjectId: null,
+        schedule: 'every 1d', action: 'dispatch', teamMemberId: null, subjectId: null,
         prompt: 'sweep the memory graph', config: null, version: 1,
       },
       claims,
@@ -700,7 +700,7 @@ describe('348: fire() passes the loop id as a server fact, not on the SpawnReque
     await port.fire(
       {
         entityId: loopId, spaceId: fixture.spaceId, title: 'Server-fact firing',
-        schedule: 'every 1d', teamMemberId: fixture.teamMemberId, subjectId: null,
+        schedule: 'every 1d', action: 'spawn', teamMemberId: fixture.teamMemberId, subjectId: null,
         prompt: 'do the thing', config: null, version: 1,
       },
       { identityId: fixture.identityId, nodeAdmin: false, requestId: 'req-loop-fire' },
@@ -754,7 +754,7 @@ describe('348: fire() passes the loop id as a server fact, not on the SpawnReque
     await port.fire(
       {
         entityId: loopId, spaceId: fixture.spaceId, title: 'No second write',
-        schedule: 'every 1d', teamMemberId: fixture.teamMemberId, subjectId: null,
+        schedule: 'every 1d', action: 'spawn', teamMemberId: fixture.teamMemberId, subjectId: null,
         prompt: 'do the thing', config: null, version: 1,
       },
       { identityId: fixture.identityId, nodeAdmin: false, requestId: 'req-loop-fire' },
