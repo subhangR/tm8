@@ -302,6 +302,12 @@ const LIVE_VERBS = [
   // this sweep sees no control from it; its own controls are held in
   // settings-mcp-tokens/mcp-tokens.test.tsx.
   /^MCP tokens$/,
+  // Bridges (BRIDGE-ENTITY-DESIGN §4.2): the NAV ROW only — `bridges.list|
+  // pause|resume|remove` are real executors on the seam (395). The body is
+  // owned by `bridges/` and injected by GateApp, so this shell shows its
+  // not-mounted state; the section's own live controls (each named for the
+  // operation that makes it live) are held in bridges/bridges-section.test.tsx.
+  /^Bridges$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

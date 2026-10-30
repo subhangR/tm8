@@ -428,6 +428,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // namespace. Always present; its METHODS are feature-detected against
       // the catalog, so S4 adding the rows does not move this list.
       'attentionV2',
+      // Bridges B2-UI (BRIDGE-ENTITY-DESIGN §4): the `bridges.*` port, assigned
+      // after construction like `loops`. Inserted at its sorted position.
+      'bridges',
       'complete', 'createEdge', 'createEntity', 'createEntityKind', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which

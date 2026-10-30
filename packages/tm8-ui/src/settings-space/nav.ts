@@ -132,6 +132,9 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
           space('chat-defaults', { keywords: ['chat model', 'default', 'effort'] }),
           space('space-credentials', { keywords: ['api key', 'keys', 'token', 'shared', 'credentials'] }),
           space('connectors', { keywords: ['mcp', 'tools', 'integrations', 'servers'] }),
+          /* §4.2: a bridge brings another network's conversation into the
+             space, and agents answer it — so it sits with the agents' tools. */
+          space('bridges', { keywords: ['whatsapp', 'slack', 'telegram', 'discord', 'group'] }),
           space('projects', { keywords: ['repo', 'repository', 'git', 'trust', 'branches'] }),
         ],
       },

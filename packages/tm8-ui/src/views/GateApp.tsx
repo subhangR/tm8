@@ -164,6 +164,7 @@ import {
   writeSetupDismissed,
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
+import { BridgesSection } from '../bridges';
 import { McpTokensSection } from '../settings-mcp-tokens';
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
@@ -2547,6 +2548,12 @@ export function GateApp(props: GateAppProps = {}) {
                 /> } : {}),
                 ...(spaceLinksPort
                   ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
+                  : {}),
+                /* §4.2: the bridges' management home, on the seam's own
+                   `commands.bridges` (absent on a seam without it, and the
+                   shell then states the section is not mounted). */
+                ...(data.seam.commands.bridges && data.spaceId
+                  ? { bridges: <BridgesSection port={data.seam.commands.bridges} spaceId={data.spaceId} onOpen={openFromSettings} /> }
                   : {}),
                 ...(mcpTokensPort ? { 'mcp-tokens': <McpTokensSection port={mcpTokensPort} /> } : {}),
                 ...(spaceCredentialsPort

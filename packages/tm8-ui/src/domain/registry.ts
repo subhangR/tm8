@@ -2598,20 +2598,28 @@ const ROWS: readonly KindConfig[] = [
     hiddenModes: ['board', 'gallery', 'tree'],
     chip: { glyph: '⌒', tintBy: 'none' },
     /* §4.7 names four bridge-specific card fields (provider, target, status,
-       people); the card renderer reads only the generic ones today. */
+       people); the card renderer reads only the generic ones today, so the
+       row carries those and the list's words come from Settings → Bridges.
+       D46. */
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     // Born only from `bridges.create` (generic create is refused server-side,
-    // human-only); `tm8 bridge` owns its lifecycle.
+    // human-only, in the wizard); connections, pause and remove live in the
+    // Settings home, so Home's list and the panel link there.
+    settingsHome: { section: 'bridges', label: 'Manage in Bridges' },
     list: baseList({
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
     }),
-    /* The minimal row that makes the registry total over the contract's core
-       kinds again after B0a (395). Settings → Bridges and the bridge page
-       (BRIDGE-ENTITY-DESIGN §4.2, §4.4) replace this panel in B2-UI. */
+    /* GENERIC, because a bridge is operated (paused, routed, retargeted)
+       through `bridges.*`, and only the generic body is handed a command
+       executor. One `bridge-page` block draws the header and the six tabs
+       over one read; the panel's Connections tab sits beside it. */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'BRIDGE' }],
+      blocks: [
+        { block: 'bridge-page' },
+        { block: 'settings-home' },
+      ],
     },
   },
 

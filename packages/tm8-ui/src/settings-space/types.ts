@@ -35,6 +35,7 @@ export type SettingsSectionId =
   | 'node-credentials'
   | 'filesystem-access'
   | 'space-links'
+  | 'bridges'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -123,6 +124,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      link is another sign-in your agents act with; built in
      `settings-space-links/` and injected through `sections`. */
   { id: 'space-links', label: 'Linked spaces', heading: 'Space links', externallyOwned: true },
+  /* BRIDGE-ENTITY-DESIGN §4.2 — WhatsApp groups, Slack channels and DMs
+     bound to a chat, session or channel here, and the accounts they ride on.
+     Built in `bridges/` and injected through `sections`. */
+  { id: 'bridges', label: 'Bridges', heading: 'Bridges', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Sidebar menu', heading: 'Sidebar menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },
