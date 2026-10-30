@@ -593,6 +593,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       : undefined;
     registerFacadeHandlers(registry, {
       ...(tools ? { tools } : {}),
+      // The same instance as the `bridgeCommands` slot below.
+      ...(bridgeCommandExecutor ? { bridgeCommands: bridgeCommandExecutor } : {}),
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
       mcp: {
         dataDir,

@@ -108,9 +108,12 @@ import { registerServerHandlers } from './handlers/w2/servers.js';
 import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
+import type { BridgeCommandHook } from '../bridges/runtime/command-hook.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly tools?: ToolRuntime;
+  /** Bridges B1b-4: the command executor main.ts builds once; it becomes `FacadeDeps.bridgeCommands`. */
+  readonly bridgeCommands?: BridgeCommandHook;
   /**
    * Loops PR2: the executor port `loops.runNow` fires through and
    * `loops.runs.stop` stops through — the SAME instance the scheduler job
@@ -233,6 +236,7 @@ export function registerFacadeHandlers(
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
     remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
+    ...(deps.bridgeCommands ? { bridgeCommands: deps.bridgeCommands } : {}),
   };
 
   /**
