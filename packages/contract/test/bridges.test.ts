@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ActorSummarySchema, BridgeCreateInputSchema, BridgeEntitySchema, BridgeFactsSchema, BridgeHandleClaimInputSchema,
   BridgeListenInputSchema, BridgeUpdateInputSchema, CORE_KIND_INFO, CoreEntityKindSchema, CreatableEntityKindSchema,
-  EntityStateSchema, OPERATIONS,
+  EntityStateSchema, OPERATIONS, BridgeConnectionAuthFrameSchema, SpaceCredentialShapeSchema, isServerOnlyCredentialProvider,
 } from '../src/index.js';
 import { FIXTURE_BRIDGE_FACTS } from './fixtures/bridge.js';
 
@@ -70,13 +70,33 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs', () => {
+  it('carries the twelve rows B1 needs, and B1b-5\'s four connection rows (400)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
+      'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
     ]);
   });
-  it('create, retarget and remove are human-only; the session doors are not', () => {
-    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove']);
+  it('create, retarget, remove and the connection writes are human-only; the session doors are not', () => {
+    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
+      'bridges.create', 'bridges.retarget', 'bridges.remove',
+      'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
+    ]);
+  });
+
+  it('the connection auth frame carries exactly one of a QR and a pairing code', () => {
+    const base = { type: 'bridge.connection.auth', connectionId: 'c1', expiresAt: '2026-10-30T05:10:00.000Z' } as const;
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, pairingCode: 'ABCD-1234' }).success).toBe(true);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, qrPng: 'iVBOR' }).success).toBe(true);
+    expect(BridgeConnectionAuthFrameSchema.safeParse(base).success).toBe(false);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, qrPng: 'iVBOR', pairingCode: 'ABCD-1234' }).success).toBe(false);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, pairingCode: 'ABCD-1234', spaceId: 'x' }).success).toBe(false);
+  });
+
+  it('whatsapp is a server-only credential provider with the connection shape', () => {
+    expect(isServerOnlyCredentialProvider('whatsapp')).toBe(true);
+    expect(SpaceCredentialShapeSchema.safeParse('connection').success).toBe(true);
   });
 });

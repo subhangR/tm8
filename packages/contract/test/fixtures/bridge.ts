@@ -11,7 +11,7 @@ export const FIXTURE_BRIDGE_POLICY: BridgePolicy = {
 export const FIXTURE_BRIDGE_FACTS: BridgeFacts = {
   provider: 'whatsapp',
   connectionId: '01a189da-0000-7000-8000-000000000001',
-  connectionCredentialId: null,
+  connectionCredentialId: '01a18acb-0000-7000-8000-00000000c0de',
   conversation: { externalId: '120363000000000000@g.us', kind: 'group', title: 'Infra', memberCount: 7 },
   target: { kind: 'chat', id: '01a189da-0000-7000-8000-000000000002', title: 'Infra main' },
   policy: FIXTURE_BRIDGE_POLICY,

@@ -70,6 +70,11 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status)
       values ($1,'whatsapp',$2,'+91 …9494','linked'),($3,'whatsapp',$4,'+91 …1999','linked')`, [connection, account, adminConnection, adminAccount]);
   });
+  // D32 (400): a bridge rides its connection's offered credential in the space.
+  for (const [who, conn] of [[identityId, connection], [adminIdentity, adminConnection]] as const) {
+    await db.tx({ identityId: who, authKind: 'cli', requestId: randomUUID() },
+      q => q.rpc('offer_bridge_connection', [conn, space, 'public', null, randomUUID()]));
+  }
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
   const deps = { db, config, owner };

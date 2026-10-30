@@ -97,6 +97,9 @@ beforeAll(async () => {
       values ($1,'whatsapp',$2,'+91 …9494','linked'),($3,'whatsapp',$4,'+91 …1999','linked')`,
       [connection, ownerAccount, adminConnection, adminAccount]);
   });
+  // D32 (400): a bridge rides its connection's offered credential in the space.
+  await as(ownerIdentity, q => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
+  await as(adminIdentity, q => q.rpc('offer_bridge_connection', [adminConnection, spaceId, 'public', null, randomUUID()]));
 });
 afterAll(async () => { await db?.end(); await scratch?.destroy(); });
 

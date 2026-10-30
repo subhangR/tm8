@@ -2615,15 +2615,15 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
 /** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
-export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp', 'tool']);
-export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp', 'tool']);
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp', 'tool', 'whatsapp']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp', 'tool', 'whatsapp']);
 export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool']);
+  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool', 'whatsapp']);
 /** True for a provider that must never reach a session (gate 8). */
 export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
   return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);
 }
-export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token']);
+export const SpaceCredentialShapeSchema: z.ZodType<SpaceCredentialShape> = z.enum(['login', 'api_key', 'token', 'connection']);
 export const SpaceCredentialStatusSchema: z.ZodType<SpaceCredentialStatus> =
   z.enum(['pending', 'active', 'stale', 'revoked']);
 export const CredentialPolicySourceSchema: z.ZodType<CredentialPolicySource> = z.enum(['member', 'space', 'node']);

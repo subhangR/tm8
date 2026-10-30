@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import type { EntityId, SpaceId } from './contract.js';
+import type { ConversationItem } from './bridge-runtime-protocol.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -68,11 +69,10 @@ export interface BridgeFacts {
   /** The node-level connection (the number) this bridge rides on. */
   connectionId: string;
   /**
-   * The space credential (shape `connection`) offered for that connection.
-   * NULL until `bridges.connections.offer` ships (D32): B0a binds a bridge to
-   * its connection directly.
+   * The space credential (shape `connection`) offered for that connection in
+   * this space, filled at `bridges.create` and fixed after (D32, 400).
    */
-  connectionCredentialId: EntityId | null;
+  connectionCredentialId: EntityId;
   conversation: {
     /** The provider's id; a DM's is masked for anyone but a space admin. */
     externalId: string;
@@ -242,6 +242,109 @@ export interface BridgeStateInput extends BridgeCommand { bridgeId?: EntityId; e
 export interface BridgeHandleClaimInput { spaceId?: SpaceId; title?: string }
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 
+// ---------------------------------------------------------------------------
+// Connections (§2.5, §3.4; migration 400): the numbers a human links, offered
+// to spaces as server-only credentials (provider whatsapp, shape connection).
+// ---------------------------------------------------------------------------
+
+/** Every state a connection row can be in; `removed` rows are never listed. */
+export type BridgeConnectionRowStatus = BridgeConnectionStatus | 'removed';
+/** 'public' is the space-visible credential (`--visibility space`). */
+export type BridgeConnectionOfferVisibility = 'private' | 'public';
+export type BridgeConnectionAuthFlow = { kind: 'qr' } | { kind: 'pairing'; phone: string };
+
+/** One space the connection is offered to: its credential there. */
+export interface BridgeConnectionOffer {
+  credentialId: EntityId;
+  spaceId: SpaceId;
+  visibility: BridgeConnectionOfferVisibility;
+  status: 'active' | 'stale' | 'needs_reconnect';
+  createdAt: string;
+  /** Live bridges riding this credential. */
+  bridges: number;
+}
+
+/** A connection as its owner (or a node admin) sees it. No secret, no state reference (§7.3 item 8). */
+export interface BridgeConnectionView {
+  id: string;
+  provider: BridgeProvider;
+  ownerAccountId: string;
+  label: string;
+  externalAccountId: string | null;
+  status: BridgeConnectionRowStatus;
+  runtimeId: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+  offers: BridgeConnectionOffer[];
+}
+export interface BridgeConnectionListResult { items: BridgeConnectionView[] }
+
+export interface BridgeConnectionBeginInput {
+  clientMutationId: string;
+  provider: BridgeProvider;
+  label?: string;
+  /** Relink one of the caller's own connections instead of linking a new number. */
+  connectionId?: string;
+  authFlow?: BridgeConnectionAuthFlow;
+}
+/**
+ * `runtime: 'connecting'`: the runtime was asked to connect and its QR or
+ * pairing code arrives as `bridge.connection.auth` on the caller's own event
+ * socket, never in this answer. `'offline'`: no runtime for the provider is
+ * running; begin again (with `connectionId`) once it is.
+ */
+export interface BridgeConnectionBeginResult {
+  connection: BridgeConnectionView;
+  runtime: 'connecting' | 'offline';
+}
+export interface BridgeConnectionOfferInput {
+  clientMutationId: string;
+  connectionId?: string;
+  spaceId: SpaceId;
+  visibility?: BridgeConnectionOfferVisibility;
+  label?: string;
+}
+export interface BridgeConnectionOfferResult { connection: BridgeConnectionView; credentialId: EntityId }
+export interface BridgeConnectionWithdrawInput { clientMutationId: string; connectionId?: string; spaceId: SpaceId }
+export interface BridgeConnectionWithdrawResult {
+  connection: BridgeConnectionView;
+  credentialId: EntityId;
+  /** The live bridges in that space this withdraw paused. */
+  pausedBridgeIds: EntityId[];
+}
+
+export interface BridgeConnectionRemoveInput { clientMutationId: string; connectionId?: string }
+/**
+ * `runtime: 'logged_out'`: the runtime was told to log the device out and wipe
+ * its keys. `'offline'`: no runtime was connected; it never reconnects a
+ * removed connection, and the owner can unlink the device from the phone.
+ */
+export interface BridgeConnectionRemoveResult {
+  connection: BridgeConnectionView;
+  /** Every bridge on the connection that was live, now ended. */
+  endedBridgeIds: EntityId[];
+  /** Every space credential that offered it, now revoked. */
+  revokedCredentialIds: EntityId[];
+  runtime: 'logged_out' | 'offline';
+}
+/** The owner's live group list (§4.3, D28): asked of the runtime on each call, never stored. */
+export interface BridgeConversationListResult { connectionId: string; items: ConversationItem[] }
+
+/**
+ * The QR or pairing code for a `bridges.connections.begin`, pushed by the
+ * server to the begin caller's own human sockets only (selected by their
+ * verified identity) and never stored: it is not a `WorkspaceEvent`, has no
+ * space and no seq, and is never in the durable log, `events.poll` or a replay
+ * (§2.5, §7.3 item 8; coordinator ruling 2026-10-30 on §3.6).
+ */
+export interface BridgeConnectionAuthFrame {
+  type: 'bridge.connection.auth';
+  connectionId: string;
+  qrPng?: string;
+  pairingCode?: string;
+  expiresAt: string;
+}
+
 const Id = z.string().uuid();
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, bridgeId: Id.optional(), expectedVersion: z.number().int().positive() };
@@ -292,7 +395,7 @@ const QuietHoursSchema = z.object({ start: Hhmm, end: Hhmm }).strict()
 const BridgeFactsShape = {
   provider: BridgeProviderSchema,
   connectionId: Id,
-  connectionCredentialId: Id.nullable(),
+  connectionCredentialId: Id,
   conversation: z.object({
     externalId: z.string(), kind: z.enum(['group', 'channel', 'dm']), title: z.string(),
     memberCount: z.number().int().nonnegative().nullable(),
@@ -365,3 +468,51 @@ export const BridgeHandleClaimInputSchema = z.object({
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
+
+const ConnectionLabel = z.string().trim().min(1).max(80).regex(/^[^\r\n]*$/, 'must be one line');
+export const BridgeConnectionAuthFlowSchema: z.ZodType<BridgeConnectionAuthFlow> = z.union([
+  z.object({ kind: z.literal('qr') }).strict(),
+  z.object({ kind: z.literal('pairing'), phone: z.string().regex(/^\+?[0-9]{6,20}$/, 'a phone number in international form, digits only') }).strict(),
+]);
+export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginInput> = z.object({
+  clientMutationId: z.string().min(1),
+  provider: BridgeProviderSchema,
+  label: ConnectionLabel.optional(),
+  connectionId: Id.optional(),
+  authFlow: BridgeConnectionAuthFlowSchema.optional(),
+}).strict();
+export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+  spaceId: Id,
+  visibility: z.enum(['private', 'public']).optional(),
+  label: ConnectionLabel.optional(),
+}).strict();
+export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWithdrawInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+  spaceId: Id,
+}).strict();
+export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemoveInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+}).strict();
+export const BridgeConnectionOfferSchema: z.ZodType<BridgeConnectionOffer> = z.object({
+  credentialId: Id, spaceId: Id, visibility: z.enum(['private', 'public']),
+  status: z.enum(['active', 'stale', 'needs_reconnect']), createdAt: z.string(), bridges: z.number().int().nonnegative(),
+}).strict();
+export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.object({
+  id: Id, provider: BridgeProviderSchema, ownerAccountId: Id, label: z.string(),
+  externalAccountId: z.string().nullable(),
+  status: z.enum(['linked', 'connecting', 'logged_out', 'offline', 'removed']),
+  runtimeId: z.string().nullable(), createdAt: z.string(), lastSeenAt: z.string().nullable(),
+  offers: z.array(BridgeConnectionOfferSchema),
+}).strict();
+/** Exactly one of `qrPng` and `pairingCode`. */
+export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFrame> = z.object({
+  type: z.literal('bridge.connection.auth'),
+  connectionId: z.string().min(1),
+  qrPng: z.string().min(1).optional(),
+  pairingCode: z.string().min(1).max(32).optional(),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict().refine(f => (f.qrPng === undefined) !== (f.pairingCode === undefined), 'exactly one of qrPng and pairingCode');

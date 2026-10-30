@@ -125,6 +125,9 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status) values ($1,'whatsapp',$2,'+91 …9494','linked')`,
       [connection, ownerAccount]);
   });
+  // 400 (B1b-5, D32): a bridge rides its connection's offered credential in the space.
+  await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, (q) =>
+    q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
   const created = await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, (q) =>
     q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, connection, GROUP,
       JSON.stringify({ kind: 'group', title: 'Infra', memberCount: 4 }), chat,

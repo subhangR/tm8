@@ -1,13 +1,19 @@
 // `tm8 bridge` (BRIDGE-ENTITY-DESIGN §3.5, B0a): every verb is one bridges.*
 // operation. Status and health are the server's derived facts; the CLI only
 // renders them. Speaking needs no verb here: `tm8 message reply|send` crosses.
+import { lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  BRIDGE_PROVIDERS,
+  BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath,
+  type BridgeConnectionAuthFrame, type BridgeConnectionBeginResult, type BridgeConnectionListResult,
+  type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
+  type BridgeConnectionRemoveResult, type BridgeConversationListResult,
   type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
   type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
 } from '@tm8/contract';
-import { requireSpace } from '../context.js';
-import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
+import { requireSpace, type CliContext } from '../context.js';
+import { CliError, EXIT_OK, EXIT_RETRYABLE, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions, enumOption, requireArg } from './entity.js';
@@ -140,7 +146,7 @@ async function bridgeCreate(cmd: CommandContext): Promise<ExitCode> {
   const connectionId = cmd.options.value('connection');
   const externalId = cmd.options.value('conversation');
   const targetId = cmd.options.value('to');
-  if (!connectionId) throw usage('--connection <connection-id> is required: the number you own');
+  if (!connectionId) throw usage('--connection <connection-id> is required: the number you own, offered to this Space', 'tm8 bridge connection list');
   if (!externalId) throw usage('--conversation <external-id> is required: the provider\'s id for the group');
   if (!targetId) throw usage('--to <chat|session|channel id> is required');
   const kind = choice(cmd, 'kind', ['group', 'channel', 'dm'] as const) ?? 'group';
@@ -257,7 +263,230 @@ async function bridgeListen(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+// ── connections (§2.5, §3.4; migration 400) ─────────────────────────────────
+
+export function renderConnection(c: BridgeConnectionView): string {
+  const lines = [
+    `connection ${c.id} · ${c.provider} "${c.label}" · ${c.status}${c.externalAccountId ? ` · ${c.externalAccountId}` : ''}`,
+    `runtime: ${c.runtimeId ?? 'none'} · last seen ${stamp(c.lastSeenAt)}`,
+  ];
+  if (!c.offers.length) lines.push('offered to: no space yet (tm8 bridge connection offer <id> --space <space-id>)');
+  for (const o of c.offers) {
+    lines.push(`offered to space ${o.spaceId} as credential ${o.credentialId} · ${o.visibility === 'public' ? 'space' : 'private'} · ${o.status} · ${o.bridges} bridge${o.bridges === 1 ? '' : 's'}`);
+  }
+  return lines.join('\n');
+}
+
+async function connectionList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['provider']); argumentsCount(cmd, 0);
+  const query: Record<string, string> = {};
+  const provider = choice(cmd, 'provider', BRIDGE_PROVIDERS); if (provider) query.provider = provider;
+  cmd.out.data(await observedInvoke<BridgeConnectionListResult>(client(cmd), 'bridges.connections.list', { query }),
+    page => page.items.length ? page.items.map(renderConnection).join('\n\n') : 'no connections: link a number with `tm8 bridge connection begin --provider whatsapp`');
+  return EXIT_OK;
+}
+
+/** The begin caller's own event socket: where its QR or pairing code arrives, never in the HTTP answer. */
+export interface ConnectionAuthStream {
+  open(): Promise<void>;
+  onFrame(fn: (frame: BridgeConnectionAuthFrame) => void): void;
+  close(): void;
+}
+type AuthStreamFactory = (ctx: CliContext) => ConnectionAuthStream;
+
+function socketAuthStream(ctx: CliContext): ConnectionAuthStream {
+  const Ctor = (globalThis as { WebSocket?: new (url: string, init?: { headers?: Record<string, string> }) => AuthSocketLike }).WebSocket;
+  if (Ctor === undefined) {
+    throw new CliError(`this runtime (node ${process.version}) has no WebSocket, so it cannot receive the QR`, EXIT_USAGE,
+      { hint: 'pass --no-wait and finish linking in the tm8 UI' });
+  }
+  const url = new URL(bindPath('events.subscribe', {}), ctx.baseUrl.value);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  // The bearer travels as a header (node's WebSocket takes one), so the server
+  // knows the socket is this person's: the QR is addressed by identity.
+  const ws = new Ctor(url.href, ctx.token ? { headers: { authorization: `Bearer ${ctx.token}` } } : undefined);
+  return {
+    open: () => new Promise<void>((resolve, reject) => {
+      ws.addEventListener('open', () => resolve(), { once: true });
+      ws.addEventListener('error', () => reject(new CliError(`could not open the event socket at ${url.href}`, EXIT_RETRYABLE)), { once: true });
+    }),
+    onFrame: fn => ws.addEventListener('message', (e: { data: unknown }) => {
+      try {
+        const parsed = BridgeConnectionAuthFrameSchema.safeParse(JSON.parse(String(e.data)));
+        if (parsed.success) fn(parsed.data);
+      } catch { /* not a frame for us */ }
+    }),
+    close: () => ws.close(),
+  };
+}
+interface AuthSocketLike {
+  close(): void;
+  addEventListener(type: 'open' | 'error', fn: () => void, opts?: { once: boolean }): void;
+  addEventListener(type: 'message', fn: (e: { data: unknown }) => void): void;
+}
+
+let authStreamFactory: AuthStreamFactory = socketAuthStream;
+/** Tests replace the socket; nothing else does. */
+export function setConnectionAuthStreamForTests(factory: AuthStreamFactory | null): void {
+  authStreamFactory = factory ?? socketAuthStream;
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+function pathExists(path: string): boolean {
+  try { lstatSync(path); return true; } catch { return false; }
+}
+
+/**
+ * Write a QR so only this user can read it: a sibling created exclusively
+ * ('wx' is O_CREAT|O_EXCL, which also refuses a symlink in its place) at 0600,
+ * then renamed over the target. A rename replaces a symlink, never follows it.
+ * The first write refuses a target that appeared since the check.
+ */
+export function writeQrFile(path: string, bytes: Uint8Array, n: number): void {
+  if (n === 0 && pathExists(path)) throw usage(`${path} already exists; refusing to write the QR there`);
+  const tmp = `${path}.${process.pid}.${n}.tmp`;
+  writeFileSync(tmp, bytes, { flag: 'wx', mode: 0o600 });
+  try {
+    renameSync(tmp, path);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
+async function connectionBegin(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['provider', 'label', 'connection', 'pairing', 'qr-file', 'wait', 'no-wait', 'mutation-id']);
+  argumentsCount(cmd, 0);
+  const provider = choice(cmd, 'provider', BRIDGE_PROVIDERS);
+  if (!provider) throw usage('--provider is required', 'whatsapp is the provider with a runtime today');
+  const wait = !cmd.options.bool('no-wait');
+  // A QR is a credential for a minute (§7.3 item 8): never into a file someone else made or points at.
+  const qrFile = cmd.options.value('qr-file');
+  if (qrFile !== undefined && pathExists(qrFile)) {
+    throw usage(`--qr-file ${qrFile} already exists; name a new path (the QR is written only to a file this command creates)`);
+  }
+  let qrPath: string | undefined;
+  let qrWrites = 0;
+  const waitSeconds = cmd.options.integer('wait') ?? 180;
+  if (waitSeconds < 1 || waitSeconds > 1800) throw usage('--wait takes 1-1800 seconds');
+  const pairing = cmd.options.value('pairing');
+  const body: Record<string, unknown> = { ...mutation(cmd), provider };
+  const label = cmd.options.value('label'); if (label !== undefined) body.label = label;
+  const connectionId = cmd.options.value('connection'); if (connectionId !== undefined) body.connectionId = connectionId;
+  if (pairing !== undefined) body.authFlow = { kind: 'pairing', phone: pairing };
+
+  // The socket is open before begin, so a QR the runtime sends at once is not missed.
+  const frames: BridgeConnectionAuthFrame[] = [];
+  let notify: (() => void) | null = null;
+  const stream = wait ? authStreamFactory(cmd.ctx) : null;
+  if (stream) {
+    await stream.open();
+    stream.onFrame(frame => { frames.push(frame); notify?.(); });
+  }
+  try {
+    const result = await observedInvoke<BridgeConnectionBeginResult>(client(cmd), 'bridges.connections.begin', { body });
+    const id = result.connection.id;
+    cmd.out.note(`connection ${id} · ${result.connection.provider} "${result.connection.label}" · ${result.connection.status}`);
+    if (result.runtime === 'offline') {
+      cmd.out.data(result, r => `${renderConnection(r.connection)}\nno ${provider} runtime is running on this node; once it is, run: tm8 bridge connection begin --provider ${provider} --connection ${id}`);
+      return EXIT_OK;
+    }
+    if (!stream) {
+      cmd.out.data(result, r => `${renderConnection(r.connection)}\nthe runtime is connecting; run begin without --no-wait to see the QR or pairing code here`);
+      return EXIT_OK;
+    }
+    const deadline = Date.now() + waitSeconds * 1000;
+    let shown = 0, lastPoll = 0;
+    while (Date.now() < deadline) {
+      for (; shown < frames.length; shown++) {
+        const frame = frames[shown]!;
+        if (frame.connectionId !== id) continue;
+        if (frame.pairingCode) {
+          cmd.out.warn(`pairing code: ${frame.pairingCode} (expires ${frame.expiresAt}) — WhatsApp → Linked devices → Link with phone number`);
+        } else if (frame.qrPng) {
+          const path = qrPath ??= cmd.options.value('qr-file') ?? join(mkdtempSync(join(tmpdir(), 'tm8-bridge-qr-')), 'qr.png');
+          writeQrFile(path, Buffer.from(frame.qrPng.replace(/^data:image\/png;base64,/, ''), 'base64'), qrWrites++);
+          cmd.out.warn(`QR written to ${path} (expires ${frame.expiresAt}) — WhatsApp → Linked devices → Link a device`);
+        }
+      }
+      if (Date.now() - lastPoll >= 3000) {
+        lastPoll = Date.now();
+        const page = await observedInvoke<BridgeConnectionListResult>(client(cmd), 'bridges.connections.list', { query: { provider } });
+        const now = page.items.find(c => c.id === id);
+        if (now?.status === 'linked') {
+          cmd.out.data(now, c => `${renderConnection(c)}\nlinked. Next: tm8 bridge connection offer ${id} --space <space-id>`);
+          return EXIT_OK;
+        }
+      }
+      await Promise.race([sleep(500), new Promise<void>(resolve => { notify = resolve; })]);
+      notify = null;
+    }
+    throw new CliError(`not linked within ${waitSeconds}s`, EXIT_RETRYABLE,
+      { hint: `run tm8 bridge connection begin --provider ${provider} --connection ${id} to try again` });
+  } finally {
+    stream?.close();
+  }
+}
+
+async function connectionOffer(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['visibility', 'label', 'mutation-id']); argumentsCount(cmd, 1);
+  const visibility = choice(cmd, 'visibility', ['private', 'space'] as const);
+  const body: Record<string, unknown> = { ...mutation(cmd), spaceId: requireSpace(cmd.ctx) };
+  if (visibility) body.visibility = visibility === 'space' ? 'public' : 'private';
+  const label = cmd.options.value('label'); if (label !== undefined) body.label = label;
+  const result = await observedInvoke<BridgeConnectionOfferResult>(client(cmd), 'bridges.connections.offer', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body,
+  });
+  cmd.out.data(result, r => `offered as credential ${r.credentialId}\n${renderConnection(r.connection)}`);
+  return EXIT_OK;
+}
+
+async function connectionWithdraw(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  const result = await observedInvoke<BridgeConnectionWithdrawResult>(client(cmd), 'bridges.connections.withdraw', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body: { ...mutation(cmd), spaceId: requireSpace(cmd.ctx) },
+  });
+  cmd.out.data(result, r => `withdrew credential ${r.credentialId}; paused ${r.pausedBridgeIds.length} bridge${r.pausedBridgeIds.length === 1 ? '' : 's'}` +
+    `${r.pausedBridgeIds.length ? `: ${r.pausedBridgeIds.join(', ')}` : ''}\n${renderConnection(r.connection)}`);
+  return EXIT_OK;
+}
+
+async function connectionRemove(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  const result = await observedInvoke<BridgeConnectionRemoveResult>(client(cmd), 'bridges.connections.remove', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body: mutation(cmd),
+  });
+  cmd.out.data(result, r => [
+    `removed connection ${r.connection.id} "${r.connection.label}"`,
+    `ended ${r.endedBridgeIds.length} bridge${r.endedBridgeIds.length === 1 ? '' : 's'}${r.endedBridgeIds.length ? `: ${r.endedBridgeIds.join(', ')}` : ''}`,
+    `revoked ${r.revokedCredentialIds.length} space credential${r.revokedCredentialIds.length === 1 ? '' : 's'}`,
+    r.runtime === 'logged_out'
+      ? 'the device was logged out'
+      : 'no runtime was connected: unlink the device on the phone (WhatsApp → Linked devices)',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
+  const page = await observedInvoke<BridgeConversationListResult>(client(cmd), 'bridges.conversations.list', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') },
+  });
+  cmd.out.data(page, p => p.items.length
+    ? p.items.map(c => `${c.conversationId}  ${c.kind.padEnd(5)} "${c.name}"${c.size === null ? '' : ` · ${c.size} members`}` +
+      `${c.canSend ? '' : ` · read-only (${c.reason ?? 'cannot send'}): a bridge here falls back to direction in`}`).join('\n')
+    : 'no groups on this number');
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
+  { path: ['bridge', 'connection', 'remove'], run: connectionRemove },
+  { path: ['bridge', 'conversations'], run: bridgeConversations },
+  { path: ['bridge', 'connection', 'list'], run: connectionList },
+  { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
+  { path: ['bridge', 'connection', 'offer'], run: connectionOffer },
+  { path: ['bridge', 'connection', 'withdraw'], run: connectionWithdraw },
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
   { path: ['bridge', 'get'], run: cmd => bridgeShow(cmd, true) },
