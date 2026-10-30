@@ -287,6 +287,10 @@ begin
     perform internal.require_replay_subject(replay #>> '{entity,space_id}', p_space_id::text, 'space');
     return replay;
   end if;
+  -- A session pinned to one space withdraws from that space only (227).
+  if internal.session_space_id() is not null and internal.session_space_id() <> p_space_id then
+    raise exception 'this session is pinned to another space' using errcode = '42501';
+  end if;
   select * into conn from public.bridge_connections where id = p_connection_id for update;
   if conn.id is null then
     raise exception 'bridge connection not found' using errcode = 'P0002';
