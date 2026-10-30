@@ -7,7 +7,7 @@
  * refused before SQL); target_has_bridge on create and retarget as a 409 with
  * its reason; the views parse as the contract; a worker session claims one
  * handle, sets its listen level and reads the log with its own cursor; the
- * generic entities.create refuses the kind. Bridges R (403): `/remember`
+ * generic entities.create refuses the kind. Bridges R (409): `/remember`
  * proposals are listed by any session and resolved only by a human (D29, D62).
  */
 import { randomUUID } from 'node:crypto';
@@ -298,7 +298,7 @@ describe('the newest page and scroll-back (bridges.log.read --latest / --before)
   });
 });
 
-describe('/remember proposals (Bridges R, 403: D29, D62)', () => {
+describe('/remember proposals (Bridges R, 409: D29, D62)', () => {
   let proposal = '';
   it('any session lists them; canDecide is the caller\'s own', async () => {
     proposal = randomUUID();

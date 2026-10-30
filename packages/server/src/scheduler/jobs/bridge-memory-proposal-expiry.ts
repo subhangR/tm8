@@ -1,5 +1,5 @@
 /**
- * Bridges D63 (migration 403): `/remember` proposals nobody accepted or
+ * Bridges D63 (migration 409): `/remember` proposals nobody accepted or
  * dropped expire 14 days after they were proposed, and their inbox items are
  * cleared. The decision door already refuses an expired proposal; this job
  * makes the status and the inbox say so. Runs `public.expire_bridge_memory_proposals`

@@ -1,5 +1,5 @@
 /**
- * Bridges R (migration 403): `/remember` proposals against a real PostgreSQL
+ * Bridges R (migration 409): `/remember` proposals against a real PostgreSQL
  * with every migration applied. D29's last bullet and D61-D63:
  *
  * - propose: the bridges worker only; a guest and a credential value are

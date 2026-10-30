@@ -1358,7 +1358,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
-    // Bridges D63 (403): /remember proposals nobody decided expire after 14 days.
+    // Bridges D63 (409): /remember proposals nobody decided expire after 14 days.
     scheduler.register(
       createBridgeMemoryProposalExpiryJob({
         db,

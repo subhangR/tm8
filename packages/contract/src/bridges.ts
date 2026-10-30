@@ -362,7 +362,7 @@ export const BridgeHandleClaimInputSchema = z.object({
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
 
 // ---------------------------------------------------------------------------
-// `/remember` proposals (D29, D61-D63; migration 403). A proposal is made from
+// `/remember` proposals (D29, D61-D63; migration 409). A proposal is made from
 // the group by the command executor and decided only here, in tm8, by a human.
 // ---------------------------------------------------------------------------
 export const BRIDGE_MEMORY_PROPOSAL_STATUSES = ['pending', 'accepted', 'dropped', 'expired'] as const;

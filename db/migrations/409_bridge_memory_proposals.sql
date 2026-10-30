@@ -1,6 +1,7 @@
 -- =============================================================================
--- 403 — Bridges R: `/remember` proposals (D29, D61-D63). (Provisional number;
+-- 409 — Bridges R: `/remember` proposals (D29, D61-D63). (Provisional number;
 -- the merger assigns the final one.)
+-- (Authored as 403; renumbered to 409 on the rebase onto main 556b8cc5a: main's max is 407 and B3 takes 408.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- D29's last bullet and D61-D63; BRIDGES-V2-DESIGN.md §2.1 and V3. Task
@@ -98,7 +99,7 @@ create policy bridge_memory_proposals_select on public.bridge_memory_proposals f
 grant select on public.bridge_memory_proposals to tm8_app;
 
 comment on table public.bridge_memory_proposals is
-  '403 (Bridges D29, D61): a /remember from a bridged group. Never a memory until '
+  '409 (Bridges D29, D61): a /remember from a bridged group. Never a memory until '
   'a linked member of that group accepts it in tm8 (D62); expires after 14 days '
   '(D63). Writes only through the definer doors.';
 

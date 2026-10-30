@@ -74,7 +74,7 @@ describe('catalog (§3.4)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
-      // Bridges R (403): /remember proposals, listed and decided in tm8 (D29, D61-D63).
+      // Bridges R (409): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
     ]);
   });
