@@ -489,7 +489,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         await ports.stopWorker(claims, row.id, { reason, clientMutationId: `${cmd.key}:stop:${row.id}` });
         const t = await workerTask(cmd, row.id);
         if (t && OPEN_TASK.has(t.status) && t.status !== 'blocked') {
-          await ports.db.rpc(claims, 'set_work_state', [t.id, 'blocked', null, null, reason, `${cmd.key}:block:${t.id}`, false, false]);
+          // The reason rides the session's ended reason: set_work_state keeps a
+          // note only on the caller's own working_on claim, and the stopper is
+          // not working on the task.
+          await ports.db.rpc(claims, 'set_work_state', [t.id, 'blocked', null, null, null, `${cmd.key}:block:${t.id}`, false, false]);
         }
         stopped.push(row.handle ?? row.title);
       } catch (error) {
