@@ -210,6 +210,8 @@ export type {
   NodeEndedKind,
   NodeSessionEnding,
   SessionUsageFacts,
+  BridgeOrigin,
+  SpawnServerFacts,
 } from './types.js';
 
 export { computeEffectiveSkills, type EffectiveSkillsInput } from './effective-skills.js';

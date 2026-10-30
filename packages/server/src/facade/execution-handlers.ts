@@ -1056,12 +1056,21 @@ export class DbGraphPort implements GraphPort {
     // new, so a retry naming a different entity cannot fail the retry.
     const about = input.aboutEntityId ?? null;
     const fromChat = input.aboutFromChatId ?? null;
-    const result = about !== null || fromChat !== null
+    // Bridges D22 (399): a session launched for a bridge gets its bridgeOrigins
+    // launch context and its own provenance edges in this same transaction, so
+    // nothing it creates can precede them. A failure fails the spawn.
+    const bridgeOrigins = input.bridgeOrigins?.length ? input.bridgeOrigins : null;
+    const result = about !== null || fromChat !== null || bridgeOrigins !== null
       ? await this.db.tx(this.claims(auth), async (q) => {
         const spawned = await q.rpc<Record<string, unknown>>('public.execution_spawn', args);
         const spawnedId = (spawned?.entity as { id?: unknown } | undefined)?.id;
         if (typeof spawnedId === 'string' && spawned?.__tm8_replayed !== true) {
-          await q.rpc('public.work_session_about', [spawnedId, about, fromChat]);
+          if (about !== null || fromChat !== null) {
+            await q.rpc('public.work_session_about', [spawnedId, about, fromChat]);
+          }
+          if (bridgeOrigins !== null) {
+            await q.rpc('public.bridge_launch_origins', [spawnedId, JSON.stringify(bridgeOrigins)]);
+          }
         }
         return spawned;
       })

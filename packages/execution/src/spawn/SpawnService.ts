@@ -2031,6 +2031,8 @@ export class SpawnService {
         // the MCP bind in the boot reads the schedule provenance root off that
         // edge.
         ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
+        // 399: from `server`, never from `request`, for the same reason.
+        ...(server?.bridgeOrigins?.length ? { bridgeOrigins: server.bridgeOrigins } : {}),
       }));
     } catch (error) {
       // The row was refused, so nothing will ever boot into the reservation.

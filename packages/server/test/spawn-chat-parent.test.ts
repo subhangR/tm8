@@ -416,3 +416,49 @@ describe('loadSpawnContext resolves what the parent IS (176)', () => {
     }
   });
 });
+
+/**
+ * Bridges D22 (399, B1b-3): a session launched for a bridge gets its
+ * bridgeOrigins launch context and provenance edges in the SPAWN'S OWN
+ * transaction (the 321 about-edge pattern), so its worker can never create
+ * anything before them.
+ */
+describe('createWorkSession writes bridge origins in the spawn transaction (399)', () => {
+  class TxSpawnDb extends SpawnDb {
+    readonly inTx: Array<{ fn: string; inTx: boolean }> = [];
+    private depth = 0;
+    override async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
+      this.depth += 1;
+      try { return await super.tx(claims, run); } finally { this.depth -= 1; }
+    }
+    override async rpc<T>(claims: DbClaims, fn: string, args: readonly unknown[] = []): Promise<T> {
+      this.inTx.push({ fn, inTx: this.depth > 0 });
+      return super.rpc<T>(claims, fn, args);
+    }
+  }
+  const input = {
+    spaceId: SPACE, teamMemberId: TEAMMATE, parentSessionId: null, taskIds: [], projectId: null,
+    workdirMode: 'scratch' as const, workdirPath: '/tmp/x', baseRef: null, mode: 'worker' as never, model: null,
+    agentTool: null, title: null, nodeId: null, confirmUntrusted: false, clientMutationId: null,
+  };
+  const origin = {
+    bridgeId: '99999999-9999-4999-8999-999999999999', messageId: '77777777-7777-4777-8777-777777777777',
+    providerMessageId: 'wamid.1', sender: { participant: 'Rahul' }, command: '/work',
+  };
+
+  it('calls bridge_launch_origins after execution_spawn, both inside one tx', async () => {
+    const db = new TxSpawnDb('chat');
+    await new DbGraphPort(db).createWorkSession({ identityId: 'owner-identity' }, { ...input, bridgeOrigins: [origin] });
+    const calls = db.inTx.filter(c => c.fn === 'public.execution_spawn' || c.fn === 'public.bridge_launch_origins');
+    expect(calls).toEqual([{ fn: 'public.execution_spawn', inTx: true }, { fn: 'public.bridge_launch_origins', inTx: true }]);
+    expect(db.rpcCalls.find(c => c.fn === 'public.bridge_launch_origins')?.args).toEqual([SESSION, JSON.stringify([origin])]);
+    expect(db.rpcCalls.some(c => c.fn === 'public.work_session_about')).toBe(false);
+  });
+
+  it('writes no origins and opens no extra tx for an ordinary spawn', async () => {
+    const db = new TxSpawnDb('chat');
+    await new DbGraphPort(db).createWorkSession({ identityId: 'owner-identity' }, input);
+    expect(db.rpcCalls.some(c => c.fn === 'public.bridge_launch_origins')).toBe(false);
+    expect(db.inTx.find(c => c.fn === 'public.execution_spawn')?.inTx).toBe(false);
+  });
+});

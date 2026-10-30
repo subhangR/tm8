@@ -68,7 +68,9 @@ async function recentPosters(q: Querier, bridgeId: string): Promise<BridgeRecent
             (array_agg(h.handle order by ob.created_at desc) filter (where h.handle is not null))[1] as handle
        from public.bridge_outbox ob
        join public.messages m on m.entity_id = ob.message_id
-       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from'
+       -- The post's session origin only: bridge provenance (props.bridgeId, 399)
+       -- would otherwise count each post once per edge.
+       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from' and not (af.props ? 'bridgeId')
        left join public.bridge_handles h on h.entity_id = af.dst_id
       where ob.bridge_id = $1 and m.author_id is not null
       group by m.author_id

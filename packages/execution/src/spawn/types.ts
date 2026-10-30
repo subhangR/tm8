@@ -898,6 +898,31 @@ export interface CreateWorkSessionInput {
    * `SpawnRequest`.
    */
   triggeredByLoopId?: string;
+  /**
+   * Bridges D22 (399): the bridge origins this session is launched for. Written
+   * by `public.bridge_launch_origins` in the SAME transaction as the session, so
+   * the launch context and the session's provenance edges exist before the
+   * worker can create anything. A server fact; see {@link SpawnServerFacts}.
+   */
+  bridgeOrigins?: BridgeOrigin[];
+}
+
+/**
+ * One origin of bridge provenance (BRIDGE-ENTITY-DESIGN §2.8, D22/D31): the
+ * bridge message that prompted the work. The recorder adds `inherited`,
+ * `viaSessionId` and `depth`; a caller never sets them.
+ */
+export interface BridgeOrigin {
+  bridgeId: string;
+  /** The origin message on the bridge's log anchor; null for a loop firing. */
+  messageId: string | null;
+  /** The provider's message id (message_origins.external_message_id); the dedupe key with bridgeId. */
+  providerMessageId: string | null;
+  sender: { memberId?: string; participant?: string; handle?: string };
+  /** '/work', '/task', … or null for a natural-language turn. */
+  command: string | null;
+  /** Set when a bridge loop fired it; keys the origin when providerMessageId is null. */
+  loopId?: string;
 }
 
 /**
@@ -923,6 +948,12 @@ export interface SpawnServerFacts {
    * would be naming the human whose connections its session launches with.
    */
   triggeredByLoopId?: string;
+  /**
+   * Bridges D22 (399): set only by the bridge command executor (`/work`,
+   * `bridges.work.start`) and the bridge loop executor, which hold the origin
+   * message. A client that could name one would be forging provenance.
+   */
+  bridgeOrigins?: BridgeOrigin[];
 }
 
 export interface CreateWorkSessionResult {
