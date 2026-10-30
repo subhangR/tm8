@@ -22,6 +22,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
  *    the node, and that folder's `working_dir` is what `start_chat` and spawn
  *    resolve a project chat or session to.
  *  - A typed `~/…` path is the node's home, used as is.
+ *  - `TM8_PROJECTS_HOME` moves the default's parent (a service install's home is the checkout).
  *  - On a loopback-only node two Spaces can share one folder; on any other
  *    node a folder still belongs to one Space (decision 29).
  *
@@ -154,6 +155,24 @@ describe.sequential('a project with no working directory gets ~/<name>', () => {
 
   it('refuses a name that gives no folder name', async () => {
     await expect(create(ids.spaceA, { name: '!!!' })).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  // A service install's run user has the checkout as its home, which it cannot
+  // write: TM8_PROJECTS_HOME moves the default, and only the default.
+  it('puts the default under TM8_PROJECTS_HOME when it is set, while a typed ~/ stays the home', async () => {
+    const projectsHome = join(home, 'node-projects');
+    mkdirSync(projectsHome);
+    process.env['TM8_PROJECTS_HOME'] = projectsHome;
+    try {
+      const project = await create(ids.spaceA, { name: 'Ops Board' });
+      expect(await workingDirOf(project.folderId)).toBe(join(projectsHome, 'ops-board'));
+      expect(existsSync(join(home, 'ops-board'))).toBe(false);
+      mkdirSync(join(home, 'repos', 'web'), { recursive: true });
+      const typed = await create(ids.spaceA, { name: 'Web', workingDir: '~/repos/web' });
+      expect(await workingDirOf(typed.folderId)).toBe(join(home, 'repos', 'web'));
+    } finally {
+      delete process.env['TM8_PROJECTS_HOME'];
+    }
   });
 });
 

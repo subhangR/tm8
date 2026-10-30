@@ -3,7 +3,7 @@ import { mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 
-import { CollabError, type ProjectDirectoryListing } from '@tm8/contract';
+import { CollabError, expandHomePath, type ProjectDirectoryListing } from '@tm8/contract';
 
 /** A picker should stay responsive even when opened on a very wide directory. */
 export const MAX_PROJECT_DIRECTORIES = 500;
@@ -69,8 +69,26 @@ export async function canonicalRoots(rawRoots = configuredRoots()): Promise<stri
 }
 
 /**
- * Where the picker OPENS when the caller names no path — the home directory,
- * falling back to the first root when home is outside the allowed window.
+ * THE PARENT of the folder a project created with no folder gets
+ * (`<projectsHome>/<projectDirName(name)>`): `TM8_PROJECTS_HOME`, else the
+ * home directory.
+ *
+ * Home alone is wrong for a service install: `install.sh --service` gives the
+ * `tm8` system user the checkout as its home (`/opt/tm8/<env>`), which is not
+ * the node's to write, so every default project was refused with "cannot
+ * create project directory: /opt/tm8/prod/<name>" — and where it was writable,
+ * projects landed inside the checkout a redeploy replaces. The installer now
+ * points this at `/var/lib/tm8/<env>/projects`, owned by the run user.
+ */
+export function projectsHome(raw = process.env.TM8_PROJECTS_HOME): string {
+  const configured = raw?.trim();
+  return configured ? resolve(expandHomePath(configured, homedir())) : homedir();
+}
+
+/**
+ * Where the picker OPENS when the caller names no path — `projectsHome()` (the
+ * home directory unless `TM8_PROJECTS_HOME` names another), falling back to the
+ * first root when it is outside the allowed window.
  *
  * Deliberately NOT the first root, even though the browse SCOPE is now the
  * filesystem root. Opening on `/` would put "register a project whose working
@@ -87,7 +105,7 @@ export async function canonicalRoots(rawRoots = configuredRoots()): Promise<stri
  */
 async function defaultStartPath(roots: readonly string[]): Promise<string> {
   try {
-    const home = await realpath(homedir());
+    const home = await realpath(projectsHome());
     if ((await stat(home)).isDirectory() && roots.some((root) => containedBy(root, home))) {
       return home;
     }
@@ -213,6 +231,7 @@ export async function listProjectDirectories(
     separator: sep as '/' | '\\',
     directories: allDirectories.slice(0, MAX_PROJECT_DIRECTORIES),
     truncated: allDirectories.length > MAX_PROJECT_DIRECTORIES,
+    projectsHome: projectsHome(),
   };
 }
 
