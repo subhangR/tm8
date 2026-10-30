@@ -73,6 +73,7 @@ import {
   claimNode,
   claimTokenIsLive,
   enterSpace,
+  inviteBridgeLink,
   inviteRequiresSpacePassword,
   resetSpaceLogin,
   setSpaceLoginLocked,
@@ -338,7 +339,12 @@ function authInviteResolve(deps: FacadeDeps): OperationHandler {
     // W5 (K2): a live code into a space that requires a space password says
     // so, so the join form can ask for one. Dead codes answer as before.
     if (preview.status !== 'valid') return preview;
-    return { ...preview, requiresSpacePassword: await inviteRequiresSpacePassword(deps.db, body.code) };
+    const bridgeLink = await inviteBridgeLink(deps.db, body.code);
+    return {
+      ...preview,
+      requiresSpacePassword: await inviteRequiresSpacePassword(deps.db, body.code),
+      ...(bridgeLink ? { bridgeLink } : {}),
+    };
   };
 }
 

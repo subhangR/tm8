@@ -1,6 +1,6 @@
 -- =============================================================================
--- 410 — Bridges B3 follow-up: mangled /link codes are matched or burned; an
--- admin who revokes a pinned invite ends the link it made. (Provisional
+-- 410 — Bridges B3 follow-up: mangled /link codes are matched or burned; a
+-- pinned invite grants membership only. (Provisional
 -- number, above B3's 408 and R's 409; the bridges merger assigns the final
 -- one at merge.)
 --
@@ -18,9 +18,9 @@
 --       near codes are found by digesting every valid code within two edits of
 --       what was typed (at most about 40,000 strings for six characters, before duplicates go) against the salt of
 --       each live code: live codes last ten minutes, so they are few.
---   §3  revoke_invite on a pinned invite (D60) also revokes the 'invite' link
---       redeeming it made, if that link is still live: the admin who pinned
---       the number can take back a link the invite gave the wrong person.
+--   §3  a pinned invite (D60) grants membership only: 408's triggers that
+--       linked the number to whoever redeemed it go, and the join page hands
+--       the new member a /link code instead (public.invite_bridge_link).
 -- =============================================================================
 
 set local lock_timeout = '5s';
@@ -145,8 +145,10 @@ begin
     end if;
     -- A near miss (a typo, an autocorrected character, a dropped one) names a
     -- live code just as well: the group has read it. Burn every live code of
-    -- this provider within two edits of what was typed.
-    if c.id is null and v_code like 'TM8-%' then
+    -- this provider within two edits of what was typed. Not for a locked-out
+    -- sender: the search digests up to ~40k candidates per live code, and the
+    -- five-tries-an-hour lock (checked above) is what bounds it per sender.
+    if c.id is null and fail <> 'rate_limited' and v_code like 'TM8-%' then
       update public.bridge_link_codes k set used_at = now()
        where k.id in (select n.id from internal.bridge_link_code_near(b.provider, substr(v_code, 5)) n);
       get diagnostics near = row_count;
@@ -173,21 +175,36 @@ revoke all on function internal.bridge_redeem_link_code(uuid, text, text) from p
 grant execute on function internal.bridge_redeem_link_code(uuid, text, text) to tm8_graph_owner;
 
 -- -----------------------------------------------------------------------------
--- §3. Revoking a pinned invite ends the link it made.
+-- §3. A pinned invite grants membership only (D60, amended).
 -- -----------------------------------------------------------------------------
-create or replace function internal.bridge_revoke_invite_pin_link() returns trigger
-language plpgsql security definer set search_path = public, internal, pg_temp as $$
-begin
-  update public.bridge_identity_links l set revoked_at = now()
-    from public.bridge_invite_pins p
-   where p.invite_id = new.id and p.link_id = l.id
-     and l.method = 'invite' and l.revoked_at is null;
-  return null;
-end
+-- 408 linked the pinned number to whoever redeemed the invite. A join link is
+-- a URL: pasted in the group, any member who opened it first held that number
+-- in every space, and the real owner got linked_elsewhere. Now redeeming a
+-- pinned invite only makes the member; the number links when its owner sends
+-- /link TM8-XXXXXX from the phone in the group (D59), which proves the phone.
+-- B3 has not shipped, so no 'invite' link exists to undo.
+drop trigger space_invites_bridge_pin on public.space_invites;
+drop function internal.bridge_complete_invite_pin();
+drop trigger members_bridge_note_joined on public.members;
+drop function internal.bridge_note_joined_member();
+
+-- What the join page needs to hand the new member a /link code: the pinned
+-- participant's provider and masked number, for a code that can still join.
+-- Claim-free, like 268's invite_requires_space_password: a dead or unknown
+-- code answers null, so the pin of an invite that can no longer join is never
+-- readable. The holder of a live code is who it was sent to, and sees only
+-- the last four digits.
+create or replace function public.invite_bridge_link(p_code text)
+returns jsonb language sql stable security definer set search_path = public, internal, pg_temp as $$
+  select jsonb_build_object('provider', p.provider, 'masked', internal.bridge_mask(p.external_id))
+    from public.space_invites i
+    join public.bridge_invite_pins p on p.invite_id = i.id
+   where i.code = p_code
+     and i.revoked_at is null
+     and (i.expires_at is null or i.expires_at >= now())
+     and i.use_count < i.max_uses
 $$;
-revoke all on function internal.bridge_revoke_invite_pin_link() from public;
-create trigger space_invites_bridge_pin_revoke after update of revoked_at on public.space_invites
-  for each row when (new.revoked_at is not null and old.revoked_at is null)
-  execute function internal.bridge_revoke_invite_pin_link();
+revoke all on function public.invite_bridge_link(text) from public;
+grant execute on function public.invite_bridge_link(text) to tm8_app;
 
 reset role;

@@ -4536,6 +4536,12 @@ export type InvitePreview =
       expiresAt: string | null;
       /** W5 (K2): joining sets a space password; ask for one. */
       requiresSpacePassword?: boolean;
+      /**
+       * Bridges D60: the invite was made for one group participant. Joining
+       * grants membership only; the join page then hands the new member a
+       * `/link TM8-…` code to send from that number in the group.
+       */
+      bridgeLink?: { provider: string; masked: string };
     };
 
 // ---------------------------------------------------------------------------
