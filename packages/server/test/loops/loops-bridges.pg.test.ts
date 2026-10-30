@@ -514,6 +514,11 @@ describe('L7. authority: granted at arming vs approval-gated, and provenance -> 
     const other = await refusal(db.rpc({ identityId: ownerIdentity, authKind: 'agent', requestId: randomUUID() },
       'loop_request_approval', [sid, 'entities.delete', 'x']));
     expect(other.code).toBe('forbidden');
+    // The authority read behind it is not an app door: it would hand any
+    // session's loop title and owner to a caller in another space.
+    const leak = await refusal(db.rpc({ identityId: ownerIdentity, authKind: 'agent', workSessionId: sid, requestId: randomUUID() },
+      'loop_session_authority', [sid]));
+    expect(leak.code).toBe('forbidden');
   });
 });
 

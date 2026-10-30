@@ -1094,8 +1094,10 @@ language sql stable security definer set search_path = public, internal, pg_temp
    where o.holder_id = p_session_id and jsonb_array_length(l.targets) > 0
    order by o.depth, o.added_at limit 1
 $$;
+-- No app grant: it reads any session's loop title and owner with no caller
+-- check, so only loop_request_approval (a definer that checks the caller is
+-- the session itself) reaches it.
 revoke all on function public.loop_session_authority(uuid) from public;
-grant execute on function public.loop_session_authority(uuid) to tm8_app;
 
 create or replace function public.loop_request_approval(p_session_id uuid, p_operation text, p_summary text)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
