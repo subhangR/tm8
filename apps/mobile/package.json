@@ -1,0 +1,81 @@
+{
+  "name": "@tm8/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "bun run build:shared && expo start",
+    "build:shared": "tsc -b ../../packages/contract ../../packages/prompt",
+    "typecheck": "bun run build:shared && node scripts/typegen.cjs && tsc -p . --noEmit",
+    "lint": "bun run build:shared && eslint --max-warnings=0 .",
+    "test": "bun run build:shared && jest",
+    "export:ios": "bun run build:shared && NODE_OPTIONS=--max-old-space-size=3072 expo export -p ios --output-dir dist-ios",
+    "export:android": "bun run build:shared && NODE_OPTIONS=--max-old-space-size=3072 expo export -p android --output-dir dist-android",
+    "export:web": "bun run build:shared && NODE_OPTIONS=--max-old-space-size=3072 expo export -p web --output-dir dist-web",
+    "doctor": "bun run build:shared && node scripts/doctor.cjs"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~58.0.15",
+    "@gorhom/bottom-sheet": "^5.2.14",
+    "@react-native-community/netinfo": "12.0.1",
+    "@shopify/flash-list": "2.3.2",
+    "@tanstack/react-query": "^5.105.0",
+    "@tm8/contract": "workspace:*",
+    "@tm8/prompt": "workspace:*",
+    "expo": "~58.0.21",
+    "expo-clipboard": "~58.0.4",
+    "expo-constants": "~58.0.14",
+    "expo-crypto": "~58.0.7",
+    "expo-haptics": "~58.0.7",
+    "expo-linking": "~58.0.15",
+    "expo-localization": "~58.0.5",
+    "expo-notifications": "~58.1.7",
+    "expo-router": "~58.0.28",
+    "expo-secure-store": "~58.0.2",
+    "expo-sqlite": "~58.0.14",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.7",
+    "expo-updates": "~58.0.19",
+    "react": "catalog:mobile",
+    "react-dom": "catalog:mobile",
+    "react-freeze": "^1.0.4",
+    "react-native": "0.88.1",
+    "react-native-gesture-handler": "~3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0",
+    "react-native-web": "~0.21.4",
+    "react-native-webview": "14.0.1",
+    "react-native-worklets": "0.13.0",
+    "ulid": "^3.0.2",
+    "zod": "^3.23.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@babel/runtime": "^7.20.0",
+    "@eslint/js": "^9.39.5",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "catalog:web",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "eslint": "^9.39.5",
+    "expo-doctor": "~1.21.5",
+    "jest": "^30.5.2",
+    "jest-expo": "~58.0.13",
+    "playwright-core": "1.58.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript",
+        "@types/react"
+      ]
+    }
+  }
+}

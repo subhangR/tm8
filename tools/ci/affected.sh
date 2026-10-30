@@ -75,6 +75,10 @@ declare -A MODULE_OF=(
   # The Electron shell (bun run desktop): no suite of its own and no @tm8/* edges — it
   # forks packages/server/dist, which the server module already tests.
   [apps/desktop]=
+  # The Expo app (@tm8/mobile): no CI module, as apps/desktop. Owner rulings Q11/Q12
+  # (2026-10-29) keep its suites local: t-p0-ci-wiring adds tools/ci/mobile-check.sh,
+  # which the lane stand-in and the Merger run. A `mobile` module would need a ci.yml job.
+  [apps/mobile]=
   # Standalone services outside the bun workspace, each with its own npm lockfile and
   # Docker build (integrations/whatsapp-bridge). Nothing in the workspace imports them,
   # and their suites (node:test via tsx) run in their own directories, not in CI.

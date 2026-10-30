@@ -17,7 +17,20 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { captureMcpCallback, rememberMcpOAuth, takeConnectedToast, type McpCallback } from './oauth-callback';
 import { McpOAuthCallback } from './McpOAuthCallback';
 import { OAUTH_MESSAGE_TYPE } from './useConnect';
-afterEach(()=>{cleanup();sessionStorage.clear();localStorage.clear();});
+/**
+ * The page's own window, faked. After posting to its opener the page closes
+ * its host 150 ms later. With jsdom's REAL window as the host, that timer
+ * outlived its test and window.close() deleted `document` under whichever test
+ * ran next ('offers recovery…' read document.body as undefined). The fake
+ * records the close instead of scheduling it, so no test queues a real close.
+ */
+const pendingCloses:Array<()=>void>=[];
+function fakeHost(){
+  const setTimeout=vi.fn((run:()=>void)=>pendingCloses.push(run));
+  const close=vi.fn();
+  return {host:{location:{origin:window.location.origin,replace:vi.fn()},setTimeout,close,opener:null} as unknown as Window,setTimeout,close};
+}
+afterEach(()=>{cleanup();sessionStorage.clear();localStorage.clear();pendingCloses.length=0;});
 it('captures callback fields then removes them from history without persisting the code',()=>{
   rememberMcpOAuth('https://fixture.example/authorize?state=one','space');
   const replaceState=vi.fn();
@@ -57,8 +70,9 @@ it('completes once under StrictMode without displaying callback secrets',async()
 it('S14(a): posts one type, to its own origin, and nothing else',async()=>{
   const postMessage=vi.fn();
   const opener={postMessage} as unknown as Window;
+  const view=fakeHost();
   const complete=vi.fn(async()=>({id:'cred',accountLabel:'subhang@gmail.com',returnTo:'/#/s/space/settings/connectors'}));
-  render(<McpOAuthCallback callback={callback} complete={complete} opener={opener}/>);
+  render(<McpOAuthCallback callback={callback} complete={complete} opener={opener} view={view.host}/>);
   await waitFor(()=>expect(postMessage).toHaveBeenCalled());
   expect(postMessage).toHaveBeenCalledWith(
     {type:OAUTH_MESSAGE_TYPE,status:'connected',credentialId:'cred',accountLabel:'subhang@gmail.com'},
@@ -68,6 +82,10 @@ it('S14(a): posts one type, to its own origin, and nothing else',async()=>{
   expect(postMessage.mock.calls.every(call=>call[1]===window.location.origin)).toBe(true);
   // The opener owns the outcome, so the same-tab navigation must NOT also run.
   expect(takeConnectedToast()).toBeNull();
+  // The page then closes ITS OWN window: the injected host, never jsdom's.
+  expect(view.setTimeout).toHaveBeenCalledWith(expect.any(Function),150);
+  pendingCloses.forEach(run=>run());
+  expect(view.close).toHaveBeenCalledTimes(1);
 });
 it('§10.2: with no opener it lands on the return_to the SERVER kept',async()=>{
   const replace=vi.fn();

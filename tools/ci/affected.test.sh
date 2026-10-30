@@ -287,7 +287,7 @@ B="$TMP/gone"; make_fixture "$B"; rm -r "$B/packages/prompt"
 paths "$B" packages/tm8-ui/src/x.tsx;        expect "MODULE_OF names a package the workspace lacks -> ALL" ALL
 B="$TMP/dangling"; make_fixture "$B"; jq '.devDependencies["@x/ghost"] = "workspace:^"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
 paths "$B" packages/tm8-ui/src/x.tsx;        expect "workspace: dep naming no package -> ALL" ALL
-B="$TMP/glob"; make_fixture "$B"; jq '.workspaces += ["packages/**"]' "$B/package.json" >"$B/x" && mv "$B/x" "$B/package.json"
+B="$TMP/glob"; make_fixture "$B"; jq 'if (.workspaces | type) == "object" then .workspaces.packages += ["packages/**"] else .workspaces += ["packages/**"] end' "$B/package.json" >"$B/x" && mv "$B/x" "$B/package.json"
 paths "$B" packages/tm8-ui/src/x.tsx;        expect "unsupported workspaces glob -> ALL" ALL
 B="$TMP/peer"; make_fixture "$B"
 jq '.dependencies |= del(.["@maestro/pty-protocol"]) | .peerDependencies["@maestro/pty-protocol"] = "workspace:~"' "$B/packages/tm8-ui/package.json" >"$B/x" && mv "$B/x" "$B/packages/tm8-ui/package.json"
