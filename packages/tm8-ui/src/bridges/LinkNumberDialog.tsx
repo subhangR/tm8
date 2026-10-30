@@ -101,7 +101,7 @@ export function LinkNumberDialog({
   const title = relink ? `Re-link ${relink.label}` : 'Link a WhatsApp number';
   return (
     <div className="brg-backdrop">
-      <div ref={dialog} className="brg-dialog brg-link" role="dialog" aria-modal="true" aria-label={title} data-testid="bridge-link-number">
+      <div ref={dialog} className="brg-dialog brg-linkdlg" role="dialog" aria-modal="true" aria-label={title} data-testid="bridge-link-number">
         <h2 className="brg-dialog__title">{title}</h2>
         {!pending ? (
           <form onSubmit={(event) => { event.preventDefault(); void begin(); }}>
