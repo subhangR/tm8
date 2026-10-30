@@ -428,6 +428,13 @@ describe('L6. owner leaves: suspended, admins notified, an admin takes it over',
     await owner(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1,$2,$3,'member','M2')`, [member2Id, spaceId, member2]);
     const notAdmin = await refusal(human(member2, q => q.rpc('update_loop', updateArgs(version))));
     expect(notAdmin.message ?? '').toMatch(/only a space admin can take it over/);
+    // Nor by editing it while disabled (then enabling it as its new armer), nor by clearing its targets.
+    const disabledEdit = updateArgs(version);
+    disabledEdit[3] = 'Renamed while disabled'; disabledEdit[11] = false;
+    expect((await refusal(human(member2, q => q.rpc('update_loop', disabledEdit)))).message ?? '')
+      .toMatch(/only a space admin can take it over/);
+    expect((await refusal(human(member2, q => q.rpc('set_loop_bridge_fields', [loopId, '[]', null, null])))).message ?? '')
+      .toMatch(/only a space admin can take it over/);
 
     await human(adminIdentity, q => q.rpc('update_loop', updateArgs(version)));
     const [after] = await owner<{ armed_by_member_id: string; last_error: string | null }>(
@@ -439,6 +446,24 @@ describe('L6. owner leaves: suspended, admins notified, an admin takes it over',
     const dueAfter = await db.query<{ entity_id: string; act_as_identity: string }>(loopsWorker(),
       'select entity_id::text, act_as_identity from public.loops_claimable(100, now(), $1)', [[]]);
     expect(dueAfter.find(d => d.entity_id === loopId)?.act_as_identity).toBe(adminIdentity);
+  });
+});
+
+describe('L6b. an admin removing the armer suspends the loop; the removal is no takeover', () => {
+  it('remove_space_member under the admin\'s claims leaves the loop suspended, armed by the member who left', async () => {
+    const m3 = `l-m3-${randomUUID()}`, m3Id = randomUUID();
+    await owner(`insert into public.user_profiles(identity_id, display_name) values ($1,'M3')`, [m3]);
+    await owner(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'member',$1)`, [m3Id, spaceId]);
+    await owner(`insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1,$2,$3,'member','M3')`, [m3Id, spaceId, m3]);
+    const loopId = await createLoop({ by: m3, title: 'M3 digest', targets: [{ bridgeId: infra, text: null }] });
+    await human(adminIdentity, q => q.rpc('remove_space_member', [spaceId, m3Id, null]));
+    const [l] = await owner<{ armed_by_member_id: string; last_error: string }>(
+      'select armed_by_member_id::text, last_error from public.loops where entity_id = $1', [loopId]);
+    expect(l).toMatchObject({ armed_by_member_id: m3Id });
+    expect(l!.last_error).toMatch(/^suspended: /);
+    const open = await owner<{ n: string }>(`select count(*) n from public.attention_requests where entity_id = $1
+      and signal_key like 'loop.owner_left:%' and status in ('open','acknowledged')`, [loopId]);
+    expect(Number(open[0]!.n)).toBeGreaterThan(0);
   });
 });
 

@@ -28,10 +28,12 @@ function fakeDb(answer: unknown): { db: Db; calls: Array<{ fn: string; args: rea
 describe('the gated list (D26)', () => {
   it('covers delete, PR merge, members, bridges and permissions, and none of the granted creates and edits', () => {
     for (const op of ['entities.delete', 'tracking.pr.merge', 'spaces.members.remove', 'bridges.update', 'bridges.remove',
-      'spaceLinks.inbound.grant', 'node.pathGrants.create'] as const) {
+      'spaceLinks.inbound.grant', 'node.pathGrants.create', 'messages.attachments.remove',
+      'spaces.members.spacePassword.reset'] as const) {
       expect(LOOP_APPROVAL_GATED_OPERATIONS.has(op)).toBe(true);
     }
-    for (const op of ['entities.create', 'entities.patch', 'messages.post', 'labels.create', 'collections.addItem'] as const) {
+    for (const op of ['entities.create', 'entities.patch', 'messages.post', 'labels.create', 'collections.addItem',
+      'collections.removeItem', 'edges.delete', 'entities.refs.remove', 'bridges.listen', 'bridges.handles.claim'] as const) {
       expect(LOOP_APPROVAL_GATED_OPERATIONS.has(op as never)).toBe(false);
     }
   });

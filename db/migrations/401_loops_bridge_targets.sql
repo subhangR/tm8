@@ -324,7 +324,14 @@ begin
             - 'armed_by_member_id' - 'armed_by_identity_id')
       or (new.enabled and not old.enabled);
     -- 401 (L): a human enabling or editing a suspended bridge loop takes it over.
-    if v_human and new.enabled and jsonb_array_length(new.targets) > 0 and old.armed_by_identity_id is not null
+    -- Read off the OLD row: an edit made while disabled, or one that clears the
+    -- targets, is still a takeover (else a member edits, then enables, as armer);
+    -- only disabling it is not. The suspension's own write (an admin's
+    -- remove_space_member runs it under their claims) is not a takeover either.
+    if v_human and (v_content_changed or new.enabled) and jsonb_array_length(old.targets) > 0
+       and not (new.last_error is not distinct from internal.loop_suspended_reason()
+                and old.last_error is distinct from new.last_error)
+       and old.armed_by_identity_id is not null
        and old.armed_by_identity_id is distinct from internal.identity_id()
        and not exists (select 1 from public.entities e join public.members m on m.space_id = e.space_id
                         where e.id = new.entity_id and m.identity_id = old.armed_by_identity_id and m.status = 'active') then
