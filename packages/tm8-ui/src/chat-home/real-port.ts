@@ -249,6 +249,7 @@ export function createChatHomePortFromSeam(
       // field entirely, and an absent list is not a malformed message.
       attachments: message.content.attachments ?? [],
       ...(message.turnInFlight ? { turnInFlight: true } : {}),
+      ...(message.bridge ? { bridge: message.bridge } : {}),
     })),
   );
 
