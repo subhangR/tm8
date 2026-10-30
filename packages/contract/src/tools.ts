@@ -109,14 +109,24 @@ export const ToolRunSchema = z.object({
   outputTail: z.string().refine(value => new TextEncoder().encode(value).byteLength <= TOOL_MAX_OUTPUT_BYTES),
   parentSessionId: Id.nullable(),
   invoker: z.lazy(() => ActorSummarySchema).nullable().optional(),
+  // The loop that fired this run: a provenance-marked `triggered_by` edge only (347).
+  // `title` is null when the loop is deleted or unreadable.
+  triggeredBy: z.object({ id: Id, title: z.string().nullable() }).strict().nullable().optional(),
 }).strict();
 export type ToolRun = z.infer<typeof ToolRunSchema>;
+/** The newest readable run of a tool, carried by `tools.get`, `tools.list` and the tool's entity summary. */
+export const ToolLastRunSchema = z.object({
+  sessionId: Id, state: ToolRunStateSchema, exitCode: z.number().int().nullable(),
+  startedAt: z.string().nullable(), exitedAt: z.string().nullable(),
+}).strict();
+export type ToolLastRun = z.infer<typeof ToolLastRunSchema>;
 export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable(), boundBy: z.lazy(() => ActorSummarySchema).nullable().optional(), boundAt: z.string().nullable().optional() }).strict();
 export const ToolViewSchema = z.object({
   id: Id, spaceId: Id, version: z.number().int().positive(), sourceSha256: z.string().regex(/^[0-9a-f]{64}$/), definition: ToolDefinitionSchema,
   executionVersion: z.number().int().positive(), configRevision: z.number().int().nonnegative(),
   config: z.record(ToolJsonValueSchema), secretBindings: z.array(ToolSecretBindingSchema),
   sourceChangedSinceViewerLastRun: z.object({ byActor: z.lazy(() => ActorSummarySchema).nullable(), at: z.string(), fromSha: z.string(), toSha: z.string() }).strict().nullable().optional(),
+  lastRun: ToolLastRunSchema.nullable().optional(),
 }).strict();
 export type ToolView = z.infer<typeof ToolViewSchema>;
 // Older entity summaries carry only the definition; current projections carry the full view.

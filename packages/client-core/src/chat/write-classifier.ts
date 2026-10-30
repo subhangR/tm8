@@ -115,6 +115,14 @@ export const WRITE_OPS: ReadonlySet<string> = new Set([
   'containers.expose',
   'containers.snapshot',
   'containers.fork',
+  // Tools (Tools v2 PR-E put these in tm8_act): run and config.set/unset carry
+  // no verb the regex knows, so a chat that ran a tool filed it as a read.
+  // create and update do match it; listed anyway, like entities.create.
+  'tools.run',
+  'tools.create',
+  'tools.update',
+  'tools.config.set',
+  'tools.config.unset',
 ]);
 
 /** Strip any MCP server prefix: `mcp__tm8__tm8_delegate` → `tm8_delegate`. */
