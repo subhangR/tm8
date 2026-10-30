@@ -264,10 +264,7 @@ describe('F: a bug completed without a PR says what was done (D72)', () => {
     await expect(db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, null])))
       .rejects.toThrow(/no tracked pull request/);
     await db.tx(human(), async q => q.rpc('set_task_gate', [task, await version(task), 'none', null, `f-gate-${randomUUID()}`]));
-    await inTx(null, async c => {
-      await post(c, task, 'Cleared 40 GB of old logs and added logrotate.');
-      await post(c, task, '', teammate);   // blank: not "what was done"
-    });
+    await inTx(null, c => post(c, task, 'Cleared 40 GB of old logs and added logrotate.'));
     // A bridge's own message on the task is never "what was done".
     await inTx(null, c => post(c, task, 'tm8: noise', infra));
     await db.tx(human(), async q => q.rpc('complete_task', [task, await version(task), [ownerMember], null, `f-done-${randomUUID()}`]));

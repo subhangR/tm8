@@ -317,7 +317,7 @@ begin
 end
 $$;
 revoke all on function internal.bridge_fix_on_pr() from public;
-create constraint trigger pull_requests_bridge_fix after update of state, ci_status on public.pull_requests
+create constraint trigger pull_requests_bridge_fix after update on public.pull_requests
   deferrable initially deferred for each row
   when (new.state = 'merged' and (old.state is distinct from 'merged' or old.ci_status is distinct from new.ci_status))
   execute function internal.bridge_fix_on_pr();
@@ -367,7 +367,7 @@ begin
 end
 $$;
 revoke all on function internal.bridge_fix_on_edge() from public;
-create constraint trigger edges_bridge_fix after insert or update of props on public.edges
+create constraint trigger edges_bridge_fix after insert or update on public.edges
   deferrable initially deferred for each row
   when (new.type = 'tracks' or (new.type = 'authored_from' and new.props ? 'bridgeId'))
   execute function internal.bridge_fix_on_edge();
@@ -381,11 +381,14 @@ begin
 end
 $$;
 revoke all on function internal.bridge_fix_on_entity() from public;
-create constraint trigger entities_bridge_fix_done after update of status_category on public.entities
+-- `after update`, not `update of status_category`: the category is derived by
+-- a trigger from status_id, and a column-list trigger fires only when the
+-- statement names the column.
+create constraint trigger entities_bridge_fix_done after update on public.entities
   deferrable initially deferred for each row
   when (new.kind = 'task' and new.status_category = 'done' and old.status_category is distinct from 'done')
   execute function internal.bridge_fix_on_entity();
-create constraint trigger entities_bridge_fix_label after update of labels on public.entities
+create constraint trigger entities_bridge_fix_label after update on public.entities
   deferrable initially deferred for each row
   when (new.kind = 'task' and new.labels is distinct from old.labels)
   execute function internal.bridge_fix_on_entity();
