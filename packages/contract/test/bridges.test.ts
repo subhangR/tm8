@@ -70,19 +70,21 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs, and B1b-5\'s four connection rows (400)', () => {
+  it('carries the twelve rows B1 needs, B1b-5\'s four connection rows (400), B1b-7\'s two and the four hand-over rows (411)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw',
     ]);
   });
-  it('create, retarget, remove and the connection writes are human-only; the session doors are not', () => {
+  it('create, retarget, remove, the connection writes and the hand-over (D9) are human-only; the session doors are not', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
       'bridges.create', 'bridges.retarget', 'bridges.remove',
       'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw',
     ]);
   });
 

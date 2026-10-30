@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:c7a7ee5c0cb6ee7533cdb2e2d66ad555172d4133293c4bad6aa968e97a411b6f",
+  "catalogDigest": "sha256:b20126666f00c13c7f1efb24dfd5ece4eb7d239486bf65c8c8520fc3ece9e66d",
   "catalog": {
-    "total": 416,
-    "v1": 414,
+    "total": 420,
+    "v1": 418,
     "reserved": 2,
-    "http": 414,
+    "http": 418,
     "ws": 1,
-    "registerableV1Http": 412,
+    "registerableV1Http": 416,
     "methods": {
       "GET": 140,
-      "POST": 206,
+      "POST": 210,
       "PATCH": 23,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 147,
-      "command": 267,
+      "command": 271,
       "stream": 2
     },
-    "uniqueNames": 416,
-    "uniqueBindings": 415
+    "uniqueNames": 420,
+    "uniqueBindings": 419
   },
   "reservedOperations": [
     "search.query",
@@ -498,6 +498,34 @@
         "operation": "bridges.conversations.list",
         "method": "GET",
         "path": "/v2/me/bridge-connections/:connectionId/conversations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.offer",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/handover",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.accept",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/accept",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.decline",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/decline",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.withdraw",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/withdraw",
         "status": "registered",
         "source": "server-router"
       },
@@ -3316,7 +3344,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 384
+    "unimplementedV1Http": 388
   },
   "schemas": {
     "additive": {
@@ -4182,6 +4210,74 @@
           "bridges",
           "conversations",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.offer",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.offer",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "offer"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.accept",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.accept",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "accept"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.decline",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.decline",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "decline"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.withdraw",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.withdraw",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "withdraw"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
