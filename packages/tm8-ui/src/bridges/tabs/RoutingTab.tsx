@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { bridgeProviderLabel } from '../bridge-marks';
 import type { BridgeHandleAppearance, BridgeView, EntitySummary } from '@tm8/contract';
 import { BRIDGE_STYLE_MAX } from '@tm8/contract';
@@ -7,7 +7,7 @@ import type { BridgePatch, BridgesPort } from '../api';
 import { ConsequenceDialog } from '../ConsequenceDialog';
 import { consequencesOf, retargetConsequences } from '../consequences';
 import { TARGET_GLYPH, TARGET_WORD, bridgeFailureOf } from '../format';
-import { unservedReason } from '../reasons';
+import { pendingReason } from '../reasons';
 import { draftOf, draftProblem, patchOf, type RoutingDraft } from '../routing-draft';
 
 /**
@@ -36,8 +36,25 @@ export function RoutingTab({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ text: string; undo: BridgePatch | null } | null>(null);
   const [busy, setBusy] = useState(false);
-  /* A new version from elsewhere (the header's pause, another tab) resets the form to it. */
-  useEffect(() => { setDraft(draftOf(view)); }, [view]);
+  /* A new version from elsewhere (the header's pause, an event, this form's
+     own save): a clean form follows it; a form with unsaved edits keeps them —
+     Save then sends only what still differs from the new version. */
+  const seen = useRef(view);
+  const current = useRef(draft);
+  current.current = draft;
+  const [kept, setKept] = useState(false);
+  useEffect(() => {
+    const prev = seen.current;
+    seen.current = view;
+    if (prev === view) return;
+    const d = current.current;
+    if (patchOf(prev, d) === null) {
+      setDraft(draftOf(view));
+      setKept(false);
+    } else {
+      setKept(patchOf(view, d) !== null);
+    }
+  }, [view]);
 
   const ended = view.status === 'ended';
   const provider = bridgeProviderLabel(view.provider);
@@ -59,6 +76,17 @@ export function RoutingTab({
     } finally {
       setBusy(false);
     }
+  };
+
+  /* Undo of a narrowing save WIDENS, so it goes through §1.5 like any other
+     change: the consequences are computed against the view as it is now. */
+  const undoSave = (undo: BridgePatch) => {
+    const lines = consequencesOf(view, undo);
+    if (lines.length === 0) { void apply(undo, false); return; }
+    setConfirm({
+      title: `Undo the change to ${view.title}?`, lines, label: 'Yes, undo it',
+      run: async () => { setConfirm(null); await apply(undo, false); },
+    });
   };
 
   const save = () => {
@@ -199,10 +227,10 @@ export function RoutingTab({
               them are not deleted.
             </p>
             <div className="brg-form__line">
-              <button type="button" className="pn-btn" disabled title={unservedReason(port, 'bridges.history.import', 'Importing earlier messages') ?? undefined}>
+              <button type="button" className="pn-btn" disabled title={pendingReason(port, 'bridges.history.import', 'Importing earlier messages')}>
                 Import earlier messages
               </button>
-              <span className="brg-hint">{unservedReason(port, 'bridges.history.import', 'Importing earlier messages')}</span>
+              <span className="brg-hint">{pendingReason(port, 'bridges.history.import', 'Importing earlier messages')}</span>
             </div>
           </Group>
 
@@ -235,13 +263,14 @@ export function RoutingTab({
           </Group>
         </fieldset>
         <div className="brg-form__save">
+          {kept && patch ? <span className="brg-hint" role="status">The bridge changed while you were editing; your unsaved changes are kept.</span> : null}
           {problem ? <span className="brg-error" role="alert">{problem}</span> : null}
           {error ? <span className="brg-error" role="alert">{error}</span> : null}
           {saved ? (
             <span className="brg-hint" role="status">
               {saved.text}{' '}
               {saved.undo ? (
-                <button type="button" className="brg-link" onClick={() => { const undo = saved.undo!; setSaved(null); void apply(undo, false); }}>
+                <button type="button" className="brg-link" onClick={() => { const undo = saved.undo!; setSaved(null); undoSave(undo); }}>
                   Undo
                 </button>
               ) : null}

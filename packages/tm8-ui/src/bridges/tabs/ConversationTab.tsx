@@ -43,6 +43,11 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   const crosses = view.policy.direction !== 'in' && view.status !== 'ended';
   return (
     <div className="brg-conv" data-testid="bridge-conversation">
+      {/* bridges.log.read answers oldest first from the start of the log
+          (server readLog); a latest-first read is a follow-up. Say so. */}
+      <p className="brg-hint" data-testid="bridge-conversation-order">
+        Oldest first, {PAGE} at a time{more ? ' — use Show later messages to read on' : ''}.
+      </p>
       {items.length === 0 ? (
         <p className="brg-hint">Nothing has crossed this bridge yet.</p>
       ) : (

@@ -4,7 +4,7 @@ import { Pill } from '../../kit';
 import { shortDate } from '../../kit/time';
 import type { BridgesPort } from '../api';
 import { CONNECTION_TONE, CONNECTION_WORD } from '../format';
-import { unservedReason } from '../reasons';
+import { pendingReason } from '../reasons';
 
 /**
  * HEALTH (§4.4, v2 §1.4): the connection state, last inbound and outbound,
@@ -14,7 +14,7 @@ import { unservedReason } from '../reasons';
  */
 export function HealthTab({ view, port }: { view: BridgeView; port: Pick<BridgesPort, 'serves'> }) {
   const h = view.health;
-  const testReason = unservedReason(port, 'bridges.test', 'The test round trip');
+  const testReason = pendingReason(port, 'bridges.test', 'The test round trip');
   return (
     <div className="brg-health" data-testid="bridge-health">
       <dl className="brg-facts">
@@ -34,8 +34,8 @@ export function HealthTab({ view, port }: { view: BridgeView; port: Pick<Bridges
         <p>{h.detail ?? 'Nothing to report.'}</p>
       </div>
       <div className="brg-health__test">
-        <button type="button" className="pn-btn" disabled={testReason !== null} title={testReason ?? undefined}>Send test</button>
-        {testReason ? <span className="brg-hint">{testReason}</span> : null}
+        <button type="button" className="pn-btn" disabled title={testReason}>Send test</button>
+        <span className="brg-hint">{testReason}</span>
       </div>
     </div>
   );

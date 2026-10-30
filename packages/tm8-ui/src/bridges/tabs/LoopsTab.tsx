@@ -13,7 +13,12 @@ export function LoopsTab({ view }: { view: BridgeView }) {
         No loop posts into {view.title} yet. Loops that post on a schedule, with a different instruction per group,
         arrive with bridge targets for loops.
       </p>
-      <button type="button" className="pn-btn" disabled title="Loops that target a bridge are not served by this node yet.">
+      <button
+        type="button"
+        className="pn-btn"
+        disabled
+        title="A loop that posts here arrives with loops.create taking a bridge target (lane L, D26), which this node does not serve yet."
+      >
         + New loop here
       </button>
     </div>

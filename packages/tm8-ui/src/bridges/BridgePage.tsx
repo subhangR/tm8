@@ -15,8 +15,9 @@ import type { BridgeDetailView, BridgeView, EntityDetail } from '@tm8/contract';
 import { Pill } from '../kit';
 import type { BridgesPort } from './api';
 import { STATUS_TONE, TARGET_GLYPH, bridgeFailureOf, statusLine } from './format';
+import { useDismissable } from '../panels/useDismissable';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
-import { unservedReason } from './reasons';
+import { pendingReason } from './reasons';
 import { ConversationTab } from './tabs/ConversationTab';
 import { HealthTab } from './tabs/HealthTab';
 import { LoopsTab } from './tabs/LoopsTab';
@@ -124,23 +125,11 @@ function BridgeHeader({
   const [note, setNote] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const menus = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => { if (!menus.current?.contains(event.target as Node)) setOpen(null); };
-    /* Escape closes the MENU, not the panel: captured and stopped here, or the
-       panel's own Escape (close the entity) would take it. */
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setOpen(null);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', escape, true);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', escape, true);
-    };
-  }, [open]);
+  /* The shared dismiss rule (panels/useDismissable): pointerdown outside —
+     iOS fires no mousedown on an inert tap — and Escape, consumed, so the
+     panel's own Escape (close the entity) never sees it. */
+  const closeMenu = useCallback(() => setOpen(null), []);
+  useDismissable(open !== null, menus, closeMenu);
 
   const ended = view.status === 'ended';
   const provider = bridgeProviderLabel(view.provider);
@@ -159,7 +148,7 @@ function BridgeHeader({
       setBusy(false);
     }
   };
-  const testReason = unservedReason(port, 'bridges.test', 'Send a test message');
+  const testReason = pendingReason(port, 'bridges.test', 'Send a test message');
   const pauseForReason = 'Pause for a set time arrives when bridges.pause takes an end time (`until`).';
 
   return (
@@ -226,7 +215,7 @@ function BridgeHeader({
           {open === 'more' ? (
             <div className="brg-menu brg-menu--end" role="menu" aria-label={`${view.title} actions`}>
               <button type="button" role="menuitem" disabled={ended} onClick={() => { setOpen(null); onMove(); }}>Move to another target…</button>
-              <button type="button" role="menuitem" disabled title={testReason ?? undefined}>Send a test message</button>
+              <button type="button" role="menuitem" disabled title={testReason}>Send a test message</button>
               <button
                 type="button"
                 role="menuitem"

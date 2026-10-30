@@ -13,7 +13,7 @@
  * Status is colour and word. A row opens the bridge's panel; its `⋯` holds the
  * lifecycle (pause, resume, remove), the same operations as the panel header.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bridgeProviderLabel, BridgeProviderMark } from './bridge-marks';
 import type { BridgeView } from '@tm8/contract';
 import { Pill } from '../kit';
@@ -24,8 +24,9 @@ import {
   CONNECTION_TONE, CONNECTION_WORD, STATUS_TONE, TARGET_GLYPH, bridgeFailureOf,
   conversationLine, peopleLine, statusLine,
 } from './format';
+import { useDismissable } from '../panels/useDismissable';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
-import { unservedReason } from './reasons';
+import { pendingReason, unservedReason } from './reasons';
 import './bridge-panel.css';
 
 export interface BridgesSectionProps {
@@ -87,25 +88,11 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
   }, [port, spaceId]);
 
   useEffect(() => { void reload(); }, [reload]);
-  /* The row menu closes on Escape or a click outside it, and Escape goes no
-     further (the settings frame would otherwise take it). */
-  useEffect(() => {
-    if (!menuFor) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      setMenuFor(null);
-    };
-    const away = (event: MouseEvent) => {
-      if (!(event.target as Element | null)?.closest?.('.brg-set__menu')) setMenuFor(null);
-    };
-    document.addEventListener('keydown', escape, true);
-    document.addEventListener('mousedown', away);
-    return () => {
-      document.removeEventListener('keydown', escape, true);
-      document.removeEventListener('mousedown', away);
-    };
-  }, [menuFor]);
+  /* The row menu closes on Escape or a tap outside it — the shared rule
+     (panels/useDismissable: pointerdown, Escape consumed). */
+  const menuCell = useRef<HTMLTableCellElement>(null);
+  const closeMenu = useCallback(() => setMenuFor(null), []);
+  useDismissable(menuFor !== null, menuCell, closeMenu);
 
   const connections = useMemo(() => connectionRowsOf(bridges ?? []), [bridges]);
   const wizardReason = unservedReason(port, 'bridges.connections.begin', 'The add-bridge wizard');
@@ -231,7 +218,7 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
                       <Pill tone={STATUS_TONE[b.status]} dot="solid" title={statusLine(b)}>{statusLine(b)}</Pill>
                       {rowError?.id === b.id ? <p className="brg-error" role="alert">{rowError.text}</p> : null}
                     </td>
-                    <td className="brg-set__menu">
+                    <td className="brg-set__menu" ref={menuFor === b.id ? menuCell : undefined}>
                       <button
                         type="button"
                         className="set-ghost"
@@ -253,7 +240,7 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
                             type="button"
                             role="menuitem"
                             disabled
-                            title={unservedReason(port, 'bridges.test', 'Send a test message') ?? undefined}
+                            title={pendingReason(port, 'bridges.test', 'Send a test message')}
                           >
                             Send a test message
                           </button>

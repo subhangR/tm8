@@ -93,6 +93,8 @@ describe('the bridge panel', () => {
     expect(ticks.map((t) => t.getAttribute('data-status'))).toEqual(['sent', 'sent']);
     expect(ticks[0]!.textContent).toContain('sent to WhatsApp');
     expect(screen.getByTestId('bridge-conversation-where').textContent).toContain('reply in WhatsApp');
+    // bridges.log.read reads oldest first; the tab says so (review #1445 r1).
+    expect(screen.getByTestId('bridge-conversation-order').textContent).toContain('Oldest first');
   });
 
   it('saves a narrowing change at once and offers Undo with the same patch back', async () => {
@@ -116,6 +118,40 @@ describe('the bridge panel', () => {
     expect(port.update).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, change it' }));
     await waitFor(() => expect(port.update).toHaveBeenCalledWith('ent-bridge-infra', 1, { policy: { whoMayTrigger: 'anyone' } }));
+  });
+
+  it('asks first when Undo would widen again (review #1445 r1)', async () => {
+    const { port } = await renderPage();
+    tab('Routing');
+    fireEvent.click(screen.getByLabelText(/^Anyone in the group/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    fireEvent.click(within(await screen.findByTestId('bridge-consequences')).getByRole('button', { name: 'Yes, change it' }));
+    await waitFor(() => expect(port.update).toHaveBeenCalledTimes(1));
+    // Narrow back: saves at once, offers Undo.
+    fireEvent.click(await screen.findByLabelText('Linked people only'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(port.update).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    // The undo widens to anyone again, so it confirms instead of running.
+    const dialog = await screen.findByTestId('bridge-consequences');
+    expect(dialog.textContent).toContain('will be able to start agents');
+    expect(port.update).toHaveBeenCalledTimes(2);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, undo it' }));
+    await waitFor(() => expect(port.update).toHaveBeenLastCalledWith('ent-bridge-infra', 3, { policy: { whoMayTrigger: 'anyone' } }));
+  });
+
+  it('keeps unsaved Routing edits when the bridge changes underneath (review #1445 r1)', async () => {
+    const { port } = await renderPage();
+    tab('Routing');
+    fireEvent.click(screen.getByLabelText('Never — log only'));
+    // Pause from the header: a new version arrives while the form is dirty.
+    fireEvent.click(screen.getByRole('button', { name: /^Status: live/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pause bridge/ }));
+    await waitFor(() => expect(port.pause).toHaveBeenCalled());
+    expect(await screen.findByText(/your unsaved changes are kept/)).toBeTruthy();
+    expect((screen.getByLabelText('Never — log only') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(port.update).toHaveBeenCalledWith('ent-bridge-infra', 2, { policy: { trigger: 'none' } }));
   });
 
   it('confirms shortening retention with what it deletes', async () => {
@@ -182,7 +218,9 @@ describe('the bridge panel', () => {
     const health = screen.getByTestId('bridge-health');
     expect(health.textContent).toContain('offline');
     expect(health.textContent).toContain('The runtime has not checked in for 4 minutes');
-    expect((screen.getByRole('button', { name: 'Send test' }) as HTMLButtonElement).disabled).toBe(true);
+    const send = screen.getByRole('button', { name: 'Send test' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.title).toContain('bridges.test');
   });
 
   it('says it is unwired without a client', () => {

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 
 /*
  * Settings → Bridges and the bridge panel (BRIDGE-ENTITY-DESIGN §4.2, §4.4;
@@ -37,6 +37,11 @@ test('Settings → Bridges lists accounts and bridges, status in colour and word
   await page.getByRole('menuitem', { name: 'Pause Infra' }).click();
   await expect(page.getByTestId('bridges-notice')).toContainText('Messages are still logged');
   await page.screenshot({ path: info.outputPath('04-settings-after-pause.png') });
+  // Opening a row opens the bridge in Work (review #1445 r1: `bridge` was
+  // missing from WORKSPACE_KINDS, so this opened nothing).
+  await page.getByRole('button', { name: 'Open Infra bridge' }).click();
+  await expect(page.getByTestId('bridge-page')).toBeVisible({ timeout: 60_000 });
+  await page.screenshot({ path: info.outputPath('05-opened-from-settings.png') });
 });
 
 test('the bridge panel: header, and each tab', async ({ page }, info) => {
@@ -77,25 +82,44 @@ test('a degraded bridge says why on Health', async ({ page }, info) => {
   await page.screenshot({ path: info.outputPath('19-degraded-health.png') });
 });
 
-test('Settings → Bridges at 900×600 and on a phone: no horizontal page scroll', async ({ page }, info) => {
+test('Settings → Bridges at 900×600: no horizontal page scroll', async ({ page }, info) => {
   await page.setViewportSize({ width: 900, height: 600 });
   await openSettings(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('20-settings-900x600.png') });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(SETTINGS);
-  await page.waitForTimeout(3000);
-  await page.screenshot({ path: info.outputPath('21-settings-phone-list.png') });
-  // The desktop shell at phone width: the settings nav fills the frame and
-  // lists Bridges under Agents & tools (the phone shell has its own list).
-  await expect(page.getByRole('button', { name: 'Bridges', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });
 
-test('the bridge panel on a phone', async ({ page }, info) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openInfra(page);
-  await page.screenshot({ path: info.outputPath('23-panel-phone.png'), fullPage: true });
-  await page.getByRole('tab', { name: 'Routing' }).click();
-  await page.screenshot({ path: info.outputPath('24-panel-phone-routing.png'), fullPage: true });
+test.describe('dark theme', () => {
+  test.use({ colorScheme: 'dark' });
+  test('Settings → Bridges, Routing and the §1.5 confirm in dark', async ({ page }, info) => {
+    await page.addInitScript(() => window.localStorage.setItem('tm8ui.theme', 'dark'));
+    await openSettings(page);
+    await page.screenshot({ path: info.outputPath('30-dark-settings.png') });
+    await openInfra(page);
+    await page.getByRole('tab', { name: 'Routing' }).click();
+    await page.screenshot({ path: info.outputPath('31-dark-routing.png') });
+    await page.getByLabel(/^Anyone in the group/).check();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByTestId('bridge-consequences')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('32-dark-consequence.png') });
+  });
+});
+
+test.describe('phone shell', () => {
+  // A coarse pointer under 500px selects the mobile shell (mobile/shell-for.ts).
+  const { defaultBrowserType: _browser, ...pixel } = devices['Pixel 5'];
+  test.use(pixel);
+  test('Settings → Bridges and the bridge panel on a phone', async ({ page }, info) => {
+    await page.goto(SETTINGS);
+    await page.waitForTimeout(4000);
+    await page.screenshot({ path: info.outputPath('40-phone-settings.png'), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.getByTestId('bridges-table').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('41-phone-settings-table.png') });
+    // The phone shell opens a bridge in its generic mobile entity page, not the
+    // bridge page (follow-up: a mobile bridge page, §4.1 Mobile). Recorded here.
+    await page.goto(`/e2e/admin-pages-harness.html#/s/sp-atelier/e/ent-bridge-infra`);
+    await expect(page.getByText('Infra').first()).toBeVisible({ timeout: 60_000 });
+    await page.screenshot({ path: info.outputPath('42-phone-entity-page.png') });
+  });
 });

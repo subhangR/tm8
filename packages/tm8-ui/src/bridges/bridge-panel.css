@@ -141,3 +141,18 @@
 .brg-health__words { margin: 10px 0; }
 .brg-health__words p { margin: 4px 0 0; font-size: var(--pn-fs-body); }
 .brg-health__test { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* --- narrow widths (the phone shell, a split pane) -------------------------
+   The account rows wrap instead of clipping, and the bridges table becomes one
+   card per bridge: each cell on its own line, labelled by its column. */
+@media (max-width: 640px) {
+  .brg-set__conn { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .brg-set__conn .brg-set__count { margin-left: auto; }
+  .brg-set__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .brg-set__table, .brg-set__table tbody, .brg-set__table tr, .brg-set__table td { display: block; width: auto; }
+  .brg-set__table tr { position: relative; padding: 10px var(--set-gutter, 18px); border-bottom: 1px solid var(--pn-x-hairline-soft); }
+  .brg-set__table td { padding: 2px 0; border: 0; }
+  .brg-set__table td:first-child, .brg-set__table td:last-child { padding-left: 0; padding-right: 0; }
+  .brg-set__table td.brg-set__menu { position: absolute; top: 10px; right: var(--set-gutter, 18px); width: auto; }
+  .brg-head__more { margin-left: 0; }
+}

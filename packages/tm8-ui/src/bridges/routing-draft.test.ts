@@ -3,6 +3,7 @@ import { bridgeDeploys, bridgeInfra } from '../fixtures/entities';
 import { consequencesOf } from './consequences';
 import { fixtureBridgeViewOf } from './fixture';
 import { draftOf, draftProblem, patchOf } from './routing-draft';
+import { pendingReason } from './reasons';
 
 const infra = fixtureBridgeViewOf(bridgeInfra)!;
 const deploys = fixtureBridgeViewOf(bridgeDeploys)!;
@@ -50,5 +51,12 @@ describe('consequences (v2 §1.5)', () => {
     expect(consequencesOf(deploys, { policy: { outbound: 'replies', trigger: 'mention' } })).toEqual([]);
     expect(consequencesOf({ ...infra, retentionDays: 30 }, { retentionDays: 90 })).toEqual([]);
     expect(consequencesOf({ ...infra, retentionDays: 30 }, { retentionDays: null })).toEqual([]);
+  });
+});
+
+describe('disabled controls always say why (D48)', () => {
+  it('names the op while unserved, and still gives a reason once served but unwired', () => {
+    expect(pendingReason({ serves: () => false }, 'bridges.test', 'Send test')).toContain('does not serve yet');
+    expect(pendingReason({ serves: () => true }, 'bridges.test', 'Send test')).toContain('not wired on this screen yet');
   });
 });
