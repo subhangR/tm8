@@ -27,7 +27,7 @@ function loopRouteId(ctx: RequestContext, field: 'spaceId' | 'loopId'): string {
 }
 
 /**
- * Bridges L (D26, 401): targets, mode and the admin's quiet-hours exemption,
+ * Bridges L (D26, 405): targets, mode and the admin's quiet-hours exemption,
  * written by `set_loop_bridge_fields` in the create's or update's own
  * transaction. Undefined fields are left as they are.
  */

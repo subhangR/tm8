@@ -1,5 +1,5 @@
 /**
- * Bridges L (BRIDGE-ENTITY-DESIGN D26, D68; migration 401): a bridge loop's
+ * Bridges L (BRIDGE-ENTITY-DESIGN D26, D68; migration 405): a bridge loop's
  * authority. Its worker posts as the teammate and acts on its owner's
  * (`armed_by`) authority. What arming grants needs no approval per run:
  * creating and editing stories, docs, tasks and labels, and posting to

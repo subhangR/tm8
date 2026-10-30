@@ -28,7 +28,7 @@ interface LoopRow {
 /**
  * Who the NEXT firing runs as (§7), by 375's rule: the armer while still an
  * active member, else the space's active owner, else nobody. A loop with
- * bridge targets has no owner fallback (D26, 401): with its armer gone it is
+ * bridge targets has no owner fallback (D26, 405): with its armer gone it is
  * suspended until an admin takes it over.
  */
 const LOOP_SELECT = `

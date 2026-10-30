@@ -85,7 +85,7 @@ export interface LoopRunRow {
   usage_input_tokens: string | number | null;
   usage_output_tokens: string | number | null;
   usage_cost_usd: number | null;
-  /** Bridges L: what the run did in each target group (401's loop_run_targets). */
+  /** Bridges L: what the run did in each target group (405's loop_run_targets). */
   targets?: Array<{ bridgeId: string; result: LoopRunTarget['result']; reason: string | null; messageId: string | null }> | null;
 }
 

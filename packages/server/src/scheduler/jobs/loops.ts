@@ -42,7 +42,7 @@
  * fails a launch that never recorded a session within LAUNCH_GRACE_MS (the
  * server died mid-firing).
  *
- * BRIDGE LOOPS (Bridges L, D26, migration 401). A loop's `targets` are the
+ * BRIDGE LOOPS (Bridges L, D26, migration 405). A loop's `targets` are the
  * groups it posts to. `post` fires no session: the port posts each target's
  * text through the outbox and the run settles at delivery, like dispatch.
  * `concurrency: replace` stops the previous live run before the claim, so the
