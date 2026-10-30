@@ -54,7 +54,7 @@ export interface RequestIdentity {
    */
   /** Verified immutable API scope on the auth session; absent preserves existing write scope. */
   apiScope?: 'read' | 'write';
-  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
+  authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link' | 'bridge_runtime';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;
   /** Thread root recorded on a PRE-176 `agent_runtime` bearer row. */
@@ -195,6 +195,13 @@ export interface IdentityResolutionContext {
   readonly remoteAddress: string | undefined;
   /** Operator kill switch. When true, even a bare loopback request is anonymous. */
   readonly disableAutoOwner: boolean;
+  /**
+   * 398 (Bridges B1b-2): the request is one of the connector runtime's own
+   * doors (`POST /v2/bridge-runtime/<route>` or the `?bridgeRuntime=` push
+   * socket). Only then is a `bridge_runtime` session accepted; on every other
+   * route the resolver refuses it.
+   */
+  readonly bridgeRuntime?: boolean;
 }
 
 /**

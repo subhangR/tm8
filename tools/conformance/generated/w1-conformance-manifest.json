@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:d953796a4a1894e9e809dea6706660687c5dee4308daf4be415bb1d16cab0b18",
+  "catalogDigest": "sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba",
   "catalog": {
-    "total": 412,
-    "v1": 410,
+    "total": 410,
+    "v1": 408,
     "reserved": 2,
-    "http": 410,
+    "http": 408,
     "ws": 1,
-    "registerableV1Http": 408,
+    "registerableV1Http": 406,
     "methods": {
-      "GET": 137,
-      "POST": 205,
+      "GET": 138,
+      "POST": 202,
       "PATCH": 23,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 144,
-      "command": 266,
+      "read": 145,
+      "command": 263,
       "stream": 2
     },
-    "uniqueNames": 412,
-    "uniqueBindings": 411
+    "uniqueNames": 410,
+    "uniqueBindings": 409
   },
   "reservedOperations": [
     "search.query",
@@ -2042,6 +2042,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.bootState",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/boot",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.gitStatus",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/git/status",
@@ -2647,6 +2654,13 @@
         "operation": "auth.claim.reissue",
         "method": "POST",
         "path": "/v2/auth/claim/reissue",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "meta.get",
+        "method": "GET",
+        "path": "/v2/meta",
         "status": "registered",
         "source": "server-router"
       },
@@ -3288,7 +3302,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 380
+    "unimplementedV1Http": 378
   },
   "schemas": {
     "additive": {
@@ -7864,6 +7878,23 @@
         "publicComposite": null
       },
       {
+        "operation": "execution.bootState",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.bootState",
+        "intentTags": [
+          "execution",
+          "boot",
+          "state"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "execution.gitStatus",
         "noun": "session",
         "exposure": "public",
@@ -9324,6 +9355,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "meta.get",
+        "noun": "node",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/meta.get",
+        "intentTags": [
+          "meta",
+          "get"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

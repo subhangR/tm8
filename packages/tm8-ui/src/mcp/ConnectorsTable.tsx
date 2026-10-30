@@ -30,7 +30,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { McpCatalogEntry } from '@tm8/contract';
 import { SectionFrame } from '../settings-space';
-import { ConnectorLogo } from './connector-logos';
+import { ConnectorLogo, serverLogo } from './connector-logos';
 import { ConnectorDrawer } from './ConnectorDrawer';
 import { ConnectorForm } from './ConnectorForm';
 import { ImportMcpJson } from './ImportMcpJson';
@@ -275,7 +275,7 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
                     pill is part of the cell, so the button's own accessible
                     name has to be the connector, not the cell's text. */}
                 <button type="button" className="mcp-row__open" aria-label={`Open ${server.title}`} onClick={() => setActive(server.id)}>
-                  <ConnectorLogo logo={server.source?.catalogId?.replace(/\./g, '-')} title={server.title} />
+                  <ConnectorLogo logo={serverLogo(server.source)} title={server.title} />
                   <span>{server.title}</span>
                   {!server.source?.catalogId && <span className="mcp-pill">Custom</span>}
                 </button>

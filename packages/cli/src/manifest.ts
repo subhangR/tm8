@@ -26,6 +26,7 @@ import { CliError, EXIT_USAGE } from './exit.js';
 export { AGENT_MODES, type AgentMode } from '@tm8/prompt';
 import { AGENT_MODES, parseContextIndex, parseDesignContext, parseStoryContext, type AgentMode, type PromptContextIndex, type PromptDesignContext, type PromptStoryContext } from '@tm8/prompt';
 import { parseBootstrapManifest, type BootstrapManifestV2 } from './harness/bootstrap-manifest.js';
+import { isRecord } from './guards.js';
 
 /** The persona this process is running as — a `team_member` entity (T-L7). */
 export interface ManifestAgent {
@@ -141,9 +142,6 @@ export interface Tm8Manifest {
   design?: PromptDesignContext;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;

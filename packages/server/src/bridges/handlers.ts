@@ -24,6 +24,7 @@ import { claimsFor, commandEnvelope, isUuid, limitOf, requireUuidParam } from '.
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
 import type { Querier } from '../db/types.js';
+import { readBridgeChatSummary } from './summary.js';
 import type { RequestContext } from '../http/types.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
@@ -72,7 +73,9 @@ async function recentPosters(q: Querier, bridgeId: string): Promise<BridgeRecent
             (array_agg(h.handle order by ob.created_at desc) filter (where h.handle is not null))[1] as handle
        from public.bridge_outbox ob
        join public.messages m on m.entity_id = ob.message_id
-       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from'
+       -- The post's session origin only: bridge provenance (props.bridgeId, 399)
+       -- would otherwise count each post once per edge.
+       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from' and not (af.props ? 'bridgeId')
        left join public.bridge_handles h on h.entity_id = af.dst_id
       where ob.bridge_id = $1 and m.author_id is not null
       group by m.author_id
@@ -221,7 +224,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.get': async ctx => read(ctx, async (q): Promise<BridgeDetailView> => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       const view = await loadBridgeView(q, bridgeId);
-      return { ...view, recentPosters: await recentPosters(q, bridgeId) };
+      return { ...view, recentPosters: await recentPosters(q, bridgeId), summary: await readBridgeChatSummary(q, bridgeId) };
     }),
     'bridges.create': requireHumanSession(async ctx => {
       const input = BridgeCreateInputSchema.parse(ctx.body);

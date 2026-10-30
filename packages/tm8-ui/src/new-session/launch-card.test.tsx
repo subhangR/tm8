@@ -789,11 +789,14 @@ describe('round 3: connectors', () => {
     expect(within(slot).getByRole('alert').textContent).toContain('Retry connectors');
   });
 
-  it('while connectors are still read, Launch says so — not "choose an account" — and the block stays hidden', async () => {
+  it('while connectors are still read, an untouched pick never holds Launch, and the block stays hidden', async () => {
+    // The server resolves the Space's defaults at launch, so nothing waits on
+    // this read; only an explicit pick waits ("Checking connectors…", McpPicker).
     const port = portWith(() => new Promise<never>(() => {}));
     const view = renderPopup({}, (card) => <McpProvider port={port}>{card}</McpProvider>);
     await view.ready();
-    expect(view.getByTestId('nsx-send').getAttribute('title')).toBe('Reading connectors…');
+    expect(view.getByTestId('nsx-send').getAttribute('title')).not.toMatch(/connectors/i);
+    expect(view.getByTestId('nsx-send').getAttribute('aria-disabled')).toBe('false');
     expect(view.getByTestId('lcd3-connectors').hidden).toBe(true);
   });
 });

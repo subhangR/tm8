@@ -736,6 +736,58 @@ describe('entity query', () => {
     expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['task'] });
   });
 
+  it('--tree-depth and --per-parent fold into `tree` (S5); --per-parent is omitted when not given', async () => {
+    await drive(['entity', 'query', '--kind', 'task', '--roots', '--tree-depth', '2', '--per-parent', '20']);
+    expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['task'], parentId: null, tree: { depth: 2, perParent: 20 } });
+    await drive(['entity', 'query', '--kind', 'task', '--tree-depth', '1']);
+    expect(seen[1]?.body).toEqual({ spaceId: SPACE, kinds: ['task'], tree: { depth: 1 } });
+  });
+
+  it('passes an out-of-range --tree-depth to the Server, whose bounds they are', async () => {
+    await drive(['entity', 'query', '--tree-depth', '3']);
+    expect(seen[0]?.body).toEqual({ spaceId: SPACE, tree: { depth: 3 } });
+  });
+
+  it('refuses --per-parent without --tree-depth, before any request', async () => {
+    const r = await drive(['entity', 'query', '--kind', 'task', '--per-parent', '20']);
+    expect(r.code).toBe(EXIT_USAGE);
+    expect(r.stderr).toContain('--per-parent bounds the children of each row in a tree; pass --tree-depth 1|2 with it');
+    expect(seen).toHaveLength(0);
+  });
+
+  it('draws a tree result indented under each row, with the rows not shown from childCount', async () => {
+    const row = (id: string, title: string, parentId: string | null, childCount: number) =>
+      ({ id, kind: 'task', title, version: 1, parentId, childCount });
+    reply = {
+      status: 200,
+      body: {
+        data: {
+          query: { spaceId: SPACE, tree: { depth: 2, perParent: 1 } },
+          page: { items: [row('r1', 'Root', null, 3), row('r2', 'Leaf', null, 0)], nextCursor: 'c2' },
+          tree: {
+            levels: [
+              { depth: 1, parentIds: ['r1'], items: [row('k1', 'Kid', 'r1', 2)], capped: false },
+              { depth: 2, parentIds: ['k1'], items: [row('g1', 'Grandkid', 'k1', 4)], capped: false },
+            ],
+          },
+        },
+        requestId: 'req_t',
+      },
+    };
+    const r = await drive(['entity', 'query', '--kind', 'task', '--roots', '--tree-depth', '2', '--per-parent', '1']);
+    expect(r.code).toBe(0);
+    expect(r.stdout.trimEnd().split('\n')).toEqual([
+      'r1  task  Root  v1',
+      '  k1  task  Kid  v1',
+      '    g1  task  Grandkid  v1',
+      '      ▸ 4 more',
+      '    ▸ 1 more',
+      '  ▸ 2 more',
+      'r2  task  Leaf  v1',
+      'next-cursor: c2',
+    ]);
+  });
+
   it('fails locally with no Space in context', async () => {
     delete process.env.TM8_SPACE_ID;
     const r = await drive(['entity', 'query']);

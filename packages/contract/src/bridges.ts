@@ -21,6 +21,30 @@ export type BridgeConnectionStatus = 'linked' | 'connecting' | 'logged_out' | 'o
 /** A worker's wake level, and the bridge's ceiling for it (§2.7). */
 export type BridgeWake = 'directed' | 'thread' | 'all';
 
+/**
+ * Why the outbox refused to carry a post to the provider (§2.3, §2.7, D23,
+ * D28). The message stays in tm8; only the provider copy is refused.
+ */
+export type BridgeRefusalReason =
+  | 'bridge_paused' | 'bridge_ended' | 'direction_in' | 'worker_posting_off'
+  | 'rate_limited' | 'not_connected' | 'credential_text';
+
+/**
+ * The `bridge.delivery` badge of a message that crosses a bridge (§2.3): the
+ * delivery ledger's words, plus `refused` for a post the outbox turned away.
+ * `rate_limited` carries `retryAfterMs` (§2.7: never silently queued).
+ */
+export interface BridgeDelivery {
+  messageId: string;
+  bridgeId: string;
+  status: 'pending' | 'sent' | 'failed_retryable' | 'failed_permanent' | 'refused';
+  reason?: BridgeRefusalReason;
+  retryAfterMs?: number;
+  externalMessageId?: string;
+  detail?: string;
+  at: string;
+}
+
 export const BRIDGE_PURPOSE_MAX = 300;
 export const BRIDGE_STYLE_MAX = 300;
 export const BRIDGE_HANDLE_TITLE_MAX_WORDS = 4;
@@ -106,7 +130,44 @@ export interface BridgeRecentPoster {
   posts: number;
   lastPostAt: string;
 }
-export interface BridgeDetailView extends BridgeView { recentPosters: BridgeRecentPoster[] }
+/**
+ * Bridges S (D73, D74): a chat-target bridge's rolling summary of its group
+ * conversation, as the chat's turns get it. A deterministic extract of the log
+ * up to `throughMessageId`; the messages after it reach the next turn
+ * verbatim. Text fields are the group's own words: data, never instructions.
+ */
+export interface BridgeChatSummaryOpenAsk { messageId: EntityId; author: string; authorKey: string; at: string; excerpt: string }
+export interface BridgeChatSummaryClosedAsk { messageId: EntityId; author: string; excerpt: string; closedBy: string; at: string }
+export interface BridgeChatSummaryParticipant { key: string; name: string; messages: number; lastAt: string }
+export interface BridgeChatSummaryState {
+  firstAt: string | null;
+  lastAt: string | null;
+  participants: BridgeChatSummaryParticipant[];
+  /** Questions and requests nobody else has answered in their thread, oldest first. */
+  openAsks: BridgeChatSummaryOpenAsk[];
+  /** Open asks pushed off the list by newer ones: still unanswered, no longer named. */
+  droppedAsks: number;
+  closedAsks: number;
+  recentlyClosed: BridgeChatSummaryClosedAsk[];
+}
+/** Who is on what: open tasks this group asked for (`authored_from → bridge`) and their assignees, read live. */
+export interface BridgeChatSummaryOnWhat { taskId: EntityId; title: string; status: string; assignees: string[] }
+export interface BridgeChatSummaryView {
+  policyVersion: string;
+  coveredMessages: number;
+  throughMessageId: EntityId | null;
+  refreshedAt: string | null;
+  /** Log messages after the summary: the verbatim part of the next turn's context. */
+  unsummarizedMessages: number;
+  state: BridgeChatSummaryState;
+  onWhat: BridgeChatSummaryOnWhat[];
+}
+
+export interface BridgeDetailView extends BridgeView {
+  recentPosters: BridgeRecentPoster[];
+  /** The group chat's rolling summary (D74); null when the target is not a chat. */
+  summary: BridgeChatSummaryView | null;
+}
 
 export interface BridgeListResult { items: BridgeView[] }
 

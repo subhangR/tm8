@@ -35,6 +35,7 @@ import {
   EXIT_USAGE,
   type ExitCode,
 } from './exit.js';
+import { isRecord } from './guards.js';
 
 /**
  * The wire taxonomy → §7.6. Exhaustive by type.
@@ -102,9 +103,6 @@ function reasonOf(details: unknown): string | undefined {
   return typeof reason === 'string' ? reason : undefined;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * The EntityDetail a `version_conflict` carries under `details.current` (the

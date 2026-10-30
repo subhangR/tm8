@@ -46,15 +46,24 @@ async function asOwner<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   });
 }
 
-/** One server-written authored_from, as the entity recorder writes it. */
+/**
+ * One server-written authored_from, as the entity recorder writes it. 399
+ * (B1b-3) now refuses a bridgeId-marked edge whose destination is not a bridge
+ * or a message; these fixtures keep pointing the marker at a session or chat on
+ * purpose (a reader that forgot the predicate would then pick it up), so that
+ * one guard is lifted for the insert, inside its own transaction.
+ */
 async function authored(src: string, dst: string, props: Record<string, unknown> = {}): Promise<string> {
   return asOwner(async (client) => {
+    const marked = 'bridgeId' in props;
+    if (marked) await client.query('alter table public.edges disable trigger edges_authored_from_bridge');
     await client.query(`select internal.w1_set_writer('entity_recorder')`);
     const { rows } = await client.query<{ id: string }>(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by, props)
        values ($1, $2, $3, 'authored_from', $4, $5::jsonb) returning id::text`,
       [fixture.space, src, dst, fixture.member, JSON.stringify(props)],
     );
+    if (marked) await client.query('alter table public.edges enable trigger edges_authored_from_bridge');
     return rows[0]!.id;
   });
 }

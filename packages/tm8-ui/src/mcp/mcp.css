@@ -489,3 +489,196 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* -------------------------------------------------------------------------
+   §10.5 in one line — `ConnectorChips`, the launch card's connector row.
+   Chips match the card's own 28px chips; `data-on` is the pressed state and
+   `data-status` the §10.0 vocabulary, one rule per state as in the list above.
+   ------------------------------------------------------------------------- */
+.mcp-compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--pn-ink, inherit);
+}
+
+.mcp-compact__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-card);
+  font-size: 13px;
+}
+
+.mcp-chip[data-on] {
+  border-color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand) 9%, var(--pn-card));
+}
+
+/* On, but skipped (a default) or refused (a pick) until someone fixes it. */
+.mcp-chip[data-on]:not([data-status='ready']):not([data-status='server_unavailable']) {
+  border-color: var(--pn-wait);
+  border-style: dashed;
+}
+
+.mcp-chip__toggle,
+.mcp-chip > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px 0 4px;
+  border: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mcp-chip__toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mcp-chip__toggle:focus-visible,
+.mcp-chip > a:focus-visible,
+.mcp-compact__reset:focus-visible,
+.mcp-compact__more:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* The bundled mark, sized to the chip; the full rule lives with the Connectors page. */
+.mcp-chip .mcp-logo {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-surface-2, color-mix(in srgb, var(--pn-ink) 5%, transparent));
+  font-size: 11px;
+  line-height: 1;
+}
+
+.mcp-chip__name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mcp-chip__state {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-chip[data-status='credential_required'] .mcp-chip__state,
+.mcp-chip[data-status='needs_reconnect'] .mcp-chip__state,
+.mcp-chip[data-status='credential_expired'] .mcp-chip__state,
+.mcp-chip[data-status='credential_revoked'] .mcp-chip__state,
+.mcp-chip[data-status='credential_definition_changed'] .mcp-chip__state {
+  color: var(--pn-brand);
+}
+
+.mcp-chip[data-status='stdio_not_trusted'] .mcp-chip__state,
+.mcp-chip[data-status='not_approved'] .mcp-chip__state,
+.mcp-chip[data-status='disabled'] .mcp-chip__state {
+  color: var(--pn-block);
+}
+
+.mcp-chip__account {
+  max-width: 150px;
+  height: 22px;
+  margin-right: 3px;
+  padding: 0 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 4px);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.mcp-compact__reset,
+.mcp-compact__more {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--pn-r-sm, 4px);
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mcp-compact__reset:hover:not(:disabled),
+.mcp-compact__more:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.mcp-compact__more[aria-expanded='true'] {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+/* The full list, when asked for, takes its own line under the chips. */
+.mcp-compact__full {
+  flex-basis: 100%;
+  min-width: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-compact__line {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcp-compact__quiet {
+  color: var(--pn-ink-3, var(--pn-ink-2));
+}
+
+/* A WAIT rides at the end of the chip row (wrapping only when the row is
+   full), so it clears when the read lands without the card changing height. */
+.mcp-compact__wait {
+  flex-basis: auto;
+}
+
+.mcp-compact__line button {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--pn-brand);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

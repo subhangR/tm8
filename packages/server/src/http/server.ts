@@ -6,7 +6,9 @@
  *   1. mint a requestId (before anything can fail, so every response has one)
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
- *      outside the envelope: it is infrastructure, not an operation
+ *      outside the envelope: it is infrastructure, not an operation. So are
+ *      the phone's two `/.well-known/` app-association files (./well-known.ts),
+ *      answered here so that the static handler's SPA fallback never does
  *   4. narrowly matched support transports (the `/p/` artifact-preview
  *      route — capability-token auth, never cookie identity — and the raw
  *      FileUploadGrant PUT)
@@ -61,6 +63,8 @@ import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
+import { BRIDGE_RUNTIME_PATH_PREFIX, type BridgeRuntimeRoute } from '../bridges/runtime/routes.js';
+import { createWellKnownRoute } from './well-known.js';
 import { MCP_ENDPOINT_PATH, type McpEndpointRoute } from '../mcp/endpoint.js';
 import type { ReadAdmission } from './read-admission.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
@@ -112,6 +116,13 @@ export interface FacadeServerOptions {
    * re-serialized one has a different digest.
    */
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
+  /**
+   * 398 (Bridges B1b-2): the connector runtime's doors, `POST
+   * /v2/bridge-runtime/<route>`. Not catalog operations (see routes.ts); they
+   * resolve their own identity, admitting only a `bridge_runtime` session,
+   * and read their own body. Dispatched before `readJsonBody`.
+   */
+  readonly bridgeRuntimeRoute?: BridgeRuntimeRoute;
   /**
    * §7.1 / G14: the remote MCP endpoint, `POST /mcp`. Not a catalog operation —
    * it speaks JSON-RPC, not the DEV-6 envelope — and it resolves its own bearer,
@@ -208,6 +219,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
   const authRateLimiter = opts.authRateLimiter === undefined
     ? new AuthRateLimiter(config.authRateLimits ?? {})
     : opts.authRateLimiter;
+  // Built from config alone, so every frame has it: no composition can leave
+  // these paths to the SPA fallback.
+  const wellKnown = createWellKnownRoute(config.mobileApp);
 
   const http = createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -263,6 +277,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       void Promise.resolve().then(() => resolveIdentity(req.headers, {
         remoteAddress: req.socket.remoteAddress,
         disableAutoOwner: config.disableAutoOwner === true,
+        // 398: the connector runtime's push socket is the one upgrade a
+        // bridge_runtime session may open; the upgrade target routes it to the hub.
+        bridgeRuntime: new URL(req.url ?? '/', 'http://tm8.invalid').searchParams.has('bridgeRuntime'),
       })).then(identity => {
         requireWriteApiScope(identity);
         return upgrades.handleUpgrade(req, socket, head);
@@ -368,6 +385,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         return;
       }
 
+      // s-lld §3: the phone's app-association files, infrastructure for the
+      // reason `/health` is. Apple's CDN and Android's verifier fetch them with
+      // no credentials and accept only a 200 of bare JSON, so no identity is
+      // resolved, and they come AHEAD OF THE STATIC HANDLER: its SPA fallback
+      // answers the extension-less AASA path with index.html and a 200.
+      if (wellKnown.serve(method, pathname, res, requestId)) return;
+
       // NOTE: the interim `GET /pty/output` 500ms scrollback poll used to live
       // here. It was replaced by the real push stream — the PTY WebSocket in
       // ../pty/, which shares the events WS path and is told apart by its
@@ -439,6 +463,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // authenticates it by signature instead. Before readJsonBody, deliberately.
       if (method === 'POST' && pathname === VOICE_WEBHOOK_PATH && opts.voiceWebhookRoute) {
         if (await opts.voiceWebhookRoute(req, res, { requestId })) return;
+      }
+
+      // 398: the runtime's frames. The route resolves its own bearer (the only
+      // place a bridge_runtime session is admitted) and reads its own body.
+      if (method === 'POST' && pathname.startsWith(BRIDGE_RUNTIME_PATH_PREFIX) && opts.bridgeRuntimeRoute) {
+        if (await opts.bridgeRuntimeRoute(req, res, { requestId })) return;
       }
 
       // W9c: no transport identity either: the route resolves its own bearer

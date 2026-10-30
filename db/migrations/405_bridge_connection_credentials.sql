@@ -1,6 +1,7 @@
 -- =============================================================================
--- 400 — Bridges B1b-5: a connection is offered to a space as a credential.
--- (Provisional number; the bridges merger assigns the final one.)
+-- 405 — Bridges B1b-5: a connection is offered to a space as a credential.
+-- (Authored as 400; renumbered to 405 on the rebase over batch 5, whose 400 is
+-- 400_bridge_chat_summaries. Provisional; the bridges merger assigns the final one.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- §2.5 (connections are credentials), §3.4 (bridges.connections.* rows), D28,
