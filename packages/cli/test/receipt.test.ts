@@ -238,6 +238,31 @@ describe('successReceipt: per op', () => {
     expect(bytes(r)).toBeLessThanOrEqual(620);
   });
 
+  it('message.send on a bridge: a refused provider copy is a warning with its reason and retry-after; the batch is still stored (398, §2.7)', () => {
+    const BRIDGE = '01a18b41-0000-7000-8000-000000000b1d';
+    const r = successReceipt('message.send', {
+      messageBatchId: 'b',
+      messages: [messageView('m1', 'heads up', null)],
+      bridgeDelivery: [{ messageId: 'm1', bridgeId: BRIDGE, status: 'refused', reason: 'rate_limited', retryAfterMs: 581_000, at: '2026-10-30T06:00:00Z' }],
+    });
+    expect(r).toMatchObject({ stored: true, bridge: [{ message: 'm1', bridge: BRIDGE, status: 'refused', reason: 'rate_limited', retryAfterMs: 581_000 }] });
+    expect(r.warnings).toEqual([{ code: 'bridge_refused', message: 'rate_limited, retry in 9m41s (retryAfterMs 581000)' }]);
+    const text = renderReceiptHuman(r);
+    expect(text).toContain(`bridge ${BRIDGE} REFUSED rate_limited, retry in 9m41s`);
+    expect(text).toContain('WARNING bridge_refused');
+    const paused = successReceipt('message.send', {
+      messageBatchId: 'b', messages: [messageView('m1', 'x', null)],
+      bridgeDelivery: [{ messageId: 'm1', bridgeId: BRIDGE, status: 'refused', reason: 'worker_posting_off', at: '2026-10-30T06:00:00Z' }],
+    });
+    expect(renderReceiptHuman(paused)).toContain(`bridge ${BRIDGE} REFUSED worker_posting_off`);
+    const queued = successReceipt('message.send', {
+      messageBatchId: 'b', messages: [messageView('m1', 'x', null)],
+      bridgeDelivery: [{ messageId: 'm1', bridgeId: BRIDGE, status: 'pending', at: '2026-10-30T06:00:00Z' }],
+    });
+    expect(queued.warnings).toEqual([]);
+    expect(renderReceiptHuman(queued)).toContain(`bridge ${BRIDGE} pending`);
+  });
+
   it('message.reply: root is the thread root; bodyChars counts code points', () => {
     const body = 'réponse ✓ 👍';
     const r = successReceipt('message.reply', {
