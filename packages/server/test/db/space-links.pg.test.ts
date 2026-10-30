@@ -63,6 +63,7 @@ const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
 const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
 const PATH_GRANTS = 'node path-grant write, human gate admin only (282): refuses link';
 const MCP_AUDIT = 'MCP call audit read, a human oversight surface (346, lead ruling on #1321): refuses link and agent';
+const PUSH_DEVICES = 'push device registration, human-only by design (392): refuses link and agent';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // Tool secret writes are human-only; the shared storage guard gates binding writes.
@@ -190,6 +191,11 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'list_mcp_call_audit(uuid,uuid,uuid,uuid,uuid,text,bigint,integer)': MCP_AUDIT,
   // 377 (§9.3(4)): the revoke-all kill switch, then Space admin or node admin.
   'revoke_all_mcp_credentials(uuid)': CREDENTIAL_MANAGEMENT,
+  // 392 (TM8 Mobile S1, task 01a1867c): the devices.* doors, behind the facade's
+  // human guard; a device binds to the caller's own live sign-in.
+  'register_device(text,text,text,bytea,bytea,text,text,text,text,timestamp with time zone,text)': PUSH_DEVICES,
+  'unregister_device(uuid,integer,text)': PUSH_DEVICES,
+  'update_device(uuid,integer,text,bytea,bytea,text,text,text,text,boolean,timestamp with time zone,text)': PUSH_DEVICES,
 };
 
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
@@ -405,7 +411,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346)', () => {
+  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 3 push devices (392)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(41); // +1 revoke_all_mcp_credentials (377) +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
@@ -415,7 +421,8 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels).toHaveLength(75); // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels.filter((l) => l === PUSH_DEVICES)).toHaveLength(3); // register/update/unregister_device (392)
+    expect(labels).toHaveLength(78); // +3 register/update/unregister_device (392, TM8 Mobile S1) +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
