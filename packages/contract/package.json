@@ -16,7 +16,8 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate:starters": "node scripts/generate-tool-starters.mjs"
   },
   "dependencies": {
     "zod": "^3.23.0"

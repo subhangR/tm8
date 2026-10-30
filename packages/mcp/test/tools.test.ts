@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as contract from '@tm8/contract';
 import { getOperation, OPERATIONS, type OperationName } from '@tm8/contract';
 import type { CatalogInvokeOptions, CatalogTransport } from '../src/catalog-client.js';
 import {
@@ -421,5 +422,73 @@ describe('space links through MCP (task 01a14650)', () => {
     expect(MCP_MAPPED_OPERATIONS).not.toContain('spaceLinks.invoke');
     expect(MCP_MAPPED_OPERATIONS.filter((op) => op.startsWith('spaceLinks.')).sort())
       .toEqual(['spaceLinks.audit', 'spaceLinks.list']);
+  });
+});
+
+describe('loops through MCP (design 01a182d4 §8)', () => {
+  const loops = OPERATIONS.filter((operation) => operation.name.startsWith('loops.'));
+  const directory = async (tool: 'tm8_read' | 'tm8_act') => {
+    const result = await new Tm8ToolRouter(new RecordingTransport()).call(tool, {});
+    return (result.structuredContent.operations as Array<{ operation: string; summary: string; request: { body?: Record<string, unknown> } }>);
+  };
+
+  it('lists all thirteen loops.* operations: reads in tm8_read, commands in tm8_act', async () => {
+    expect(loops).toHaveLength(13);
+    const read = (await directory('tm8_read')).map((item) => item.operation);
+    const act = (await directory('tm8_act')).map((item) => item.operation);
+    for (const operation of loops) {
+      expect(operation.kind === 'read' ? read : act, operation.name).toContain(operation.name);
+      expect(MCP_MAPPED_OPERATIONS).toContain(operation.name);
+    }
+  });
+
+  it('routes every loops.* verb to its catalog operation', async () => {
+    for (const operation of loops) {
+      const transport = new RecordingTransport();
+      const tool = operation.kind === 'read' ? 'tm8_read' : 'tm8_act';
+      const result = await new Tm8ToolRouter(transport).call(tool, { operation: operation.name, params: {}, body: {} });
+      expect(result.isError, `${tool} refused ${operation.name}: ${JSON.stringify(result.structuredContent)}`).not.toBe(true);
+      expect(transport.calls.map((c) => c.operation)).toEqual([operation.name]);
+    }
+  });
+
+  it('mints a clientMutationId for every loops command (the doors replay one they have seen)', async () => {
+    for (const operation of loops.filter((o) => o.kind === 'command')) {
+      const transport = new RecordingTransport();
+      await new Tm8ToolRouter(transport).call('tm8_act', { operation: operation.name, params: {}, body: {} });
+      expect(transport.calls[0]?.options.body, operation.name).toMatchObject({ clientMutationId: expect.any(String) });
+    }
+  });
+
+  it('every template body is one the server accepts, and the summaries teach the schedule grammar', async () => {
+    const schemas: Record<string, { safeParse(value: unknown): { success: boolean; error?: unknown } }> = {
+      'loops.create': contract.LoopCreateInputSchema,
+      'loops.update': contract.LoopUpdateInputSchema,
+      'loops.enable': contract.LoopEnableInputSchema,
+      'loops.disable': contract.LoopDisableInputSchema,
+      'loops.pause': contract.LoopPauseInputSchema,
+      'loops.resume': contract.LoopResumeInputSchema,
+      'loops.runNow': contract.LoopRunNowInputSchema,
+      'loops.runs.stop': contract.LoopRunStopInputSchema,
+      'loops.schedule.preview': contract.LoopSchedulePreviewInputSchema,
+    };
+    // Placeholders become real ids; a command also carries the id the router mints.
+    const filled = (value: unknown): unknown => typeof value === 'string' && /^<[a-z-]+-id>$/.test(value)
+      ? '019fe999-0000-7000-8000-00000000f001'
+      : Array.isArray(value) ? value.map(filled)
+        : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, filled(v)])) : value;
+    const guides = [...await directory('tm8_read'), ...await directory('tm8_act')].filter((item) => item.operation.startsWith('loops.'));
+    for (const item of guides) {
+      const schema = schemas[item.operation];
+      if (!schema) continue;
+      const body = filled({ ...(item.request.body ?? {}), ...(getOperation(item.operation as OperationName).kind === 'command' ? { clientMutationId: 'mcp-1' } : {}) });
+      const parsed = schema.safeParse(body);
+      expect(parsed.success, `${item.operation}: ${JSON.stringify(parsed.error)}`).toBe(true);
+    }
+    const summaries = guides.map((item) => item.summary).join(' ');
+    expect(summaries).toContain('every <n>m|h|d');
+    expect(summaries).toContain('IANA');
+    expect(summaries).toMatch(/Dispatcher/);
+    expect(summaries).toMatch(/loop_run_overlap/);
   });
 });

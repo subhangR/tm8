@@ -331,6 +331,16 @@ interface SummaryRow {
   loop_next_run_at: Date | string | null;
   loop_last_run_at: Date | string | null;
   loop_last_error: string | null;
+  // Loops 384 columns. Optional: a row built by a select without the loops join has none.
+  loop_action?: 'spawn' | 'dispatch' | 'tool' | null;
+  loop_timezone?: string | null;
+  loop_paused_until?: Date | string | null;
+  loop_tool_id?: string | null;
+  loop_tool_inputs?: Record<string, unknown> | null;
+  loop_concurrency?: 'skip' | 'queue' | null;
+  loop_max_runtime_seconds?: number | null;
+  loop_retry_attempts?: number | null;
+  loop_retry_delay_seconds?: number | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
   chat_credential_selection?: import('@tm8/contract').ChatCredentialSelection | null;
@@ -552,6 +562,14 @@ select
   lp.next_run_at     as loop_next_run_at,
   lp.last_run_at     as loop_last_run_at,
   lp.last_error      as loop_last_error,
+  -- 384's columns read through to_jsonb (the chat-column pattern above), so a
+  -- suite that applies only the migrations it needs still runs this select.
+  to_jsonb(lp)->>'action' as loop_action, to_jsonb(lp)->>'timezone' as loop_timezone,
+  to_jsonb(lp)->>'paused_until' as loop_paused_until, to_jsonb(lp)->>'tool_id' as loop_tool_id,
+  to_jsonb(lp)->'tool_inputs' as loop_tool_inputs, to_jsonb(lp)->>'concurrency' as loop_concurrency,
+  (to_jsonb(lp)->>'max_runtime_seconds')::int as loop_max_runtime_seconds,
+  (to_jsonb(lp)->>'retry_attempts')::int as loop_retry_attempts,
+  (to_jsonb(lp)->>'retry_delay_seconds')::int as loop_retry_delay_seconds,
   cht.title          as chat_title,
   cht.teammate_id    as chat_teammate_id,
   to_jsonb(cht)->'credential_selection' as chat_credential_selection,
@@ -1567,9 +1585,13 @@ export class PgEntityProjector implements EntityProjector {
         // (route via the dispatcher), so it is projected as null, not ''.
         return {
           kind: 'loop',
+          action: r.loop_action ?? (r.loop_team_member_id === null ? 'dispatch' : 'spawn'),
           schedule: r.loop_schedule ?? '',
+          timezone: r.loop_timezone ?? 'UTC',
           enabled: r.loop_enabled ?? false,
+          pausedUntil: iso(r.loop_paused_until ?? null),
           teamMemberId: r.loop_team_member_id,
+          toolId: r.loop_tool_id ?? null,
           subjectId: r.loop_subject_id,
           nextRunAt: iso(r.loop_next_run_at),
           lastRunAt: iso(r.loop_last_run_at),

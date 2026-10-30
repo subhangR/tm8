@@ -50,17 +50,31 @@ export class CatalogHttpError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/**
+ * Operations whose server-side work outlives the default deadline: the same floors as the UI's and the
+ * CLI's SLOW_OPERATION_TIMEOUT_MS. execution.spawn, execution.resume and a loop's Run now (a spawn) answer
+ * only once the session's first turn has settled (up to ~150 s). At 15 s an agent was told the call was
+ * unavailable while the session kept booting, and its retry, with a fresh id, started a second one.
+ * Floors on the DEFAULT only: an explicit `timeoutMs` wins.
+ */
+export const SLOW_OPERATION_TIMEOUT_MS: Readonly<Partial<Record<OperationName, number>>> = {
+  'execution.spawn': 180_000,
+  'execution.resume': 180_000,
+  'loops.runNow': 180_000,
+};
 
 export class HttpCatalogClient implements CatalogTransport {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
+  private readonly timeoutExplicit: boolean;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: HttpCatalogClientOptions) {
     this.baseUrl = options.baseUrl;
     this.token = options.token;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutExplicit = options.timeoutMs !== undefined;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -85,7 +99,8 @@ export class HttpCatalogClient implements CatalogTransport {
     // One deadline for the headers AND the body: clearing it once the headers
     // arrived left a stalled body to hang the tool call with no bound at all.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const deadline = this.timeoutExplicit ? this.timeoutMs : Math.max(this.timeoutMs, SLOW_OPERATION_TIMEOUT_MS[operation] ?? 0);
+    const timer = setTimeout(() => controller.abort(), deadline);
     const unavailable = (error: unknown): CatalogHttpError => new CatalogHttpError({
       code: 'upstream_unavailable',
       message: `${binding.method} ${url.pathname} failed: ${error instanceof Error ? error.message : String(error)}`,

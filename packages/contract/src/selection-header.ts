@@ -35,7 +35,10 @@ export type SelectionHeaderKind =
   | 'file'
   | 'task'
   | 'collection'
-  | 'story';
+  | 'story'
+  // Tools PR-E adds 'tool' to this same list; both lanes carry the converged set.
+  | 'tool'
+  | 'loop';
 
 export const SELECTION_HEADER_KINDS = [
   'skill',
@@ -48,6 +51,8 @@ export const SELECTION_HEADER_KINDS = [
   'task',
   'collection',
   'story',
+  'tool',
+  'loop',
 ] as const satisfies readonly SelectionHeaderKind[];
 
 /**

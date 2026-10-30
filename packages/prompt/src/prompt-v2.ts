@@ -81,6 +81,16 @@ export { PLACEMENT_RULE } from './placement-rule.js';
 import { PLACEMENT_RULE } from './placement-rule.js';
 
 /**
+ * Tools (Tools v2 PR-E, design doc 01a182cb §5): the one line that tells an
+ * agent the space's runnable scripts exist and how to use one safely. Base
+ * rule 6, so every mode carries it once; the `<context_index>` `tools` group
+ * lists the space's tools by name when it has any.
+ */
+export const TOOLS_RULE =
+  'Tools: `tm8 tool list` shows this space\'s runnable scripts; read `tm8 tool help <name>` before ' +
+  '`tm8 tool run <name> …`; a run prints its session id first and exits with the tool\'s exit code.';
+
+/**
  * The coordinator's half of placement: a unit of the assignment is a subtask
  * of it, created before its worker is spawned on it, so the work tree mirrors
  * the delegation tree. v1 and v2 coordinator layers carry the same sentence.
@@ -116,8 +126,16 @@ export const BASE_PROMPT_V2 = [
     "`tm8 artifact publish`, never your harness's artifact tool.",
   `4. ${HEADER_AUTHORING_RULE}`,
   `5. ${PLACEMENT_RULE}`,
+  `6. ${TOOLS_RULE}`,
   '</tm8>',
 ].join('\n');
+
+/**
+ * Recurring work (loops, design 01a182d4 §8): a unit that repeats is a
+ * scheduled loop the server fires, not a worker kept waiting on a clock.
+ */
+export const COORDINATOR_LOOP_RULE =
+  'Recurring work is a loop, not a waiting worker: `tm8 loop preview`, then `tm8 loop create`.';
 
 /** The three role layers. A coordinated-* mode takes its base role's layer. */
 export type RoleV2 = 'worker' | 'coordinator' | 'dispatcher';
@@ -133,7 +151,8 @@ export const ROLE_LAYERS_V2: Record<RoleV2, readonly string[]> = {
     'You coordinate; workers execute. Your output is spawns, briefs, verification and ' +
       'a closing message, not the work itself.',
     '1. Split the assignment into units, each with inputs, outputs and success criteria. ' +
-      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE}`,
+      `Do a unit yourself only when its brief would cost more than the work. ${COORDINATOR_SUBTASK_RULE} ` +
+      `${COORDINATOR_LOOP_RULE}`,
     '2. Spawn each unit with `tm8 session spawn --teammate <team-member-id> --task <task-id> ' +
       '--mode coordinated-worker --launch-project <project-id> --workdir worktree ' +
       '--base-ref origin/main --context "<brief>"`. Without `--mode coordinated-worker` ' +

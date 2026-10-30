@@ -515,3 +515,289 @@ test('entity_tree walks the task hierarchy the composer renders', () => {
     'entity_tree must be RLS-filtered for a non-member',
   );
 });
+
+test('384 — runner invariants, the action backfill rule, loop_runs and loop headers', () => {
+  const dispatch = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Routed', null, 'every 1h',
+       p_client_mutation_id => ${literal(cmid('loop-384-dispatch'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  // A caller written against 091 names no action: no runner still means dispatch.
+  assert.equal(dispatch.content.action, 'dispatch');
+  assert.equal(dispatch.content.timezone, 'UTC');
+  assert.equal(dispatch.content.concurrency, 'skip');
+  assert.equal(dispatch.content.retry_attempts, 0);
+  assert.equal(dispatch.content.retry_delay_seconds, 300);
+
+  const spawn = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Spawned', null, '0 9 * * 1-5',
+       ${uuid(w.personaA)}, p_timezone => 'Europe/London', p_concurrency => 'queue',
+       p_max_runtime_seconds => 600, p_retry_attempts => 2, p_retry_delay_seconds => 60,
+       p_client_mutation_id => ${literal(cmid('loop-384-spawn'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(spawn.content.action, 'spawn');
+  assert.equal(spawn.content.timezone, 'Europe/London');
+  assert.equal(spawn.content.concurrency, 'queue');
+  assert.equal(spawn.content.max_runtime_seconds, 600);
+
+  denied('create_loop: spawn without a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No runner', null, 'every 1d', p_action => 'spawn')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: tool without a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'No tool', null, 'every 1d', p_action => 'tool')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('create_loop: a tool id that is not a tool',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Not a tool', null, 'every 1d',
+       p_action => 'tool', p_tool_id => ${uuid(spawn.id)})`,
+    { claims: w.claimsA, expect: '23503' });
+  denied('create_loop: retry attempts out of range',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Retry', null, 'every 1d', p_retry_attempts => 9)`,
+    { claims: w.claimsA, expect: '23514' });
+  // The invariant is judged on the row a patch leaves: clearing the runner of a
+  // spawn loop is refused, not stored.
+  denied('update_loop: clearing the runner of a spawn loop',
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_clear_team_member => true)`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // Pause and resume are bookkeeping: they write paused_until and nothing else.
+  const until = '2030-01-01T09:00:00Z';
+  const paused = json(
+    `select public.update_loop(${uuid(spawn.id)}, 1, null, p_paused_until => ${literal(until)},
+       p_client_mutation_id => ${literal(cmid('loop-384-pause'))})`,
+    { claims: w.claimsA },
+  ).entity;
+  assert.equal(new Date(paused.content.paused_until).toISOString(), new Date(until).toISOString());
+
+  // A dispatch loop names no runner: the executors choose spawn from the runner,
+  // so one would fire as a spawn of it (review 3 of #1406).
+  denied('create_loop: a dispatch loop that names a runner',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Dispatch with a runner', null, 'every 1d',
+       ${uuid(w.personaA)}, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+  denied('update_loop: switching a spawn loop to dispatch while it keeps its runner',
+    `select public.update_loop(${uuid(spawn.id)}, null, null, p_action => 'dispatch')`,
+    { claims: w.claimsA, expect: '22023' });
+
+  // loop_runs: rows come from PR2's claim door, never a free-standing insert door
+  // (one would let any member forge run history). Settled once, never with a
+  // null outcome, invisible outside the space.
+  assert.equal(scalar(`select count(*)::text from pg_proc where proname = 'loop_run_record'`, { url: OWNER_URL }), '0');
+  const runId = scalar(
+    `insert into public.loop_runs(loop_id, space_id, fired_at, trigger, action, launch)
+       values (${uuid(spawn.id)}, ${uuid(w.spaceA)}, now(), 'manual', 'spawn', 'fired') returning id::text`,
+    { url: OWNER_URL });
+  denied('loop_run_settle: a null outcome',
+    `select public.loop_run_settle(${uuid(runId)}, null)`, { claims: w.claimsA, expect: '22023' });
+  const first = json(`select public.loop_run_settle(${uuid(runId)}, 'stopped')`, { claims: w.claimsA });
+  const second = json(`select public.loop_run_settle(${uuid(runId)}, 'completed')`, { claims: w.claimsA });
+  assert.equal(first.outcome, 'stopped');
+  assert.equal(second.outcome, 'stopped', 'a run settles once');
+  assert.deepEqual(
+    rows(`select id from public.loop_runs where id = ${uuid(runId)}`, { claims: w.claimsB }),
+    [], 'loop_runs is RLS-filtered for a non-member');
+  denied('loop_run_settle: a non-member',
+    `select public.loop_run_settle(${uuid(runId)}, 'completed')`,
+    { claims: w.claimsB, expect: '42501' });
+
+  assert.equal(scalar(`select internal.header_kind_allowed('loop')`, { url: OWNER_URL }), 't');
+  assert.equal(scalar(`select internal.header_kind_allowed('tool')`, { url: OWNER_URL }), 't');
+});
+
+test('385 — claim-then-fire: due read, claim, overlap skip/queue/409, launch bookkeeping, retry, sweep read', () => {
+  const human = { ...w.claimsA, 'tm8.auth_kind': 'browser' };
+  const worker = { 'tm8.identity_id': w.identityA, 'tm8.node_admin': 'true', 'tm8.background_job': 'loops.execute-due' };
+  const past = `now() - interval '1 minute'`;
+  const loop = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Claimed', null, 'every 1h', ${uuid(w.personaA)},
+       p_next_run_at => ${past}, p_retry_attempts => 1, p_retry_delay_seconds => 60,
+       p_client_mutation_id => ${literal(cmid('loop-385-create'))})`,
+    { claims: human },
+  ).entity;
+
+  // Who the firing runs as: the human armer, by the armer rule.
+  const acting = json(`select public.loop_acting_as(${uuid(loop.id)})`, { claims: w.claimsA });
+  assert.equal(acting.identityId, w.identityA);
+  assert.equal(acting.via, 'armer');
+  denied('loop_acting_as: a non-member', `select public.loop_acting_as(${uuid(loop.id)})`, { claims: w.claimsB, expect: '42501' });
+
+  // The due read is the worker's; a member sees nothing through it.
+  assert.deepEqual(rows(`select entity_id from public.loops_claimable(25, now())`, { claims: w.claimsA }), []);
+  const due = rows(`select entity_id, act_as_identity, concurrency, retry_attempt from public.loops_claimable(25, now())`, { claims: worker });
+  assert.ok(due.some((row) => row.entity_id === loop.id && row.act_as_identity === w.identityA && row.concurrency === 'skip'));
+
+  // A scheduled claim is the executor's alone.
+  denied('loop_run_claim: a member may not make a scheduled claim',
+    `select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`,
+    { claims: w.claimsA, expect: '42501' });
+
+  // The claim: one 'fired' row, next_run_at advanced to the instant handed in, last_run_at set.
+  const claim1 = json(
+    `select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour', null, ${literal(w.identityA)})`,
+    { claims: worker },
+  );
+  assert.equal(claim1.claimed, true);
+  assert.equal(claim1.launch, 'fired');
+  assert.equal(claim1.attempt, 1);
+  assert.equal(claim1.actedAsIdentityId, w.identityA);
+  const afterClaim = rows(`select (next_run_at > now()) advanced, last_run_at is not null ran from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA })[0];
+  assert.deepEqual(afterClaim, { advanced: true, ran: true });
+  assert.equal(scalar(`select launch from public.loop_runs where id = ${uuid(claim1.runId)}`, { claims: w.claimsA }), 'fired');
+  // Claimed, so no longer due: a second scheduled claim is refused as not_due.
+  const again = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`, { claims: worker });
+  assert.deepEqual(again, { claimed: false, reason: 'not_due' });
+
+  // The launch record: task and session land on the run; retry counter and last_error clear.
+  const launched = json(`select public.loop_run_launched(${uuid(claim1.runId)}, ${uuid(w.taskA)}, null)`, { claims: worker });
+  assert.equal(launched.taskId, w.taskA);
+
+  // OVERLAP (concurrency skip): run1 is open and its launch is in flight (no session yet, fresh).
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${uuid(loop.id)}`, { url: OWNER_URL });
+  const skipped = json(
+    `select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`,
+    { claims: worker },
+  );
+  assert.equal(skipped.claimed, true);
+  assert.equal(skipped.launch, 'skipped');
+  assert.equal(skipped.skipReason, 'overlap');
+  assert.equal(skipped.waitingOnRunId, claim1.runId);
+  assert.equal(scalar(`select (next_run_at > now())::text from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }), 'true', 'a skipped deadline still advances');
+
+  // OVERLAP (concurrency queue): no row, next_run_at untouched, the open run named.
+  ok(`update public.loops set concurrency = 'queue', next_run_at = ${past} where entity_id = ${uuid(loop.id)}`, { url: OWNER_URL });
+  const before = scalar(`select count(*)::text from public.loop_runs where loop_id = ${uuid(loop.id)}`, { claims: w.claimsA });
+  const queued = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`, { claims: worker });
+  assert.deepEqual(queued, { claimed: false, reason: 'queued', waitingOnRunId: claim1.runId });
+  assert.equal(scalar(`select count(*)::text from public.loop_runs where loop_id = ${uuid(loop.id)}`, { claims: w.claimsA }), before, 'queue writes no row per tick');
+  assert.equal(scalar(`select (next_run_at <= now())::text from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }), 'true', 'a queued loop stays due');
+
+  // Run now while run1 is live: 409 material unless forced; forced fires and records the presser.
+  const refused = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-manual-refused'))})`, { claims: w.claimsA });
+  assert.deepEqual(refused, { claimed: false, reason: 'overlap', waitingOnRunId: claim1.runId });
+  const forcedCmid = cmid('loop-385-manual-forced');
+  const forced = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(forcedCmid)})`, { claims: w.claimsA });
+  assert.equal(forced.claimed, true);
+  assert.equal(forced.launch, 'fired');
+  assert.equal(forced.requestedBy, w.memberA);
+  assert.equal(scalar(`select trigger from public.loop_runs where id = ${uuid(forced.runId)}`, { claims: w.claimsA }), 'manual');
+  // The same mutation id replays the same claim instead of minting a second run.
+  const replayed = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[], p_force => true, p_client_mutation_id => ${literal(forcedCmid)})`, { claims: w.claimsA });
+  assert.equal(replayed.runId, forced.runId);
+  denied('loop_run_claim: a non-member may not Run now',
+    `select public.loop_run_claim(${uuid(loop.id)}, now(), 'manual', '{}'::uuid[])`, { claims: w.claimsB, expect: '42501' });
+
+  // Settle run1 and the forced run; the queued loop then fires on the next claim.
+  json(`select public.loop_run_settle(${uuid(claim1.runId)}, 'completed')`, { claims: worker });
+  json(`select public.loop_run_settle(${uuid(forced.runId)}, 'stopped')`, { claims: w.claimsA });
+  const claim3 = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`, { claims: worker });
+  assert.equal(claim3.launch, 'fired');
+
+  // LAUNCH FAILURE with one retry left: launch='failed', error on the run and the loop, re-armed in 60s, attempt 2 next.
+  const failed = json(`select public.loop_run_launch_failed(${uuid(claim3.runId)}, 'spawn refused: capacity', now())`, { claims: worker });
+  assert.ok(failed.retryAt, 'a retry is scheduled');
+  const afterFail = rows(`select retry_attempt, last_error, (next_run_at between now() + interval '50 seconds' and now() + interval '70 seconds') backoff from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA })[0];
+  assert.deepEqual(afterFail, { retry_attempt: 1, last_error: 'spawn refused: capacity', backoff: true });
+  assert.deepEqual(rows(`select launch, error from public.loop_runs where id = ${uuid(claim3.runId)}`, { claims: w.claimsA }), [{ launch: 'failed', error: 'spawn refused: capacity' }]);
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${uuid(loop.id)}`, { url: OWNER_URL });
+  const claim4 = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`, { claims: worker });
+  assert.equal(claim4.attempt, 2, 'the retry is attempt 2 of the same deadline');
+  // Retries exhausted: the counter resets for the next deadline; no re-arm.
+  const exhausted = json(`select public.loop_run_launch_failed(${uuid(claim4.runId)}, 'spawn refused again', now())`, { claims: worker });
+  assert.equal(exhausted.retryAt, null);
+  assert.equal(scalar(`select retry_attempt::text from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }), '0');
+  // A successful launch clears last_error.
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${uuid(loop.id)}`, { url: OWNER_URL });
+  const claim5 = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], now() + interval '1 hour')`, { claims: worker });
+  json(`select public.loop_run_launched(${uuid(claim5.runId)}, ${uuid(w.taskA)}, null)`, { claims: worker });
+  assert.equal(scalar(`select coalesce(last_error, '<null>') from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }), '<null>');
+
+  // SCHEDULE INVALID: a 'skipped'/'schedule_invalid' row, the loop parked with the reason, still enabled.
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${uuid(loop.id)}`, { url: OWNER_URL });
+  json(`select public.loop_run_settle(${uuid(claim5.runId)}, 'completed')`, { claims: worker });
+  const parked = json(`select public.loop_run_claim(${uuid(loop.id)}, now(), 'schedule', '{}'::uuid[], null, 'schedule "0 0 30 2 *" never matches')`, { claims: worker });
+  assert.equal(parked.skipReason, 'schedule_invalid');
+  assert.deepEqual(
+    rows(`select enabled, next_run_at is null parked, last_error from public.loops where entity_id = ${uuid(loop.id)}`, { claims: w.claimsA }),
+    [{ enabled: true, parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
+
+  // The sweep read is the worker's and lists only open firings.
+  assert.deepEqual(rows(`select run_id from public.loop_runs_open_for_executor(now())`, { claims: w.claimsA }), []);
+  const open = rows(`select run_id, act_as_identity from public.loop_runs_open_for_executor(now())`, { claims: worker });
+  assert.ok(!open.some((row) => row.run_id === claim1.runId), 'a settled run is not open');
+  assert.ok(open.every((row) => row.act_as_identity), 'every open run names who can stop it');
+
+  // Orphan parking: a space whose only member has left is parked with a reason, once, and is no longer claimable.
+  const orphanHuman = { ...w.claimsB, 'tm8.auth_kind': 'browser' };
+  const orphan = json(
+    `select public.create_loop(${uuid(w.spaceB)}, 'Orphan', null, 'every 1h', null, p_next_run_at => ${past},
+       p_client_mutation_id => ${literal(cmid('loop-385-orphan'))})`,
+    { claims: orphanHuman },
+  ).entity;
+  ok(`update public.members set status = 'removed', left_at = now() where space_id = ${uuid(w.spaceB)}`, { url: OWNER_URL });
+  assert.ok(!rows(`select entity_id from public.loops_claimable(25, now())`, { claims: worker }).some((row) => row.entity_id === orphan.id));
+  const parkedOrphans = rows(`select entity_id from public.loops_park_orphans(now())`, { claims: worker });
+  assert.deepEqual(parkedOrphans, [{ entity_id: orphan.id }]);
+  assert.deepEqual(rows(`select entity_id from public.loops_park_orphans(now())`, { claims: worker }), [], 'parking is idempotent');
+  assert.match(scalar(`select last_error from public.loops where entity_id = ${uuid(orphan.id)}`, { url: OWNER_URL }), /needs arming/);
+  ok(`update public.members set status = 'active', left_at = null where space_id = ${uuid(w.spaceB)}`, { url: OWNER_URL });
+});
+
+test('385 — a retry never overrides an edit made during the firing, a held-back queue loop takes no slot, a launch keeps a parked reason', () => {
+  const human = { ...w.claimsA, 'tm8.auth_kind': 'browser' };
+  const worker = { 'tm8.identity_id': w.identityA, 'tm8.node_admin': 'true', 'tm8.background_job': 'loops.execute-due' };
+  const past = `now() - interval '1 minute'`;
+  const loop = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Fixes', null, 'every 1h', ${uuid(w.personaA)},
+       p_next_run_at => ${past}, p_retry_attempts => 2, p_retry_delay_seconds => 600,
+       p_client_mutation_id => ${literal(cmid('loop-385-fixes-create'))})`,
+    { claims: human },
+  ).entity;
+  const id = uuid(loop.id);
+  const claim = (next) => json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], ${next})`, { claims: worker });
+  const claimable = (live = `'{}'::uuid[]`) => rows(`select entity_id from public.loops_claimable(25, now(), ${live})`, { claims: worker })
+    .some((row) => row.entity_id === loop.id);
+
+  // The retry never pushes a sooner deadline later: the next deadline (2 min) beats the 10-minute delay.
+  const c1 = claim(`now() + interval '2 minutes'`);
+  json(`select public.loop_run_launch_failed(${uuid(c1.runId)}, 'spawn refused', now())`, { claims: worker });
+  assert.deepEqual(rows(`select (next_run_at <= now() + interval '3 minutes') sooner, retry_attempt from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ sooner: true, retry_attempt: 1 }]);
+
+  // A write made during the firing (here: a deadline a week out) wins over the re-arm.
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  const c2 = claim(`now() + interval '1 hour'`);
+  ok(`update public.loops set next_run_at = now() + interval '7 days' where entity_id = ${id}`, { url: OWNER_URL });
+  json(`select public.loop_run_launch_failed(${uuid(c2.runId)}, 'spawn refused again', now())`, { claims: worker });
+  assert.deepEqual(rows(`select (next_run_at > now() + interval '6 days') kept, retry_attempt, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ kept: true, retry_attempt: 0, last_error: 'spawn refused again' }]);
+
+  // A queue loop held back by a LIVE open firing stays due but is not claimable,
+  // so it takes no slot of the tick. Live is the claim's rule: a launch in
+  // flight, or a session in the PTY set the executor passes. A run whose
+  // session is not live (it died with the node) never holds the loop.
+  ok(`update public.loops set concurrency = 'queue', next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  const c3 = claim(`now() + interval '1 hour'`);
+  assert.equal(c3.launch, 'fired');
+  ok(`update public.loops set next_run_at = ${past} where entity_id = ${id}`, { url: OWNER_URL });
+  assert.equal(claimable(), false, 'held back by a launch in flight');
+  json(`select public.loop_run_launched(${uuid(c3.runId)}, ${uuid(w.taskA)}, ${uuid(w.taskA)})`, { claims: worker });
+  assert.equal(claimable(`array[${uuid(w.taskA)}]::uuid[]`), false, 'held back while its session is live');
+  assert.equal(claimable(), true, 'a session that is not live (a restart) never holds the loop');
+  json(`select public.loop_run_settle(${uuid(c3.runId)}, 'completed')`, { claims: worker });
+  assert.equal(claimable(), true, 'claimable once the run settles');
+
+  // A launch that succeeds does not clear a parked loop's reason (Run now on a loop whose schedule cannot be evaluated).
+  json(`select public.loop_run_claim(${id}, now(), 'schedule', '{}'::uuid[], null, 'schedule "0 0 30 2 *" never matches')`, { claims: worker });
+  const manual = json(`select public.loop_run_claim(${id}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-fixes-manual'))})`, { claims: w.claimsA });
+  json(`select public.loop_run_launched(${uuid(manual.runId)}, ${uuid(w.taskA)}, null)`, { claims: w.claimsA });
+  assert.deepEqual(rows(`select next_run_at is null parked, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
+  json(`select public.loop_run_settle(${uuid(manual.runId)}, 'completed')`, { claims: w.claimsA });
+
+  // A manual launch failure leaves a scheduled retry series and a parked reason alone.
+  ok(`update public.loops set retry_attempt = 1 where entity_id = ${id}`, { url: OWNER_URL });
+  const manual2 = json(`select public.loop_run_claim(${id}, now(), 'manual', '{}'::uuid[], p_client_mutation_id => ${literal(cmid('loop-385-fixes-manual-fail'))})`, { claims: w.claimsA });
+  json(`select public.loop_run_launch_failed(${uuid(manual2.runId)}, 'spawn refused', now())`, { claims: w.claimsA });
+  assert.deepEqual(rows(`select retry_attempt, next_run_at is null parked, last_error from public.loops where entity_id = ${id}`, { claims: w.claimsA }),
+    [{ retry_attempt: 1, parked: true, last_error: 'schedule "0 0 30 2 *" never matches' }]);
+});
