@@ -46,6 +46,7 @@ export const EDGE_FAMILIES: Readonly<Record<string, FamilyRow>> = {
   attached_to: 'files',
   authored_from: 'sessions',
   based_on: 'files',
+  bridged_to: 'sessions',
   completed_by: 'people',
   contains: 'work',
   controls: 'people',

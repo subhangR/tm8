@@ -2585,6 +2585,36 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  // -- bridge (395, BRIDGE-ENTITY-DESIGN §4: a provider conversation, here) ---
+  {
+    kind: 'bridge',
+    label: 'Bridge',
+    labelPlural: 'Bridges',
+    icon: '⌒',
+    iconArt: KIND_ART.bridge,
+    slug: 'bridges',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'gallery', 'tree'],
+    chip: { glyph: '⌒', tintBy: 'none' },
+    /* §4.7 names four bridge-specific card fields (provider, target, status,
+       people); the card renderer reads only the generic ones today. */
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    // Born only from `bridges.create` (generic create is refused server-side,
+    // human-only); `tm8 bridge` owns its lifecycle.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    /* The minimal row that makes the registry total over the contract's core
+       kinds again after B0a (395). Settings → Bridges and the bridge page
+       (BRIDGE-ENTITY-DESIGN §4.2, §4.4) replace this panel in B2-UI. */
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'BRIDGE' }],
+    },
+  },
+
   // -- space_link (250, W6: managed from Space settings, not browsed) --------
   {
     kind: 'space_link',
@@ -2780,7 +2810,9 @@ const ROWS: readonly KindConfig[] = [
  *     — but that is an argument about which verb should be PRIMARY, not about
  *     whether an agent can be pointed at the row.
  */
-const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>([]);
+// `bridge` (BRIDGE-ENTITY-DESIGN §3.1, `spawnable: false`): you do not RUN a
+// bridge — agents answer through its target, and workers post on it by handle.
+const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>(['bridge']);
 
 /**
  * `run` — the launch action, in every place that renders one.
