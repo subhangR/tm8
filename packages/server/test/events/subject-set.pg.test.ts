@@ -1,4 +1,4 @@
-import { addEntityCounterLinkShape, addToolProjectionShape } from '../db/tool-projection-shape.js';
+import { addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from '../db/tool-projection-shape.js';
 /**
  * THE canonical subject set (migration 208, src/events/subject-set.ts), pinned
  * on both sides:
@@ -177,6 +177,7 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
     await addToolProjectionShape(database);
+    await addBridgeProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 322 renames it `craft` (`public.crafts`, `internal.craft_summary`). 322
     // itself cannot apply on this partial chain (§9 rewrites stored kind strings
