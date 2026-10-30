@@ -21,6 +21,7 @@ import { registerW2MessagesHandoffsHandlers } from '../src/facade/handlers/w2/me
 import { toCommandResult } from '../src/facade/handlers/entities.js';
 import { toWireError } from '../src/http/errors.js';
 import type { RequestContext } from '../src/http/types.js';
+import { admittedSpawn } from './admitted-spawn.js';
 
 const SPACE = '019f9896-928d-79b6-ba1c-1cdcc1d30a6f';
 const SOURCE = '019f9896-928d-7a24-848b-4c8fdd82b761';
@@ -554,7 +555,8 @@ describe('W1 honest W2-only skeletons', () => {
       },
       owner,
     });
-    const spawn = vi.spyOn(runtime.spawnService, 'spawn').mockResolvedValue({ commandResult: {} } as never);
+    // `admit` is the launch boundary (404); `spawn()` runs through it too.
+    const spawn = vi.spyOn(runtime.spawnService, 'admit').mockImplementation(async () => admittedSpawn());
     return { registry, owner, spawn, tx, db, q };
   }
 
@@ -601,7 +603,17 @@ describe('W1 honest W2-only skeletons', () => {
       expect(parsed.data.liveChatCount).toBe(3);
       expect(parsed.data.workingChatCount).toBe(1);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
+      // 403: no `?ghosts=1`, so the SHAPE is byte-identical to before, and the
+      // one capacity read named no node, so it counted no ghosts. The MEANING
+      // of `used` did change: it is now node-wide for every caller (the spawn
+      // gate's population, from the definer `session_capacity`), where it was
+      // the caller's RLS-scoped count. This mock only pins the shape; the real
+      // function is pinned against two spaces, with a member of each, in
+      // test/db/node-ghost-sessions-403.pg.test.ts ("session_capacity: used is
+      // node-wide for ANY caller").
       expect(parsed.data.capacity).toEqual({ used: 1, total: 64 });
+      const capacityCall = query.mock.calls.find((c) => String(c[1]).includes('session_capacity')) as unknown[];
+      expect((capacityCall[2] as unknown[])[0]).toBeNull();
       // Carried so a client can open a space at the tail of the log instead of
       // paging the whole retained log to discover the same number.
       expect(parsed.data.eventHwm).toBe(108477);
@@ -625,6 +637,22 @@ describe('W1 honest W2-only skeletons', () => {
     // the database's under the caller's claims, not a pre-filter here).
     const intersectArgs = query.mock.calls[1] as unknown[];
     expect(intersectArgs[2]).toEqual([SPACE, [SOURCE, 'ffffffff-ffff-4fff-8fff-ffffffffffff']]);
+
+    // 403, opted in: `?ghosts=1` adds the dead share of the cap, as a count.
+    bound.mockResolvedValueOnce([{ last_seq: '1' }]);
+    query
+      .mockResolvedValueOnce([{ id: SPACE }])
+      .mockResolvedValueOnce([{ id: SOURCE, recorded_live: true }])
+      .mockResolvedValueOnce([{ used: 64, ghosts: '19' }])
+      .mockResolvedValueOnce([{ live: '0', working: '0' }]);
+    const optedIn = (await handler({
+      ...context('execution.liveness', undefined),
+      params: { spaceId: SPACE },
+      query: new URLSearchParams('ghosts=1'),
+    })) as { data: unknown };
+    const ghostParsed = ExecutionLivenessSchema.safeParse(optedIn.data);
+    expect(ghostParsed.success).toBe(true);
+    if (ghostParsed.success) expect(ghostParsed.data.capacity).toEqual({ used: 64, total: 64, ghosts: 19 });
 
     // Unreadable space: not_found, and the PTY map is never consulted further.
     query.mockReset();

@@ -42,6 +42,15 @@ export function connectorGlyph(logo: string | undefined): string {
   return GLYPHS.get(logo) ?? GENERIC_GLYPH;
 }
 
+/**
+ * A registered connector's slug: its catalog id with dots as dashes
+ * (`google.gmail` → `google-gmail`), the shape the catalog's own `logo` uses.
+ * A custom connector has no catalog id and draws the generic mark.
+ */
+export function serverLogo(definition: { catalogId?: string } | undefined): string | undefined {
+  return definition?.catalogId?.replace(/\./g, '-');
+}
+
 export function ConnectorLogo({ logo, title }: { logo?: string; title: string }) {
   return <span className="mcp-logo" aria-hidden="true" data-logo={logo ?? 'generic'} title={title}>{connectorGlyph(logo)}</span>;
 }

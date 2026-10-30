@@ -1,4 +1,6 @@
 import {
+  BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
+  BridgeHandleClaimInputSchema, BridgeListenInputSchema,
   LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
   LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
 } from '@tm8/contract';
@@ -268,6 +270,15 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'loops.runNow': LoopRunNowInputSchema,
   'loops.runs.stop': LoopRunStopInputSchema,
   'loops.schedule.preview': LoopSchedulePreviewInputSchema,
+  // Bridges B0a (395): every bridges.* command, as its handler parses it.
+  'bridges.create': BridgeCreateInputSchema,
+  'bridges.update': BridgeUpdateInputSchema,
+  'bridges.retarget': BridgeRetargetInputSchema,
+  'bridges.pause': BridgeStateInputSchema,
+  'bridges.resume': BridgeStateInputSchema,
+  'bridges.remove': BridgeStateInputSchema,
+  'bridges.handles.claim': BridgeHandleClaimInputSchema,
+  'bridges.listen': BridgeListenInputSchema,
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

@@ -20,6 +20,7 @@
 import { readdir, stat } from 'node:fs/promises';
 
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
+import { POOL_IDLE_EXPIRY_MS, type PoolSweepReport } from '../worktree/warm-pool.js';
 import type { Logger } from '../pty/types.js';
 import type {
   GraphAuth,
@@ -48,6 +49,11 @@ export interface WorktreeReconcileReport {
   /** Foreign checkouts found inside this node's area. Reported, never touched. */
   quarantined: WorktreeQuarantine[];
   errors: Array<{ worktreeId: string | null; message: string }>;
+  /**
+   * The warm lane pool's startup sweep (worktree/warm-pool.ts), on a node that
+   * keeps one, and the projects whose pools it then started to fill.
+   */
+  pool?: PoolSweepReport & { warming: string[] };
 }
 
 export interface ReconcileParams {
@@ -57,6 +63,14 @@ export interface ReconcileParams {
   nodeId: string;
   /** The live PTY map. Only the node owning a terminal can say whether it is gone. */
   hasLivePty: (sessionId: string) => boolean;
+  /**
+   * Whether a launch this process admitted is still booting into this
+   * reservation. An admitted spawn writes its session row before `git worktree
+   * add` runs, so its allocation sits in `preparing` for as long as the
+   * checkout takes; the answer here is exact where the grace window below is a
+   * guess. Absent → the grace window alone decides, as before.
+   */
+  isBootInFlight?: (worktreeId: string) => boolean;
   /**
    * `project.working_dir` per project id. Reconciliation needs a repository
    * root to run `git worktree list/remove/prune` against, and allocations only
@@ -126,6 +140,8 @@ export async function reconcileNodeWorktrees(
       worktreeId: null,
       message: `could not read allocations: ${error instanceof Error ? error.message : String(error)}`,
     });
+    // The pool's sweep needs no graph; only knowing what to warm does.
+    if (params.manager.pool) report.pool = { ...(await params.manager.pool.sweepOnce()), warming: [] };
     return report;
   }
   report.examined = rows.length;
@@ -202,6 +218,10 @@ export async function reconcileNodeWorktrees(
     }
   }
 
+  if (params.manager.pool) {
+    report.pool = await warmPoolAtStartup(params, rows, repoRoots);
+  }
+
   if (report.repaired.length || report.quarantined.length) {
     params.logger?.info?.('worktree reconciliation', {
       examined: report.examined,
@@ -211,6 +231,45 @@ export async function reconcileNodeWorktrees(
     });
   }
   return report;
+}
+
+/**
+ * The warm lane pool at startup: sweep its area — every leftover there is from
+ * an earlier process and nobody's work — and then start filling the pools of
+ * the projects this node launches lanes for, in the background. Warm lanes
+ * have no allocation rows, so nothing above ever saw one: they sit outside the
+ * worktree area the quarantine scan reads.
+ *
+ * "Launches lanes for" is read off the allocations: a project with a lane in
+ * use, or one touched within the pool's own idle window.
+ */
+async function warmPoolAtStartup(
+  params: ReconcileParams,
+  rows: WorktreeAllocationRow[],
+  repoRoots: Map<string, string>,
+): Promise<PoolSweepReport & { warming: string[] }> {
+  const pool = params.manager.pool!;
+  const swept = await pool.sweepOnce();
+  const warming: string[] = [];
+  const inUse = new Set<string>();
+  for (const row of rows) {
+    if (!row.projectId) continue;
+    if (row.state === 'ready' || row.state === 'preparing' || changedWithin(row, POOL_IDLE_EXPIRY_MS)) {
+      inUse.add(row.projectId);
+    }
+  }
+  for (const projectId of inUse) {
+    try {
+      const workingDir = repoRoots.get(projectId) ?? (params.repoRootFor ? await params.repoRootFor(projectId) : null);
+      if (!workingDir) continue;
+      const { repoRoot } = await params.manager.validateRepository(workingDir);
+      pool.replenish(projectId, repoRoot);
+      warming.push(projectId);
+    } catch {
+      // Not a repository any more: there is nothing to keep warm for it.
+    }
+  }
+  return { ...swept, warming };
 }
 
 async function reconcileOne(
@@ -249,6 +308,12 @@ async function reconcileOne(
 
   switch (row.state) {
     case 'preparing': {
+      // A boot this process is running owns the row whatever its age: a slow
+      // checkout behind an admitted session is work in progress, not a leak.
+      if (params.isBootInFlight?.(row.worktreeId) === true) {
+        record('preparing under a boot in flight', 'left alone (boot in flight)', null);
+        return;
+      }
       // A reservation that changed a moment ago is very likely a spawn still
       // running, not a crash to clean up. Skip it and let the next sweep decide
       // — the row is not going anywhere, and the cost of being hasty here is
@@ -378,9 +443,8 @@ async function removeAndSettle(
   }
 
   try {
-    await params.manager.withProjectLock(row.projectId ?? repoRoot, () =>
-      params.manager.remove({ repoRoot, path }),
-    );
+    // The manager takes the project's Git lock for the removal itself.
+    await params.manager.remove({ projectId: row.projectId ?? repoRoot, repoRoot, path });
   } catch (error) {
     await graph.setWorktreeAllocationState(auth, {
       worktreeId: row.worktreeId,

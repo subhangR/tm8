@@ -6,8 +6,8 @@
  * not a workspace. It may read who it is, list its spaces, get into a FIRST
  * space (create one, or redeem an invite), manage its own session, enter a
  * space (`auth.space.enter` mints the pinned session every other call uses),
- * and do node administration, which is gate admin (K6). Everything else is
- * refused before the handler runs.
+ * read what the node speaks (`meta.get`), and do node administration, which is
+ * gate admin (K6). Everything else is refused before the handler runs.
  *
  * The brand-new-user walk (sign in -> identity.get -> spaces.list ->
  * spaces.create or auth.invite.resolve + spaces.invites.redeem ->
@@ -42,9 +42,16 @@ const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([
   'spaces.invites.redeem',
 ]);
 
+/**
+ * Facts about the node itself that any caller may read, with no credential at
+ * all (`meta.get`, which a client reads before it signs in). Refusing them to a
+ * gate session would refuse a signed-in person what a stranger may read.
+ */
+const GATE_NODE_FACT_OPS: ReadonlySet<string> = new Set(['meta.get']);
+
 /** Whether `opName` is one a gate session may call under `enforce`. */
 export function gateSessionMayCall(opName: string): boolean {
-  if (GATE_SPACE_ENTRY_OPS.has(opName)) return true;
+  if (GATE_SPACE_ENTRY_OPS.has(opName) || GATE_NODE_FACT_OPS.has(opName)) return true;
   // `auth.*` includes `auth.space.enter`, `auth.session.get`, logout and
   // `auth.invite.resolve` (the invite preview the join screen shows first).
   if (opName.startsWith('auth.')) return true;

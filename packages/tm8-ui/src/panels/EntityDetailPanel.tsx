@@ -89,6 +89,7 @@ import { MachineBody } from './bodies/MachineBody';
 import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { useSessionShowsTerminal, WorkSessionContent } from './bodies/WorkSessionContent';
+import { bootingSessionOf } from '../launch-handoff';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
@@ -1218,6 +1219,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               jevKeyStatus={props.launch.jevKeyStatus}
               sessionsSince={props.launch.sessionsSince}
               onSpawn={props.launch.onSpawn}
+              onLaunchStarted={props.launch.onLaunchStarted}
               loadDescription={
                 props.launch.descriptionOf
                   ? () => props.launch!.descriptionOf!(detail.id)
@@ -2237,6 +2239,7 @@ function PanelBody(
         sessionId={detail.id}
         viewerMemberId={props.viewerMemberId}
         profile={interactionProfile}
+        boot={bootingSessionOf(detail)}
         requestedSurface={props.contentSurface}
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}

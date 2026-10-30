@@ -53,6 +53,7 @@ export const EDGE_VERBS: Readonly<Record<string, EdgeVerb>> = {
   attached_to: { out: 'Attached to', in: 'Attached here' },
   authored_from: { out: 'Made during', in: 'Made here', conversationFrom: MESSAGE_KINDS },
   based_on: { out: 'Based on', in: 'Basis for' },
+  bridged_to: { out: 'Bridged to', in: 'Bridged from' },
   completed_by: { out: 'Completed by', in: 'Completed' },
   contains: { out: 'Contains', in: 'In collection' },
   controls: { out: 'Controls', in: 'Controlled by' },

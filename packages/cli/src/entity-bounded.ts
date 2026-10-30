@@ -32,10 +32,8 @@ type Rec = Record<string, unknown>;
 
 import { storyPageCounts } from './story-render.js';
 import { craftPageRows } from './craft-render.js';
+import { isRecord } from './guards.js';
 
-function isRecord(v: unknown): v is Rec {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /** An EntityDetail is the only DTO this projection touches. Anything else passes through. */
 export function isEntityDetail(v: unknown): v is Rec {

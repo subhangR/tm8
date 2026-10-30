@@ -1,5 +1,6 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
+import { BridgeEntitySchema } from './bridges.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -17,6 +18,8 @@ import { z } from 'zod';
 import { isOperationName } from './catalog.js';
 import type { OperationName } from './catalog.js';
 import {
+  COLLECTION_TREE_LEVEL_MAX,
+  COLLECTION_TREE_MAX_DEPTH,
   MAX_CONTROL_FRAME_SPACES,
   PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES,
   PROJECT_FOLDER_UPLOAD_MAX_FILES,
@@ -69,6 +72,7 @@ import type {
   AmendmentErrorReason,
   ActivityItem, ActorSummary, AddMessageAttachmentsInput,
   AuthAccountView, AuthClaimInput, AuthClaimReissueResult, AuthClaimResult, AuthClaimStatusResult,
+  MetaGetResult,
   AuthInviteSignupInput, AuthInviteSignupResult,
   AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthPasswordChangeInput, AuthPasswordChangeResult,
@@ -77,6 +81,7 @@ import type {
   SpacePasswordLockInput, SpacePasswordResetInput, SpacePasswordSetRequiredInput,
   AuthSignupResult, ChannelTab, ChatContextFrame, ChatTurnFrame, ChatTurnUsage,
   ClosedPromptPolicy, CollectionAddItemInput, CollectionGroup, CollectionQuery, CollectionResult,
+  CollectionTree, CollectionTreeLevel, CollectionTreeOption,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ContainerLifecycle, ContainerLifecycleInput, ContainerMount, ContainerMountInput,
   ContainerNetworkPolicy, ContainerProviderDescriptor, ContainerSpec, ContainerSpecInput,
@@ -179,7 +184,7 @@ import type {
   ResultWarning, UndoToken, UpdateInteractionProfileDraftInput, UpdateMemberRoleInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
   ExecutionTerminalStartInput,
-  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionDriveMode, WorkSessionEndedKind, WorkSessionOutcome, WorkSessionOutcomeSource, ClaimEndReason, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorkSessionBootPhase, WorkSessionBootState, WorkSessionWorkdirMode, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -246,6 +251,8 @@ export const CoreEntityKindSchema = z.enum([
   // Crafts (304; renamed from design in 322): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'craft',
+  // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
+  'bridge',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -371,6 +378,9 @@ export const VisibilitySchema = z.enum(['space', 'restricted']);
 export const PrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
+/** Mirrors `work_sessions.boot_phase`'s CHECK exactly — 404. */
+export const WorkSessionBootPhaseSchema: z.ZodType<WorkSessionBootPhase> =
+  z.enum(['admitted', 'lane', 'briefing', 'agent', 'live', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
 /**
@@ -420,13 +430,17 @@ export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
 
 export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   id: EntityIdSchema,
-  kind: z.enum(['member', 'team_member', 'work_session']),
+  kind: z.enum(['member', 'team_member', 'work_session', 'bridge']),
   displayName: z.string(),
   avatar: z.string().nullable().optional(),
   role: z.string().nullable().optional(),
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
-  via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
+  via: z.object({
+    sessionId: EntityIdSchema.optional(),
+    bridgeId: EntityIdSchema.optional(),
+    participant: z.object({ displayName: z.string(), avatar: z.string().nullable().optional() }).strict().optional(),
+  }).strict().optional(),
   memberStatus: z.enum(['left', 'removed']).optional(),
 }).strict();
 
@@ -692,6 +706,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // reason driveMode is above — this arm is `.strict()`, so a field the
     // reader spreads and this schema does not name stops the event stream.
     sharingSetAt: z.string().nullable().optional(),
+    // 404: the last phase the launch's boot reached, and when. Absent on a
+    // node (or a row) that records no boot. Named here for the reason above.
+    bootPhase: WorkSessionBootPhaseSchema.optional(),
+    bootPhaseAt: z.string().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -775,6 +793,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // answers for them. `server` has no detail row until W8.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style carries its FULL doc on state (spec §4.3: the push
   // event is how viewers repaint, so it must not need a fetch).
   z.object({
@@ -1225,6 +1245,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 250 (W6) — a space link's content is `spaceLinks.list`'s answer.
   z.object({ kind: z.literal('space_link') }).strict(),
   z.object({ kind: z.literal('server') }).strict(),
+  // 395 — a bridge's derived facts; state and content are the same view.
+  BridgeEntitySchema,
   // 284 — a space style's content: its state plus the description.
   z.object({
     kind: z.literal('style'),
@@ -1411,8 +1433,43 @@ function collectionQueryShape() {
   };
 }
 
+/**
+ * `tree` (S5, mobile LLD §5.1): the page plus up to two levels under it, in
+ * one trip. THE BOUNDS ARE THE CONTRACT, and a value outside them is refused,
+ * never clamped (a client that asked for three levels and drew two would show
+ * a tree that looks whole and is not):
+ *   - `depth`: 1 or 2 (`COLLECTION_TREE_MAX_DEPTH`).
+ *   - `perParent`: an integer from 1 to 200; omitted means 200, no cut beyond
+ *     the level's own, so each level is exactly the step query's rows.
+ *   - every level holds at most 200 rows (`COLLECTION_TREE_LEVEL_MAX`), so the
+ *     next level's parents are at most the 200 ids `filters.parentIn` allows;
+ *     a level the bound cut says `capped: true`.
+ *   - the page is bounded by `limit` (at most 200), so level 1's parents are too.
+ * Only `collections.query` takes it: `GraphQuerySchema` has no `tree`, so a
+ * graph read refuses it instead of ignoring it.
+ */
+export const CollectionTreeOptionSchema: z.ZodType<CollectionTreeOption> = z.object({
+  depth: z.union([z.literal(1), z.literal(2)], {
+    errorMap: () => ({
+      message: `tree.depth must be 1 or 2: at most ${COLLECTION_TREE_MAX_DEPTH} levels are read under the page`,
+    }),
+  }),
+  perParent: z.number().int().min(1).max(COLLECTION_TREE_LEVEL_MAX).optional(),
+}).strict();
+
 export const CollectionQuerySchema: z.ZodType<CollectionQuery> =
-  z.object(collectionQueryShape()).strict();
+  z.object({ ...collectionQueryShape(), tree: CollectionTreeOptionSchema.optional() }).strict();
+
+export const CollectionTreeLevelSchema: z.ZodType<CollectionTreeLevel> = z.lazy(() => z.object({
+  depth: z.union([z.literal(1), z.literal(2)]),
+  parentIds: z.array(EntityIdSchema).max(COLLECTION_TREE_LEVEL_MAX),
+  items: z.array(EntitySummarySchema).max(COLLECTION_TREE_LEVEL_MAX),
+  capped: z.boolean(),
+}).strict());
+
+export const CollectionTreeSchema: z.ZodType<CollectionTree> = z.lazy(() => z.object({
+  levels: z.array(CollectionTreeLevelSchema).min(1).max(COLLECTION_TREE_MAX_DEPTH),
+}).strict());
 
 export const CollectionGroupSchema: z.ZodType<CollectionGroup> = z.lazy(() => z.object({
   key: z.string(),
@@ -1426,6 +1483,7 @@ export const CollectionResultSchema: z.ZodType<CollectionResult> = z.lazy(() => 
   query: CollectionQuerySchema,
   page: pageOf(EntitySummarySchema),
   groups: z.array(CollectionGroupSchema).optional(),
+  tree: CollectionTreeSchema.optional(),
 }).strict());
 
 export const GraphQuerySchema: z.ZodType<GraphQuery> = z.object({
@@ -1843,6 +1901,7 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     to: WorkSessionStatusSchema,
     endedKind: WorkSessionEndedKindSchema.nullable(),
     endedReason: z.string().nullable(),
+    endedByNode: z.string().min(1).optional(),
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
@@ -2416,6 +2475,20 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   tokenRequired: z.boolean().optional(),
 }).strict();
 
+/**
+ * `meta.get`. Deliberately NOT `.strict()` and lenient on version strings: an
+ * older reader must parse a newer node's answer (unknown fields are stripped,
+ * unknown operation names kept), because that answer is how it learns it is too
+ * old. The digest is the one field with a fixed form.
+ */
+export const MetaGetResultSchema: z.ZodType<MetaGetResult> = z.object({
+  contractVersion: z.string().min(1),
+  catalogSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  eventSchemaVersion: z.number().int().positive(),
+  features: z.array(z.string().min(1)),
+  minClients: z.record(z.string().min(1), z.string().min(1)),
+});
+
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({
   token: z.string().min(1),
   claimUrl: z.string().min(1),
@@ -2984,6 +3057,10 @@ export const ExecutionSpawnResultSchema: z.ZodType<ExecutionSpawnResult> = z.laz
   warnings: z.array(ResultWarningSchema).optional(),
   createdTaskId: EntityIdSchema.optional(),
   launch: ExecutionSpawnLaunchSchema.optional(),
+  timings: z.object({
+    totalMs: z.number().nonnegative(),
+    phases: z.record(z.number().nonnegative()),
+  }).strict().optional(),
 }).strict());
 
 export const ExecutionSpawnLaunchSchema: z.ZodType<ExecutionSpawnLaunch> = z.lazy(() => z.object({
@@ -3058,7 +3135,7 @@ export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge']),
   CustomEntityKindSchema,
 ]));
 
@@ -4461,6 +4538,7 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   capacity: z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
+    ghosts: z.number().int().nonnegative().optional(),
   }).strict(),
   // Nullable, never optional: "the mark cannot be established" is an ANSWER
   // this read has to be able to give, and an absent field is the shape a
@@ -4544,6 +4622,14 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
  * its interior would make this read fail closed on exactly the sessions a
  * debug surface most needs to explain. The envelope around it is strict.
  */
+export const WorkSessionBootStateSchema: z.ZodType<WorkSessionBootState> = z.object({
+  sessionId: EntityIdSchema,
+  status: WorkSessionStatusSchema,
+  bootPhase: WorkSessionBootPhaseSchema.optional(),
+  bootPhaseAt: z.string().optional(),
+  endedReason: z.string().nullable(),
+}).strict();
+
 export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
   sessionId: EntityIdSchema,
   available: z.boolean(),
@@ -4574,6 +4660,7 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unlinkedMemories: z.array(z.string()),
     unlinkedSkillCount: z.number().int().nonnegative(),
   }).strict().nullable(),
+  launch: ExecutionSpawnLaunchSchema.optional(),
 }).strict();
 
 /**
@@ -5091,6 +5178,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   endedReason: NullableString,
   outcome: NullableString,
   receiptMessageId: NullableString,
+  bootPhase: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
   launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,

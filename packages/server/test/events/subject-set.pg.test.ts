@@ -1,4 +1,4 @@
-import { addEntityCounterLinkShape, addToolProjectionShape } from '../db/tool-projection-shape.js';
+import { addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from '../db/tool-projection-shape.js';
 /**
  * THE canonical subject set (migration 208, src/events/subject-set.ts), pinned
  * on both sides:
@@ -177,6 +177,7 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
     await addToolProjectionShape(database);
+    await addBridgeProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 322 renames it `craft` (`public.crafts`, `internal.craft_summary`). 322
     // itself cannot apply on this partial chain (§9 rewrites stored kind strings
@@ -201,6 +202,11 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
       add column outcome text not null default 'open', add column outcome_at timestamptz,
       add column outcome_by uuid, add column receipt_message_id uuid,
       add column outcome_source text, add column outcome_note text`);
+    // 404 (boot phase): the session readers select `ws.boot_phase` and
+    // `ws.boot_phase_at`. 404 rewrites work_session_transition over 302,
+    // which this partial chain lacks, so only the two columns are mirrored.
+    await database.query(`alter table public.work_sessions
+      add column boot_phase text, add column boot_phase_at timestamptz`);
     // 307 (task progress): `entity-read.ts` and the projector select
     // `internal.task_progress(e.id)` on task rows. 307 itself rewrites
     // story_summary over 289/295 and adds triggers this partial chain does not

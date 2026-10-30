@@ -131,13 +131,13 @@ export const CREDENTIALS_HUMAN_ONLY = 'credentials_human_only';
  * handler on the registry is this function's return value, rather than proving
  * it four times by behaviour and missing the fifth operation somebody adds.
  */
-export function requireHumanSession(handler: OperationHandler): OperationHandler {
+export function requireHumanSession(handler: OperationHandler, message = 'credential operations are available to human sessions only'): OperationHandler {
   return async (ctx) => {
     const kind = ctx.identity.authKind;
     if (!isHumanAuthKind(kind)) {
       throw new CollabError(
         'forbidden',
-        'credential operations are available to human sessions only',
+        message,
         { details: { reason: CREDENTIALS_HUMAN_ONLY } },
       );
     }

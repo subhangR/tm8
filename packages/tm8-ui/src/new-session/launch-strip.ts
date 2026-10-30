@@ -108,6 +108,12 @@ export interface StripGroup {
 /** Jev's still-carried changes per selection group, and its words per row. */
 export interface StripJev {
   carried: Partial<Record<SpawnSelectionGroup, { added: readonly EntityId[]; removed: readonly EntityId[] }>>;
+  /**
+   * Everything Jev's Apply added per group, ticked or not. A pick the person
+   * unticked stays a row (unticked, ✦, its reason kept) so it is one click
+   * from coming back; Undo clears it. Absent: only carried picks are drawn.
+   */
+  picked?: Partial<Record<SpawnSelectionGroup, readonly EntityId[]>>;
   why: Readonly<Record<string, string>>;
 }
 
@@ -177,6 +183,17 @@ export function buildStrip(args: {
         via: null,
         jev: byJev ? 'picked' : null,
         jevWhy: byJev ? jev?.why[id] ?? null : null,
+      });
+      seen.add(id);
+    }
+    for (const id of jev?.picked?.[group] ?? []) {
+      if (seen.has(id)) continue;
+      const row = added[group].find((r) => r.id === id);
+      if (!row) continue;
+      seen.add(id);
+      rows.push({
+        id, kind: row.kind, title: row.title, group, ticked: false,
+        source: 'jev', via: null, jev: 'picked', jevWhy: jev?.why[id] ?? null,
       });
     }
   }
