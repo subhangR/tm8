@@ -21,6 +21,6 @@ export class BridgeRuntimeHub {
    * Answers null when no runtime of that provider is connected.
    */
   async connect(_input: BridgeRuntimeConnectInput): Promise<{ runtimeId: string } | null> {
-    throw new CollabError('unavailable', 'bridge runtime hub is not wired yet');
+    throw new CollabError('upstream_unavailable', 'bridge runtime hub is not wired yet');
   }
 }
