@@ -398,6 +398,21 @@ describe('inbound (§2.3, D14, D20, ac1, ac3)', () => {
   });
 });
 
+describe('internal.bridge_log_anchor: 398 (a bridges row) and 399 (a uuid) agree', () => {
+  it('both forms name the same log anchor: the bridge for chat/session targets, the channel for a channel target', async () => {
+    const rows = await owner<{ id: string; target_kind: string; target_id: string; by_row: string }>(
+      `select b.entity_id as id, b.target_kind, b.target_id, internal.bridge_log_anchor(b) as by_row from public.bridges b`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.by_row).toBe(r.target_kind === 'channel' ? r.target_id : r.id);
+    const [form] = await owner<{ ok: boolean }>(`select to_regprocedure('internal.bridge_log_anchor(uuid)') is not null as ok`);
+    if (!form!.ok) return;   // 399 (B1b-3) adds the uuid form
+    for (const r of rows) {
+      const [byId] = await owner<{ a: string }>('select internal.bridge_log_anchor($1::uuid) as a', [r.id]);
+      expect(byId!.a).toBe(r.by_row);
+    }
+  });
+});
+
 describe('402 (B1b-8): delivery to sessions (§2.2, D30)', () => {
   it('a session target gets the routed copy, routed once, with the reply route recorded', async () => {
     // The 'Ops' bridge on the second number targets a work session (created above).
