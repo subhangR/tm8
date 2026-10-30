@@ -407,9 +407,13 @@ grant execute on function public.withdraw_bridge_handover(uuid, text) to tm8_app
 
 -- -----------------------------------------------------------------------------
 -- §3. The guards: a bridge's connection and credential stay fixed, except
--- inside an accept (§2). Restated from their latest definitions (395's
--- guard_bridge_row, 408's bridge_credential_guard); each change is marked
--- `410 (D55)`.
+-- inside an accept (§2). Restated from their latest definitions, each change
+-- marked `410 (D55)`:
+--   * guard_bridge_row: 395's (main has no later one);
+--   * bridge_credential_guard: #1427's (B1b-5, here 408) PLUS #1443's (B1b-7,
+--     407_bridge_connection_lifecycle @ 087fe8422) `owner_not_member` arm,
+--     marked `407 (B1b-7)`, so this body is right whichever merges first. A
+--     later restatement must carry all three.
 -- -----------------------------------------------------------------------------
 create or replace function internal.guard_bridge_row() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
@@ -481,6 +485,16 @@ begin
        or cred.space_id <> new.space_id or cred.status = 'revoked' then
       raise exception 'a bridge rides the credential offered for its connection in its space' using errcode = '23514';
     end if;
+  end if;
+  -- 407 (B1b-7): the owner of the number left the space (§2.5). Checked first: it is the
+  -- reason to name, since leaving also revoked the offer.
+  if old.paused_at is not null and new.paused_at is null and new.ended_at is null
+     and not exists (select 1 from public.bridge_connections c
+                       join public.accounts a on a.id = c.owner_account_id
+                       join public.members m on m.identity_id = a.identity_id
+                      where c.id = new.connection_id and m.space_id = new.space_id and m.status = 'active') then
+    perform internal.bridge_refuse('owner_not_member',
+      'the owner of this bridge''s number is no longer a member of the space; it stays paused');
   end if;
   if old.paused_at is not null and new.paused_at is null and new.ended_at is null
      and exists (select 1 from public.space_credentials sc where sc.id = new.credential_id and sc.status = 'revoked') then
