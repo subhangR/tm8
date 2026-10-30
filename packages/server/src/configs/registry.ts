@@ -195,6 +195,12 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_LIVEKIT_API_KEY', group: 'Previews & voice', summary: 'LiveKit API key.', default: null, definedIn: CONFIG, secret: true },
   { name: 'TM8_LIVEKIT_API_SECRET', group: 'Previews & voice', summary: 'LiveKit API secret.', default: null, definedIn: CONFIG, secret: true },
 
+  // ── Bridges (398: the connector runtime sidecar) ─────────────────────
+  { name: 'TM8_BRIDGE_RUNTIME_TOKEN_FILE', group: 'Bridges', summary: 'File the node writes the connector runtime\'s bridge_runtime bearer to (0600) and keeps fresh; set it to mint at boot.', default: null, definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_COMMAND', group: 'Bridges', summary: 'JSON argv of the connector runtime to start and supervise; unset, the deployment runs it.', default: null, definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_LABEL', group: 'Bridges', summary: 'Label of the runtime\'s session; one live token per label.', default: 'whatsapp-runtime', definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_CWD', group: 'Bridges', summary: 'Working directory the supervised runtime command starts in.', default: null, definedIn: MAIN },
+
   // ── Keys ─────────────────────────────────────────────────────────────
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },
   { name: 'ANTHROPIC_API_KEY', group: 'Keys', summary: 'Node fallback Anthropic key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
