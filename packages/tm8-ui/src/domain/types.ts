@@ -1359,6 +1359,44 @@ export interface ManagedFact {
   key: string;
   label: string;
   words?: Readonly<Record<string, string>>;
+  /** Draws the value as a status pill in this tone; a value with no tone stays plain text. */
+  tones?: Readonly<Record<string, PillTone>>;
+  /**
+   * How the value reads: `time` is an instant (relative, absolute on hover),
+   * `hint` the last characters of a masked secret (drawn behind dots — the
+   * value itself is already masked by the server), `entity` an entity id the
+   * panel can open.
+   */
+  format?: 'time' | 'hint' | 'entity';
+}
+
+/**
+ * THE MANAGED PANEL'S HEADER: which record facts name it. Every member is a
+ * dotted key into the record; a fact the header draws is not repeated in the
+ * details list below it.
+ */
+export interface ManagedHeader {
+  /** The name. Falls back to the entity title when the record has none. */
+  title: string;
+  /** A fact whose value is a credential provider id, drawn as that provider's mark. */
+  mark?: string;
+  /** Facts drawn as one quiet line under the name, in order. */
+  subtitle?: readonly string[];
+  /** The fact drawn as the status pill (its `words` and `tones` come from `facts`). */
+  status?: string;
+}
+
+/**
+ * ONE LIFECYCLE STEP. `at` is a dotted key to an instant on the record. A step
+ * whose `when` does not hold is not drawn; one whose instant is null is drawn
+ * hollow with `pending`, or not at all when `pending` is absent.
+ */
+export interface ManagedStep {
+  label: string;
+  at: string;
+  when?: { key: string; values: readonly string[] };
+  pending?: string;
+  tone?: PillTone;
 }
 
 /**
@@ -1413,6 +1451,16 @@ export interface ManagedPanelSpec {
   };
   /** Standing statements about the kind: server truth that no verb can change (e.g. remote forwarding is off). */
   notices?: readonly string[];
+  header?: ManagedHeader;
+  /** The LIFECYCLE section, in order. */
+  timeline?: readonly ManagedStep[];
+  /**
+   * When the record read finds nothing (a revoked credential is not listed),
+   * draw the entity's own envelope instead — `state` plus its title and
+   * timestamps, the allow-list the server already returns on every read — under
+   * this sentence. Absent ⇒ "not visible to you", as before.
+   */
+  envelopeNote?: string;
 }
 
 export interface PanelConfig {

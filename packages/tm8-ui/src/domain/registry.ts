@@ -2122,21 +2122,42 @@ const ROWS: readonly KindConfig[] = [
      */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'managed', label: 'CREDENTIAL' }, { block: 'settings-home' }, COLLECTIONS_BLOCK],
+      /* No eyebrow: the managed block's own header names it. */
+      blocks: [{ block: 'managed' }, { block: 'settings-home' }, COLLECTIONS_BLOCK],
       managed: {
         source: 'spaceCredentials',
         owner: { key: 'ownerAccountId', mine: 'You', other: 'Owned by someone else', none: 'This space' },
+        /* THE PAGE'S SHAPE (task 01a18e53): a header that names it (provider
+           mark, name, provider · kind, status, owner), then DETAILS — the facts
+           the header does not already draw — then LIFECYCLE. None of it is a
+           secret: `keyHint` is the server's last four characters at most, and
+           a private credential's hint and login are masked to its owner. */
+        header: { title: 'label', mark: 'provider', subtitle: ['provider', 'shape'], status: 'status' },
         facts: [
           { key: 'label', label: 'Name' },
-          { key: 'provider', label: 'Provider', words: { anthropic: 'Anthropic', openai: 'OpenAI', github: 'GitHub' } },
+          { key: 'provider', label: 'Provider',
+            words: { anthropic: 'Anthropic', openai: 'OpenAI', github: 'GitHub', typesafe: 'Typesafe', mcp: 'MCP connector', tool: 'Tool' } },
           { key: 'shape', label: 'Kind', words: { login: 'Subscription login', api_key: 'API key', token: 'Token' } },
-          { key: 'status', label: 'Status', words: { active: 'Active', stale: 'Needs attention', revoked: 'Revoked' } },
+          { key: 'status', label: 'Status',
+            words: { pending: 'Signing in', active: 'Active', stale: 'Needs attention', revoked: 'Revoked' },
+            tones: { pending: 'info', active: 'run', stale: 'wait', revoked: 'idle' } },
           { key: 'visibility', label: 'Who may use it', words: { public: 'Everyone in this space', private: 'Its owner, and anyone they share it with' } },
           { key: 'isDefault', label: 'Space default', words: { true: 'Yes', false: 'No' } },
-          { key: 'keyHint', label: 'Key ends in' },
+          { key: 'keyHint', label: 'Key ends in', format: 'hint' },
           { key: 'displayLogin', label: 'Signed in as' },
-          { key: 'lastUsedAt', label: 'Last used' },
         ],
+        timeline: [
+          { label: 'Created', at: 'createdAt' },
+          { label: 'Last verified', at: 'lastProbeAt', when: { key: 'status', values: ['pending', 'active'] },
+            pending: 'Not verified yet', tone: 'run' },
+          { label: 'Failed its last check', at: 'lastProbeAt', when: { key: 'status', values: ['stale'] }, tone: 'wait' },
+          /* Not on a revoked one: its envelope does not carry the instant, and
+             "never used" would be a claim nothing measured. */
+          { label: 'Last used', at: 'lastUsedAt', when: { key: 'status', values: ['pending', 'active', 'stale'] },
+            pending: 'No session has used it yet', tone: 'run' },
+          { label: 'Revoked', at: 'updatedAt', when: { key: 'status', values: ['revoked'] }, tone: 'idle' },
+        ],
+        envelopeNote: 'Revoked credentials leave Space credentials, so this page shows what the credential itself still records.',
         verbs: [
           { operation: 'credentials.space.rename', label: 'Rename', input: { key: 'label', label: 'Name' },
             reason: 'Only its owner can rename it: for a credential this space owns, its creator or a space admin' },
@@ -2163,12 +2184,14 @@ const ROWS: readonly KindConfig[] = [
           reason: 'Only its owner can log it in again: for a credential this space owns, its creator or a space admin',
         },
         reads: [{
-          operation: 'credentials.space.usage', label: 'USAGE', rowsAt: 'sessions', empty: 'No session has used it yet.',
+          operation: 'credentials.space.usage', label: 'SESSIONS', rowsAt: 'sessions', empty: 'No session has used it yet.',
           columns: [
-            { key: 'workSessionId', label: 'Session' },
+            { key: 'workSessionId', label: 'Session', format: 'entity' },
             { key: 'source', label: 'Picked as', words: { pinned: 'Pinned', my_default: 'Their default', space_default: 'Space default' } },
-            { key: 'status', label: 'Status' },
-            { key: 'recordedAt', label: 'When' },
+            { key: 'status', label: 'Status',
+              words: { spawning: 'Starting', running: 'Running', idle: 'Idle', exited: 'Ended', failed: 'Failed', terminated: 'Stopped' },
+              tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block', terminated: 'idle' } },
+            { key: 'recordedAt', label: 'When', format: 'time' },
           ],
         }],
       },
@@ -2651,9 +2674,9 @@ const ROWS: readonly KindConfig[] = [
           { key: 'mine.status', label: 'Your sign-in',
             words: { signed_in: 'Signed in', signed_out: 'Signed out', left: 'You left that space', unreachable: 'Unreachable' } },
           { key: 'mine.allowSpawn', label: 'Agents may start sessions there', words: { true: 'Yes', false: 'No' } },
-          { key: 'mine.lastUsedAt', label: 'Last used' },
+          { key: 'mine.lastUsedAt', label: 'Last used', format: 'time' },
           { key: 'statusSummary.signedIn', label: 'Signed in, everyone' },
-          { key: 'createdAt', label: 'Created' },
+          { key: 'createdAt', label: 'Created', format: 'time' },
         ],
         verbs: [
           { operation: 'spaceLinks.login', label: 'Sign in', reason: 'Only someone in this space can sign in on its links' },
@@ -2715,7 +2738,7 @@ const ROWS: readonly KindConfig[] = [
           { key: 'username', label: 'Account' },
           { key: 'reachStatus', label: 'Reachable',
             words: { unknown: 'Not checked yet', reachable: 'Reachable', unreachable: 'Unreachable', offline: 'Offline' } },
-          { key: 'reachCheckedAt', label: 'Last checked' },
+          { key: 'reachCheckedAt', label: 'Last checked', format: 'time' },
         ],
         verbs: [
           { operation: 'servers.probe', label: 'Check reachability', reason: 'Only someone in this space can check its servers' },
