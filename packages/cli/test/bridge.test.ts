@@ -1,19 +1,32 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BridgeDetailView } from '@tm8/contract';
+import type { BridgeConnectionAuthFrame, BridgeConnectionView, BridgeDetailView } from '@tm8/contract';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { run } from '../src/run.js';
-import { parseQuietHours, renderBridge } from '../src/commands/bridge.js';
+import { parseQuietHours, renderBridge, renderConnection, setConnectionAuthStreamForTests } from '../src/commands/bridge.js';
 import { nounHelp } from '../src/discovery/help.js';
 
 const SPACE = '33333333-3333-7333-8333-333333333333';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
 const CHAT = '22222222-2222-7222-8222-222222222222';
 const CONNECTION = '44444444-4444-7444-8444-444444444444';
+const CREDENTIAL = '55555555-5555-7555-8555-555555555555';
+const ACCOUNT = '66666666-6666-7666-8666-666666666666';
+const connectionView = (status: BridgeConnectionView['status']): BridgeConnectionView => ({
+  id: CONNECTION, provider: 'whatsapp', ownerAccountId: ACCOUNT, label: 'Infra phone',
+  externalAccountId: status === 'linked' ? '919494@s.whatsapp.net' : null, status, runtimeId: 'rt-1',
+  createdAt: '2026-10-30T05:00:00.000Z', lastSeenAt: null,
+  offers: [{ credentialId: CREDENTIAL, spaceId: SPACE, visibility: 'public', status: 'active', createdAt: '2026-10-30T05:01:00.000Z', bridges: 2 }],
+});
+let connectionStatus: BridgeConnectionView['status'] = 'connecting';
+let beginRuntime: 'connecting' | 'offline' = 'connecting';
 
 const view: BridgeDetailView = {
   id: BRIDGE, spaceId: SPACE, version: 3, title: 'Infra', createdAt: '2026-10-29T22:00:00.000Z', updatedAt: '2026-10-29T22:00:00.000Z',
-  provider: 'whatsapp', connectionId: CONNECTION, connectionCredentialId: null,
+  provider: 'whatsapp', connectionId: CONNECTION, connectionCredentialId: CREDENTIAL,
   conversation: { externalId: '1203@g.us', kind: 'group', title: 'Infra', memberCount: 7 },
   target: { kind: 'chat', id: CHAT, title: 'Infra main' },
   policy: { trigger: 'mention', direction: 'both', outbound: 'replies', whoMayTrigger: 'linked', voice: 'named', style: null },
@@ -41,6 +54,10 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: [view] };
       else if (url.pathname.endsWith('/handles') && req.method === 'POST') data = { spaceId: SPACE, handle: 'keen-otter', entityId: CHAT, kind: 'work_session', title: null, status: 'live', createdAt: view.createdAt };
       else if (url.pathname.endsWith('/listen')) data = { bridgeId: BRIDGE, sessionId: CHAT, wake: body.wake, ceiling: 'thread' };
+      else if (url.pathname === '/v2/me/bridge-connections' && req.method === 'GET') data = { items: [connectionView(connectionStatus)] };
+      else if (url.pathname === '/v2/me/bridge-connections') data = { connection: connectionView('connecting'), runtime: beginRuntime };
+      else if (url.pathname.endsWith('/offer')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL };
+      else if (url.pathname.endsWith('/withdraw')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL, pausedBridgeIds: [BRIDGE] };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -132,5 +149,84 @@ describe('tm8 bridge (B0a)', () => {
     expect(await run(['entity', 'create', 'bridge', 'Infra'])).toBe(2);
     expect(stderr).toMatch(/use `tm8 bridge create`/);
     expect(requests).toEqual([]);
+  });
+});
+
+describe('tm8 bridge connection (B1b-5)', () => {
+  let sent: BridgeConnectionAuthFrame[] = [];
+  let opened = 0, closed = 0;
+  beforeEach(() => {
+    sent = []; opened = 0; closed = 0; connectionStatus = 'connecting'; beginRuntime = 'connecting';
+    setConnectionAuthStreamForTests(() => {
+      let deliver: ((f: BridgeConnectionAuthFrame) => void) | null = null;
+      return {
+        open: async () => { opened += 1; },
+        onFrame: fn => { deliver = fn; queueMicrotask(() => { for (const f of sent) deliver?.(f); }); },
+        close: () => { closed += 1; },
+      };
+    });
+  });
+  afterAll(() => setConnectionAuthStreamForTests(null));
+
+  it('the noun shard lists the connection verbs', () => {
+    const paths = nounHelp('bridge')!.commands.map(c => c.command);
+    for (const p of ['list', 'begin', 'offer', 'withdraw']) expect(paths).toContain(`bridge connection ${p}`);
+  });
+
+  it('list reaches bridges.connections.list and renders the offers', async () => {
+    expect(await run(['bridge', 'connection', 'list', '--provider', 'whatsapp'])).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'GET', path: '/v2/me/bridge-connections' });
+    expect(requests[0]!.query.get('provider')).toBe('whatsapp');
+    expect(stdout).toMatch(new RegExp(`offered to space ${SPACE} as credential ${CREDENTIAL} · space · active · 2 bridges`));
+    expect(renderConnection({ ...connectionView('connecting'), offers: [] })).toMatch(/no space yet/);
+  });
+
+  it('begin opens the socket first, shows the pairing code from the socket, and stops when linked', async () => {
+    sent = [{ type: 'bridge.connection.auth', connectionId: CONNECTION, pairingCode: 'ABCD-1234', expiresAt: '2026-10-30T05:10:00.000Z' }];
+    connectionStatus = 'linked';
+    expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp', '--label', 'Infra phone', '--pairing', '+919494000000'])).toBe(0);
+    expect(opened).toBe(1);
+    expect(closed).toBe(1);
+    expect(requests[0]).toMatchObject({ method: 'POST', path: '/v2/me/bridge-connections' });
+    expect(requests[0]!.body).toMatchObject({ provider: 'whatsapp', label: 'Infra phone', authFlow: { kind: 'pairing', phone: '+919494000000' } });
+    expect(stderr).toMatch(/pairing code: ABCD-1234/);
+    expect(stdout).toMatch(/linked\. Next: tm8 bridge connection offer/);
+  });
+
+  it('begin writes a QR to a private file and ignores another connection\'s frame', async () => {
+    const path = join(tmpdir(), `tm8-b1b5-test-${process.pid}.png`);
+    rmSync(path, { force: true });
+    sent = [
+      { type: 'bridge.connection.auth', connectionId: 'someone-else', pairingCode: 'NOPE-0000', expiresAt: '2026-10-30T05:10:00.000Z' },
+      { type: 'bridge.connection.auth', connectionId: CONNECTION, qrPng: Buffer.from('png-bytes').toString('base64'), expiresAt: '2026-10-30T05:10:00.000Z' },
+    ];
+    connectionStatus = 'linked';
+    expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp', '--qr-file', path])).toBe(0);
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(path, 'utf8')).toBe('png-bytes');
+    expect(stderr).not.toMatch(/NOPE-0000/);
+    expect(stderr).toMatch(new RegExp(`QR written to ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    rmSync(path, { force: true });
+  });
+
+  it('begin says so when no runtime is running, and --no-wait opens no socket', async () => {
+    beginRuntime = 'offline';
+    expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp'])).toBe(0);
+    expect(stdout).toMatch(/no whatsapp runtime is running/);
+    beginRuntime = 'connecting'; opened = 0;
+    expect(await run(['bridge', 'connection', 'begin', '--provider', 'whatsapp', '--no-wait'])).toBe(0);
+    expect(opened).toBe(0);
+    expect(await run(['bridge', 'connection', 'begin'])).toBe(2);
+  });
+
+  it('offer and withdraw name the connection and the space', async () => {
+    expect(await run(['bridge', 'connection', 'offer', CONNECTION, '--visibility', 'space'])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/offer` });
+    expect(requests.at(-1)!.body).toMatchObject({ spaceId: SPACE, visibility: 'public' });
+    expect(stdout).toMatch(new RegExp(`offered as credential ${CREDENTIAL}`));
+    expect(await run(['bridge', 'connection', 'withdraw', CONNECTION])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/withdraw`, body: { spaceId: SPACE } });
+    expect(stdout).toMatch(/paused 1 bridge: /);
+    expect(await run(['bridge', 'connection', 'offer'])).toBe(2);
   });
 });

@@ -3209,13 +3209,17 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool' | 'whatsapp';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
 
-/** `login` is a vendor CLI login in a space home; the other two are pasted strings. */
-export type SpaceCredentialShape = 'login' | 'api_key' | 'token';
+/**
+ * `login` is a vendor CLI login in a space home; `api_key` and `token` are
+ * pasted strings; `connection` is a bridge connection offered to the space
+ * (provider whatsapp, 400): its bytes are sealed on the node, never in a column.
+ */
+export type SpaceCredentialShape = 'login' | 'api_key' | 'token' | 'connection';
 
 /** `pending` is a login that has not finished; `stale` failed its last probe. */
 export type SpaceCredentialStatus = 'pending' | 'active' | 'stale' | 'revoked';
