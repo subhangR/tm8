@@ -186,6 +186,8 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'begin_bridge_connection(text,text,uuid,text)': CONNECTIONS,
   'offer_bridge_connection(uuid,uuid,text,text,text)': CONNECTIONS,
   'withdraw_bridge_connection(uuid,uuid,text)': CONNECTIONS,
+  // 406 (option B): the hub's connect runs as the number's human owner, or as the bridges worker.
+  'internal.bridge_runtime_connect(uuid,text)': CONNECTIONS,
   'redeem_invite(text,text,text)': SPACE_PASSWORD,
   'space_login_for_enter(uuid)': SPACE_PASSWORD,
 
@@ -418,7 +420,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 3 bridge connection writes (400)', () => {
+  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 3 bridge connection writes (400) + 1 runtime connect (406)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(41); // +1 revoke_all_mcp_credentials (377) +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
@@ -429,8 +431,8 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === BRIDGES)).toHaveLength(4); // 395: create/retarget/remove_bridge + the shared state body
-    expect(labels.filter((l) => l === CONNECTIONS)).toHaveLength(3); // 400: begin/offer/withdraw_bridge_connection
-    expect(labels).toHaveLength(82); // +3 bridge connection writes (400) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels.filter((l) => l === CONNECTIONS)).toHaveLength(4); // 400: begin/offer/withdraw_bridge_connection; 406: internal.bridge_runtime_connect
+    expect(labels).toHaveLength(83); // +1 bridge_runtime_connect's owner arm (406) // +3 bridge connection writes (400) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
