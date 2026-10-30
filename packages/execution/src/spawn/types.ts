@@ -632,6 +632,22 @@ export interface SpawnContext {
    * keeps its roster (`applyDispatcherTeammates` removes the set).
    */
   teammates?: DispatcherRoster['members'];
+  /**
+   * The space's tools (`GraphPort.loadSpaceTools`, under RLS; Tools v2 PR-E),
+   * rendered as the `tools` group of `<context_index>`: most recently run
+   * first, then by name, at most `TOOL_INDEX_READ_MAX`. Absent when the graph
+   * has no such read or the read failed; the tools past the read are declared
+   * in the group's `omitted` count, never dropped silently.
+   */
+  tools?: SpaceTools;
+}
+
+/** The space's tools, as `loadSpaceTools` read them. */
+export interface SpaceTools {
+  /** Most recently run first (a tool never run sorts after every run one), then by name. */
+  tools: Array<{ entityId: string; name: string }>;
+  /** Every tool the read could see. */
+  total: number;
 }
 
 /** The teammates a dispatcher routes to, as `loadDispatcherRoster` read them. */
@@ -667,14 +683,15 @@ export type ManifestSkillContext = SkillIndexEntry;
 
 // --- the launch-context audit (design 01a0d348 §6) ----------------------------
 
-export type ContextGroupName = 'memories' | 'skills' | 'references' | 'teammates';
+export type ContextGroupName = 'memories' | 'skills' | 'references' | 'teammates' | 'tools';
 
 /**
  * How an entry entered the launch set. `requested` is an id the spawn named
  * directly without a selection (`tm8 session spawn --memory`); `roster` is a
- * dispatcher's teammate, read from the space rather than from an edge.
+ * dispatcher's teammate, read from the space rather than from an edge;
+ * `space` is a tool, read from the space's own directory (Tools v2 PR-E).
  */
-export type ContextVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'roster';
+export type ContextVia = 'selection' | 'teammate' | 'inherited' | 'task' | 'linked' | 'attached' | 'requested' | 'roster' | 'space';
 
 export interface ContextGroupAudit {
   /**
@@ -770,7 +787,8 @@ export interface ContextDrop {
  */
 export interface ManifestContext {
   memoryIds?: string[];
-  groups?: Record<ContextGroupName, ContextGroupAudit>;
+  /** One audit per group; `tools` only when the launch read the space's tools. */
+  groups?: Record<Exclude<ContextGroupName, 'tools'>, ContextGroupAudit> & { tools?: ContextGroupAudit };
   entries?: ContextEntryRecord[];
   dropped?: ContextDrop[];
   /**
@@ -808,8 +826,8 @@ export interface ContextIndexRecord {
   /** Rendered bytes of the whole element plus its joining newline. */
   bytes: number;
   /**
-   * The sub-caps in force (`BYTE_BUDGETS.referenceIndex` / `rosterIndex`), by
-   * the groups that share each; skills take what remains.
+   * The sub-caps in force (`BYTE_BUDGETS.referenceIndex` / `rosterIndex` /
+   * `toolIndex`), by the groups that share each; skills take what remains.
    */
   caps: { groups: string[]; cap: number }[];
   /** `interactionProfile` `contextBudgets` keys that replaced a node default. */
@@ -1106,6 +1124,13 @@ export interface GraphPort {
     auth: GraphAuth,
     input: { spaceId: string; excludeTeamMemberId: string; limit: number },
   ): Promise<DispatcherRoster>;
+  /**
+   * The space's tools for the `tools` group of `<context_index>` (Tools v2
+   * PR-E): under the caller's RLS, most recently run first, then by name, at
+   * most `limit` rows with the readable total. Optional: without it the
+   * index has no tools group and an agent lists them with `tm8 tool list`.
+   */
+  loadSpaceTools?(auth: GraphAuth, input: { spaceId: string; limit: number }): Promise<SpaceTools>;
   /**
    * Jev's scores for `memoryIds` from the launch's Ask Jev run
    * (`jev_runs.suggestions.memories`), read under the caller's RLS, with

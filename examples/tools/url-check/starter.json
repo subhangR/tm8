@@ -1,0 +1,5 @@
+{
+  "description": "Check that HTTP(S) URLs answer with a 2xx or 3xx final response.",
+  "whenToUse": "Open when checking whether HTTP(S) endpoints respond, for example a smoke check after a deploy",
+  "summary": "Bash + curl: requests each whitespace-separated URL and prints OK or FAIL per URL; exit 0 when every final response is 2xx/3xx, 1 on any failure, 2 when no URL is given"
+}

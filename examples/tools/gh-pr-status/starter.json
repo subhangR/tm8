@@ -1,0 +1,5 @@
+{
+  "description": "List a GitHub repository's pull requests with their CI check status, as JSON.",
+  "whenToUse": "Open when you need a GitHub repository's pull requests and the state of their CI checks",
+  "summary": "Bash + gh: lists open, closed, merged or all pull requests (up to 200) with their status check rollup as JSON; needs the github_token secret"
+}

@@ -85,7 +85,7 @@ describe('the Home icon rail', () => {
   });
 
   it('seats each group exactly as ruled', () => {
-    expect(kindsOf('work')).toEqual(['chat', 'story', 'task', 'work_session', 'form', 'project']);
+    expect(kindsOf('work')).toEqual(['chat', 'story', 'task', 'work_session', 'form', 'tool', 'loop', 'project']);
     expect(kindsOf('library')).toEqual(['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', 'craft']);
     expect(kindsOf('people')).toEqual(['team_member', 'skill', 'memory', 'member', 'channel']);
     expect(kindsOf('code')).toEqual(['commit', 'pull_request', 'worktree']);
@@ -95,12 +95,17 @@ describe('the Home icon rail', () => {
       'space_link',
       'server',
       'mcp_server',
-      'tool',
       'style',
-      'loop',
       'spell',
       'container',
     ]);
+  });
+
+  it('seats `tool` and `loop` with the work kinds, not under Admin (2026-10-28)', () => {
+    // Runnable work, reached daily: a closed Admin accordion hid both.
+    expect(kindsOf('work')).toEqual(expect.arrayContaining(['tool', 'loop']));
+    expect(kindsOf('admin')).not.toContain('tool');
+    expect(kindsOf('admin')).not.toContain('loop');
   });
 
   it('leaves NOTHING in the catch-all — the spine now names every shipped kind', () => {

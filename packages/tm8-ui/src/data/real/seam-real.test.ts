@@ -465,6 +465,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // copied onto the real seam, so every real launch read defaults as
       // unknown. Inserted at its sorted position.
       'launchDefaults',
+      // Loops (design 01a182d4 §6): the `loops.*` client and the loop form's
+      // picker reads, both assigned after construction like `managed`.
+      'loopForm', 'loops',
       'markRead',
       'markSeen',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and

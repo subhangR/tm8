@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
+# Install the starter tools this CLI ships into a Space.
+#
+# A thin wrapper over `tm8 tool starters install`, which reads the starter set
+# (TOOL_STARTERS in @tm8/contract, generated from the directories next to this
+# script), skips names that already exist in the Space, creates the rest and
+# sets each tool's selection header. Every argument is passed through, so
+# global options (`--space <id>`, `--format json`) and `--only <name>` work:
+#
+#   bash examples/tools/install.sh --space <space-id>
+#   bash examples/tools/install.sh --only url-check --only space-digest
 set -euo pipefail
-root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-# Global options (for example --space <id>) are passed through before the noun.
-for name in url-check gh-pr-status space-digest slack-notify; do
-  runtime=bash
-  source=tool.sh
-  if [[ "$name" == space-digest ]]; then runtime=python; source=tool.py; fi
-  tm8 "$@" tool create "$name" --runtime "$runtime" \
-    --source "@$root/$name/$source" --spec "@$root/$name/spec.json" \
-    --description "Starter tool: $name" \
-    --when-to-use "Open when running or configuring $name" \
-    --summary "Runnable $runtime starter with declared inputs; source in examples/tools/$name"
-done
+exec tm8 tool starters install "$@"

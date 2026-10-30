@@ -33,7 +33,10 @@ export {
   type LoopsJobOptions,
 } from './jobs/loops.js';
 export { LOOPS_JOB_NAME } from './jobs/loops.js';
-export { assertValidSchedule, nextRunAt, ScheduleError } from './schedule.js';
+export {
+  assertValidSchedule, assertValidTimezone, describeSchedule, isValidTimezone, nextRunAt, previewSchedule,
+  ScheduleError, DEFAULT_TIMEZONE, type SchedulePreview,
+} from './schedule.js';
 export {
   COMMAND_LEDGER_TTL_MS,
   RESERVED_JOB_SLOTS,

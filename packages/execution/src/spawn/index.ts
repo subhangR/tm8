@@ -94,7 +94,7 @@ export {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 export { emptySweep, SpawnError } from './types.js';
-export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
+export { DISPATCHER_ROSTER_READ_MAX, TOOL_INDEX_FETCH, TOOL_INDEX_READ_MAX } from './context-index.js';
 export {
   codexMcpHomesRoot,
   codexMcpSessionDir,
@@ -166,6 +166,7 @@ export type {
   ContextGroupName,
   ContextVia,
   DispatcherRoster,
+  SpaceTools,
   LaunchHarnessRecord,
   ManifestContext,
   ManifestSkillContext,
@@ -219,6 +220,7 @@ export {
   applyDispatcherTeammates,
   rosterEntry,
   skillIndexEntry,
+  toolIndexEntry,
   type ContextIndexSource,
   type LaunchIndexFitInput,
 } from './context-index.js';

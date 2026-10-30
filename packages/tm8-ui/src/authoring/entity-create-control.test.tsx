@@ -2,10 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { getKind } from '../domain';
+import { createToolFixture } from '../tools/fixture';
 import { EntityCreateControl } from './EntityCreateControl';
 import type { AuthoringCommands } from './commands';
 import type { NewTaskHandle } from './useNewTask';
+import { createFixtureLoopsClient } from '../loops/fixture';
 
+vi.mock('../tools/SourceEditor', () => ({ SourceEditor: ({ value, onChange }: { value: string; onChange(value: string): void }) => <textarea aria-label="Source" value={value} onChange={(event) => onChange(event.target.value)} /> }));
 afterEach(cleanup);
 
 const immediate: NewTaskHandle = {
@@ -19,6 +22,8 @@ const commands = {
   createEntity: vi.fn(),
   patchEntity: vi.fn(),
   patchTask: vi.fn(),
+  loops: createFixtureLoopsClient(),
+  loopForm: { query: async () => ({ page: { items: [], nextCursor: null } }) },
 } as unknown as AuthoringCommands;
 
 describe('the registry selects the honest create flow', () => {
@@ -34,7 +39,26 @@ describe('the registry selects the honest create flow', () => {
       </div>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'New loop' }));
-    expect(screen.getByTestId('loop-create-dialog')).toBeTruthy();
+    expect(screen.getByTestId('loop-form')).toBeTruthy();
+    expect(immediate.create).not.toHaveBeenCalled();
+  });
+
+  it('opens the tool-definition form for a kind made from a definition, with the starters installer beside it', () => {
+    const { port } = createToolFixture();
+    render(
+      <div className="cv2-root">
+        <EntityCreateControl
+          config={getKind('tool')}
+          immediate={immediate}
+          spaceId="space-1"
+          commands={{ ...commands, tools: port }}
+        />
+      </div>,
+    );
+    expect(screen.getByRole('button', { name: 'Install starter tools' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'New tool' }));
+    expect(screen.getByTestId('tool-create-dialog')).toBeTruthy();
+    expect(screen.getByRole('form', { name: 'New tool' })).toBeTruthy();
     expect(immediate.create).not.toHaveBeenCalled();
   });
 
@@ -51,6 +75,6 @@ describe('the registry selects the honest create flow', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'New task' }));
     expect(immediate.create).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId('loop-create-dialog')).toBeNull();
+    expect(screen.queryByTestId('loop-form')).toBeNull();
   });
 });

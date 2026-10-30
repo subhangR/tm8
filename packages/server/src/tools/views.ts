@@ -1,5 +1,5 @@
 export { toolRunView } from './projection.js';
-import { toolRunView } from './projection.js';
+import { projectToolLastRun, toolLastRunSql, toolRunView, type RawToolLastRun } from './projection.js';
 import { createHash } from 'node:crypto';
 import { CollabError, ToolDefinitionSchema, type ToolRun, type ToolView } from '@tm8/contract';
 import { loadActors, actorOf } from '../facade/entity-read.js';
@@ -17,6 +17,7 @@ export async function loadTool(q: Querier, toolId: string): Promise<ToolView> {
     `select b.input_name,b.credential_id,public.read_space_credential(b.credential_id)->>'keyHint' as key_hint,b.bound_by,b.bound_at from public.tool_secret_bindings b
      where b.tool_id=$1`, [toolId]);
   const actors = await loadActors(q, bindings.flatMap(value => value.bound_by ? [value.bound_by] : []));
+  const [latest] = await q.query<{ last_run: RawToolLastRun | null }>(`select ${toolLastRunSql('$1::uuid')} as last_run`, [toolId]);
   const [last] = await q.query<{ tool_source_sha256: string }>(`select w.tool_source_sha256 from public.work_sessions w
     join public.entities e on e.id=w.entity_id where w.tool_id=$1 and e.deleted_at is null
     and e.created_by=coalesce(internal.actor_id(),internal.current_member_id($2::uuid)) order by e.id desc limit 1`, [toolId, row.space_id]);
@@ -34,19 +35,26 @@ export async function loadTool(q: Querier, toolId: string): Promise<ToolView> {
     }
   }
   return { id: row.id, spaceId: row.space_id, version: Number(row.version), executionVersion: Number(row.execution_version), configRevision: Number(row.config_revision), definition,
-    sourceSha256: sha, sourceChangedSinceViewerLastRun,
+    sourceSha256: sha, sourceChangedSinceViewerLastRun, lastRun: projectToolLastRun(latest?.last_run ?? null),
     config: Object.fromEntries(config.map(value => [value.input_name, value.value])),
     secretBindings: bindings.map(value => ({ inputName: value.input_name, credentialId: value.credential_id, keyHint: value.key_hint, boundAt: value.bound_at ? new Date(value.bound_at).toISOString() : null, boundBy: value.bound_by ? actorOf(actors, value.bound_by) : null })) };
 }
 
+// `triggered_by` reads only the server-written, provenance-marked edge (347): any member
+// may write an unmarked one, so it cannot label a run as loop-fired. A deleted or
+// unreadable loop keeps its id and loses its title (loops RLS).
 export const RUN_SELECT = `select e.id,e.space_id,e.parent_id,e.created_by,w.tool_id,w.tool_version,w.tool_source_sha256,
- w.tool_inputs,w.tool_state,w.tool_keep_open,w.tool_exit_code,w.tool_started_at,w.tool_exited_at,w.tool_output_tail
+ w.tool_inputs,w.tool_state,w.tool_keep_open,w.tool_exit_code,w.tool_started_at,w.tool_exited_at,w.tool_output_tail,
+ tb.loop_id as triggered_by_id,tb.loop_title as triggered_by_title
  from public.entities e join public.work_sessions w on w.entity_id=e.id
+ left join lateral (select g.dst_id as loop_id,l.title as loop_title from public.edges g left join public.loops l on l.entity_id=g.dst_id
+  where g.src_id=e.id and g.type='triggered_by' and g.props->>'provenance'='true' order by g.created_at desc,g.id desc limit 1) tb on true
  where w.session_kind='tool' and e.deleted_at is null and internal.entity_readable(e.id)`;
 export interface ToolRunRow {
   id: string; created_by: string; space_id: string; parent_id: string | null; tool_id: string; tool_version: number; tool_source_sha256: string;
   tool_inputs: ToolRun['inputs']; tool_state: ToolRun['state']; tool_keep_open: boolean; tool_exit_code: number | null;
   tool_started_at: string | Date | null; tool_exited_at: string | Date | null; tool_output_tail: string;
+  triggered_by_id: string | null; triggered_by_title: string | null;
 }
 const iso = (value: string | Date | null) => value === null ? null : new Date(value).toISOString();
 export async function loadToolRun(q: Querier, sessionId: string): Promise<ToolRun> {
