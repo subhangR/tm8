@@ -3,7 +3,8 @@ import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { createDb } from '../../src/db/client.js';
 import type { Db, Querier } from '../../src/db/types.js';
-import { loadMcpServer, resolveMcpSelections } from '../../src/mcp/definitions.js';
+import { loadMcpServer, registerMcpDefinitionHandlers, resolveMcpSelections } from '../../src/mcp/definitions.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
 import { W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/entities-commands-tracking.js';
 import type { RequestContext } from '../../src/http/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
@@ -99,4 +100,19 @@ it('inherits real ancestor equipment without duplicating the same server',async(
  for(const id of [root.entity.id,child.entity.id])await as(memberIdentity,q=>q.rpc('write_edge',[id,c.entity.id,'equips','{}',null,randomUUID()]));
  const resolved=await as(memberIdentity,q=>resolveMcpSelections(q,{spaceId,targetIds:[child.entity.id]}));
  expect(resolved.selections.map(s=>s.server.id)).toEqual([c.entity.id]);
+});
+
+it('deletes a connector through mcp.servers.delete and through the generic entities.delete (407)',async()=>{
+ // Both doors run as tm8_app. The first used `select ... for update`, which needs an UPDATE
+ // privilege tm8_app does not hold; the second read the deleted row's summary, which the
+ // old select policy hid, and threw. Either refusal rolled the delete back.
+ const deps={db,owner:async()=>({identityId:ownerIdentity,memberId:owner,spaceId}),config:{}} as unknown as FacadeDeps;
+ const registry=new HandlerRegistry();registerMcpDefinitionHandlers(registry,deps);
+ const ctx=(body:unknown,params:Record<string,string>={})=>({body,params,query:new URLSearchParams(),requestId:randomUUID(),headers:{},identity:{identityId:memberIdentity,authKind:'browser'}} as unknown as RequestContext);
+ const viaMcp=await create('deletemcp');
+ await registry.get('mcp.servers.delete' as never)!(ctx({expectedVersion:viaMcp.entity.version,clientMutationId:randomUUID()},{serverId:viaMcp.entity.id}));
+ const viaGeneric=await create('deletegeneric');
+ await new W2EntitiesCommandsTrackingService(deps).deleteEntity(ctx({clientMutationId:randomUUID()},{id:viaGeneric.entity.id}));
+ const live=await scratch.query<{id:string}>('select id from public.entities where id=any($1::uuid[]) and deleted_at is null',[[viaMcp.entity.id,viaGeneric.entity.id]]);
+ expect(live).toEqual([]);
 });
