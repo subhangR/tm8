@@ -33,7 +33,9 @@ The moves are verbatim. Every changed line is either an import line or a `SPLIT`
 ## Scripts
 
 ```bash
-bunx tsc -b packages/client-core      # dist/ (from the repo root)
+# From the repo root. The contract goes first: routes/codec.ts imports
+# @tm8/contract/workspace, whose exports name dist/ only, so the suite needs it.
+bun x tsc -b packages/contract packages/client-core
 (cd packages/client-core && bun run test && bun run lint)
 ```
 
