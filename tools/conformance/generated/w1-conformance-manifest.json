@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba",
+  "catalogDigest": "sha256:1bddf9ce589a16bb0b4e657149e830254c85c201ffe07cff873fd6b8899a7737",
   "catalog": {
-    "total": 410,
-    "v1": 408,
+    "total": 411,
+    "v1": 409,
     "reserved": 2,
-    "http": 408,
+    "http": 409,
     "ws": 1,
-    "registerableV1Http": 406,
+    "registerableV1Http": 407,
     "methods": {
       "GET": 138,
-      "POST": 202,
+      "POST": 203,
       "PATCH": 23,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 145,
-      "command": 263,
+      "command": 264,
       "stream": 2
     },
-    "uniqueNames": 410,
-    "uniqueBindings": 409
+    "uniqueNames": 411,
+    "uniqueBindings": 410
   },
   "reservedOperations": [
     "search.query",
@@ -456,6 +456,13 @@
         "operation": "bridges.listen",
         "method": "POST",
         "path": "/v2/bridges/:bridgeId/listen",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.work.start",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/work",
         "status": "registered",
         "source": "server-router"
       },
@@ -3274,7 +3281,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 378
+    "unimplementedV1Http": 379
   },
   "schemas": {
     "additive": {
@@ -4038,6 +4045,23 @@
         "intentTags": [
           "bridges",
           "listen"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.work.start",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.work.start",
+        "intentTags": [
+          "bridges",
+          "work",
+          "start"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
