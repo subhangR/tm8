@@ -1911,8 +1911,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     expect(view.getByTestId('launch-quick-config').getAttribute('aria-label')).toBe('Run configuration');
 
-    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
-    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
+    fireEvent.click(view.getByTestId('nsx-send')); // one press commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     // The payload must agree with the button that was actually pressed.
     expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
@@ -1932,8 +1931,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const bar = view.getByTestId('panel-action-bar');
     fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
     fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
-    fireEvent.click(view.getByTestId('nsx-send')); // the card's Launch opens its preview…
-    fireEvent.click(await view.findByTestId('lcd3-preview-confirm')); // …whose Launch commits
+    fireEvent.click(view.getByTestId('nsx-send')); // one press commits
     await waitFor(() => expect(onSpawn).toHaveBeenCalled());
     expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });
