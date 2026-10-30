@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:278f8bb742da944f7737999db6eacc36b826b9a8908ce373d8786d013845aeba",
+  "catalogDigest": "sha256:d210cec0eb3ad4b7a6c728d22017871f1376ce04417e55836600a92f2f9143b5",
   "catalog": {
-    "total": 410,
-    "v1": 408,
+    "total": 411,
+    "v1": 409,
     "reserved": 2,
-    "http": 408,
+    "http": 409,
     "ws": 1,
-    "registerableV1Http": 406,
+    "registerableV1Http": 407,
     "methods": {
-      "GET": 138,
+      "GET": 139,
       "POST": 202,
       "PATCH": 23,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 145,
+      "read": 146,
       "command": 263,
       "stream": 2
     },
-    "uniqueNames": 410,
-    "uniqueBindings": 409
+    "uniqueNames": 411,
+    "uniqueBindings": 410
   },
   "reservedOperations": [
     "search.query",
@@ -638,6 +638,13 @@
         "operation": "mcp.sessions.provenance",
         "method": "GET",
         "path": "/v2/mcp/sessions/:sessionId/provenance",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.local",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/mcp/servers/local",
         "status": "registered",
         "source": "server-router"
       },
@@ -3274,7 +3281,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 378
+    "unimplementedV1Http": 379
   },
   "schemas": {
     "additive": {
@@ -4480,6 +4487,23 @@
           "mcp",
           "sessions",
           "provenance"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.local",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.local",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "local"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

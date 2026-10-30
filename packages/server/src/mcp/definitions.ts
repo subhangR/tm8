@@ -10,6 +10,7 @@ import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, requireUuidParam, optionalUuid, limitOf } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
+import { readLocalMcpConfigs } from './local-configs.js';
 import { encodeCursor, decodeCursor } from '@tm8/contract';
 
 type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; definition: unknown; member: boolean; health?: unknown };
@@ -365,6 +366,18 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
     const sessionId=requireUuidParam(ctx,'sessionId');
     const raw=await deps.db.tx(claimsFor(await deps.owner(),ctx),q=>q.rpc<unknown>('mcp_session_provenance',[sessionId]));
     return McpSessionProvenanceSchema.parse(raw);
+  })});
+  /*
+   * The HOST's `~/.claude.json` and `~/.codex/config.toml`, translated and with
+   * every literal credential dropped (local-configs.ts). Admins only and
+   * human only: the files belong to the account the tm8 server runs as, so
+   * they are an operator's to import, not any member's or agent's to read.
+   */
+  registry.registerAll({'mcp.servers.local':requireHumanSession(async ctx=>{
+    const spaceId=requireUuidParam(ctx,'spaceId');
+    const [row]=await deps.db.tx(claimsFor(await deps.owner(),ctx),q=>q.query<{admin:boolean}>(`select internal.is_space_admin($1::uuid) as admin`,[spaceId]));
+    if(!row?.admin)throw new CollabError('forbidden','Only a space administrator can import the tm8 host\'s MCP configs');
+    return readLocalMcpConfigs();
   })});
   registry.register('mcp.servers.import',async ctx=>{
     const input=McpServerImportInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});

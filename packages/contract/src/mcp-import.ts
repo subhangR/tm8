@@ -62,6 +62,31 @@ export interface McpImportResult {
   problems: McpImportProblem[];
 }
 
+/**
+ * `mcp.servers.local`: a candidate read from the tm8 HOST's own config. The
+ * literal credential is stripped on the server, so only the fact that one was
+ * there crosses the wire.
+ */
+export interface McpLocalImportCandidate extends Omit<McpImportCandidate, 'secret'> {
+  droppedSecret: boolean;
+}
+
+/** One config file on the tm8 host: `~/.claude.json` or `~/.codex/config.toml`. */
+export interface McpLocalConfigSource {
+  format: 'claude' | 'codex';
+  /** Where it was looked for, `~`-relative when it is under the home directory. */
+  path: string;
+  found: boolean;
+  candidates: McpLocalImportCandidate[];
+  problems: McpImportProblem[];
+  /** The whole file could not be read or parsed. Authored text, never file content. */
+  error?: string;
+}
+
+export interface McpLocalConfigsResult {
+  sources: McpLocalConfigSource[];
+}
+
 export interface McpImportOptions {
   /** Mark translated stdio connectors as trusted code. Default false: they translate but stay untrusted. */
   trustStdio?: boolean;

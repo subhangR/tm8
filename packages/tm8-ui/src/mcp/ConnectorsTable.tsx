@@ -180,10 +180,12 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
   function openConnect(server: McpServer) { setActive(server.id); }
   const approve = (server: McpServer) => run(() => port.patch(server, { approved: true }), `${server.title} approved.`);
 
-  async function importRows(rows: McpImportRow[], trustLocal: boolean) {
+  async function importRows(rows: McpImportRow[], trustLocal: boolean, defaultOn: boolean) {
     await run(async () => {
+      // `defaultOn` joins every chat's and session's defaults in the Space;
+      // each one can still turn the connector off for itself.
       await port.importMany(rows.flatMap(row => row.definition
-        ? [{ ...row.definition, ...(row.transport === 'stdio' ? { stdioTrusted: trustLocal } : {}) }]
+        ? [{ ...row.definition, defaultOn, ...(row.transport === 'stdio' ? { stdioTrusted: trustLocal } : {}) }]
         : []));
       setSheet(null);
     }, `${rows.length} connector${rows.length === 1 ? '' : 's'} imported.`);
@@ -231,8 +233,10 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
     </section>}
 
     {sheet?.kind === 'import' && <section className="mcp-card">
-      <h3>Import from .mcp.json</h3>
-      <ImportMcpJson busy={busy} onImport={importRows} />
+      <h3>Import connectors</h3>
+      <ImportMcpJson busy={busy} onImport={importRows}
+        {...(admin && port.localConfigs ? { local: () => port.localConfigs!() } : {})}
+        existing={servers.flatMap(server => server.source ? [{ id: server.id, definition: server.source }] : [])} />
       <button type="button" onClick={() => setSheet(null)}>Cancel</button>
     </section>}
 
@@ -330,7 +334,7 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
 
     {tab !== 'discover' && <p className="mcp-note mcp-strict">
       Connectors you added in the Claude app or a <code>.mcp.json</code> file aren&rsquo;t used by tm8 chats or sessions, whatever the harness.
-      Add them here. <button type="button" onClick={() => setSheet({ kind: 'import' })}>Import from .mcp.json</button>
+      Add them here. <button type="button" onClick={() => setSheet({ kind: 'import' })}>Import from Claude Code, Codex or .mcp.json</button>
     </p>}
 
     {drawer && <ConnectorDrawer server={drawer} port={port} admin={admin} busy={busy} run={run} onClose={() => setActive(null)} />}
@@ -366,7 +370,7 @@ export function ConnectorsSection() {
       <div>
         <button type="button" onClick={e => { close(e); setSheet(null); setTab('discover'); }}>From catalog…</button>
         <button type="button" onClick={e => { close(e); setTab('yours'); setSheet({ kind: 'custom' }); }}>{admin ? 'Custom connector…' : 'Request a connector…'}</button>
-        <button type="button" onClick={e => { close(e); setTab('yours'); setSheet({ kind: 'import' }); }}>Import from .mcp.json…</button>
+        <button type="button" onClick={e => { close(e); setTab('yours'); setSheet({ kind: 'import' }); }}>Import from Claude Code / Codex…</button>
       </div>
     </details>}>
     <section className="mcp-settings" aria-label="Connector management" aria-busy={busy}>

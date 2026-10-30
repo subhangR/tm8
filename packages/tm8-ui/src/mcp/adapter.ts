@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpAuditListResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
+import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpAuditListResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpLocalConfigSource, type McpLocalConfigsResult, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpAddOutcome, McpDefinition, McpPort, McpServer } from './port';
@@ -169,6 +169,45 @@ export interface McpImportRow {
 const IMPORT_KEEP = ['url', 'command', 'args', 'transport', 'auth', 'envKeys', 'headerKeys', 'provenance'];
 /** Fields a real `.mcp.json` uses for live secret VALUES. Dropped, and the row says so. */
 const IMPORT_SECRETS = ['env', 'headers', 'apiKey', 'api_key', 'token', 'secret', 'password', 'authorization'];
+
+/**
+ * The import preview's rows for one of the tm8 HOST's configs
+ * (`mcp.servers.local`). The server has already translated the file with the
+ * shared translator and dropped every secret, so this only decides, through
+ * the same `selectMcpImports` the CLI uses, which rows are already in the
+ * Space (a red row) and what the rest are renamed to around names it uses.
+ * A local command stays importable here: the preview's own trust tick gates it.
+ */
+export function localImportRows(
+  source: McpLocalConfigSource,
+  existing: readonly { id: string; definition: McpServerDefinition }[],
+): McpImportRow[] {
+  const dropped = new Set(source.candidates.filter(c => c.droppedSecret).map(c => c.sourcePointer));
+  const origin = (url?: string) => { try { return url ? new URL(url).origin : ''; } catch { return ''; } };
+  return [
+    ...selectMcpImports(source.candidates, existing, { trustStdio: true }).map(({ candidate, decision, reason }): McpImportRow => {
+      const d = candidate.definition;
+      const row = { key: candidate.sourcePointer, name: d.name, transport: d.transport, target: d.transport === 'http' ? origin(d.url) : d.command ?? '', droppedSecrets: dropped.has(candidate.sourcePointer) };
+      return decision === 'register' ? { ...row, definition: d } : { ...row, error: reason ?? decision };
+    }),
+    ...source.problems.map((p): McpImportRow => ({ key: p.sourcePointer, name: p.sourceName, transport: 'unknown', target: '', droppedSecrets: false, error: p.reason })),
+  ];
+}
+
+/**
+ * A pasted or chosen config: JSON through `previewMcpConfig`, Codex TOML through
+ * the shared translator (its secrets dropped here, in the tab) and
+ * `localImportRows`.
+ */
+export function previewMcpText(text: string, existing: readonly { id: string; definition: McpServerDefinition }[] = []): McpImportRow[] {
+  if (detectMcpImportFormat(text) !== 'codex') return previewMcpConfig(text);
+  let translated;
+  try { translated = translateMcpConfigText('codex', text); } catch (error) {
+    throw new McpUiError(error instanceof McpImportError ? error.message : 'This file could not be read.');
+  }
+  const candidates = translated.candidates.map(({ secret, ...candidate }) => ({ ...candidate, droppedSecret: secret !== undefined }));
+  return localImportRows({ format: 'codex', path: '', found: true, candidates, problems: translated.problems }, existing);
+}
 
 export function previewMcpConfig(json: string): McpImportRow[] {
   let parsed: unknown;
@@ -344,6 +383,7 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       return summary;
     },
     async importMany(definitions) { await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions } }); },
+    localConfigs() { return http.call<McpLocalConfigsResult>('mcp.servers.local', { params: { spaceId } }); },
     async attach(targetId, serverId) { await seam.commands.createEdge({ ...command(), srcId: targetId, dstId: serverId, type: 'equips', props: {} }); },
     async detach(targetId, serverId) {
       const edges = await attachments(targetId);
