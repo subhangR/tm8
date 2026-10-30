@@ -9,14 +9,15 @@
  * space (D23).
  */
 import {
-  BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionViewSchema,
+  BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema, BridgeConnectionViewSchema,
   BridgeConnectionWithdrawInputSchema, BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema,
   BridgeStateInputSchema, BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
   type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
   type BridgeLogEntry, type BridgeLogResult, type BridgeRecentPoster, type BridgeView,
   type BridgeConnectionBeginResult, type BridgeConnectionOfferResult, type BridgeConnectionView,
-  type BridgeConnectionWithdrawResult,
+  type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult, type BridgeConversationListResult,
 } from '@tm8/contract';
+import { randomUUID } from 'node:crypto';
 import type { BridgeRuntimeLink, ConnectionAuthRelay } from './connection-auth.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -358,6 +359,44 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         };
       });
     }, 'bridges.connections.withdraw is for a human: the number\'s owner'),
+    'bridges.connections.remove': requireHumanSession(async (ctx): Promise<BridgeConnectionRemoveResult> => {
+      const input = BridgeConnectionRemoveInputSchema.parse(ctx.body ?? {});
+      const connectionId = routeId(ctx, 'connectionId');
+      const removed = await command(ctx, q => q.rpc<{
+        connection: Record<string, unknown>; endedBridgeIds: string[]; revokedCredentialIds: string[];
+      }>('remove_bridge_connection', [connectionId, input.clientMutationId]));
+      const connection = connectionOf(removed.connection);
+      options.connectionAuth?.settle(connectionId);
+      // After the commit: the bridges have ended, so the allowlist the hub pushes is already empty.
+      const told = options.runtime
+        ? await options.runtime.disconnect(connectionId, { logout: true, runtimeId: connection.runtimeId })
+        : false;
+      return {
+        connection, endedBridgeIds: removed.endedBridgeIds, revokedCredentialIds: removed.revokedCredentialIds,
+        runtime: told ? 'logged_out' : 'offline',
+      };
+    }, 'bridges.connections.remove is for a human: the number\'s owner'),
+    'bridges.conversations.list': requireHumanSession(async (ctx): Promise<BridgeConversationListResult> => {
+      const connectionId = requireUuidParam(ctx, 'connectionId');
+      // D28: the owner's own connection only; a node admin is not the owner.
+      const conn = await read(ctx, q => q.rpc<{ id: string; status: string; runtimeId: string | null }>(
+        'bridge_connection_for_owner', [connectionId]));
+      if (!options.runtime || !conn.runtimeId) {
+        throw new CollabError('upstream_unavailable', 'no bridge runtime holds this connection; link it with `tm8 bridge connection begin`',
+          { details: { reason: 'runtime_offline' } });
+      }
+      const frame = await options.runtime.listConversations(conn.runtimeId, connectionId, randomUUID());
+      if (!frame) {
+        throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
+          { details: { reason: 'runtime_offline' } });
+      }
+      if ('error' in frame) {
+        throw new CollabError('upstream_unavailable', `the bridge runtime could not list groups: ${frame.error}`,
+          { details: { reason: 'runtime_error' } });
+      }
+      // Answered as it came; nothing about it is kept.
+      return { connectionId, items: frame.items };
+    }, 'bridges.conversations.list is for a human: the number\'s owner'),
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');

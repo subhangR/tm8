@@ -75,12 +75,14 @@ describe('catalog (§3.4)', () => {
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
     ]);
   });
   it('create, retarget, remove and the connection writes are human-only; the session doors are not', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
       'bridges.create', 'bridges.retarget', 'bridges.remove',
       'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
     ]);
   });
 

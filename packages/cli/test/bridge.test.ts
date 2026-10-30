@@ -57,6 +57,10 @@ beforeAll(async () => {
       else if (url.pathname === '/v2/me/bridge-connections' && req.method === 'GET') data = { items: [connectionView(connectionStatus)] };
       else if (url.pathname === '/v2/me/bridge-connections') data = { connection: connectionView('connecting'), runtime: beginRuntime };
       else if (url.pathname.endsWith('/offer')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL };
+      else if (url.pathname.endsWith('/remove')) data = { connection: { ...connectionView('linked'), status: 'removed', offers: [] }, endedBridgeIds: [BRIDGE], revokedCredentialIds: [CREDENTIAL], runtime: 'logged_out' };
+      else if (url.pathname.endsWith('/conversations')) data = { connectionId: CONNECTION, items: [
+        { conversationId: '1203@g.us', kind: 'group', name: 'Infra', size: 7, canSend: true, reason: null },
+        { conversationId: '9999@g.us', kind: 'group', name: 'Announcements', size: 120, canSend: false, reason: 'admins_only' }] };
       else if (url.pathname.endsWith('/withdraw')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL, pausedBridgeIds: [BRIDGE] };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
@@ -170,7 +174,8 @@ describe('tm8 bridge connection (B1b-5)', () => {
 
   it('the noun shard lists the connection verbs', () => {
     const paths = nounHelp('bridge')!.commands.map(c => c.command);
-    for (const p of ['list', 'begin', 'offer', 'withdraw']) expect(paths).toContain(`bridge connection ${p}`);
+    for (const p of ['list', 'begin', 'offer', 'withdraw', 'remove']) expect(paths).toContain(`bridge connection ${p}`);
+    expect(paths).toContain('bridge conversations');
   });
 
   it('list reaches bridges.connections.list and renders the offers', async () => {
@@ -271,5 +276,18 @@ describe('tm8 bridge connection (B1b-5)', () => {
     expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/withdraw`, body: { spaceId: SPACE } });
     expect(stdout).toMatch(/paused 1 bridge: /);
     expect(await run(['bridge', 'connection', 'offer'])).toBe(2);
+  });
+
+  it('remove names the connection; conversations lists the owner\'s groups live (B1b-7)', async () => {
+    expect(await run(['bridge', 'connection', 'remove', CONNECTION])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/remove` });
+    expect(typeof requests.at(-1)!.body.clientMutationId).toBe('string');
+    expect(stdout).toMatch(/ended 1 bridge: /);
+    expect(stdout).toMatch(/the device was logged out/);
+    expect(await run(['bridge', 'conversations', CONNECTION])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'GET', path: `/v2/me/bridge-connections/${CONNECTION}/conversations` });
+    expect(stdout).toMatch(/1203@g.us  group "Infra" · 7 members/);
+    expect(stdout).toMatch(/read-only \(admins_only\)/);
+    expect(await run(['bridge', 'conversations'])).toBe(2);
   });
 });

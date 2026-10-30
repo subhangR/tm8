@@ -8,6 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath,
   type BridgeConnectionAuthFrame, type BridgeConnectionBeginResult, type BridgeConnectionListResult,
   type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
+  type BridgeConnectionRemoveResult, type BridgeConversationListResult,
   type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
   type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
 } from '@tm8/contract';
@@ -460,7 +461,37 @@ async function connectionWithdraw(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function connectionRemove(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  const result = await observedInvoke<BridgeConnectionRemoveResult>(client(cmd), 'bridges.connections.remove', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body: mutation(cmd),
+  });
+  cmd.out.data(result, r => [
+    `removed connection ${r.connection.id} "${r.connection.label}"`,
+    `ended ${r.endedBridgeIds.length} bridge${r.endedBridgeIds.length === 1 ? '' : 's'}${r.endedBridgeIds.length ? `: ${r.endedBridgeIds.join(', ')}` : ''}`,
+    `revoked ${r.revokedCredentialIds.length} space credential${r.revokedCredentialIds.length === 1 ? '' : 's'}`,
+    r.runtime === 'logged_out'
+      ? 'the device was logged out'
+      : 'no runtime was connected: unlink the device on the phone (WhatsApp → Linked devices)',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
+  const page = await observedInvoke<BridgeConversationListResult>(client(cmd), 'bridges.conversations.list', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') },
+  });
+  cmd.out.data(page, p => p.items.length
+    ? p.items.map(c => `${c.conversationId}  ${c.kind.padEnd(5)} "${c.name}"${c.size === null ? '' : ` · ${c.size} members`}` +
+      `${c.canSend ? '' : ` · read-only (${c.reason ?? 'cannot send'}): a bridge here falls back to direction in`}`).join('\n')
+    : 'no groups on this number');
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
+  { path: ['bridge', 'connection', 'remove'], run: connectionRemove },
+  { path: ['bridge', 'conversations'], run: bridgeConversations },
   { path: ['bridge', 'connection', 'list'], run: connectionList },
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },
