@@ -210,6 +210,53 @@ describe('402 (B1b-8): review fixes N1 and N3 on 398', () => {
   });
 });
 
+describe('402 (B1b-8): reactions and poll votes are stored (D39)', () => {
+  it('a reaction is one per (message, sender): stored, replaced by a later one, removed by an empty emoji', async () => {
+    const m = await inbound(frame({ body: 'react to me' }));
+    // The reaction names the provider id of the message it is about.
+    const [o] = await owner<{ ext: string }>('select external_message_id as ext from public.message_origins where message_id = $1', [m.messageId]);
+    const send = (emoji: string, ts: number) => inbound(frame({ body: '', kind: 'other', ts, reaction: { externalMessageId: o!.ext, emoji } }));
+    expect(await send('👍', 1_790_100_000)).toMatchObject({ status: 'stored', kind: 'reaction', messageId: m.messageId });
+    expect(await send('❤️', 1_790_100_010)).toMatchObject({ status: 'stored' });
+    await send('😂', 1_790_100_005);   // older than the stored one: ignored
+    const rows = await owner<{ emoji: string; author_id: string }>('select emoji, author_id from public.bridge_reactions where message_id = $1', [m.messageId]);
+    expect(rows).toEqual([{ emoji: '❤️', author_id: infra }]);
+    // No message was stored for any of them.
+    const [n] = await owner<{ n: number }>(`select count(*)::int as n from public.messages where body = '' or body = '[message]'`);
+    expect(n!.n).toBe(0);
+    expect(await send('', 1_790_100_020)).toMatchObject({ removed: true });
+    expect(await owner('select 1 from public.bridge_reactions where message_id = $1', [m.messageId])).toEqual([]);
+    expect(await inbound(frame({ body: '', kind: 'other', reaction: { externalMessageId: 'NOPE', emoji: '👍' } })))
+      .toMatchObject({ status: 'ignored', reason: 'reaction_target_unknown' });
+  });
+
+  it('a vote on our poll is stored per voter, opened or sealed; the sealed payload never reaches the app role', async () => {
+    const poll = randomUUID();
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [poll, spaceId, infra]);
+      await c.query(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$2,'Lunch? Yes/No')`, [poll, infra]);
+      await c.query(`insert into public.message_origins(message_id, bridge_id, connection_id, direction, external_message_id, external_conversation_id)
+        values ($1,$2,$3,'out','POLL0001',$4)`, [poll, infra, connection, GROUP]);
+    });
+    const opened = await inbound(frame({ body: '', kind: 'poll', pollVote: { pollMessageId: 'POLL0001', voterIds: [RAHUL], selectedHashes: ['aGFzaA'] } }));
+    expect(opened).toMatchObject({ status: 'stored', kind: 'poll_vote', messageId: poll, votes: 1 });
+    const sealed = await inbound(frame({ body: '', kind: 'poll', sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false },
+      pollVote: { pollMessageId: 'POLL0001', voterIds: [LINKED_JID], sealed: { encPayload: 'cGF5', encIv: 'aXY' } } }));
+    expect(sealed).toMatchObject({ status: 'stored', votes: 1 });
+    const votes = await owner<{ voter_external_id: string; author_id: string; selected_hashes: string[] | null; sealed: unknown }>(
+      'select voter_external_id, author_id, selected_hashes, sealed from public.bridge_poll_votes where poll_message_id = $1 order by voter_external_id', [poll]);
+    expect(votes).toEqual([
+      { voter_external_id: LINKED_JID, author_id: linkedMember, selected_hashes: null, sealed: { encPayload: 'cGF5', encIv: 'aXY' } },
+      { voter_external_id: RAHUL, author_id: infra, selected_hashes: ['aGFzaA'], sealed: null },
+    ]);
+    const leak = await refusal(human(q => q.query('select sealed from public.bridge_poll_votes limit 1')));
+    expect(leak.code).toBeDefined();
+    expect(await inbound(frame({ body: '', kind: 'poll', pollVote: { pollMessageId: 'NOPOLL', voterIds: [RAHUL], selectedHashes: ['x'] } })))
+      .toMatchObject({ status: 'ignored', reason: 'poll_unknown' });
+  });
+});
+
 describe('allowlists (§2.3, D28, D35, ac4, ac7)', () => {
   let lastVersion = 0;
   it('hello answers each connection with its live, unpaused conversations and a fresh version', async () => {

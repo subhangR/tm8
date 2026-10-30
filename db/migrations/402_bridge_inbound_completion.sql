@@ -14,6 +14,11 @@
 --       and its appearance), so it is not a STABLE function;
 --   §2  public.bridge_runtime_inbound passes the participant's display STRING
 --       to add_bridge_origin (#1428 review N1; D22's origin.sender.participant).
+--   §3  reactions and poll votes are stored (D39): one reaction per (message,
+--       sender), the latest wins and an empty emoji removes it; one vote per
+--       (poll, voter), its selected option hashes, or the sealed payload the
+--       server opens with the poll's stored messageSecret. 398's inbound
+--       acknowledged and dropped both; §2's restated body routes them here.
 --
 -- CORRECTION TO 395's HEADER (fix-forward; 395 is applied and checksummed, so
 -- it is not edited). 395 says it touches no object of Mobile's 391, but its §2
@@ -96,14 +101,6 @@ begin
   if conn.id is null or conn.status = 'removed' then
     return jsonb_build_object('status', 'refused', 'reason', 'unknown_connection');
   end if;
-  -- A reaction or a poll vote is not a message: nothing is stored for it yet.
-  if p_frame -> 'reaction' is not null and jsonb_typeof(p_frame -> 'reaction') = 'object' then
-    return jsonb_build_object('status', 'ignored', 'reason', 'reaction');
-  end if;
-  if p_frame -> 'pollVote' is not null and jsonb_typeof(p_frame -> 'pollVote') = 'object' then
-    return jsonb_build_object('status', 'ignored', 'reason', 'poll_vote');
-  end if;
-
   select br.* into b from public.bridges br join public.entities e on e.id = br.entity_id and e.deleted_at is null
    where br.connection_id = conn.id and br.external_conversation_id = conv
      and br.ended_at is null and br.paused_at is null
@@ -116,6 +113,15 @@ begin
              to_jsonb(coalesce((runtime_counters ->> 'serverRefused')::integer, 0) + 1))
      where id = conn.id;
     return jsonb_build_object('status', 'refused', 'reason', 'not_on_allowlist');
+  end if;
+
+  -- §3 (B1b-8): a reaction and a poll vote are not messages; they are stored
+  -- beside the message they are about (D39), after the allowlist check.
+  if jsonb_typeof(p_frame -> 'reaction') = 'object' then
+    return internal.bridge_store_reaction(b, conn.id, p_frame);
+  end if;
+  if jsonb_typeof(p_frame -> 'pollVote') = 'object' then
+    return internal.bridge_store_poll_vote(b, conn.id, p_frame);
   end if;
 
   -- Exactly once per bridge, from any number (D20).
@@ -238,5 +244,129 @@ end
 $$;
 revoke all on function public.bridge_runtime_inbound(jsonb, boolean) from public;
 grant execute on function public.bridge_runtime_inbound(jsonb, boolean) to tm8_app;
+
+-- -----------------------------------------------------------------------------
+-- §3. Reactions and poll votes (D39). Server-owned rows beside the message
+--     they are about; the app role reads reactions through RLS on the message,
+--     and never reads a sealed vote.
+-- -----------------------------------------------------------------------------
+create table public.bridge_reactions (
+  message_id          uuid not null references public.messages(entity_id) on delete cascade,
+  bridge_id           uuid not null references public.bridges(entity_id) on delete cascade,
+  external_sender_id  text not null,
+  author_id           uuid not null references public.entities(id),
+  emoji               text not null check (char_length(emoji) between 1 and 16),
+  external_message_id text not null,
+  reacted_at          timestamptz not null,
+  primary key (message_id, external_sender_id)
+);
+alter table public.bridge_reactions enable row level security;
+create policy bridge_reactions_select on public.bridge_reactions for select to tm8_app
+  using ((exists (select 1 from public.entities readable_entity
+                   where readable_entity.id = bridge_reactions.message_id and readable_entity.deleted_at is null offset 0)));
+grant select on public.bridge_reactions to tm8_app;
+
+create table public.bridge_poll_votes (
+  poll_message_id     uuid not null references public.messages(entity_id) on delete cascade,
+  bridge_id           uuid not null references public.bridges(entity_id) on delete cascade,
+  voter_external_id   text not null,
+  author_id           uuid not null references public.entities(id),
+  selected_hashes     text[],
+  -- SERVER-ONLY: a vote the runtime could not open (D39); withheld from tm8_app.
+  sealed              jsonb,
+  external_message_id text not null,
+  voted_at            timestamptz not null,
+  primary key (poll_message_id, voter_external_id),
+  check (selected_hashes is not null or sealed is not null)
+);
+alter table public.bridge_poll_votes enable row level security;
+create policy bridge_poll_votes_select on public.bridge_poll_votes for select to tm8_app
+  using ((exists (select 1 from public.entities readable_entity
+                   where readable_entity.id = bridge_poll_votes.poll_message_id and readable_entity.deleted_at is null offset 0)));
+grant select (poll_message_id, bridge_id, voter_external_id, author_id, selected_hashes, external_message_id, voted_at)
+  on public.bridge_poll_votes to tm8_app;
+
+-- The tm8 message a provider id names on this bridge: an inbound log copy or
+-- one of our own sends.
+create or replace function internal.bridge_message_for(p_bridge uuid, p_external text) returns uuid
+language sql stable set search_path = public, internal, pg_temp as $$
+  select o.message_id from public.message_origins o
+   where o.bridge_id = p_bridge and o.external_message_id = p_external
+   order by o.direction limit 1
+$$;
+revoke all on function internal.bridge_message_for(uuid, text) from public;
+
+-- The author a sender resolves to, without touching presence (a reaction is
+-- not a message, so it does not count toward message_count).
+create or replace function internal.bridge_sender_actor(b public.bridges, p_sender text) returns uuid
+language sql stable set search_path = public, internal, pg_temp as $$
+  select case when p_sender is null then b.entity_id
+              else (internal.bridge_resolve_author(b.entity_id, p_sender) ->> 'actorId')::uuid end
+$$;
+revoke all on function internal.bridge_sender_actor(public.bridges, text) from public;
+
+create or replace function internal.bridge_store_reaction(b public.bridges, p_connection uuid, p_frame jsonb) returns jsonb
+language plpgsql set search_path = public, internal, pg_temp as $$
+declare
+  target uuid := internal.bridge_message_for(b.entity_id, p_frame #>> '{reaction,externalMessageId}');
+  sender text := p_frame #>> '{sender,externalId}';
+  emoji text := coalesce(p_frame #>> '{reaction,emoji}', '');
+  at timestamptz := coalesce(to_timestamp((p_frame ->> 'ts')::double precision), now());
+begin
+  if target is null or sender is null then
+    return jsonb_build_object('status', 'ignored', 'reason', 'reaction_target_unknown');
+  end if;
+  if emoji = '' then
+    delete from public.bridge_reactions where message_id = target and external_sender_id = sender and reacted_at <= at;
+    return jsonb_build_object('status', 'stored', 'kind', 'reaction', 'messageId', target, 'removed', true);
+  end if;
+  insert into public.bridge_reactions(message_id, bridge_id, external_sender_id, author_id, emoji, external_message_id, reacted_at)
+  values (target, b.entity_id, sender, internal.bridge_sender_actor(b, sender), left(emoji, 16), p_frame ->> 'externalMessageId', at)
+  on conflict (message_id, external_sender_id) do update
+    set emoji = excluded.emoji, author_id = excluded.author_id,
+        external_message_id = excluded.external_message_id, reacted_at = excluded.reacted_at
+    where bridge_reactions.reacted_at <= excluded.reacted_at;
+  update public.messages set updated_at = clock_timestamp() where entity_id = target;
+  return jsonb_build_object('status', 'stored', 'kind', 'reaction', 'messageId', target);
+end
+$$;
+revoke all on function internal.bridge_store_reaction(public.bridges, uuid, jsonb) from public;
+
+create or replace function internal.bridge_store_poll_vote(b public.bridges, p_connection uuid, p_frame jsonb) returns jsonb
+language plpgsql set search_path = public, internal, pg_temp as $$
+declare
+  poll uuid := internal.bridge_message_for(b.entity_id, p_frame #>> '{pollVote,pollMessageId}');
+  hashes text[];
+  sealed jsonb := case when jsonb_typeof(p_frame #> '{pollVote,sealed}') = 'object' then p_frame #> '{pollVote,sealed}' end;
+  voter text;
+  at timestamptz := coalesce(to_timestamp((p_frame ->> 'ts')::double precision), now());
+  n integer := 0;
+begin
+  if poll is null then
+    return jsonb_build_object('status', 'ignored', 'reason', 'poll_unknown');
+  end if;
+  if jsonb_typeof(p_frame #> '{pollVote,selectedHashes}') = 'array' then
+    select coalesce(array_agg(h), '{}') into hashes from jsonb_array_elements_text(p_frame #> '{pollVote,selectedHashes}') h;
+  end if;
+  if hashes is null and sealed is null then
+    return jsonb_build_object('status', 'ignored', 'reason', 'poll_vote_empty');
+  end if;
+  for voter in select jsonb_array_elements_text(coalesce(p_frame #> '{pollVote,voterIds}',
+                 jsonb_build_array(p_frame #>> '{sender,externalId}'))) loop
+    continue when voter is null;
+    insert into public.bridge_poll_votes(poll_message_id, bridge_id, voter_external_id, author_id, selected_hashes, sealed,
+                                         external_message_id, voted_at)
+    values (poll, b.entity_id, voter, internal.bridge_sender_actor(b, voter), hashes, sealed, p_frame ->> 'externalMessageId', at)
+    on conflict (poll_message_id, voter_external_id) do update
+      set selected_hashes = excluded.selected_hashes, sealed = excluded.sealed, author_id = excluded.author_id,
+          external_message_id = excluded.external_message_id, voted_at = excluded.voted_at
+      where bridge_poll_votes.voted_at <= excluded.voted_at;
+    n := n + 1;
+  end loop;
+  update public.messages set updated_at = clock_timestamp() where entity_id = poll;
+  return jsonb_build_object('status', 'stored', 'kind', 'poll_vote', 'messageId', poll, 'votes', n);
+end
+$$;
+revoke all on function internal.bridge_store_poll_vote(public.bridges, uuid, jsonb) from public;
 
 reset role;
