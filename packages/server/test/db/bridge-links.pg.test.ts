@@ -143,7 +143,7 @@ describe('/link redeem (§2.4 Code, D5)', () => {
     const mine = await begin(plainIdentity);
     expect(await redeem(guest, mine.code)).toMatchObject({ ok: true, already: true });
     const theirs = await begin(ownerIdentity);
-    expect(await redeem(guest, theirs.code)).toMatchObject({ ok: false, reason: 'linked_elsewhere' });
+    expect(await redeem(guest, theirs.code)).toMatchObject({ ok: false, reason: 'linked_elsewhere', burned: true });
   });
 
   it('five failed tries in an hour lock the sender out, a valid code included (D59)', async () => {
@@ -152,7 +152,9 @@ describe('/link redeem (§2.4 Code, D5)', () => {
       expect(await redeem(sender, `TM8-ZZZZZ${i + 2}`)).toMatchObject({ ok: false, reason: 'bad_code' });
     }
     const { code } = await begin(ownerIdentity);
-    expect(await redeem(sender, code)).toMatchObject({ ok: false, reason: 'rate_limited' });
+    // Locked out, and the code it named is burned: the group has read it.
+    expect(await redeem(sender, code)).toMatchObject({ ok: false, reason: 'rate_limited', burned: true });
+    expect(await redeem('919000000079@s.whatsapp.net', code)).toMatchObject({ ok: false, reason: 'used' });
     expect(await redeem('919000000078@s.whatsapp.net', 'not a code')).toMatchObject({ ok: false, reason: 'bad_code' });
   });
 

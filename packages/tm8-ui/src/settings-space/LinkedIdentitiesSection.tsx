@@ -171,7 +171,7 @@ export function LinkedIdentitiesSection({ heading, load, begin, revoke, pollMs =
       title={heading}
       bodyTestId="linked-identities-body"
       action={begin ? (
-        <button type="button" className="set-chip" data-testid="link-begin" disabled={busy}
+        <button type="button" className="set-chip set-links__begin" data-testid="link-begin" disabled={busy}
           onClick={() => void onBegin('whatsapp')}>
           {code ? 'New code' : 'Link WhatsApp'}
         </button>

@@ -2,9 +2,10 @@
 -- 402 — Bridges B3: code and invite links (BRIDGE-ENTITY-DESIGN §2.4, §4.6, D5).
 -- (Provisional number: the bridges merger assigns the final one at merge.)
 --
--- Task 01a189db-323a-7c7c-a4c2-2e4c35019ba3. Predecessor on main: 396. Builds
--- on 395's bridge_identity_links and bridge_link_codes; touches no object the
--- open B1b migrations (399, 400, 401) touch.
+-- Task 01a189db-323a-7c7c-a4c2-2e4c35019ba3. Stacked on B1b-4 (#1430, 401):
+-- the /link door is gated on 401's internal.require_bridge_commands_worker().
+-- Builds on 395's bridge_identity_links and bridge_link_codes; creates only
+-- new objects and replaces none an earlier migration defines.
 --
 -- WHAT THIS FILE DOES
 --   §1  bridge_link_codes keeps a salted digest, never the code (D58);
@@ -14,8 +15,9 @@
 --       only), my_bridge_links (Account → Linked identities) and
 --       revoke_bridge_link (the identity itself; an admin for an assertion);
 --   §3  internal.bridge_redeem_link_code: the /link verb's body. It answers an
---       outcome instead of raising, so a failed try is recorded (D59). It is
---       internal: the command executor's door (B1b-4) wraps it;
+--       outcome instead of raising, so a failed try is recorded (D59), and a
+--       live code a failed try named is burned. public.bridge_command_link_redeem
+--       is the command executor's door to it (bridges worker only);
 --   §4  pin_bridge_invite (spaces.invites.create's bridgeParticipant) and the
 --       two triggers that complete the link when the pinned invite is redeemed
 --       (D60).
@@ -227,6 +229,11 @@ grant execute on function public.revoke_bridge_link(uuid) to tm8_app;
 -- so a failed try is kept (D59). Reasons: rate_limited, bridge_ended,
 -- bad_code, expired, used, wrong_provider, linked_elsewhere. A code for the
 -- identity this number is already linked to answers ok with already: true.
+--
+-- A code sent in a group has been read by everyone in it. So a try that names
+-- a live code and does not link with it BURNS it (D59): otherwise a member who
+-- saw a refused /link could send the same code from their own number and be
+-- counted as its owner.
 -- -----------------------------------------------------------------------------
 create or replace function internal.bridge_redeem_link_code(
   p_bridge_id uuid, p_sender_external_id text, p_code text)
@@ -246,40 +253,48 @@ begin
   if p_sender_external_id is null or p_sender_external_id = '' then
     raise exception 'a /link needs its sender' using errcode = '22023';
   end if;
-  if (select count(*) from public.bridge_link_attempts a
-       where a.provider = b.provider and a.external_id = p_sender_external_id
-         and a.attempted_at > now() - interval '1 hour') >= 5 then
-    return jsonb_build_object('ok', false, 'reason', 'rate_limited');
-  end if;
 
-  if v_code !~ '^TM8-[A-Z0-9]{4,8}$' then
-    fail := 'bad_code';
-  else
+  if v_code ~ '^TM8-[A-Z0-9]{4,8}$' then
     select m.* into c from internal.bridge_link_code_match(v_code) m
      order by (m.used_at is null and m.expires_at > now()) desc, m.created_at desc limit 1;
     if c.id is not null then
       perform 1 from public.bridge_link_codes where id = c.id for update;
       select * into c from public.bridge_link_codes where id = c.id;
     end if;
-    if c.id is null then fail := 'bad_code';
-    elsif c.used_at is not null then fail := 'used';
-    elsif c.expires_at <= now() then fail := 'expired';
-    elsif c.provider <> b.provider then fail := 'wrong_provider';
+  end if;
+
+  if (select count(*) from public.bridge_link_attempts a
+       where a.provider = b.provider and a.external_id = p_sender_external_id
+         and a.attempted_at > now() - interval '1 hour') >= 5 then
+    fail := 'rate_limited';
+  elsif v_code !~ '^TM8-[A-Z0-9]{4,8}$' or c.id is null then fail := 'bad_code';
+  elsif c.used_at is not null then fail := 'used';
+  elsif c.expires_at <= now() then fail := 'expired';
+  elsif c.provider <> b.provider then fail := 'wrong_provider';
+  end if;
+
+  if fail is null then
+    select * into existing from public.bridge_identity_links
+     where provider = b.provider and external_id = p_sender_external_id
+       and space_id is null and revoked_at is null;
+    if existing.id is not null and existing.identity_id <> c.identity_id then
+      -- The number is someone else's proof. That holder unlinks first; a code
+      -- does not take a number from another account.
+      fail := 'linked_elsewhere';
     end if;
   end if;
+
   if fail is not null then
-    insert into public.bridge_link_attempts(provider, external_id) values (b.provider, p_sender_external_id);
+    if fail in ('bad_code', 'used', 'expired', 'wrong_provider', 'rate_limited') then
+      insert into public.bridge_link_attempts(provider, external_id) values (b.provider, p_sender_external_id);
+    end if;
+    if c.id is not null and c.used_at is null and c.expires_at > now() then
+      update public.bridge_link_codes set used_at = now() where id = c.id;
+      return jsonb_build_object('ok', false, 'reason', fail, 'burned', true);
+    end if;
     return jsonb_build_object('ok', false, 'reason', fail);
   end if;
 
-  select * into existing from public.bridge_identity_links
-   where provider = b.provider and external_id = p_sender_external_id
-     and space_id is null and revoked_at is null;
-  if existing.id is not null and existing.identity_id <> c.identity_id then
-    -- The number is someone else's proof. That holder unlinks first; a code
-    -- does not take a number from another account. The code stays unused.
-    return jsonb_build_object('ok', false, 'reason', 'linked_elsewhere');
-  end if;
   update public.bridge_link_codes set used_at = now() where id = c.id;
   if existing.id is not null then
     return jsonb_build_object('ok', true, 'already', true, 'link', internal.bridge_link_json(existing),
@@ -294,6 +309,20 @@ end
 $$;
 revoke all on function internal.bridge_redeem_link_code(uuid, text, text) from public;
 grant execute on function internal.bridge_redeem_link_code(uuid, text, text) to tm8_graph_owner;
+
+-- The executor's door (B1b-4's /link dispatch entry): the in-process bridges
+-- worker only, like 401's doors. It runs whoever sent /link, guest included:
+-- a guest is exactly who links.
+create or replace function public.bridge_command_link_redeem(
+  p_bridge_id uuid, p_sender_external_id text, p_code text)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_bridge_commands_worker();
+  return internal.bridge_redeem_link_code(p_bridge_id, p_sender_external_id, p_code);
+end
+$$;
+revoke all on function public.bridge_command_link_redeem(uuid, text, text) from public;
+grant execute on function public.bridge_command_link_redeem(uuid, text, text) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- §4. Invite to space (D60): pin a participant to an invite; redeeming it
