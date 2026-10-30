@@ -41,6 +41,7 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: [view] };
       else if (url.pathname.endsWith('/handles') && req.method === 'POST') data = { spaceId: SPACE, handle: 'keen-otter', entityId: CHAT, kind: 'work_session', title: null, status: 'live', createdAt: view.createdAt };
       else if (url.pathname.endsWith('/listen')) data = { bridgeId: BRIDGE, sessionId: CHAT, wake: body.wake, ceiling: 'thread' };
+      else if (url.pathname.endsWith('/work')) data = { bridgeId: BRIDGE, parentTaskId: null, items: [{ taskId: CHAT, sessionId: CHAT, handle: 'keen-otter', error: null }], noticeMessageId: CHAT };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -77,9 +78,21 @@ describe('tm8 bridge (B0a)', () => {
 
   it('the noun shard lists every B0a verb', () => {
     const paths = nounHelp('bridge')!.commands.map(c => c.command);
-    for (const p of ['list', 'show', 'get', 'create', 'update', 'retarget', 'pause', 'resume', 'remove', 'handles', 'handle claim', 'log', 'listen']) {
+    for (const p of ['list', 'show', 'get', 'create', 'update', 'retarget', 'pause', 'resume', 'remove', 'handles', 'handle claim', 'log', 'listen', 'work']) {
       expect(paths).toContain(`bridge ${p}`);
     }
+  });
+
+  it('work sends the items and options to bridges.work.start (B1b-6)', async () => {
+    expect(await run(['bridge', 'work', BRIDGE, '--item', 'fix the login timeout', '--item', 'release notes',
+      '--teammate', 'Infra Bot', '--effort', 'high', '--mutation-id', 'mid-1'])).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'POST', path: `/v2/bridges/${BRIDGE}/work` });
+    expect(requests[0]!.body).toMatchObject({
+      clientMutationId: 'mid-1', items: ['fix the login timeout', 'release notes'], options: { teammate: 'Infra Bot', effort: 'high' },
+    });
+    expect(stdout).toContain('keen-otter starting');
+    expect(await run(['bridge', 'work', BRIDGE])).not.toBe(0);
+    expect(await run(['bridge', 'work', BRIDGE, '--item', 'x', '--effort', 'huge'])).not.toBe(0);
   });
 
   it('list sends the filters to bridges.list', async () => {
