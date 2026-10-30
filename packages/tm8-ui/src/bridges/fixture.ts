@@ -249,6 +249,7 @@ export function createFixtureBridgesClient(
           actorId: m.authorId ?? '', actorKind: m.authorKind ?? 'team_member', displayName: m.authorName,
           handle: m.handle, posts: 1, lastPostAt: m.createdAt,
         })),
+        summary: null, // #1438 (D74): the fixture has no rolling summary.
       };
     },
     update: (id, v, patch) => write(id, v, (b) => {
@@ -268,7 +269,7 @@ export function createFixtureBridgesClient(
     log: async (id) => {
       const view = find(id);
       const items = logs.get(id) ?? [];
-      return { bridgeId: id, logAnchorId: view.target.kind === 'channel' ? view.target.id : id, items, lastMessageId: items[items.length - 1]?.id ?? null, more: false };
+      return { bridgeId: id, logAnchorId: view.target.kind === 'channel' ? view.target.id : id, items, lastMessageId: items[items.length - 1]?.id ?? null, more: false, olderCursor: null }; // olderCursor: #1446's paging
     },
   };
 }
