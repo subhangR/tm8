@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:677bff68235b53aa160fb4e90acb7feebe69d9bbe8053f07a798af6aa6c7e7fb",
+  "catalogDigest": "sha256:bda561af8bb7aac0ade56444f95c7674515afa7d5e9c62e625b4200bd2bc5dcb",
   "catalog": {
-    "total": 408,
-    "v1": 406,
+    "total": 410,
+    "v1": 408,
     "reserved": 2,
-    "http": 406,
+    "http": 408,
     "ws": 1,
-    "registerableV1Http": 404,
+    "registerableV1Http": 406,
     "methods": {
-      "GET": 136,
+      "GET": 137,
       "POST": 202,
-      "PATCH": 23,
+      "PATCH": 24,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 143,
-      "command": 263,
+      "read": 144,
+      "command": 264,
       "stream": 2
     },
-    "uniqueNames": 408,
-    "uniqueBindings": 407
+    "uniqueNames": 410,
+    "uniqueBindings": 409
   },
   "reservedOperations": [
     "search.query",
@@ -428,6 +428,20 @@
         "operation": "bridges.remove",
         "method": "POST",
         "path": "/v2/bridges/:bridgeId/remove",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.participants.list",
+        "method": "GET",
+        "path": "/v2/bridges/:bridgeId/participants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.participants.update",
+        "method": "PATCH",
+        "path": "/v2/bridges/:bridgeId/participants/:externalId",
         "status": "registered",
         "source": "server-router"
       },
@@ -3260,7 +3274,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 376
+    "unimplementedV1Http": 378
   },
   "schemas": {
     "additive": {
@@ -3957,6 +3971,40 @@
         "intentTags": [
           "bridges",
           "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.participants.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.participants.list",
+        "intentTags": [
+          "bridges",
+          "participants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.participants.update",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.participants.update",
+        "intentTags": [
+          "bridges",
+          "participants",
+          "update"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

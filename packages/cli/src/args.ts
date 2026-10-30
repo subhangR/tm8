@@ -143,6 +143,9 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
   'include-ended',       // tm8 bridge list
+  'linked',              // tm8 bridge people (Bridges P, 404)
+  'guests',              // tm8 bridge people (Bridges P, 404)
+  'unassert',            // tm8 bridge participant (Bridges P, 404)
   // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
   // particular has to be listed or it would eat the next token and turn a
   // rehearsal into a write.

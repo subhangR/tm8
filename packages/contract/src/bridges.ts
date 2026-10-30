@@ -9,7 +9,7 @@
  * never computed by a client.
  */
 import { z } from 'zod';
-import type { EntityId, SpaceId } from './contract.js';
+import type { ActorSummary, EntityId, SpaceId } from './contract.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -123,6 +123,44 @@ export interface BridgeHandle {
 export interface BridgeHandleAppearance extends BridgeHandle { firstAt: string; lastAt: string }
 export interface BridgeHandleListResult { items: BridgeHandleAppearance[] }
 
+/** How a participant is known in the bridge's space (§2.4): the resolver's answer, as on inbound. */
+export type BridgeParticipantTrust = 'linked' | 'asserted' | 'guest';
+export const BRIDGE_PARTICIPANT_TRUSTS = ['linked', 'asserted', 'guest'] as const satisfies readonly BridgeParticipantTrust[];
+
+/**
+ * One row of `bridges.participants.list` (§2.4, §4.4, D50): presence, not an
+ * entity. External ids are masked ('…9494') unless the caller is an admin of
+ * the bridge's space; then `masked` is false and the alternate ids are listed.
+ * The link that resolved the row is reported as its outcome only.
+ */
+export interface BridgeParticipant {
+  externalId: string;
+  /** Empty for a non-admin: withheld, not masked. */
+  altExternalIds: string[];
+  masked: boolean;
+  displayName: string | null;
+  avatarRef: string | null;
+  muted: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  messageCount: number;
+  trust: BridgeParticipantTrust;
+  /** The member the participant counts as; null for a guest. */
+  memberId: EntityId | null;
+  /** The member's actor chip; null for a guest. */
+  member: ActorSummary | null;
+  link: { method: 'code' | 'invite' | 'admin'; verifiedAt: string } | null;
+  /** The link names the caller's own identity. */
+  you: boolean;
+}
+export interface BridgeParticipantListResult {
+  bridgeId: EntityId;
+  spaceId: SpaceId;
+  /** The caller is an admin of the bridge's space: ids are unmasked and the row actions are theirs (D52). */
+  admin: boolean;
+  items: BridgeParticipant[];
+}
+
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
 /** One row of `bridges.log.read`: a message on the bridge's log anchor, oldest first. */
@@ -188,6 +226,16 @@ export interface BridgeUpdateInput extends BridgeCommand {
 export interface BridgeRetargetInput extends BridgeCommand { bridgeId?: EntityId; expectedVersion: number; targetId: EntityId }
 export interface BridgeStateInput extends BridgeCommand { bridgeId?: EntityId; expectedVersion: number }
 export interface BridgeHandleClaimInput { spaceId?: SpaceId; title?: string }
+/**
+ * `bridges.participants.update` (D52): human-only, space admin. `memberId`
+ * asserts *This is <member>* (a space-scoped link); null revokes the
+ * assertion. Refused `already_linked` while the person's own link resolves them.
+ */
+export interface BridgeParticipantUpdateInput extends BridgeCommand {
+  bridgeId?: EntityId;
+  externalId?: string;
+  patch: { muted?: boolean; memberId?: EntityId | null };
+}
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 
 const Id = z.string().uuid();
@@ -291,5 +339,12 @@ export const BridgeHandleClaimInputSchema = z.object({
   spaceId: Id.optional(),
   title: z.string().trim().min(1).max(80)
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
+}).strict();
+export const BridgeParticipantUpdateInputSchema = z.object({
+  ...Command,
+  bridgeId: Id.optional(),
+  externalId: z.string().min(1).max(256).optional(),
+  patch: z.object({ muted: z.boolean().optional(), memberId: Id.nullable().optional() }).strict()
+    .refine(patch => Object.keys(patch).length > 0, 'patch must change something'),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
