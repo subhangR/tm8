@@ -960,7 +960,11 @@ grant select on public.session_loop_origins to tm8_app;
 -- Write (or merge) the authored_from -> loop edge(s) for one entity.
 create or replace function internal.loop_stamp(p_entity_id uuid, p_origins jsonb) returns integer
 language plpgsql set search_path = public, internal, pg_temp as $$
-declare e public.entities; o jsonb; existing public.edges; n integer := 0; v_loop uuid;
+declare
+  e public.entities; o jsonb; existing public.edges; n integer := 0; v_loop uuid;
+  -- Runs inside the entities/edges AFTER INSERT triggers: restore the creating
+  -- path's writer, never clear it (399's review F1).
+  prev_writer text := internal.w1_writer();
 begin
   select * into e from public.entities where id = p_entity_id;
   if e.id is null then raise exception 'entity % not found', p_entity_id using errcode = 'P0002'; end if;
@@ -976,7 +980,7 @@ begin
       on conflict (src_id, dst_id, type) do nothing;
       n := n + 1;
     end if;
-    perform internal.w1_set_writer(null);
+    perform internal.w1_set_writer(nullif(prev_writer, ''));
   end loop;
   return n;
 end
