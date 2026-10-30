@@ -56,13 +56,19 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
 
 /**
  * 395 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
- * bridge rows. Historical fixtures that stop before 395 mirror only that read's
- * signature: a NULL stub. No bridge rows are tested.
+ * bridge rows. 406 (Bridges B2): the message readers and the projector select
+ * `internal.bridge_message_badges(ids)` for every page of messages. Historical
+ * fixtures that stop before 395 mirror only those reads' signatures: a NULL
+ * view and an empty badge list (no message crossed a bridge). No bridge rows
+ * are tested.
  */
 export async function addBridgeProjectionShape(database: W1ScratchDatabase): Promise<void> {
   await database.query(`set role tm8_graph_owner;
     create or replace function internal.bridge_view(p_bridge_id uuid) returns jsonb
       language sql stable as 'select null::jsonb';
     grant execute on function internal.bridge_view(uuid) to tm8_app;
+    create or replace function internal.bridge_message_badges(p_ids uuid[]) returns jsonb
+      language sql stable as 'select ''[]''::jsonb';
+    grant execute on function internal.bridge_message_badges(uuid[]) to tm8_app;
     reset role;`);
 }
