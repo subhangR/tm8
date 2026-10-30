@@ -768,7 +768,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   const words = cmd.options.value('words');
   if (titleContains !== undefined) filters.titleContains = titleContains;
   if (words !== undefined) filters.words = words;
-  // 408: all of (--label) / any of (--label-any); archived labels still match
+  // 410: all of (--label) / any of (--label-any); archived labels still match
   // the entities that carry them, so names resolve among them too.
   const allLabels = cmd.options.values('label');
   const anyLabels = cmd.options.values('label-any');
@@ -943,7 +943,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (connections.length > 0) body.connections = connections;
   const header = headerTextOptions(cmd);
   if (header !== undefined) body.header = header;
-  // 408: `--label <name|id>` (repeatable); names resolve through labels.list.
+  // 410: `--label <name|id>` (repeatable); names resolve through labels.list.
   const labelRefs = cmd.options.values('label');
   if (labelRefs.length > 0) body.labels = await resolveLabelIds(cmd, labelRefs);
 
@@ -982,13 +982,13 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
     body.content = { ...(body.content as Record<string, unknown> | undefined), status };
   }
 
-  // 408: label names or ids, added and removed under the same version.
+  // 410: label names or ids, added and removed under the same version.
   const addLabels = cmd.options.values('add-label');
   const removeLabels = cmd.options.values('remove-label');
   if (addLabels.length > 0 || removeLabels.length > 0) {
     body.labels = {
       ...(addLabels.length > 0 ? { add: await resolveLabelIds(cmd, addLabels) } : {}),
-      // An archived label can always be removed (408 D2), so its name resolves.
+      // An archived label can always be removed (410 D2), so its name resolves.
       ...(removeLabels.length > 0 ? { remove: await resolveLabelIds(cmd, removeLabels, { includeArchived: true }) } : {}),
     };
   }

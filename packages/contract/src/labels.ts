@@ -1,5 +1,5 @@
 /**
- * Labels (migration 408; BRIDGE-ENTITY-DESIGN v4 §3.8, D27).
+ * Labels (migration 410; BRIDGE-ENTITY-DESIGN v4 §3.8, D27).
  *
  * A label is a flat, space-level entity: a name (unique per space, case-
  * insensitive, across live and archived labels), a colour and a description.
@@ -14,7 +14,7 @@ const Id = z.string().uuid();
 
 export const LABEL_NAME_MAX = 64;
 export const LABEL_DESCRIPTION_MAX = 500;
-/** An entity carries at most this many labels (408's guard). */
+/** An entity carries at most this many labels (410's guard). */
 export const ENTITY_LABELS_MAX = 32;
 /** The colour a label gets when none is given. */
 export const LABEL_DEFAULT_COLOUR = '#6b7280';

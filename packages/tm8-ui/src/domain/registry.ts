@@ -2763,7 +2763,7 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- label (408: a space-wide tag — name, colour, description; D27) --
+   * -- label (410: a space-wide tag — name, colour, description; D27) --
    *
    * MINIMAL BY DESIGN, like `style`: the row registers the kind so lists,
    * panels and the rail can show a label. Labels are made, renamed and
@@ -2851,7 +2851,7 @@ const ROWS: readonly KindConfig[] = [
  */
 // `bridge` (BRIDGE-ENTITY-DESIGN §3.1, `spawnable: false`): you do not RUN a
 // bridge — agents answer through its target, and workers post on it by handle.
-// `label` (408): a tag on other entities — there is nothing to run.
+// `label` (410): a tag on other entities — there is nothing to run.
 const NOT_LAUNCHABLE: ReadonlySet<string> = new Set<string>(['bridge', 'label']);
 
 /**

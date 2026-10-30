@@ -1,7 +1,7 @@
 /**
- * `labels.*` (migration 408; BRIDGE-ENTITY-DESIGN §3.8, D27).
+ * `labels.*` (migration 410; BRIDGE-ENTITY-DESIGN §3.8, D27).
  *
- * Thin doors over 408's RPCs. The read is one query over `public.labels`
+ * Thin doors over 410's RPCs. The read is one query over `public.labels`
  * joined to its envelope, under the caller's RLS; an archived label leaves the
  * list unless `includeArchived` asks for it. An entity's labels are written by
  * `entities.patch` (`labels: {add, remove}`), not here.

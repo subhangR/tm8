@@ -101,7 +101,7 @@ export const ENTITY_COLUMNS = `
   -- will carry a status in a later phase. MIRRORED by projector.ts's
   -- SUMMARY_SQL — the two column lists must not drift.
   e.status_category,
-  -- 408: label ids on the envelope. MIRRORED by projector.ts's SUMMARY_SQL.
+  -- 410: label ids on the envelope. MIRRORED by projector.ts's SUMMARY_SQL.
   e.labels,
   coalesce(ec.likes, 0)    as likes,
   coalesce(ec.dislikes, 0) as dislikes,
@@ -233,7 +233,7 @@ export const ENTITY_COLUMNS = `
   -- in order) — one SQL function the projector twin selects too.
   dsg.title as craft_title, dsg.description as craft_description,
   case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
-  -- 408: a label's own row facts (name, colour, description, archive mark).
+  -- 410: a label's own row facts (name, colour, description, archive mark).
   lbl.name as label_name, lbl.colour as label_colour,
   lbl.description as label_description, lbl.archived_at as label_archived_at,
   -- 307: points-weighted subtree progress, the same function the projector
@@ -529,7 +529,7 @@ export interface EntityRow {
   created_by: string;
   /** 147; optional keeps legacy row fixtures source-compatible. */
   status_category?: string | null;
-  /** 408; optional keeps legacy row fixtures source-compatible. */
+  /** 410; optional keeps legacy row fixtures source-compatible. */
   labels?: string[] | null;
   likes: number;
   dislikes: number;
@@ -1736,7 +1736,7 @@ export function titleOf(row: EntityRow): string {
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.craft_title ?? 'Craft';
     case 'label':
-      // 408: its name. MIRRORS the projector twin.
+      // 410: its name. MIRRORS the projector twin.
       return row.label_name ?? 'Label';
     case 'style':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
@@ -2199,7 +2199,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // too — the mirror is the shared function.
       return craftSummaryOf(row.craft_summary);
     case 'label':
-      // 408: the label's own row facts. MIRRORS the projector twin.
+      // 410: the label's own row facts. MIRRORS the projector twin.
       return labelFactsOf(row);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
@@ -2617,7 +2617,7 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
   // 395: edited and ended only through bridges.* (generic delete is refused in SQL); flat, never completed.
   if (row.kind === 'bridge') return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
-  // 408: edited through `labels.update`, archived (never deleted) through `labels.archive`.
+  // 410: edited through `labels.update`, archived (never deleted) through `labels.archive`.
   if (row.kind === 'label') return { ...base, canEdit: live, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
@@ -2761,7 +2761,7 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     // reason: an entity with no status must OMIT the key rather than claim a
     // bucket. MIRRORED by projector.ts's summary literal.
     ...categoryFragment(row.status_category, row.id),
-    // 408: spread when non-empty. MIRRORED by projector.ts's summary literal.
+    // 410: spread when non-empty. MIRRORED by projector.ts's summary literal.
     ...labelsFragment(row.labels),
     counters: {
       likes: row.likes,
@@ -2970,7 +2970,7 @@ export function contentOf(row: EntityRow): EntityContent {
       // The prose; `hydrateDetail` adds the ordered pages on a detail read.
       return { kind: 'craft', description: row.craft_description ?? '', pages: null };
     case 'label':
-      // 408: content is the state; a label has nothing a detail read adds.
+      // 410: content is the state; a label has nothing a detail read adds.
       return labelFactsOf(row);
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
@@ -3355,12 +3355,12 @@ export function taskProgressOf(raw: unknown): { progress?: TaskProgress } {
   return parsed.success ? { progress: parsed.data } : {};
 }
 
-/** 408: a summary's `labels`, present only when the entity carries any. Shared with the projector. */
+/** 410: a summary's `labels`, present only when the entity carries any. Shared with the projector. */
 export function labelsFragment(raw: readonly string[] | null | undefined): { labels?: string[] } {
   return Array.isArray(raw) && raw.length > 0 ? { labels: [...raw] } : {};
 }
 
-/** 408: a label entity's state and content (both read paths). */
+/** 410: a label entity's state and content (both read paths). */
 export function labelFactsOf(row: {
   label_name?: string | null; label_colour?: string | null;
   label_description?: string | null; label_archived_at?: Date | string | null;

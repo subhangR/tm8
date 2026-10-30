@@ -672,7 +672,7 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'tools.secrets.bind': 'ToolSecretBindInputSchema',
   'tools.secrets.unbind': 'ToolSecretUnbindInputSchema',
   'tools.run': 'ToolRunInputSchema',
-  // Labels (408): `tm8 label update|archive --expect-version`.
+  // Labels (410): `tm8 label update|archive --expect-version`.
   'labels.update': 'LabelUpdateInputSchema',
   'labels.archive': 'LabelArchiveInputSchema',
   // Loops: `tm8 loop edit|enable|disable|pause|resume --expect-version`.
@@ -915,7 +915,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // writes, lenient headers / migration 223), so they are not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(58 /* +2 label update|archive --expect-version (408). MEASURED. */ /* +5 bridge update|retarget|pause|resume|remove --expect-version (Bridges B0a, 395). MEASURED. */ /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
+    expect(swept).toBe(58 /* +2 label update|archive --expect-version (410). MEASURED. */ /* +5 bridge update|retarget|pause|resume|remove --expect-version (Bridges B0a, 395). MEASURED. */ /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -1085,7 +1085,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(65 /* +2 label update|archive --expect-version (408). MEASURED. */ /* +5 bridge update|retarget|pause|resume|remove --expect-version (Bridges B0a, 395). MEASURED. */ /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
+    expect(actual.length).toBe(65 /* +2 label update|archive --expect-version (410). MEASURED. */ /* +5 bridge update|retarget|pause|resume|remove --expect-version (Bridges B0a, 395). MEASURED. */ /* +5 loop edit|enable|disable|pause|resume --expect-version (loops PR4). MEASURED. */ /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

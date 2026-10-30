@@ -1,5 +1,5 @@
 /**
- * `tm8 label list|create|update|archive` (migration 408; BRIDGE-ENTITY-DESIGN §3.8).
+ * `tm8 label list|create|update|archive` (migration 410; BRIDGE-ENTITY-DESIGN §3.8).
  *
  * A label is a space-level name and colour that any entity can carry; `bug`
  * is seeded in every space. Labels are archived, never deleted. To put one on

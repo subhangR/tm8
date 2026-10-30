@@ -1358,7 +1358,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
-    // Bridges F (410): the fix-notice waits that need a clock (D70, D72).
+    // Bridges F (412): the fix-notice waits that need a clock (D70, D72).
     scheduler.register(createBridgeFixSweepJob({ db }));
     // §5.6 (346): MCP call audit rows past the node's retention window.
     scheduler.register(

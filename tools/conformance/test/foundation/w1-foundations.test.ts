@@ -272,7 +272,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     // 32 -> 33 (2026-10-06): `craft` (migration 304 as `design`, renamed by 322).
     // MEASURED by counting the `core(` rows in kind-dispositions.ts.
     // 34 -> 33 (2026-10-13): the request kind of migration 280 is removed (migration 325).
-    // 33 -> 34: `bridge` (migration 395, Bridges B0a); 34 -> 35: `label` (migration 408, Bridges B0b).
+    // 33 -> 34: `bridge` (migration 395, Bridges B0a); 34 -> 35: `label` (migration 410, Bridges B0b).
     expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(35);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({

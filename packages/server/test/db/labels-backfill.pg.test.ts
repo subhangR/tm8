@@ -1,9 +1,9 @@
 /**
- * 408's BACKFILL, against a database that held spaces before 408 ran.
+ * 410's BACKFILL, against a database that held spaces before 410 ran.
  *
  * `labels.pg.test.ts` seeds its spaces after every migration, so it only ever
- * exercises the owner-arrival trigger. Here the chain stops below 408, spaces
- * are written, then 408 applies: a space with an owner gets `bug` created by
+ * exercises the owner-arrival trigger. Here the chain stops below 410, spaces
+ * are written, then 410 applies: a space with an owner gets `bug` created by
  * that owner; a space with no owner gets it from its earliest member. Also
  * pinned: a non-member reads no `labels` rows and cannot label an entity.
  *
@@ -54,17 +54,17 @@ async function seedSpace(identityId: string, name: string, role: 'owner' | 'memb
 beforeAll(async () => {
   database = await createW1ScratchDatabase('labels-397-backfill');
   const files = migrationFiles();
-  database.apply(files.filter((f) => f < '408'));
+  database.apply(files.filter((f) => f < '410'));
   owned = await seedSpace('backfill-owner', 'Pre-397', 'owner');
   ownerless = await seedSpace('backfill-member', 'Ownerless', 'member');
-  database.apply(files.filter((f) => f >= '408'));
+  database.apply(files.filter((f) => f >= '410'));
 });
 
 afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('408 backfill', () => {
+describe('410 backfill', () => {
   it('gives every pre-existing space bug, created by its owner or else its earliest member', async () => {
     const rows = await database.query<{ space_id: string; created_by: string; colour: string }>(
       `select l.space_id::text, e.created_by::text, l.colour

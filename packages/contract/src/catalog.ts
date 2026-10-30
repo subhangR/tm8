@@ -101,7 +101,7 @@ export const OPERATIONS = [
   { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
   { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },
   { name: 'bridges.listen', method: 'POST', path: '/v2/bridges/:bridgeId/listen', kind: 'command', status: 'v1' },
-  // labels (408; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
+  // labels (410; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
   { name: 'labels.list', method: 'GET', path: '/v2/spaces/:spaceId/labels', kind: 'read', status: 'v1' },
   { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },
   { name: 'labels.update', method: 'PATCH', path: '/v2/labels/:labelId', kind: 'command', status: 'v1' },

@@ -1062,7 +1062,7 @@ function normalizeReason(error: unknown): never {
   throw error;
 }
 
-/** 408: a label has its own doors, and is archived rather than deleted. */
+/** 410: a label has its own doors, and is archived rather than deleted. */
 const LABEL_LIFECYCLE_REMEDY: Readonly<Record<string, string>> = {
   'entities.create': 'labels are created with `tm8 label create` (labels.create)',
   'entities.patch': 'a label is edited with labels.update; to label an entity, patch it with `labels: {add, remove}`',
@@ -1156,7 +1156,7 @@ function assertPatchContentMembers(
 }
 
 /**
- * 408: add and remove label ids under `expectedVersion` (NULL only for an
+ * 410: add and remove label ids under `expectedVersion` (NULL only for an
  * entity born in this transaction). The SQL door checks every id.
  */
 function setEntityLabels(
@@ -1638,7 +1638,7 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, envelope.clientMutationId ?? null]);
       }
       await attachInitialConnections(q, raw, input);
-      // 408: labels are part of the birth — no new version, no extra activity.
+      // 410: labels are part of the birth — no new version, no extra activity.
       if (input.labels && input.labels.length > 0 && raw.entity?.id) {
         await setEntityLabels(q, raw.entity.id, null, envelope.actorId ?? null,
           { add: input.labels }, labelsMutationId(envelope.clientMutationId));
@@ -1665,7 +1665,7 @@ export class W2EntitiesCommandsTrackingService {
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
         const kind = await kindFor(q, id);
-        // 408: a labels-only patch is not a body edit, so no kind's content
+        // 410: a labels-only patch is not a body edit, so no kind's content
         // arm (and no lifecycle refusal) applies: any live entity the caller
         // can read takes labels. `set_entity_labels` owns every check.
         const touchesBody = input.title !== undefined || Object.keys(content).length > 0;
@@ -1925,7 +1925,7 @@ export class W2EntitiesCommandsTrackingService {
               envelope.actorId ?? null, content.fields === undefined ? null : JSON.stringify(content.fields),
               envelope.clientMutationId ?? null]);
         }
-        // 408: labels beside a body edit apply after it, in the same
+        // 410: labels beside a body edit apply after it, in the same
         // transaction, with the version the CALLER sent: the door folds them
         // into the version the body edit just made (one patch, one version).
         if (input.labels) {

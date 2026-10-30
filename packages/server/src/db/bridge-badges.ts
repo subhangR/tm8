@@ -6,7 +6,7 @@ import type { Querier } from './types.js';
  * The bridge mark of each message that crossed or is crossing one
  * (BRIDGE-ENTITY-DESIGN §4.5, D4): provider, conversation, the participant and
  * trust of an inbound message, the delivery badge of an outbound one. One read
- * per page, through 407's `internal.bridge_message_badges`, which takes the
+ * per page, through 409's `internal.bridge_message_badges`, which takes the
  * delivery badge from 398's `internal.bridge_message_delivery` (D65).
  *
  * A message no bridge touched is simply absent from the map.

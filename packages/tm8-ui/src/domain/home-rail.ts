@@ -170,7 +170,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // shape. `spell` and `container` close it, what is left of the "Beta"
     // group (shipped and reachable, shape not settled) once `loop` and `tool`
     // moved to Work, so the settled kinds read first.
-    // `label` (408) sits beside `style`: listed here, managed by `tm8 label`
+    // `label` (410) sits beside `style`: listed here, managed by `tm8 label`
     // and (later) a Settings section, with no create door on Home.
     kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'style', 'label', 'spell', 'container'],
   },

@@ -263,7 +263,7 @@ describe('W1 frozen-row schema amendments', () => {
       // 395: a provider conversation bound to a target. Not creatable through
       // entities.create: `bridges.create` is its only door.
       'bridge',
-      // 2026-10-29: `label` (408, Bridges B0b) — a flat, space-level label.
+      // 2026-10-29: `label` (410, Bridges B0b) — a flat, space-level label.
       // Not creatable through entities.create: `labels.create` is its door.
       'label',
     ]);

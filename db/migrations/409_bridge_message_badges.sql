@@ -1,7 +1,7 @@
 -- =============================================================================
--- 407 — Bridges B2-ticks: the bridged-message read and live delivery ticks.
+-- 409 — Bridges B2-ticks: the bridged-message read and live delivery ticks.
 -- (Provisional number; the bridges merger assigns the final one.)
--- (Authored as 406; renumbered to 407 at merge by the bridges merger: main's 406 is L's 406_loops_bridge_targets.)
+-- (Authored as 406; renumbered to 409 at merge by the bridges merger: main has 406 (L) and 407/408 (MCP).)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §4.5, §2.3,
 -- D4, D64, D65. Task 01a189db-3067-74cf-9944-0d26f620a8dd. Builds on 398 (B1b-2).

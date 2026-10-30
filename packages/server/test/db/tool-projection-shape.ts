@@ -56,7 +56,7 @@ export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Pr
 
 /**
  * 395 (Bridges B0a): current readers select `internal.bridge_view(e.id)` for
- * bridge rows. 407 (Bridges B2): the message readers and the projector select
+ * bridge rows. 409 (Bridges B2): the message readers and the projector select
  * `internal.bridge_message_badges(ids)` for every page of messages. Historical
  * fixtures that stop before 395 mirror only those reads' signatures: a NULL
  * view and an empty badge list (no message crossed a bridge). No bridge rows
@@ -74,9 +74,9 @@ export async function addBridgeProjectionShape(database: W1ScratchDatabase): Pro
 }
 
 /**
- * 408 adds `entities.labels` and the `label` kind's detail table, and current
+ * 410 adds `entities.labels` and the `label` kind's detail table, and current
  * readers select `e.labels` and left-join `public.labels`. Historical fixtures
- * that stop before 408 mirror only that read shape; no label rows are tested.
+ * that stop before 410 mirror only that read shape; no label rows are tested.
  */
 export async function addLabelProjectionShape(database: W1ScratchDatabase): Promise<void> {
   await database.query(`set role tm8_graph_owner;

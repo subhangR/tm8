@@ -1,5 +1,5 @@
 /**
- * Labels (408; BRIDGE-ENTITY-DESIGN §3.8) over authenticated HTTP, against a
+ * Labels (410; BRIDGE-ENTITY-DESIGN §3.8) over authenticated HTTP, against a
  * scratch database with every migration applied.
  *
  * `labels.list|create|update|archive`; `labels` on `entities.create` and
@@ -142,7 +142,7 @@ describe('labels on entities', () => {
     const before = read.version;
     ok(await request('PATCH', `/v2/entities/${task.id}`, { expectedVersion: before, title: 'Sometimes red (CI)', labels: { remove: [flaky] } }));
     read = await getEntity(task.id);
-    // One patch, one version: the labels half does not move it again (408 D4).
+    // One patch, one version: the labels half does not move it again (410 D4).
     expect(read).toMatchObject({ title: 'Sometimes red (CI)', labels: [bug], version: before + 1 });
   });
 

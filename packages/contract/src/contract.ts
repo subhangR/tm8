@@ -110,7 +110,7 @@ export type CoreEntityKind =
   // conversation bound to one chat, session or channel. Born only from
   // `bridges.create`; ended only by `bridges.remove`. See ./bridges.ts.
   | 'bridge'
-  // Labels (migration 408, BRIDGE-ENTITY-DESIGN §3.8): a flat, space-level
+  // Labels (migration 410, BRIDGE-ENTITY-DESIGN §3.8): a flat, space-level
   // name/colour/description. Born only from `labels.create`; entities carry
   // label ids on the envelope (`EntitySummary.labels`). See ./labels.ts.
   | 'label';
@@ -314,7 +314,7 @@ export interface EntitySummary {
    */
   category?: StatusCategory;
   /**
-   * The label ids this entity carries (408, `entities.labels`), in the order
+   * The label ids this entity carries (410, `entities.labels`), in the order
    * they were added. IDS, not names: a label is renamed in one place. Resolve
    * them with `labels.list` (an archived label is still a valid id here).
    *
@@ -1510,11 +1510,11 @@ export interface CollectionQuery {
      */
     words?: string;
     /**
-     * Additive (408, labels): entities carrying ALL of these label ids
+     * Additive (410, labels): entities carrying ALL of these label ids
      * (`entities.labels @> …`, GIN-indexed). Kind-neutral.
      */
     labels?: EntityId[];
-    /** Additive (408): entities carrying ANY of these label ids (`&&`). */
+    /** Additive (410): entities carrying ANY of these label ids (`&&`). */
     labelsAny?: EntityId[];
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
@@ -3946,7 +3946,7 @@ export type CreatableEntityKind = Exclude<
   // `bridge` is born ONLY from `bridges.create` (395): a human space admin who
   // owns the connection, with the target checked and the edge written.
   | 'bridge'
-  // `label` is born ONLY from `labels.create` (408), which checks the name is
+  // `label` is born ONLY from `labels.create` (410), which checks the name is
   // free in the space; it is archived, never deleted.
   | 'label'
 >;
@@ -3969,7 +3969,7 @@ export interface CreateEntityInput extends CommandContext {
   header?: HeaderTextInput;
   /**
    * Label ids to put on the new entity, written in the same transaction
-   * (408). Each must be a live, unarchived label in the same space.
+   * (410). Each must be a live, unarchived label in the same space.
    */
   labels?: EntityId[];
 }
@@ -3986,7 +3986,7 @@ export interface PatchEntityInput extends CommandContext {
   title?: string;
   content?: Record<string, unknown>;
   /**
-   * Label ids to add and remove (408), under the same `expectedVersion`. Any
+   * Label ids to add and remove (410), under the same `expectedVersion`. Any
    * kind may carry labels; a labels-only patch needs no content arm.
    */
   labels?: EntityLabelsPatch;
