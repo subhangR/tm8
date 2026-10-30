@@ -97,7 +97,9 @@
 .cv2-root .slaunch__phase {
   position: relative;
   display: grid;
-  grid-template-columns: 20px 72px minmax(0, 1fr) auto;
+  /* L4: the detail column has a floor, never minmax(0,…) — a phase whose
+     words can collapse to nothing reads as a phase with nothing to say. */
+  grid-template-columns: 20px 72px minmax(12ch, 1fr) auto;
   align-items: center;
   column-gap: var(--pn-space-3);
   min-block-size: 32px;
