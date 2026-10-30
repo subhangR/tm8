@@ -1,5 +1,5 @@
 -- =============================================================================
--- 392  THE BOOT OF A LAUNCH, RECORDED ON ITS ROW (task 01a182d2-7217, lane C).
+-- 398  THE BOOT OF A LAUNCH, RECORDED ON ITS ROW (task 01a182d2-7217, lane C).
 --
 -- `execution.spawn` now answers as soon as a launch is ADMITTED — validated,
 -- its slot counted, its row written, its worktree reserved — and the server
@@ -77,7 +77,7 @@ alter table public.work_sessions
  * The phase a work session moves to. Pure: the trigger below is its only
  * caller, and every rule of the header's diagram is here and nowhere else.
  *
- *   p_phase           the current phase (NULL: a row from before 392)
+ *   p_phase           the current phase (NULL: a row from before 398)
  *   p_from, p_to      the status before and after this write
  *   p_requested       an explicit progress report, or NULL
  *
@@ -134,7 +134,7 @@ begin
      and coalesce(internal.claim_text('tm8.work_session_transition'), '') <> 'on' then
     raise exception 'work_session.boot_phase has a single writer: the execution transition function'
       using errcode = '23514',
-            detail = 'call public.work_session_transition(..., p_boot_phase) — 392';
+            detail = 'call public.work_session_transition(..., p_boot_phase) — 398';
   end if;
   new.boot_phase := internal.work_session_boot_phase_next(old.boot_phase, old.status, new.status, requested);
   if new.boot_phase is distinct from old.boot_phase then

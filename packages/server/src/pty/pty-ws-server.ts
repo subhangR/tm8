@@ -115,7 +115,7 @@ export interface PtyWsServerOptions {
   /**
    * Waits, bounded, for the terminal of a session whose boot is still running
    * (`SpawnService.awaitTerminal`): `execution.spawn` answers at admission
-   * (392), before the PTY exists, so an attach right after it must not be
+   * (398), before the PTY exists, so an attach right after it must not be
    * refused as a ghost; a boot that fails meanwhile is refused (409) with its
    * reason. Absent (tests), a missing PTY is refused at once.
    */
@@ -431,7 +431,7 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // the subscribe join (see the ordering invariant).
     if (!pty.getReplay(sessionId, 0)) {
       // A session still booting here has no PTY yet (`execution.spawn` answers
-      // at admission, 392): wait for it, bounded, before deciding. A boot that
+      // at admission, 398): wait for it, bounded, before deciding. A boot that
       // fails meanwhile is refused at once with its own reason, never a hang.
       const wait = opts.awaitTerminal ? await opts.awaitTerminal(sessionId) : null;
       if (wait?.failure) {

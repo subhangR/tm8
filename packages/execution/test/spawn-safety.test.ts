@@ -21,7 +21,7 @@ const REQUEST = {
   interactionProfileId: '44444444-4444-4444-8444-444444444444',
 };
 
-/** Status writes only: the boot's progress reports (392) are not what these tests count. */
+/** Status writes only: the boot's progress reports (398) are not what these tests count. */
 function statusWrites(spy: { mock: { calls: unknown[][] } }): number {
   return spy.mock.calls.filter(([, input]) => (input as { bootPhase?: string }).bootPhase === undefined).length;
 }
@@ -234,7 +234,7 @@ describe('SpawnService spawn acknowledgement safety', () => {
     vi.spyOn(pty, 'spawnIfAbsent').mockImplementation(() => {
       throw new Error('injected spawn failure');
     });
-    // The outage hits the STATUS write; the boot's progress reports (392)
+    // The outage hits the STATUS write; the boot's progress reports (398)
     // pass through to the fake as they would to the database.
     const report = graph.transition.bind(graph);
     let outage = true;

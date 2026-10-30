@@ -52,12 +52,23 @@ describe('the spawn payload', () => {
     expect(go.getAttribute('aria-disabled')).toBe('true');
     expect(go.getAttribute('title')).toMatch(/isn’t connected/);
     fireEvent.click(go);
-    expect(view.queryByTestId('lcd3-preview')).toBeNull();
+    expect(view.queryByTestId('lcd3-launching')).toBeNull();
   });
 
   it('a scrim click dismisses', () => {
     const view = renderPopup();
     fireEvent.click(view.container.querySelector('.nsx-popup__scrim')!);
+    expect(view.onDismiss).toHaveBeenCalled();
+  });
+
+  it('a scrim click closes an open menu first, then the card', () => {
+    const view = renderPopup();
+    fireEvent.click(view.getByTestId('nsx-model'));
+    expect(view.getByTestId('nsx-model-menu')).toBeTruthy();
+    fireEvent.click(document.querySelector('.nsx-popup__scrim')!);
+    expect(view.queryByTestId('nsx-model-menu')).toBeNull();
+    expect(view.onDismiss).not.toHaveBeenCalled();
+    fireEvent.click(document.querySelector('.nsx-popup__scrim')!);
     expect(view.onDismiss).toHaveBeenCalled();
   });
 });

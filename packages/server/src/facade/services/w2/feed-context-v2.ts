@@ -1448,7 +1448,7 @@ function assemble(
         model: root.ws_model ?? null,
         checkoutBranch: root.ws_checkout_branch ?? null,
         startedAt: isoOrNull(root.ws_started_at),
-        // 392: the boot, only while it is still the news — a session that
+        // 398: the boot, only while it is still the news — a session that
         // went live says nothing more than `startedAt` already does.
         ...(bootPhase !== undefined && bootPhase !== 'live' ? { bootPhase } : {}),
         // 299 (Spec D1): whether the WORK is finished, and its receipt.

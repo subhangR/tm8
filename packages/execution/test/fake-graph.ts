@@ -317,7 +317,7 @@ export class FakeGraph implements GraphPort {
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
     this.authSeen.push(auth);
-    // A boot's progress report (392) moves no status, so it is kept apart from
+    // A boot's progress report (398) moves no status, so it is kept apart from
     // the status transitions every other test asserts on.
     if (input.bootPhase !== undefined) {
       await this.bootPhaseGates.get(input.bootPhase);
@@ -339,11 +339,11 @@ export class FakeGraph implements GraphPort {
     this.transitions.push(input);
   }
 
-  /** Sessions whose row a refused boot report ended (392): every later status write is refused too. */
+  /** Sessions whose row a refused boot report ended (398): every later status write is refused too. */
   readonly stoppedSessions = new Set<string>();
   /** Status writes refused for a stopped session, in order. */
   readonly refusedStatusWrites: TransitionInput[] = [];
-  /** Every boot progress report (392), in order. */
+  /** Every boot progress report (398), in order. */
   readonly bootPhaseReports: Array<{ sessionId: string; bootPhase: string }> = [];
   /** A report of this phase is refused as the row would refuse it once the session stopped (23514). */
   refuseBootPhase: string | null = null;

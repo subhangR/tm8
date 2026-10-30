@@ -1,4 +1,4 @@
-import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape, addBridgeProjectionShape } from './tool-projection-shape.js';
 /**
  * 147 against a real Postgres: the backfill, the two triggers, and the EVENT
  * COST of each — which is the part that is easy to get wrong and invisible in
@@ -385,6 +385,7 @@ describe.sequential('147 — entities.status_category', () => {
     database.apply(['304_design_kind.sql']);
     await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
+    await addBridgeProjectionShape(database);
     await addEntityCounterLinkShape(database);
     // 302 adds session outcome fields selected by current entity readers.
     // This task-category fixture needs their shape, not the later backfill.
@@ -392,8 +393,8 @@ describe.sequential('147 — entities.status_category', () => {
       add column outcome text not null default 'open', add column outcome_at timestamptz,
       add column outcome_by uuid, add column receipt_message_id uuid,
       add column outcome_source text, add column outcome_note text`);
-    // 392 (boot phase): the session readers select `ws.boot_phase` and
-    // `ws.boot_phase_at`. 392 rewrites work_session_transition over 302,
+    // 398 (boot phase): the session readers select `ws.boot_phase` and
+    // `ws.boot_phase_at`. 398 rewrites work_session_transition over 302,
     // which this partial chain lacks, so only the two columns are mirrored.
     await database.query(`alter table public.work_sessions
       add column boot_phase text, add column boot_phase_at timestamptz`);

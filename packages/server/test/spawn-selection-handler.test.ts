@@ -130,7 +130,7 @@ describe('execution.spawn — selection and jevRunId', () => {
       requestId: 'req', identity: { kind: 'loopback' }, headers: {}, method: 'POST', path: '/v2/execution/spawn',
     } as unknown as RequestContext;
     let error: unknown;
-    // The handler answers at admission (392); the boot runs on behind it and
+    // The handler answers at admission (398); the boot runs on behind it and
     // is waited for before the test's directories are removed.
     const settled = trackBoots(runtime.spawnService);
     try {

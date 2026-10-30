@@ -1,5 +1,5 @@
 import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
-import { McpServerDefinitionSchema } from '@tm8/contract';
+import { BridgeEntitySchema, CollabError, McpServerDefinitionSchema } from '@tm8/contract';
 import { attachChatRuntimeFacts } from '../chat/public-state.js';
 import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
 /**
@@ -219,6 +219,8 @@ export const ENTITY_COLUMNS = `
   drw.files as drawing_files,
   mcp.definition as mcp_definition,
   ${TOOL_CONTENT_SQL} as tool_content,
+  -- 395: a bridge's derived facts, the one SQL function the projector twin selects too.
+  case when e.kind = 'bridge' then internal.bridge_view(e.id) end as bridge_view,
   ${TOOL_RUN_SQL} as ws_tool_run,
   case when e.kind='mcp_server' then internal.is_space_admin(e.space_id) else false end as mcp_manage,
   sty.title as story_title, sty.description as story_description,
@@ -599,7 +601,7 @@ export interface EntityRow {
   ws_receipt_message_id?: string | null;
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
-  /** Boot facts (392); optional for the same fixture-compatibility reason. */
+  /** Boot facts (398); optional for the same fixture-compatibility reason. */
   ws_boot_phase?: string | null;
   ws_boot_phase_at?: Date | string | null;
   ws_offered_task_ids?: string[] | null;
@@ -684,6 +686,8 @@ export interface EntityRow {
   drawing_files: Record<string, unknown> | null;
   mcp_definition?: unknown;
   tool_content?: unknown; ws_tool_run?: unknown;
+  /** 395: `internal.bridge_view`, camelCase; null off a bridge row or for a reader who cannot see it. */
+  bridge_view?: Record<string, unknown> | null;
   mcp_manage?: boolean;
   story_title?: string | null;
   story_description?: string | null;
@@ -841,15 +845,15 @@ const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
   'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
 ]);
 
-/** `work_sessions.boot_phase`'s CHECK verbatim — 392. */
+/** `work_sessions.boot_phase`'s CHECK verbatim — 398. */
 const BOOT_PHASES: ReadonlySet<string> = new Set<WorkSessionBootPhase>([
   'admitted', 'lane', 'briefing', 'agent', 'live', 'failed',
 ]);
 
 /**
- * The boot half of a session's state (392), from a projected row: the last
+ * The boot half of a session's state (398), from a projected row: the last
  * phase its launch reached and when. Projected only when the row records a
- * phase the contract knows — a row from before 392 says nothing, and a value
+ * phase the contract knows — a row from before 398 says nothing, and a value
  * outside the CHECK (which cannot be written) would fail the `.strict()` state
  * rather than render, so it is dropped instead. Shared by every read model that
  * serves the session state, so an event-borne summary and a read summary of the
@@ -1731,6 +1735,9 @@ export function titleOf(row: EntityRow): string {
     case 'server':
       // Its own name. MIRRORS the projector twin.
       return row.srv_name ?? 'Server';
+    case 'bridge':
+      // The conversation's title: a bridge has no title of its own. MIRRORS the projector twin.
+      return bridgeTitleOf(row.bridge_view);
     case 'space_link':
       // A fixed word, never the target space's name: P8 lets a non-member of
       // the target see THAT a link exists, not what the target is called.
@@ -2046,7 +2053,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           : { sharingSetAt: isoOrNull(row.ws_sharing_set_at) }),
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
-        // 392: how far the launch's boot has got.
+        // 398: how far the launch's boot has got.
         ...bootPhaseFacts(row),
         // OMITTED, never defaulted, when the column has no value: the DTO
         // makes absence mean `agent`, so a node whose rows predate 082 keeps
@@ -2290,6 +2297,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         fetchedAt: isoOrNull(row.commit_fetched_at ?? null),
         stale: (row.commit_fetched_at ?? null) === null,
       } as EntityState;
+    case 'bridge':
+      // 395: state and content are the same derived view. MIRRORS the projector twin.
+      return bridgeEntityOf(row.bridge_view);
     case 'space_link':
     case 'server':
       // 250 (W6): no row facts on the entity — `spaceLinks.list` answers for a
@@ -2587,6 +2597,8 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   const base = capabilitiesOf(row);
   const live = row.deleted_at === null;
   if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
+  // 395: edited and ended only through bridges.* (generic delete is refused in SQL); flat, never completed.
+  if (row.kind === 'bridge') return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
     return {
@@ -3010,6 +3022,8 @@ export function contentOf(row: EntityRow): EntityContent {
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
+    case 'bridge':
+      return bridgeEntityOf(row.bridge_view);
     case 'space_link':
     case 'server':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
@@ -3365,6 +3379,22 @@ export async function loadCraftPages(q: Querier, craftId: string, viewerIdentity
 export function craftSummaryOf(raw: unknown): Extract<EntityState, { kind: 'craft' }> {
   const parsed = CraftStateSchema.safeParse(raw);
   return parsed.success ? parsed.data : { kind: 'craft', pageCount: 0, pageKinds: [] };
+}
+
+/**
+ * A bridge row's facts from `internal.bridge_view` (395). The view answers null
+ * to a reader who cannot see the bridge; such a row never reaches assembly, so
+ * a missing view is a broken invariant and fails loudly rather than inventing facts.
+ */
+export function bridgeEntityOf(raw: unknown): Extract<EntityState, { kind: 'bridge' }> {
+  if (!raw || typeof raw !== 'object') throw new CollabError('not_found', 'Bridge is unavailable');
+  const { createdAt: _c, updatedAt: _u, ...facts } = raw as Record<string, unknown>;
+  return BridgeEntitySchema.parse({ kind: 'bridge', ...facts });
+}
+
+export function bridgeTitleOf(raw: unknown): string {
+  const title = (raw as { conversation?: { title?: unknown } } | null)?.conversation?.title;
+  return typeof title === 'string' && title.length > 0 ? title : 'Bridge';
 }
 
 /** Detail-only IO, shared by the original and universal entity doors. */

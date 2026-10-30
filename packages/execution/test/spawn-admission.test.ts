@@ -1,4 +1,4 @@
-// Admit fast (392): `SpawnService.admit` answers once the launch is ADMITTED —
+// Admit fast (398): `SpawnService.admit` answers once the launch is ADMITTED —
 // its row written, its worktree reserved — and the boot runs on behind it,
 // recording lane → briefing → agent on the row before `running` makes it live.
 //
@@ -152,7 +152,7 @@ describe('SpawnService.admit — answer at admission, boot behind it', () => {
     expect(graph.bootPhaseReports.map((r) => r.bootPhase)).toEqual(['lane']);
   });
 
-  it('a terminal waiter hears a failing boot at once, with its reason (392)', async () => {
+  it('a terminal waiter hears a failing boot at once, with its reason (398)', async () => {
     // A PTY attach that arrived at admission waits on this; the boot failing
     // must end the wait now, not at the 30 s bound.
     let open!: () => void;
