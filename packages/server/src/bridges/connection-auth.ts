@@ -16,6 +16,7 @@
  */
 import {
   BridgeConnectionAuthFrameSchema, type AuthFrame, type BridgeConnectionAuthFlow, type BridgeConnectionAuthFrame,
+  type ConversationsFrame,
 } from '@tm8/contract';
 import type { DbClaims } from '../db/types.js';
 import { fanOutToIdentity, type IdentityAddress, type SubscriptionRegistry } from '../events/subscriptions.js';
@@ -30,6 +31,10 @@ export interface BridgeRuntimeLink {
    * 398's bridge_runtime_connect admits only the connection's human owner.
    */
   connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }, claims: DbClaims): Promise<{ runtimeId: string } | null>;
+  /** B1b-7: `disconnect {logout}` to the runtime holding the connection; false when no runtime is connected. */
+  disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean>;
+  /** B1b-7: the runtime's live group list for one connection; never stored. Null when that runtime is not connected. */
+  listConversations(runtimeId: string, connectionId: string, requestId: string): Promise<ConversationsFrame | null>;
 }
 
 /** How long a begin waits for its runtime before the pending entry lapses on its own. */
@@ -84,4 +89,18 @@ export class ConnectionAuthRelay {
     const entry = this.pending.get(connectionId);
     return entry !== undefined && entry.until > this.now();
   }
+}
+
+/**
+ * The hub as the handlers reach it: looked up per call, because the composition
+ * root builds the hub after it registers the handlers. No hub (a node without
+ * a database URL) answers like no runtime: null, false, null.
+ */
+export function lazyRuntimeLink(hub: () => BridgeRuntimeLink | undefined): BridgeRuntimeLink {
+  return {
+    connect: async (input, claims) => (hub() ? hub()!.connect(input, claims) : null),
+    disconnect: async (connectionId, opts) => (hub() ? hub()!.disconnect(connectionId, opts) : false),
+    listConversations: async (runtimeId, connectionId, requestId) =>
+      (hub() ? hub()!.listConversations(runtimeId, connectionId, requestId) : null),
+  };
 }

@@ -208,6 +208,8 @@ const ROWS: Record<OperationName, Row> = {
   'bridges.handover.accept': { cmd: ['bridge', 'handover', 'accept'], syn: 'tm8 bridge handover accept <handover-id> [--mutation-id <id>]', sum: 'Accept a bridge onto your number: it moves in one step, queued posts follow it', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'connection', 'number', 'handover', 'failover'], notes: ['human-only; only the receiving connection\'s owner, in tm8 (never from a group, D9)', 'your number must be linked and in the group right now: its runtime is asked; not in it refuses not_in_group', 'both numbers\' allowlists are updated and posts still queued go out on your number'] },
   'bridges.handover.decline': { cmd: ['bridge', 'handover', 'decline'], syn: 'tm8 bridge handover decline <handover-id> [--mutation-id <id>]', sum: 'Decline a bridge offered to your number', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'connection', 'number', 'handover', 'failover'], notes: ['human-only; the receiving connection\'s owner'] },
   'bridges.handover.withdraw': { cmd: ['bridge', 'handover', 'withdraw'], syn: 'tm8 bridge handover withdraw <handover-id> [--mutation-id <id>]', sum: 'Withdraw an open hand-over offer', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'connection', 'number', 'handover', 'failover'], notes: ['human-only; who offered it, the current connection\'s owner or a space admin'] },
+  'bridges.connections.remove': { cmd: ['bridge', 'connection', 'remove'], syn: 'tm8 bridge connection remove <connection-id> [--mutation-id <id>]', sum: 'Remove your connection: log the device out, end every bridge on it and revoke its offers', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'connection', 'number', 'credential', 'provider'], notes: ['human-only, the owner; every Space it is offered to loses its bridges on it (ended, read-only)', 'the runtime is told to log the device out and wipe its keys; without a runtime, unlink the device on the phone'] },
+  'bridges.conversations.list': { cmd: ['bridge', 'conversations'], syn: 'tm8 bridge conversations <connection-id>', sum: 'List the groups on your number, live from the runtime, to pick one to bridge', authz: 'server', input: 'none', side: 'none', tags: ['bridge', 'whatsapp', 'connection', 'number', 'credential', 'provider'], notes: ['human-only, and only the number\'s owner (D28): never a node admin or another member', 'asked of the runtime on each call; never stored'], examples: ['tm8 bridge conversations <connection-id>'] },
 
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
@@ -4448,6 +4450,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +2 bridges.connections.remove, bridges.conversations.list (B1b-7, 401): RECOMPUTED, equal to the regenerated manifest digest. MEASURED. */
   /* +4 bridges.connections.* (B1b-5, 400): RECOMPUTED, equal to the regenerated manifest digest. MEASURED. */
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
@@ -4529,8 +4532,9 @@ export const CATALOG_DIGEST =
   // Re-measured for meta.get (TM8 Mobile S2, GET /v2/meta) — RECOMPUTED from JSON.stringify(OPERATIONS), not adjusted.
   // Re-measured on the merge of main 625165032 (+13 loops.*, #1413) into the S2 lane: 397 rows, meta.get once — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   // Re-measured on TM8 Mobile server batch 1, fourth build (S2 meta.get on main a991cf6ca, which carries Bridges B0a's 12 bridges.* rows): 410 rows — RECOMPUTED from JSON.stringify(OPERATIONS) on the batch head (merge of S2 47d56d78c into 9e6352403, server batch 1 fourth build) by the Merger.
+  /* +2 bridges.connections.remove, bridges.conversations.list (B1b-7, 407): RECOMPUTED. MEASURED. */
   /* +4 bridges.connections.* (B1b-5, 405): RECOMPUTED over main b1e89eb03, equal to the regenerated manifest digest. MEASURED. */
-  'sha256:c984e1c913408de8219d2318e7def7a0a384b7d6de00279ab499769b4bb0a10e';
+  'sha256:c7a7ee5c0cb6ee7533cdb2e2d66ad555172d4133293c4bad6aa968e97a411b6f';
 
 export const GRAMMAR_VERSION = '2';
 

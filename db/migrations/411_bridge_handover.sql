@@ -1,13 +1,14 @@
 -- =============================================================================
--- 410 — Bridges Q7/Q8: hand-over (D55) and no automatic failover (D56).
--- (Provisional number: main's max was 407 when this lane started, and it is
--- stacked on #1427, whose 405/406 sit at 408/409 on this branch. The bridges
--- merger assigns the final one.)
+-- 411 — Bridges Q7/Q8: hand-over (D55) and no automatic failover (D56).
+-- (Provisional number: main's max was 407 when this lane started; it is
+-- stacked on #1427 (its 405/406 sit at 408/409 here) and #1443 (its 407 sits at
+-- 410 here). The bridges merger assigns the final one; this file must stay
+-- after #1443's, whose bridge_credential_guard it restates.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §8 D55, D56,
 -- and this lane's D57, D78–D80. Task 01a189db-3911-729c-ab74-5510b5ebba9f.
 -- Builds on 395 (schema), 398 (allowlist, outbox, watchdog) and #1427's 408
--- (the connection credential, D32).
+-- (the connection credential, D32) and #1443's 410 (the connection lifecycle).
 --
 -- WHAT THIS FILE DOES
 --   §1  bridge_handovers: one open offer per bridge, from the bridge's
@@ -408,10 +409,10 @@ grant execute on function public.withdraw_bridge_handover(uuid, text) to tm8_app
 -- -----------------------------------------------------------------------------
 -- §3. The guards: a bridge's connection and credential stay fixed, except
 -- inside an accept (§2). Restated from their latest definitions, each change
--- marked `410 (D55)`:
+-- marked `411 (D55)`:
 --   * guard_bridge_row: 395's (main has no later one);
 --   * bridge_credential_guard: #1427's (B1b-5, here 408) PLUS #1443's (B1b-7,
---     407_bridge_connection_lifecycle @ 087fe8422) `owner_not_member` arm,
+--     407_bridge_connection_lifecycle @ 087fe8422, here 410) `owner_not_member` arm,
 --     marked `407 (B1b-7)`, so this body is right whichever merges first. A
 --     later restatement must carry all three.
 -- -----------------------------------------------------------------------------
@@ -436,7 +437,7 @@ begin
     raise exception 'bridge teammate must be a teammate in the bridge''s space' using errcode = '23514';
   end if;
   if tg_op = 'UPDATE' and (new.space_id <> old.space_id or new.provider <> old.provider
-                           -- 410 (D55): only an accept in flight moves the connection.
+                           -- 411 (D55): only an accept in flight moves the connection.
                            or (new.connection_id <> old.connection_id
                                and not internal.bridge_handover_moving(new.entity_id, old.connection_id, new.connection_id))
                            or new.external_conversation_id <> old.external_conversation_id) then
@@ -475,7 +476,7 @@ begin
     return new;
   end if;
   if new.credential_id is distinct from old.credential_id then
-    -- 410 (D55): an accept in flight moves the credential with the connection,
+    -- 411 (D55): an accept in flight moves the credential with the connection,
     -- onto the live offer for the new connection in this space.
     if not internal.bridge_handover_moving(new.entity_id, old.connection_id, new.connection_id) then
       raise exception 'a bridge''s credential is fixed' using errcode = '42501';

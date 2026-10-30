@@ -456,6 +456,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'bridges.connections.begin': contract.BridgeConnectionBeginInputSchema,
       'bridges.connections.offer': contract.BridgeConnectionOfferInputSchema,
       'bridges.connections.withdraw': contract.BridgeConnectionWithdrawInputSchema,
+      'bridges.connections.remove': contract.BridgeConnectionRemoveInputSchema,
       'loops.create': contract.LoopCreateInputSchema,
       'loops.update': contract.LoopUpdateInputSchema,
       'loops.enable': contract.LoopEnableInputSchema,

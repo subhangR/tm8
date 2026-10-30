@@ -105,7 +105,7 @@ import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
-import { ConnectionAuthRelay } from './bridges/connection-auth.js';
+import { ConnectionAuthRelay, lazyRuntimeLink } from './bridges/connection-auth.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
 import {
   createCredentialStreamSweepJob,
@@ -596,17 +596,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       : undefined;
     registerFacadeHandlers(registry, {
       ...(tools ? { tools } : {}),
-      // Bridges B1b-5: the QR relay. B1b-2 adds `runtime: <BridgeRuntimeHub>` beside it.
-      bridges: {
-        connectionAuth: bridgeConnectionAuth,
-        // D55: accept asks the receiving number's runtime for its live groups.
-        // The hub is built below; this runs only at request time, after it.
-        listConversations: (runtimeId, connectionId, requestId) => bridgeHub
-          ? bridgeHub.listConversations(runtimeId, connectionId, requestId)
-          : Promise.reject(new CollabError('upstream_unavailable', 'no bridge runtime on this node')),
-      },
-      // The same instance as the `bridgeCommands` slot below.
-      ...(bridgeCommandExecutor ? { bridgeCommands: bridgeCommandExecutor } : {}),
+      // Bridges B1b-5/B1b-7: the QR relay, and the runtime hub (built further down,
+      // so reached per call; B1b-7 closed the gap where begin answered 'offline').
+      bridges: { connectionAuth: bridgeConnectionAuth, runtime: lazyRuntimeLink(() => bridgeHub) },
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
       mcp: {
         dataDir,
@@ -952,6 +944,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         resolveIdentity: identityResolver ?? autoOwnerResolver,
         disableAutoOwner: config.disableAutoOwner === true,
         hub: bridgeHub,
+        // B1b-7: the auth door relays the QR, the state door settles it (B1b-5's relay).
+        connectionAuth: bridgeConnectionAuth,
         commands: () => bridgeCommands,
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
         log: (line) => console.warn(line),

@@ -1,5 +1,5 @@
 /**
- * Q7/Q8 (D55, D56; migration 410) over a real bootstrap() and a fake runtime
+ * Q7/Q8 (D55, D56; migration 411) over a real bootstrap() and a fake runtime
  * on the runtime socket. Two members' numbers (Asha's A, Bina's B) are offered
  * to the space; the Infra bridge rides A. The runtime answers accept's
  * `conversation.list` with each number's groups from `groups` below.
@@ -366,7 +366,7 @@ describe('H5. the guards still hold outside an accept', () => {
     expect(await bridgeRow()).toEqual({ connection_id: connB, credential_id: credB });
   });
 
-  it('#1443\'s owner_not_member arm (carried in 410\'s restatement): the NEW number\'s owner left, resume is refused', async () => {
+  it('#1443\'s owner_not_member arm (carried in 411\'s restatement): the NEW number\'s owner left, resume is refused', async () => {
     await owner('update public.bridges set paused_at = now() where entity_id = $1', [bridge]);
     await owner(`update public.members set status = 'left' where entity_id = $1`, [people.bina.member]);
     const resume = await refusal(owner('update public.bridges set paused_at = null where entity_id = $1', [bridge]));
