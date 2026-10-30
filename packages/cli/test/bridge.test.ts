@@ -25,6 +25,11 @@ const view: BridgeDetailView = {
   recentPosters: [{ actorId: CHAT, actorKind: 'team_member', displayName: 'Infra', handle: 'keen-otter', posts: 3, lastPostAt: '2026-10-29T22:10:00.000Z' }],
 };
 
+const LINK = {
+  id: CONNECTION, provider: 'whatsapp', externalId: '919000000001@s.whatsapp.net', masked: '…0001', method: 'code', trust: 'linked',
+  spaceId: null, spaceName: null, verifiedAt: '2026-10-28T10:00:00.000Z', revokedAt: null,
+};
+
 let server: Server;
 let requests: Array<{ method: string; path: string; query: URLSearchParams; body: Record<string, any> }> = [];
 let stdout = '', stderr = '';
@@ -41,6 +46,10 @@ beforeAll(async () => {
       if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: [view] };
       else if (url.pathname.endsWith('/handles') && req.method === 'POST') data = { spaceId: SPACE, handle: 'keen-otter', entityId: CHAT, kind: 'work_session', title: null, status: 'live', createdAt: view.createdAt };
       else if (url.pathname.endsWith('/listen')) data = { bridgeId: BRIDGE, sessionId: CHAT, wake: body.wake, ceiling: 'thread' };
+      else if (url.pathname === '/v2/identity/bridge-links' && req.method === 'POST') data = { code: 'TM8-4F7KQ2', provider: body.provider, expiresAt: '2026-10-30T06:40:00.000Z', createdAt: '2026-10-30T06:30:00.000Z' };
+      else if (url.pathname === '/v2/identity/bridge-links') data = { items: [LINK], pending: [{ id: CHAT, provider: 'whatsapp', expiresAt: '2026-10-30T06:40:00.000Z', createdAt: '2026-10-30T06:30:00.000Z' }] };
+      else if (url.pathname.endsWith('/revoke')) data = { ...LINK, revokedAt: '2026-10-30T06:35:00.000Z' };
+      else if (url.pathname.endsWith('/invites')) data = { id: CHAT, code: 'inv_abc', role: 'member', maxUses: 1, uses: 0, expiresAt: null, revoked: false };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -140,5 +149,26 @@ describe('tm8 bridge (B0a)', () => {
     expect(await run(['entity', 'create', 'bridge', 'Infra'])).toBe(2);
     expect(stderr).toMatch(/use `tm8 bridge create`/);
     expect(requests).toEqual([]);
+  });
+
+  it('link begin prints the /link line once; list and revoke reach their doors (B3, D58)', async () => {
+    expect(await run(['bridge', 'link', 'begin'])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: '/v2/identity/bridge-links', body: { provider: 'whatsapp' } });
+    expect(stdout).toMatch(/\/link TM8-4F7KQ2/);
+    expect(await run(['bridge', 'link', 'begin', '--provider', 'fax'])).toBe(2);
+    expect(await run(['bridge', 'link', 'list'])).toBe(0);
+    expect(stdout).toMatch(/…0001 · linked ✓ by code/);
+    expect(stdout).toMatch(/pending whatsapp code/);
+    expect(await run(['bridge', 'link', 'revoke', CONNECTION])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/identity/bridge-links/${CONNECTION}/revoke` });
+    expect(stdout).toMatch(/unlinked:/);
+  });
+
+  it('invite pins the participant to a one-use invite in the bridge\'s space (D60)', async () => {
+    expect(await run(['bridge', 'invite', BRIDGE, '919000000002@s.whatsapp.net'])).toBe(0);
+    expect(requests.map(r => `${r.method} ${r.path}`)).toEqual([`GET /v2/bridges/${BRIDGE}`, `POST /v2/spaces/${SPACE}/invites`]);
+    expect(requests[1]!.body).toMatchObject({ maxUses: 1, bridgeParticipant: { bridgeId: BRIDGE, externalId: '919000000002@s.whatsapp.net' } });
+    expect(stdout).toMatch(/\/join\/inv_abc/);
+    expect(await run(['bridge', 'invite', BRIDGE])).toBe(2);
   });
 });
