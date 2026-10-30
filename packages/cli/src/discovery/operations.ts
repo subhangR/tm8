@@ -4409,6 +4409,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +3 bridges.links.* (B3, 402): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
   /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
@@ -4486,7 +4487,7 @@ export const CATALOG_DIGEST =
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.credentials.revokeAll (§9.3, 377) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:677bff68235b53aa160fb4e90acb7feebe69d9bbe8053f07a798af6aa6c7e7fb';
+  'sha256:1635d147a455bd7d7189dfceb8f35591617ee3ff7a08f568afb0df10fb8b26e4';
 
 export const GRAMMAR_VERSION = '2';
 
