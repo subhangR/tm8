@@ -162,6 +162,7 @@ export function AddBridgeWizard({
     }
     if (policy.trigger === 'every' && convKind === 'group') out.push(`Every message in ${who} will start a turn.`);
     if (policy.outbound === 'all' && targetKind !== 'channel') out.push(`Everything posted in the target — including agents' working notes — will appear in ${who}.`);
+    if (policy.direction === 'out') out.push(`Nothing from ${who} will reach tm8; you won't see replies.`);
     return out;
   };
   const onCreate = () => {
@@ -177,6 +178,9 @@ export function AddBridgeWizard({
   const groups = visible.filter((c) => c.kind === 'group');
   const dms = visible.filter((c) => c.kind === 'self');
   const targetChoices = (targets ?? []).filter((t) => t.kind === targetKind);
+  /* The contract's bound (1–3650 days); Create waits until it holds (review #1447 r1). */
+  const retentionProblem = !retention.forever && (!Number.isInteger(retention.days) || retention.days < 1 || retention.days > 3650)
+    ? 'Keep messages for 1 to 3650 days.' : null;
   const provider = bridgeProviderLabel(connection?.provider ?? 'whatsapp');
 
   return (
@@ -198,7 +202,7 @@ export function AddBridgeWizard({
               <p className="brg-hint">You have not linked a number yet.</p>
             ) : (
               <ul className="brg-wiz__list">
-                {connections.map((c) => {
+                {connections.filter((c) => c.status !== 'removed').map((c) => {
                   const here = offeredHere(c);
                   const linked = c.status === 'linked';
                   return (
@@ -345,6 +349,7 @@ export function AddBridgeWizard({
                       onChange={(e) => setRetention((r) => ({ ...r, days: Number(e.target.value) }))} />
                   </label>
                 ) : null}
+                {retentionProblem ? <p className="brg-error" role="alert">{retentionProblem}</p> : null}
                 <p className="brg-hint">{pendingReason(port, 'bridges.history.import', 'Importing earlier messages')}</p>
               </details>
             </fieldset>
@@ -374,7 +379,7 @@ export function AddBridgeWizard({
             <button type="button" className="pn-btn pn-btn--primary" disabled={!conversation || busy} onClick={() => setStep(3)}>Next: where it lands</button>
           ) : null}
           {step === 3 ? (
-            <button type="button" className="pn-btn pn-btn--primary" disabled={!targetId || busy} onClick={onCreate}>
+            <button type="button" className="pn-btn pn-btn--primary" disabled={!targetId || busy || retentionProblem !== null} onClick={onCreate}>
               {busy ? 'Creating…' : 'Create bridge'}
             </button>
           ) : null}
