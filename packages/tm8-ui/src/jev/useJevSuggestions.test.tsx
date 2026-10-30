@@ -803,3 +803,74 @@ describe('the fixture port models the server contract', () => {
     })).rejects.toBeInstanceOf(CollabError);
   });
 });
+
+/* THE PRESS (lane E): Jev never holds Launch, and an answer that lands while
+   a launch is on its way is HELD — never applied under it — until the launch
+   is refused (unseal) or the card goes. */
+describe('seal — the press', () => {
+  function flight() {
+    let resolve!: () => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+
+  it('the press reads the spawn fields, then HOLDS an answer that lands after it — groups, ticks and run cost alike', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    act(() => { result.current.ask(); });
+    const fields = result.current.toSpawnFields();
+    expect(fields.defaultReasons).toEqual({ memories: 'jev-pending', skills: 'jev-pending', references: 'jev-pending' });
+    act(() => { result.current.seal(flight().promise); });
+
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+    expect(result.current.groups.memories.status).toBe('asking');
+    expect(result.current.entity.memories.rows).toEqual([]);
+    expect(result.current.run).toBeNull();
+  });
+
+  it('a REJECTED flight (refused, failed, timed out) shows the held answer by itself — nobody asks twice', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    act(() => { result.current.ask(); });
+    const f = flight();
+    act(() => { result.current.seal(f.promise); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+
+    await act(async () => { f.reject(new Error('refused')); });
+    expect(result.current.groups.memories.status).toBe('ok');
+    expect(result.current.run?.calls).toBe(7);
+    expect(port.calls).toHaveLength(1);
+  });
+
+  it('a successful flight leaves the hold to the caller: a card that stays calls unseal', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    act(() => { result.current.ask(); });
+    const f = flight();
+    let hold: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { hold = result.current.seal(f.promise); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+    await act(async () => { f.resolve(); });
+    expect(result.current.groups.memories.status).toBe('asking');
+    act(() => { hold!.unseal(); });
+    expect(result.current.groups.memories.status).toBe('ok');
+  });
+
+  it('a later press supersedes an earlier hold: releasing the earlier one releases nothing', async () => {
+    const port = pendingPort();
+    const { result } = mount({ port });
+    let first: ReturnType<typeof result.current.seal> | undefined;
+    act(() => { first = result.current.seal(flight().promise); });
+    act(() => { result.current.ask(['memories']); });
+    act(() => { result.current.seal(flight().promise); });
+    await act(async () => { port.calls[0]!.resolve(answer(port.calls[0]!.input)); });
+    act(() => { first!.unseal(); });
+    expect(result.current.groups.memories.status).toBe('asking');
+  });
+
+  it('with nothing asked, the press carries no Jev fields at all', () => {
+    const { result } = mount({ port: pendingPort() });
+    expect(result.current.toSpawnFields()).toEqual({});
+  });
+});
