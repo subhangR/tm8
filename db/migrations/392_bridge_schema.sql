@@ -312,7 +312,10 @@ grant select on public.bridge_read_cursors to tm8_app;
 -- resolver, never as a list (§3.2).
 alter table public.bridge_identity_links enable row level security;
 create policy bridge_identity_links_select on public.bridge_identity_links for select to tm8_app
-  using (identity_id = internal.identity_id()
+  using ((identity_id = internal.identity_id()
+          -- A session pinned to one space never reads another space's assertion
+          -- about its own identity (227); identity-scoped rows have no space.
+          and (space_id is null or internal.session_space_id() is null or space_id = internal.session_space_id()))
          or (space_id is not null and internal.is_space_admin(space_id)));
 grant select on public.bridge_identity_links to tm8_app;
 
