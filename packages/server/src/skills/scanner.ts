@@ -55,7 +55,9 @@ export interface SkillScanDebouncerOptions {
   /**
    * The staleness bound. The sweep runs every `maxStaleMs / 2` and refreshes a
    * key served in the last `activeMs` whose scan is `maxStaleMs` old, so its
-   * references are never older than 1.5 × `maxStaleMs` plus one scan.
+   * references are never older than 1.5 × `maxStaleMs` plus one scan. A key
+   * idle for longer than `activeMs` leaves the sweep: its next launch serves
+   * the last scan, however old (its `scannedAt` says so), and refreshes.
    */
   maxStaleMs?: number;
   activeMs?: number;
