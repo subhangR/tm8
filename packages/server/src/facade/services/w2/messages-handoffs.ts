@@ -7,6 +7,7 @@ import {
   encodeCursor,
   isCollabError,
   type AddMessageAttachmentsInput,
+  type BridgeDelivery,
   type DeleteMessageInput,
   type HandoffDeliveryStatus,
   type HandoffRecordStatus,
@@ -622,6 +623,21 @@ export class W2MessagesHandoffsService {
 
     this.options.onMessagesCommitted?.(viewerIdentityId, stored.messages);
 
+    // 398 (Bridges §2.7): a bridged post's provider outcome is decided at
+    // commit (the outbound rule is a deferred trigger), so it is read back
+    // here, after it. A refusal never fails the post; it is told to the sender
+    // (`rate_limited` with its retryAfterMs), never silently queued.
+    // A read only: if it fails, the post (already stored) still answers, and
+    // the badge reaches the sender on the message itself (message.updated).
+    let bridgeDelivery: BridgeDelivery[] = [];
+    try {
+      const [row] = await this.deps.db.query<{ d: BridgeDelivery[] | null }>(
+        claims, 'select internal.bridge_message_delivery($1::uuid[]) as d', [stored.result.messageIds]);
+      bridgeDelivery = Array.isArray(row?.d) ? row.d : [];
+    } catch (err) {
+      console.warn(`[bridges] delivery read-back failed for batch ${stored.result.messageBatchId}: ${(err as Error).message}`);
+    }
+
     return {
       messageBatchId: stored.result.messageBatchId,
       messages: stored.messages,
@@ -635,6 +651,7 @@ export class W2MessagesHandoffsService {
       // target, because one post can name several sessions and they can
       // disagree.
       ...(dispositions.length > 0 ? { delivery: dispositions } : {}),
+      ...(bridgeDelivery.length > 0 ? { bridgeDelivery } : {}),
       // Absent unless the sender holds an anchored task still `working` (P0g).
       ...(stored.statusNudges.length > 0 ? { warnings: stored.statusNudges } : {}),
     };

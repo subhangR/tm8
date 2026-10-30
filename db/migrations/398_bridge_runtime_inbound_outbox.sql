@@ -148,6 +148,54 @@ $$;
 revoke all on function public.revoke_bridge_runtime_sessions(text, uuid) from public;
 grant execute on function public.revoke_bridge_runtime_sessions(text, uuid) to tm8_app;
 
+-- auth.sessions.list (249) never shows the runtime's session: 249's body
+-- verbatim, with one filter in the caller's own list (a bridge_runtime row is
+-- never space-pinned, so the space list cannot hold one).
+CREATE OR REPLACE FUNCTION public.list_auth_sessions(p_space_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'internal', 'pg_temp'
+AS $function$
+declare
+  caller text;
+  rows jsonb;
+begin
+  caller := internal.require_identity();
+  perform internal.require_human_auth_kind();
+
+  if p_space_id is null then
+    select coalesce(jsonb_agg(internal.auth_session_view(s) order by s.created_at desc), '[]'::jsonb)
+      into rows
+      from public.auth_sessions s
+      join public.accounts a on a.id = s.account_id
+     where a.identity_id = caller
+       -- W4-P1: under a pin the own list is that space's sessions only; the
+       -- account's gate sessions and its sessions in other spaces stay unseen.
+       and (internal.session_space_id() is null or s.space_id = internal.session_space_id())
+       and s.revoked_at is null
+       and s.expires_at > now()
+       -- 398: the connector runtime's session belongs to the node, not to a
+       -- person; it is never listed (nor revocable from a list). The node
+       -- re-mints it on every sidecar start.
+       and s.kind <> 'bridge_runtime';
+    return rows;
+  end if;
+
+  -- 227's helper honours the pin: an admin pinned to another space is refused.
+  if not internal.is_space_admin(p_space_id) then
+    raise exception 'space admin required' using errcode = '42501';
+  end if;
+  select coalesce(jsonb_agg(internal.auth_session_view(s) order by s.created_at desc), '[]'::jsonb)
+    into rows
+    from public.auth_sessions s
+   where s.space_id = p_space_id
+     and s.revoked_at is null
+     and s.expires_at > now();
+  return rows;
+end
+$function$;
+
 -- -----------------------------------------------------------------------------
 -- §2. Columns and tables.
 -- -----------------------------------------------------------------------------
@@ -549,6 +597,23 @@ end
 $$;
 revoke all on function internal.bridge_try(text, text, text[]) from public;
 
+-- The live, unpaused bridge a runtime frame names, for the server's command
+-- detection inside the inbound transaction (the app role cannot read bridges
+-- as the runtime: it is no member of their spaces).
+create or replace function public.bridge_runtime_bridge_for(p_connection uuid, p_conversation text) returns uuid
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare id uuid;
+begin
+  perform internal.bridge_runtime_session();
+  select b.entity_id into id from public.bridges b
+   where b.connection_id = p_connection and b.external_conversation_id = p_conversation
+     and b.ended_at is null and b.paused_at is null;
+  return id;
+end
+$$;
+revoke all on function public.bridge_runtime_bridge_for(uuid, text) from public;
+grant execute on function public.bridge_runtime_bridge_for(uuid, text) to tm8_app;
+
 -- inbound (§2.3): resolve, dedupe, author, store on the log anchor, origins,
 -- route. `p_command` is the executor's detect() answer, computed in the same
 -- transaction by the server. A conversation off this connection's allowlist is
@@ -770,8 +835,6 @@ begin
            last_error = left(coalesce(p_frame #>> '{failed,reason}', 'failed'), 300)
      where id = ob.id;
   end if;
-  -- The badge rides the message: touching it re-emits it to its readers.
-  update public.entities set updated_at = clock_timestamp() where id = ob.message_id and deleted_at is null;
   select * into ob from public.bridge_outbox where id = ob.id;
   return jsonb_build_object('outboxId', ob.id, 'status', ob.status);
 end
@@ -782,6 +845,34 @@ grant execute on function public.bridge_runtime_sent(jsonb) to tm8_app;
 -- -----------------------------------------------------------------------------
 -- §6. The outbox.
 -- -----------------------------------------------------------------------------
+
+-- The badge rides the message (§2.3, §3.6). Every change to a send's state, and
+-- every refusal written or cleared, touches the message and its batch twins
+-- (the chat copy and the log copy are one message by correlation). A messages
+-- UPDATE emits message.updated (254); an entities.updated_at touch alone emits
+-- nothing, so it is never used for this.
+create or replace function internal.bridge_touch_delivery() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare msg uuid;
+begin
+  if tg_table_name = 'bridge_outbox' then
+    if new.kind <> 'send' or (tg_op = 'UPDATE' and new.status is not distinct from old.status) then return null; end if;
+    msg := new.message_id;
+  else
+    msg := coalesce(new.message_id, old.message_id);
+  end if;
+  update public.messages m set updated_at = clock_timestamp()
+   where m.entity_id = msg
+      or (m.message_batch_id is not null
+          and m.message_batch_id = (select b.message_batch_id from public.messages b where b.entity_id = msg));
+  return null;
+end
+$$;
+revoke all on function internal.bridge_touch_delivery() from public;
+create trigger bridge_outbox_touch_delivery after insert or update of status on public.bridge_outbox
+for each row execute function internal.bridge_touch_delivery();
+create trigger bridge_delivery_refusals_touch_delivery after insert or delete on public.bridge_delivery_refusals
+for each row execute function internal.bridge_touch_delivery();
 
 -- Credential-shaped text never crosses (the Phase-1 relay refusal, §2.3).
 create or replace function internal.bridge_text_looks_secret(p text) returns boolean
@@ -1135,7 +1226,6 @@ begin
       when not (r.conv = any(internal.bridge_allowlist_ids(r.connection_id))) then 'not_connected' end;
     if reason is not null then
       update public.bridge_outbox set status = 'failed_permanent', settled_at = now(), last_error = reason where id = r.id;
-      update public.entities set updated_at = clock_timestamp() where id = r.message_id and deleted_at is null;
       continue;
     end if;
     update public.bridge_outbox set status = 'dispatching', attempts = attempts + 1, dispatched_at = now() where id = r.id;

@@ -15,17 +15,11 @@
  * background-job claim `bridges.runtime`, which no request can bind.
  */
 import { randomUUID } from 'node:crypto';
-import { CollabError } from '@tm8/contract';
+import { CollabError, type BridgeRefusalReason } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../db/types.js';
 
-export type BridgeRefusalReason =
-  | 'bridge_paused'
-  | 'bridge_ended'
-  | 'direction_in'
-  | 'worker_posting_off'
-  | 'rate_limited'
-  | 'not_connected';
+export type { BridgeRefusalReason };
 
 export type BridgeDeliveryResult =
   | { status: 'pending'; outboxId: string }

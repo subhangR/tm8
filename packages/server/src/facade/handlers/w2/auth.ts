@@ -190,6 +190,11 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
         throw new CollabError('unauthenticated', 'bearer session is unresolved');
       }
       const session = await resolveBearerIdentity(deps.db, ctx.identity.token);
+      // 398: unreachable (the resolver refuses a bridge_runtime bearer on every
+      // catalog route), and stated so the session view never carries the kind.
+      if (session.kind === 'bridge_runtime') {
+        throw new CollabError('forbidden', 'a bridge runtime session may only call the bridgeRuntime doors');
+      }
       const displayName = await profileDisplayName(deps, session.identityId, ctx.requestId);
       const result: AuthSessionGetResult = {
         authKind: 'bearer',
