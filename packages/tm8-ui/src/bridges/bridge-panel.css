@@ -202,3 +202,12 @@
   }
   .brg-head .brg-menu button { padding: 10px 8px; }
 }
+
+/* On the phone the shell's floating action button sits over the bottom-right
+   corner (#1448 review): the Routing tab's sticky Save bar keeps clear of it,
+   and the page ends above it — the same tokens the phone lists use
+   (mobile-screens.css), never a hand-typed number. */
+.cv2-root[data-shell='mobile'] .brg-form__save {
+  padding-inline-end: calc(var(--mobile-fab-size, 56px) + var(--pn-space-3) * 2);
+}
+.cv2-root[data-shell='mobile'] .brg-page { padding-bottom: var(--mobile-fab-reserve, 72px); }
