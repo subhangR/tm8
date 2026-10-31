@@ -940,7 +940,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const bridgeMedia = db && bridgeHub && blobStore
     ? new BridgeMediaFetcher({ db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line) })
     : undefined;
-  // 402 §5: session targets and directed workers, through the same delivery
+  // 413 §5: session targets and directed workers, through the same delivery
   // loop every message uses. Absent with no execution runtime: stored only.
   const bridgeDeliver = db && delivery
     ? createBridgeSessionDelivery({ db, delivery: delivery.messageDelivery as unknown as MessageDeliveryPort })

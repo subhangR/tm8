@@ -1,5 +1,5 @@
 /**
- * Bridges B1b-8 (402 §5): delivery of inbound messages to workers, with B1b-3's
+ * Bridges B1b-8 (413 §5): delivery of inbound messages to workers, with B1b-3's
  * audience, answerer and origin doors (399).
  *
  * ac1 / §7.3 item 10 (wake): an un-directed message wakes no worker; an
@@ -66,7 +66,7 @@ function capturingPort(): { port: MessageDeliveryPort; sent: { session: string; 
   return { port, sent };
 }
 
-describe.skipIf(!has399)('directed delivery to workers (402 §5 with 399)', () => {
+describe.skipIf(!has399)('directed delivery to workers (413 §5 with 399)', () => {
   beforeAll(async () => {
     scratch = await createW1ScratchDatabase('bridges_b1b8_dlv');
     scratch.apply(migrationFiles());

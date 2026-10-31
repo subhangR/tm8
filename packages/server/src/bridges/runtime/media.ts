@@ -1,6 +1,6 @@
 /**
  * Inbound media become file entities (BRIDGE-ENTITY-DESIGN §2.3 step 3,
- * migration 402 §4). Inbound stores one `bridge_media` row per media item with
+ * migration 413 §4). Inbound stores one `bridge_media` row per media item with
  * the runtime's self-contained fetch handle (D39); this asks the runtime for
  * the bytes (`media.fetch`), writes them to the blob store and attaches a file
  * entity to the log message, exactly as a message attachment is attached.

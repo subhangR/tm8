@@ -1,6 +1,6 @@
 /**
  * Delivery of inbound bridge messages to sessions (BRIDGE-ENTITY-DESIGN §2.2,
- * §2.7, D30; migration 402 §5): a session target's routed copy, and the
+ * §2.7, D30; migration 413 §5): a session target's routed copy, and the
  * workers B1b-3's audience names (an `@handle`, a reply to the worker's own
  * post, its /work thread, or a worker listening at `thread`/`all`).
  *

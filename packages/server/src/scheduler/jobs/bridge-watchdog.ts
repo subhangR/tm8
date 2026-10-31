@@ -24,7 +24,7 @@ interface TickResult { runtimeDown: number; runtimeBack: number; warned: number;
 export function bridgeWatchdogJob(deps: {
   db: Db;
   commands?: () => BridgeCommandHook | undefined;
-  /** 402 §4: media fetches a restart interrupted, or that wait for a retry. */
+  /** 413 §4: media fetches a restart interrupted, or that wait for a retry. */
   media?: { kick(): Promise<number> };
   /** After a tick that changed something, the hub pushes and dispatches at once. */
   onChanged?: () => void;

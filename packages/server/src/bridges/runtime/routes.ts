@@ -49,9 +49,9 @@ export interface BridgeRuntimeRouteOptions {
   /** B1b-4's executor. Absent: nothing is a command. */
   readonly commands?: () => BridgeCommandHook | undefined;
   readonly connectionAuth?: BridgeConnectionAuthPort;
-  /** Delivers a stored inbound message to its session target and its directed workers (402 §5). */
+  /** Delivers a stored inbound message to its session target and its directed workers (413 §5). */
   readonly deliver?: (messageId: string) => Promise<unknown>;
-  /** Fetches inbound media into file entities after commit (402 §4). */
+  /** Fetches inbound media into file entities after commit (413 §4). */
   readonly media?: { kick(): Promise<number> };
   /** Starts a queued chat turn (the orchestrator's wake). */
   readonly wakeChat?: (chatId: string, requesterIdentityId: string) => void;

@@ -15,7 +15,7 @@
  *
  * The server boots without an execution runtime, so the PTY is the one thing
  * not in the loop: delivery runs the server's own createBridgeSessionDelivery
- * (402 §5) and dispatch loop with a capturing delivery port.
+ * (413 §5) and dispatch loop with a capturing delivery port.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

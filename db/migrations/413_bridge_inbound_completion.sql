@@ -1,6 +1,7 @@
 -- =============================================================================
--- 402 — Bridges B1b-8: inbound completion. (Provisional number; the bridges
+-- 413 — Bridges B1b-8: inbound completion. (Provisional number; the bridges
 -- merger assigns the final one.)
+-- (Authored as 402; renumbered to 413 at merge by the bridges merger: next free above main's 412.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- §2.3 steps 3 and 5, §2.7, §2.8 / D30, D39. Task

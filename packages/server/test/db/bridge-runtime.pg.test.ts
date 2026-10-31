@@ -180,7 +180,7 @@ describe('internal.bridge_signed is VOLATILE: a worker signature writes through 
   });
 });
 
-describe('402 (B1b-8): review fixes N1 and N3 on 398', () => {
+describe('413 (B1b-8): review fixes N1 and N3 on 398', () => {
   it('N1: a routed message hands add_bridge_origin the participant display STRING (D22)', async () => {
     const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.add_bridge_origin(uuid,jsonb)')::text as r`))[0]!.r;
     if (!real) {
@@ -217,7 +217,7 @@ describe('402 (B1b-8): review fixes N1 and N3 on 398', () => {
   });
 });
 
-describe('402 (B1b-8): reactions and poll votes are stored (D39)', () => {
+describe('413 (B1b-8): reactions and poll votes are stored (D39)', () => {
   it('a reaction is one per (message, sender): stored, replaced by a later one, removed by an empty emoji', async () => {
     const m = await inbound(frame({ body: 'react to me' }));
     // The reaction names the provider id of the message it is about.
@@ -420,7 +420,7 @@ describe('internal.bridge_log_anchor: 398 (a bridges row) and 399 (a uuid) agree
   });
 });
 
-describe('402 (B1b-8): delivery to sessions (§2.2, D30)', () => {
+describe('413 (B1b-8): delivery to sessions (§2.2, D30)', () => {
   it('a session target gets the routed copy, routed once, with the reply route recorded', async () => {
     // The 'Ops' bridge on the second number targets a work session (created above).
     const r = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: '@tm8 restart the job',
@@ -485,7 +485,7 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     const [out] = await owner<{ direction: string; provider_payload: unknown }>(
       'select direction, provider_payload from public.message_origins where message_id = $1', [answer]);
     expect(out).toMatchObject({ direction: 'out', provider_payload: { conversation: 'Infra Bot: Deployed at 10:40.' } });
-    // F2 (402): nor do the runtime's media items (fetch handles, media keys) in message_origins.media.
+    // F2 (413): nor do the runtime's media items (fetch handles, media keys) in message_origins.media.
     const media = await refusal(human(q => q.query('select media from public.message_origins limit 1')));
     expect(media.code).toBeDefined();
     const ok = await human(q => q.query('select external_message_id from public.message_origins limit 1'));

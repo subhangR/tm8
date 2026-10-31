@@ -293,7 +293,7 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
       media: [{ kind: 'document', mime: 'text/plain', fileName: 'deploy.log', caption: null, size: 11, handle: 'HANDLE-1' }],
     });
     expect(r.body).toMatchObject({ status: 'stored' });
-    // F2 (402): the origin keeps descriptive fields only; the handle (media keys) is in bridge_media alone.
+    // F2 (413): the origin keeps descriptive fields only; the handle (media keys) is in bridge_media alone.
     const [origin] = await database.query<{ media: Record<string, unknown>[] }>('select media from public.message_origins where message_id = $1',
       [r.body.messageId]);
     expect(origin!.media).toEqual([{ kind: 'document', mime: 'text/plain', fileName: 'deploy.log', size: 11 }]);
