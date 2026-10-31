@@ -1,6 +1,7 @@
 -- =============================================================================
--- 411 — Bridges B1b-6: the command executor's follow-up doors.
+-- 414 — Bridges B1b-6: the command executor's follow-up doors.
 -- (Provisional number: the bridges merger assigns the final one at merge.)
+-- (Authored as 411; renumbered to 414 at merge by the bridges merger: next free above main's 412 and #1442's 413.)
 --
 -- Design of record: docs/features/bridges/BRIDGES-V2-DESIGN.md §4.4 (/result),
 -- §4.6 (Readers tier), §4.8 (privacy). Task 01a18b69-4aba-757d-a409-2e5c1b8f921d.
@@ -52,7 +53,7 @@ begin
     'edited', m.edited_at is not null or m.redacted_at is not null,
     'replyTo', case when o.external_reply_to_id is null then null
                     else jsonb_build_object('externalMessageId', o.external_reply_to_id) end,
-    -- 411: B1b-2's state (398); the executor tells the group once when it ends failed.
+    -- 414: B1b-2's state (398); the executor tells the group once when it ends failed.
     'commandState', o.command_state);
 end
 $$;
@@ -106,7 +107,7 @@ begin
     'targetTeammateId', case when b.target_kind = 'chat'
       then (select c.teammate_id from public.chats c where c.entity_id = b.target_id) end,
     'targetTitle', internal.bridge_target_title(b.target_kind, b.target_id),
-    -- 411: where the group's log lives (399), so /result quotes only what the group saw.
+    -- 414: where the group's log lives (399), so /result quotes only what the group saw.
     'logAnchor', internal.bridge_log_anchor(b.entity_id),
     'whoMayTrigger', b.policy ->> 'whoMayTrigger',
     'direction', b.policy ->> 'direction',
