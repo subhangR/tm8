@@ -843,6 +843,48 @@ describe('the rest of the slice', () => {
   });
 });
 
+describe('428: a bridge with no teammate runs /work as its session\'s teammate', () => {
+  const owner = { identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli' as const, requestId: 't-428' };
+  const version = async () => Number((await asOwner(c => c.query('select version from public.entities where id = $1', [bridgeId]))).rows[0].version);
+  async function session(withPersona: boolean): Promise<string> {
+    const id = randomUUID();
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by,visibility) values($1,$2,'work_session',0,$3,'space')",
+        [id, space, people.owner.member]);
+      await c.query("insert into public.work_sessions(entity_id,title,status,share_mode,started_at) values($1,'Bugs (WhatsApp)','idle','none',now())", [id]);
+      if (withPersona) {
+        await c.query('select internal.w1_set_writer($1)', ['entity_recorder']);
+        await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$4)",
+          [space, persona, id, people.owner.member]);
+      }
+    });
+    return id;
+  }
+  const retarget = async (to: string) => db.rpc(owner, 'retarget_bridge', [bridgeId, await version(), to, null, `t428-${randomUUID()}`]);
+
+  it('the session\'s persona answers; with none, the refusal names the syntax and a real teammate', async () => {
+    await endWorkers(); // under the group's live cap, whatever ran before
+    await db.rpc(owner, 'update_bridge', [bridgeId, await version(), JSON.stringify({ teammateId: null }), null, `t428-${randomUUID()}`]);
+    try {
+      await retarget(await session(true));
+      const before = spawns.length;
+      expect((await command('rahul', '/work look at the login bug')).reply!.text).toMatch(/^1 worker on it\n1 Look at the login bug/);
+      expect(spawns.length).toBe(before + 1);
+      expect(spawns.at(-1)!.teamMemberId).toBe(persona);
+
+      await retarget(await session(false));
+      const refused = (await command('rahul', '/work look at the signup bug')).reply!.text;
+      expect(refused).toMatch(/^no teammate to run this as: this bridge has none, and its session has none either\./);
+      expect(refused).toContain('/work teammate:Infra <what to do>');
+      expect(refused).toContain('Routing → Teammate');
+      expect(spawns.length).toBe(before + 1);
+    } finally {
+      await retarget(chat);
+      await db.rpc(owner, 'update_bridge', [bridgeId, await version(), JSON.stringify({ teammateId: persona }), null, `t428-${randomUUID()}`]);
+    }
+  });
+});
+
 describe('/new (R11, 425): the bridge starts its own session and moves to it', () => {
   const target = async () => (await asOwner(c => c.query(
     'select target_kind, target_id::text from public.bridges where entity_id = $1', [bridgeId]))).rows[0] as { target_kind: string; target_id: string };

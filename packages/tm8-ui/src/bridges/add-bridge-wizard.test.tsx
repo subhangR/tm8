@@ -97,6 +97,7 @@ describe('the add-bridge wizard', () => {
       connectionId: '0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494',
       conversation: { externalId: '1203631gaming@g.us', kind: 'group', title: 'Gaming', memberCount: 31 },
       targetId: chatLaunchPlan.id,
+      teammateId: null,
       policy: expect.objectContaining({ trigger: 'mention', outbound: 'replies', whoMayTrigger: 'linked', style: null }),
       retentionDays: null,
     }));
@@ -164,7 +165,31 @@ describe('the add-bridge wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create bridge' }));
     await screen.findByTestId('wizard-step-test');
     expect(startSession).toHaveBeenCalledWith(SPACE, { teamMemberId: teamMemberScout.id, title: 'Release 1.4 (WhatsApp)' });
-    expect(create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: 'ent-session-new' }));
+    // Task 01a1937d: the pick is the bridge's teammate too, not only the new session's.
+    expect(create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: 'ent-session-new', teammateId: teamMemberScout.id }));
+  });
+
+  it('a chat target may keep its own teammate or name the bridge\'s; a channel has none', async () => {
+    const t = wizardPort();
+    const port = { ...t.port, teammates: vi.fn(async () => [teamMemberForge, teamMemberScout]) };
+    render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Ada · work phone' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Gaming/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
+    await screen.findByTestId('wizard-step-target');
+    const runsAs = screen.getByLabelText('Runs as') as HTMLSelectElement;
+    await waitFor(() => expect(within(runsAs).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(["The chat's own teammate", 'forge', 'scout']));
+    expect(runsAs.value).toBe('');
+    fireEvent.click(screen.getByLabelText(/^# Channel/));
+    expect(screen.queryByLabelText('Runs as')).toBeNull();
+    fireEvent.click(screen.getByLabelText(/^💬 Chat/));
+    await waitFor(() => expect(within(screen.getByLabelText('Target')).getAllByRole('option').length).toBe(2));
+    fireEvent.change(screen.getByLabelText('Target'), { target: { value: chatLaunchPlan.id } });
+    fireEvent.change(screen.getByLabelText('Runs as'), { target: { value: teamMemberForge.id } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create bridge' }));
+    await screen.findByTestId('wizard-step-test');
+    expect(port.create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: chatLaunchPlan.id, teammateId: teamMemberForge.id }));
   });
 
   it('lands in a NEW chat, started as the chosen teammate and model at Create', async () => {

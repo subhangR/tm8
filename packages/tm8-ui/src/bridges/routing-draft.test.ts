@@ -24,6 +24,16 @@ describe('the Routing draft', () => {
     });
   });
 
+  it('sets and clears the bridge\'s teammate (task 01a1937d: the client had no way to)', () => {
+    const d = draftOf(infra);
+    expect(d.teammateId).toBe(infra.teammateId);
+    d.teammateId = 'ent-tm-scout';
+    expect(patchOf(infra, d)).toEqual({ teammateId: 'ent-tm-scout' });
+    d.teammateId = '';
+    expect(patchOf(infra, d)).toEqual({ teammateId: null });
+    expect(patchOf({ ...infra, teammateId: null }, d)).toBeNull();
+  });
+
   it('Undo is the same function run back', () => {
     const d = draftOf(infra);
     d.retention = { forever: false, days: 30 };

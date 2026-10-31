@@ -399,8 +399,23 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       return rows[0].id;
     }
     const id = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId;
-    if (!id) throw new Refusal('this bridge has no worker teammate: set one on the bridge in tm8, or add teammate:<name>');
+    if (!id) throw new Refusal(await noTeammate(cmd, claims));
     return id;
+  }
+
+  /** Who a worker would run as is unknown: say where to set it, with a teammate this space really has. */
+  async function noTeammate(cmd: Command, claims: DbClaims): Promise<string> {
+    const rows = await ports.db.query<{ name: string }>(claims,
+      `select tm.name from public.team_members tm join public.entities e on e.id = tm.entity_id
+        where e.space_id = $1 and e.deleted_at is null order by tm.name limit 3`, [cmd.input.spaceId]).catch(() => []);
+    const names = rows.map(r => r.name);
+    const example = names[0] ?? '<name>';
+    return [
+      `no teammate to run this as: this bridge has none, and its ${cmd.bridge.targetKind === 'chat' ? 'chat' : 'session'} has none either.`,
+      `Name one in the command: /work teammate:${example} <what to do>`,
+      `Or set the bridge's teammate in tm8: the bridge's page → Routing → Teammate.`,
+      ...(names.length ? [`Teammates here: ${names.join(', ')}`] : []),
+    ].join('\n');
   }
 
   async function resolveProject(cmd: Command, claims: DbClaims, name: string | undefined): Promise<string | null> {

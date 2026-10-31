@@ -16,6 +16,8 @@ export interface RoutingDraft {
   retention: { forever: boolean; days: number };
   workerPosting: boolean;
   workerWake: BridgeWake;
+  /** The teammate /work and /start run as; '' = the target's own (a chat's or session's). */
+  teammateId: string;
 }
 
 /** v1 Q2: DM bridges default to 90 days when retention is first set. */
@@ -31,6 +33,7 @@ export function draftOf(view: BridgeView): RoutingDraft {
     retention: { forever: view.retentionDays === null, days: view.retentionDays ?? DEFAULT_RETENTION_DAYS },
     workerPosting: view.workerPosting,
     workerWake: view.workers.wake,
+    teammateId: view.teammateId ?? '',
   };
 }
 
@@ -70,6 +73,9 @@ export function patchOf(view: BridgeView, draft: RoutingDraft): BridgePatch | nu
 
   if (draft.workerPosting !== view.workerPosting) patch.workerPosting = draft.workerPosting;
   if (draft.workerWake !== view.workers.wake) patch.workerWake = draft.workerWake;
+
+  const teammateId = draft.teammateId === '' ? null : draft.teammateId;
+  if (teammateId !== (view.teammateId ?? null)) patch.teammateId = teammateId;
 
   return Object.keys(patch).length > 0 ? patch : null;
 }

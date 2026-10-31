@@ -18,7 +18,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail } from '@tm8/contract';
-import { memoryTokens } from '../fixtures/entities';
+import { memoryTokens, teamMemberForge, teamMemberScout } from '../fixtures/entities';
 import { BRIDGE_TABS, BridgePageBlock } from './BridgePage';
 import { memoryEdge, testPort } from './test-port';
 
@@ -134,6 +134,23 @@ describe('the bridge panel', () => {
     expect(screen.queryByTestId('bridge-consequences')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(port.update).toHaveBeenLastCalledWith('ent-bridge-infra', 2, { policy: { trigger: 'mention' } }));
+  });
+
+  it('sets the bridge\'s teammate from Routing, and clears it back to the target\'s own', async () => {
+    const t = testPort();
+    t.port.teammates = vi.fn(async () => [teamMemberForge, teamMemberScout]);
+    render(<BridgePageBlock detail={detail()} port={t.port} />);
+    await screen.findByTestId('bridge-page');
+    tab('Routing');
+    const pick = screen.getByLabelText('Teammate') as HTMLSelectElement;
+    await waitFor(() => expect(within(pick).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(["The chat's own teammate", 'A teammate not listed here', 'forge', 'scout']));
+    fireEvent.change(pick, { target: { value: teamMemberScout.id } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(t.port.update).toHaveBeenCalledWith('ent-bridge-infra', 1, { teammateId: teamMemberScout.id }));
+    fireEvent.change(await screen.findByLabelText('Teammate'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(t.port.update).toHaveBeenLastCalledWith('ent-bridge-infra', 2, { teammateId: null }));
   });
 
   it('asks first, in numbers, before letting anyone start agents', async () => {
