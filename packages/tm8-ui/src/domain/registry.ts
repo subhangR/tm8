@@ -2775,13 +2775,15 @@ const ROWS: readonly KindConfig[] = [
     kind: 'label',
     label: 'Label',
     labelPlural: 'Labels',
-    icon: '⌂',
+    /* A pentagon tag, like the drawn mark (`KIND_ART.label`). It was '⌂', which reads
+       as a house (#1424 review); same block as '⬢'/'⬡', so the same font coverage. */
+    icon: '⬠',
     iconArt: KIND_ART.label,
     slug: 'labels',
     strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree', 'gallery'],
-    chip: { glyph: '⌂', tintBy: 'none' },
+    chip: { glyph: '⬠', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
