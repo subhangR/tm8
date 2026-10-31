@@ -4559,7 +4559,8 @@ export const CATALOG_DIGEST =
   // Re-measured on the merge of main a068d40f5 (batch 7 cut A) into B1b-5 (+4 bridges.connections.*, 421) — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   // Re-measured on the merge of B1b-5 b15f6d7ae into B1b-7 (+2 bridges.connections.remove, bridges.conversations.list, 423) — RECOMPUTED from JSON.stringify(OPERATIONS) on the merged tree.
   /* +4 bridges.handover.* (Q7/Q8, 424) over #1443 94bcc78f7: RECOMPUTED by discovery-operations.test.ts. MEASURED. */
-  'sha256:f5e7e351a4ded91f7e9d5ec149adc2409905406f11240372bfd9982fc79226e3';
+  /* +1 bridges.handovers.list (Q7/Q8 follow-up, 425): RECOMPUTED by discovery-operations.test.ts. MEASURED. */
+  'sha256:3a7a8fc569944c66a82d66bf34f7850940601bd6a7a78cda80699438a62ea14c';
 
 export const GRAMMAR_VERSION = '2';
 
