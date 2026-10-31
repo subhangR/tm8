@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BridgeDeliveryTick, bridgeProviderLabel, BridgeVia } from '../bridge-marks';
-import type { BridgeLogEntry, BridgeView } from '@tm8/contract';
+import type { BridgeLogEntry, BridgeTrust, BridgeView } from '@tm8/contract';
 import { clockTime } from '../../kit/time';
 import type { BridgesPort } from '../api';
 import { bridgeFailureOf } from '../format';
@@ -8,8 +8,10 @@ import { bridgeFailureOf } from '../format';
 const PAGE = 50;
 
 /**
- * CONVERSATION (§4.4): the log anchor's thread, oldest first — the bridge's
- * own discussion, or the channel's for a channel target. Inbound bubbles name
+ * CONVERSATION (§4.4): the log anchor's thread — the bridge's own
+ * discussion, or the channel's for a channel target. It opens on the NEWEST
+ * page and scrolls back a page at a time (#1446's latest/before); rows read
+ * oldest first within what is shown. Inbound bubbles name
  * the participant (never a number); outbound ones say they were sent, and a
  * worker's carry its `Title (handle)` signature (D23).
  *
@@ -19,20 +21,27 @@ const PAGE = 50;
  */
 export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<BridgesPort, 'log'> }) {
   const [items, setItems] = useState<BridgeLogEntry[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
+  /* The id to pass as `before` for the next older page; null at the start of the log. */
+  const [older, setOlder] = useState<string | null>(null);
+  /* One read at a time: a second click on a slow link would prepend the same page twice. */
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const provider = bridgeProviderLabel(view.provider);
 
-  const load = useCallback(async (since: string | null) => {
+  /* Open on the NEWEST page (#1446: latest=true) and scroll back with
+     before=olderCursor; rows stay oldest-first within a page, so an older page
+     goes in front. Neither read moves anyone's unread cursor. */
+  const load = useCallback(async (before: string | null) => {
+    setLoading(true);
     try {
-      const page = await port.log(view.id, { limit: PAGE, ...(since ? { since } : {}) });
-      setItems((prev) => (since ? [...(prev ?? []), ...page.items] : page.items));
-      setMore(page.more);
-      setCursor(page.lastMessageId ?? since);
+      const page = await port.log(view.id, { limit: PAGE, ...(before ? { before } : { latest: true }) });
+      setItems((prev) => (before ? [...page.items, ...(prev ?? [])] : page.items));
+      setOlder(page.olderCursor);
       setError(null);
     } catch (err) {
       setError(bridgeFailureOf(err));
+    } finally {
+      setLoading(false);
     }
   }, [port, view.id]);
 
@@ -43,11 +52,13 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   const crosses = view.policy.direction !== 'in' && view.status !== 'ended';
   return (
     <div className="brg-conv" data-testid="bridge-conversation">
-      {/* bridges.log.read answers oldest first from the start of the log
-          (server readLog); a latest-first read is a follow-up. Say so. */}
-      <p className="brg-hint" data-testid="bridge-conversation-order">
-        Oldest first, {PAGE} at a time{more ? ' — use Show later messages to read on' : ''}.
-      </p>
+      {older ? (
+        <button type="button" className="pn-btn brg-conv__older" disabled={loading} onClick={() => void load(older)} data-testid="bridge-conversation-older">
+          {loading ? 'Loading earlier messages…' : 'Show earlier messages'}
+        </button>
+      ) : items.length > 0 ? (
+        <p className="brg-hint" data-testid="bridge-conversation-start">The start of the conversation.</p>
+      ) : null}
       {items.length === 0 ? (
         <p className="brg-hint">Nothing has crossed this bridge yet.</p>
       ) : (
@@ -55,9 +66,6 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
           {items.map((m) => <Bubble key={m.id} entry={m} view={view} />)}
         </ol>
       )}
-      {more ? (
-        <button type="button" className="pn-btn" onClick={() => void load(cursor)}>Show later messages</button>
-      ) : null}
       {error ? <p className="brg-error" role="alert">{error}</p> : null}
       <p className="brg-conv__where brg-hint" data-testid="bridge-conversation-where">
         {crosses
@@ -90,8 +98,8 @@ function Bubble({ entry, view }: { entry: BridgeLogEntry; view: BridgeView }) {
             bridge={{
               bridgeId: view.id, provider: view.provider, conversation: view.title, direction: 'in',
               participant: entry.origin?.participant ?? null,
-              // The log read carries no trust yet; B2-ticks adds it to BridgeLogEntry (#1434).
-              trust: null,
+              // #1457 adds `trust` to BridgeLogEntry (the MessageBridgeView value); null until it is on main.
+              trust: (entry as BridgeLogEntry & { trust?: BridgeTrust | null }).trust ?? null,
               delivery: null,
             }}
           />

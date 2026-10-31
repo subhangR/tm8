@@ -23,7 +23,7 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import { managedPortFromSeam } from '../../managed/port';
-import { createFixtureLoopsClient, fixtureLoopViewOf } from '../../loops/fixture';
+import { createFixtureLoopsClient, fixtureLoopView, fixtureLoopViewOf } from '../../loops/fixture';
 import { bridgesPortFromSeam, catalogServes } from '../../bridges/api';
 import { createFixtureBridgesClient, fixtureBridgeViewOf } from '../../bridges/fixture';
 import { loopFormSourcesOf } from '../../loops/sources';
@@ -6355,9 +6355,16 @@ export function createFixtureSeam(): FixtureSeam {
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
   // Seeded from the fixture loop entities, so the list and the loop page agree with the entity rows.
-  seam.commands.loops = createFixtureLoopsClient(
-    [...summaries.values()].flatMap((row) => fixtureLoopViewOf(row) ?? []),
-  );
+  seam.commands.loops = createFixtureLoopsClient([
+    ...[...summaries.values()].flatMap((row) => fixtureLoopViewOf(row) ?? []),
+    // Bridges L: a post loop into the Infra bridge, so its Loops tab has one to show.
+    fixtureLoopView('019f0000-0000-7000-8000-0000000000d1' as EntityId, FIXTURE_SPACE_ID as SpaceId, {
+      title: 'Stand-up nudge', schedule: 'every weekday at 09:30', timezone: 'Asia/Kolkata', action: 'post',
+      targets: [{ bridgeId: 'ent-bridge-infra' as EntityId, text: "Morning! Reply here with what you're on today." }],
+    }, {
+      state: { ...fixtureLoopView('x' as EntityId, FIXTURE_SPACE_ID as SpaceId).state, nextRunAt: '2026-07-29T04:00:00.000Z' },
+    }),
+  ]);
   seam.commands.loopForm = loopFormSourcesOf(seam);
   // Seeded from the fixture bridge entities, so Settings → Bridges and the bridge panel agree with the entity rows.
   seam.commands.bridges = bridgesPortFromSeam(

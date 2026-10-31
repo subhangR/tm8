@@ -122,10 +122,17 @@ export function createFixtureBridgesClient(seed: readonly BridgeView[] = []): Br
     resume: (id, v) => write(id, v, (b) => ({ ...b, status: 'live', pausedAt: null })),
     remove: (id, v) => write(id, v, (b) => ({ ...b, status: 'ended', endedAt: new Date().toISOString() })),
     handles: async (id) => { find(id); return handles.get(id) ?? []; },
-    log: async (id) => {
+    /* #1446's paging, closely enough for a fixture: pages of two, newest
+       first by page; `before` answers the page just older than that id. */
+    log: async (id, query = {}) => {
       const view = find(id);
-      const items = logs.get(id) ?? [];
-      return { bridgeId: id, logAnchorId: view.target.kind === 'channel' ? view.target.id : id, items, lastMessageId: items[items.length - 1]?.id ?? null, more: false, olderCursor: null }; // olderCursor: #1446's paging
+      const all = logs.get(id) ?? [];
+      const size = 2;
+      const end = query.before ? Math.max(0, all.findIndex((m) => m.id === query.before)) : all.length;
+      const start = Math.max(0, end - size);
+      const items = all.slice(start, end);
+      const olderCursor = start > 0 ? items[0]!.id : null;
+      return { bridgeId: id, logAnchorId: view.target.kind === 'channel' ? view.target.id : id, items, lastMessageId: items[items.length - 1]?.id ?? null, more: false, olderCursor }; // olderCursor: #1446's paging
     },
   };
 }

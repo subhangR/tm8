@@ -81,20 +81,47 @@ describe('the bridge panel', () => {
     expect(await screen.findByRole('button', { name: /^Status: removed/ })).toBeTruthy();
   });
 
-  it('draws the conversation: participants inbound, sends outbound with the handle', async () => {
-    await renderPage();
+  it('opens the conversation on the newest page and scrolls back to the start (#1446)', async () => {
+    const t = testPort();
+    const log = vi.spyOn(t.port, 'log');
+    render(<BridgePageBlock detail={detail()} port={t.port} />);
     const conv = await screen.findByTestId('bridge-conversation');
+    // The newest page first: latest=true, never since/unread.
+    await waitFor(() => expect(log).toHaveBeenCalledWith('ent-bridge-infra', { limit: 50, latest: true }));
+    expect(conv.textContent).toContain('nice, ship the changelog too');
+    expect(conv.textContent).not.toContain('@tm8 is the deploy done?');
+    // Scroll back with before=olderCursor; the older page goes in front.
+    fireEvent.click(within(conv).getByTestId('bridge-conversation-older'));
+    await waitFor(() => expect(conv.textContent).toContain('@tm8 is the deploy done?'));
+    expect(log).toHaveBeenLastCalledWith('ent-bridge-infra', { limit: 50, before: 'ent-bridge-infra-msg-3' });
+    const bodies = [...conv.querySelectorAll('.brg-bubble__body')].map((b) => b.textContent);
+    expect(bodies[0]).toBe('@tm8 is the deploy done?');
+    expect(bodies.at(-1)).toContain('Changelog is up');
+    expect(within(conv).getByTestId('bridge-conversation-start').textContent).toContain('start of the conversation');
+    expect(within(conv).queryByTestId('bridge-conversation-older')).toBeNull();
     // B2-ticks' shared marks (#1434): BridgeVia inbound, BridgeDeliveryTick outbound.
     expect(within(conv).getAllByTestId('bridge-via')).toHaveLength(2);
-    expect(within(conv).getAllByTestId('bridge-via')[0]!.textContent).toContain('via WhatsApp');
-    expect(conv.textContent).toContain('@tm8 is the deploy done?');
+    expect(within(conv).getAllByTestId('bridge-tick').map((x) => x.getAttribute('data-status'))).toEqual(['sent', 'sent']);
     expect(conv.textContent).toContain('Release notes (keen-otter)');
-    const ticks = within(conv).getAllByTestId('bridge-tick');
-    expect(ticks.map((t) => t.getAttribute('data-status'))).toEqual(['sent', 'sent']);
-    expect(ticks[0]!.textContent).toContain('sent to WhatsApp');
     expect(screen.getByTestId('bridge-conversation-where').textContent).toContain('reply in WhatsApp');
-    // bridges.log.read reads oldest first; the tab says so (review #1445 r1).
-    expect(screen.getByTestId('bridge-conversation-order').textContent).toContain('Oldest first');
+  });
+
+  it('reads one older page at a time: the button is off while a read is in flight (#1470 review)', async () => {
+    const t = testPort();
+    let release: () => void = () => {};
+    const real = t.port.log.bind(t.port);
+    const log = vi.spyOn(t.port, 'log').mockImplementation(async (id, q) => {
+      if (q?.before) await new Promise<void>((r) => { release = r; });
+      return real(id, q);
+    });
+    render(<BridgePageBlock detail={detail()} port={t.port} />);
+    const older = await screen.findByTestId('bridge-conversation-older');
+    fireEvent.click(older);
+    await waitFor(() => expect((screen.getByTestId('bridge-conversation-older') as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByTestId('bridge-conversation-older'));
+    expect(log.mock.calls.filter(([, q]) => q?.before)).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByTestId('bridge-conversation').textContent).toContain('@tm8 is the deploy done?'));
   });
 
   it('saves a narrowing change at once and offers Undo with the same patch back', async () => {

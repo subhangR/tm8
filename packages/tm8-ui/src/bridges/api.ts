@@ -35,6 +35,10 @@ export interface BridgeLogQuery {
   since?: string;
   thread?: string;
   limit?: number;
+  /** #1446: the newest page (rows still oldest first within it). Never moves an unread cursor. */
+  latest?: boolean;
+  /** #1446: the page just older than this message id (exclusive): pass the last answer's `olderCursor`. */
+  before?: string;
 }
 
 /** The `bridges.*` operations, by catalog name. */

@@ -270,7 +270,7 @@ function ContentBlock({
       /* The bridge page (BRIDGE-ENTITY-DESIGN §4.4): the client is the seam's
          `commands.bridges`, the same way the loop page reads `commands.loops`. */
       case 'bridge-page':
-        return <BridgePageBlock detail={detail} port={commands?.bridges} onOpenEntity={onOpenEntity} />;
+        return <BridgePageBlock detail={detail} port={commands?.bridges} loops={commands?.loops} onOpenEntity={onOpenEntity} />;
       /* The same extracted block `ProfileBody` and `SubtreeBody` draw — one
          implementation, three bodies, so a generic kind can list its peers
          over one edge type as registry data. */

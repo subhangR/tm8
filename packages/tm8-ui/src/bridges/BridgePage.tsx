@@ -14,6 +14,7 @@ import { bridgeProviderLabel, BridgeProviderMark } from './bridge-marks';
 import type { BridgeDetailView, BridgeView, EntityDetail } from '@tm8/contract';
 import { Pill } from '../kit';
 import type { BridgesPort } from './api';
+import type { LoopsClient } from '../loops/api';
 import { STATUS_TONE, TARGET_GLYPH, bridgeFailureOf, statusLine } from './format';
 import { useDismissable } from '../panels/useDismissable';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
@@ -57,10 +58,13 @@ export function useBridgeView(port: BridgesPort | null | undefined, bridgeId: st
 export function BridgePageBlock({
   detail,
   port,
+  loops,
   onOpenEntity,
 }: {
   detail: EntityDetail;
   port: BridgesPort | null | undefined;
+  /** `loops.*` (Bridges L): the Loops tab's reads and writes. Absent, the tab says it is unwired. */
+  loops?: LoopsClient | null | undefined;
   onOpenEntity?: (id: string) => void;
 }) {
   const { view, error, reload, accept } = useBridgeView(port, detail.id, detail.version);
@@ -100,7 +104,7 @@ export function BridgePageBlock({
         {tab === 'people' ? <PeopleTab view={view} /> : null}
         {tab === 'routing' ? <RoutingTab view={view} port={port} onView={accept} onOpenEntity={onOpenEntity} /> : null}
         {tab === 'memory' ? <MemoryTab view={view} port={port} onOpenEntity={onOpenEntity} /> : null}
-        {tab === 'loops' ? <LoopsTab view={view} /> : null}
+        {tab === 'loops' ? <LoopsTab view={view} loops={loops} onOpenEntity={onOpenEntity} /> : null}
         {tab === 'health' ? <HealthTab view={view} port={port} /> : null}
       </div>
     </div>
