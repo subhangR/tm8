@@ -150,7 +150,7 @@ describe('the add-bridge wizard', () => {
     const { port, client } = await open();
     fireEvent.click(screen.getByRole('button', { name: '+ Link a new number' }));
     const dialog = screen.getByTestId('bridge-link-number');
-    fireEvent.click(within(dialog).getByLabelText(/^This phone/));
+    fireEvent.click(within(dialog).getByLabelText(/^Type a pairing code/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+91 98000 00094' } });
     fireEvent.change(within(dialog).getByLabelText('Number label'), { target: { value: 'Ops phone' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Get a code' }));
@@ -188,7 +188,7 @@ describe('review #1447 round 1', () => {
     render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: '+ Link a new number' }));
     const dialog = screen.getByTestId('bridge-link-number');
-    fireEvent.click(within(dialog).getByLabelText(/^This phone/));
+    fireEvent.click(within(dialog).getByLabelText(/^Type a pairing code/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+919800000094' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Get a code' }));
     // Only the early frame reaches this stubbed socket; before the fix it was dropped and the dialog hung.
