@@ -19,6 +19,7 @@
 export const BRIDGE_VERBS = [
   'work', 'task', 'help', 'whoami', 'workers', 'stop', 'status', 'tasks', 'docs', 'link',
   'who', 'bridge', 'mute', 'unmute', 'new',
+  'start', 'retry', 'result', 'tell',
 ] as const;
 export type BridgeVerb = (typeof BRIDGE_VERBS)[number];
 
@@ -27,7 +28,7 @@ export type BridgeVerb = (typeof BRIDGE_VERBS)[number];
  * sender gets "not available yet" rather than a did-you-mean to something else.
  */
 export const BRIDGE_PLANNED_VERBS = [
-  'tell', 'result', 'retry', 'start', 'remember', 'memories', 'forget', 'remind', 'loop', 'loops', 'queue',
+  'remember', 'memories', 'forget', 'remind', 'loop', 'loops', 'queue',
 ] as const;
 export type BridgePlannedVerb = (typeof BRIDGE_PLANNED_VERBS)[number];
 

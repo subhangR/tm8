@@ -106,6 +106,8 @@ export const OPERATIONS = [
   { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },
   { name: 'labels.update', method: 'PATCH', path: '/v2/labels/:labelId', kind: 'command', status: 'v1' },
   { name: 'labels.archive', method: 'POST', path: '/v2/labels/:labelId/archive', kind: 'command', status: 'v1' },
+  // v2 §4.3: the agent's door to /work — the same server path, handles, provenance and announcement.
+  { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },

@@ -3450,6 +3450,7 @@ export async function stopSessionAsOperator(
 export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnService }): {
   spawnWorker: BridgeCommandPorts['spawnWorker'];
   stopWorker: BridgeCommandPorts['stopWorker'];
+  resumeWorker: BridgeCommandPorts['resumeWorker'];
 } {
   const { db, spawnService } = deps;
   return {
@@ -3468,8 +3469,12 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
         title: request.title,
         promptExtra: null,
         clientMutationId: request.clientMutationId,
-      }, { bridgeOrigins: request.origins } as Parameters<SpawnService['spawn']>[2]));
+      }, { bridgeOrigins: request.origins }));
       return { sessionId: spawned.sessionId };
+    },
+    async resumeWorker(claims, sessionId, input) {
+      const resumed = await rethrowing(() => spawnService.resume(claims, { sessionId, clientMutationId: input.clientMutationId }));
+      return { sessionId: resumed.sessionId };
     },
     stopWorker: (claims, sessionId, input) => stopSessionAsOperator(db, spawnService, claims, sessionId, {
       reason: input.reason, endedReason: input.reason, clientMutationId: input.clientMutationId,

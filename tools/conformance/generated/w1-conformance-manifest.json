@@ -2,15 +2,15 @@
   "schemaVersion": "tm8.conformance.w1.v1",
   "catalogDigest": "sha256:751f592ee5ac30f76d972c4f522c0b436d3ea572167c9f435290bf65d43db875",
   "catalog": {
-    "total": 414,
-    "v1": 412,
+    "total": 415,
+    "v1": 413,
     "reserved": 2,
-    "http": 412,
+    "http": 413,
     "ws": 1,
-    "registerableV1Http": 410,
+    "registerableV1Http": 411,
     "methods": {
       "GET": 139,
-      "POST": 204,
+      "POST": 205,
       "PATCH": 24,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 146,
-      "command": 266,
+      "command": 267,
       "stream": 2
     },
-    "uniqueNames": 414,
-    "uniqueBindings": 413
+    "uniqueNames": 415,
+    "uniqueBindings": 414
   },
   "reservedOperations": [
     "search.query",
@@ -484,6 +484,13 @@
         "operation": "labels.archive",
         "method": "POST",
         "path": "/v2/labels/:labelId/archive",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.work.start",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/work",
         "status": "registered",
         "source": "server-router"
       },
@@ -3302,7 +3309,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 382
+    "unimplementedV1Http": 383
   },
   "schemas": {
     "additive": {
@@ -4130,6 +4137,23 @@
         "intentTags": [
           "labels",
           "archive"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.work.start",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.work.start",
+        "intentTags": [
+          "bridges",
+          "work",
+          "start"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

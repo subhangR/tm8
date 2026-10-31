@@ -75,6 +75,7 @@ describe('catalog (§3.4)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
+      'bridges.work.start', // B1b-6 (v2 §4.3)
     ]);
   });
   it('create, retarget and remove are human-only; the session doors are not', () => {

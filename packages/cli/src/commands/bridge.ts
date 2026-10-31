@@ -4,7 +4,7 @@
 import {
   BRIDGE_PROVIDERS,
   type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
-  type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
+  type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake, type BridgeWorkStartResult,
 } from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -274,6 +274,32 @@ async function bridgeListen(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** `tm8 bridge work` (v2 §4.3): bridges.work.start — the /work path, for agents asked in natural language. */
+async function bridgeWork(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['item', 'teammate', 'project', 'effort', 'mutation-id']); argumentsCount(cmd, 1);
+  const items = cmd.options.values('item').map(i => i.trim()).filter(i => i !== '');
+  if (items.length === 0) throw usage('--item "<one line of work>" is required (repeat it, at most 5)');
+  const effort = cmd.options.value('effort');
+  if (effort !== undefined && !['low', 'high', 'max'].includes(effort)) throw usage('--effort takes low, high or max');
+  const teammate = cmd.options.value('teammate');
+  const project = cmd.options.value('project');
+  const options = {
+    ...(teammate ? { teammate } : {}), ...(project ? { project } : {}), ...(effort ? { effort } : {}),
+  };
+  const result = await observedInvoke<BridgeWorkStartResult>(client(cmd), 'bridges.work.start', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') },
+    body: { ...mutation(cmd), items, ...(Object.keys(options).length > 0 ? { options } : {}) },
+  });
+  cmd.out.data(result, r => [
+    ...(r.parentTaskId ? [`parent task ${r.parentTaskId}`] : []),
+    ...r.items.map((item, i) => item.sessionId
+      ? `${i + 1} task ${item.taskId} · ${item.handle ?? item.sessionId} starting`
+      : `${i + 1} task ${item.taskId} · not started: ${item.error ?? 'unknown'}`),
+    r.noticeMessageId ? 'announced in the group' : 'not announced (the bridge refused the post)',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
@@ -288,4 +314,5 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'handle', 'claim'], run: bridgeHandleClaim },
   { path: ['bridge', 'log'], run: bridgeLog },
   { path: ['bridge', 'listen'], run: bridgeListen },
+  { path: ['bridge', 'work'], run: bridgeWork },
 ];

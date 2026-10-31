@@ -10,11 +10,12 @@
  */
 import {
   BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema,
-  BridgeStateInputSchema, BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
+  BridgeStateInputSchema, BridgeUpdateInputSchema, BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
   type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
   type BridgeLogEntry, type BridgeLogResult, type BridgeRecentPoster, type BridgeView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
+import type { BridgeWorkStarter } from './commands/ports.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, isUuid, limitOf, requireUuidParam } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
@@ -315,6 +316,16 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       // --latest and --before never move it.
       const run = unread ? command : read;
       return run(ctx, q => readLog(q, bridgeId, { since, before, latest, thread, limit, unread }));
+    },
+    'bridges.work.start': async (ctx): Promise<BridgeWorkStartResult> => {
+      const input = BridgeWorkStartInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const starter = deps.bridgeCommands as (Partial<BridgeWorkStarter> & object) | undefined;
+      if (!starter?.workStart) {
+        throw new CollabError('not_implemented', 'this node runs no bridge command executor (it needs the execution runtime)');
+      }
+      const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+      return starter.workStart(claims, { ...input, bridgeId });
     },
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);
