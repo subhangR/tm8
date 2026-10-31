@@ -65,9 +65,9 @@ export function pairs(flag: string, raw: string[]): Record<string, string> {
   for (const item of raw) {
     const at = item.indexOf('=');
     // `--member` keys are phone numbers: these refusals get pasted onto tasks, so they are masked too.
-    if (at < 1 || at === item.length - 1) throw usage(`--${flag} takes <key>=<value>, got "${maskJids(item)}"`);
+    if (at < 1 || at === item.length - 1) throw usage(`--${flag} takes <key>=<value>, got "${maskJids(item, true)}"`);
     const key = item.slice(0, at), value = item.slice(at + 1);
-    if (key in out && out[key] !== value) throw usage(`--${flag} names ${maskJids(key)} twice`);
+    if (key in out && out[key] !== value) throw usage(`--${flag} names ${maskJids(key, true)} twice`);
     out[key] = value;
   }
   return out;
@@ -172,9 +172,13 @@ function renderPlan(plan: PlannedBridge[]): string {
   ].join('\n')).join('\n');
 }
 
-/** Every `<digits>@…` in free text, masked the way mask() masks one address. */
-export function maskJids(text: string): string {
-  return text.replace(/[0-9]{5,}(?=@)/g, digits => `…${digits.slice(-4)}`);
+/**
+ * Every phone number in free text, masked the way mask() masks one address: a run of 5+ digits before
+ * `@` or a URL-encoded `%40` (a request path). With `bare`, every 5+ digit run, for text that holds
+ * nothing but addresses (a `--member` key may come without its `@…` suffix).
+ */
+export function maskJids(text: string, bare = false): string {
+  return text.replace(bare ? /[0-9]{5,}/g : /[0-9]{5,}(?=@|%40)/gi, digits => `…${digits.slice(-4)}`);
 }
 
 /** `+…1999@s.whatsapp.net`: enough to tell addresses apart in a log, not a number. */
@@ -206,7 +210,8 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     config = JSON.parse(await readTextSource(source.startsWith('@') || source === '-' ? source : `@${source}`)) as Phase1Config;
   } catch (err) {
     if (err instanceof CliError) throw err;
-    throw usage(`--config is not JSON: ${err instanceof Error ? err.message : String(err)}`);
+    // JSON.parse quotes a snippet of the file around the error, which can hold part of a number: say only that it failed.
+    throw usage('--config is not JSON', 'check it with `jq . <file>` on the host');
   }
   const spaceId = requireSpace(cmd.ctx);
   const plan = planPhase1Import(config, {
@@ -271,6 +276,8 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
         links.push({ externalId: mask(l.externalId), memberId: l.memberId, outcome });
         lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: ${outcome}`);
       } catch (err) {
+        // A transport or protocol failure names the request path, which carries the address (%40-encoded).
+        if (err instanceof Error && !(err instanceof ApiError)) err.message = maskJids(err.message);
         const ROW: Record<string, LinkOutcome> = { not_found: 'member_not_active', invalid_input: 'invalid_address', conflict: 'link_conflict' };
         if (!(err instanceof ApiError) || !(err.code in ROW)) throw err;
         const outcome = ROW[err.code]!;

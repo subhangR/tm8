@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import type { BridgeView } from '@tm8/contract';
 import { run } from '../src/run.js';
-import { mask, pairs, planPhase1Import, type Phase1Config } from '../src/commands/bridge-import.js';
+import { mask, maskJids, pairs, planPhase1Import, type Phase1Config } from '../src/commands/bridge-import.js';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/phase1-wa-config.json', import.meta.url));
 const config = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Phase1Config;
@@ -18,7 +18,7 @@ const RAHUL = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb';
 const ASHA = 'cccccccc-cccc-7ccc-8ccc-cccccccccccc';
 const CONNECTION = '44444444-4444-7444-8444-444444444444';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
-const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', BAD = '910000000005@s.whatsapp.net', CLASH = '910000000006@s.whatsapp.net';
+const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', GONE_ADDR = '910000000008@s.whatsapp.net', BAD = '910000000005@s.whatsapp.net', CLASH = '910000000006@s.whatsapp.net', DROP = '910000000007@s.whatsapp.net';
 const PN = '910000000001@s.whatsapp.net', LID = '100000000000001@lid', TRUSTED = '910000000002@s.whatsapp.net';
 
 const base = { spaceId: SPACE, mainChats: {}, purposes: {}, members: {}, ownerMember: OWNER };
@@ -121,6 +121,15 @@ describe('planPhase1Import (pure)', () => {
     expect(twice).toBe('--member names …0002@s.whatsapp.net twice');
     expect(malformed).toBe('--member takes <key>=<value>, got "…0002@s.whatsapp.net="');
     for (const m of [twice, malformed]) expect(m).not.toMatch(/[0-9]{8,}@/);
+    // F7: a key without its @ suffix is masked too.
+    const bareMalformed = refusal(() => pairs('member', ['919876543210']));
+    const bareTwice = refusal(() => pairs('member', ['919876543210=a', '919876543210=b']));
+    expect(bareMalformed).toBe('--member takes <key>=<value>, got "…3210"');
+    expect(bareTwice).toBe('--member names …3210 twice');
+    for (const m of [bareMalformed, bareTwice]) expect(m).not.toMatch(/[0-9]{8,}/);
+    // F8: a request path (the @ URL-encoded) is masked.
+    expect(maskJids('PATCH /v2/bridges/b/participants/919876543210%40s.whatsapp.net timed out'))
+      .toBe('PATCH /v2/bridges/b/participants/…3210%40s.whatsapp.net timed out');
     expect(mask(PN)).toBe('…0001@s.whatsapp.net');
   });
 });
@@ -130,7 +139,7 @@ describe('tm8 bridge import-config (fake server)', () => {
   let requests: Array<{ method: string; path: string; body: Record<string, any> }> = [];
   let bridges: BridgeView[] = [];
   const asserted = new Map<string, string>();
-  let stdout = '';
+  let stdout = '', stderr = '';
 
   const viewFor = (body: Record<string, any>): BridgeView => ({
     id: BRIDGE, spaceId: SPACE, version: 1, title: body.conversation.title, createdAt: 'x', updatedAt: 'x',
@@ -167,6 +176,7 @@ describe('tm8 bridge import-config (fake server)', () => {
             res.end(JSON.stringify({ error: { code: 'invalid_input', message: 'a WhatsApp link names a person', requestId: 'test', retryable: false } }));
             return;
           }
+          if (externalId === DROP) { req.socket.destroy(); return; } // a transport failure on this one row
           if (externalId === CLASH) {
             res.writeHead(409, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: { code: 'conflict', message: 'this address is verified as someone else', details: { reason: 'link_conflict' }, requestId: 'test', retryable: false } }));
@@ -186,11 +196,11 @@ describe('tm8 bridge import-config (fake server)', () => {
     vi.stubEnv('TM8_SESSION_ID', ''); vi.stubEnv('TM8_AGENT_TOKEN', ''); vi.stubEnv('TM8_TEAM_MEMBER_ID', '');
     vi.stubEnv('TM8_JOURNAL_CLASS', 'human'); vi.stubEnv('TM8_NO_TERSE_DEFAULT', '1');
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { stdout += String(chunk); return true; });
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => { stderr += String(chunk); return true; });
     await run(['bridge', 'list']); // warm the CLI's module graph outside the per-test limit
   }, 60_000);
   afterAll(async () => { vi.restoreAllMocks(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  beforeEach(() => { requests = []; stdout = ''; });
+  beforeEach(() => { requests = []; stdout = ''; stderr = ''; });
 
   const args = ['bridge', 'import-config', '--config', FIXTURE, '--channel', 'self', '--connection', CONNECTION,
     '--main-chat', `self=${SELF_CHAT}`, '--owner-member', OWNER, '--member', `${TRUSTED}=${RAHUL}`];
@@ -264,6 +274,64 @@ describe('tm8 bridge import-config (fake server)', () => {
     bridges = [{ ...bridges[0]!, target: { kind: 'chat', id: '00000000-0000-7000-8000-000000000001', title: 'Other' } }];
     expect(await run(args)).not.toBe(0);
     expect(requests.filter(r => r.method !== 'GET')).toEqual([]);
+  });
+
+  it('a config that is not JSON is refused without quoting the file (F9)', async () => {
+    const file = `${FIXTURE}.broken.json`;
+    (await import('node:fs')).writeFileSync(file, '{"ownerJids": [x"919876543210@s.whatsapp.net"]}');
+    try {
+      const a = args.map(x => (x === FIXTURE ? file : x));
+      expect(await run([...a, '--dry-run'])).toBe(2);
+    } finally { (await import('node:fs')).rmSync(file); }
+    expect(stderr).toContain('--config is not JSON');
+    expect(stderr).not.toMatch(/[0-9]{8,}/);
+    expect(requests).toEqual([]);
+  });
+
+  it('a transport failure on a link row names the request path masked (F8)', async () => {
+    bridges = []; asserted.clear();
+    const file = `${FIXTURE}.drop.json`;
+    (await import('node:fs')).writeFileSync(file, JSON.stringify({ ...config, trustedSenders: [DROP] }));
+    try {
+      const a = [...args.filter((x, i, all) => !(x === '--member' || all[i - 1] === '--member')).map(x => (x === FIXTURE ? file : x)),
+        '--member', `${DROP}=${RAHUL}`];
+      expect(await run(a)).not.toBe(0);
+    } finally { (await import('node:fs')).rmSync(file); bridges = []; asserted.clear(); }
+    expect(requests.some(r => r.path.endsWith(`/participants/${DROP}`))).toBe(true);
+    expect(stderr).toContain('…0007%40s.whatsapp.net');
+    expect(stderr).not.toMatch(/[0-9]{8,}(@|%40)/);
+  });
+
+  it('catch-all: no refusal path prints a run of 8+ digits (UUIDs aside)', async () => {
+    bridges = []; asserted.clear();
+    const fs = await import('node:fs');
+    const out: string[] = [];
+    const take = () => { out.push(stdout, stderr); stdout = ''; stderr = ''; };
+    const withConfig = async (cfg: unknown, extra: string[], drop: string[] = []) => {
+      const file = `${FIXTURE}.all.json`;
+      fs.writeFileSync(file, typeof cfg === 'string' ? cfg : JSON.stringify(cfg));
+      try {
+        const base = args.filter((x, i, all) => !drop.some(d => x === d || all[i - 1] === d)).map(x => (x === FIXTURE ? file : x));
+        await run([...base, ...extra]);
+      } finally { fs.rmSync(file); }
+      take();
+    };
+    await withConfig(config, [], ['--owner-member', '--member']);                         // owner and trusted have no member
+    await withConfig(config, ['--member', '910000000099@s.whatsapp.net=' + ASHA]);         // unused --member key
+    await withConfig(config, ['--member', '919876543210'], ['--member']);                 // malformed, bare
+    await withConfig(config, ['--member', '919876543210=a', '--member', '919876543210=b']);// repeated, bare
+    await withConfig(config, ['--channel', 'infra']);                                     // a group without --allow-groups
+    await withConfig({ ...config, trustedSenders: ['120300000000000009@g.us'] }, []);     // not a person
+    await withConfig('{"ownerJids": [x"919876543210@s.whatsapp.net"]}', []);             // not JSON
+    await withConfig({ ...config, trustedSenders: [...(config.trustedSenders ?? []), GONE_ADDR, BAD, CLASH] },
+      ['--member', `${GONE_ADDR}=${GONE}`, '--member', `${BAD}=${RAHUL}`, '--member', `${CLASH}=${RAHUL}`]);   // 404 / 400 / 409 rows
+    await withConfig({ ...config, trustedSenders: [DROP] }, ['--member', `${DROP}=${RAHUL}`], ['--member']); // a transport failure stops the run
+    bridges = []; asserted.clear();
+    const text = out.join('\n').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+    expect(text).toContain('REFUSED');                 // the row paths really ran
+    expect(text).toContain('not JSON');
+    expect(text).toContain('%40s.whatsapp.net failed');
+    expect(text).not.toMatch(/[0-9]{8,}/);
   });
 
   it('refuses a real run without --connection', async () => {
