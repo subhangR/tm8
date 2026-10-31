@@ -4730,6 +4730,25 @@ const COMMAND_ALIASES = new Map<string, {
   // server replaces the axes jsonb wholesale — merging one axis into the
   // stored record requires the record. No new catalog row for a door that
   // already exists.
+  // `bridge import-config` is SUGAR over bridges.list + bridges.create +
+  // bridges.participants.update: the Phase-1 config.json is read locally and
+  // never sent, and every write is an existing door (B1c, §7.2).
+  ['bridge import-config', {
+    path: ['bridge', 'import-config'],
+    syntax: 'tm8 bridge import-config --config <path> --channel <id>... [--connection <connection-id>] [--main-chat <channel>=<chat-id>...] [--owner-member <member-id>] [--member <jid>=<member-id>...] [--purpose <channel>=<text>...] [--allow-groups] [--dry-run]',
+    summary: 'Import Phase-1 wa-bridge channels as bridges, and their owner and trusted senders as admin-asserted links',
+    notes: [
+      'sugar over bridges.list + bridges.create + bridges.participants.update; the config file is read locally and never sent',
+      'only the channels named by --channel are touched; any gap (no target chat, an unmapped address, another space, shadow mode) refuses the whole run before a write',
+      'idempotent: a bridge already on the conversation is reused and an assertion that already holds is a no-op',
+      'a group channel is refused unless --allow-groups is given (B1c moves the self chat only); addresses are printed masked, in the JSON result too',
+      'human-only like the doors under it: a space admin who owns the connection',
+    ],
+    examples: [
+      'tm8 bridge import-config --config wa-bridge/config.json --channel self --main-chat self=<chat-id> --owner-member <member-id> --dry-run',
+      'tm8 bridge import-config --config wa-bridge/config.json --channel self --connection <connection-id> --main-chat self=<chat-id> --owner-member <member-id>',
+    ],
+  }],
   ['task axis', {
     path: ['task', 'axis'],
     syntax: 'tm8 task axis <task-id> <axis-name> [<value>] [--clear] [--expect-version <n>] [--mutation-id <id>]',
@@ -5299,6 +5318,8 @@ COMMAND_ORDER.splice(
 // weakest stage and `--message` is one of its two branches.
 COMMAND_OPS.set('bridge get', ['bridges.get']);
 COMMAND_ORDER.splice(COMMAND_ORDER.indexOf('bridge show') + 1, 0, 'bridge get');
+COMMAND_OPS.set('bridge import-config', ['bridges.list', 'bridges.create', 'bridges.participants.update']);
+COMMAND_ORDER.splice(COMMAND_ORDER.indexOf('bridge listen') + 1, 0, 'bridge import-config');
 COMMAND_OPS.set('chat list', ['collections.query']);
 COMMAND_OPS.set('chat show', ['entities.context']);
 COMMAND_OPS.set('chat send', ['messages.post']);
