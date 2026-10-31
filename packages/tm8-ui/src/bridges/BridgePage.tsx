@@ -226,14 +226,14 @@ function BridgeHeader({
               {view.status === 'paused' ? (
                 <button type="button" role="menuitem" onClick={() => void lifecycle('resume')}>
                   ▶ Resume bridge
-                  <span className="brg-menu__help">Messages that arrived while paused are logged, not answered.</span>
+                  <span className="brg-menu__help">Messages sent to the group while it was paused were not received and are not in tm8.</span>
                 </button>
               ) : (
                 <>
                   <button type="button" role="menuitem" onClick={() => void lifecycle('pause')}>
                     ⏸ Pause bridge
                     <span className="brg-menu__help">
-                      Messages are still logged; nobody is answered, nothing is sent. Loops and workers wait.
+                      Disconnects the group: nothing is read from it or sent to it until you resume, and messages sent meanwhile are not kept. To keep the log but stop answers, send /mute in the group.
                     </span>
                   </button>
                   <button type="button" role="menuitem" disabled title={pauseForReason}>⏸ Pause for…</button>

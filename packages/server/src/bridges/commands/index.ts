@@ -8,6 +8,7 @@ import type { Db } from '../../db/types.js';
 import { createBridgeWorkerPort } from '../../facade/execution-handlers.js';
 import { bridgesWorkerClaims, postBridgeNotice, reactBridgeMessage } from '../outbox.js';
 import { createBridgeCommandExecutor, type BridgeCommandExecutor } from './executor.js';
+import { createBridgeSessionKeeper, type BridgeSessionKeeper } from '../runtime/keeper.js';
 import type { BridgeCommandPorts } from './ports.js';
 
 export { createBridgeCommandExecutor, VERB_TIER } from './executor.js';
@@ -45,5 +46,21 @@ export function createBridgeCommands(deps: {
       return raw?.handle ? { handle: raw.handle, title: raw.title ?? null } : null;
     },
     ...(deps.logger ? { logger: deps.logger } : {}),
+  });
+}
+
+/** R11: the keeper that resumes, else replaces, a bridge's stopped session (runtime/keeper.ts). */
+export function createBridgeKeeper(deps: {
+  db: Db;
+  spawnService: SpawnService;
+  log?: (line: string) => void;
+}): BridgeSessionKeeper {
+  const workers = createBridgeWorkerPort({ db: deps.db, spawnService: deps.spawnService });
+  return createBridgeSessionKeeper({
+    db: deps.db,
+    spawnWorker: workers.spawnWorker,
+    resumeWorker: workers.resumeWorker,
+    postNotice: postBridgeNotice,
+    ...(deps.log ? { log: deps.log } : {}),
   });
 }

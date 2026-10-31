@@ -19,7 +19,10 @@ import { pendingReason } from './reasons';
  *   2 Conversation — the number's live group list (`bridges.conversations.list`,
  *                    never stored); one already connected here is greyed (D20)
  *   3 Target       — chat · session · channel, and the policy the choice
- *                    implies (§2.2), editable, with History & retention
+ *                    implies (§2.2), editable, with History & retention.
+ *                    A session target can be a NEW session, started at
+ *                    Create as the chosen teammate (R11); the bridge keeps it
+ *                    running from then on (resumed, else replaced)
  *   4 Test it      — the bridge just created, checked
  *
  * NOTHING IS COMMITTED BEFORE STEP 3's Create (the EditEntityDialog rule):
@@ -29,6 +32,15 @@ import { pendingReason } from './reasons';
  */
 
 type Step = 1 | 2 | 3 | 4;
+
+/** The *New session* choice in the target picker (R11): started at Create. */
+export const NEW_SESSION = '__new_session__';
+const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
+
+/** A session the picker should say has stopped (it is resumed by the next message). */
+function stoppedSession(t: EntitySummary): boolean {
+  return t.state.kind === 'work_session' && !LIVE_SESSION.has(String((t.state as { status?: unknown }).status ?? ''));
+}
 
 /** §2.2's default policy, by target kind and conversation kind. */
 export function defaultPolicy(target: BridgeTargetKind, conversation: 'group' | 'dm'): Omit<BridgePolicy, 'style'> {
@@ -78,6 +90,8 @@ export function AddBridgeWizard({
   const [targets, setTargets] = useState<EntitySummary[] | null>(null);
   const [targetKind, setTargetKind] = useState<BridgeTargetKind>('chat');
   const [targetId, setTargetId] = useState<string>(initialTargetId ?? '');
+  const [teammates, setTeammates] = useState<EntitySummary[] | null>(null);
+  const [teammateId, setTeammateId] = useState('');
   const [policy, setPolicy] = useState<Omit<BridgePolicy, 'style'>>(defaultPolicy('chat', 'group'));
   const [style, setStyle] = useState('');
   const [retention, setRetention] = useState<{ forever: boolean; days: number }>({ forever: true, days: 90 });
@@ -101,6 +115,10 @@ export function AddBridgeWizard({
     void reloadConnections();
     void port.list(spaceId).then((rows) => setExisting(connectedHere(rows)), () => {});
     void port.targets(spaceId).then(setTargets, () => setTargets([]));
+    void port.teammates(spaceId).then((rows) => {
+      setTeammates(rows);
+      setTeammateId((id) => id || rows[0]?.id || '');
+    }, () => setTeammates([]));
   }, [port, spaceId, reloadConnections]);
 
   /* A target handed in by the launcher picks its own kind. */
@@ -135,8 +153,19 @@ export function AddBridgeWizard({
     setConversations((await port.conversations(c.id)).items);
   });
 
+  const canStartSession = !!port.startSession;
+  /* A different kind is a different set of defaults (R7): the choice re-derives them. */
+  const chooseKind = (kind: BridgeTargetKind) => {
+    setTargetKind(kind);
+    setTargetId(kind === 'work_session' && canStartSession ? NEW_SESSION : '');
+    setPolicyTouched(false);
+  };
+
   const create = () => run(async () => {
     if (!connection || !conversation) return;
+    const target = targetId === NEW_SESSION
+      ? await port.startSession!(spaceId, { teamMemberId: teammateId, title: `${conversation.name} (${provider})`.slice(0, 80) })
+      : targetId;
     const view = await port.create(spaceId, {
       connectionId: connection.id,
       conversation: {
@@ -145,7 +174,7 @@ export function AddBridgeWizard({
         title: conversation.name,
         memberCount: conversation.size,
       },
-      targetId,
+      targetId: target,
       policy: { ...policy, style: style.trim() === '' ? null : style.trim() },
       retentionDays: retention.forever ? null : retention.days,
     });
@@ -178,6 +207,9 @@ export function AddBridgeWizard({
   const groups = visible.filter((c) => c.kind === 'group');
   const dms = visible.filter((c) => c.kind === 'self');
   const targetChoices = (targets ?? []).filter((t) => t.kind === targetKind);
+  /* D25: a target with a bridge cannot take another; say which, instead of refusing at Create. */
+  const bridgedTo = useMemo(() => new Map([...existing.values()].map((b) => [b.target.id, b.conversation.title])), [existing]);
+  const targetReady = targetId === NEW_SESSION ? teammateId !== '' : targetId !== '';
   /* The contract's bound (1–3650 days); Create waits until it holds (review #1447 r1). */
   const retentionProblem = !retention.forever && (!Number.isInteger(retention.days) || retention.days < 1 || retention.days > 3650)
     ? 'Keep messages for 1 to 3650 days.' : null;
@@ -294,12 +326,12 @@ export function AddBridgeWizard({
           <section data-testid="wizard-step-target">
             <div className="brg-wiz__cards" role="radiogroup" aria-label="Lands in">
               {([
-                ['chat', 'A chat: each message to @tm8 is a turn; the chat\'s teammate answers.'],
-                ['work_session', 'A session: messages are delivered to one running session, which answers with tm8 message reply.'],
-                ['channel', 'A channel: a mirror. Everything posted there crosses; nobody answers unless mentioned.'],
+                ['chat', 'A chat: each message to @tm8 is a turn; the chat\'s teammate answers in the group.'],
+                ['work_session', 'A session: messages to @tm8 go to one session, which answers in the group. The bridge keeps it running; /new in the group starts a fresh one.'],
+                ['channel', 'A channel: a mirror. Every message is copied both ways; nothing answers unless someone is @mentioned.'],
               ] as const).map(([kind, words]) => (
                 <label key={kind} className="brg-wiz__card" data-selected={targetKind === kind || undefined}>
-                  <input type="radio" name="targetKind" checked={targetKind === kind} onChange={() => { setTargetKind(kind); setTargetId(''); }} />
+                  <input type="radio" name="targetKind" checked={targetKind === kind} onChange={() => chooseKind(kind)} />
                   <span className="brg-wiz__name">{TARGET_GLYPH[kind]} {TARGET_WORD[kind][0]!.toUpperCase() + TARGET_WORD[kind].slice(1)}</span>
                   <span className="brg-hint">{words}</span>
                 </label>
@@ -308,27 +340,58 @@ export function AddBridgeWizard({
             <label className="brg-form__line">
               <span className="set-eyebrow">Lands in</span>
               <select aria-label="Target" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-                <option value="">{targetChoices.length ? `Choose a ${TARGET_WORD[targetKind]}…` : `No ${TARGET_WORD[targetKind]} in this space yet`}</option>
-                {targetChoices.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                {targetKind === 'work_session' && canStartSession ? (
+                  <option value={NEW_SESSION}>＋ New session for this group</option>
+                ) : (
+                  <option value="">{targetChoices.length ? `Choose a ${TARGET_WORD[targetKind]}…` : `No ${TARGET_WORD[targetKind]} in this space yet`}</option>
+                )}
+                {targetChoices.map((t) => {
+                  const taken = bridgedTo.get(t.id);
+                  return (
+                    <option key={t.id} value={t.id} disabled={!!taken}>
+                      {t.title}{taken ? ` — already bridged to ${taken}` : stoppedSession(t) ? ' (stopped: the next message resumes it)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </label>
+            {targetId === NEW_SESSION ? (
+              <label className="brg-form__line">
+                <span className="set-eyebrow">Runs as</span>
+                <select aria-label="Runs as" value={teammateId} onChange={(e) => setTeammateId(e.target.value)}>
+                  {(teammates ?? []).length === 0 ? <option value="">No teammate in this space yet</option> : null}
+                  {(teammates ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                </select>
+              </label>
+            ) : null}
             <p className="brg-hint">
-              {`New ${TARGET_WORD[targetKind]}: create it first (it needs its own teammate and model), then pick it here.`}
+              {targetKind === 'chat'
+                ? 'New chat: start it in tm8 first (it needs a teammate, a model and a first message), then pick it here.'
+                : targetKind === 'work_session'
+                  ? 'If the session stops, the next message resumes it, or starts a new one and tells the group.'
+                  : 'Pick the channel the group is mirrored into.'}
             </p>
 
             <fieldset className="brg-form__fields" onChange={() => setPolicyTouched(true)}>
-              <WizardChoice legend="When does tm8 answer?" name="w-trigger" value={policy.trigger}
-                onChange={(v) => setPolicy((p) => ({ ...p, trigger: v }))}
-                options={[['mention', 'Only when someone writes @tm8 or replies to tm8'], ['every', 'Every message'], ['none', 'Never — log only']]} />
-              <WizardChoice legend={`What from tm8 goes back to ${provider}?`} name="w-outbound" value={policy.outbound}
-                onChange={(v) => setPolicy((p) => ({ ...p, outbound: v }))}
-                options={[['replies', 'Only answers to the group', 'e.g. tm8\'s reply to "@tm8 is the deploy done?"'], ['all', 'Everything posted in the target', 'e.g. also your own notes and agents\' updates there']]} />
+              {/* R7: a channel mirrors everything; when tm8 answers and what goes back do not apply. */}
+              {targetKind !== 'channel' ? (
+                <>
+                  <WizardChoice legend="When does tm8 answer?" name="w-trigger" value={policy.trigger}
+                    onChange={(v) => setPolicy((p) => ({ ...p, trigger: v }))}
+                    options={[['mention', 'Only when someone writes @tm8 or replies to tm8'], ['every', 'Every message'], ['none', 'Never — log only']]} />
+                  <WizardChoice legend={`What from tm8 goes back to ${provider}?`} name="w-outbound" value={policy.outbound}
+                    onChange={(v) => setPolicy((p) => ({ ...p, outbound: v }))}
+                    options={[['replies', 'Answers, and anything posted on the bridge', 'e.g. tm8\'s reply to "@tm8 is the deploy done?"'], ['all', `Also everything posted in the ${TARGET_WORD[targetKind]}`, 'e.g. your own notes and agents\' updates there']]} />
+                </>
+              ) : null}
               <WizardChoice legend="Which way do messages flow?" name="w-direction" value={policy.direction}
                 onChange={(v) => setPolicy((p) => ({ ...p, direction: v }))}
                 options={[['both', 'Both ways'], ['in', `${provider} → tm8 only`], ['out', `tm8 → ${provider} only`]]} />
-              <WizardChoice legend="Who can start agents?" name="w-who" value={policy.whoMayTrigger}
-                onChange={(v) => setPolicy((p) => ({ ...p, whoMayTrigger: v }))}
-                options={[['linked', 'Linked people only'], ['anyone', 'Anyone in the group', 'asks first']]} />
+              {targetKind !== 'channel' ? (
+                <WizardChoice legend="Who can start agents?" name="w-who" value={policy.whoMayTrigger}
+                  onChange={(v) => setPolicy((p) => ({ ...p, whoMayTrigger: v }))}
+                  options={[['linked', 'Only people who have verified their number in tm8'], ['anyone', 'Anyone in the group', 'you\'ll confirm']]} />
+              ) : null}
               <WizardChoice legend="How replies are signed" name="w-voice" value={policy.voice}
                 onChange={(v) => setPolicy((p) => ({ ...p, voice: v }))}
                 options={[['named', '"tm8:" / "Release notes (keen-otter):"'], ['plain', 'No prefix']]} />
@@ -363,7 +426,7 @@ export function AddBridgeWizard({
               <li data-ok>✓ tm8 can read “{conversation?.name}”{conversation?.size ? ` (${conversation.size} people)` : ''}</li>
               <li data-ok>✓ The bridge is {created.status}: it lands in {created.target.title}</li>
               <li>◌ Send a test message to the group — {pendingReason(port, 'bridges.test', 'The test message')}</li>
-              <li>◌ Now send <code>@tm8 ping</code> from your phone; the answer arrives in {created.target.title}.</li>
+              <li>◌ {testLine(created.target.kind, created.target.title, provider)}</li>
             </ul>
             <p className="brg-hint">Finish is fine either way: if anything fails later, Health on the bridge says why.</p>
           </section>
@@ -379,7 +442,7 @@ export function AddBridgeWizard({
             <button type="button" className="pn-btn pn-btn--primary" disabled={!conversation || busy} onClick={() => setStep(3)}>Next: where it lands</button>
           ) : null}
           {step === 3 ? (
-            <button type="button" className="pn-btn pn-btn--primary" disabled={!targetId || busy || retentionProblem !== null} onClick={onCreate}>
+            <button type="button" className="pn-btn pn-btn--primary" disabled={!targetReady || busy || retentionProblem !== null} onClick={onCreate}>
               {busy ? 'Creating…' : 'Create bridge'}
             </button>
           ) : null}
@@ -409,6 +472,13 @@ export function AddBridgeWizard({
       ) : null}
     </div>
   );
+}
+
+/** Step 4's live check, per kind (R7): where the question lands and where the answer appears. */
+export function testLine(kind: BridgeTargetKind, title: string, provider: string): string {
+  if (kind === 'channel') return `Now send a message from your phone; it appears in #${title}, and a reply there appears in ${provider}.`;
+  if (kind === 'work_session') return `Now send "@tm8 ping" from your phone; ${title} gets it and answers in ${provider}. If nothing comes back, check that your number is verified (Account → Linked identities).`;
+  return `Now send "@tm8 ping" from your phone; ${title} answers in ${provider}. If nothing comes back, check that your number is verified (Account → Linked identities).`;
 }
 
 function WizardChoice<V extends string>({

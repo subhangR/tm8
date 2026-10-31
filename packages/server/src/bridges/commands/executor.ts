@@ -60,7 +60,7 @@ export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'lin
   workers: 'reader', status: 'reader', tasks: 'reader', docs: 'reader',
   work: 'linked', task: 'linked', stop: 'linked', remember: 'linked',
   who: 'reader', bridge: 'everyone',
-  mute: 'admin', unmute: 'admin', new: 'admin',
+  mute: 'admin', unmute: 'admin', new: 'linked',
   start: 'linked', retry: 'linked', tell: 'linked', result: 'reader',
 };
 
@@ -298,12 +298,15 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       lines.push('/workers [all] · /status <worker> — what is running');
       lines.push('/tasks [open] · /docs [artifacts|drawings] — what this group made');
     }
+    if (cmd.sender.memberId && cmd.bridge.targetKind !== 'channel' && (t === '' || t.startsWith('new') || t.startsWith('session'))) {
+      lines.push('/new session — start a fresh session for this group; @tm8 goes there');
+    }
     if (cmd.sender.admin && (t === '' || t.startsWith('admin') || t.startsWith('mute'))) {
       lines.push('/mute 1h · /unmute — hold tm8\'s posts here; commands keep working');
     }
     lines.push('/whoami · /bridge — who you are, where this group goes');
     if (!cmd.sender.memberId) lines.push(GUEST_FIRST);
-    return { text: lines.slice(0, 9).join('\n') };
+    return { text: lines.slice(0, 10).join('\n') };
   }
 
   function whoami(cmd: Command): Answer {
@@ -786,6 +789,41 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { text: `${named(row)} couldn't resume — started ${launched.handle ?? 'a new worker'} on "${t.title}"` };
   }
 
+  /**
+   * /new [session] (R11): a fresh session for this group, and the bridge
+   * moves to it, so the next @tm8 lands there. The old session is left as it
+   * is (it keeps its handle and its history); the group's log never moves,
+   * because a chat or session bridge logs on the bridge itself. A new CHAT is
+   * started by a person in tm8 (chat.start is human-only), so `/new chat` and a
+   * bare `/new` on a chat bridge say where to do that.
+   */
+  async function newSession(cmd: Command, args: string): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    const word = stripTail(args).toLowerCase();
+    if (cmd.bridge.targetKind === 'channel') {
+      throw new Refusal('this group mirrors a tm8 channel, so there is no session to replace');
+    }
+    if (word !== '' && word !== 'session' && word !== 'chat') throw new Refusal('usage: /new, or /new session');
+    if (word === 'chat' || (word === '' && cmd.bridge.targetKind === 'chat')) {
+      throw new Refusal('a new chat is started in tm8: open this bridge → New chat. /new session starts a session from here');
+    }
+    const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [cmd.input.bridgeId]));
+    const teammate = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId ?? facts?.teammateId ?? null;
+    if (!teammate) throw new Refusal('this bridge has no teammate to run a session as: set one on the bridge in tm8');
+    const provider = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
+    const { sessionId } = await ports.spawnWorker(claims, {
+      spaceId: cmd.input.spaceId, teamMemberId: teammate, taskId: null, projectId: null, effort: null,
+      title: titleOf(`${cmd.bridge.title || 'Group'} (${provider})`, 80),
+      clientMutationId: `${cmd.key}:spawn:new`, origins: [cmd.origin('/new')],
+    });
+    await exec(q => q.rpc('bridge_managed_retarget', [cmd.input.bridgeId, sessionId, cmd.sender.memberId, 'new']));
+    const handle = await ports.workerHandle(claims, cmd.input.bridgeId, sessionId).catch(() => null);
+    const old = cmd.bridge.targetTitle ? `"${cmd.bridge.targetTitle}"` : `the old ${cmd.bridge.targetKind === 'chat' ? 'chat' : 'session'}`;
+    return {
+      text: `new session started${handle?.handle ? ` (${handle.handle})` : ''} — @tm8 goes there now. ${old} keeps its history`,
+    };
+  }
+
   /** /result <worker> (§4.4): its latest post on this group's log, ≤ 10 lines, never secret-shaped text (§4.8). */
   async function result(cmd: Command, args: string): Promise<Answer> {
     requireReader(cmd);
@@ -884,8 +922,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'bridge': return bridgeCard(cmd);
       case 'mute': return mute(cmd, parsed.args);
       case 'unmute': return unmute(cmd);
-      // Retarget is human-only by design (D28): an admin does it in tm8.
-      case 'new': return { text: 'starting a fresh chat for this group is done in tm8: open the bridge → Retarget' };
+      case 'new': return newSession(cmd, parsed.args);
       case 'start': return start(cmd, parsed.args);
       case 'retry': return retry(cmd, parsed.args);
       case 'result': return result(cmd, parsed.args);

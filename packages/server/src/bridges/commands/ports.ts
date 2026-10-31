@@ -46,7 +46,8 @@ export interface BridgeNoticeInput {
 export interface SpawnWorkerRequest {
   spaceId: string;
   teamMemberId: string;
-  taskId: string;
+  /** Null for a session with no task: the bridge's own session (/new, the session keeper). */
+  taskId: string | null;
   projectId: string | null;
   effort: 'low' | 'high' | 'max' | null;
   title: string;

@@ -171,16 +171,19 @@ function makeExecutor(): BridgeCommandExecutor {
       if (prior) return { sessionId: prior };
       spawns.push(request);
       const sessionId = randomUUID();
-      const creator = (await asOwner(c => c.query(
-        'select created_by from public.entities where id = $1', [request.taskId]))).rows[0].created_by;
+      const creator = request.taskId
+        ? (await asOwner(c => c.query('select created_by from public.entities where id = $1', [request.taskId]))).rows[0].created_by
+        : people.owner.member;
       await asOwner(async c => {
         await c.query("insert into public.entities(id,space_id,kind,position,created_by,visibility) values($1,$2,'work_session',0,$3,'space')",
           [sessionId, space, creator]);
         await c.query("insert into public.work_sessions(entity_id,title,status,share_mode,started_at) values($1,$2,'running','none',now())",
           [sessionId, request.title]);
-        await c.query('select internal.w1_set_writer($1)', ['entity_recorder']);
-        await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'working_on',$4)",
-          [space, sessionId, request.taskId, creator]);
+        if (request.taskId) {
+          await c.query('select internal.w1_set_writer($1)', ['entity_recorder']);
+          await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'working_on',$4)",
+            [space, sessionId, request.taskId, creator]);
+        }
       });
       await database.transaction(c => c.query('select public.record_bridge_provenance($1, $2::jsonb)', [sessionId, JSON.stringify(request.origins)]));
       spawned.set(request.clientMutationId, sessionId);
@@ -355,7 +358,7 @@ describe('§7.3 item 11: /tasks and /docs read the provenance edges (ac3)', () =
 
 describe('§4.6 admin tier is structural (ac5)', () => {
   // Each admin-tier command × {linked admin allowed, asserted admin refused, guest refused}.
-  const adminCommands = ['/stop all', '/stop <other>', '/mute 1h', '/unmute', '/new'] as const;
+  const adminCommands = ['/stop all', '/stop <other>', '/mute 1h', '/unmute'] as const;
   const muted = async () => (await asOwner(c => c.query('select muted_until from public.bridges where entity_id = $1', [bridgeId]))).rows[0].muted_until;
   async function otherWorkerHandle(): Promise<string> {
     await command('rahul', `/work worker for the admin table ${randomUUID().slice(0, 4)}`);
@@ -380,8 +383,6 @@ describe('§4.6 admin tier is structural (ac5)', () => {
       } else if (cmd === '/unmute') {
         expect(reply!.text).toBe('unmuted');
         expect(await muted()).toBeNull();
-      } else if (cmd === '/new') {
-        expect(reply!.text).toMatch(/done in tm8/);
       } else if (cmd === '/stop all') {
         expect(reply!.text).toMatch(/^stop \d+ workers?\? reply YES within 2 min$/);
       } else {
@@ -823,5 +824,45 @@ describe('the rest of the slice', () => {
       if (reply?.text.startsWith('too many commands')) told += 1;
     }
     expect(told).toBe(1);
+  });
+});
+
+describe('/new (R11, 425): the bridge starts its own session and moves to it', () => {
+  const target = async () => (await asOwner(c => c.query(
+    'select target_kind, target_id::text from public.bridges where entity_id = $1', [bridgeId]))).rows[0] as { target_kind: string; target_id: string };
+
+  it('a guest may not; a bare /new or /new chat on a chat bridge says where a chat is started', async () => {
+    const before = spawns.length;
+    expect((await command('guest', '/new session')).reply!.text).toMatch(/link your number first/);
+    expect((await command('rahul', '/new')).reply!.text).toMatch(/new chat is started in tm8/);
+    expect((await command('rahul', '/new chat')).reply!.text).toMatch(/new chat is started in tm8/);
+    expect((await command('rahul', '/new everything')).reply!.text).toBe('usage: /new, or /new session');
+    expect(spawns.length).toBe(before);
+    expect((await target()).target_id).toBe(chat);
+  });
+
+  it('a linked member starts a session with no task; the bridge targets it, and /new again moves on', async () => {
+    const { reply } = await command('rahul', '/new session');
+    expect(reply!.text).toMatch(/^new session started/);
+    const spawn = spawns.at(-1)!;
+    expect(spawn.taskId).toBeNull();
+    expect(spawn.teamMemberId).toBe(persona);
+    expect(spawn.origins[0]!.command).toBe('/new');
+    const first = await target();
+    expect(first.target_kind).toBe('work_session');
+    expect(first.target_id).not.toBe(chat);
+    // The bridged_to edge follows the target.
+    expect(await count(`select count(*) n from public.edges where src_id = $1 and type = 'bridged_to' and dst_id = $2`,
+      [bridgeId, first.target_id])).toBe(1);
+    // On a session bridge a bare /new replaces the session.
+    const again = await command('rahul', '/new');
+    expect(again.reply!.text).toMatch(/^new session started/);
+    const second = await target();
+    expect(second.target_id).not.toBe(first.target_id);
+    // Put the fixture back on its chat for the rest of the file.
+    await db.rpc({ identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli', requestId: 'r11-back' },
+      'retarget_bridge', [bridgeId, Number((await asOwner(c => c.query('select version from public.entities where id = $1', [bridgeId]))).rows[0].version),
+        chat, null, `r11-back-${randomUUID()}`]);
+    expect((await target()).target_id).toBe(chat);
   });
 });

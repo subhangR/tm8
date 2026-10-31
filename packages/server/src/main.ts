@@ -122,7 +122,7 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
-import { createBridgeCommands } from './bridges/commands/index.js';
+import { createBridgeCommands, createBridgeKeeper } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
@@ -952,6 +952,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const bridgeDeliver = db && delivery
     ? createBridgeSessionDelivery({ db, delivery: delivery.messageDelivery as unknown as MessageDeliveryPort })
     : undefined;
+  // R11 (425): a bridge's stopped session is resumed, else replaced, before delivery.
+  const bridgeKeeper = db && execution
+    ? createBridgeKeeper({ db, spawnService: execution.spawnService, log: (line) => console.warn(line) })
+    : undefined;
   const bridgeRuntimeRoute = db && bridgeHub
     ? createBridgeRuntimeRoute({
         db,
@@ -963,6 +967,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         commands: () => bridgeCommands,
         ...(bridgeMedia ? { media: bridgeMedia } : {}),
         ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
+        ...(bridgeKeeper ? { keepSession: (bridgeId: string, messageId: string) => bridgeKeeper.ensure(bridgeId, messageId) } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
         log: (line) => console.warn(line),
       })
