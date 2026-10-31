@@ -302,6 +302,16 @@ describe('the newest page and scroll-back (bridges.log.read --latest / --before)
 
 describe('/remember proposals (Bridges R, 416: D29, D62)', () => {
   let proposal = '';
+  // This block links +911111 to the shared human identity; later blocks (B3's
+  // link list) read that identity's links, so the link and its participant go
+  // when the block ends. Each block stays independent of file order.
+  afterAll(async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`delete from public.bridge_identity_links where provider = 'whatsapp' and external_id = '+911111' and identity_id = $1`, [identityId]);
+      await c.query(`delete from public.bridge_participants where bridge_id = $1 and external_id = '+911111'`, [bridgeId]);
+    });
+  });
   it('any session lists them; canDecide is the caller\'s own', async () => {
     proposal = randomUUID();
     await database.transaction(async c => {
