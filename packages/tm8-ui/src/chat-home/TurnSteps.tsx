@@ -187,13 +187,20 @@ function ThoughtLine({ text }: { text: string }) {
  * no failure is ever hidden); identical failures fold into one line with a
  * count (R6).
  */
-export function StepErrorLine({ view, count = 1, retried = view.retried }: {
+export function StepErrorLine({ view, count = 1, retried = view.retried, tone = 'alert' }: {
   view: StepView;
   count?: number;
   retried?: boolean;
+  /**
+   * `alert` — the turn itself failed, so the line keeps the block colour.
+   * `quiet` — the turn finished, so a step the agent handled reads as the
+   * footnote it is. R5 is unchanged either way: the line is still drawn and
+   * still counted in the header's `· N failed`.
+   */
+  tone?: 'alert' | 'quiet';
 }) {
   return (
-    <div className="tch-errline" data-testid="chat-step-errline">
+    <div className="tch-errline" data-tone={tone} data-testid="chat-step-errline">
       <span aria-hidden>✕ </span>
       {`${view.words.active} failed`}
       {count > 1 ? ` ${count} times` : ''}

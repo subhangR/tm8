@@ -144,6 +144,15 @@
   overflow-wrap: anywhere;
 }
 
+/* A step that failed inside a turn the agent finished anyway. Same words,
+   same place, same count in the header — read as a footnote, not an alarm.
+   The filled block stays for the turn that actually failed. */
+.tch-errline[data-tone='quiet'] {
+  padding: 2px 0;
+  background: none;
+  color: var(--pn-ink-3);
+}
+
 /* D11: `✎ Edited ¶ Runbook` — a quiet line, no card. */
 .tch-docedit {
   display: flex;

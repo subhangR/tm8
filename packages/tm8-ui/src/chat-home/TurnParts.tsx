@@ -19,7 +19,7 @@ import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
 import {
   buildStepLines,
   buildStepViews,
-  foldFailures,
+  foldTurnFailures,
   isStepTool,
   segmentTurn,
   summarizeRun,
@@ -267,12 +267,40 @@ export function TurnParts({
   const turnExpanded = turnOpen ?? (currentRunKey !== null && runKeys.length === 1);
   const runOpen = (key: string): boolean => turnOpen ?? key === currentRunKey;
 
-  const renderRun = (key: string, items: readonly RunItem[]) => {
-    const steps = items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
-    const failed = steps.flatMap((part) => {
-      const view = views.get(part.seq);
+  const failedIn = (items: readonly RunItem[]): StepView[] =>
+    items.flatMap((item) => {
+      if (item.kind !== 'step') return [];
+      const view = views.get(item.part.seq);
       return view?.state === 'error' ? [view] : [];
     });
+
+  /* R6 is the TURN's rule, not the run's (see `foldTurnFailures`): folding
+     per run redrew an identical failure once per run it landed in. Folded
+     once here, each group draws at the run it first appeared in. */
+  const failuresByRun = useMemo(
+    () =>
+      foldTurnFailures(
+        segments.flatMap((segment) =>
+          segment.kind === 'run' ? [{ key: segment.key, failed: failedIn(segment.items) }] : [],
+        ),
+      ),
+    [segments, views],
+  );
+
+  /*
+   * TONE, not visibility (R5 is untouched: every failure still draws and
+   * still counts in the header). A step that failed inside a turn the agent
+   * went on to finish is a step the agent handled — `gh` not logged in, a
+   * grep that matched nothing — and drawing it as a filled red alert told
+   * readers on a phone that the CHAT had failed when it had not. The alert
+   * tone is kept for the turn that actually broke, which also draws its own
+   * `Turn failed` row (R7).
+   */
+  const turnFailed = useMemo(() => projected.some((part) => part.kind === 'error'), [projected]);
+  const failureTone = turnFailed ? 'alert' : 'quiet';
+
+  const renderRun = (key: string, items: readonly RunItem[]) => {
+    const steps = items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
     /* D15 §5: the run's outcomes first — its calls' ledger lines in seq
        order, then any edit lines, then its failures (D13, folded per R6) —
        and the step block last, so the live step is the last thing on screen. */
@@ -280,8 +308,14 @@ export function TurnParts({
       <Fragment key={key}>
         {steps.map((part) => ledgerLines(part, views.get(part.seq)))}
         {steps.map((part) => docEdit(part, views.get(part.seq)))}
-        {foldFailures(failed).map((group) => (
-          <StepErrorLine key={`err:${group.first.seq}`} view={group.first} count={group.count} retried={group.retried} />
+        {(failuresByRun.get(key) ?? []).map((group) => (
+          <StepErrorLine
+            key={`err:${group.first.seq}`}
+            view={group.first}
+            count={group.count}
+            retried={group.retried}
+            tone={failureTone}
+          />
         ))}
         <TurnSteps
           lines={buildStepLines(items, views)}

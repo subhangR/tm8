@@ -312,7 +312,7 @@ export interface FailureGroup {
 export function foldFailures(failed: readonly StepView[]): FailureGroup[] {
   const groups = new Map<string, FailureGroup>();
   for (const view of failed) {
-    const key = `${view.words.active}\u0000${view.reason ?? ''}`;
+    const key = failureKey(view);
     const group = groups.get(key);
     if (group) {
       group.count += 1;
@@ -322,4 +322,52 @@ export function foldFailures(failed: readonly StepView[]): FailureGroup[] {
     }
   }
   return [...groups.values()];
+}
+
+function failureKey(view: StepView): string {
+  return `${view.words.active}\u0000${view.reason ?? ''}`;
+}
+
+/**
+ * R6 ACROSS THE WHOLE TURN, not one run at a time.
+ *
+ * `foldFailures` only ever saw one run's failures, because that is the scope
+ * `TurnParts` called it in — so two identical failures in two different runs
+ * drew two identical red lines, which is exactly what R6 exists to prevent.
+ * A run is cut at every piece of content, so a turn that narrates as it works
+ * puts almost every failure in a run of its own: measured on a real craft
+ * turn on this node (83 calls, 8 failures, 23 runs), the transcript drew 7
+ * failure lines where R6's intent is 3.
+ *
+ * The fold is therefore computed once over the turn, and each group is
+ * returned at the run where it FIRST appeared — so R5 still holds (a failure
+ * is never hidden, and it still sits with the run that produced it) while a
+ * repeat stops being redrawn. The count is the turn's count.
+ */
+export function foldTurnFailures(
+  runs: readonly { key: string; failed: readonly StepView[] }[],
+): Map<string, FailureGroup[]> {
+  const groups = new Map<string, { group: FailureGroup; runKey: string }>();
+  for (const run of runs) {
+    for (const view of run.failed) {
+      const key = failureKey(view);
+      const seen = groups.get(key);
+      if (seen) {
+        seen.group.count += 1;
+        seen.group.retried = seen.group.retried && view.retried;
+      } else {
+        groups.set(key, {
+          group: { first: view, count: 1, retried: view.retried },
+          runKey: run.key,
+        });
+      }
+    }
+  }
+  const byRun = new Map<string, FailureGroup[]>();
+  for (const { group, runKey } of groups.values()) {
+    const bucket = byRun.get(runKey);
+    if (bucket) bucket.push(group);
+    else byRun.set(runKey, [group]);
+  }
+  return byRun;
 }

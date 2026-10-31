@@ -143,6 +143,77 @@ describe('R6 · repeated identical failures fold', () => {
     expect(lines[0]).toMatch(/failed 3 times: team member not found in this space/);
     expect(view.getByTestId('chat-steps-head').textContent).toContain('· 3 failed');
   });
+
+  /*
+   * THE SCREENSHOT BUG. A run is cut at every piece of content, so an agent
+   * that narrates as it works puts each failure in a run of its own — and
+   * the fold used to be computed per run, so R6 never got to apply. Tharak's
+   * phone showed two identical "Running a shell command failed" boxes
+   * bracketing the step header on a turn that answered fine.
+   */
+  it('folds identical failures that land in DIFFERENT runs, at the first one', () => {
+    const view = render(
+      <TurnParts
+        parts={[
+          ...bash(0, 'c1', 'gh pr list', { result: 'Exit code 4\ngh auth login', isError: true }),
+          { seq: 3, kind: 'text', text: 'Let me try that another way.' },
+          ...bash(4, 'c2', 'gh pr list', { result: 'Exit code 4\ngh auth login', isError: true }),
+          { seq: 7, kind: 'text', text: 'Here is the answer anyway.' },
+          { seq: 8, kind: 'done' },
+        ]}
+      />,
+    );
+    const lines = errlines(view.container);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/failed 2 times: gh auth login/);
+    // Still counted in full, and still drawn at the run that first failed.
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('· 2 failed');
+  });
+
+  it('keeps DIFFERENT failures apart, each at its own run', () => {
+    const view = render(
+      <TurnParts
+        parts={[
+          ...bash(0, 'c1', 'a', { result: 'Exit code 4\ngh auth login', isError: true }),
+          { seq: 3, kind: 'text', text: 'Next.' },
+          ...bash(4, 'c2', 'b', { result: 'Exit code 1\nCONFLICT (content)', isError: true }),
+          { seq: 7, kind: 'done' },
+        ]}
+      />,
+    );
+    expect(errlines(view.container)).toHaveLength(2);
+  });
+});
+
+/*
+ * TONE — the complaint that started this. R5 says a failure is never hidden,
+ * and it is not: both tones draw the same words in the same place and both
+ * count in the header. What changes is that a step the agent recovered from
+ * stops wearing the filled block colour that made a finished chat look
+ * broken on a phone.
+ */
+describe('a handled failure reads as a footnote, a turn failure as an alert', () => {
+  const failedStep = (seq: number) =>
+    bash(seq, `c${seq}`, 'bun test', { result: 'Exit code 1\nFAIL x', isError: true });
+  const tones = (root: HTMLElement) =>
+    within(root).queryAllByTestId('chat-step-errline').map((el) => el.dataset.tone);
+
+  it('is quiet when the turn went on to finish', () => {
+    const view = render(
+      <TurnParts parts={[...failedStep(0), { seq: 3, kind: 'text', text: 'Done.' }, { seq: 4, kind: 'done' }]} />,
+    );
+    expect(tones(view.container)).toEqual(['quiet']);
+    // R5 intact: the words and the count are unchanged.
+    expect(errlines(view.container)[0]).toContain('Running a shell command failed');
+    expect(view.getByTestId('chat-steps-head').textContent).toContain('· 1 failed');
+  });
+
+  it('stays an alert when the turn itself failed', () => {
+    const view = render(
+      <TurnParts parts={[...failedStep(0), { seq: 3, kind: 'error', message: 'runtime exited' }, { seq: 4, kind: 'done' }]} />,
+    );
+    expect(tones(view.container)).toEqual(['alert']);
+  });
 });
 
 describe('R7 · a failure that ended the turn is never hidden', () => {

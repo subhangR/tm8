@@ -228,15 +228,26 @@ export function describeToolStep(
 /**
  * The first line of a failed call's result, for a ✕ step: `Exit code 1`,
  * `version conflict`. A reason, not a dump — one line, capped.
+ *
+ * A BARE EXIT CODE IS NOT A REASON. A shell failure's result opens with
+ * `Exit code 4` and puts the thing a reader can act on — `gh auth login`,
+ * `CONFLICT (content): Merge conflict` — on the NEXT line. Measured on the
+ * live node: of 67 real `Bash` failures across this Space's chats, 64 opened
+ * with nothing but an exit-code line, and 53 of those carried the real cause
+ * on a later line that the surface threw away. The code line is skipped when
+ * another line follows it, and kept when it is all there is (11 cases).
  */
+const EXIT_CODE_ONLY = /^exit code\s+\d+[.:]?$/i;
+
 export function toolStepError(result: unknown): string | null {
   const raw = firstText(result, 0);
   if (!raw) return null;
-  const line = raw
+  const lines = raw
     .replace(/<\/?tool_use_error>/g, '')
     .split('\n')
     .map((l) => withoutIds(l).trim())
-    .find((l) => l.length > 0);
+    .filter((l) => l.length > 0);
+  const line = lines.find((l) => !EXIT_CODE_ONLY.test(l)) ?? lines[0];
   return line ? clip(line, 120) : null;
 }
 

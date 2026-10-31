@@ -221,8 +221,23 @@ describe('groupDone — one counted line for consecutive settled steps', () => {
 });
 
 describe('toolStepError — one line of reason, never a dump', () => {
-  it('takes the first non-empty line of a failed command', () => {
-    expect(toolStepError('Exit code 1\n 6464 /private/tmp/…\nmore')).toBe('Exit code 1');
+  it('skips a bare exit-code line for the line that says what went wrong', () => {
+    /* A shell failure opens with `Exit code N` and puts the cause on the next
+       line. Measured on the live node: 64 of 67 real Bash failures opened
+       with nothing but the code, and 53 of those carried the real cause
+       below it — which the surface used to discard. */
+    expect(toolStepError('Exit code 1\n 6464 /private/tmp/…\nmore')).toBe('6464 /private/tmp/…');
+    expect(toolStepError('Exit code 4\nTo get started with GitHub CLI, please run:  gh auth login'))
+      .toBe('To get started with GitHub CLI, please run:  gh auth login');
+  });
+
+  it('keeps the exit code when it is the only thing the command said', () => {
+    expect(toolStepError('Exit code 1')).toBe('Exit code 1');
+    expect(toolStepError('Exit code 143\n')).toBe('Exit code 143');
+  });
+
+  it('does not mistake a line that merely starts with an exit code for a bare one', () => {
+    expect(toolStepError('Exit code 1: bun test failed')).toBe('Exit code 1: bun test failed');
   });
 
   it('unwraps the provider error tag, MCP text blocks and JSON error envelopes', () => {

@@ -145,7 +145,7 @@ describe('failures are shown, once, where they happened', () => {
     /* Before: an isError result on a plain call drew nothing at all. */
     const view = render(<TurnParts parts={failing()} />);
     const errline = view.getByTestId('chat-step-errline');
-    expect(errline.textContent).toContain('Running a shell command failed: Exit code 1');
+    expect(errline.textContent).toContain('Running a shell command failed: FAIL x');
     // A later identical call succeeded (D13).
     expect(errline.textContent).toContain('The agent retried');
     expect(view.getByTestId('chat-steps-head').textContent).toContain('· 1 failed');
@@ -157,7 +157,7 @@ describe('failures are shown, once, where they happened', () => {
     const view = render(<TurnParts parts={failing()} />);
     fireEvent.click(view.getByTestId('chat-steps-head'));
     expect(states(view.container)).toEqual(['error', 'completed']);
-    expect(lines(view.container)[0]!.textContent).toContain('Exit code 1');
+    expect(lines(view.container)[0]!.textContent).toContain('FAIL x');
   });
 
   it('claims no retry when the later call acted on a DIFFERENT target', () => {
