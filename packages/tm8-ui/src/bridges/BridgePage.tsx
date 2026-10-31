@@ -6,19 +6,22 @@
  * bridge. The panel's own Connections tab sits beside them as for every kind.
  *
  * The header's status pill IS the Pause / Resume control, and its `⋯` holds
- * Move, Send a test message, Copy bridge id and Remove. Every write goes
+ * Move, Hand over, Send a test message, Copy bridge id and Remove. An open
+ * hand-over offer is a banner under the header (HandoverBanner). Every write goes
  * through `BridgesPort`; a refusal is drawn as a refusal where it happened.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bridgeProviderLabel, BridgeProviderMark } from './bridge-marks';
 import type { BridgeDetailView, BridgeView, EntityDetail } from '@tm8/contract';
 import { Pill } from '../kit';
-import type { BridgesPort } from './api';
+import type { BridgesPort, PendingHandover } from './api';
 import type { LoopsClient } from '../loops/api';
 import { STATUS_TONE, TARGET_GLYPH, bridgeFailureOf, statusLine } from './format';
 import { useDismissable } from '../panels/useDismissable';
+import { HandoverBanner } from './HandoverBanner';
+import { HandoverDialog } from './HandoverDialog';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
-import { pendingReason } from './reasons';
+import { pendingReason, unservedReason } from './reasons';
 import { ConversationTab } from './tabs/ConversationTab';
 import { HealthTab } from './tabs/HealthTab';
 import { LoopsTab } from './tabs/LoopsTab';
@@ -55,6 +58,26 @@ export function useBridgeView(port: BridgesPort | null | undefined, bridgeId: st
   return { view, error, reload, accept };
 }
 
+/**
+ * The bridge's open hand-over offer, read from its attention items (there is
+ * no list op). Re-read when the bridge version moves and after this page's
+ * own offer or settle, which do not move the entity version on their own.
+ */
+function usePendingHandover(port: BridgesPort | null | undefined, spaceId: string | undefined, bridgeId: string, version: number) {
+  const [pending, setPending] = useState<PendingHandover | null>(null);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (!port || !spaceId || !port.serves('bridges.handover.offer')) return;
+    let live = true;
+    void port.pendingHandovers(spaceId, bridgeId).then(
+      (items) => { if (live) setPending(items[0] ?? null); },
+      () => { if (live) setPending(null); },
+    );
+    return () => { live = false; };
+  }, [port, spaceId, bridgeId, version, nonce]);
+  return { pending, reread: useCallback(() => setNonce((n) => n + 1), []) };
+}
+
 export function BridgePageBlock({
   detail,
   port,
@@ -69,6 +92,8 @@ export function BridgePageBlock({
 }) {
   const { view, error, reload, accept } = useBridgeView(port, detail.id, detail.version);
   const [tab, setTab] = useState<BridgeTab>('conversation');
+  const [handoverNote, setHandoverNote] = useState<string | null>(null);
+  const { pending, reread } = usePendingHandover(port, view?.spaceId, detail.id, view?.version ?? detail.version);
   if (!port) {
     return <p className="brg-hint" role="status">Bridge controls are not wired on this surface (no bridges client).</p>;
   }
@@ -82,7 +107,23 @@ export function BridgePageBlock({
   }
   return (
     <div className="brg-page" data-testid="bridge-page">
-      <BridgeHeader view={view} port={port} onView={accept} onMove={() => setTab('routing')} onOpenEntity={onOpenEntity} />
+      <BridgeHeader
+        view={view}
+        port={port}
+        onView={accept}
+        onMove={() => setTab('routing')}
+        onHandoverOffered={() => { setHandoverNote('Offer sent. Nothing moves until the number’s owner accepts in tm8.'); reread(); }}
+        onOpenEntity={onOpenEntity}
+      />
+      {pending ? (
+        <HandoverBanner
+          key={pending.handoverId}
+          pending={pending}
+          port={port}
+          onSettled={(result, note) => { accept(result.bridge); setHandoverNote(note); reread(); }}
+        />
+      ) : null}
+      {handoverNote ? <p className="brg-hint" role="status">{handoverNote}</p> : null}
       <div className="brg-tabs" role="tablist" aria-label="Bridge">
         {BRIDGE_TABS.map((t) => (
           <button
@@ -116,12 +157,14 @@ function BridgeHeader({
   port,
   onView,
   onMove,
+  onHandoverOffered,
   onOpenEntity,
 }: {
   view: BridgeDetailView;
   port: BridgesPort;
   onView(next: BridgeView): void;
   onMove(): void;
+  onHandoverOffered(): void;
   onOpenEntity?: (id: string) => void;
 }) {
   const [open, setOpen] = useState<'status' | 'more' | null>(null);
@@ -129,6 +172,7 @@ function BridgeHeader({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [handingOver, setHandingOver] = useState(false);
   const menus = useRef<HTMLDivElement>(null);
   /* The shared dismiss rule (panels/useDismissable): pointerdown outside —
      iOS fires no mousedown on an inert tap — and Escape, consumed, so the
@@ -154,6 +198,7 @@ function BridgeHeader({
     }
   };
   const testReason = pendingReason(port, 'bridges.test', 'Send a test message');
+  const handoverReason = unservedReason(port, 'bridges.handover.offer', 'Hand over');
   const pauseForReason = 'Pause for a set time arrives when bridges.pause takes an end time (`until`).';
 
   return (
@@ -220,6 +265,15 @@ function BridgeHeader({
           {open === 'more' ? (
             <div className="brg-menu brg-menu--end" role="menu" aria-label={`${view.title} actions`}>
               <button type="button" role="menuitem" disabled={ended} onClick={() => { setOpen(null); onMove(); }}>Move to another target…</button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={ended || Boolean(handoverReason)}
+                title={handoverReason ?? 'Move this bridge onto another number; its owner accepts in tm8.'}
+                onClick={() => { setOpen(null); setHandingOver(true); }}
+              >
+                Hand over to another number…
+              </button>
               <button type="button" role="menuitem" disabled title={testReason}>Send a test message</button>
               <button
                 type="button"
@@ -242,6 +296,14 @@ function BridgeHeader({
       {view.purpose ? <p className="brg-head__purpose">{view.purpose}</p> : null}
       {error ? <p className="brg-error" role="alert">{error}</p> : null}
       {note ? <p className="brg-hint" role="status">{note}</p> : null}
+      {handingOver ? (
+        <HandoverDialog
+          bridge={view}
+          port={port}
+          onClose={() => setHandingOver(false)}
+          onOffered={() => { setHandingOver(false); onHandoverOffered(); }}
+        />
+      ) : null}
       {removing ? (
         <RemoveBridgeDialog
           bridge={view}
