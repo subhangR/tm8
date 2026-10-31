@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BridgeView, LoopRunTargetResult, LoopView } from '@tm8/contract';
 import { LOOP_TARGET_TEXT_MAX } from '@tm8/contract';
-import { shortDate } from '../../kit/time';
+import { browserTimeZone, shortDate } from '../../kit/time';
 import type { LoopsClient } from '../../loops/api';
 import { bridgeProviderLabel } from '../bridge-marks';
 import { bridgeFailureOf } from '../format';
@@ -278,10 +278,6 @@ export function LoopsTab({
   );
 }
 
-function browserZone(): string {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
-}
-
 /**
  * A `post` loop with this group as its one target. The schedule is previewed
  * by the server as it is typed (`loops.schedule.preview`), never parsed here.
@@ -303,7 +299,7 @@ function NewPostLoop({
   const [previewGap, setPreviewGap] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const zone = useMemo(browserZone, []);
+  const zone = useMemo(browserTimeZone, []);
   const seq = useRef(0);
 
   useEffect(() => {

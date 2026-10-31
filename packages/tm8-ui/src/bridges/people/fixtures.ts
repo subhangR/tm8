@@ -16,12 +16,12 @@ export const FIXTURE_MEMBERS: ActorSummary[] = [
   member('0bad0000-0000-4000-8000-000000000003', 'Rahul Verma'),
 ];
 
-const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const minutesBefore = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 function row(over: Partial<BridgeParticipant> & Pick<BridgeParticipant, 'externalId' | 'displayName'>): BridgeParticipant {
   return {
     altExternalIds: [], masked: false, avatarRef: null, muted: false,
-    firstSeenAt: ago(60 * 24 * 20), lastSeenAt: ago(5), messageCount: 12,
+    firstSeenAt: minutesBefore(60 * 24 * 20), lastSeenAt: minutesBefore(5), messageCount: 12,
     trust: 'guest', memberId: null, member: null, link: null, you: false,
     ...over,
   };
@@ -30,14 +30,14 @@ function row(over: Partial<BridgeParticipant> & Pick<BridgeParticipant, 'externa
 /** The admin's view: ids in full. */
 export function fixtureRoster(): BridgeParticipant[] {
   return [
-    row({ externalId: '919876500001@s.whatsapp.net', displayName: 'Subhang', trust: 'linked', lastSeenAt: ago(2), messageCount: 214,
-      memberId: FIXTURE_MEMBERS[0]!.id, member: FIXTURE_MEMBERS[0]!, link: { method: 'code', verifiedAt: ago(60 * 24 * 2) }, you: true,
+    row({ externalId: '919876500001@s.whatsapp.net', displayName: 'Subhang', trust: 'linked', lastSeenAt: minutesBefore(2), messageCount: 214,
+      memberId: FIXTURE_MEMBERS[0]!.id, member: FIXTURE_MEMBERS[0]!, link: { method: 'code', verifiedAt: minutesBefore(60 * 24 * 2) }, you: true,
       altExternalIds: ['207761234567890@lid'] }),
-    row({ externalId: '919811109494@s.whatsapp.net', displayName: 'Rahul', lastSeenAt: ago(19), messageCount: 37 }),
-    row({ externalId: '447700900123@s.whatsapp.net', displayName: 'Priya', trust: 'asserted', lastSeenAt: ago(60 * 3), messageCount: 58,
-      memberId: FIXTURE_MEMBERS[1]!.id, member: FIXTURE_MEMBERS[1]!, link: { method: 'admin', verifiedAt: ago(60 * 24) } }),
-    row({ externalId: '14155550142@s.whatsapp.net', displayName: 'Dana K', lastSeenAt: ago(60 * 26), messageCount: 4, muted: true }),
-    row({ externalId: '918888812345@s.whatsapp.net', displayName: null, lastSeenAt: ago(60 * 24 * 6), messageCount: 1 }),
+    row({ externalId: '919811109494@s.whatsapp.net', displayName: 'Rahul', lastSeenAt: minutesBefore(19), messageCount: 37 }),
+    row({ externalId: '447700900123@s.whatsapp.net', displayName: 'Priya', trust: 'asserted', lastSeenAt: minutesBefore(60 * 3), messageCount: 58,
+      memberId: FIXTURE_MEMBERS[1]!.id, member: FIXTURE_MEMBERS[1]!, link: { method: 'admin', verifiedAt: minutesBefore(60 * 24) } }),
+    row({ externalId: '14155550142@s.whatsapp.net', displayName: 'Dana K', lastSeenAt: minutesBefore(60 * 26), messageCount: 4, muted: true }),
+    row({ externalId: '918888812345@s.whatsapp.net', displayName: null, lastSeenAt: minutesBefore(60 * 24 * 6), messageCount: 1 }),
   ];
 }
 
