@@ -79,6 +79,7 @@ describe('catalog (§3.4)', () => {
       'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.work.start', // B1b-6 (v2 §4.3)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
@@ -90,6 +91,7 @@ describe('catalog (§3.4)', () => {
       'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
       'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.memories.proposals.resolve', 'bridges.links.begin', 'bridges.links.revoke',
     ]);
   });

@@ -114,6 +114,13 @@ export const OPERATIONS = [
   // group list is the owner's only, asked of the runtime live and never stored (D28).
   { name: 'bridges.connections.remove', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/remove', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.conversations.list', method: 'GET', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'read', status: 'v1', humanOnly: true },
+  // Q7/Q8 (D55, D56; 424): hand a bridge to another member's connection. All
+  // human-only (D9: never from a group). accept asks the receiving number's
+  // runtime for its live group list before the one-transaction move.
+  { name: 'bridges.handover.offer', method: 'POST', path: '/v2/bridges/:bridgeId/handover', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.accept', method: 'POST', path: '/v2/bridge-handovers/:handoverId/accept', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.decline', method: 'POST', path: '/v2/bridge-handovers/:handoverId/decline', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.withdraw', method: 'POST', path: '/v2/bridge-handovers/:handoverId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
   // labels (410; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
   { name: 'labels.list', method: 'GET', path: '/v2/spaces/:spaceId/labels', kind: 'read', status: 'v1' },
   { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },

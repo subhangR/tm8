@@ -2,6 +2,7 @@ import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
   BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeConnectionBeginInputSchema,
   BridgeConnectionOfferInputSchema, BridgeConnectionWithdrawInputSchema, BridgeConnectionRemoveInputSchema,
+  BridgeHandoverOfferInputSchema, BridgeHandoverSettleInputSchema,
   BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
   BridgeMemoryProposalResolveInputSchema, BridgeParticipantUpdateInputSchema, BridgeWorkStartInputSchema,
   LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,
@@ -293,6 +294,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'bridges.connections.offer': BridgeConnectionOfferInputSchema,
   'bridges.connections.withdraw': BridgeConnectionWithdrawInputSchema,
   'bridges.connections.remove': BridgeConnectionRemoveInputSchema,
+  'bridges.handover.offer': BridgeHandoverOfferInputSchema,
+  'bridges.handover.accept': BridgeHandoverSettleInputSchema,
+  'bridges.handover.decline': BridgeHandoverSettleInputSchema,
+  'bridges.handover.withdraw': BridgeHandoverSettleInputSchema,
   'bridges.work.start': BridgeWorkStartInputSchema,
   'bridges.memories.proposals.resolve': BridgeMemoryProposalResolveInputSchema,
   // B3 (417): the caller's own links.
