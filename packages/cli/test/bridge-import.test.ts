@@ -20,7 +20,13 @@ const CONNECTION = '44444444-4444-7444-8444-444444444444';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
 // Every way an operator might write one number (review r5).
 const SHAPES = ['919876543210', '+91 98765 43210', '98765-43210', '(987) 654-3210', '+91.98765.43210', 'a@919876543210',
-  '919876543210@s.whatsapp.net', '919876543210%40s.whatsapp.net', '+91 98765 43210@s.whatsapp.net'];
+  '919876543210@s.whatsapp.net', '919876543210%40s.whatsapp.net', '+91 98765 43210@s.whatsapp.net',
+  // review r6 (F14): the other separators people type, and full-width digits
+  '9198_7654_3210', '919/876/543/210', '9198\t7654\t3210', '+91\u00a098765\u00a043210', '98765\u201343210',
+  '9198,7654,3210', '9198:7654:3210', '\uff19\uff11\uff19\uff18\uff17\uff16\uff15\uff14\uff13\uff12\uff11\uff10'];
+/** The property: no 8+ digits survive, whatever separates them (any 1-2 non-alphanumerics), in any script. */
+const leaks = (text: string) => /\p{Nd}{8,}/u.test(
+  text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>').replace(/(?<=\p{Nd})[^\p{L}\p{Nd}]{1,2}(?=\p{Nd})/gu, ''));
 const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', GONE_ADDR = '910000000008@s.whatsapp.net', BAD = '910000000005@s.whatsapp.net', CLASH = '910000000006@s.whatsapp.net', DROP = '910000000007@s.whatsapp.net';
 const PN = '910000000001@s.whatsapp.net', LID = '100000000000001@lid', TRUSTED = '910000000002@s.whatsapp.net';
 
@@ -116,10 +122,16 @@ describe('planPhase1Import (pure)', () => {
   it('scrubNumbers masks a number in every shape, keeps its last 4, and leaves UUIDs and short numbers alone', () => {
     for (const n of SHAPES) {
       const out = scrubNumbers(`x ${n} y`);
-      expect(out, n).toContain('…3210');
-      expect(out.replace(/(?<=[0-9])[ .()+-]+(?=[0-9])/g, ''), n).not.toMatch(/[0-9]{5,}/);
+      expect(out, JSON.stringify(n)).toMatch(/…(3210|\uff13\uff12\uff11\uff10)/);
+      expect(leaks(out), JSON.stringify(n)).toBe(false);
     }
     expect(scrubNumbers(`bridge ${BRIDGE} → chat ${SELF_CHAT}`)).toBe(`bridge ${BRIDGE} → chat ${SELF_CHAT}`);
+    // UUIDs survive next to numbers, and many of them in one text (indices past 9)
+    const many = Array.from({ length: 12 }, () => BRIDGE).join(' ');
+    expect(scrubNumbers(`${many} 919876543210`)).toBe(`${many} …3210`);
+    expect(scrubNumbers(`${SELF_CHAT}:919876543210`)).toBe(`${SELF_CHAT}:…3210`);
+    // the placeholder nit: input that already holds the private-use mark is left as it was
+    expect(scrubNumbers('x\uE000\uE000y \uE000ab\uE000')).toBe('x\uE000\uE000y \uE000ab\uE000');
     expect(scrubNumbers('trustedSenders[1] · exit 5 · 1234')).toBe('trustedSenders[1] · exit 5 · 1234');
   });
 
@@ -153,6 +165,7 @@ describe('tm8 bridge import-config (fake server)', () => {
   let bridges: BridgeView[] = [];
   const asserted = new Map<string, string>();
   let stdout = '', stderr = '';
+  let refuseCreate = false;
 
   const viewFor = (body: Record<string, any>): BridgeView => ({
     id: BRIDGE, spaceId: SPACE, version: 1, title: body.conversation.title, createdAt: 'x', updatedAt: 'x',
@@ -175,6 +188,13 @@ describe('tm8 bridge import-config (fake server)', () => {
         requests.push({ method: req.method!, path: decodeURIComponent(url.pathname), body });
         let data: unknown;
         if (url.pathname.endsWith('/bridges') && req.method === 'GET') data = { items: bridges };
+        else if (url.pathname.endsWith('/bridges') && req.method === 'POST' && refuseCreate) {
+          // F15: a validation refusal whose details echo a number back, the way zod issues do.
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { code: 'invalid_input', message: 'request body failed validation', requestId: 'test', retryable: false,
+            details: { reason: 'bad_value 919876543210', next: 'tm8 x 919876543210', issues: [{ key: 'purpose.919876543210', code: 'invalid_enum_value', message: "received '919876543210'" }] } } }));
+          return;
+        }
         else if (url.pathname.endsWith('/bridges') && req.method === 'POST') { const v = viewFor(body); bridges.push(v); data = v; }
         else if (url.pathname.includes('/participants/')) {
           // P's reply (#1439): no participant rows exist yet, so participant is null.
@@ -371,8 +391,15 @@ describe('tm8 bridge import-config (fake server)', () => {
     expect(text).toContain('purpose: …3210');
     expect(text).toContain('%40s.whatsapp.net failed');
     expect(text).not.toMatch(/[0-9]{8,}/);
-    // and with the separators people write numbers with taken out
-    expect(text.replace(/(?<=[0-9])[ .()+-]+(?=[0-9])/g, '')).not.toMatch(/[0-9]{8,}/);
+    // and with any separator between digits taken out, in any script
+    expect(leaks(text)).toBe(false);
+  });
+
+  it('an ApiError that escapes the command is scrubbed in its details too (F15)', async () => {
+    bridges = []; asserted.clear(); refuseCreate = true;
+    try { expect(await run(args)).not.toBe(0); } finally { refuseCreate = false; }
+    expect(stderr).toContain('…3210');
+    expect(leaks(stdout + stderr)).toBe(false);
   });
 
   it('refuses a real run without --connection', async () => {

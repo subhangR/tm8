@@ -182,24 +182,37 @@ function renderPlan(plan: PlannedBridge[]): string {
 }
 
 const UUID_G = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-/** A phone-like run: digits joined by the separators people write numbers with (space . - ( ) +). */
-const NUMBER_RUN = /\+?[0-9](?:[ .()+-]*[0-9])*/g;
+/**
+ * A phone-like run: digits (any script's, `\p{Nd}`, so full-width `９１９８…` too) joined by up to two
+ * characters that are neither letters nor digits: space, tab, NBSP, `.` `-` `–` `_` `/` `,` `:` `(` `)` `+` …
+ */
+const NUMBER_RUN = /\p{Nd}(?:[^\p{L}\p{Nd}]{0,2}\p{Nd})*/gu;
+/** A private-use placeholder for a protected UUID while the digits are scrubbed. */
+const HOLD = '\uE000';
 
 /**
  * THE output boundary of `tm8 bridge import-config` (review r5): every line it prints, every error that
  * leaves it and every string in its JSON result goes through here. Any run holding 5 or more digits,
- * however it is written (bare, `+91 98765 43210`, `98765-43210`, `(987) 654-3210`), wherever it sits
- * (before or after an `@`, in a `%40`-encoded path), keeps only its last 4 digits: `…3210`. UUIDs are
- * protected first and stay whole, because they are ids, not numbers.
+ * however it is written (bare, `+91 98765 43210`, `98765-43210`, `(987) 654-3210`, `9198_7654_3210`,
+ * `919/876/543/210`, tab, NBSP or en-dash grouped, full-width), wherever it sits (before or after an `@`,
+ * in a `%40`-encoded path), keeps only its last 4 digits: `…3210`. UUIDs are protected first and stay
+ * whole, because they are ids, not numbers. Accepted cost (review r6): a 5+ digit count, a long version or
+ * an ISO timestamp would be shortened too; this command prints none of those.
  */
 export function scrubNumbers(text: string): string {
   const ids: string[] = [];
-  const held = text.replace(UUID_G, id => `\u0000${ids.push(id) - 1}\u0000`);
+  // A UUID becomes HOLD + its index spelled in letters (a–j), so the digit scrub can't touch the index,
+  // and a HOLD pair that was already in the input is left as it was.
+  const spell = (n: number) => String(n).replace(/[0-9]/g, d => 'abcdefghij'[Number(d)]!);
+  // URL escapes (`%40` in a request path) are held the same way, so `…3210%40s.whatsapp.net` keeps its @.
+  const held = text.replace(UUID_G, id => `${HOLD}${spell(ids.push(id) - 1)}${HOLD}`)
+    .replace(/%[0-9a-f]{2}/gi, esc => `${HOLD}${spell(ids.push(esc) - 1)}${HOLD}`);
   const scrubbed = held.replace(NUMBER_RUN, run => {
-    const digits = run.replace(/[^0-9]/g, '');
-    return digits.length >= 5 ? `…${digits.slice(-4)}` : run;
+    const digits = [...run].filter(ch => /\p{Nd}/u.test(ch));
+    return digits.length >= 5 ? `…${digits.slice(-4).join('')}` : run;
   });
-  return scrubbed.replace(/\u0000([0-9]+)\u0000/g, (_, n: string) => ids[Number(n)]!);
+  return scrubbed.replace(new RegExp(`${HOLD}([a-j]+)${HOLD}`, 'g'),
+    (whole, n: string) => ids[Number(n.replace(/[a-j]/g, c => String('abcdefghij'.indexOf(c))))] ?? whole);
 }
 
 /** Kept for the call sites inside the planner; the same scrub. */
@@ -248,8 +261,16 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     }
     if (err instanceof Error) {
       err.message = scrubNumbers(err.message);
-      const withHint = err as Error & { hint?: string };
-      if (typeof withHint.hint === 'string') withHint.hint = scrubNumbers(withHint.hint);
+      // Every other own field too (review r6 F15): an ApiError's hint and details (zod issues' key and
+      // message, next, reason, current.title) are printed by the error renderer. Class, status and code stay.
+      const fields = err as unknown as Record<string, unknown>;
+      for (const key of Object.keys(fields)) {
+        const value = fields[key];
+        if (value instanceof Error) { value.message = scrubNumbers(value.message); continue; } // a cause stays an Error
+        if (typeof value === 'string' || (value && typeof value === 'object')) {
+          Object.defineProperty(err, key, { value: scrubDeep(value), writable: true, enumerable: true, configurable: true });
+        }
+      }
     }
     throw err;
   }
