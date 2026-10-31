@@ -341,3 +341,28 @@ describe('cross-space: one space\'s admin and assertions never reach another', (
     expect(revoke.json.data).toMatchObject({ changed: true, participant: { trust: 'linked' } });
   });
 });
+
+// Round-2 review probes (F4), folded in: a number and its LID are one person.
+describe('alternate ids: a participant row reaches its other address (review r2 F4)', () => {
+  const LID = '30000000001@lid', PHONE = '918000000001@s.whatsapp.net';
+  beforeAll(async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, alt_external_ids, display_name, first_seen_at, last_seen_at, message_count)
+        values ($1,$2,$3,'Lidrow',now(),now(),1)`, [bridgeId, LID, [PHONE]]);
+    });
+  });
+  it('an assertion made on the phone (as the import does) is revocable from the roster row keyed by the LID', async () => {
+    const a = await patch(ownerBearer.token, PHONE, { memberId: plainMember });
+    expect(a.status, JSON.stringify(a.json)).toBe(200);
+    expect(a.json.data.participant).toMatchObject({ externalId: LID, trust: 'asserted' });
+    expect(byName((await roster(ownerBearer.token)).items, 'Lidrow')).toMatchObject({ trust: 'asserted' });
+    const r = await patch(ownerBearer.token, LID, { memberId: null });
+    expect({ status: r.status, changed: r.json.data?.changed, trust: r.json.data?.participant?.trust })
+      .toEqual({ status: 200, changed: true, trust: 'guest' });
+  });
+  it('asserting the row id while its alternate is verified as someone else is link_conflict', async () => {
+    const r = await patch(ownerBearer.token, LINKED, { memberId: ownerMember });
+    expect({ status: r.status, reason: r.json.error?.details?.reason }).toEqual({ status: 409, reason: 'link_conflict' });
+  });
+});

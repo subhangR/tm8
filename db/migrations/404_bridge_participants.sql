@@ -108,30 +108,43 @@ revoke all on function internal.bridge_valid_external_id(text, text) from public
 -- admin) call this; neither re-implements it. It checks NO caller rights: the
 -- caller has. It needs no participant row (the import runs before anyone has
 -- spoken). p_member_id null revokes. Returns whether anything changed.
---   assert   refused `link_conflict` when a verified (identity-scoped) link
---            names someone else, or this space already asserts someone else;
---            the same person as their verified link, or as the live
---            assertion, is a no-op
---   revoke   ends this space's assertion only, even beside a verified link;
---            nothing to revoke is a no-op
+-- p_alternates are the same person's other addresses (a WhatsApp number and
+-- its LID): inbound keys a roster row by the sender and keeps the other as an
+-- alternate, and the resolver reads both, so every rule here reads all of
+-- them too (review r2 F4). The import passes none.
+--   assert   refused `link_conflict` when a verified (identity-scoped) link,
+--            or this space's live assertion, on ANY of the addresses names
+--            someone else; the same person is a no-op; a new assertion is
+--            written on p_external_id
+--   revoke   ends this space's assertions on every address, even beside a
+--            verified link; nothing to revoke is a no-op
 create or replace function internal.bridge_assert_participant(
-  p_space_id uuid, p_provider text, p_external_id text, p_member_id uuid, p_actor uuid
+  p_space_id uuid, p_provider text, p_external_id text, p_member_id uuid, p_actor uuid,
+  p_alternates text[] default '{}'
 ) returns boolean language plpgsql set search_path = public, internal, pg_temp as $$
 declare
+  ids text[];
   v_identity text;
-  live public.bridge_identity_links;
-  verified public.bridge_identity_links;
+  v_id text;
+  live_other boolean;
+  live_same boolean;
 begin
   perform internal.bridge_valid_external_id(p_provider, p_external_id);
-  select * into live from public.bridge_identity_links
-   where provider = p_provider and external_id = p_external_id
+  ids := array(select distinct x from unnest(array[p_external_id] || coalesce(p_alternates, '{}')) x where x is not null);
+  foreach v_id in array ids loop
+    perform internal.bridge_valid_external_id(p_provider, v_id);
+  end loop;
+  -- Lock this space's live assertions on the person before deciding.
+  perform 1 from public.bridge_identity_links
+   where provider = p_provider and external_id = any(ids)
      and space_id = p_space_id and revoked_at is null
    for update;
 
   if p_member_id is null then
-    if live.id is null then return false; end if;
-    update public.bridge_identity_links set revoked_at = now() where id = live.id;
-    return true;
+    update public.bridge_identity_links set revoked_at = now()
+     where provider = p_provider and external_id = any(ids)
+       and space_id = p_space_id and revoked_at is null;
+    return found;
   end if;
 
   -- Only a member of THIS space: an admin of one space cannot make a number
@@ -144,21 +157,24 @@ begin
     raise exception 'member not found in this space' using errcode = 'P0002';
   end if;
 
-  select * into verified from public.bridge_identity_links
-   where provider = p_provider and external_id = p_external_id
-     and space_id is null and revoked_at is null;
-  if verified.id is not null then
-    if verified.identity_id <> v_identity then
-      perform internal.bridge_refuse('link_conflict',
-        'this address is verified as someone else; they must unlink it first');
-    end if;
-    return false;                                   -- already them, verified: nothing to assert
+  if exists (select 1 from public.bridge_identity_links
+              where provider = p_provider and external_id = any(ids)
+                and space_id is null and revoked_at is null and identity_id <> v_identity) then
+    perform internal.bridge_refuse('link_conflict',
+      'this address is verified as someone else; they must unlink it first');
   end if;
-  if live.id is not null then
-    if live.identity_id <> v_identity then
-      perform internal.bridge_refuse('link_conflict',
-        'this address is already asserted as another member here; revoke that first');
-    end if;
+  select bool_or(identity_id <> v_identity), bool_or(identity_id = v_identity) into live_other, live_same
+    from public.bridge_identity_links
+   where provider = p_provider and external_id = any(ids)
+     and space_id = p_space_id and revoked_at is null;
+  if coalesce(live_other, false) then
+    perform internal.bridge_refuse('link_conflict',
+      'this address is already asserted as another member here; revoke that first');
+  end if;
+  -- Already them: verified on any address, or asserted here.
+  if coalesce(live_same, false) or exists (select 1 from public.bridge_identity_links
+              where provider = p_provider and external_id = any(ids)
+                and space_id is null and revoked_at is null and identity_id = v_identity) then
     return false;
   end if;
   begin
@@ -171,8 +187,8 @@ begin
   return true;
 end
 $$;
-revoke all on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid) from public;
-grant execute on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid) to tm8_graph_owner;
+revoke all on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid, text[]) from public;
+grant execute on function internal.bridge_assert_participant(uuid, text, text, uuid, uuid, text[]) to tm8_graph_owner;
 
 -- bridges.participants.update: the catalog door. Human-only and space-admin
 -- on top of the core. Mute needs the participant row; an assertion does not.
@@ -181,7 +197,7 @@ create or replace function public.update_bridge_participant(
   p_actor_id uuid default null, p_client_mutation_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
-  replay jsonb; actor uuid; b public.bridges; k text;
+  replay jsonb; actor uuid; b public.bridges; k text; p public.bridge_participants;
   v_changed boolean := false; v_fields jsonb := '{}'::jsonb;
 begin
   perform internal.require_human_auth_kind();
@@ -204,16 +220,22 @@ begin
     end if;
   end loop;
 
+  -- The roster row this address belongs to, by its key or as an alternate
+  -- (inbound keys a row by the sender and keeps the other id as an alternate).
+  select * into p from public.bridge_participants
+   where bridge_id = p_bridge_id and (external_id = p_external_id or p_external_id = any(alt_external_ids))
+   order by (external_id = p_external_id) desc limit 1;
+
   if p_patch ? 'muted' then
     if jsonb_typeof(p_patch -> 'muted') <> 'boolean' then
       raise exception 'muted must be a boolean' using errcode = '22023';
     end if;
-    update public.bridge_participants set muted = (p_patch ->> 'muted')::boolean
-     where bridge_id = p_bridge_id and external_id = p_external_id and muted is distinct from (p_patch ->> 'muted')::boolean;
-    if found then v_changed := true; v_fields := v_fields || jsonb_build_object('muted', (p_patch ->> 'muted')::boolean);
-    elsif not exists (select 1 from public.bridge_participants where bridge_id = p_bridge_id and external_id = p_external_id) then
+    if p.bridge_id is null then
       raise exception 'participant not found on this bridge' using errcode = 'P0002';
     end if;
+    update public.bridge_participants set muted = (p_patch ->> 'muted')::boolean
+     where bridge_id = p_bridge_id and external_id = p.external_id and muted is distinct from (p_patch ->> 'muted')::boolean;
+    if found then v_changed := true; v_fields := v_fields || jsonb_build_object('muted', (p_patch ->> 'muted')::boolean); end if;
   end if;
 
   if p_patch ? 'memberId' then
@@ -221,7 +243,9 @@ begin
       raise exception 'memberId must be a member id or null' using errcode = '22023';
     end if;
     if internal.bridge_assert_participant(b.space_id, b.provider, p_external_id,
-                                          nullif(p_patch ->> 'memberId', '')::uuid, actor) then
+                                          nullif(p_patch ->> 'memberId', '')::uuid, actor,
+                                          case when p.bridge_id is null then '{}'::text[]
+                                               else array[p.external_id] || p.alt_external_ids end) then
       v_changed := true;
       v_fields := v_fields || jsonb_build_object('assertion', case when jsonb_typeof(p_patch -> 'memberId') = 'null' then 'revoked' else 'asserted' end);
     end if;

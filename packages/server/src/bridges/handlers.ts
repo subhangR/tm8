@@ -266,7 +266,9 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         const result = await q.rpc<{ changed: boolean }>('update_bridge_participant',
           [bridgeId, externalId, JSON.stringify(input.patch), input.actorId ?? null, input.clientMutationId]);
         // The caller is an admin (the door checked), so the roster names the row unmasked.
-        const participant = (await readParticipants(q, bridgeId)).items.find(p => p.externalId === externalId) ?? null;
+        // By key or alternate (a number and its LID are one row); unmasked for the admin caller.
+        const participant = (await readParticipants(q, bridgeId)).items
+          .find(p => p.externalId === externalId || p.altExternalIds.includes(externalId)) ?? null;
         return { bridgeId, externalId, changed: result.changed, participant } satisfies BridgeParticipantUpdateResult;
       });
     }, 'bridges.participants.update is for a human space admin'),
