@@ -681,3 +681,7 @@ end
 $$;
 revoke all on function internal.bridge_inbound_deliveries(uuid) from public;
 grant execute on function internal.bridge_inbound_deliveries(uuid) to tm8_app;
+
+-- New tables get planner statistics now, not at the first autovacuum
+-- (never-analyzed-tables.pg).
+analyze public.bridge_reactions, public.bridge_poll_votes, public.bridge_media, public.bridge_inbound_deliveries;
