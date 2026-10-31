@@ -56,6 +56,11 @@
   font-size: var(--pn-fs-label);
 }
 
+/* A kind's own page body (`bodySlot`, the bridge page): the same gutters as
+   the text body, none of its type, which the kind's own blocks set. */
+.pp-kindbody { padding: var(--pn-space-2) 16px var(--pn-space-4); min-width: 0; }
+.pp-title--sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 .pp-body {
   padding: var(--pn-space-2) 16px var(--pn-space-4);
   font-size: 15px;
