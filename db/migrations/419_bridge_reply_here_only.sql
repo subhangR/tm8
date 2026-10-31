@@ -1,14 +1,15 @@
 -- =============================================================================
--- 409 — Bridges B2-ticks follow-up: the badge read's pre-filter, and
+-- 419 — Bridges B2-ticks follow-up: the badge read's pre-filter, and
 -- *Reply here only* (§4.5).
 -- (Provisional number; the bridges merger assigns the final one.)
+-- (Authored as 409; renumbered to 419 at merge by the bridges merger. B2-ticks (#1434) is 409 on main.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §2.3, §4.5,
 -- D65, D75, D76. Task 01a18bb9-eca7-76fa-80ce-e8d40afb261f. Builds on 398
--- (B1b-2) and 406 (B2-ticks, PR #1434).
+-- (B1b-2) and 409 (B2-ticks, PR #1434).
 --
 -- WHAT THIS FILE DOES
---   §1  internal.bridge_message_badges(ids): 406's body at f6bac5160, with one
+--   §1  internal.bridge_message_badges(ids): 409's body at f6bac5160, with one
 --       statement in front that keeps only the ids whose message or batch twin
 --       has an origin, a send row or a refusal. The event mapper calls this on
 --       every message event, so a page no bridge touched now costs that one
@@ -181,7 +182,7 @@ begin
      or exists (select 1 from public.bridge_delivery_refusals where message_id = m.entity_id) then return null; end if;
   select * into author from public.entities where id = m.author_id;
   if author.kind = 'bridge' then return null; end if;
-  -- 409 (D76): *Reply here only* — the message, or any copy of its batch,
+  -- 419 (D76): *Reply here only* — the message, or any copy of its batch,
   -- stays in tm8: no outbox row and no refusal.
   if exists (select 1 from public.bridge_here_only h
               where h.message_id = m.entity_id

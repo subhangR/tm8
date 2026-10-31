@@ -8,7 +8,7 @@
  * then sent on settle; a refused post carries the refusal. A message no bridge
  * touched has no entry, and a reader outside the space sees nothing.
  *
- * 409 (the B2-ticks follow-up): `bridges.log.read` rows carry the same trust
+ * 419 (the B2-ticks follow-up): `bridges.log.read` rows carry the same trust
  * word; a page no bridge touched is answered by the pre-filter alone (D75);
  * and *Reply here only* (§4.5, D76) never reaches bridge_outbox, held on the
  * server path, `messages.post` itself, not only in the composer.
@@ -194,7 +194,7 @@ describe('the delivery tick (§2.3, D64, D65: 398\'s badge)', () => {
 });
 
 // -----------------------------------------------------------------------------
-// 409: the B2-ticks follow-up.
+// 419: the B2-ticks follow-up.
 // -----------------------------------------------------------------------------
 let registry: HandlerRegistry | null = null;
 function call<T>(op: 'bridges.log.read' | 'messages.post', opts: { params?: Record<string, string>; body?: unknown }): Promise<T> {
@@ -213,7 +213,7 @@ function call<T>(op: 'bridges.log.read' | 'messages.post', opts: { params?: Reco
   return registry.get(op)!(ctx) as Promise<T>;
 }
 
-describe('bridges.log.read carries trust (409, for the bridge panel)', () => {
+describe('bridges.log.read carries trust (419, for the bridge panel)', () => {
   it('each row reads the trust MessageBridgeView reads: guest, linked, asserted, and null outbound', async () => {
     const guest = await inbound(frame({ body: 'from a guest' }));
     const linked = await inbound(frame({ sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
@@ -284,7 +284,7 @@ describe('the badge read\'s pre-filter (409, D75)', () => {
   });
 });
 
-describe('Reply here only never enqueues to bridge_outbox (409, §4.5, D76)', () => {
+describe('Reply here only never enqueues to bridge_outbox (419, §4.5, D76)', () => {
   const crossed = async (id: string) => ({
     outbox: (await owner<{ n: number }>('select count(*)::int as n from public.bridge_outbox where message_id = $1', [id]))[0]!.n,
     refusals: (await owner<{ n: number }>('select count(*)::int as n from public.bridge_delivery_refusals where message_id = $1', [id]))[0]!.n,
