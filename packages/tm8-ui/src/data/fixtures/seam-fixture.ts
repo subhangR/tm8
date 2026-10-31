@@ -1837,7 +1837,7 @@ export function createFixtureSeam(): FixtureSeam {
    * listing never carries a token, and neither does this fixture.
    */
   const fixtureSessionAt = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 1, 12, 0) - minutesAgo * 60_000).toISOString();
-  /* Account → Linked identities (B3, 408): one code-verified WhatsApp
+  /* Account → Linked identities (B3, 417): one code-verified WhatsApp
      number, and an admin's assertion in the fixture space. Codes are minted
      here as a node would and never listed back (D58). */
   const bridgeLinks: BridgeIdentityLink[] = [
@@ -4246,7 +4246,7 @@ export function createFixtureSeam(): FixtureSeam {
           throw new CollabError('invalid_input',
             "role must be 'admin' or 'member': an invite cannot confer ownership");
         }
-        // B3 (408, D60): an invite for one bridge participant is one use.
+        // B3 (417, D60): an invite for one bridge participant is one use.
         if (input.bridgeParticipant && (input.maxUses ?? 1) !== 1) {
           throw new CollabError('invalid_input', 'an invite for one bridge participant has maxUses 1');
         }
@@ -4269,7 +4269,7 @@ export function createFixtureSeam(): FixtureSeam {
         for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
         const createdAt = new Date().toISOString();
         const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
-        // A new code ends the earlier ones for the provider, as 408 does.
+        // A new code ends the earlier ones for the provider, as 417 does.
         for (const c of bridgeLinkCodes) if (c.provider === provider) c.expiresAt = createdAt;
         bridgeLinkCodes.unshift({ id: `code-fixture-${bridgeLinkCodes.length + 1}`, provider, expiresAt, createdAt });
         return { code, provider, expiresAt, createdAt };

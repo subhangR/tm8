@@ -4455,7 +4455,7 @@ function exposureFor(operation: OperationName): Exposure {
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
   /* +2 bridges.memories.proposals.list|resolve (Bridges R, 416): RECOMPUTED from JSON.stringify(OPERATIONS). MEASURED. */
-  /* +3 bridges.links.* (B3, 408): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
+  /* +3 bridges.links.* (B3, 417): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +4 labels.* (410, Bridges B0b): RECOMPUTED from JSON.stringify(OPERATIONS). MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */

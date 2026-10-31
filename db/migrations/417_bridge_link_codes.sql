@@ -1,7 +1,8 @@
 -- =============================================================================
--- 408 — Bridges B3: code and invite links (BRIDGE-ENTITY-DESIGN §2.4, §4.6, D5).
+-- 417 — Bridges B3: code and invite links (BRIDGE-ENTITY-DESIGN §2.4, §4.6, D5).
 -- (Provisional number: the bridges merger assigns the final one at merge.)
--- (Authored as 402; renumbered to 408 on the rebase onto main 556b8cc5a: main's max is 407, and 408 is the next free number.)
+-- (Authored as 402; renumbered to 417 on the rebase onto main 556b8cc5a: main's max is 407, and 417 is the next free number.)
+-- (Authored as 402, then 408; renumbered to 417 at merge by the bridges merger: main's 408 is MCP's.)
 --
 -- Task 01a189db-323a-7c7c-a4c2-2e4c35019ba3. Stacked on B1b-4 (#1430, 401):
 -- the /link door is gated on 401's internal.require_bridge_commands_worker().

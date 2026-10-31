@@ -203,7 +203,7 @@ function proposalOf(raw: BridgeMemoryProposal): BridgeMemoryProposal {
   };
 }
 
-/** 408's link rows carry timestamps as SQL renders them; the wire is ISO. */
+/** 417's link rows carry timestamps as SQL renders them; the wire is ISO. */
 function linkOf(row: BridgeIdentityLink): BridgeIdentityLink {
   return { ...row, verifiedAt: iso(row.verifiedAt)!, revokedAt: iso(row.revokedAt) };
 }
@@ -342,7 +342,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
       return starter.workStart(claims, { ...input, bridgeId });
     },
-    // B3 (408, §4.6): the caller's own links. Begin and revoke are human-only
+    // B3 (417, §4.6): the caller's own links. Begin and revoke are human-only
     // here and in SQL; an agent can neither mint a proof of its owner nor end one.
     'bridges.links.begin': requireHumanSession(async ctx => {
       const input = BridgeLinkBeginInputSchema.parse(ctx.body ?? {});

@@ -1,5 +1,5 @@
 /**
- * Account → Linked identities (BRIDGE-ENTITY-DESIGN §4.6, B3, migration 408):
+ * Account → Linked identities (BRIDGE-ENTITY-DESIGN §4.6, B3, migration 417):
  * `bridges.links.list` / `.begin` / `.revoke`.
  *
  * A linked number is a PROOF: the person at the phone sent a code they could

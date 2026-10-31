@@ -498,7 +498,7 @@ export const BridgeMemoryProposalResolveInputSchema = z.object({
 }).strict().refine(i => i.decision === 'accept' || i.statement === undefined, 'statement is for accept only');
 
 // ---------------------------------------------------------------------------
-// B3 (408, §2.4, §4.6, D5, D58-D60): code and invite links.
+// B3 (417, §2.4, §4.6, D5, D58-D60): code and invite links.
 // ---------------------------------------------------------------------------
 
 /** A link code: `TM8-` and six characters, ten minutes, one use (D58). */

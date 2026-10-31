@@ -579,7 +579,7 @@ export class W2IdentitySpacesService {
     if (role !== 'admin' && role !== 'member') {
       throw new CollabError('invalid_input', "role must be 'admin' or 'member': an invite cannot confer ownership");
     }
-    // Bridges B3 (408, D60): an invite for one bridge participant. The invite
+    // Bridges B3 (417, D60): an invite for one bridge participant. The invite
     // and its pin are one transaction; a replay re-pins the same pair quietly.
     const pinned = body.bridgeParticipant === undefined
       ? null

@@ -228,7 +228,7 @@ const InviteCreateInputSchema = z.object({
   expiresAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
     message: 'expiresAt must be an ISO timestamp',
   }).nullable().optional(),
-  // Bridges B3 (408, D60): pin the invite to one participant of a bridge;
+  // Bridges B3 (417, D60): pin the invite to one participant of a bridge;
   // redeeming it links the joiner. One use only.
   bridgeParticipant: BridgeInviteParticipantSchema.optional(),
 }).strict();
@@ -286,7 +286,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'bridges.listen': BridgeListenInputSchema,
   'bridges.work.start': BridgeWorkStartInputSchema,
   'bridges.memories.proposals.resolve': BridgeMemoryProposalResolveInputSchema,
-  // B3 (408): the caller's own links.
+  // B3 (417): the caller's own links.
   'bridges.links.begin': BridgeLinkBeginInputSchema,
   'bridges.links.revoke': BridgeLinkRevokeInputSchema,
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,

@@ -103,7 +103,7 @@ describe('auth session listing kinds (395/398 fix-forward)', () => {
     }
     expect(AuthSessionListingSchema.safeParse(row('rogue')).success).toBe(false);
 
-describe('link inputs (B3, 408)', () => {
+describe('link inputs (B3, 417)', () => {
   it('begin takes a known provider; an invite pins a bridge id and an external id; the code shape is TM8-', async () => {
     const { BridgeLinkBeginInputSchema, BridgeInviteParticipantSchema, BRIDGE_LINK_CODE_PATTERN } = await import('../src/bridges.js');
     expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'whatsapp' }).success).toBe(true);

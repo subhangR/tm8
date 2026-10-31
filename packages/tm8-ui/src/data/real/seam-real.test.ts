@@ -431,7 +431,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Bridges B2-UI (BRIDGE-ENTITY-DESIGN §4): the `bridges.*` port, assigned
       // after construction like `loops`. Inserted at its sorted position.
       'bridges',
-      // B3 (408): bridges.links.begin.
+      // B3 (417): bridges.links.begin.
       'beginBridgeLink',
       'complete', 'createEdge', 'createEntity', 'createEntityKind', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
@@ -523,7 +523,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // W4 (auth sessions, 2026-09-26): `auth.sessions.revoke`. The list READ
       // is `seam.authSessions`, not a command.
       'revokeAuthSession',
-      // B3 (408): bridges.links.revoke.
+      // B3 (417): bridges.links.revoke.
       'revokeBridgeLink',
       // W2 (2026-08-16): the task-axis registry's writes, over the catalog
       // ops that existed all along (`spaces.taskAxes.*`) — the settings shell
