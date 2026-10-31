@@ -33,6 +33,7 @@ import type {
   QuoteRef,
   RuntimeFrames,
   RuntimeRoute,
+  GroupMemberResult,
   ServerFrame,
 } from './protocol.js'
 import { useSealedAuthState } from './sealed-auth.js'
@@ -43,6 +44,7 @@ export type Emit = <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) =
 export type WaSocketLike = Pick<
   WASocket,
   'ev' | 'user' | 'sendMessage' | 'sendPresenceUpdate' | 'readMessages' | 'groupMetadata' | 'groupFetchAllParticipating' | 'requestPairingCode' | 'logout' | 'end' | 'updateMediaMessage'
+  | 'groupCreate' | 'groupParticipantsUpdate' | 'groupInviteCode'
 >
 export type SocketFactory = (config: UserFacingSocketConfig) => WaSocketLike
 
@@ -427,6 +429,40 @@ export class RuntimeConnection {
     if (!me) return 'not_a_member'
     if (meta.announce && !me.admin) return 'admins_only'
     return null
+  }
+
+  /**
+   * A new group with these people, the number its admin (the bridge's own group-making). The new group is not on the
+   * allowlist: nothing in it is read or sent until the server connects it with a bridge and pushes the list.
+   */
+  async createGroup(f: Extract<ServerFrame, { type: 'group.create' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }> {
+    if (!this.sock || !this.open) throw new Error('WhatsApp is not connected')
+    const subject = f.subject.trim().slice(0, 100)
+    if (!subject) throw new Error('a group needs a name')
+    const asked = [...new Set(f.participants.map((j) => bareJid(j)).filter((j) => !this.allowlist.isOwn(j)))]
+    const meta = await this.sock.groupCreate(subject, asked)
+    const inGroup = new Set(meta.participants.flatMap((p) => [p.id, p.lid, p.phoneNumber]).filter((j): j is string => !!j).map((j) => bareJid(j)))
+    const results: GroupMemberResult[] = asked.map((id) => ({ id, status: inGroup.has(id) ? 'added' : 'invite_needed' }))
+    return { conversationId: meta.id, subject: meta.subject ?? subject, results, inviteLink: await this.inviteLinkIf(meta.id, results) }
+  }
+
+  /** Add people to a connected group; WhatsApp answers per person (200 added, 409 already in, 403 privacy: invite). */
+  async addToGroup(f: Extract<ServerFrame, { type: 'group.add' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }> {
+    const sock = this.guard(f.conversationId, 'group.add')
+    const asked = [...new Set(f.participants.map((j) => bareJid(j)).filter((j) => !this.allowlist.isOwn(j)))]
+    const answer = asked.length ? await sock.groupParticipantsUpdate(f.conversationId, asked, 'add') : []
+    const results: GroupMemberResult[] = answer.map((r) => ({
+      id: bareJid(r.jid ?? ''),
+      status: r.status === '200' ? 'added' : r.status === '409' ? 'already' : r.status === '403' || r.status === '408' ? 'invite_needed' : 'failed',
+    }))
+    const meta = await sock.groupMetadata(f.conversationId).catch(() => null)
+    return { conversationId: f.conversationId, subject: meta?.subject ?? '', results, inviteLink: await this.inviteLinkIf(f.conversationId, results) }
+  }
+
+  private async inviteLinkIf(conversationId: string, results: GroupMemberResult[]): Promise<string | null> {
+    if (!results.some((r) => r.status === 'invite_needed') || !this.sock) return null
+    const code = await this.sock.groupInviteCode(conversationId).catch(() => undefined)
+    return code ? `https://chat.whatsapp.com/${code}` : null
   }
 
   /** Learns whether the number may post in a connected group and tells the server when that changes. */

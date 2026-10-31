@@ -20,6 +20,8 @@ export const BRIDGE_VERBS = [
   'work', 'task', 'help', 'whoami', 'workers', 'stop', 'status', 'tasks', 'docs', 'link',
   'who', 'bridge', 'mute', 'unmute', 'new',
   'start', 'retry', 'result', 'tell',
+  // 426: the bridge makes groups on its number.
+  'split', 'invite',
   // Bridges R (416, D29): a proposal, accepted only in tm8.
   'remember',
 ] as const;
@@ -39,6 +41,8 @@ const ALIASES: Readonly<Record<string, BridgeVerb>> = {
   cancel: 'stop',
   s: 'status',
   '?': 'help', commands: 'help',
+  group: 'split', newgroup: 'split',
+  add: 'invite',
 };
 
 /** Options inline on a `/work` line (§4.3). `x<n>` is recognised and refused (Q5). */
@@ -244,4 +248,42 @@ export function parseDuration(text: string): number | null {
     ms += Number(n) * u;
   }
   return ms > 0 && ms <= 7 * 86_400_000 ? ms : null;
+}
+
+/** One person named on /split or /invite (426). */
+export type PersonRef =
+  | { kind: 'mention'; digits: string }
+  | { kind: 'phone'; digits: string }
+  | { kind: 'name'; text: string }
+  | { kind: 'everyone' };
+
+const MENTION = /@(\d{6,20})\b/g;
+const PHONE = /(?:^|[\s,])(\+\d[\d\s-]{6,20}\d)(?=$|[\s,])/g;
+
+/**
+ * The people on a /split or /invite: WhatsApp @mentions (the text carries the
+ * mentioned JID's digits), +phone numbers, `everyone`/`all`, and display
+ * names separated by commas or "and". Pure; resolution against the group's
+ * roster is the executor's.
+ */
+export function parsePeople(text: string): PersonRef[] {
+  const out: PersonRef[] = [];
+  let rest = ` ${text} `;
+  rest = rest.replace(MENTION, (_, d: string) => { out.push({ kind: 'mention', digits: d }); return ' , '; });
+  rest = rest.replace(PHONE, (_, p: string) => { out.push({ kind: 'phone', digits: p.replace(/\D/g, '') }); return ' , '; });
+  for (const raw of rest.split(/,|\band\b|\n/i)) {
+    const word = stripTail(raw).replace(/^@/, '').trim();
+    if (!word) continue;
+    if (/^(everyone|everybody|all)$/i.test(word)) out.push({ kind: 'everyone' });
+    else out.push({ kind: 'name', text: word });
+  }
+  return out;
+}
+
+/** `/split <name> with <people>`, or the name on the first line and people below. */
+export function parseSplit(args: string, body: readonly string[]): { name: string; people: PersonRef[] } {
+  const at = args.search(/\s+with\s+/i);
+  const name = stripTail(at >= 0 ? args.slice(0, at) : args).replace(/^["“']|["”']$/g, '').trim();
+  const peopleText = [at >= 0 ? args.slice(at).replace(/^\s+with\s+/i, '') : '', ...body].join('\n');
+  return { name, people: parsePeople(peopleText) };
 }

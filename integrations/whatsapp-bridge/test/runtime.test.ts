@@ -52,6 +52,23 @@ class FakeSocket {
     this.rec('groupFetchAllParticipating', [])
     return { ...this.groups }
   }
+  /** People whose privacy refuses adds: groupCreate leaves them out, groupParticipantsUpdate answers 403. */
+  private = new Set<string>()
+  groupCreate = async (subject: string, participants: string[]) => {
+    this.rec('groupCreate', [subject, participants])
+    const id = `120363999${++this.n}@g.us`
+    this.groups[id] = { id, subject, announce: false, participants: [{ id: ME, admin: 'superadmin' }, ...participants.filter((p) => !this.private.has(p)).map((p) => ({ id: p }))] }
+    return this.groups[id]
+  }
+  groupParticipantsUpdate = async (jid: string, participants: string[], action: string) => {
+    this.rec('groupParticipantsUpdate', [jid, participants, action])
+    const inGroup = new Set((this.groups[jid]?.participants ?? []).map((p: { id: string }) => p.id))
+    return participants.map((p) => ({ jid: p, status: this.private.has(p) ? '403' : inGroup.has(p) ? '409' : '200' }))
+  }
+  groupInviteCode = async (jid: string) => {
+    this.rec('groupInviteCode', [jid])
+    return 'INVITE123'
+  }
   requestPairingCode = async () => 'ABCD1234'
   logout = async () => this.rec('logout', [])
   end = () => this.rec('end', [])
@@ -104,6 +121,35 @@ function untouchable(chat: string): WAMessage {
   }
   return m
 }
+
+describe('groups (the bridge makes and fills groups)', () => {
+  const BOB = '933333333333@s.whatsapp.net'
+  const CARA = '944444444444@s.whatsapp.net'
+
+  test('group.create makes a group with the people, leaves the number out of its own list, and links whoever needs an invite', async () => {
+    const { conn, sock } = await connection()
+    sock.private.add(CARA)
+    const g = await conn.createGroup({ type: 'group.create', requestId: 'g1', connectionId: CONN, subject: '  Release crew ', participants: [ALICE, CARA, ME, ALICE] })
+    assert.deepEqual(sock.calls.find((c) => c.fn === 'groupCreate')!.args, ['Release crew', [ALICE, CARA]])
+    assert.equal(g.subject, 'Release crew')
+    assert.deepEqual(g.results, [{ id: ALICE, status: 'added' }, { id: CARA, status: 'invite_needed' }])
+    assert.equal(g.inviteLink, 'https://chat.whatsapp.com/INVITE123')
+    // The new group is not connected: nothing may be sent there until the server pushes it on the list.
+    await assert.rejects(conn.send({ type: 'send', outboxId: 'o', connectionId: CONN, conversationId: g.conversationId, text: 'hi' }), OutboundRefused)
+  })
+
+  test('group.add adds to a connected group only, and reports each person', async () => {
+    const { conn, sock } = await connection()
+    sock.private.add(CARA)
+    const g = await conn.addToGroup({ type: 'group.add', requestId: 'g2', connectionId: CONN, conversationId: G1, participants: [BOB, ALICE, CARA] })
+    assert.deepEqual(g.results, [{ id: BOB, status: 'added' }, { id: ALICE, status: 'already' }, { id: CARA, status: 'invite_needed' }])
+    assert.equal(g.inviteLink, 'https://chat.whatsapp.com/INVITE123')
+    assert.equal(g.subject, 'Infra')
+    await assert.rejects(conn.addToGroup({ type: 'group.add', requestId: 'g3', connectionId: CONN, conversationId: G2, participants: [BOB] }), OutboundRefused)
+    assert.equal(sock.calls.filter((c) => c.fn === 'groupParticipantsUpdate' && c.args[0] === G2).length, 0)
+  })
+
+})
 
 describe('allowlist', () => {
   test('allows nothing before the first list, then exactly the list', () => {
@@ -488,6 +534,12 @@ describe('runtime', () => {
     await tick()
     await rt.onFrame({ type: 'conversation.list', requestId: 'r2', connectionId: CONN })
     assert.equal(posts.find((p) => p.route === 'conversations' && p.frame.requestId === 'r2')!.frame.items.length, 3)
+  })
+
+  test('the runtime answers group frames on the group route, and unknown connections with an error', async () => {
+    const { rt, posts } = runtime({ connections: [] })
+    await rt.onFrame({ type: 'group.create', requestId: 'r9', connectionId: CONN, subject: 'x', participants: [] })
+    assert.deepEqual(posts.map((p) => [p.route, p.frame]), [['group', { requestId: 'r9', connectionId: CONN, error: 'unknown_connection' }]])
   })
 
   test('a connection id that is not a uuid is refused (it names a directory)', async () => {

@@ -21,7 +21,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
 import { CollabError } from '@tm8/contract';
-import type { AllowlistFrame, ConversationsFrame, MediaFrame, ServerFrame } from '@tm8/contract';
+import type { AllowlistFrame, ConversationsFrame, GroupFrame, MediaFrame, ServerFrame } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../db/types.js';
 import { createWsServer, type WsServer } from '../../events/ws-server.js';
@@ -217,7 +217,19 @@ export class BridgeRuntimeHub {
     return this.request(runtimeId, input.requestId, { type: 'media.fetch', ...input }, timeoutMs) as Promise<MediaFrame>;
   }
 
-  /** The `conversations` and `media` doors answer a request this hub made. */
+  /** 426: make a group on the number (the bridge's /split). WhatsApp can take a while to answer. */
+  async createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[] },
+    timeoutMs = 30_000): Promise<GroupFrame> {
+    return this.request(runtimeId, input.requestId, { type: 'group.create', ...input }, timeoutMs) as Promise<GroupFrame>;
+  }
+
+  /** 426: add people to a connected group (the bridge's /invite). */
+  async addToGroup(runtimeId: string, input: { requestId: string; connectionId: string; conversationId: string; participants: string[] },
+    timeoutMs = 30_000): Promise<GroupFrame> {
+    return this.request(runtimeId, input.requestId, { type: 'group.add', ...input }, timeoutMs) as Promise<GroupFrame>;
+  }
+
+  /** The `conversations`, `media` and `group` doors answer a request this hub made. */
   settleRequest(requestId: string, frame: unknown): boolean {
     const p = this.pending.get(requestId);
     if (!p) return false;

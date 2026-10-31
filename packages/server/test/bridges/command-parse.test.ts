@@ -157,3 +157,21 @@ describe('confirm bodies (§4.6)', () => {
   it.each(['YES', 'yes', 'y', 'Ok', 'okay!', 'yes please'])('%j confirms', text => expect(isConfirmText(text)).toBe(true));
   it.each(['yes but not now', 'no', 'yesterday', '/yes'])('%j does not', text => expect(isConfirmText(text)).toBe(false));
 });
+
+describe('426: /split and /invite people', () => {
+  it('reads mentions, +numbers, everyone and names separated by commas or "and"', async () => {
+    const { parsePeople, parseSplit, parseBridgeCommand } = await import('../../src/bridges/commands/parse.js');
+    expect(parsePeople('@919800000002 +91 98000 00003, Maya and rahul k')).toEqual([
+      { kind: 'mention', digits: '919800000002' },
+      { kind: 'phone', digits: '919800000003' },
+      { kind: 'name', text: 'Maya' },
+      { kind: 'name', text: 'rahul k' },
+    ]);
+    expect(parsePeople('everyone please')).toEqual([{ kind: 'everyone' }]);
+    expect(parseSplit('"Release crew" with Maya', [])).toEqual({ name: 'Release crew', people: [{ kind: 'name', text: 'Maya' }] });
+    expect(parseSplit('Ops', ['@919800000002', 'Maya'])).toEqual({ name: 'Ops', people: [
+      { kind: 'mention', digits: '919800000002' }, { kind: 'name', text: 'Maya' }] });
+    expect(parseBridgeCommand('/group Ops with Maya')).toMatchObject({ kind: 'command', verb: 'split' });
+    expect(parseBridgeCommand('/add +919800000003')).toMatchObject({ kind: 'command', verb: 'invite' });
+  });
+});

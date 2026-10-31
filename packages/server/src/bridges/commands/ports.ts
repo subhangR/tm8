@@ -21,7 +21,7 @@
  * Kept as a seam, not imports, so the executor is testable against a scratch
  * database with fakes for the PTY host and the outbox.
  */
-import type { BridgeWorkStartInput, BridgeWorkStartResult } from '@tm8/contract';
+import type { BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
 import type { BridgeAuthor } from '../runtime/command-hook.js';
@@ -76,6 +76,20 @@ export interface BridgeWorkStarter {
   workStart(claims: DbClaims, input: BridgeWorkStartInput & { bridgeId: string }): Promise<BridgeWorkStartResult>;
 }
 
+/** What WhatsApp did on a group request (426): the group, and each person asked in. */
+export interface BridgeGroupResult {
+  conversationId: string;
+  subject: string;
+  results: GroupMemberResult[];
+  inviteLink: string | null;
+}
+
+/** 426: the number's group powers, through its runtime. Absent where no runtime is wired. */
+export interface BridgeGroupPort {
+  create(input: { connectionId: string; subject: string; participants: string[]; requestId: string }): Promise<BridgeGroupResult>;
+  add(input: { connectionId: string; conversationId: string; participants: string[]; requestId: string }): Promise<BridgeGroupResult>;
+}
+
 export interface BridgeCommandPorts {
   readonly db: Db;
   /** Claims for the executor's server-only doors: bridgesWorkerClaims() ('bridges.runtime'). */
@@ -91,6 +105,8 @@ export interface BridgeCommandPorts {
   /** `session resume`: the same session, relaunched (/retry). */
   resumeWorker(claims: DbClaims, sessionId: string, input: { clientMutationId: string }): Promise<{ sessionId: string }>;
   workerHandle(claims: DbClaims, bridgeId: string, sessionId: string): Promise<{ handle: string; title: string | null } | null>;
+  /** 426: /split and /invite. Absent: both answer that this node cannot make groups. */
+  readonly groups?: BridgeGroupPort;
   readonly logger?: { warn(message: string): void; debug?(message: string): void };
   readonly now?: () => Date;
 }
