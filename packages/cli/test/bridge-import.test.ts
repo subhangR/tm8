@@ -114,6 +114,13 @@ describe('planPhase1Import (pure)', () => {
     expect(pairs('member', [`${PN}=${OWNER}`])).toEqual({ [PN]: OWNER });
     expect(() => pairs('member', ['nope'])).toThrow(/<key>=<value>/);
     expect(() => pairs('main-chat', ['a=1', 'a=2'])).toThrow(/names a twice/);
+    // F6: a malformed or repeated --member key never prints the whole number.
+    const refusal = (f: () => unknown) => { try { f(); } catch (err) { return (err as Error).message; } return ''; };
+    const twice = refusal(() => pairs('member', [`${TRUSTED}=${RAHUL}`, `${TRUSTED}=${ASHA}`]));
+    const malformed = refusal(() => pairs('member', [`${TRUSTED}=`]));
+    expect(twice).toBe('--member names …0002@s.whatsapp.net twice');
+    expect(malformed).toBe('--member takes <key>=<value>, got "…0002@s.whatsapp.net="');
+    for (const m of [twice, malformed]) expect(m).not.toMatch(/[0-9]{8,}@/);
     expect(mask(PN)).toBe('…0001@s.whatsapp.net');
   });
 });

@@ -64,9 +64,10 @@ export function pairs(flag: string, raw: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const item of raw) {
     const at = item.indexOf('=');
-    if (at < 1 || at === item.length - 1) throw usage(`--${flag} takes <key>=<value>, got "${item}"`);
+    // `--member` keys are phone numbers: these refusals get pasted onto tasks, so they are masked too.
+    if (at < 1 || at === item.length - 1) throw usage(`--${flag} takes <key>=<value>, got "${maskJids(item)}"`);
     const key = item.slice(0, at), value = item.slice(at + 1);
-    if (key in out && out[key] !== value) throw usage(`--${flag} names ${key} twice`);
+    if (key in out && out[key] !== value) throw usage(`--${flag} names ${maskJids(key)} twice`);
     out[key] = value;
   }
   return out;
@@ -169,6 +170,11 @@ function renderPlan(plan: PlannedBridge[]): string {
     `  purpose: ${p.purpose}`,
     ...p.links.map(l => `  link ${mask(l.externalId)} → member ${l.memberId} (${l.why}, asserted)`),
   ].join('\n')).join('\n');
+}
+
+/** Every `<digits>@…` in free text, masked the way mask() masks one address. */
+export function maskJids(text: string): string {
+  return text.replace(/[0-9]{5,}(?=@)/g, digits => `…${digits.slice(-4)}`);
 }
 
 /** `+…1999@s.whatsapp.net`: enough to tell addresses apart in a log, not a number. */
