@@ -6,7 +6,12 @@
 -- §2.3 steps 3 and 5, §2.7, §2.8 / D30, D39. Task
 -- 01a18bb0-d554-7223-b193-c9618a5a5338. Builds on 398 (B1b-2), which is
 -- immutable once applied: every object below that 398 defines is restated
--- from 398's exact body, changed only where this header says.
+-- from main's latest body, changed only where this header says. For
+-- public.bridge_runtime_inbound that is 406_loops_bridge_targets (L, #1433),
+-- which redefined 398's: every '406 (L, D26, D69)' block (the reply to a live
+-- loop session's post routed to that session) is kept verbatim. 406's L origin
+-- passes the participant object as L wrote it; only this file's own branches
+-- pass the display string (N1).
 --
 -- WHAT THIS FILE DOES
 --   §1  internal.bridge_signed becomes VOLATILE (#1428 review N2): a worker's
@@ -69,8 +74,9 @@ $$;
 revoke all on function internal.bridge_signed(public.bridges, uuid, uuid, text, text) from public;
 
 -- -----------------------------------------------------------------------------
--- §2. 398's public.bridge_runtime_inbound; the origin's participant is the
---     display string.
+-- §2. public.bridge_runtime_inbound, restated from 406 (L), which restated
+--     398's; the origin's participant is the display string on this file's
+--     own branches.
 -- -----------------------------------------------------------------------------
 create or replace function public.bridge_runtime_inbound(p_frame jsonb, p_command boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -102,6 +108,9 @@ declare
   existing uuid;
   wake jsonb := null;
   target_e public.entities;
+  -- 406 (L)
+  loop_sid uuid;
+  sess_e public.entities;
 begin
   perform internal.bridge_runtime_session();
   if ext is null or conv is null or char_length(ext) > 256 then
@@ -211,6 +220,32 @@ begin
   if p_command then
     return jsonb_build_object('status', 'stored', 'messageId', log_id, 'bridgeId', b.entity_id,
                               'command', true, 'routed', false);
+  end if;
+
+  -- 406 (L, D26, D69): a reply to a post by a live interactive loop session goes
+  -- to that session, which becomes its answerer and gains the group as an
+  -- origin (D30). Once the session has closed, the chat answers as before.
+  if parent_msg is not null
+     and (b.policy ->> 'whoMayTrigger' = 'anyone' or author ->> 'kind' = 'member') then
+    loop_sid := internal.loop_reply_session(parent_msg);
+    if loop_sid is not null then
+      select * into sess_e from public.entities where id = loop_sid;
+      copy_id := internal.new_id();
+      insert into public.entities(id, space_id, kind, parent_id, position, created_by, visibility)
+      values (copy_id, b.space_id, 'message', null, null, (author ->> 'actorId')::uuid, sess_e.visibility);
+      insert into public.messages(entity_id, anchor_id, root_message_id, author_id, body, message_batch_id)
+      values (copy_id, loop_sid, null, (author ->> 'actorId')::uuid, body, batch);
+      perform public.set_bridge_answerer(log_id, loop_sid);
+      perform public.add_bridge_origin(loop_sid,
+        jsonb_build_object('bridgeId', b.entity_id, 'messageId', log_id, 'providerMessageId', ext,
+                           'sender', jsonb_build_object('participant', author -> 'participant',
+                             'memberId', case when author ->> 'kind' = 'member' then author ->> 'actorId' end),
+                           'command', null));
+      update public.message_origins set routed = true where message_id = log_id;
+      return jsonb_build_object('status', 'stored', 'messageId', log_id, 'bridgeId', b.entity_id,
+                                'command', false, 'routed', true, 'copyId', copy_id, 'wakeChat', null,
+                                'wakeSession', jsonb_build_object('sessionId', loop_sid), 'author', author);
+    end if;
   end if;
 
   -- Step 5: trigger and whoMayTrigger.
