@@ -1,5 +1,5 @@
 /**
- * Bridges P (BRIDGE-ENTITY-DESIGN §2.4, §4.4, D50-D52; migration 404): the
+ * Bridges P (BRIDGE-ENTITY-DESIGN §2.4, §4.4, D50-D52; migration 420): the
  * People tab's read and write over authenticated HTTP against a scratch
  * database with every migration applied.
  *

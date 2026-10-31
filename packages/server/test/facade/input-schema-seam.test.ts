@@ -307,7 +307,7 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'bridges.memories.proposals.resolve', // Bridges R (416)
   'bridges.links.begin',
   'bridges.links.revoke',
-  'bridges.participants.update', // Bridges P (404)
+  'bridges.participants.update', // Bridges P (420)
   'loops.create',
   'loops.update',
   'loops.enable',

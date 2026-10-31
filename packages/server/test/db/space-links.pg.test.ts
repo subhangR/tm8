@@ -186,7 +186,7 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'resolve_bridge_memory_proposal(uuid,text,text,text)': BRIDGE_MEMORY,
   'begin_bridge_link(text)': BRIDGE_LINKS,
   'revoke_bridge_link(uuid)': BRIDGE_LINKS,
-  // 404 (Bridges P, D52): the admin's assertion makes a number count as a person.
+  // 420 (Bridges P, D52): the admin's assertion makes a number count as a person.
   'update_bridge_participant(uuid,text,jsonb,uuid,text)': BRIDGES,
   'redeem_invite(text,text,text)': SPACE_PASSWORD,
   'space_login_for_enter(uuid)': SPACE_PASSWORD,
@@ -420,7 +420,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 1 memory proposal decision (416) + 2 bridge link mint/unlink (417) + 1 participant write (404)', () => {
+  it('the list is 41 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346) + 4 bridge lifecycle writes (395) + 1 memory proposal decision (416) + 2 bridge link mint/unlink (417) + 1 participant write (420)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(41); // +1 revoke_all_mcp_credentials (377) +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
@@ -430,10 +430,10 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels.filter((l) => l === BRIDGES)).toHaveLength(5); // 395: create/retarget/remove_bridge + the shared state body; 404: update_bridge_participant
+    expect(labels.filter((l) => l === BRIDGES)).toHaveLength(5); // 395: create/retarget/remove_bridge + the shared state body; 420: update_bridge_participant
     expect(labels.filter((l) => l === BRIDGE_MEMORY)).toHaveLength(1); // 416: resolve_bridge_memory_proposal (D29: accepted in tm8 by a person)
     expect(labels.filter((l) => l === BRIDGE_LINKS)).toHaveLength(2); // 417: begin_bridge_link, revoke_bridge_link
-    expect(labels).toHaveLength(83); // +1 update_bridge_participant (404) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(83); // +1 update_bridge_participant (420) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

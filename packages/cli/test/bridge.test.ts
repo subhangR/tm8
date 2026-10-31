@@ -30,7 +30,7 @@ const LINK = {
   spaceId: null, spaceName: null, verifiedAt: '2026-10-28T10:00:00.000Z', revokedAt: null,
 };
 
-// Bridges P (404, D50-D52): one linked member and one guest, masked as a member sees them.
+// Bridges P (420, D50-D52): one linked member and one guest, masked as a member sees them.
 const PEOPLE = [
   { externalId: '…0001', altExternalIds: [], masked: true, displayName: 'Subhang', avatarRef: null, muted: false,
     firstSeenAt: view.createdAt, lastSeenAt: view.createdAt, messageCount: 214, trust: 'linked', memberId: CHAT,

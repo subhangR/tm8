@@ -292,7 +292,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // B3 (417): the caller's own links.
   'bridges.links.begin': BridgeLinkBeginInputSchema,
   'bridges.links.revoke': BridgeLinkRevokeInputSchema,
-  'bridges.participants.update': BridgeParticipantUpdateInputSchema, // 404 (Bridges P)
+  'bridges.participants.update': BridgeParticipantUpdateInputSchema, // 420 (Bridges P)
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

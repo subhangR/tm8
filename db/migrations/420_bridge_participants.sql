@@ -1,7 +1,8 @@
 -- =============================================================================
--- 404 — Bridges P: the People tab's read and write (bridges.participants.list,
+-- 420 — Bridges P: the People tab's read and write (bridges.participants.list,
 --       bridges.participants.update).
 -- (Provisional number; the bridges merger assigns the final one.)
+-- (Authored as 404; renumbered to 420 at merge by the bridges merger: main's 404 is the launch lane's boot phase.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §2.4, §3.2,
 -- §3.4, §4.4 (People); D50-D51 (§8). Task 01a189db-34a6-7873-975e-9da024aa70ac.

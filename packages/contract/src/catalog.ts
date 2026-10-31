@@ -88,7 +88,7 @@ export const OPERATIONS = [
   // bridges (BRIDGE-ENTITY-DESIGN §3.4, B0a, migration 395). The CLI noun
   // `bridge` now names these; the reserved `bridge.fetchBlob` row (files section) keeps
   // its slot until its retirement (D11) lands with its tests. create/retarget/remove are
-  // human-only in SQL, as is participants.update (404, D52); handles.claim, log.read and listen admit any session in the space (D23).
+  // human-only in SQL, as is participants.update (420, D52); handles.claim, log.read and listen admit any session in the space (D23).
   { name: 'bridges.list', method: 'GET', path: '/v2/spaces/:spaceId/bridges', kind: 'read', status: 'v1' },
   { name: 'bridges.get', method: 'GET', path: '/v2/bridges/:bridgeId', kind: 'read', status: 'v1' },
   { name: 'bridges.create', method: 'POST', path: '/v2/spaces/:spaceId/bridges', kind: 'command', status: 'v1', humanOnly: true },

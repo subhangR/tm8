@@ -6,7 +6,7 @@
  * Who may call what is decided in SQL: create, retarget and remove are
  * human-only (and wrapped here so the catalog's `humanOnly` holds before the
  * call); the handle claim, the log read and listen take any session in the
- * space (D23). The People tab's write (participants.update, 404) is
+ * space (D23). The People tab's write (participants.update, 420) is
  * human-only too: an assertion makes a number count as a person (D52).
  */
 import {

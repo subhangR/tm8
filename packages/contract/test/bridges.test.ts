@@ -72,7 +72,7 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs, B3\'s three link rows, and the People tab\'s two (Bridges P, 404)', () => {
+  it('carries the twelve rows B1 needs, B3\'s three link rows, and the People tab\'s two (Bridges P, 420)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.participants.list', 'bridges.participants.update',
