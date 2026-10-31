@@ -181,6 +181,23 @@ export interface BridgeCommandExecutor extends BridgeCommandHook, BridgeWorkStar
   reset(): void;
 }
 
+/**
+ * The code a /link names, as the group typed it (B3 follow-up, D59): a phone
+ * may split TM8-XXXXXX at the hyphen ("TM8 XXXXXX", "TM8 – XXX XXX"), so words
+ * are taken until they hold a whole code's letters and digits (TM8 plus six,
+ * or six without the prefix). The SQL door normalizes the separators.
+ */
+export function linkCodeText(args: string): string {
+  const words = stripTail(args).split(/\s+/).filter(Boolean);
+  let out = '';
+  for (const word of words) {
+    out = out ? `${out} ${word}` : word;
+    const chars = out.replace(/[^0-9A-Za-z]/g, '');
+    if (chars.length >= (/^tm8/i.test(chars) ? 9 : 6)) break;
+  }
+  return out;
+}
+
 export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCommandExecutor {
   const now = () => ports.now?.() ?? new Date();
   const lists = new Map<string, { at: number; ids: string[] }>();
@@ -651,7 +668,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
    * a failed try named (everyone in the group has read it).
    */
   async function link(cmd: Command, args: string): Promise<Answer> {
-    const code = stripTail(args).split(/\s+/)[0] ?? '';
+    const code = linkCodeText(args);
     if (!code) return { text: 'usage: /link TM8-XXXXXX — get a code in tm8: Account → Linked identities' };
     const r = await exec(q => q.rpc<{ ok: boolean; reason?: string; already?: boolean; burned?: boolean }>(
       'bridge_command_link_redeem', [cmd.input.bridgeId, cmd.input.senderExternalId, code]));
@@ -670,7 +687,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'wrong_provider': return { text: `that code is for another network.${fresh}` };
       case 'linked_elsewhere': return { text: `this number is linked to another tm8 account; unlink it there first.${fresh}` };
       case 'bridge_ended': return { text: 'this group is no longer connected to tm8' };
-      default: return { text: 'that is not a valid code — copy it exactly from tm8: Account → Linked identities' };
+      default: return { text: `that is not a valid code — copy it exactly from tm8: Account → Linked identities.${fresh}` };
     }
   }
 

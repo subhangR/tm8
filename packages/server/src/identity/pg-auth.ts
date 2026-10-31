@@ -918,3 +918,12 @@ export function hashSpacePassword(password: string): Promise<string> {
 export function inviteRequiresSpacePassword(db: Db, code: string): Promise<boolean> {
   return db.rpc<boolean>({}, 'invite_requires_space_password', [code]);
 }
+
+/**
+ * Bridges B3 follow-up (D60): the participant a live invite was pinned to,
+ * masked, so the join page can hand the new member a /link code. Null for an
+ * unpinned or dead code. Claim-free, like the space-password probe above.
+ */
+export function inviteBridgeLink(db: Db, code: string): Promise<{ provider: string; masked: string } | null> {
+  return db.rpc<{ provider: string; masked: string } | null>({}, 'invite_bridge_link', [code]);
+}

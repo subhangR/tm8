@@ -94,9 +94,11 @@ describe('Invite to space (D60)', () => {
     render(<InviteToSpace spaceId="s1" bridgeId="b1" participant={{ externalId: '919000000002@s.whatsapp.net', displayName: 'Rahul' }}
       createInvite={createInvite} joinUrl={(c) => `https://tm8.example/join/${c}`} />);
     fireEvent.click(screen.getByTestId('bridge-invite-919000000002@s.whatsapp.net'));
-    expect(screen.getByTestId('bridge-invite-panel').textContent).toMatch(/Invite Rahul to this space\?.*never messages them/);
+    expect(screen.getByTestId('bridge-invite-panel').textContent).toMatch(/Invite Rahul to this space\?.*privately, not in the group.*never messages them/);
     fireEvent.click(screen.getByTestId('bridge-invite-mint'));
     expect((await screen.findByTestId('bridge-invite-link')).textContent).toBe('https://tm8.example/join/inv_abc');
+    // Pasted in the group, the link gives the number to whoever opens it first (B3 follow-up).
+    expect(screen.getByTestId('bridge-invite-panel').textContent).toMatch(/Send it to them privately, not in the group/);
     expect(createInvite).toHaveBeenCalledWith('s1', expect.objectContaining({
       maxUses: 1, bridgeParticipant: { bridgeId: 'b1', externalId: '919000000002@s.whatsapp.net' },
     }));

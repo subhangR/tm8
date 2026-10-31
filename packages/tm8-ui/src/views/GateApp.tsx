@@ -16,7 +16,7 @@ import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
+import type { BridgeProvider, ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
   MenuRail,
@@ -2738,6 +2738,10 @@ export function GateApp(props: GateAppProps = {}) {
                     clientMutationId: newJoinMutationId(),
                     ...(spacePassword ? { spacePassword } : {}),
                   }),
+                // Bridges D60: a pinned invite makes the member; the number
+                // links when they send this code from it, in the group.
+                onBeginLink: (provider: string) =>
+                  data.seam.commands.beginBridgeLink(provider as BridgeProvider),
               }
             : {})}
           onJoined={(spaceId) => {

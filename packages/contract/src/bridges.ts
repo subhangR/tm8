@@ -528,7 +528,7 @@ export interface BridgeLinksList { items: BridgeIdentityLink[]; pending: BridgeL
 export interface BridgeLinkBeginInput { provider: BridgeProvider; clientMutationId?: string }
 export interface BridgeLinkRevokeInput { linkId?: string; clientMutationId?: string }
 
-/** A participant pinned to `spaces.invites.create` (D60): redeeming links the joiner. */
+/** A participant pinned to `spaces.invites.create` (D60): redeeming makes a member; the number links by /link code. */
 export interface BridgeInviteParticipant { bridgeId: EntityId; externalId: string }
 
 export const BridgeLinkBeginInputSchema = z.object({

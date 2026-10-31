@@ -5,8 +5,9 @@
  *
  * It mints ONE join link with `spaces.invites.create`, one use, pinned to this
  * participant. The bridge never messages anyone (D28): the admin copies the
- * link and shares it themselves. Whoever joins with it has this number linked
- * to their account, identity-scoped, as a code would (D5).
+ * link and shares it themselves, privately. Joining grants membership only
+ * (D60, B3 follow-up): the join page then hands the new member a /link code,
+ * and the number links when they send it from that phone, in the group (D59).
  */
 import { useState } from 'react';
 import type { CreateInviteInput, EntityId, SpaceId, SpaceInviteView } from '@tm8/contract';
@@ -93,8 +94,9 @@ export function InviteToSpace({ spaceId, bridgeId, participant, createInvite, jo
             <button type="button" className="bri-invite__act" onClick={() => void copy()}>{copied ? 'copied' : 'copy'}</button>
           </div>
           <span className="bri-invite__note">
-            Send it to them yourself; tm8 does not message them. It works once. When they join with it, their messages
-            from {maskedNumber(participant.externalId)} count as them.
+            Send it to them privately, not in the group. tm8 does not message them. It works once. Joining makes them a
+            member; their messages from {maskedNumber(participant.externalId)} count as them once they send the /link
+            code tm8 then gives them, from that phone, in the group.
           </span>
           <div className="bri-invite__row">
             <button type="button" className="bri-invite__act bri-invite__act--quiet" onClick={() => { setOpen(false); setLink(null); }}>
@@ -106,8 +108,9 @@ export function InviteToSpace({ spaceId, bridgeId, participant, createInvite, jo
         <>
           <span className="bri-invite__head">Invite {who} to this space?</span>
           <span className="bri-invite__note">
-            You get a one-use join link to share with them yourself. tm8 never messages them. When they join with it,
-            {` ${maskedNumber(participant.externalId)}`} is linked to their account.
+            You get a one-use join link to send them privately, not in the group. tm8 never messages them. When they
+            join, tm8 gives them a /link code; {` ${maskedNumber(participant.externalId)}`} is linked to their account
+            once they send it from that phone, in the group.
           </span>
           {error ? <span className="bri-invite__error" role="alert" data-testid="bridge-invite-error">{error}</span> : null}
           <div className="bri-invite__row">

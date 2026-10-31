@@ -192,6 +192,44 @@ describe('bridges.links.list and revoke (§4.6)', () => {
   });
 });
 
+describe('a code as the group typed it (B3 follow-up, D59)', () => {
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const other = (ch: string) => ALPHABET[(ALPHABET.indexOf(ch) + 7) % ALPHABET.length]!;
+  const sender = () => `91900${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}@s.whatsapp.net`;
+  const live = async (code: string) => (await scratch.query<{ n: number }>(
+    `select count(*)::int as n from internal.bridge_link_code_match($1) where used_at is null`, [code]))[0]!.n;
+
+  it('an en-dash or a space for the hyphen still links: separators are normalized', async () => {
+    for (const mangle of [(c: string) => c.replace('-', '\u2013'), (c: string) => c.replace('-', ' '),
+      (c: string) => `tm8 \u2013 ${c.slice(4, 7).toLowerCase()} ${c.slice(7)}`]) {
+      const { code } = await begin(plainIdentity);
+      expect(await redeem(sender(), mangle(code))).toMatchObject({ ok: true, already: false, identityId: plainIdentity });
+      expect(await live(code)).toBe(0);
+    }
+  });
+
+  it('a near miss burns the live code it names: a wrong, a dropped or two swapped characters', async () => {
+    for (const mangle of [(c: string) => c.slice(0, 6) + other(c[6]!) + c.slice(7),
+      (c: string) => c.slice(0, 8) + c.slice(9), (c: string) => c.slice(0, 5) + c[6] + c[5] + c.slice(7),
+      (c: string) => `${c.slice(0, 3)}\u2014${c.slice(4, 9)}O`]) {
+      const { code } = await begin(ownerIdentity);
+      const typed = mangle(code);
+      if (typed.replace(/[^0-9A-Za-z]/g, '') === code.replace('-', '')) continue; // a swap of two equal characters is the code
+      expect(await redeem(sender(), typed)).toMatchObject({ ok: false, reason: 'bad_code', burned: true });
+      expect(await live(code)).toBe(0);
+      expect(await redeem(sender(), code)).toMatchObject({ ok: false, reason: 'used' });
+    }
+  });
+
+  it('further than two edits is not a near miss: nothing is burned and the code still links', async () => {
+    const { code } = await begin(plainIdentity);
+    const far = code.slice(0, 4) + [...code.slice(4, 8)].map(other).join('') + code.slice(8);
+    expect(await redeem(sender(), far)).toEqual({ ok: false, reason: 'bad_code' });
+    expect(await live(code)).toBe(1);
+    expect(await redeem(sender(), code)).toMatchObject({ ok: true });
+  });
+});
+
 describe('Invite to space (D60)', () => {
   const invite = (identity: string, maxUses = 1) =>
     as(identity, q => q.rpc<{ invite: { id: string; code: string } }>('create_invite',
@@ -211,25 +249,34 @@ describe('Invite to space (D60)', () => {
     expect((await refusal(as(ownerIdentity, q => q.rpc('pin_bridge_invite', [one.id, bridgeId, 'nobody'])))).code).toBe('not_found');
   });
 
-  it('redeeming the pinned invite links the joiner, identity-scoped, method invite', async () => {
+  it('redeeming the pinned invite grants membership only: NO bridge_identity_links row; the number links by /link code (D60)', async () => {
     const { invite: inv } = await invite(ownerIdentity);
     await as(ownerIdentity, q => q.rpc('pin_bridge_invite', [inv.id, bridgeId, invitee]));
+    const pinned = async (code: string) =>
+      (await scratch.query<{ r: unknown }>('select public.invite_bridge_link($1) as r', [code]))[0]!.r;
+    expect(await pinned(inv.code)).toEqual({ provider: 'whatsapp', masked: '…0002' });
+    const links = () => scratch.query('select 1 from public.bridge_identity_links where external_id = $1', [invitee]);
+    const before = await scratch.query('select 1 from public.bridge_identity_links');
     const joined = await as(joinerIdentity, q => q.rpc<{ memberId: string; joined: boolean }>('redeem_invite', [inv.code, randomUUID(), null]));
     expect(joined.joined).toBe(true);
-    const [link] = await scratch.query<{ identity_id: string; method: string; space_id: string | null }>(
-      `select identity_id, method, space_id from public.bridge_identity_links where external_id = $1 and revoked_at is null`, [invitee]);
-    expect(link).toEqual({ identity_id: joinerIdentity, method: 'invite', space_id: null });
+    expect(await links()).toEqual([]);
+    expect(await scratch.query('select 1 from public.bridge_identity_links')).toHaveLength(before.length);
+    expect(await resolve(invitee)).toMatchObject({ kind: 'bridge', trust: 'guest' });
+    // A spent (or unpinned) code discloses no pin.
+    expect(await pinned(inv.code)).toBeNull();
+    // The join page hands the new member a code; sent from the phone, it links.
+    const { code } = await begin(joinerIdentity);
+    expect(await redeem(invitee, code)).toMatchObject({ ok: true, identityId: joinerIdentity, link: { method: 'code' } });
     expect(await resolve(invitee)).toMatchObject({ kind: 'member', actorId: joined.memberId, trust: 'linked' });
-    const [pin] = await scratch.query<{ completed: boolean }>(
-      'select completed_at is not null as completed from public.bridge_invite_pins where invite_id = $1', [inv.id]);
-    expect(pin!.completed).toBe(true);
   });
 
-  it('an unpinned invite links nobody; a participant already linked cannot be pinned', async () => {
+  it('an unpinned invite links nobody and discloses no pin; a participant already linked cannot be pinned', async () => {
     const before = await scratch.query('select 1 from public.bridge_identity_links where revoked_at is null');
     const { invite: inv } = await invite(ownerIdentity);
+    expect((await scratch.query<{ r: unknown }>('select public.invite_bridge_link($1) as r', [inv.code]))[0]!.r).toBeNull();
     await as(`b3-plainjoin-${randomUUID()}`, q => q.rpc('redeem_invite', [inv.code, randomUUID(), null]));
     expect(await scratch.query('select 1 from public.bridge_identity_links where revoked_at is null')).toHaveLength(before.length);
+    // invitee was linked by code in the test above.
     const { invite: again } = await invite(ownerIdentity);
     const e = await refusal(as(ownerIdentity, q => q.rpc('pin_bridge_invite', [again.id, bridgeId, invitee])));
     expect(e.details?.['reason']).toBe('already_linked');
