@@ -498,3 +498,60 @@ describe('H7. review fixes', () => {
   });
 });
 
+
+describe('H8. the session pin (227): a session pinned to another space learns nothing about this space\'s offers', () => {
+  const elsewhere = randomUUID();
+  const pinned = (who: keyof typeof people): DbClaims => ({ ...claims(who), sessionSpaceId: elsewhere });
+  const fromOf = async () => (await owner<{ c: string }>('select connection_id::text c from public.bridges where entity_id = $1', [bridge]))[0]!.c;
+  let toConn = '', toOwner: keyof typeof people = 'asha', openId = '', settledId = '';
+
+  beforeAll(async () => {
+    const from = await fromOf();
+    toConn = from === connA ? connB : connA;
+    toOwner = toConn === connA ? 'asha' : 'bina';
+    // A settled offer (withdrawn) and an open one, both from Asha (an admin).
+    settledId = (await db.tx(claims('asha'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [bridge, toConn, randomUUID()]))).handover.id;
+    await db.tx(claims('asha'), q => q.rpc('withdraw_bridge_handover', [settledId, randomUUID()]));
+    openId = (await db.tx(claims('asha'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [bridge, toConn, randomUUID()]))).handover.id;
+  });
+  afterAll(async () => {
+    await db.tx(claims('asha'), q => q.rpc('withdraw_bridge_handover', [openId, randomUUID()])).catch(() => undefined);
+  });
+
+  it('receiving: pinned elsewhere is not_found, with no id of the group; unpinned, the receiver reads it', async () => {
+    const out = await refusal(db.tx(pinned(toOwner), q => q.rpc('bridge_handover_receiving', [openId])));
+    expect(out.code).toBe('not_found');
+    expect(JSON.stringify(out)).not.toContain(GROUP);
+    const seen = await db.tx(claims(toOwner), q => q.rpc<{ id: string; conversationId: string }>('bridge_handover_receiving', [openId]));
+    expect(seen).toMatchObject({ id: openId, conversationId: GROUP });
+  });
+
+  it('offer: pinned elsewhere is refused as not a member, not with the bridge\'s state (an offer is open: handover_pending)', async () => {
+    const out = await refusal(db.tx(pinned('asha'), q => q.rpc('offer_bridge_handover', [bridge, toConn, randomUUID()])));
+    expect(out.code).toBe('forbidden');
+    expect(JSON.stringify(out)).toContain('not_space_member');
+    expect(JSON.stringify(out)).not.toContain('handover_pending');
+    // In the space, the same call still names the open offer.
+    const here = await refusal(db.tx(claims('asha'), q => q.rpc('offer_bridge_handover', [bridge, toConn, randomUUID()])));
+    expect(JSON.stringify(here)).toContain('handover_pending');
+  });
+
+  it('accept: pinned elsewhere is refused as not a member, not with the offer\'s status (withdrawn)', async () => {
+    const out = await refusal(db.tx(pinned(toOwner), q => q.rpc('accept_bridge_handover', [settledId, [GROUP], randomUUID()])));
+    expect(out.code).toBe('forbidden');
+    expect(JSON.stringify(out)).toContain('not_space_member');
+    expect(JSON.stringify(out)).not.toContain('withdrawn');
+    const here = await refusal(db.tx(claims(toOwner), q => q.rpc('accept_bridge_handover', [settledId, [GROUP], randomUUID()])));
+    expect(JSON.stringify(here)).toContain('handover_not_open');
+  });
+
+  it('decline and withdraw: pinned elsewhere are refused as not a member, not with the offer\'s status', async () => {
+    for (const [rpc, who] of [['decline_bridge_handover', toOwner], ['withdraw_bridge_handover', 'asha']] as const) {
+      const out = await refusal(db.tx(pinned(who), q => q.rpc(rpc, [settledId, randomUUID()])));
+      expect(out.code, rpc).toBe('forbidden');
+      expect(JSON.stringify(out), rpc).toContain('not_space_member');
+      expect(JSON.stringify(out), rpc).not.toContain('withdrawn');
+    }
+    expect((await handoverRow(openId)).status).toBe('offered');
+  });
+});

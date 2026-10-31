@@ -145,6 +145,13 @@ begin
     return replay;
   end if;
   e := internal.live_entity(p_bridge_id, 'bridge');
+  -- Pin first (227): a session pinned to another space is refused here, before
+  -- any lock or state refusal, so it learns nothing about this space's offer.
+  actor := internal.current_member_id(e.space_id);
+  if actor is null then
+    raise exception 'you can hand over a bridge only in a space you are a member of' using errcode = '42501',
+      detail = jsonb_build_object('reason', 'not_space_member')::text;
+  end if;
   select * into b from public.bridges where entity_id = p_bridge_id for update;
   if b.ended_at is not null then
     perform internal.bridge_refuse('bridge_ended', 'this bridge was removed');
@@ -154,11 +161,6 @@ begin
      and not internal.is_space_admin(b.space_id) then
     raise exception 'only the connection''s owner or a space admin can hand a bridge over' using errcode = '42501',
       detail = jsonb_build_object('reason', 'admin_only')::text;
-  end if;
-  actor := internal.current_member_id(b.space_id);
-  if actor is null then
-    raise exception 'you can hand over a bridge only in a space you are a member of' using errcode = '42501',
-      detail = jsonb_build_object('reason', 'not_space_member')::text;
   end if;
   perform internal.bind_actor(actor);
 
@@ -219,6 +221,12 @@ begin
   perform internal.require_human_auth_kind();
   select * into h from public.bridge_handovers where id = p_handover_id;
   if h.id is null then raise exception 'hand-over not found' using errcode = 'P0002'; end if;
+  -- Pin first (227): pinned elsewhere (or not a member of the offer's space),
+  -- the offer does not exist for this caller: no space, bridge, runtime or
+  -- conversation id comes back.
+  if internal.current_member_id(h.space_id) is null then
+    raise exception 'hand-over not found' using errcode = 'P0002';
+  end if;
   select * into conn from public.bridge_connections where id = h.to_connection_id;
   if conn.owner_account_id is distinct from internal.current_account_id() then
     raise exception 'only the receiving connection''s owner can do this' using errcode = '42501',
@@ -266,6 +274,13 @@ begin
   -- trigger, the offer; the same order here cannot deadlock against them.
   select * into h from public.bridge_handovers where id = p_handover_id;
   if h.id is null then raise exception 'hand-over not found' using errcode = 'P0002'; end if;
+  -- Pin first (227): a session pinned to another space is refused here, before
+  -- any lock or state refusal, so it learns nothing about this space's offer.
+  actor := internal.current_member_id(h.space_id);
+  if actor is null then
+    raise exception 'you can accept a hand-over only in a space you are a member of' using errcode = '42501',
+      detail = jsonb_build_object('reason', 'not_space_member')::text;
+  end if;
   select * into b from public.bridges where entity_id = h.bridge_id for update;
   select * into h from public.bridge_handovers where id = p_handover_id for update;
   select * into to_conn from public.bridge_connections where id = h.to_connection_id for update;
@@ -276,11 +291,6 @@ begin
   if h.status <> 'offered' then
     perform internal.bridge_refuse('handover_not_open', format('this hand-over was %s', h.status),
       jsonb_build_object('status', h.status));
-  end if;
-  actor := internal.current_member_id(h.space_id);
-  if actor is null then
-    raise exception 'you can accept a hand-over only in a space you are a member of' using errcode = '42501',
-      detail = jsonb_build_object('reason', 'not_space_member')::text;
   end if;
   perform internal.bind_actor(actor);
 
@@ -367,6 +377,12 @@ begin
   select owner_account_id into from_owner from public.bridge_connections where id = h.from_connection_id;
   select owner_account_id into to_owner from public.bridge_connections where id = h.to_connection_id;
   actor := internal.current_member_id(h.space_id);
+  -- Pin first (227): a session pinned to another space is refused here, before
+  -- any lock or state refusal, so it learns nothing about this space's offer.
+  if actor is null then
+    raise exception 'you are not a member of this space' using errcode = '42501',
+      detail = jsonb_build_object('reason', 'not_space_member')::text;
+  end if;
   if p_op = 'bridges.handover.decline' then
     if to_owner is distinct from internal.current_account_id() then
       raise exception 'only the receiving connection''s owner can decline a hand-over' using errcode = '42501',
@@ -381,10 +397,6 @@ begin
   if h.status <> 'offered' then
     perform internal.bridge_refuse('handover_not_open', format('this hand-over was %s', h.status),
       jsonb_build_object('status', h.status));
-  end if;
-  if actor is null then
-    raise exception 'you are not a member of this space' using errcode = '42501',
-      detail = jsonb_build_object('reason', 'not_space_member')::text;
   end if;
   perform internal.bind_actor(actor);
   h := internal.bridge_handover_settle(h.id,
