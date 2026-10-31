@@ -58,6 +58,8 @@ export interface PlannedBridge {
 }
 
 const PERSON_JID = /^[0-9]{5,20}@(s\.whatsapp\.net|lid)$/;
+/** Every id flag takes a tm8 id; anything else (a phone number, most likely) is refused without being echoed. */
+const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `a=b` pairs from a repeatable flag; the key is everything before the first `=`. */
 export function pairs(flag: string, raw: string[]): Record<string, string> {
@@ -87,24 +89,31 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
   }
   const plan: PlannedBridge[] = [];
   const planned = new Set<string>();
+  if (opts.ownerMember !== null && !ID.test(opts.ownerMember)) problems.push('--owner-member takes a member id (a UUID), not a phone number');
+  const badMain = Object.entries(opts.mainChats).filter(([, v]) => !ID.test(v)).map(([k]) => maskJids(k, true));
+  if (badMain.length) problems.push(`--main-chat takes <channel>=<chat id, a UUID>; not an id for: ${badMain.join(', ')}`);
+  const badMembers = Object.entries(opts.members).filter(([, v]) => !ID.test(v)).map(([k]) => mask(k));
+  if (badMembers.length) problems.push(`--member takes <address>=<member id, a UUID>; not an id for: ${badMembers.join(', ')}`);
   for (const id of opts.channels) {
+    // An id is the operator's typing: a chat's address passed instead of its channel id must not print whole.
+    const tag = maskJids(id, true);
     const ch = channels.find(c => c.id === id);
-    if (!ch) { problems.push(`${id}: no such channel in the config`); continue; }
+    if (!ch) { problems.push(`${tag}: no such channel in the config`); continue; }
     const space = ch.tm8?.spaceId ?? config.tm8?.spaceId;
     if (space && space !== opts.spaceId) {
-      problems.push(`${id}: belongs to space ${space}; run the import with --space ${space}`);
+      problems.push(`${tag}: belongs to space ${space}; run the import with --space ${space}`);
     }
-    if (ch.deliverTo) problems.push(`${id}: shadow mode (deliverTo ${ch.deliverTo}) has no bridge equivalent; take it live in Phase 1 first`);
+    if (ch.deliverTo) problems.push(`${tag}: shadow mode (deliverTo ${ch.deliverTo}) has no bridge equivalent; take it live in Phase 1 first`);
     const kind = ch.jid.endsWith('@g.us') ? 'group' : 'dm';
     if (kind === 'group' && !opts.allowGroups) {
-      problems.push(`${id}: a group; this cutover imports the self chat only (pass --allow-groups when the groups move)`);
+      problems.push(`${tag}: a group; this cutover imports the self chat only (pass --allow-groups when the groups move)`);
     }
     if (kind === 'dm' && !owners.includes(ch.jid)) {
-      problems.push(`${id}: a non-group channel must be the owner's self chat (one of ownerJids)`);
+      problems.push(`${tag}: a non-group channel must be the owner's self chat (one of ownerJids)`);
     }
     const targetId = opts.mainChats[id] ?? ch.mainChatId ?? null;
     if (!targetId) {
-      problems.push(`${id}: no target chat; pass --main-chat ${id}=<chat-id> (Phase-1 /health → channels.${id}.main_chat_id)`);
+      problems.push(`${tag}: no target chat; pass --main-chat ${id}=<chat-id> (Phase-1 /health → channels.${id}.main_chat_id)`);
     }
 
     // ownerJids always (the owner's /work keeps working everywhere it did);
@@ -124,10 +133,10 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
     for (const [externalId, { why, at }] of addresses) {
       planned.add(externalId);
       const named = `${at} ${mask(externalId)}`;
-      if (!PERSON_JID.test(externalId)) { problems.push(`${id}: ${named} is not a person's WhatsApp address`); continue; }
+      if (!PERSON_JID.test(externalId)) { problems.push(`${tag}: ${named} is not a person's WhatsApp address`); continue; }
       const memberId = opts.members[externalId] ?? (why === 'owner' ? opts.ownerMember : null);
       if (!memberId) {
-        problems.push(`${id}: ${named} (${why}) has no member; pass ${why === 'owner' ? '--owner-member <member-id> or ' : ''}` +
+        problems.push(`${tag}: ${named} (${why}) has no member; pass ${why === 'owner' ? '--owner-member <member-id> or ' : ''}` +
           `--member <the address at ${at} in config.json>=<member-id>`);
         continue;
       }
@@ -151,9 +160,9 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
     });
   }
   const unused = Object.keys(opts.mainChats).filter(k => !opts.channels.includes(k));
-  if (unused.length) problems.push(`--main-chat names channels not being imported: ${unused.join(', ')}`);
+  if (unused.length) problems.push(`--main-chat names channels not being imported: ${unused.map(k => maskJids(k, true)).join(', ')}`);
   const unusedPurposes = Object.keys(opts.purposes).filter(k => !opts.channels.includes(k));
-  if (unusedPurposes.length) problems.push(`--purpose names channels not being imported: ${unusedPurposes.join(', ')}`);
+  if (unusedPurposes.length) problems.push(`--purpose names channels not being imported: ${unusedPurposes.map(k => maskJids(k, true)).join(', ')}`);
   // A typo'd --member key would otherwise be ignored and resurface as "has no member".
   const unusedMembers = Object.keys(opts.members).filter(k => !planned.has(k));
   if (unusedMembers.length) {
@@ -167,7 +176,7 @@ function renderPlan(plan: PlannedBridge[]): string {
   return plan.map(p => [
     `${p.channel}: ${p.conversation.kind} "${p.conversation.title}" → chat ${p.targetId} · teammate ${p.teammateId ?? 'none'}` +
       ` · trigger ${p.policy.trigger} · who may trigger ${p.policy.whoMayTrigger}`,
-    `  purpose: ${p.purpose}`,
+    `  purpose: ${maskJids(p.purpose, true)}`,
     ...p.links.map(l => `  link ${mask(l.externalId)} → member ${l.memberId} (${l.why}, asserted)`),
   ].join('\n')).join('\n');
 }
@@ -209,7 +218,8 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   try {
     config = JSON.parse(await readTextSource(source.startsWith('@') || source === '-' ? source : `@${source}`)) as Phase1Config;
   } catch (err) {
-    if (err instanceof CliError) throw err;
+    // A read failure names the path, which the operator may have named after a number.
+    if (err instanceof CliError) throw new CliError(maskJids(err.message, true), err.exitCode, { hint: err.hint });
     // JSON.parse quotes a snippet of the file around the error, which can hold part of a number: say only that it failed.
     throw usage('--config is not JSON', 'check it with `jq . <file>` on the host');
   }
@@ -226,6 +236,9 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   const dryRun = cmd.options.bool('dry-run');
   const connectionId = cmd.options.value('connection');
   if (!dryRun && !connectionId) throw usage('--connection <connection-id> is required: the number the bridges run on');
+  if (connectionId !== undefined && !ID.test(connectionId)) {
+    throw usage('--connection takes the connection id (a UUID) from `tm8 bridge connection list`, not a phone number');
+  }
 
   const result: ImportResult = { dryRun, bridges: [] };
   if (dryRun) {

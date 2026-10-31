@@ -323,6 +323,29 @@ describe('tm8 bridge import-config (fake server)', () => {
     await withConfig(config, ['--channel', 'infra']);                                     // a group without --allow-groups
     await withConfig({ ...config, trustedSenders: ['120300000000000009@g.us'] }, []);     // not a person
     await withConfig('{"ownerJids": [x"919876543210@s.whatsapp.net"]}', []);             // not JSON
+    // F10, table-driven: EVERY flag that takes a value, given a 12-digit number in each form and each slot.
+    // (--allow-groups and --dry-run take no value.)
+    const N = '919876543210';
+    for (const n of [N, `${N}@s.whatsapp.net`, `${N}%40s.whatsapp.net`]) {
+      const cases: Array<[string[], string[]]> = [
+        [['--config', n], []],
+        [['--channel', n], []],
+        [['--connection', n], ['--connection']],
+        [['--main-chat', `${n}=x`], []], [['--main-chat', `self=${n}`], ['--main-chat']],
+        [['--purpose', `${n}=x`], []], [['--purpose', `self=${n}`], []],
+        [['--member', `${n}=${ASHA}`], []], [['--member', `${TRUSTED}=${n}`], ['--member']], [['--member', n], ['--member']],
+        [['--owner-member', n], ['--owner-member']],
+      ];
+      for (const [extra, drop] of cases) {
+        if (extra[0] === '--config') {
+          // --config replaces the fixture path, so it goes on the plain args with the path dropped.
+          await run([...args.filter((x, i, all) => !(x === '--config' || all[i - 1] === '--config')), ...extra, '--dry-run']);
+          take();
+        } else {
+          await withConfig(config, [...extra, '--dry-run'], drop);
+        }
+      }
+    }
     await withConfig({ ...config, trustedSenders: [...(config.trustedSenders ?? []), GONE_ADDR, BAD, CLASH] },
       ['--member', `${GONE_ADDR}=${GONE}`, '--member', `${BAD}=${RAHUL}`, '--member', `${CLASH}=${RAHUL}`]);   // 404 / 400 / 409 rows
     await withConfig({ ...config, trustedSenders: [DROP] }, ['--member', `${DROP}=${RAHUL}`], ['--member']); // a transport failure stops the run
@@ -330,6 +353,12 @@ describe('tm8 bridge import-config (fake server)', () => {
     const text = out.join('\n').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
     expect(text).toContain('REFUSED');                 // the row paths really ran
     expect(text).toContain('not JSON');
+    expect(text).toContain('…3210@s.whatsapp.net: no such channel in the config');
+    expect(text).toContain('--purpose names channels not being imported: …3210');
+    expect(text).toContain('--main-chat names channels not being imported: …3210');
+    expect(text).toContain('--connection takes the connection id');
+    expect(text).toContain('--owner-member takes a member id');
+    expect(text).toContain('purpose: …3210');
     expect(text).toContain('%40s.whatsapp.net failed');
     expect(text).not.toMatch(/[0-9]{8,}/);
   });
