@@ -1,7 +1,7 @@
 /**
  * Bridges B3 follow-up (D59): the words a /link hands its SQL door. A phone
  * may split TM8-XXXXXX at the hyphen, so the words are taken until they hold a
- * whole code; the door normalizes the separators (migration 410).
+ * whole code; the door normalizes the separators (migration 418).
  */
 import { describe, expect, it } from 'vitest';
 import { linkCodeText } from '../../src/bridges/commands/executor.js';

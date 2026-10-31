@@ -1,11 +1,12 @@
 -- =============================================================================
--- 410 — Bridges B3 follow-up: mangled /link codes are matched or burned; a
+-- 418 — Bridges B3 follow-up: mangled /link codes are matched or burned; a
 -- pinned invite grants membership only. (Provisional
--- number, above B3's 408 and R's 409; the bridges merger assigns the final
+-- number, above B3's 417 and R's 416; the bridges merger assigns the final
 -- one at merge.)
+-- (Authored as 410; renumbered to 418 at merge by the bridges merger. B3's link codes are 417, R's proposals 416.)
 --
 -- Task 01a18c06-804e-7368-bdf0-a0af30fd27eb, from the #1432 review.
--- internal.bridge_redeem_link_code starts from 408's body, the latest.
+-- internal.bridge_redeem_link_code starts from 417's body, the latest.
 --
 --   §1  A code is read as the group wrote it. Autocorrect turns '-' into an
 --       en-dash, a phone inserts a space, a reader drops the hyphen: every
@@ -18,7 +19,7 @@
 --       near codes are found by digesting every valid code within two edits of
 --       what was typed (at most about 40,000 strings for six characters, before duplicates go) against the salt of
 --       each live code: live codes last ten minutes, so they are few.
---   §3  a pinned invite (D60) grants membership only: 408's triggers that
+--   §3  a pinned invite (D60) grants membership only: 417's triggers that
 --       linked the number to whoever redeemed it go, and the join page hands
 --       the new member a /link code instead (public.invite_bridge_link).
 -- =============================================================================
@@ -46,7 +47,7 @@ revoke all on function internal.bridge_link_code_normalize(text) from public;
 -- -----------------------------------------------------------------------------
 -- Every string one edit from p_s whose length is in p_lens: a character
 -- replaced or deleted, or one inserted anywhere, over the code alphabet
--- (408's: no 0/O, 1/I).
+-- (417's: no 0/O, 1/I).
 create or replace function internal.bridge_link_code_edits(p_s text, p_lens int[]) returns setof text
 language sql immutable set search_path = public, internal, pg_temp as $$
   with a(ch) as (select unnest(string_to_array('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', null)))
@@ -83,7 +84,7 @@ $$;
 revoke all on function internal.bridge_link_code_near(text, text) from public;
 
 -- -----------------------------------------------------------------------------
--- The /link body (408's), reading the normalized code and burning near misses.
+-- The /link body (417's), reading the normalized code and burning near misses.
 -- -----------------------------------------------------------------------------
 create or replace function internal.bridge_redeem_link_code(
   p_bridge_id uuid, p_sender_external_id text, p_code text)
@@ -177,7 +178,7 @@ grant execute on function internal.bridge_redeem_link_code(uuid, text, text) to 
 -- -----------------------------------------------------------------------------
 -- §3. A pinned invite grants membership only (D60, amended).
 -- -----------------------------------------------------------------------------
--- 408 linked the pinned number to whoever redeemed the invite. A join link is
+-- 417 linked the pinned number to whoever redeemed the invite. A join link is
 -- a URL: pasted in the group, any member who opened it first held that number
 -- in every space, and the real owner got linked_elsewhere. Now redeeming a
 -- pinned invite only makes the member; the number links when its owner sends
