@@ -416,6 +416,37 @@ export interface BridgeConnectionWithdrawResult {
   pausedBridgeIds: EntityId[];
 }
 
+// ---------------------------------------------------------------------------
+// Hand-over (D55, D56; migration 424): a bridge moves to another member's
+// connection, keeping its id, history, handles and loops. Offered by the
+// current connection's owner or a space admin; accepted in tm8 only by the
+// receiving connection's owner, whose number's live group list must hold the
+// conversation (`not_in_group`). Nothing moves by itself (D56).
+// ---------------------------------------------------------------------------
+
+export type BridgeHandoverStatus = 'offered' | 'accepted' | 'declined' | 'withdrawn' | 'lapsed';
+export interface BridgeHandover {
+  id: string;
+  bridgeId: EntityId;
+  spaceId: SpaceId;
+  fromConnectionId: string;
+  toConnectionId: string;
+  /** The offerer's member id. */
+  offeredBy: EntityId;
+  status: BridgeHandoverStatus;
+  createdAt: string;
+  settledAt: string | null;
+  settledBy: EntityId | null;
+}
+export interface BridgeHandoverOfferInput { clientMutationId: string; bridgeId?: EntityId; toConnectionId: string }
+export interface BridgeHandoverSettleInput { clientMutationId: string; handoverId?: string }
+export interface BridgeHandoverResult {
+  handover: BridgeHandover;
+  /** The bridge after the call: on accept, riding the new connection. */
+  bridge: BridgeView;
+  /** accept only: outbox rows still pending that now go out on the new number. */
+  readdressed?: number;
+}
 export interface BridgeConnectionRemoveInput { clientMutationId: string; connectionId?: string }
 /**
  * `runtime: 'logged_out'`: the runtime was told to log the device out and wipe
@@ -628,6 +659,15 @@ export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWith
   clientMutationId: z.string().min(1),
   connectionId: Id.optional(),
   spaceId: Id,
+}).strict();
+export const BridgeHandoverOfferInputSchema: z.ZodType<BridgeHandoverOfferInput> = z.object({
+  clientMutationId: z.string().min(1),
+  bridgeId: Id.optional(),
+  toConnectionId: Id,
+}).strict();
+export const BridgeHandoverSettleInputSchema: z.ZodType<BridgeHandoverSettleInput> = z.object({
+  clientMutationId: z.string().min(1),
+  handoverId: Id.optional(),
 }).strict();
 export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemoveInput> = z.object({
   clientMutationId: z.string().min(1),

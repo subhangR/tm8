@@ -11,13 +11,13 @@
  */
 import {
   BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema,
-  BridgeConnectionViewSchema, BridgeConnectionWithdrawInputSchema, BridgeCreateInputSchema,
+  BridgeConnectionViewSchema, BridgeConnectionWithdrawInputSchema, BridgeCreateInputSchema, BridgeHandoverOfferInputSchema, BridgeHandoverSettleInputSchema,
   BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
   BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError, type BridgeDetailView,
   type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult, type BridgeLogEntry,
   type BridgeLogResult, type BridgeRecentPoster, type BridgeView, type BridgeConnectionBeginResult,
   type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
-  type BridgeConnectionRemoveResult, type BridgeConversationListResult, BridgeParticipantUpdateInputSchema,
+  type BridgeConnectionRemoveResult, type BridgeConversationListResult, type BridgeHandover, type BridgeHandoverResult, BridgeParticipantUpdateInputSchema,
   BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema, BridgeMemoryProposalResolveInputSchema,
   BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES, type BridgeIdentityLink,
   type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
@@ -39,7 +39,7 @@ import type { RequestContext } from '../http/types.js';
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
 
 /** The route names the target; a repeated body ID must agree with it. */
-function routeId(ctx: RequestContext, field: 'spaceId' | 'bridgeId' | 'connectionId'): string {
+function routeId(ctx: RequestContext, field: 'spaceId' | 'bridgeId' | 'connectionId' | 'handoverId'): string {
   const id = requireUuidParam(ctx, field);
   const bodyId = (ctx.body as Record<string, unknown> | undefined)?.[field];
   if (bodyId !== undefined && bodyId !== id) {
@@ -263,6 +263,36 @@ export interface BridgeHandlerOptions {
   readonly connectionAuth?: ConnectionAuthRelay;
 }
 
+interface HandoverReceiving extends BridgeHandover {
+  runtimeId: string | null; connectionStatus: string; conversationId: string;
+}
+
+const handoverOf = (h: BridgeHandover): BridgeHandover => ({
+  ...h, createdAt: iso(h.createdAt)!, settledAt: iso(h.settledAt),
+});
+
+/**
+ * accept's group check (D55, D28): the receiving number must be in the group
+ * right now, by its own runtime's word. Anything short of an answer refuses;
+ * an accept is never decided on a stale or guessed list.
+ */
+async function liveGroupIds(options: BridgeHandlerOptions, receiving: HandoverReceiving, requestId: string): Promise<string[]> {
+  const offline = (why: string) => new CollabError('conflict',
+    `your connection must be linked and running to accept, so its groups can be checked (${why})`,
+    { details: { reason: 'connection_offline', connectionId: receiving.toConnectionId } });
+  if (!options.runtime) throw offline('no runtime on this node');
+  if (!receiving.runtimeId || receiving.connectionStatus !== 'linked') throw offline(receiving.connectionStatus);
+  let frame: Awaited<ReturnType<BridgeRuntimeLink['listConversations']>>;
+  try {
+    frame = await options.runtime.listConversations(receiving.runtimeId, receiving.toConnectionId, `handover-${receiving.id}-${requestId}`);
+  } catch (error) {
+    throw offline((error as Error).message);
+  }
+  if (!frame) throw offline('its runtime is not connected');
+  if ('error' in frame) throw offline(frame.error);
+  return frame.items.map(item => item.conversationId);
+}
+
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
   const value = ctx.query.get(name);
   if (value === null || value === '') return null;
@@ -275,6 +305,17 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), work);
   const read = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
     deps.db.tx(claimsFor(await deps.owner(), ctx), work);
+
+  /** decline and withdraw share one shape: settle the offer, answer it with its bridge. */
+  const handoverClose = (rpc: 'decline_bridge_handover' | 'withdraw_bridge_handover', refusal: string) =>
+    requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverSettleInputSchema.parse(ctx.body);
+      const handoverId = routeId(ctx, 'handoverId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover }>(rpc, [handoverId, input.clientMutationId]);
+        return { handover: handoverOf(result.handover), bridge: await loadBridgeView(q, result.handover.bridgeId) };
+      });
+    }, refusal);
 
   /** pause, resume and remove share one shape: a versioned call on the bridge. */
   const state = (rpc: 'pause_bridge' | 'resume_bridge' | 'remove_bridge') => async (ctx: RequestContext) => {
@@ -539,6 +580,35 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       }
       return command(ctx, async q => linkOf(await q.rpc<BridgeIdentityLink>('revoke_bridge_link', [linkId])));
     }, 'unlinking is for a human: open Account → Linked identities'),
+    'bridges.handover.offer': requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverOfferInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover }>('offer_bridge_handover', [
+          bridgeId, input.toConnectionId, input.clientMutationId]);
+        return { handover: handoverOf(result.handover), bridge: await loadBridgeView(q, bridgeId) };
+      });
+    }, 'bridges.handover.offer is for a human: the connection\'s owner or a space admin'),
+    'bridges.handover.accept': requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverSettleInputSchema.parse(ctx.body);
+      const handoverId = routeId(ctx, 'handoverId');
+      // Who may accept is checked before the runtime is asked anything.
+      const receiving = await read(ctx, q => q.rpc<HandoverReceiving>('bridge_handover_receiving', [handoverId]));
+      // A settled offer goes straight to the door: it replays or refuses.
+      const live = receiving.status === 'offered' ? await liveGroupIds(options, receiving, ctx.requestId) : [];
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover; readdressed?: number }>('accept_bridge_handover', [
+          handoverId, live, input.clientMutationId]);
+        return {
+          handover: handoverOf(result.handover), bridge: await loadBridgeView(q, result.handover.bridgeId),
+          readdressed: Number(result.readdressed ?? 0),
+        };
+      });
+    }, 'bridges.handover.accept is for a human: the receiving number\'s owner, in tm8 (D9)'),
+    'bridges.handover.decline': handoverClose('decline_bridge_handover',
+      'bridges.handover.decline is for a human: the receiving number\'s owner'),
+    'bridges.handover.withdraw': handoverClose('withdraw_bridge_handover',
+      'bridges.handover.withdraw is for a human: who offered it, the connection\'s owner or a space admin'),
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');
