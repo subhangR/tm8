@@ -1,5 +1,6 @@
 -- =============================================================================
--- 405 — Bridges S follow-up: one log-anchor derivation.
+-- 415 — Bridges S follow-up: one log-anchor derivation.
+-- (Authored as 405; renumbered to 415 at merge by the bridges merger: main's 405 is MCP's.)
 --
 -- Task 01a18bb5-2d6f-7de5-8cce-179de721d1be, from the #1438 review and B1b-2's
 -- note. 400 carried its own internal.bridge_summary_log_anchor until 398's
