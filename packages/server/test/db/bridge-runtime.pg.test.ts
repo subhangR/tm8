@@ -618,7 +618,8 @@ describe('the watchdog (D19, §7.3 item 6, ac6)', () => {
     await worker('internal.bridge_watchdog_tick');
     await worker('internal.bridge_watchdog_tick');
     const reacts = await owner<{ kind: string; payload: { emoji: string } }>(
-      `select kind, payload from public.bridge_outbox where message_id = $1 and kind = 'react'`, [r.messageId]);
+      `select kind, payload from public.bridge_outbox where message_id = $1 and kind = 'react' and reaction = 'watchdog'`, [r.messageId]);
+    // 427: beside the progress reaction (📨), which ⚠️ outranks at dispatch.
     expect(reacts).toHaveLength(1);
     expect(reacts[0]!.payload.emoji).toBe('⚠️');
     const open = await owner<{ n: number }>(`select count(*)::int as n from public.attention_requests
