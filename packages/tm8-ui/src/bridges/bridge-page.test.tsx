@@ -12,7 +12,8 @@
  *   a widening one shows its consequence in numbers and needs a second click;
  *   Move always confirms and calls `retarget`
  * - Memory links and unlinks the `remembers` edge, and says where it reaches
- * - People draws the counts and posters until the roster lands
+ * - People draws the counts and posters where the roster is not served, and
+ *   lane P's roster with B3's Invite on guest rows where it is
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -228,6 +229,25 @@ describe('the bridge panel', () => {
     await renderPage({ memories: [memoryEdge('e1', memoryTokens)] }, 'ent-bridge-rahul');
     tab('Memory');
     expect((await screen.findByTestId('bridge-memory')).textContent).toContain("a running session's working set is fixed");
+  });
+
+  it('draws lane P\'s roster when the port serves it, with B3\'s Invite on guest rows only', async () => {
+    const t = await renderPage({ people: true });
+    tab('People');
+    const rows = await screen.findAllByTestId('bridge-participant');
+    expect(rows.length).toBeGreaterThan(1);
+    expect(screen.queryByTestId('bridge-people-roster-note')).toBeNull();
+    const guests = rows.filter((r) => r.dataset.trust === 'guest');
+    const members = rows.filter((r) => r.dataset.trust !== 'guest');
+    expect(guests.length).toBeGreaterThan(0);
+    for (const r of guests) expect(r.querySelector('[data-testid^="bridge-invite-"]')).toBeTruthy();
+    for (const r of members) expect(r.querySelector('[data-testid^="bridge-invite-"]')).toBeNull();
+    fireEvent.click(guests[0]!.querySelector('[data-testid^="bridge-invite-"]') as HTMLElement);
+    fireEvent.click(await screen.findByTestId('bridge-invite-mint'));
+    await screen.findByTestId('bridge-invite-link');
+    expect(t.port.createInvite).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ maxUses: 1 }));
+    // Who has been posting through the bridge still shows under the roster.
+    expect(screen.getByTestId('bridge-page').textContent).toContain('keen-otter');
   });
 
   it('draws people counts and posters until the roster lands', async () => {
