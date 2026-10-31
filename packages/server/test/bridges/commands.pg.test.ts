@@ -922,6 +922,29 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     expect(notices.length).toBeLessThanOrEqual(answered);
   });
 
+  it('the split doors and bridge_runtime_of refuse a member, an admin and an agent', async () => {
+    const msg = await inbound(people.owner.phone, people.owner.member, '/split Door check with maya');
+    const session = await asOwner(async c => {
+      const id = randomUUID();
+      await c.query(`insert into public.entities(id, space_id, kind, created_by, visibility) values ($1,$2,'work_session',$3,'space')`, [id, space, persona]);
+      await c.query(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at) values ($1,'Door check','running','none',now())`, [id]);
+      return id;
+    });
+    const callers: DbClaims[] = [
+      memberClaims(people.rahul.identity),
+      { ...memberClaims(people.owner.identity), authKind: 'browser' },
+      { ...memberClaims(people.owner.identity), authKind: 'agent', sessionSpaceId: space },
+      { ...memberClaims(people.owner.identity), authKind: 'agent', sessionSpaceId: space, backgroundJob: 'bridges.runtime' },
+    ];
+    for (const claims of callers) {
+      await expect(db.rpc(claims, 'bridge_split_of', [msg])).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(db.rpc(claims, 'bridge_split_record', [msg, bridgeId, '120363-door@g.us', 'Door check'])).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(db.rpc(claims, 'bridge_split_connect', [msg, session, people.owner.member, 2])).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(db.rpc(claims, 'bridge_runtime_of', [connection])).rejects.toMatchObject({ code: 'forbidden' });
+    }
+    expect((await asOwner(c => c.query('select count(*)::int n from public.bridge_splits where message_id = $1', [msg]))).rows[0].n).toBe(0);
+  });
+
   it('/split refuses a name nobody here has, before anything is made', async () => {
     const before = groupCalls.length;
     expect((await command('owner', '/split Ops with Zed')).reply!.text).toMatch(/I don't know "Zed" in this group/);

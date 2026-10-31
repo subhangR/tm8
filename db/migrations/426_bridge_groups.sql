@@ -50,11 +50,15 @@ comment on table public.bridge_splits is
 -- -----------------------------------------------------------------------------
 
 -- What a /split already did, if anything: null, or {conversationId, title, bridgeId}.
+-- Refuses anyone but the bridges worker, like the other split doors (a quiet
+-- null would read as "nothing made yet").
 create or replace function public.bridge_split_of(p_message_id uuid) returns jsonb
-language sql stable security definer set search_path = public, internal, pg_temp as $$
-  select case when internal.is_bridges_worker() then (
-    select jsonb_build_object('conversationId', s.conversation_id, 'title', s.title, 'bridgeId', s.bridge_id)
-      from public.bridge_splits s where s.message_id = p_message_id) end
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_bridges_worker();
+  return (select jsonb_build_object('conversationId', s.conversation_id, 'title', s.title, 'bridgeId', s.bridge_id)
+            from public.bridge_splits s where s.message_id = p_message_id);
+end
 $$;
 revoke all on function public.bridge_split_of(uuid) from public;
 grant execute on function public.bridge_split_of(uuid) to tm8_app;
