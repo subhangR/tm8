@@ -125,6 +125,13 @@ test.describe('phone shell', () => {
     await page.screenshot({ path: info.outputPath('43-phone-bridge-routing.png'), fullPage: true });
     await page.getByRole('tab', { name: 'Health' }).click();
     await page.screenshot({ path: info.outputPath('44-phone-bridge-health.png') });
+    // The phone page carries the loops client (#1448 after #1470): the Loops tab is the live one.
+    await page.getByRole('tab', { name: 'Loops' }).click();
+    await expect(page.getByTestId('bridge-loops').getByRole('button', { name: 'Stand-up nudge', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: info.outputPath('46-phone-bridge-loops.png'), fullPage: true });
+    await page.getByRole('tab', { name: 'People' }).click();
+    await page.screenshot({ path: info.outputPath('47-phone-bridge-people.png'), fullPage: true });
     await page.getByRole('button', { name: /^Status: live/ }).click();
     await page.screenshot({ path: info.outputPath('45-phone-status-menu.png') });
   });
