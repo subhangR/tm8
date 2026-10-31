@@ -29,7 +29,7 @@ export function PeopleTab({ view, port, onOpenEntity }: {
             ? (p) => <InviteToSpace spaceId={view.spaceId} bridgeId={view.id} participant={p} createInvite={createInvite} />
             : undefined}
         />
-        <Posters view={view} />
+        <div className="brg-people__posters"><Posters view={view} /></div>
       </div>
     );
   }

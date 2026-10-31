@@ -173,3 +173,7 @@
   width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm);
   background: var(--pn-card); color: var(--pn-ink);
 }
+
+/* Under lane P's roster, the posters sit on the roster's own inset (.brp's
+   14px), not flush at the card edge. */
+.brg-people__posters { padding: 0 14px 12px; }

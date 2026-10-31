@@ -63,7 +63,9 @@
 /* A <button> keeps the UA's black text unless told otherwise: unreadable in dark. */
 .brp__chip { padding: 0; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; }
 
-.brp__actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+/* align-items: flex-start: an inline panel opened in this row (B3's Invite)
+   is taller than the buttons; stretch would grow its siblings with it. */
+.brp__actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; }
 .brp__btn {
   padding: 3px 9px;
   border: 1px solid var(--pn-line);
