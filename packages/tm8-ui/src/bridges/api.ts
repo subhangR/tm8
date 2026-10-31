@@ -1,3 +1,5 @@
+import type { BridgePeoplePort } from './people';
+import type { CreateInviteInput, SpaceId, SpaceInviteView } from '@tm8/contract';
 import type {
   BridgeDetailView,
   BridgeHandleAppearance,
@@ -77,6 +79,10 @@ export interface BridgesPort extends BridgesClient {
    * reason (`bridges.test`, `bridges.history.import`, the connection ops).
    */
   serves(op: string): boolean;
+  /** Lane P's roster port (`bridges.participants.*`); absent on surfaces that do not serve it. */
+  people?: BridgePeoplePort;
+  /** B3's *Invite to space* door (`seam.commands.createInvite`); absent where invites are not wired. */
+  createInvite?: (spaceId: SpaceId, input: CreateInviteInput) => Promise<SpaceInviteView>;
 }
 
 const mutation = () => ({ clientMutationId: nextMutationId() });

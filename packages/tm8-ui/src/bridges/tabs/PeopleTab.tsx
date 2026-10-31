@@ -1,16 +1,38 @@
 import type { BridgeDetailView } from '@tm8/contract';
 import { shortDate } from '../../kit/time';
+import type { BridgesPort } from '../api';
+import { InviteToSpace } from '../invite';
+import { BridgePeopleTab } from '../people';
 
 /**
- * PEOPLE (§4.4). The participant roster and its row actions (mute, assert,
- * unlink, invite) are lane P's `BridgePeopleTab` over
- * `bridges.participants.list`; whichever of the two PRs merges second mounts
- * it here, in place of the roster note below. Until then this tab draws what
- * `bridges.get` already answers: the counts, and who has been posting
- * through the bridge (from the outbox, D23).
+ * PEOPLE (§4.4). Where the node serves it (`port.people`), the roster is lane
+ * P's `BridgePeopleTab` over `bridges.participants.*` (D50-D52), with B3's
+ * *Invite to space* on guest rows (D60). Otherwise, as on the fixture seam,
+ * the tab draws what `bridges.get` already answers: the counts. Who has been
+ * posting through the bridge (from the outbox, D23) shows in both.
  */
-export function PeopleTab({ view }: { view: BridgeDetailView }) {
+export function PeopleTab({ view, port, onOpenEntity }: {
+  view: BridgeDetailView;
+  port: BridgesPort;
+  onOpenEntity?: (id: string) => void;
+}) {
   const { participants, linked, guestsSeen7d } = view.people;
+  const createInvite = port.createInvite;
+  if (port.people) {
+    return (
+      <div className="brg-people">
+        <BridgePeopleTab
+          bridgeId={view.id}
+          port={port.people}
+          onOpenEntity={onOpenEntity}
+          renderInvite={createInvite
+            ? (p) => <InviteToSpace spaceId={view.spaceId} bridgeId={view.id} participant={p} createInvite={createInvite} />
+            : undefined}
+        />
+        <Posters view={view} />
+      </div>
+    );
+  }
   return (
     <div className="brg-people" data-testid="bridge-people">
       <dl className="brg-facts">
@@ -19,9 +41,17 @@ export function PeopleTab({ view }: { view: BridgeDetailView }) {
         <div><dt>Guests seen this week</dt><dd>{guestsSeen7d}</dd></div>
       </dl>
       <p className="brg-hint" data-testid="bridge-people-roster-note">
-        The roster (each person, their link state, mute and <em>This is…</em>) arrives with
-        bridges.participants.list.
+        The roster (each person, their link state, mute and <em>This is…</em>) shows where this
+        node serves bridges.participants.list.
       </p>
+      <Posters view={view} />
+    </div>
+  );
+}
+
+function Posters({ view }: { view: BridgeDetailView }) {
+  return (
+    <>
       <h3 className="set-eyebrow brg-subhead">Posting through this bridge</h3>
       {view.recentPosters.length === 0 ? (
         <p className="brg-hint">Nobody in tm8 has posted through this bridge yet.</p>
@@ -40,6 +70,6 @@ export function PeopleTab({ view }: { view: BridgeDetailView }) {
           </tbody>
         </table>
       )}
-    </div>
+    </>
   );
 }
