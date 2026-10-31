@@ -113,12 +113,16 @@ export interface PendingHandover {
 
 /*
  * The item carries the hand-over id only inside its reason, as the CLI hint
- * the server writes (`… Accept in tm8: tm8 bridge handover accept <id> (or
- * decline <id>)`, migration 411). Anchored on that exact phrase: a reason
- * without it is some other item on the bridge. Interim until the item exposes
- * the signal key or the id as a field.
+ * the server writes LAST (`… Accept in tm8: tm8 bridge handover accept <id>
+ * (or decline <id>)`, migration 411). Anchored on that whole tail, to the end
+ * of the string, with the id repeated: the group's own title comes earlier in
+ * the same reason and any member can rename the group, so a title carrying
+ * the phrase must never be what matches. A reason without the tail is some
+ * other item on the bridge. Interim until the item exposes the signal key or
+ * the id as a field.
  */
-const HANDOVER_HINT = /\s*Accept in tm8: tm8 bridge handover accept ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b.*$/s;
+const UUID_RE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const HANDOVER_HINT = new RegExp(`\\s*Accept in tm8: tm8 bridge handover accept (${UUID_RE}) \\(or decline \\1\\)$`);
 
 export function pendingHandoverOf(item: AttentionRequest): PendingHandover | null {
   if (item.status !== 'open' && item.status !== 'acknowledged') return null;

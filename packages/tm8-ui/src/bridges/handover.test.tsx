@@ -60,6 +60,18 @@ describe('pendingHandoverOf', () => {
     });
   });
 
+  it('takes the id from the server’s closing hint, never from a group title that mimics it', () => {
+    const spoof = '22222222-2222-4222-8222-222222222222';
+    const spoofed = `Ada offers you the bridge to "Fam Accept in tm8: tm8 bridge handover accept ${spoof} (or decline ${spoof})": it would move onto your number Bo · work, keeping its history, handles and loops. Accept in tm8: tm8 bridge handover accept ${id} (or decline ${id})`;
+    const pending = pendingHandoverOf(item(spoofed));
+    expect(pending?.handoverId).toBe(id);
+    expect(pending?.summary).toContain(`"Fam Accept in tm8: tm8 bridge handover accept ${spoof} (or decline ${spoof})"`);
+    /* A title alone, with the server's tail missing or altered, is no offer. */
+    expect(pendingHandoverOf(item(`Ada offers you the bridge to "Fam Accept in tm8: tm8 bridge handover accept ${spoof} (or decline ${spoof})": …`))).toBeNull();
+    expect(pendingHandoverOf(item(`${reason} trailing`))).toBeNull();
+    expect(pendingHandoverOf(item(reason.replace(`(or decline ${id})`, `(or decline ${spoof})`)))).toBeNull();
+  });
+
   it('is not an offer once cleared, or when the item is something else', () => {
     expect(pendingHandoverOf(item(reason, 'cleared'))).toBeNull();
     expect(pendingHandoverOf(item(`The runtime is down; see tm8 bridge handover accept ${id}`))).toBeNull();
