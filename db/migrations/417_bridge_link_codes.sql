@@ -210,8 +210,15 @@ begin
   perform internal.require_human_auth_kind();
   identity := internal.require_identity();
   select * into l from public.bridge_identity_links where id = p_link_id for update;
+  -- The own arm honours the session pin (227) exactly as my_bridge_links and
+  -- 395's RLS do: a session pinned to space Y never reaches (revokes or reads
+  -- back) an assertion made in space X, even one naming the caller. The admin
+  -- arm is is_space_admin, pinned already (232).
   if l.id is null
-     or not (l.identity_id = identity or (l.space_id is not null and internal.is_space_admin(l.space_id))) then
+     or not ((l.identity_id = identity
+              and (l.space_id is null or internal.session_space_id() is null
+                   or l.space_id = internal.session_space_id()))
+             or (l.space_id is not null and internal.is_space_admin(l.space_id))) then
     raise exception 'link not found' using errcode = 'P0002';
   end if;
   if l.revoked_at is null then

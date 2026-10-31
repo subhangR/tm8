@@ -192,6 +192,42 @@ describe('bridges.links.list and revoke (§4.6)', () => {
   });
 });
 
+describe('revoke under a session pin (227; identity-id-gate review of 417)', () => {
+  const pinnedAs = <T>(identityId: string, pin: string, fn: (q: Querier) => Promise<T>) =>
+    db.tx({ identityId, authKind: 'browser', requestId: randomUUID(), sessionSpaceId: pin }, fn);
+  const link = async (externalId: string, identity: string, space: string | null, method: 'admin' | 'code') =>
+    (await scratch.query<{ id: string }>(`insert into public.bridge_identity_links(provider, external_id, identity_id,
+      method, space_id, verified_at) values ('whatsapp',$1,$2,$3,$4,now()) returning id`, [externalId, identity, method, space]))[0]!.id;
+  const revokedAt = async (id: string) =>
+    (await scratch.query<{ r: string | null }>('select revoked_at::text as r from public.bridge_identity_links where id = $1', [id]))[0]!.r;
+
+  it('a session pinned to Y gets not_found on a space-X assertion naming itself, and nothing changes', async () => {
+    const xRow = await link('919000000101@s.whatsapp.net', plainIdentity, otherSpace, 'admin');
+    const out = await refusal(pinnedAs(plainIdentity, spaceId, q => q.rpc('revoke_bridge_link', [xRow])));
+    expect(out.code).toBe('not_found');
+    expect(JSON.stringify(out)).not.toContain('Other');
+    expect(await revokedAt(xRow)).toBeNull();
+    // Unpinned, the same identity still revokes its own assertion (the own arm).
+    const unpinned = await as(plainIdentity, q => q.rpc<{ revokedAt: string | null }>('revoke_bridge_link', [xRow]));
+    expect(unpinned.revokedAt).not.toBeNull();
+  });
+
+  it('pinned, the identity still revokes its own unscoped link and an assertion in the pinned space', async () => {
+    const own = await link('919000000102@s.whatsapp.net', plainIdentity, null, 'code');
+    const here = await link('919000000103@s.whatsapp.net', plainIdentity, spaceId, 'admin');
+    expect((await pinnedAs(plainIdentity, spaceId, q => q.rpc<{ revokedAt: string | null }>('revoke_bridge_link', [own]))).revokedAt).not.toBeNull();
+    expect((await pinnedAs(plainIdentity, spaceId, q => q.rpc<{ revokedAt: string | null }>('revoke_bridge_link', [here]))).revokedAt).not.toBeNull();
+  });
+
+  it('the admin arm is unchanged: an admin pinned to the space revokes an assertion there, not one elsewhere', async () => {
+    const here = await link('919000000104@s.whatsapp.net', plainIdentity, spaceId, 'admin');
+    expect((await pinnedAs(ownerIdentity, spaceId, q => q.rpc<{ revokedAt: string | null }>('revoke_bridge_link', [here]))).revokedAt).not.toBeNull();
+    const there = await link('919000000105@s.whatsapp.net', plainIdentity, otherSpace, 'admin');
+    expect((await refusal(pinnedAs(ownerIdentity, spaceId, q => q.rpc('revoke_bridge_link', [there])))).code).toBe('not_found');
+    expect(await revokedAt(there)).toBeNull();
+  });
+});
+
 describe('a code as the group typed it (B3 follow-up, D59)', () => {
   const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const other = (ch: string) => ALPHABET[(ALPHABET.indexOf(ch) + 7) % ALPHABET.length]!;
