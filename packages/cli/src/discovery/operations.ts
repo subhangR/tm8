@@ -2096,7 +2096,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [--reply-to <parent-message-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [--reply-to <parent-message-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--here-only] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -2113,6 +2113,7 @@ const ROWS: Record<OperationName, Row> = {
       'reply with the exact target from an incoming envelope: `--to <anchor-id> --reply-to <message-id>`',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
       'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
+      '`--here-only` keeps the message in tm8: no bridge sends it, not even a reply to a bridged message (Bridges §4.5, D76)',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
@@ -4700,11 +4701,12 @@ const COMMAND_ALIASES = new Map<string, {
 }>([
   ['message reply', {
     path: ['message', 'reply'],
-    syntax: 'tm8 message reply <message-id> [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syntax: 'tm8 message reply <message-id> [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--here-only] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     summary: 'Reply through a delivered message’s immutable source route',
     notes: [
       'the Server derives both anchor and parent from the delivered message id; no ambient last-source state is used',
       'requires the session-bound agent credential for the work session that received that message',
+      '`--here-only` keeps the reply in tm8: a reply to a bridged message crosses by default, and this stops it (Bridges §4.5, D76)',
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],

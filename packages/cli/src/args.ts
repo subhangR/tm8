@@ -97,6 +97,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'confirm-untrusted',   // session spawn --confirm-untrusted
   'force-new-task',      // session spawn/dispatch --force-new-task
   'no-wait',             // session spawn --no-wait — return at admission, not once running
+  'here-only',           // message send|reply --here-only — no bridge sends it (Bridges §4.5, D76)
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
