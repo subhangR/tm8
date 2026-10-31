@@ -3459,7 +3459,7 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
         spaceId: request.spaceId,
         teamMemberId: request.teamMemberId,
         parentSessionId: null,
-        taskIds: [request.taskId],
+        taskIds: request.taskId ? [request.taskId] : [],
         projectId: request.projectId,
         mode: null,
         model: null,

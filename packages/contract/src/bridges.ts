@@ -81,7 +81,12 @@ export interface BridgeFacts {
     memberCount: number | null;
   };
   /** The tm8 side. Also the `bridged_to` edge. */
-  target: { kind: BridgeTargetKind; id: EntityId; title: string };
+  /**
+   * `live` (425): whether the target can take a message now — a session that
+   * runs, a chat or channel not deleted. A stopped session is resumed (else
+   * replaced) by the next message that routes to it. Absent before 425.
+   */
+  target: { kind: BridgeTargetKind; id: EntityId; title: string; live?: boolean };
   policy: BridgePolicy;
   status: BridgeStatus;
   health: {
@@ -560,7 +565,7 @@ const BridgeFactsShape = {
     externalId: z.string(), kind: z.enum(['group', 'channel', 'dm']), title: z.string(),
     memberCount: z.number().int().nonnegative().nullable(),
   }).strict(),
-  target: z.object({ kind: z.enum(['chat', 'work_session', 'channel']), id: Id, title: z.string() }).strict(),
+  target: z.object({ kind: z.enum(['chat', 'work_session', 'channel']), id: Id, title: z.string(), live: z.boolean().optional() }).strict(),
   policy: BridgePolicySchema,
   status: z.enum(['live', 'degraded', 'paused', 'ended']),
   health: z.object({

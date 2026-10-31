@@ -51,6 +51,11 @@ export interface BridgeRuntimeRouteOptions {
   readonly connectionAuth?: BridgeConnectionAuthPort;
   /** Delivers a stored inbound message to its session target and its directed workers (413 §5). */
   readonly deliver?: (messageId: string) => Promise<unknown>;
+  /**
+   * R11 (425): resumes, else replaces, a bridge's session target that is not
+   * running, before the message is delivered to it. Absent: delivered as is.
+   */
+  readonly keepSession?: (bridgeId: string, messageId: string) => Promise<unknown>;
   /** Fetches inbound media into file entities after commit (413 §4). */
   readonly media?: { kick(): Promise<number> };
   /** Starts a queued chat turn (the orchestrator's wake). */
@@ -72,6 +77,9 @@ interface InboundResult {
   command?: boolean;
   reason?: string;
   wakeChat?: { chatId: string; identityId: string } | null;
+  bridgeId?: string;
+  /** 425: a routed copy for a session target, and whether that session is running. */
+  targetSession?: { sessionId: string; live: boolean } | null;
 }
 
 function claimsOf(identity: RequestIdentity, requestId: string): DbClaims {
@@ -215,7 +223,16 @@ async function inbound(
   if (result.status === 'stored' && Array.isArray(frame.media) && frame.media.length > 0) void o.media?.kick();
   if (result.status === 'stored' && !result.command && result.messageId && o.deliver) {
     const messageId = result.messageId;
-    void o.deliver(messageId).catch((err) => o.log?.(`[bridges] delivery of ${messageId} failed: ${(err as Error).message}`));
+    const deliver = o.deliver;
+    // R11: a session that stopped is resumed (or replaced) first, so the copy
+    // lands on a session that runs.
+    const keep = result.targetSession && !result.targetSession.live && result.bridgeId && o.keepSession
+      ? o.keepSession(result.bridgeId, messageId)
+      : Promise.resolve();
+    void keep
+      .catch((err) => o.log?.(`[bridges] keeping the session of ${result.bridgeId} failed: ${(err as Error).message}`))
+      .then(() => deliver(messageId))
+      .catch((err) => o.log?.(`[bridges] delivery of ${messageId} failed: ${(err as Error).message}`));
   }
   return { status: result.status === 'refused' ? 409 : 200, body: result };
 }
