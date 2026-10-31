@@ -69,13 +69,19 @@ describe('useLaunchPort', () => {
     expect(result.current.profileFor('ent-tm-scout')).toMatchObject({ source: 'space-default' });
   });
 
-  it('omits onSpawn when the host has no dispatcher, so Launch stays refused', () => {
+  it('omits onSpawn when the host has no dispatcher, so Launch stays refused', async () => {
     const { result } = renderHook(() => useLaunchPort(gateDataStub()));
     expect(result.current.onSpawn).toBeUndefined();
+    expect(result.current.onLaunchStarted).toBeUndefined();
 
+    /* A host's verb runs through the launch hand-off (task 01a182d2): a launch
+       the popup did not hand over reaches the host's own verb unchanged. */
     const spawn = vi.fn();
     const wired = renderHook(() => useLaunchPort(gateDataStub(), { onSpawn: spawn }));
-    expect(wired.result.current.onSpawn).toBe(spawn);
+    const input = { clientMutationId: 'not-handed-over' } as Parameters<NonNullable<typeof wired.result.current.onSpawn>>[0];
+    await wired.result.current.onSpawn!(input);
+    expect(spawn).toHaveBeenCalledWith(input);
+    expect(wired.result.current.onLaunchStarted).toBeTypeOf('function');
   });
 
   /* The node refuses a content member the subject's kind does not take, and

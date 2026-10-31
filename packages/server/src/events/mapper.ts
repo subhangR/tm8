@@ -588,6 +588,9 @@ export class WorkspaceEventMapper {
       }
       case 'session.process_changed': {
         const session = this.need(entities, str(p['id']), seq, 'session');
+        // 403: present only on an ending a node recorded itself, so every
+        // other event projects exactly as before.
+        const endedByNode = str(p['endedByNode']);
         return {
           type: row.event_type,
           sessionId: session.id,
@@ -595,6 +598,7 @@ export class WorkspaceEventMapper {
           to: str(p['to']),
           endedKind: str(p['endedKind']),
           endedReason: str(p['endedReason']),
+          ...(endedByNode ? { endedByNode } : {}),
         };
       }
       case 'edge.ended': {

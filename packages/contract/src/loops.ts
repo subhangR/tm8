@@ -18,9 +18,23 @@ export const LOOP_RETRY_DELAY_DEFAULT_SECONDS = 300;
 export const LOOP_PREVIEW_DEFAULT_COUNT = 5;
 export const LOOP_PREVIEW_MAX_COUNT = 10;
 export const LOOP_PAUSE_MAX_DAYS = 365;
+/** Bridges L (D26): the groups a loop posts to, each with its own text. */
+export const LOOP_TARGETS_MAX = 32;
+export const LOOP_TARGET_TEXT_MAX = 4000;
+/** An interactive loop session closes after this long with nothing addressed to it. */
+export const LOOP_INTERACTIVE_IDLE_MINUTES = 30;
 
-export type LoopAction = 'spawn' | 'dispatch' | 'tool';
-export type LoopConcurrency = 'skip' | 'queue';
+/** `post` (Bridges L, D26) posts each target's text and starts no session. */
+export type LoopAction = 'spawn' | 'dispatch' | 'tool' | 'post';
+/** `replace` (D26): a new run ends the previous live one. */
+export type LoopConcurrency = 'skip' | 'queue' | 'replace';
+/** D26: `one-shot` posts and closes; `interactive` stays for the conversation and closes after 30 idle minutes. */
+export type LoopMode = 'one-shot' | 'interactive';
+/** One group a loop posts to. For `post`, `text` is the message (null: the prompt); for an agent loop, that group's own instruction. */
+export interface LoopTarget { bridgeId: EntityId; text: string | null }
+/** What one run did in one group (v2 §2.2's Loops tab). */
+export type LoopRunTargetResult = 'pending' | 'posted' | 'paused' | 'held' | 'superseded' | 'refused';
+export interface LoopRunTarget { bridgeId: EntityId; result: LoopRunTargetResult; reason: string | null; messageId: EntityId | null }
 export type LoopRunTrigger = 'schedule' | 'manual';
 export type LoopRunStatus = 'running' | 'completed' | 'failed' | 'skipped' | 'stopped' | 'timed_out';
 export type LoopRunSkipReason = 'overlap' | 'paused' | 'schedule_invalid';
@@ -61,6 +75,11 @@ export interface LoopDefinition {
   concurrency: LoopConcurrency;
   maxRuntimeSeconds: number | null;
   retry: LoopRetryPolicy;
+  /** Bridges L (D26): the default posting targets; not a permission (D23). */
+  targets: LoopTarget[];
+  mode: LoopMode;
+  /** Set by a space admin only: the loop's posts are never held by quiet hours. */
+  quietHoursExempt: boolean;
 }
 
 export interface LoopSchedulePreview {
@@ -103,6 +122,8 @@ export interface LoopRun {
   actedAs: ActorSummary | null;
   endedKind: string | null;
   usage: LoopRunUsage | null;
+  /** Per target (Bridges L): posted · paused · held (quiet hours) · superseded · refused. */
+  targets: LoopRunTarget[];
 }
 
 export type LoopActingVia = 'armer' | 'fallback' | 'none';
@@ -170,8 +191,10 @@ const Instant = z.string().datetime({ offset: true });
 // Lazy: schemas.ts and this module import each other through index.ts.
 const Actor = z.lazy(() => ActorSummarySchema);
 
-export const LoopActionSchema = z.enum(['spawn', 'dispatch', 'tool']);
-export const LoopConcurrencySchema = z.enum(['skip', 'queue']);
+export const LoopActionSchema = z.enum(['spawn', 'dispatch', 'tool', 'post']);
+export const LoopConcurrencySchema = z.enum(['skip', 'queue', 'replace']);
+export const LoopModeSchema = z.enum(['one-shot', 'interactive']);
+export const LoopRunTargetResultSchema = z.enum(['pending', 'posted', 'paused', 'held', 'superseded', 'refused']);
 export const LoopRunTriggerSchema = z.enum(['schedule', 'manual']);
 export const LoopRunStatusSchema = z.enum(['running', 'completed', 'failed', 'skipped', 'stopped', 'timed_out']);
 export const LoopRunSkipReasonSchema = z.enum(['overlap', 'paused', 'schedule_invalid']);
@@ -204,6 +227,14 @@ export const LoopSpawnConfigSchema = z.object({
 
 export const LoopRetryPolicySchema = z.object({ attempts: RetryAttempts, delaySeconds: RetryDelay }).strict();
 
+export const LoopTargetSchema = z.object({
+  bridgeId: Id, text: z.string().trim().min(1).max(LOOP_TARGET_TEXT_MAX).nullable(),
+}).strict();
+const LoopTargets = z.array(LoopTargetSchema).max(LOOP_TARGETS_MAX);
+export const LoopRunTargetSchema = z.object({
+  bridgeId: Id, result: LoopRunTargetResultSchema, reason: z.string().nullable(), messageId: Id.nullable(),
+}).strict();
+
 export const LoopDefinitionSchema = z.object({
   title: LoopTitle,
   schedule: LoopScheduleText,
@@ -218,6 +249,9 @@ export const LoopDefinitionSchema = z.object({
   concurrency: LoopConcurrencySchema,
   maxRuntimeSeconds: LoopMaxRuntime.nullable(),
   retry: LoopRetryPolicySchema,
+  targets: LoopTargets,
+  mode: LoopModeSchema,
+  quietHoursExempt: z.boolean(),
 }).strict();
 
 const PartialRetry = z.object({ attempts: RetryAttempts.optional(), delaySeconds: RetryDelay.optional() }).strict();
@@ -236,6 +270,9 @@ export const LoopDefinitionDraftSchema = z.object({
   concurrency: LoopConcurrencySchema.optional(),
   maxRuntimeSeconds: LoopMaxRuntime.nullable().optional(),
   retry: PartialRetry.optional(),
+  targets: LoopTargets.optional(),
+  mode: LoopModeSchema.optional(),
+  quietHoursExempt: z.boolean().optional(),
 }).strict();
 
 export const LoopDefinitionPatchSchema = z.object({
@@ -252,6 +289,9 @@ export const LoopDefinitionPatchSchema = z.object({
   concurrency: LoopConcurrencySchema.optional(),
   maxRuntimeSeconds: LoopMaxRuntime.nullable().optional(),
   retry: PartialRetry.optional(),
+  targets: LoopTargets.optional(),
+  mode: LoopModeSchema.optional(),
+  quietHoursExempt: z.boolean().optional(),
 }).strict();
 
 export const LoopSchedulePreviewSchema = z.object({
@@ -273,6 +313,7 @@ export const LoopRunSchema = z.object({
   exitCode: z.number().int().nullable(), outputTail: z.string().nullable(),
   actedAs: Actor.nullable(), endedKind: z.string().nullable(),
   usage: LoopRunUsageSchema.nullable(),
+  targets: z.array(LoopRunTargetSchema),
 }).strict();
 
 export const LoopViewStateSchema = z.object({
@@ -324,6 +365,8 @@ export const LoopRunResultSchema = z.object({ run: LoopRunSchema }).strict();
 
 type Assert<T extends true> = T;
 export type LoopShapeProof = [
+  Assert<SameShape<z.infer<typeof LoopTargetSchema>, LoopTarget>>,
+  Assert<SameShape<z.infer<typeof LoopRunTargetSchema>, LoopRunTarget>>,
   Assert<SameShape<z.infer<typeof LoopSpawnConfigSchema>, LoopSpawnConfig>>,
   Assert<SameShape<z.infer<typeof LoopDefinitionSchema>, LoopDefinition>>,
   Assert<SameShape<z.infer<typeof LoopDefinitionDraftSchema>, LoopDefinitionDraft>>,

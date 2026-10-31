@@ -6,11 +6,22 @@
 export {
   WorktreeManager,
   isContainedIn,
+  type PoolLaneAdoption,
   type WorktreeAddParams,
   type WorktreeListEntry,
   type WorktreeManagerOptions,
   type WorktreePreflight,
 } from './WorktreeManager.js';
+export {
+  POOL_IDLE_EXPIRY_MS,
+  WarmLanePool,
+  type PoolClaimRequest,
+  type PoolLaneSnapshot,
+  type PoolLaneState,
+  type PoolMaintenanceReport,
+  type PoolSweepReport,
+  type WarmLanePoolOptions,
+} from './warm-pool.js';
 export {
   GIT_ENV_KEYS,
   GIT_NO_HOOKS_ARGS,

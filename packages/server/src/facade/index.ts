@@ -1,5 +1,6 @@
 import { registerToolHandlers } from '../tools/handlers.js';
 import { registerLoopHandlers, type LoopHandlerDeps } from '../loops/handlers.js';
+import { loopAuthorityGuard } from '../loops/authority.js';
 import { registerBridgeHandlers, type BridgeHandlerOptions } from '../bridges/handlers.js';
 import { registerLoopRunHandlers } from '../loops/run-handlers.js';
 import type { ToolRuntime } from '../tools/runtime.js';
@@ -66,6 +67,7 @@ import type { FacadeDeps } from './deps.js';
 import type { W2FilesServiceOptions } from './services/w2/files.js';
 
 import { registerW2AuthHandlers } from './handlers/w2/auth.js';
+import { registerW2MetaHandlers } from './handlers/w2/meta.js';
 import { registerW2EdgesPlacementsHandlers } from './handlers/w2/edges-placements.js';
 import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entities-commands-tracking.js';
 import { registerAttentionHandlers } from './services/attention/index.js';
@@ -107,9 +109,12 @@ import { registerServerHandlers } from './handlers/w2/servers.js';
 import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
+import type { BridgeCommandHook } from '../bridges/runtime/command-hook.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly tools?: ToolRuntime;
+  /** Bridges B1b-4: the command executor main.ts builds once; it becomes `FacadeDeps.bridgeCommands`. */
+  readonly bridgeCommands?: BridgeCommandHook;
   /**
    * Loops PR2: the executor port `loops.runNow` fires through and
    * `loops.runs.stop` stops through — the SAME instance the scheduler job
@@ -238,6 +243,7 @@ export function registerFacadeHandlers(
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
     remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
+    ...(deps.bridgeCommands ? { bridgeCommands: deps.bridgeCommands } : {}),
   };
 
   /**
@@ -261,6 +267,8 @@ export function registerFacadeHandlers(
   registerMcpTokenHandlers(registry, facade);
   registerToolHandlers(registry, facade, deps.tools);
   registerLoopHandlers(registry, facade);
+  // Bridges L (D26): a bridge loop's worker asks its owner before what cannot be undone.
+  registry.addGuard(loopAuthorityGuard(facade));
   // Bridges B0a (395): the bridges.* catalog doors.
   registerBridgeHandlers(registry, facade, deps.bridges);
   // Loops PR2: runNow and runs.*, sharing the scheduler's executor port. Mounted here, beside
@@ -272,6 +280,9 @@ export function registerFacadeHandlers(
   registerW2IdentitySpacesHandlers(registry, facade);
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
   registerW2AuthHandlers(registry, facade, deps.sessionSockets ? { sockets: deps.sessionSockets } : {});
+  // meta.get (TM8 Mobile S2): what this node speaks; anonymous, like auth.claim.status.
+  // Its features are read from this registry per request, so the order here is free.
+  registerW2MetaHandlers(registry);
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);

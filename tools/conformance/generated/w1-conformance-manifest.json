@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:9058ef5fb0b1217cbf3d5a17d4e3cb475abaef9c9a2f258be1cbf2a082aab4fd",
+  "catalogDigest": "sha256:b20126666f00c13c7f1efb24dfd5ece4eb7d239486bf65c8c8520fc3ece9e66d",
   "catalog": {
-    "total": 414,
-    "v1": 412,
+    "total": 420,
+    "v1": 418,
     "reserved": 2,
-    "http": 412,
+    "http": 418,
     "ws": 1,
-    "registerableV1Http": 410,
+    "registerableV1Http": 416,
     "methods": {
-      "GET": 138,
-      "POST": 206,
+      "GET": 140,
+      "POST": 210,
       "PATCH": 23,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 145,
-      "command": 267,
+      "read": 147,
+      "command": 271,
       "stream": 2
     },
-    "uniqueNames": 414,
-    "uniqueBindings": 413
+    "uniqueNames": 420,
+    "uniqueBindings": 419
   },
   "reservedOperations": [
     "search.query",
@@ -498,6 +498,34 @@
         "operation": "bridges.conversations.list",
         "method": "GET",
         "path": "/v2/me/bridge-connections/:connectionId/conversations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.offer",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/handover",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.accept",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/accept",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.decline",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/decline",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.handover.withdraw",
+        "method": "POST",
+        "path": "/v2/bridge-handovers/:handoverId/withdraw",
         "status": "registered",
         "source": "server-router"
       },
@@ -2056,6 +2084,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.bootState",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/boot",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.gitStatus",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/git/status",
@@ -2661,6 +2696,13 @@
         "operation": "auth.claim.reissue",
         "method": "POST",
         "path": "/v2/auth/claim/reissue",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "meta.get",
+        "method": "GET",
+        "path": "/v2/meta",
         "status": "registered",
         "source": "server-router"
       },
@@ -3302,7 +3344,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 382
+    "unimplementedV1Http": 388
   },
   "schemas": {
     "additive": {
@@ -4168,6 +4210,74 @@
           "bridges",
           "conversations",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.offer",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.offer",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "offer"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.accept",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.accept",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "accept"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.decline",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.decline",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "decline"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.handover.withdraw",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.handover.withdraw",
+        "intentTags": [
+          "bridges",
+          "handover",
+          "withdraw"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -7912,6 +8022,23 @@
         "publicComposite": null
       },
       {
+        "operation": "execution.bootState",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.bootState",
+        "intentTags": [
+          "execution",
+          "boot",
+          "state"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "execution.gitStatus",
         "noun": "session",
         "exposure": "public",
@@ -9372,6 +9499,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "meta.get",
+        "noun": "node",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/meta.get",
+        "intentTags": [
+          "meta",
+          "get"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

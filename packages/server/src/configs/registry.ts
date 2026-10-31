@@ -44,6 +44,7 @@ import {
 import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
+import { DEFAULT_MOBILE_APP_ID } from '../http/well-known.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
 
@@ -124,6 +125,9 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_STYLE_PREFS_MAX', group: 'Network & access', summary: 'Style preference writes per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute), definedIn: CONFIG },
   { name: 'TM8_STYLE_DEFAULT_MAX', group: 'Network & access', summary: 'Space default-style writes per space per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute), definedIn: CONFIG },
   { name: 'TM8_UI_DIR', group: 'Network & access', summary: 'Built web UI bundle served for non-/v2 paths. Unset in dev, where Vite serves the UI.', default: null, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_APP_ID', group: 'Network & access', summary: 'iOS bundle id and Android package name of the phone app that /.well-known/apple-app-site-association and assetlinks.json vouch for.', default: DEFAULT_MOBILE_APP_ID, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_APPLE_TEAM_ID', group: 'Network & access', summary: 'Apple Developer Team ID that signs the phone app. Unset: /.well-known/apple-app-site-association answers 404.', default: null, definedIn: CONFIG },
+  { name: 'TM8_MOBILE_ANDROID_CERT_SHA256', group: 'Network & access', summary: 'SHA-256 fingerprints of the certificates that sign the Android app (comma-separated AA:BB:…). Unset: /.well-known/assetlinks.json answers 404.', default: null, definedIn: CONFIG },
 
   // ── Storage & database ───────────────────────────────────────────────
   { name: 'TM8_DATABASE_URL', group: 'Storage & database', summary: 'Postgres connection string for the graph.', default: null, definedIn: CONFIG, secret: true },
@@ -164,6 +168,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_WORKTREE_POOL', group: 'Lane launch', summary: 'Warm worktree lanes kept checked out per project, so a launch skips its git checkout (0 = off, at most 8). They live in <dataDir>/worktrees-pool and never count as lanes.', default: '2', definedIn: EXEC_HANDLERS },
   { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
@@ -194,6 +199,12 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_LIVEKIT_URL', group: 'Previews & voice', summary: 'LiveKit server for voice.', default: null, definedIn: CONFIG },
   { name: 'TM8_LIVEKIT_API_KEY', group: 'Previews & voice', summary: 'LiveKit API key.', default: null, definedIn: CONFIG, secret: true },
   { name: 'TM8_LIVEKIT_API_SECRET', group: 'Previews & voice', summary: 'LiveKit API secret.', default: null, definedIn: CONFIG, secret: true },
+
+  // ── Bridges (398: the connector runtime sidecar) ─────────────────────
+  { name: 'TM8_BRIDGE_RUNTIME_TOKEN_FILE', group: 'Bridges', summary: 'File the node writes the connector runtime\'s bridge_runtime bearer to (0600) and keeps fresh; set it to mint at boot.', default: null, definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_COMMAND', group: 'Bridges', summary: 'JSON argv of the connector runtime to start and supervise; unset, the deployment runs it.', default: null, definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_LABEL', group: 'Bridges', summary: 'Label of the runtime\'s session; one live token per label.', default: 'whatsapp-runtime', definedIn: MAIN },
+  { name: 'TM8_BRIDGE_RUNTIME_CWD', group: 'Bridges', summary: 'Working directory the supervised runtime command starts in.', default: null, definedIn: MAIN },
 
   // ── Keys ─────────────────────────────────────────────────────────────
   { name: 'TYPESAFE_API_KEY', group: 'Keys', summary: 'Node key for Jev (TypeSafe), used when a member has none.', default: null, definedIn: MAIN, secret: true },

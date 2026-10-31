@@ -28,6 +28,51 @@ describe('MCP real operation adapter', () => {
     expect(calls.find(c => c.url.includes('/resolve'))?.body).toEqual({ spaceId: 'space', targetIds: ['task'], teamMemberId: 'teammate' });
     expect(calls[0]?.url).toContain('targetId=task');
   });
+  it('once a scope is known attachable, asks for the defaults and attachments while the list is in flight', async () => {
+    const { seam } = harness();
+    let release: () => void = () => {};
+    let hold = false;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const fetch = vi.fn(async (url: string) => {
+      if (hold && url.includes('/mcp/servers?')) await held;
+      const data = url.includes('/resolve') ? { ready: true, selections: [] }
+        : url.endsWith('/credentials') ? []
+        : { items: [server], nextCursor: null, allowed: { register: true, attach: true } };
+      return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const port = createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space');
+    await port.catalog('task', 'teammate');
+    hold = true; fetch.mockClear(); seam.connections.mockClear();
+    const reading = port.catalog('task', 'teammate');
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).includes('/resolve'))).toBe(true));
+    expect(seam.connections).toHaveBeenCalledWith('task', expect.anything());
+    release();
+    expect((await reading).attachedServerIds).toEqual(['server']);
+  });
+  it('reports the connector list’s refusal, whatever the parallel reads answered first', async () => {
+    const { seam } = harness();
+    const refuse = (status: number, message: string) => new Response(JSON.stringify({ error: { code: 'forbidden', message } }), { status, headers: { 'content-type': 'application/json' } });
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/resolve')) return refuse(403, 'defaults refused');
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return refuse(403, 'list refused');
+    });
+    await expect(createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space').catalog('task', 'teammate')).rejects.toThrow('list refused');
+  });
+  it('answers a viewer who may not attach with a catalog, not with the defaults read’s refusal', async () => {
+    const { seam } = harness();
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/resolve')) return new Response(JSON.stringify({ error: { code: 'forbidden', message: 'MCP defaults target is unavailable' } }), { status: 403, headers: { 'content-type': 'application/json' } });
+      const data = url.endsWith('/credentials') ? [] : { items: [server], nextCursor: null, allowed: { register: false, attach: false } };
+      return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const port = createMcpPort(createHttpClient({ fetch }), seam as unknown as Seam, 'space');
+    expect(await port.catalog('task', 'teammate')).toMatchObject({ canAttach: false, defaults: [] });
+    expect(await port.catalog('task', 'teammate')).toMatchObject({ canAttach: false, defaults: [] });
+    // Neither read nor re-read asks the two reads a non-attacher is refused.
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/resolve'))).toBe(false);
+    expect(seam.connections).not.toHaveBeenCalled();
+  });
   it('writes equips edges in the correct direction and deletes only matching edges', async () => {
     const { port, seam } = harness(); await port.attach('task', 'server'); await port.detach('task', 'server');
     expect(seam.commands.createEdge).toHaveBeenCalledWith(expect.objectContaining({ srcId: 'task', dstId: 'server', type: 'equips', props: {} }));

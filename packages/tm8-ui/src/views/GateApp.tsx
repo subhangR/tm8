@@ -118,6 +118,7 @@ import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { REFERENCE_KINDS } from '../domain/launch-selection';
 import { useLaunchPort } from './useLaunchPort';
+import { setLaunchLanding } from './useLaunchHandoff';
 import { useTheme } from '../theme/useTheme';
 import { useStyleSync } from '../theme/useStyleSync';
 import { useCustomKindsSync } from '../data/custom-kinds';
@@ -694,6 +695,13 @@ export function GateApp(props: GateAppProps = {}) {
   /* Under the pinned-rail layout the three modes are the rail's own icons, so
      a stale `desktop-modes=legacy` rollback is ignored there too. */
   const threeModes = shell !== 'mobile' && (isPinnedRailEnabled() || modes === 'three');
+  /* THE LAUNCH HAND-OFF LANDS IN WORK (task 01a182d2), which only the
+     three-mode desktop has; elsewhere a popup keeps its in-card state. Read at
+     press time, so an effect is early enough. */
+  useEffect(() => {
+    setLaunchLanding(threeModes ? 'work' : null);
+    return () => setLaunchLanding(null);
+  }, [threeModes]);
   const threeModesRef = useRef(threeModes);
   threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);

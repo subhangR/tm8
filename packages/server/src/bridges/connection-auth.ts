@@ -18,6 +18,7 @@ import {
   BridgeConnectionAuthFrameSchema, type AuthFrame, type BridgeConnectionAuthFlow, type BridgeConnectionAuthFrame,
   type ConversationsFrame,
 } from '@tm8/contract';
+import type { DbClaims } from '../db/types.js';
 import { fanOutToIdentity, type IdentityAddress, type SubscriptionRegistry } from '../events/subscriptions.js';
 
 /** The runtime hub as begin needs it (B1b-2's BridgeRuntimeHub). */
@@ -25,9 +26,11 @@ export interface BridgeRuntimeLink {
   /**
    * Send `connect` (stateKey and allowlist filled by the hub) to the live
    * runtime for the provider; null when no runtime of that provider is
-   * connected. The hub records `bridge_connections.runtime_id` itself.
+   * connected. The hub records `bridge_connections.runtime_id` itself, under
+   * `claims`: the begin caller's OWN claims, never the bridges worker's, so
+   * 398's bridge_runtime_connect admits only the connection's human owner.
    */
-  connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }): Promise<{ runtimeId: string } | null>;
+  connect(input: { provider: 'whatsapp'; connectionId: string; authFlow?: BridgeConnectionAuthFlow }, claims: DbClaims): Promise<{ runtimeId: string } | null>;
   /** B1b-7: `disconnect {logout}` to the runtime holding the connection; false when no runtime is connected. */
   disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean>;
   /** B1b-7: the runtime's live group list for one connection; never stored. Null when that runtime is not connected. */
@@ -95,7 +98,7 @@ export class ConnectionAuthRelay {
  */
 export function lazyRuntimeLink(hub: () => BridgeRuntimeLink | undefined): BridgeRuntimeLink {
   return {
-    connect: async (input) => (hub() ? hub()!.connect(input) : null),
+    connect: async (input, claims) => (hub() ? hub()!.connect(input, claims) : null),
     disconnect: async (connectionId, opts) => (hub() ? hub()!.disconnect(connectionId, opts) : false),
     listConversations: async (runtimeId, connectionId, requestId) =>
       (hub() ? hub()!.listConversations(runtimeId, connectionId, requestId) : null),

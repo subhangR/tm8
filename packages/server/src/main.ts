@@ -21,7 +21,7 @@ import { McpTestResultSchema } from '@tm8/contract';
 import type { IncomingMessage } from 'node:http';
 import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
-import { CredentialSessionLauncher, type HarnessRegistry } from '@tm8/execution';
+import { CredentialSessionLauncher, type HarnessRegistry, type WarmLanePool } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
@@ -60,6 +60,7 @@ import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './sched
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { createSessionArtifactReclaimJob, sessionHomeRetentionFromEnv } from './scheduler/jobs/session-artifact-reclaim.js';
+import { createWorktreePoolJob } from './scheduler/jobs/worktree-pool.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
@@ -119,6 +120,7 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
+import { createBridgeCommands } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
@@ -545,6 +547,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   let loopExecutor: LoopExecutorPort | undefined;
   // Tools v2 PR-C: also handed to the loop executor below, so a loop can run a tool.
   let tools: ToolRuntime | undefined;
+  /**
+   * Bridges B1b-4: the command executor (v2 §4), built once where the spawn
+   * service exists. The SAME instance fills the `bridgeCommands` slot below,
+   * which the runtime's inbound route and the watchdog's sweep read; without
+   * it nothing a group sends is a command.
+   */
+  const bridgeCommandExecutor = db && execution
+    ? createBridgeCommands({
+        db,
+        spawnService: execution.spawnService,
+        logger: { warn: (message) => console.warn(`[bridges] ${message}`) },
+      })
+    : undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -694,10 +709,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
     // stores its request on the task and answers `undelivered`.
-    execution?.register(
-      registry,
-      delivery ? { dispatchDelivery: delivery.messageDelivery } : {},
-    );
+    execution?.register(registry, {
+      ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
+      // The capacity read's `ghosts` uses the reaper's own stale window (403).
+      ghostStaleAfterMs: lostAfterMsFromEnv(),
+    });
   }
 
   // NOT a stand-in for the durable sequence — that misreading is why this
@@ -857,6 +873,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const ptyWs = execution
     ? createPtyWsServer({
         pty: execution.pty,
+        awaitTerminal: (sessionId) => execution.spawnService.awaitTerminal(sessionId),
         admission: wsAdmission,
         ...(ptyAuthorize ? { authorize: ptyAuthorize } : {}),
         ...(db ? { credentialRecheck: createPtyCredentialRecheck(db) } : {}),
@@ -870,7 +887,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * Idle until a runtime connects. The command executor (B1b-4) is assigned to
    * `bridgeCommands`; until then nothing a group sends is a command.
    */
-  let bridgeCommands: BridgeCommandHook | undefined;
+  let bridgeCommands: BridgeCommandHook | undefined = bridgeCommandExecutor;
   const bridgeHub = db && config.databaseUrl
     ? new BridgeRuntimeHub({
         db,
@@ -1375,6 +1392,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         reclaim: (retention) => runtime.reclaimSessionArtifacts(retention),
         retention: sessionHomeRetentionFromEnv(),
       }));
+      // Warm worktree lanes follow their project's default base and refill
+      // after bursts (TM8_WORKTREE_POOL; worktree reconciliation warms them at
+      // boot).
+      const pool = runtime.worktreePool;
+      if (pool) scheduler.register(createWorktreePoolJob({ maintain: () => pool.maintainAll() }));
     }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing
@@ -1410,6 +1432,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (ghosts.retired > 0) {
       console.log(`  reconciled: retired ${ghosts.retired} ghost session(s) left by a previous run`);
     }
+    if (ghosts.notRecorded > 0) {
+      console.log(`  reconciled: ${ghosts.notRecorded} ghost session(s) had already ended before the write`);
+    }
     // Printed for the same reason the worktree errors below are, and it is the
     // omission of exactly this that hid a node reconciling nothing on every boot:
     // a refusal here leaves rows claiming to be running with no process, which
@@ -1438,6 +1463,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     for (const problem of worktrees.errors) {
       console.log(`  worktree reconciliation could not finish: ${problem.message}`);
     }
+    // Warm lanes are nobody's work, so what the sweep found it removed.
+    if (worktrees.pool) {
+      const { removed, unexpected, errors, warming } = worktrees.pool;
+      if (removed.length > 0) console.log(`  worktree pool: removed ${removed.length} warm lane(s) left by a previous run`);
+      for (const path of unexpected) console.log(`  worktree pool: not a warm lane, left in place: ${path}`);
+      for (const problem of errors) console.log(`  worktree pool could not remove ${problem.path}: ${problem.message}`);
+      if (warming.length > 0) console.log(`  worktree pool: warming lanes for ${warming.length} project(s)`);
+    }
   }
 
   let claimUrl: string | undefined;
@@ -1463,6 +1496,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   }
 
   return { server, subscriptions, events, url, db, delivery, preview, scheduler, execution, claimUrl };
+}
+
+/** How long shutdown waits for the warm lane pool to remove its lanes. */
+const WORKTREE_POOL_DRAIN_BOUND_MS = 3_000;
+
+/**
+ * Close the pool and wait at most `boundMs` for its lanes to leave the disk.
+ * Never rejects and never outlasts the bound: what is left, the next boot's
+ * sweep removes.
+ */
+async function drainWorktreePool(pool: WarmLanePool | null, boundMs: number): Promise<void> {
+  if (!pool) return;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    pool.drain().catch(() => undefined),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, boundMs);
+      timer.unref();
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 export async function main(): Promise<void> {
@@ -1544,9 +1598,14 @@ export async function main(): Promise<void> {
       // Bounded and non-throwing by contract (see recordShutdown), and awaited
       // before the listener closes so the writes actually land. TimeoutStopSec
       // on the unit remains the outer bound.
-      void Promise.resolve(execution?.recordShutdown(signal))
-        .catch(() => undefined)
-        .then((annotated) => {
+      void Promise.all([
+        Promise.resolve(execution?.recordShutdown(signal)).catch(() => undefined),
+        // Warm lanes go with the process that made them. Bounded: a drain
+        // still running when the bound passes is finished by the next boot's
+        // sweep, and must never hold the exit.
+        drainWorktreePool(execution?.worktreePool ?? null, WORKTREE_POOL_DRAIN_BOUND_MS),
+      ])
+        .then(([annotated]) => {
           if (typeof annotated === 'number' && annotated > 0) {
             console.log(`  recorded shutdown reason on ${annotated} live session(s)`);
           }

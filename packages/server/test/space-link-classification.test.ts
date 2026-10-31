@@ -30,6 +30,7 @@ const PASSES: Record<string, string> = {
   'execution.complete': 'settles a session outcome (Spec D1); starts nothing — closeProcess only terminates',
   'execution.sessions.share': 'changes sharing on B\'s own entity; mints no bearer',
   'execution.launch': 'reads the launch posture; no body, no token',
+  'execution.bootState': 'reads a session\'s status and boot phase; no body, no token',
   'execution.liveness': 'reads liveness flags',
   'execution.dispatchers': 'reads the dispatcher list (ids, titles, liveness); starts nothing, no body, no token',
   'containers.stop': 'stops',

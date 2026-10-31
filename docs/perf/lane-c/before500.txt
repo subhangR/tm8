@@ -1,0 +1,110 @@
+measure-spawn [before500] → http://127.0.0.1:4691 · run mvt2y99bwvxn · n=10 per mode · modes scratch, worktree
+node load (1/5/15 min) at start: 30.6 / 38.0 / 42.1
+space 01a1860c-a9dd-74af-8f2b-06a751e0175c · project 01a1860c-ac09-7725-8f65-93e4d743c559 (500 files at /tmp/tm8-measure-mvt2y99bwvxn-gjYFEn) · teammate 01a1860c-ac8f-707e-a9ea-a8c14a7bc42b
+  scratch #1: running · response 2231 ms · running 938 ms · 01a1860c-b014-72e2-a97f-bec4ef6c44a7
+  scratch #2: running · response 1976 ms · running 1370 ms · 01a1860c-bf32-7a7a-8e7e-e90fc5e50918
+  scratch #3: running · response 1603 ms · running 1175 ms · 01a1860c-ccd0-791e-820e-6fdd5680986f
+  scratch #4: running · response 715 ms · running 476 ms · 01a1860c-d66c-7289-b01b-ae94d90ae6ee
+  scratch #5: running · response 1146 ms · running 799 ms · 01a1860c-dc5f-7078-b00b-9d31830b3e4e
+  scratch #6: running · response 1765 ms · running 1264 ms · 01a1860c-e62a-7142-9c02-bd6bd7cb2d46
+  scratch #7: running · response 760 ms · running 378 ms · 01a1860c-f0c1-727a-8fe7-5cb53133a353
+  scratch #8: running · response 1755 ms · running 1410 ms · 01a1860c-f86e-7d5b-bf71-9ae20e3bfb24
+  scratch #9: running · response 985 ms · running 614 ms · 01a1860d-034e-7f4f-aecd-109c6fa3f23e
+  scratch #10: running · response 1062 ms · running 630 ms · 01a1860d-0a3e-7b14-a787-5b5095b64f15
+
+[before500] mode=scratch  n=10  outcomes {"running":10}  load 29.9 / 37.7 / 42.0 → 33.7 / 37.9 / 42.0  (ms)
+  metric                                              p50       p90       max   n
+  request→response                                 1146.1    1976.2    2231.2  10
+  request→running                                   799.0    1370.0    1410.0  10
+  response: handler.resolveOwner                      0.0       0.0       0.1  10
+  response: handler.resolveAssignmentAnchors          5.4      10.0      10.5  10
+  response: handler.putDerivedTasksInStories          0.0       0.0       0.2  10
+  response: handler.inheritedSpawnProjectId           0.0       0.0       0.1  10
+  response: loadSpawnContext                         53.9     112.4     129.7  10
+  response: inheritedPosture                          0.0       0.0       0.1  10
+  response: resolveLaunchConfig                       0.1       0.3       1.0  10
+  response: resolveInteractionProfile                10.5      22.6      32.8  10
+  response: loadIndexHeaders                          1.4       8.9      10.0  10
+  response: createWorkSession                        49.2     105.4     121.9  10
+  response: refreshStartedTasks                       6.5      13.9      14.7  10
+  response: readOomKillCount                          4.5      11.4      13.9  10
+  response: recordNativeSessionId                     5.8      10.1      85.1  10
+  response: recordInteractionProfilePin              14.1      25.2      43.7  10
+  response: issueWorkSessionAgentToken               18.4      44.9      47.0  10
+  response: mcpBind                                  45.7     168.6     246.7  10
+  response: resolveSandboxPosture                     0.0       0.0       0.2  10
+  response: resolveSessionCredentials                41.2     133.5     188.1  10
+  response: harnessSurfaceReads                       0.2       0.7       3.9  10
+  response: composeManifest                           2.0      13.6      23.3  10
+  response: storyContext                             26.9      49.1     127.6  10
+  response: designContext                             3.6      21.5      60.9  10
+  response: promptV2Runtime                         202.3     372.5     636.1  10
+  response: composeLaunchPrompt                       0.2       0.8       2.1  10
+  response: assertAgentRuntime                        0.0       0.2       0.2  10
+  response: writeManifestFile                        13.1      37.3     123.7  10
+  response: recordManifest                            8.6      17.8      28.3  10
+  response: scratchDirectory                          0.4       8.9      25.8  10
+  response: seedClaudeTrust                           7.4      10.4      13.6  10
+  response: credentialRecheckBeforePty                0.0       0.0       0.1  10
+  response: ptySpawn                                  2.5       9.7      12.6  10
+  response: credentialRecheckAfterPty                 0.0       0.0       0.0  10
+  response: bootAndFirstPromptSettlement            150.1     152.8     158.3  10
+  response: transitionRunning                        19.3      59.7      73.9  10
+  response: handler.assembleCommandResult           365.2     579.5    1157.0  10
+  worktree #1: running · response 2352 ms · running 1475 ms · 01a1860d-149d-78e1-a339-c96bf7829179
+  worktree #2: running · response 1635 ms · running 942 ms · 01a1860d-2014-7caa-891d-eeebd03c8f88
+  worktree #3: running · response 1124 ms · running 854 ms · 01a1860d-294e-777e-906d-641a74ee8cb8
+  worktree #4: running · response 1696 ms · running 1147 ms · 01a1860d-3426-7545-98aa-9e4d9d003a9f
+  worktree #5: running · response 1555 ms · running 1155 ms · 01a1860d-3e5e-7096-883d-e1f41325c0f2
+  worktree #6: running · response 1281 ms · running 950 ms · 01a1860d-47a1-790e-965b-dae76baa7020
+  worktree #7: running · response 2233 ms · running 1787 ms · 01a1860d-52eb-7e63-9b11-c74619895546
+  worktree #8: running · response 1456 ms · running 1076 ms · 01a1860d-5fdb-71ca-b069-5e74e215d579
+  worktree #9: running · response 1718 ms · running 1330 ms · 01a1860d-6ee1-7455-934e-38b7ce1316d6
+  worktree #10: running · response 1940 ms · running 1442 ms · 01a1860d-788f-7bdf-9654-cb09cd3b9d5d
+
+[before500] mode=worktree  n=10  outcomes {"running":10}  load 33.7 / 37.9 / 42.0 → 35.5 / 38.0 / 41.9  (ms)
+  metric                                              p50       p90       max   n
+  request→response                                 1634.8    2233.2    2352.0  10
+  request→running                                  1147.0    1475.0    1787.0  10
+  response: handler.resolveOwner                      0.0       0.0       0.0  10
+  response: handler.resolveAssignmentAnchors          5.3      21.3      34.3  10
+  response: handler.putDerivedTasksInStories          0.0       0.0       0.0  10
+  response: handler.inheritedSpawnProjectId           0.0       0.0       0.0  10
+  response: loadSpawnContext                         28.3      79.0      81.9  10
+  response: inheritedPosture                          0.0       0.0       0.0  10
+  response: resolveLaunchConfig                       0.1       0.2       0.3  10
+  response: resolveInteractionProfile                 4.8       8.3       8.7  10
+  response: loadIndexHeaders                          0.7       3.1       4.2  10
+  response: provisionWorktree                       447.1     658.6     687.2  10
+  response: createWorkSession                        58.8      77.9     101.1  10
+  response: refreshStartedTasks                       2.7      33.3      34.5  10
+  response: readOomKillCount                          1.7       3.6      13.7  10
+  response: acquireWorktreeLease                      7.8      25.1      78.4  10
+  response: linkSessionToWorktree                    20.4      34.7      34.9  10
+  response: setWorktreeReady                          6.2      12.7      18.0  10
+  response: captureCheckoutBranch                     7.0      14.8      14.9  10
+  response: recordNativeSessionId                     3.7      12.8      15.8  10
+  response: recordInteractionProfilePin               5.6      19.5      75.9  10
+  response: issueWorkSessionAgentToken                8.7      21.1      31.3  10
+  response: mcpBind                                  26.3      66.6     104.1  10
+  response: resolveSandboxPosture                     0.0       0.0       0.0  10
+  response: resolveSessionCredentials                29.3      51.6      68.2  10
+  response: harnessSurfaceReads                       0.3       0.6       2.5  10
+  response: composeManifest                           0.9       1.7      13.0  10
+  response: storyContext                             21.4      55.9      62.8  10
+  response: designContext                             2.9      11.2      33.7  10
+  response: promptV2Runtime                         129.6     321.8     510.4  10
+  response: composeLaunchPrompt                       0.2       0.2       0.2  10
+  response: assertAgentRuntime                        0.0       0.0       0.0  10
+  response: writeManifestFile                        10.6      27.8      30.0  10
+  response: recordManifest                           10.0      36.3      42.1  10
+  response: seedClaudeTrust                          23.4      40.8      47.9  10
+  response: credentialRecheckBeforePty                0.0       0.0       0.0  10
+  response: ptySpawn                                  4.7       9.7      12.1  10
+  response: credentialRecheckAfterPty                 0.0       0.0       0.0  10
+  response: bootAndFirstPromptSettlement            153.2     154.9     157.0  10
+  response: transitionRunning                        19.5      30.5      86.1  10
+  response: handler.assembleCommandResult           387.3     608.4     842.3  10
+
+node load (1/5/15 min) at end: 35.5 / 38.0 / 41.9
+wrote /tmp/laneC-before500.json

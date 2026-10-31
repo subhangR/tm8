@@ -62,7 +62,8 @@ TM8_CONFORMANCE_BASE_URL=http://host:port bun run test:live
 
 `test:live` runs the unchanged black-box suites in `test/*.test.ts` against a
 real Server. They cover envelopes, taxonomy, cursors, idempotency, reads,
-commands, events, execution, projects, and files. These suites are not part of
+commands, events, execution, projects, files, and the phone's `/.well-known`
+app-association files. These suites are not part of
 the historical W1 green gate. The W1 manifest records its frozen 28-handler
 boundary, while the separate current-source I01 inventory records 62 mounted
 handlers; remaining W2 groups and public semantic verification are still

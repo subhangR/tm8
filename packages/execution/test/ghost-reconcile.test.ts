@@ -43,26 +43,31 @@ describe('startup ghost reconciliation', () => {
   afterEach(() => pty.shutdownAll());
 
   it('retires a session left at running by a previous process', async () => {
-    graph.nodeActiveSessions = [{ sessionId: 'ghost-1', status: 'running' }];
+    graph.nodeLiveSessions = [{ sessionId: 'ghost-1', status: 'running' }];
 
     const retired = await service.reconcileNodeGhosts(AUTH);
 
-    expect(retired).toEqual({ retired: 1, errors: [] });
+    expect(retired).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('ghost-1')).toEqual(['failed']);
-    // Retirement goes through the ordinary terminate path, so the ledger records
-    // it like any other terminate rather than a status mutating from nowhere.
-    expect(graph.commands.map((c) => c.operation)).toEqual(['execution.terminate']);
+    // 403: through the node door, in any space. Its durable record is the
+    // `session.process_changed` event naming `endedByNode` (pinned in
+    // node-ghost-sessions-403.pg.test.ts); no member-door
+    // `execution.terminate` command is asked for.
+    expect(graph.nodeEndings).toMatchObject([
+      { sessionId: 'ghost-1', status: 'failed', error: expect.stringMatching(/retired at node startup/) },
+    ]);
+    expect(graph.commands).toEqual([]);
   });
 
   it('retires spawning and idle too, not just running', async () => {
     // A process killed mid-spawn leaves 'spawning'; an agent that went quiet
     // leaves 'idle'. Both hold a slot exactly as firmly as 'running'.
-    graph.nodeActiveSessions = [
+    graph.nodeLiveSessions = [
       { sessionId: 'g-spawning', status: 'spawning' },
       { sessionId: 'g-idle', status: 'idle' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 2, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 2, retired: 2, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('g-spawning')).toEqual(['failed']);
     expect(graph.statusesFor('g-idle')).toEqual(['failed']);
   });
@@ -78,23 +83,23 @@ describe('startup ghost reconciliation', () => {
     // Makes the sweep safe to call at any time, not only at boot — and stops a
     // stray call from killing a running agent.
     pty.spawn({ sessionId: 'alive', command: 'sleep 5', cwd: '/tmp', env: {} });
-    graph.nodeActiveSessions = [
+    graph.nodeLiveSessions = [
       { sessionId: 'alive', status: 'running' },
       { sessionId: 'ghost', status: 'running' },
     ];
 
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 1, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 1, retired: 1, notRecorded: 0, errors: [] });
     expect(graph.statusesFor('alive')).toEqual([]);
     expect(graph.statusesFor('ghost')).toEqual(['failed']);
   });
 
   it('does nothing, quietly, when there are no ghosts', async () => {
-    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
+    expect(await service.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 0, retired: 0, notRecorded: 0, errors: [] });
     expect(graph.transitions).toHaveLength(0);
   });
 
   it('NEVER throws when the graph cannot be read — boot must not depend on cleanup', async () => {
-    graph.listNodeActiveSessionsError = new Error('graph unreachable');
+    graph.listNodeLiveSessionsError = new Error('graph unreachable');
     // Still never rejects — boot must not depend on cleanup. But a total failure
     // is no longer reported as a clean sweep: "nothing to do" and "could not read
     // the graph at all" were the same answer before.
@@ -107,16 +112,16 @@ describe('startup ghost reconciliation', () => {
   it('keeps sweeping when ONE session fails to retire', async () => {
     // One unreadable or un-transitionable row must not strand every other ghost
     // — that would leave the cap consumed by rows we already identified.
-    graph.failTerminateFor.add('bad');
-    graph.nodeActiveSessions = [
+    graph.failNodeWriteFor.add('bad');
+    graph.nodeLiveSessions = [
       { sessionId: 'bad', status: 'running' },
       { sessionId: 'good', status: 'running' },
     ];
 
-    // The swept one is still swept, AND the one that refused is now named. This
-    // is the case that mattered in production: on a node whose owner is not a
-    // member of the session's space EVERY terminate refuses, and the caller saw
-    // only `0` — indistinguishable from a clean boot.
+    // The swept one is still swept, AND the one that refused is now named.
+    // Before 403 this was the production case: on a node whose owner is not a
+    // member of the session's space EVERY retirement refused, and the caller
+    // saw only `0` — indistinguishable from a clean boot.
     const partial = await service.reconcileNodeGhosts(AUTH);
     expect(partial.retired).toBe(1);
     expect(partial.errors).toHaveLength(1);
@@ -134,9 +139,9 @@ describe('startup ghost reconciliation', () => {
       nodeId: null,
       logger: quiet,
     });
-    graph.nodeActiveSessions = [{ sessionId: 'ghost', status: 'running' }];
+    graph.nodeLiveSessions = [{ sessionId: 'ghost', status: 'running' }];
 
-    expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ retired: 0, errors: [] });
+    expect(await anonymous.reconcileNodeGhosts(AUTH)).toEqual({ candidates: 0, retired: 0, notRecorded: 0, errors: [] });
     expect(graph.nodeSessionQueries).toHaveLength(0);
     expect(graph.transitions).toHaveLength(0);
   });
@@ -156,7 +161,7 @@ describe('startup ghost reconciliation', () => {
   // (20%) retired this way across 28 separate restarts, every one recorded as
   // an ordinary 'exited'.
   it('records a ghost as FAILED, distinguishably from an operator terminate', async () => {
-    graph.nodeActiveSessions = [{ sessionId: 'killed-with-host', status: 'running' }];
+    graph.nodeLiveSessions = [{ sessionId: 'killed-with-host', status: 'running' }];
     await service.reconcileNodeGhosts(AUTH);
 
     // The discrimination the incident needed and did not have.

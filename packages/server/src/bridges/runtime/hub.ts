@@ -23,7 +23,7 @@ import type { Duplex } from 'node:stream';
 import { CollabError } from '@tm8/contract';
 import type { AllowlistFrame, ConversationsFrame, MediaFrame, ServerFrame } from '@tm8/contract';
 
-import type { Db } from '../../db/types.js';
+import type { Db, DbClaims } from '../../db/types.js';
 import { createWsServer, type WsServer } from '../../events/ws-server.js';
 import type { EventSink } from '../../events/ws-connection.js';
 import type { RequestIdentity } from '../../http/types.js';
@@ -159,11 +159,16 @@ export class BridgeRuntimeHub {
   }
 
   /** B1b-5's `BridgeRuntimeLink.connect`: start or re-link one connection on its provider's runtime. */
-  async connect(input: BridgeRuntimeConnectInput): Promise<{ runtimeId: string } | null> {
+  /**
+   * `claims` are the begin caller's OWN (406): bridge_runtime_connect admits
+   * the connection's human owner or the bridges worker, so a member request
+   * never binds the worker's backgroundJob claim.
+   */
+  async connect(input: BridgeRuntimeConnectInput, claims: DbClaims): Promise<{ runtimeId: string } | null> {
     const link = [...this.runtimes.values()].find((r) => r.provider === input.provider)
       ?? (this.runtimes.size === 1 ? [...this.runtimes.values()][0] : undefined);
     if (!link) return null;
-    const bound = await this.o.db.rpc<{ allowlist: AllowlistFrame }>(bridgesWorkerClaims(), 'internal.bridge_runtime_connect',
+    const bound = await this.o.db.rpc<{ allowlist: AllowlistFrame }>(claims, 'internal.bridge_runtime_connect',
       [input.connectionId, link.runtimeId]);
     this.send(link.runtimeId, {
       type: 'connect',

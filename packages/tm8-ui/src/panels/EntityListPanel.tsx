@@ -122,7 +122,7 @@ import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. `LaunchQuickConfig` remains the inline fallback
    for surfaces not yet migrated (merge flow). */
-import { LaunchComposerPopup } from '../new-session';
+import { LaunchComposerPopup, type LaunchStarted } from '../new-session';
 import type { FileUploadTask } from '../files/upload';
 import type { LaunchSelectionSources } from '../launch-selection';
 import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch';
@@ -659,6 +659,12 @@ export interface LaunchSources {
   capacity?: LaunchCapacity;
   profileFor?: (teamMemberId: string | null) => ProfileResolution | undefined;
   onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
+  /**
+   * The launch popup's hand-off seam (task 01a182d2): called on the press,
+   * before the node answers. True ⇒ the host shows the launching page and the
+   * popup dismisses at once; false ⇒ the popup keeps its in-card state.
+   */
+  onLaunchStarted?: (launch: LaunchStarted) => boolean;
   onFullOptions?: (entityId: string) => void;
   /**
    * The entity's current description, for the launch popup's body field —
@@ -5565,6 +5571,7 @@ export function Tile({
               jevKeyStatus={props.launch?.jevKeyStatus}
               sessionsSince={props.launch?.sessionsSince}
               onSpawn={props.launch?.onSpawn}
+              onLaunchStarted={props.launch?.onLaunchStarted}
               loadDescription={
                 props.launch?.descriptionOf
                   ? () => props.launch!.descriptionOf!(row.id)
@@ -5884,6 +5891,7 @@ export function Tile({
               jevKeyStatus={props.launch?.jevKeyStatus}
               sessionsSince={props.launch?.sessionsSince}
             onSpawn={props.launch?.onSpawn}
+            onLaunchStarted={props.launch?.onLaunchStarted}
             loadDescription={
               props.launch?.descriptionOf
                 ? () => props.launch!.descriptionOf!(row.id)

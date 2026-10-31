@@ -9,7 +9,7 @@ import {
   type BridgeConnectionAuthFrame, type BridgeConnectionBeginResult, type BridgeConnectionListResult,
   type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
   type BridgeConnectionRemoveResult, type BridgeConversationListResult,
-  type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
+  type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
   type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
 } from '@tm8/contract';
 import { requireSpace, type CliContext } from '../context.js';
@@ -112,6 +112,16 @@ export function renderBridge(b: BridgeView | BridgeDetailView): string {
     for (const r of b.recentPosters) {
       lines.push(`  ${r.displayName}${r.handle ? ` (${r.handle})` : ''} · ${r.actorKind} ${r.actorId} · ${r.posts} posts · last ${r.lastPostAt}`);
     }
+  }
+  if ('summary' in b && b.summary) {
+    const s = b.summary;
+    lines.push(`summary: ${s.coveredMessages} messages through ${s.state.lastAt ?? '—'} · refreshed ${stamp(s.refreshedAt)}` +
+      ` · ${s.unsummarizedMessages} newer verbatim · ${s.state.closedAsks} asks closed`);
+    lines.push(s.state.openAsks.length ? 'open asks:' : 'open asks: none');
+    for (const a of s.state.openAsks) lines.push(`  ${a.at} ${a.author}: ${a.excerpt}`);
+    if (s.state.droppedAsks) lines.push(`  … ${s.state.droppedAsks} older open asks not named`);
+    lines.push(s.onWhat.length ? 'on what:' : 'on what: nothing open');
+    for (const w of s.onWhat) lines.push(`  ${w.assignees.join(', ') || 'unassigned'} · ${w.status} · ${w.title} (${w.taskId})`);
   }
   return lines.join('\n');
 }
@@ -223,13 +233,19 @@ async function bridgeHandleClaim(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['unread', 'since', 'thread', 'limit']); argumentsCount(cmd, 1);
+  assertKnownOptions(cmd, ['unread', 'since', 'latest', 'before', 'thread', 'limit']); argumentsCount(cmd, 1);
   const query: Record<string, string> = {};
   const unread = cmd.options.bool('unread');
   const since = cmd.options.value('since');
-  if (unread && since) throw usage('pass --unread or --since, not both');
+  const latest = cmd.options.bool('latest');
+  const before = cmd.options.value('before');
+  if ([unread, Boolean(since), latest, Boolean(before)].filter(Boolean).length > 1) {
+    throw usage('pass one of --unread, --since, --latest or --before');
+  }
   if (unread) query.unread = 'true';
   if (since) query.since = since;
+  if (latest) query.latest = 'true';
+  if (before) query.before = before;
   const thread = cmd.options.value('thread'); if (thread) query.thread = thread;
   const limit = cmd.options.integer('limit');
   if (limit !== undefined) {
@@ -243,9 +259,9 @@ async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
       const who = `${m.authorName || m.authorId || 'unknown'}${m.handle ? ` (${m.handle})` : ''}`;
       const via = m.origin ? ` [${m.origin.direction === 'in' ? 'from' : 'to'} ${m.origin.externalMessageId}]` : '';
       const reply = m.parentMessageId ? ` ↳${m.parentMessageId}` : '';
-      const tick = m.delivery ? ` {${m.delivery.status}${m.delivery.reason ? `: ${m.delivery.reason}` : ''}}` : '';
-      return `${m.createdAt} ${m.id}${reply} ${who}${via}${tick}: ${m.body.replace(/\s+/g, ' ')}`;
+      return `${m.createdAt} ${m.id}${reply} ${who}${via}: ${m.body.replace(/\s+/g, ' ')}`;
     });
+    if (p.olderCursor) lines.push(`older: tm8 bridge log ${p.bridgeId} --before ${p.olderCursor}`);
     if (p.more) lines.push(`more: tm8 bridge log ${p.bridgeId} --since ${p.lastMessageId}`);
     return lines.join('\n');
   });
@@ -452,6 +468,34 @@ async function connectionWithdraw(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+// Hand-over (D55): offer, then the receiving number's owner accepts in tm8.
+function renderHandover(r: BridgeHandoverResult): string {
+  const h = r.handover;
+  const lines = [`hand-over ${h.id} · ${h.status} · connection ${h.fromConnectionId} → ${h.toConnectionId}`];
+  if (h.status === 'offered') lines.push(`the receiving number's owner accepts with: tm8 bridge handover accept ${h.id}`);
+  if (r.readdressed) lines.push(`${r.readdressed} queued post${r.readdressed === 1 ? '' : 's'} now go out on the new number`);
+  return `${lines.join('\n')}\n${renderBridge(r.bridge)}`;
+}
+
+async function handoverOffer(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['to', 'mutation-id']); argumentsCount(cmd, 1);
+  const to = cmd.options.value('to');
+  if (!to) throw usage('--to <connection-id> is required: the receiving member\'s connection, offered to this Space', 'tm8 bridge connection list');
+  cmd.out.data(await observedInvoke<BridgeHandoverResult>(client(cmd), 'bridges.handover.offer', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, body: { ...mutation(cmd), toConnectionId: to },
+  }), renderHandover);
+  return EXIT_OK;
+}
+
+async function handoverSettle(cmd: CommandContext,
+  operation: 'bridges.handover.accept' | 'bridges.handover.decline' | 'bridges.handover.withdraw'): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  cmd.out.data(await observedInvoke<BridgeHandoverResult>(client(cmd), operation, {
+    params: { handoverId: requireArg(cmd, 0, '<handover-id>') }, body: mutation(cmd),
+  }), renderHandover);
+  return EXIT_OK;
+}
+
 async function connectionRemove(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
   const result = await observedInvoke<BridgeConnectionRemoveResult>(client(cmd), 'bridges.connections.remove', {
@@ -487,6 +531,10 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },
   { path: ['bridge', 'connection', 'withdraw'], run: connectionWithdraw },
+  { path: ['bridge', 'handover', 'offer'], run: handoverOffer },
+  { path: ['bridge', 'handover', 'accept'], run: cmd => handoverSettle(cmd, 'bridges.handover.accept') },
+  { path: ['bridge', 'handover', 'decline'], run: cmd => handoverSettle(cmd, 'bridges.handover.decline') },
+  { path: ['bridge', 'handover', 'withdraw'], run: cmd => handoverSettle(cmd, 'bridges.handover.withdraw') },
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
   { path: ['bridge', 'get'], run: cmd => bridgeShow(cmd, true) },

@@ -30,7 +30,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { McpCatalogEntry } from '@tm8/contract';
 import { SectionFrame } from '../settings-space';
-import { ConnectorLogo } from './connector-logos';
+import { ConnectorLogo, serverLogo } from './connector-logos';
 import { ConnectorDrawer } from './ConnectorDrawer';
 import { ConnectorForm } from './ConnectorForm';
 import { ImportMcpJson } from './ImportMcpJson';
@@ -220,7 +220,10 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
     {sheet?.kind === 'custom' && <section className="mcp-card">
       <h3>{admin ? 'Custom connector' : 'Request a connector'}</h3>
       <ConnectorForm mode={admin ? 'manage' : 'request'} busy={busy} onSave={(input, note) => run(async () => {
-        if (admin) await port.register(input); else await port.request({ definition: input }, note);
+        // An administrator registering a connector IS the approval: without it
+        // the definition defaults to unapproved and the admin is asked to
+        // approve their own connector. A member's copy still goes to request.
+        if (admin) await port.register({ ...input, approved: true }); else await port.request({ definition: input }, note);
         setSheet(null);
       }, admin ? 'Connector registered.' : 'Request sent to the administrators.')} />
       <button type="button" onClick={() => setSheet(null)}>Cancel</button>
@@ -275,7 +278,7 @@ export function ConnectorsTable({ catalog, port, admin, busy, run, refresh, load
                     pill is part of the cell, so the button's own accessible
                     name has to be the connector, not the cell's text. */}
                 <button type="button" className="mcp-row__open" aria-label={`Open ${server.title}`} onClick={() => setActive(server.id)}>
-                  <ConnectorLogo logo={server.source?.catalogId?.replace(/\./g, '-')} title={server.title} />
+                  <ConnectorLogo logo={serverLogo(server.source)} title={server.title} />
                   <span>{server.title}</span>
                   {!server.source?.catalogId && <span className="mcp-pill">Custom</span>}
                 </button>

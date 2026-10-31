@@ -11,7 +11,7 @@ import {
   type Hierarchy,
   type Page,
 } from '@tm8/contract';
-import type { Querier } from '../../db/types.js';
+import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor } from '../context.js';
@@ -349,6 +349,68 @@ async function toCommandResult(
   viewerIdentityId: string,
 ): Promise<CommandResult> {
   const entityId = raw.entity?.id;
+  const entity = entityId ? await buildDetail(q, entityId, viewerIdentityId) : undefined;
+  return shapeCommandResult(raw, entity, await patchesAndEdge(q, raw, viewerIdentityId));
+}
+
+/**
+ * `toCommandResult` on two pooled clients. The entity's DETAIL (row, summary,
+ * hierarchy, connections) and the rest (patches, edge) are independent reads
+ * of rows the command already committed, so they run side by side instead of
+ * one after the other on one client — one `Querier` cannot run two queries at
+ * once. Measured on `execution.spawn` (404, load ~80): detail 400-700 ms,
+ * patches another 40-175 ms of the same chain.
+ *
+ * Two SIBLING transactions, never one nested in the other: a nested checkout
+ * holds its first client while it waits for the second, so a saturated pool
+ * stalls every such caller until the checkout timeout.
+ */
+async function toCommandResultOnTwoClients(
+  db: Db,
+  claims: DbClaims,
+  raw: RpcCommandResult,
+  viewerIdentityId: string,
+): Promise<CommandResult> {
+  const entityId = raw.entity?.id;
+  if (!entityId) return db.tx(claims, (q) => toCommandResult(q, raw, viewerIdentityId));
+  const [entity, rest] = await Promise.all([
+    db.tx(claims, (q) => buildDetail(q, entityId, viewerIdentityId)),
+    db.tx(claims, (q) => patchesAndEdge(q, raw, viewerIdentityId)),
+  ]);
+  return shapeCommandResult(raw, entity, rest);
+}
+
+function shapeCommandResult(
+  raw: RpcCommandResult,
+  entity: EntityDetail | undefined,
+  rest: { patches: CommandResult['patches']; edge: EdgeView | undefined },
+): CommandResult {
+  return {
+    ...(entity ? { entity } : {}),
+    ...(rest.edge ? { edge: rest.edge } : {}),
+    patches: rest.patches,
+    ...(raw.undo
+      ? {
+          undo: {
+            token: raw.undo.token,
+            label: raw.undo.label,
+            // Normalised for the same reason every other jsonb-sourced
+            // timestamp is: Postgres serialises it with a UTC offset.
+            ...(raw.undo.expiresAt
+              ? { expiresAt: new Date(raw.undo.expiresAt).toISOString() }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** The patch summaries and the edge view of a command result; see `toCommandResult`. */
+async function patchesAndEdge(
+  q: Querier,
+  raw: RpcCommandResult,
+  viewerIdentityId: string,
+): Promise<{ patches: CommandResult['patches']; edge: EdgeView | undefined }> {
   const patchIds = (raw.patches ?? []).map((p) => p.id).filter(Boolean);
 
   const patchRows =
@@ -381,29 +443,11 @@ async function toCommandResult(
       };
     }
   }
-
-  return {
-    ...(entityId ? { entity: await buildDetail(q, entityId, viewerIdentityId) } : {}),
-    ...(edge ? { edge } : {}),
-    patches,
-    ...(raw.undo
-      ? {
-          undo: {
-            token: raw.undo.token,
-            label: raw.undo.label,
-            // Normalised for the same reason every other jsonb-sourced
-            // timestamp is: Postgres serialises it with a UTC offset.
-            ...(raw.undo.expiresAt
-              ? { expiresAt: new Date(raw.undo.expiresAt).toISOString() }
-              : {}),
-          },
-        }
-      : {}),
-  };
+  return { patches, edge };
 }
 
 // ---------------------------------------------------------------------------
 // entities.activity
 // ---------------------------------------------------------------------------
 
-export { toCommandResult, type RpcCommandResult };
+export { toCommandResult, toCommandResultOnTwoClients, type RpcCommandResult };

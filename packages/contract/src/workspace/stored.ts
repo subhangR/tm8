@@ -137,6 +137,7 @@ function cleanTab(id: string, raw: unknown): TabRecord | null {
       dirty: raw.dirty === true,
       submitting: false,
       ordinal: num(raw.ordinal) && raw.ordinal >= 1 ? Math.floor(raw.ordinal) : 1,
+      ...(raw.holds === 'launch' ? { holds: 'launch' as const } : {}),
     };
   }
   if (raw.type !== 'entity' || !str(raw.entityId)) return null;

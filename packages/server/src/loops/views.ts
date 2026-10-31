@@ -1,6 +1,7 @@
 import {
   CollabError, LoopSpawnConfigSchema,
-  type ActorSummary, type LoopAction, type LoopConcurrency, type LoopRunsSummary, type LoopView, type ToolJsonValue,
+  type ActorSummary, type LoopAction, type LoopConcurrency, type LoopMode, type LoopRunsSummary, type LoopTarget,
+  type LoopView, type ToolJsonValue,
 } from '@tm8/contract';
 import { loadActors, actorOf } from '../facade/entity-read.js';
 import { previewSchedule } from '../scheduler/schedule.js';
@@ -16,6 +17,7 @@ interface LoopRow {
   tool_inputs: Record<string, ToolJsonValue>; prompt: string; config: unknown;
   concurrency: LoopConcurrency; max_runtime_seconds: number | null;
   retry_attempts: number; retry_delay_seconds: number;
+  targets: LoopTarget[] | null; mode: LoopMode; quiet_hours_exempt: boolean;
   enabled: boolean; paused_until: Date | string | null;
   next_run_at: Date | string | null; last_run_at: Date | string | null; last_error: string | null;
   armed_by_member_id: string | null; armed_at: Date | string | null;
@@ -25,19 +27,22 @@ interface LoopRow {
 
 /**
  * Who the NEXT firing runs as (§7), by 375's rule: the armer while still an
- * active member, else the space's active owner, else nobody.
+ * active member, else the space's active owner, else nobody. A loop with
+ * bridge targets has no owner fallback (D26, 406): with its armer gone it is
+ * suspended until an admin takes it over.
  */
 const LOOP_SELECT = `
   select e.id, e.space_id, e.version, e.created_by, e.created_at,
          l.title, l.schedule, l.timezone, l.action, l.team_member_id, l.subject_id, l.tool_id,
          l.tool_inputs, l.prompt, l.config, l.concurrency, l.max_runtime_seconds,
-         l.retry_attempts, l.retry_delay_seconds, l.enabled, l.paused_until,
+         l.retry_attempts, l.retry_delay_seconds, l.targets, l.mode, l.quiet_hours_exempt, l.enabled, l.paused_until,
          l.next_run_at, l.last_run_at, l.last_error, l.armed_by_member_id, l.armed_at, l.updated_at,
          -- By identity alone, as the due read decides it (384 §5): after a re-join
          -- the armer has a new member row, and the firing still runs as them.
          exists (select 1 from public.members m where m.identity_id = l.armed_by_identity_id
                    and m.space_id = e.space_id and m.status = 'active') as armer_active,
          (select m.entity_id from public.members m where m.space_id = e.space_id
+             and jsonb_array_length(l.targets) = 0
              and m.role = 'owner' and m.status = 'active' order by m.entity_id limit 1) as fallback_member_id,
          internal.current_member_id(e.space_id) as viewer_member_id
     from public.entities e join public.loops l on l.entity_id = e.id
@@ -65,6 +70,8 @@ function viewOf(row: LoopRow, actors: Map<string, ActorSummary>, options: LoopVi
       config: config.success ? config.data : {},
       concurrency: row.concurrency, maxRuntimeSeconds: row.max_runtime_seconds,
       retry: { attempts: Number(row.retry_attempts), delaySeconds: Number(row.retry_delay_seconds) },
+      targets: (row.targets ?? []).map(t => ({ bridgeId: t.bridgeId, text: t.text ?? null })),
+      mode: row.mode, quietHoursExempt: row.quiet_hours_exempt,
     },
     schedule: previewSchedule(row.schedule, row.timezone, options.withNext ? 5 : 0),
     state: {

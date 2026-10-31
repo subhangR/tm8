@@ -108,6 +108,12 @@ export type DraftTabRecord = {
   submitting: boolean;
   /** 1 reads "New task", 2 reads "New task 2". */
   ordinal: number;
+  /**
+   * ADDITIVE (task 01a182d2): what the draft holds when it is not a form. A
+   * `launch` draft is a pressed launch's page: `drafts.open` never reuses it,
+   * and it persists (unlike `submitting`, which no restore keeps).
+   */
+  holds?: 'launch';
 };
 export type ChooserTabRecord = { id: TabId; type: 'chooser'; query: string };
 /**
@@ -331,7 +337,12 @@ export type TabsCloseVisibleArgs = { except?: TabId };
 export type TabsMoveArgs = { tabId: TabId; beforeTabId?: TabId };
 export type TabsSetUiArgs = { tabId: TabId; patch: Partial<TabUi> };
 /** ADDITIVE `replaceTabId` (W1-F): as on `TabsOpenArgs`; the draft takes the chooser's position. */
-export type DraftsOpenArgs = { kind: KindId; replaceTabId?: TabId };
+export type DraftsOpenArgs = {
+  kind: KindId;
+  replaceTabId?: TabId;
+  /** ADDITIVE (task 01a182d2): a draft that holds a pressed launch — always a new one. */
+  holds?: 'launch';
+};
 /**
  * ADDITIVE `submitting`: §5.5 has the draft host set `submitting`, and
  * dispatch is the only writer, so the flag rides on this command.
