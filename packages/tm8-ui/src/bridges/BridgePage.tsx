@@ -97,7 +97,7 @@ export function BridgePageBlock({
       </div>
       <div className="brg-tabpanel" role="tabpanel" id={`brg-panel-${tab}`} aria-labelledby={`brg-tab-${tab}`}>
         {tab === 'conversation' ? <ConversationTab view={view} port={port} /> : null}
-        {tab === 'people' ? <PeopleTab view={view} /> : null}
+        {tab === 'people' ? <PeopleTab view={view} port={port} onOpenEntity={onOpenEntity} /> : null}
         {tab === 'routing' ? <RoutingTab view={view} port={port} onView={accept} onOpenEntity={onOpenEntity} /> : null}
         {tab === 'memory' ? <MemoryTab view={view} port={port} onOpenEntity={onOpenEntity} /> : null}
         {tab === 'loops' ? <LoopsTab view={view} /> : null}
