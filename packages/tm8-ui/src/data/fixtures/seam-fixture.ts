@@ -165,6 +165,10 @@ import {
   type AuthSessionListing,
   type AuthSessionsListResult,
   type AuthSessionsRevokeResult,
+  type BridgeIdentityLink,
+  type BridgeLinkCode,
+  type BridgeLinksList,
+  type BridgeProvider,
   type ChatDefault,
   type ChatDefaultsView,
   type SpaceSummary,
@@ -1833,6 +1837,18 @@ export function createFixtureSeam(): FixtureSeam {
    * listing never carries a token, and neither does this fixture.
    */
   const fixtureSessionAt = (minutesAgo: number): string => new Date(Date.UTC(2026, 8, 1, 12, 0) - minutesAgo * 60_000).toISOString();
+  /* Account → Linked identities (B3, 408): one code-verified WhatsApp
+     number, and an admin's assertion in the fixture space. Codes are minted
+     here as a node would and never listed back (D58). */
+  const bridgeLinks: BridgeIdentityLink[] = [
+    { id: 'link-fixture-1', provider: 'whatsapp', externalId: '919800000001@s.whatsapp.net', masked: '…0001',
+      method: 'code', trust: 'linked', spaceId: null, spaceName: null,
+      verifiedAt: '2026-10-28T09:12:00.000Z', revokedAt: null },
+    { id: 'link-fixture-2', provider: 'whatsapp', externalId: '919800000042@s.whatsapp.net', masked: '…0042',
+      method: 'admin', trust: 'asserted', spaceId: FIXTURE_SPACE_ID, spaceName: 'Fixture space',
+      verifiedAt: '2026-10-29T16:40:00.000Z', revokedAt: null },
+  ];
+  const bridgeLinkCodes: Array<{ id: string; provider: BridgeProvider; expiresAt: string; createdAt: string }> = [];
   const authSessions: AuthSessionListing[] = [
     {
       sessionId: 'ses-ada-tab', kind: 'browser', createdAt: fixtureSessionAt(60), lastUsedAt: fixtureSessionAt(0),
@@ -2662,6 +2678,13 @@ export function createFixtureSeam(): FixtureSeam {
         chatDefaults = { ...chatDefaults, defaults: next, revision: chatDefaults.revision + 1 };
       }
       return clone(chatDefaults);
+    },
+    async bridgeLinks(): Promise<BridgeLinksList> {
+      const now = Date.now();
+      return {
+        items: clone(bridgeLinks.filter((l) => l.revokedAt === null)),
+        pending: clone(bridgeLinkCodes.filter((c) => Date.parse(c.expiresAt) > now)),
+      };
     },
     /** Own list, or the sessions pinned to the fixture space (Ada owns it). */
     async authSessions(spaceId): Promise<AuthSessionsListResult> {
@@ -4223,6 +4246,10 @@ export function createFixtureSeam(): FixtureSeam {
           throw new CollabError('invalid_input',
             "role must be 'admin' or 'member': an invite cannot confer ownership");
         }
+        // B3 (408, D60): an invite for one bridge participant is one use.
+        if (input.bridgeParticipant && (input.maxUses ?? 1) !== 1) {
+          throw new CollabError('invalid_input', 'an invite for one bridge participant has maxUses 1');
+        }
         const invite: SpaceInviteView = {
           id: `inv-fixture-${invites.length + 1}`,
           code: newInviteCode(),
@@ -4234,6 +4261,25 @@ export function createFixtureSeam(): FixtureSeam {
         };
         invites.unshift(invite);
         return clone(invite);
+      },
+
+      async beginBridgeLink(provider: BridgeProvider): Promise<BridgeLinkCode> {
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let code = 'TM8-';
+        for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+        const createdAt = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+        // A new code ends the earlier ones for the provider, as 408 does.
+        for (const c of bridgeLinkCodes) if (c.provider === provider) c.expiresAt = createdAt;
+        bridgeLinkCodes.unshift({ id: `code-fixture-${bridgeLinkCodes.length + 1}`, provider, expiresAt, createdAt });
+        return { code, provider, expiresAt, createdAt };
+      },
+
+      async revokeBridgeLink(linkId: string): Promise<BridgeIdentityLink> {
+        const link = bridgeLinks.find((l) => l.id === linkId);
+        if (!link) throw new CollabError('not_found', 'link not found');
+        link.revokedAt ??= new Date().toISOString();
+        return clone(link);
       },
 
       /** Gate revoke cascades to the sessions entered from it, as 249 does. */

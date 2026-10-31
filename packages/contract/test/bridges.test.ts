@@ -71,18 +71,21 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs', () => {
+  it('carries the twelve rows B1 needs and B3\'s three link rows', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.work.start', // B1b-6 (v2 §4.3)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
+      'bridges.links.begin', 'bridges.links.list', 'bridges.links.revoke',
     ]);
   });
-  it('create, retarget and remove are human-only; the session doors are not', () => {
-    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove',
-      'bridges.memories.proposals.resolve']);
+  it('create, retarget, remove, the link begin and revoke, and the memory proposal decision are human-only; the session doors are not', () => {
+    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
+      'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.links.begin', 'bridges.links.revoke',
+      'bridges.memories.proposals.resolve',
+    ]);
   });
 });
 
@@ -99,5 +102,15 @@ describe('auth session listing kinds (395/398 fix-forward)', () => {
       expect(parsed.success, kind).toBe(true);
     }
     expect(AuthSessionListingSchema.safeParse(row('rogue')).success).toBe(false);
+
+describe('link inputs (B3, 408)', () => {
+  it('begin takes a known provider; an invite pins a bridge id and an external id; the code shape is TM8-', async () => {
+    const { BridgeLinkBeginInputSchema, BridgeInviteParticipantSchema, BRIDGE_LINK_CODE_PATTERN } = await import('../src/bridges.js');
+    expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'whatsapp' }).success).toBe(true);
+    expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'fax' }).success).toBe(false);
+    expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: '11111111-1111-7111-8111-111111111111', externalId: '9190@s.whatsapp.net' }).success).toBe(true);
+    expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: 'x', externalId: '' }).success).toBe(false);
+    expect(BRIDGE_LINK_CODE_PATTERN.test('TM8-4F7KQ2')).toBe(true);
+    expect(BRIDGE_LINK_CODE_PATTERN.test('4F7K')).toBe(false);
   });
 });

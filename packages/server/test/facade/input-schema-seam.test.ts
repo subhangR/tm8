@@ -305,6 +305,8 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'labels.archive',
   'bridges.work.start', // B1b-6: the contract schema is unannotated, like B0a's bridges rows
   'bridges.memories.proposals.resolve', // Bridges R (416)
+  'bridges.links.begin',
+  'bridges.links.revoke',
   'loops.create',
   'loops.update',
   'loops.enable',
@@ -463,6 +465,8 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'labels.archive': contract.LabelArchiveInputSchema,
       'bridges.work.start': contract.BridgeWorkStartInputSchema,
       'bridges.memories.proposals.resolve': contract.BridgeMemoryProposalResolveInputSchema,
+      'bridges.links.begin': contract.BridgeLinkBeginInputSchema,
+      'bridges.links.revoke': contract.BridgeLinkRevokeInputSchema,
       'loops.create': contract.LoopCreateInputSchema,
       'loops.update': contract.LoopUpdateInputSchema,
       'loops.enable': contract.LoopEnableInputSchema,

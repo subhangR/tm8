@@ -1,8 +1,6 @@
 import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
-  BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeMemoryProposalResolveInputSchema, BridgeWorkStartInputSchema,
-  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,
-  LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
+  BridgeHandleClaimInputSchema, BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema, BridgeListenInputSchema, BridgeMemoryProposalResolveInputSchema, BridgeWorkStartInputSchema,  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,  LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
   LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
 } from '@tm8/contract';
 import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
@@ -230,6 +228,9 @@ const InviteCreateInputSchema = z.object({
   expiresAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
     message: 'expiresAt must be an ISO timestamp',
   }).nullable().optional(),
+  // Bridges B3 (408, D60): pin the invite to one participant of a bridge;
+  // redeeming it links the joiner. One use only.
+  bridgeParticipant: BridgeInviteParticipantSchema.optional(),
 }).strict();
 
 const InviteRedeemInputSchema = z.object({
@@ -285,6 +286,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'bridges.listen': BridgeListenInputSchema,
   'bridges.work.start': BridgeWorkStartInputSchema,
   'bridges.memories.proposals.resolve': BridgeMemoryProposalResolveInputSchema,
+  // B3 (408): the caller's own links.
+  'bridges.links.begin': BridgeLinkBeginInputSchema,
+  'bridges.links.revoke': BridgeLinkRevokeInputSchema,
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

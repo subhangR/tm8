@@ -85,6 +85,7 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
         rows: [
           space('account', { keywords: ['name', 'display name', 'avatar', 'identity', 'username'] }),
           space('my-sessions', { keywords: ['sessions', 'sign out', 'devices', 'logout', 'browsers'] }),
+          space('linked-identities', { keywords: ['whatsapp', 'link', 'phone', 'number', 'bridge', 'telegram', 'slack'] }),
           space('credentials', { keywords: ['api key', 'keys', 'token', 'claude', 'codex', 'github', 'login', 'credentials'] }),
           /* §10.7: a token acts as the member and spans the Spaces they chose,
              so it is an ACCOUNT row — it is minted outside any one Space, and a

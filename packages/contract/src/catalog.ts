@@ -110,6 +110,11 @@ export const OPERATIONS = [
   { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
   { name: 'bridges.memories.proposals.list', method: 'GET', path: '/v2/bridges/:bridgeId/memory-proposals', kind: 'read', status: 'v1' },
   { name: 'bridges.memories.proposals.resolve', method: 'POST', path: '/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve', kind: 'command', status: 'v1', humanOnly: true },
+  // B3 (408, §4.6, D58): the caller's own identity links. Begin and revoke are
+  // human-only in SQL; the routes sit under /v2/identity, beside the profile.
+  { name: 'bridges.links.begin', method: 'POST', path: '/v2/identity/bridge-links', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.links.list', method: 'GET', path: '/v2/identity/bridge-links', kind: 'read', status: 'v1' },
+  { name: 'bridges.links.revoke', method: 'POST', path: '/v2/identity/bridge-links/:linkId/revoke', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },

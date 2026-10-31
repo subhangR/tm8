@@ -207,6 +207,9 @@ const ROWS: Record<OperationName, Row> = {
   'bridges.work.start': { cmd: ['bridge', 'work'], syn: 'tm8 bridge work <bridge-id> --item <one line> [--item <one line> …] [--teammate <name>] [--project <name>] [--effort low|high|max] [--mutation-id <id>]', sum: 'Start a worker per item for a bridged group: the same path, handles and announcement as /work', authz: 'entity', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'slack', 'telegram', 'group', 'provider', 'work', 'worker'], notes: ['one child task per item under one parent (two or more items), each worker started at once with a space handle, announced in the group', 'at most 5 items; as the caller, a member of the bridge\'s Space; idempotent on the mutation id'] },
   'bridges.memories.proposals.list': { cmd: ['bridge', 'proposals'], syn: 'tm8 bridge proposals <bridge-id> [--status pending|accepted|dropped|expired] [--limit <count>]', sum: 'List a bridge\'s /remember memory proposals and whether you can decide each', authz: 'entity', input: 'none', side: 'none', tags: ['bridge', 'whatsapp', 'slack', 'telegram', 'group', 'provider', 'memory', 'remember'], notes: ['a proposal is made by `/remember <text>` in the group; it is never a memory until accepted (D29, D61)', 'unaccepted proposals expire 14 days after they were made (D63)'], examples: ['tm8 bridge proposals <bridge-id> --status pending'] },
   'bridges.memories.proposals.resolve': { cmd: ['bridge', 'proposal', 'resolve'], syn: 'tm8 bridge proposal resolve <bridge-id> <proposal-id> accept|drop [--statement <corrected text>] [--note <text>]', sum: 'Accept a /remember proposal as a memory the bridge remembers, or drop it', authz: 'entity', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'slack', 'telegram', 'group', 'provider', 'memory', 'remember'], notes: ['human-only, in tm8: never an agent, never from WhatsApp (D29)', 'a linked member of that group decides; a proposal from an admin-asserted link needs a member with a verified link, or a space admin (D62)', 'accept makes the memory with provenance to the bridge and the /remember message; --statement corrects the text first'], examples: ['tm8 bridge proposal resolve <bridge-id> <proposal-id> accept'] },
+  'bridges.links.begin': { cmd: ['bridge', 'link', 'begin'], syn: 'tm8 bridge link begin [--provider whatsapp|telegram|slack|discord|instagram|messenger]', sum: 'Mint a one-use /link code that links your number on a provider to you', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'link', 'identity', 'me'], notes: ['human-only; the code is shown once and expires in ten minutes', 'send `/link <code>` from your phone in a conversation connected to tm8; a DM to the number is never read'] },
+  'bridges.links.list': { cmd: ['bridge', 'link', 'list'], syn: 'tm8 bridge link list', sum: 'List your linked identities: provider numbers that count as you', authz: 'server', input: 'none', side: 'none', tags: ['bridge', 'whatsapp', 'link', 'identity', 'me'] },
+  'bridges.links.revoke': { cmd: ['bridge', 'link', 'revoke'], syn: 'tm8 bridge link revoke <link-id>', sum: 'Unlink a provider number from you; its messages are a guest\'s again', authz: 'server', input: 'bound', side: 'durable', tags: ['bridge', 'whatsapp', 'link', 'identity', 'me'], notes: ['human-only; a space admin may also end an assertion scoped to their space'] },
 
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
@@ -4452,6 +4455,7 @@ function exposureFor(operation: OperationName): Exposure {
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
   /* +2 bridges.memories.proposals.list|resolve (Bridges R, 416): RECOMPUTED from JSON.stringify(OPERATIONS). MEASURED. */
+  /* +3 bridges.links.* (B3, 408): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +12 bridges.* (Bridges B0a, 395): RECOMPUTED from JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   /* +4 labels.* (410, Bridges B0b): RECOMPUTED from JSON.stringify(OPERATIONS). MEASURED. */
   /* +13 loops.* (loops PR1, 01a182d5): the regenerated manifest digest. MEASURED. */
@@ -5031,6 +5035,16 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 style import <file> --title <title>'],
   }],
+  ['bridge invite', {
+    path: ['bridge', 'invite'],
+    syntax: 'tm8 bridge invite <bridge-id> <external-id> [--role member|admin] [--mutation-id <id>]',
+    summary: 'Mint a one-use join link for a guest on a bridge; joining with it links their number to them',
+    notes: [
+      'sugar over spaces.invites.create with bridgeParticipant — it adds no catalog operation',
+      'space admin; tm8 never messages the guest (D28): share the link yourself',
+    ],
+    examples: ['tm8 bridge invite <bridge-id> <external-id>'],
+  }],
   ['style versions', {
     path: ['style', 'versions'],
     syntax: 'tm8 style versions <space-ref> [--limit <count>] [--cursor <cursor>]',
@@ -5330,6 +5344,10 @@ COMMAND_OPS.set('style default', ['spaces.styleDefault.set', 'spaces.styleDefaul
 COMMAND_OPS.set('style set', ['styles.personal.update', 'styles.get']);
 COMMAND_OPS.set('style unset', ['styles.personal.update', 'styles.get']);
 COMMAND_OPS.set('style import', ['styles.personal.create']);
+// Bridges B3 (D60): a one-use invite pinned to a participant; the write leads.
+COMMAND_OPS.set('bridge invite', ['spaces.invites.create', 'bridges.get']);
+const bridgeLinkRevokeIndex = COMMAND_ORDER.indexOf('bridge link revoke');
+COMMAND_ORDER.splice(bridgeLinkRevokeIndex < 0 ? COMMAND_ORDER.length : bridgeLinkRevokeIndex + 1, 0, 'bridge invite');
 COMMAND_OPS.set('style versions', ['entities.versions']);
 const styleUpdateIndex = COMMAND_ORDER.indexOf('style update');
 COMMAND_ORDER.splice(styleUpdateIndex < 0 ? COMMAND_ORDER.length : styleUpdateIndex + 1, 0, 'style set', 'style unset');

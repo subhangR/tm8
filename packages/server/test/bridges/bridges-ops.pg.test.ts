@@ -21,6 +21,7 @@ import { createFacadeServer, type FacadeServer } from '../../src/http/server.js'
 import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { registerBridgeHandlers } from '../../src/bridges/handlers.js';
+import { registerW2IdentitySpacesHandlers } from '../../src/facade/handlers/w2/identity-spaces.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
@@ -76,6 +77,7 @@ beforeAll(async () => {
   const deps = { db, config, owner };
   registerBridgeHandlers(registry, deps);
   registerW2EntitiesCommandsTrackingHandlers(registry, deps);
+  registerW2IdentitySpacesHandlers(registry, deps);
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;
 });
@@ -330,6 +332,50 @@ describe('/remember proposals (Bridges R, 416: D29, D62)', () => {
     expect(done.memoryId).toEqual(expect.any(String));
     const [edge] = await database.query(`select 1 from public.edges where src_id = $1 and dst_id = $2 and type = 'remembers'`, [bridgeId, done.memoryId]);
     expect(edge).toBeTruthy();
+  });
+});
+
+describe('B3 links (408, §4.6, D58-D60)', () => {
+  it('begin answers the code once, to a human; the list shows its expiry, never the code', async () => {
+    refused(await request(agent.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }), 403, 'forbidden');
+    refused(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'fax' }), 400, 'invalid_input');
+    const minted = ok(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }));
+    expect(minted.code).toMatch(/^TM8-[A-HJ-NP-Z2-9]{6}$/);
+    expect(Number.isNaN(Date.parse(minted.expiresAt))).toBe(false);
+    const list = ok(await request(human.token, 'GET', '/v2/identity/bridge-links'));
+    expect(list.items).toEqual([]);
+    expect(list.pending).toHaveLength(1);
+    expect(JSON.stringify(list)).not.toContain(minted.code);
+  });
+
+  it('a redeemed code shows as a link; an agent cannot revoke it; its human can', async () => {
+    const { code } = ok(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }));
+    const [row] = await database.query<{ r: { ok: boolean } }>('select internal.bridge_redeem_link_code($1,$2,$3) as r',
+      [bridgeId, '919000000123@s.whatsapp.net', code]);
+    expect(row!.r.ok).toBe(true);
+    const list = ok(await request(human.token, 'GET', '/v2/identity/bridge-links'));
+    expect(list.items).toEqual([expect.objectContaining({ masked: '…0123', method: 'code', trust: 'linked' })]);
+    const linkId = list.items[0].id;
+    refused(await request(agent.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}), 403, 'forbidden');
+    refused(await request(admin.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}), 404, 'not_found');
+    const revoked = ok(await request(human.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}));
+    expect(Number.isNaN(Date.parse(revoked.revokedAt))).toBe(false);
+    expect(ok(await request(human.token, 'GET', '/v2/identity/bridge-links')).items).toEqual([]);
+  });
+
+  it('spaces.invites.create pins a participant; more than one use is refused', async () => {
+    await database.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+      values ($1,'919000000456@s.whatsapp.net','Rahul',now(),now())`, [bridgeId]);
+    const bridgeParticipant = { bridgeId, externalId: '919000000456@s.whatsapp.net' };
+    refused(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { maxUses: 2, bridgeParticipant }), 400, 'invalid_input');
+    const invite = ok(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { bridgeParticipant }));
+    expect(invite.maxUses).toBe(1);
+    const [pin] = await database.query<{ external_id: string }>('select external_id from public.bridge_invite_pins where invite_id = $1', [invite.id]);
+    expect(pin!.external_id).toBe(bridgeParticipant.externalId);
+    // A failed pin leaves no invite behind: invite and pin are one transaction.
+    const before = await database.query('select 1 from public.space_invites where space_id = $1', [space]);
+    refused(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { bridgeParticipant: { bridgeId, externalId: 'nobody' } }), 404, 'not_found');
+    expect(await database.query('select 1 from public.space_invites where space_id = $1', [space])).toHaveLength(before.length);
   });
 });
 

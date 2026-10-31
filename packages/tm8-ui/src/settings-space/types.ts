@@ -20,6 +20,7 @@ export type SettingsSectionId =
   | 'profile'
   | 'account'
   | 'my-sessions'
+  | 'linked-identities'
   | 'members'
   | 'invites'
   | 'sessions'
@@ -71,6 +72,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   /* W4 — the account half of settings: every place YOU are signed in, beside
      "Your profile" because both are about the person, not the space. */
   { id: 'my-sessions', label: 'Sign-ins & devices', heading: 'Sign-ins & devices' },
+  /* Bridges B3 (§4.6): the numbers on other networks that count as you. An
+     identity fact like the two above, so it sits with them. */
+  { id: 'linked-identities', label: 'Linked identities', heading: 'Linked identities' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   /* W4 — the admin's view: sessions pinned to THIS space, anyone's. After

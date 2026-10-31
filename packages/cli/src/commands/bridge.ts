@@ -3,10 +3,7 @@
 // renders them. Speaking needs no verb here: `tm8 message reply|send` crosses.
 import {
   BRIDGE_PROVIDERS,
-  type BridgeDetailView, type BridgeHandle, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
-  type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgePolicy,
-  type BridgeView, type BridgeWake, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES,
-} from '@tm8/contract';
+  type BridgeDetailView, type BridgeHandle, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList,  type BridgeProvider, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,  type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgePolicy,  type BridgeView, type BridgeWake, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES,} from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { observedInvoke } from '../discovery/observe.js';
@@ -341,6 +338,62 @@ async function bridgeProposalResolve(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+// B3 (408, §4.6, D58): the caller's own links. A code is shown once, here.
+async function bridgeLinkBegin(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['provider']); argumentsCount(cmd, 0);
+  const provider = (choice(cmd, 'provider', BRIDGE_PROVIDERS) ?? 'whatsapp') as BridgeProvider;
+  const code = await observedInvoke<BridgeLinkCode>(client(cmd), 'bridges.links.begin', { body: { provider } });
+  cmd.out.data(code, c => [
+    `/link ${c.code}`,
+    `Send that from your phone, in a ${c.provider} conversation connected to tm8. It works once and expires at ${c.expiresAt}.`,
+    'When it arrives, your messages from that number count as you, here and in every space you are in.',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+const renderLink = (l: BridgeIdentityLink): string =>
+  `${l.id} ${l.provider} ${l.masked} · ${l.trust === 'linked' ? `linked ✓ by ${l.method}` : `asserted in ${l.spaceName ?? l.spaceId}`} · ${l.verifiedAt}${l.revokedAt ? ` · revoked ${l.revokedAt}` : ''}`;
+
+async function bridgeLinkList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 0);
+  const list = await observedInvoke<BridgeLinksList>(client(cmd), 'bridges.links.list', {});
+  cmd.out.data(list, l => {
+    const lines = l.items.map(renderLink);
+    for (const p of l.pending) lines.push(`pending ${p.provider} code, expires ${p.expiresAt} (shown once when minted)`);
+    return lines.length ? lines.join('\n') : 'no linked identities; mint a code with `tm8 bridge link begin`';
+  });
+  return EXIT_OK;
+}
+
+async function bridgeLinkRevoke(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
+  const link = await observedInvoke<BridgeIdentityLink>(client(cmd), 'bridges.links.revoke', {
+    params: { linkId: requireArg(cmd, 0, '<link-id>') }, body: {},
+  });
+  cmd.out.data(link, l => `unlinked: ${renderLink(l)}`);
+  return EXIT_OK;
+}
+
+// D60: a one-use invite pinned to a participant. The bridge never DMs (D28):
+// the admin shares the join link themselves.
+async function bridgeInvite(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['role', 'mutation-id']); argumentsCount(cmd, 2);
+  const bridgeId = requireArg(cmd, 0, '<bridge-id>');
+  const externalId = requireArg(cmd, 1, '<external-id>');
+  const role = choice(cmd, 'role', ['member', 'admin'] as const);
+  const view = await observedInvoke<BridgeView>(client(cmd), 'bridges.get', { params: { bridgeId } });
+  const invite = await observedInvoke<{ id: string; code: string }>(client(cmd), 'spaces.invites.create', {
+    params: { spaceId: view.spaceId },
+    body: { ...mutation(cmd), maxUses: 1, ...(role ? { role } : {}), bridgeParticipant: { bridgeId, externalId } },
+  });
+  cmd.out.data(invite, i => [
+    `invite ${i.id} for ${externalId} on ${view.title}`,
+    `Share this join link with them yourself (tm8 never messages them): /join/${i.code} on your tm8 server.`,
+    'When they join with it, their number is linked to their account.',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'list'], run: bridgeList },
   { path: ['bridge', 'show'], run: cmd => bridgeShow(cmd, false) },
@@ -358,4 +411,8 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'work'], run: bridgeWork },
   { path: ['bridge', 'proposals'], run: bridgeProposals },
   { path: ['bridge', 'proposal', 'resolve'], run: bridgeProposalResolve },
+  { path: ['bridge', 'link', 'begin'], run: bridgeLinkBegin },
+  { path: ['bridge', 'link', 'list'], run: bridgeLinkList },
+  { path: ['bridge', 'link', 'revoke'], run: bridgeLinkRevoke },
+  { path: ['bridge', 'invite'], run: bridgeInvite },
 ];
