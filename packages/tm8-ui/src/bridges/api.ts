@@ -28,6 +28,7 @@ import type {
 } from '@tm8/contract';
 import { getOperation, isOperationName } from '@tm8/contract';
 import { nextMutationId } from '../authoring/commands';
+import { readEntityOpenAttention } from '../attention/entity-open-attention';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 
@@ -249,7 +250,7 @@ export function bridgesPortFromSeam(
     unlinkMemory: (edgeId) => seam.commands.deleteEdge(edgeId, mutation()),
     serves: served,
     pendingHandovers: async (spaceId, bridgeId) =>
-      (await seam.attentionRequests({ spaceId, entityId: bridgeId, limit: 50 })).items
+      (await readEntityOpenAttention(seam, spaceId, bridgeId))
         .flatMap((item) => pendingHandoverOf(item) ?? []),
     ...(onConnectionAuth ? { onConnectionAuth } : {}),
   };
