@@ -4,6 +4,7 @@ import type {
   BridgeDetailView,
   BridgeFacts,
   BridgeHandleAppearance,
+  BridgeHandover,
   BridgeLogEntry,
   BridgeView,
   EntitySummary,
@@ -120,12 +121,22 @@ function seedConversations(views: readonly BridgeView[]): ConversationItem[] {
   ];
 }
 
+export type FixtureHandoverEvent =
+  | { type: 'offered'; handover: BridgeHandover; reason: string }
+  | { type: 'settled'; handover: BridgeHandover };
+
 export function createFixtureBridgesClient(
   seed: readonly BridgeView[] = [],
   /** Resolves a target id to its row, so a created bridge names its target. */
   targetOf: (id: string) => EntitySummary | undefined = () => undefined,
   /** A created bridge, so a fixture seam can list it as an entity the way a server would. */
   onCreated: (view: BridgeView) => void = () => {},
+  /**
+   * A hand-over offered or settled, so a fixture seam can raise and clear the
+   * bridge's attention item the way migration 411 does (the pending offer is
+   * read back from that item).
+   */
+  onHandover: (event: FixtureHandoverEvent) => void = () => {},
 ): BridgesClient & {
   readonly bridges: Map<string, BridgeView>;
   readonly connectionsById: Map<string, BridgeConnectionView>;
@@ -137,11 +148,21 @@ export function createFixtureBridgesClient(
   const handles = new Map(seed.map((b) => [b.id, seedHandles(b)]));
   const connectionsById = new Map(seedConnections(seed).map((c) => [c.id, c]));
   const conversationList = seedConversations(seed);
+  const handovers = new Map<string, BridgeHandover>();
   const authSubs = new Set<(frame: BridgeConnectionAuthFrame) => void>();
   const connection = (id: string) => {
     const c = connectionsById.get(id);
     if (!c) throw new CollabError('not_found', 'Connection is unavailable');
     return c;
+  };
+  const settleHandover = (id: string, status: BridgeHandover['status']) => {
+    const h = handovers.get(id);
+    if (!h) throw new CollabError('not_found', 'hand-over not found');
+    if (h.status !== 'offered') throw new CollabError('conflict', `this hand-over was already ${h.status}`);
+    const settled: BridgeHandover = { ...h, status, settledAt: new Date().toISOString(), settledBy: 'mem-ada' };
+    handovers.set(id, settled);
+    onHandover({ type: 'settled', handover: settled });
+    return settled;
   };
   const find = (id: string) => {
     const bridge = bridges.get(id);
@@ -231,6 +252,46 @@ export function createFixtureBridgesClient(
         const next = { ...c, status: 'removed' as const, offers: [] };
         connectionsById.set(connectionId, next);
         return { connection: next, endedBridgeIds: ended.map((b) => b.id), revokedCredentialIds: c.offers.map((o) => o.credentialId), runtime: 'logged_out' };
+      },
+    },
+    handover: {
+      offer: async (bridgeId, toConnectionId) => {
+        const bridge = find(bridgeId);
+        if (bridge.status === 'ended') throw new CollabError('conflict', 'this bridge was removed');
+        const open = [...handovers.values()].find((h) => h.bridgeId === bridgeId && h.status === 'offered');
+        if (open) {
+          throw new CollabError('conflict', `this bridge already has an open hand-over; withdraw it first: tm8 bridge handover withdraw ${open.id}`,
+            { details: { handoverId: open.id } });
+        }
+        const to = connectionsById.get(toConnectionId);
+        if (!to || to.status === 'removed') throw new CollabError('not_found', 'bridge connection not found');
+        if (to.id === bridge.connectionId) throw new CollabError('invalid_input', 'the bridge already rides that connection');
+        const handover: BridgeHandover = {
+          id: `0a0a0a0a-0000-4000-8000-${String(handovers.size + 1).padStart(12, '0')}`,
+          bridgeId, spaceId: bridge.spaceId, fromConnectionId: bridge.connectionId, toConnectionId,
+          offeredBy: 'mem-ada', status: 'offered', createdAt: new Date().toISOString(), settledAt: null, settledBy: null,
+        };
+        handovers.set(handover.id, handover);
+        onHandover({
+          type: 'offered', handover,
+          reason: `Ada offers you the bridge to "${bridge.conversation.title}": it would move onto your number ${to.label}, keeping its history, handles and loops. Accept in tm8: tm8 bridge handover accept ${handover.id} (or decline ${handover.id})`,
+        });
+        return { handover, bridge };
+      },
+      accept: async (handoverId) => {
+        const h = settleHandover(handoverId, 'accepted');
+        const bridge = find(h.bridgeId);
+        const next = { ...bridge, connectionId: h.toConnectionId, version: bridge.version + 1, updatedAt: new Date().toISOString() };
+        bridges.set(next.id, next);
+        return { handover: h, bridge: next, readdressed: 0 };
+      },
+      decline: async (handoverId) => {
+        const h = settleHandover(handoverId, 'declined');
+        return { handover: h, bridge: find(h.bridgeId) };
+      },
+      withdraw: async (handoverId) => {
+        const h = settleHandover(handoverId, 'withdrawn');
+        return { handover: h, bridge: find(h.bridgeId) };
       },
     },
     conversations: async (connectionId) => {

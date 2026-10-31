@@ -232,3 +232,12 @@
   padding-inline-end: calc(var(--mobile-fab-size, 56px) + var(--pn-space-3) * 2);
 }
 .cv2-root[data-shell='mobile'] .brg-page { padding-bottom: var(--mobile-fab-reserve, 72px); }
+
+/* An open hand-over offer (HandoverBanner): above the tabs, in the wait tone (--pn-wait: someone has to decide). */
+.brg-handover {
+  margin: 8px 0 4px; padding: 10px 12px; border: 1px solid var(--pn-line); border-left: 3px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm); background: var(--pn-card);
+}
+.brg-handover__text { margin: 0 0 8px; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); }
+.brg-handover__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.brg-handover__ask { flex-basis: 100%; font-size: var(--pn-fs-sm); color: var(--pn-ink-2); }
