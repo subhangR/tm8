@@ -157,6 +157,13 @@ export interface BridgesPort extends BridgesClient {
    * choice is then not offered.
    */
   startSession?(spaceId: string, input: { teamMemberId: string; title: string }): Promise<string>;
+  /**
+   * Start a chat for a bridge to land in (`chat.start`, human-only, which is
+   * why the wizard does it in the person's own request) and answer its id.
+   * A chat is never empty: `body` is its opening turn. Absent where chats are
+   * not wired; the New chat choice is then not offered.
+   */
+  startChat?(spaceId: string, input: { teammateId: string; model: string; title: string; body: string }): Promise<string>;
   /** The memories this bridge `remembers`, as edges (the edge id is what Unlink deletes). */
   memories(bridgeId: string): Promise<EdgeView[]>;
   /** Memories in the space, for *Link a memory*. */
@@ -260,6 +267,13 @@ export function bridgesPortFromSeam(
       });
       if (!result.entity) throw new Error('The server did not return the session it started.');
       return result.entity.id;
+    },
+    startChat: async (spaceId, input) => {
+      const result = await seam.commands.startChat({
+        ...mutation(), spaceId: spaceId as SpaceId, teammateId: input.teammateId as EntityId, model: input.model,
+        mode: 'ask', workdirMode: 'scratch', title: input.title, body: input.body,
+      });
+      return result.chat.id;
     },
     linkMemory: (bridgeId, memoryId) =>
       seam.commands.createEdge({ srcId: bridgeId, dstId: memoryId, type: 'remembers', ...mutation() }),

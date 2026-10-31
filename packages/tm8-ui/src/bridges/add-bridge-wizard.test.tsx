@@ -19,7 +19,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeView, EntitySummary } from '@tm8/contract';
 import { chatLaunchPlan, channelDesign, teamMemberForge, teamMemberScout } from '../fixtures/entities';
-import { AddBridgeWizard, NEW_SESSION, connectedHere, defaultPolicy } from './AddBridgeWizard';
+import { AddBridgeWizard, NEW_CHAT, NEW_SESSION, connectedHere, defaultPolicy } from './AddBridgeWizard';
 import { BridgesSection } from './BridgesSection';
 import { testPort } from './test-port';
 
@@ -165,6 +165,36 @@ describe('the add-bridge wizard', () => {
     await screen.findByTestId('wizard-step-test');
     expect(startSession).toHaveBeenCalledWith(SPACE, { teamMemberId: teamMemberScout.id, title: 'Release 1.4 (WhatsApp)' });
     expect(create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: 'ent-session-new' }));
+  });
+
+  it('lands in a NEW chat, started as the chosen teammate and model at Create', async () => {
+    const t = wizardPort();
+    const startChat = vi.fn(async () => 'ent-chat-new');
+    const create = vi.fn(async (spaceId: string, input: Parameters<typeof t.client.create>[1]) =>
+      t.client.create(spaceId, { ...input, targetId: chatLaunchPlan.id }));
+    const port = { ...t.port, create, startChat, teammates: vi.fn(async () => [teamMemberForge, teamMemberScout]) };
+    render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Ada · work phone' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Release 1.4/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
+    await screen.findByTestId('wizard-step-target');
+    // Chat is the first choice, so a fresh wizard already offers the new chat.
+    expect((screen.getByLabelText('Target') as HTMLSelectElement).value).toBe(NEW_CHAT);
+    fireEvent.click(screen.getByLabelText(/^▶ Session/));
+    fireEvent.click(screen.getByLabelText(/^💬 Chat/));
+    expect((screen.getByLabelText('Target') as HTMLSelectElement).value).toBe(NEW_CHAT);
+    const runsAs = await screen.findByLabelText('Runs as');
+    await waitFor(() => expect(within(runsAs).getAllByRole('option')).toHaveLength(2));
+    fireEvent.change(runsAs, { target: { value: teamMemberScout.id } });
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'claude-sonnet-5' } });
+    expect(startChat).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Create bridge' }));
+    await screen.findByTestId('wizard-step-test');
+    expect(startChat).toHaveBeenCalledWith(SPACE, expect.objectContaining({
+      teammateId: teamMemberScout.id, model: 'claude-sonnet-5', title: 'Release 1.4 (WhatsApp)',
+      body: expect.stringContaining('"Release 1.4"'),
+    }));
+    expect(create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: 'ent-chat-new' }));
   });
 
   it('offers a number to the space before it can be used', async () => {
