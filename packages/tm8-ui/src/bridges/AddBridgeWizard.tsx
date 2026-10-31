@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BridgeConnectionView, BridgePolicy, BridgeTargetKind, BridgeView, ConversationItem, EntitySummary,
 } from '@tm8/contract';
-import { BRIDGE_STYLE_MAX } from '@tm8/contract';
+import { BRIDGE_STYLE_MAX, LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import { useDismissable } from '../panels/useDismissable';
 import type { BridgesPort } from './api';
 import { BridgeProviderMark, bridgeProviderLabel } from './bridge-marks';
@@ -22,7 +22,9 @@ import { pendingReason } from './reasons';
  *                    implies (§2.2), editable, with History & retention.
  *                    A session target can be a NEW session, started at
  *                    Create as the chosen teammate (R11); the bridge keeps it
- *                    running from then on (resumed, else replaced)
+ *                    running from then on (resumed, else replaced).
+ *                    A chat target can be a NEW chat, started at Create
+ *                    in the person's own request (`chat.start` is human-only)
  *   4 Test it      — the bridge just created, checked
  *
  * NOTHING IS COMMITTED BEFORE STEP 3's Create (the EditEntityDialog rule):
@@ -35,6 +37,11 @@ type Step = 1 | 2 | 3 | 4;
 
 /** The *New session* choice in the target picker (R11): started at Create. */
 export const NEW_SESSION = '__new_session__';
+/** The *New chat* choice in the target picker: started at Create, as the chosen teammate and model. */
+export const NEW_CHAT = '__new_chat__';
+/** Models a new chat can run on: the contract catalog's Claude Code entries. */
+const CHAT_MODELS = LAUNCH_MODEL_CATALOG.filter((m) => m.agentTool === 'claude-code');
+const DEFAULT_CHAT_MODEL = (CHAT_MODELS.find((m) => m.model === 'claude-opus-5-5') ?? CHAT_MODELS[0])?.model ?? '';
 const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
 
 /** A session the picker should say has stopped (it is resumed by the next message). */
@@ -89,9 +96,10 @@ export function AddBridgeWizard({
   const [conversation, setConversation] = useState<ConversationItem | null>(null);
   const [targets, setTargets] = useState<EntitySummary[] | null>(null);
   const [targetKind, setTargetKind] = useState<BridgeTargetKind>('chat');
-  const [targetId, setTargetId] = useState<string>(initialTargetId ?? '');
+  const [targetId, setTargetId] = useState<string>(initialTargetId ?? (port.startChat ? NEW_CHAT : ''));
   const [teammates, setTeammates] = useState<EntitySummary[] | null>(null);
   const [teammateId, setTeammateId] = useState('');
+  const [chatModel, setChatModel] = useState<string>(DEFAULT_CHAT_MODEL);
   const [policy, setPolicy] = useState<Omit<BridgePolicy, 'style'>>(defaultPolicy('chat', 'group'));
   const [style, setStyle] = useState('');
   const [retention, setRetention] = useState<{ forever: boolean; days: number }>({ forever: true, days: 90 });
@@ -154,18 +162,25 @@ export function AddBridgeWizard({
   });
 
   const canStartSession = !!port.startSession;
+  const canStartChat = !!port.startChat;
   /* A different kind is a different set of defaults (R7): the choice re-derives them. */
   const chooseKind = (kind: BridgeTargetKind) => {
     setTargetKind(kind);
-    setTargetId(kind === 'work_session' && canStartSession ? NEW_SESSION : '');
+    setTargetId(kind === 'work_session' && canStartSession ? NEW_SESSION : kind === 'chat' && canStartChat ? NEW_CHAT : '');
     setPolicyTouched(false);
   };
 
   const create = () => run(async () => {
     if (!connection || !conversation) return;
+    const title = `${conversation.name} (${provider})`.slice(0, 80);
     const target = targetId === NEW_SESSION
-      ? await port.startSession!(spaceId, { teamMemberId: teammateId, title: `${conversation.name} (${provider})`.slice(0, 80) })
-      : targetId;
+      ? await port.startSession!(spaceId, { teamMemberId: teammateId, title })
+      : targetId === NEW_CHAT
+        ? await port.startChat!(spaceId, {
+          teammateId, model: chatModel, title,
+          body: `This chat answers the ${provider} group "${conversation.name}". Messages there that mention @tm8 arrive here as turns, and your answers go back to the group. Say hello in one line.`,
+        })
+        : targetId;
     const view = await port.create(spaceId, {
       connectionId: connection.id,
       conversation: {
@@ -209,7 +224,9 @@ export function AddBridgeWizard({
   const targetChoices = (targets ?? []).filter((t) => t.kind === targetKind);
   /* D25: a target with a bridge cannot take another; say which, instead of refusing at Create. */
   const bridgedTo = useMemo(() => new Map([...existing.values()].map((b) => [b.target.id, b.conversation.title])), [existing]);
-  const targetReady = targetId === NEW_SESSION ? teammateId !== '' : targetId !== '';
+  const targetReady = targetId === NEW_SESSION ? teammateId !== ''
+    : targetId === NEW_CHAT ? teammateId !== '' && chatModel !== ''
+      : targetId !== '';
   /* The contract's bound (1–3650 days); Create waits until it holds (review #1447 r1). */
   const retentionProblem = !retention.forever && (!Number.isInteger(retention.days) || retention.days < 1 || retention.days > 3650)
     ? 'Keep messages for 1 to 3650 days.' : null;
@@ -342,6 +359,8 @@ export function AddBridgeWizard({
               <select aria-label="Target" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
                 {targetKind === 'work_session' && canStartSession ? (
                   <option value={NEW_SESSION}>＋ New session for this group</option>
+                ) : targetKind === 'chat' && canStartChat ? (
+                  <option value={NEW_CHAT}>＋ New chat for this group</option>
                 ) : (
                   <option value="">{targetChoices.length ? `Choose a ${TARGET_WORD[targetKind]}…` : `No ${TARGET_WORD[targetKind]} in this space yet`}</option>
                 )}
@@ -355,7 +374,7 @@ export function AddBridgeWizard({
                 })}
               </select>
             </label>
-            {targetId === NEW_SESSION ? (
+            {targetId === NEW_SESSION || targetId === NEW_CHAT ? (
               <label className="brg-form__line">
                 <span className="set-eyebrow">Runs as</span>
                 <select aria-label="Runs as" value={teammateId} onChange={(e) => setTeammateId(e.target.value)}>
@@ -364,9 +383,19 @@ export function AddBridgeWizard({
                 </select>
               </label>
             ) : null}
+            {targetId === NEW_CHAT ? (
+              <label className="brg-form__line">
+                <span className="set-eyebrow">Model</span>
+                <select aria-label="Model" value={chatModel} onChange={(e) => setChatModel(e.target.value)}>
+                  {CHAT_MODELS.map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
+                </select>
+              </label>
+            ) : null}
             <p className="brg-hint">
               {targetKind === 'chat'
-                ? 'New chat: start it in tm8 first (it needs a teammate, a model and a first message), then pick it here.'
+                ? targetId === NEW_CHAT
+                  ? 'The new chat opens with a note saying it answers this group, and its teammate says hello there in tm8 (not in the group).'
+                  : 'Each message to @tm8 becomes a turn in this chat.'
                 : targetKind === 'work_session'
                   ? 'If the session stops, the next message resumes it, or starts a new one and tells the group.'
                   : 'Pick the channel the group is mirrored into.'}
