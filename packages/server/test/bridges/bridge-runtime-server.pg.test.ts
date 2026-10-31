@@ -283,6 +283,43 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
       q.rpc('resume_bridge', [bridge, w!.version, null, randomUUID()]));
   });
 
+  it('inbound media becomes a file entity attached to the log message (B1b-8, §2.3 step 3)', async () => {
+    const { frames } = await runtimeSocket('wa-srv');
+    await hello('wa-srv');
+    const r = await call('/v2/bridge-runtime/inbound', runtimeToken, {
+      connectionId: connection, conversationId: GROUP, externalMessageId: '3EB0MEDIA1',
+      sender: { externalId: '919800000001@s.whatsapp.net', altId: null, name: 'Rahul', fromMe: false },
+      body: 'the deploy log', kind: 'media', replyTo: null, mentions: [], ts: 1_790_000_300,
+      media: [{ kind: 'document', mime: 'text/plain', fileName: 'deploy.log', caption: null, size: 11, handle: 'HANDLE-1' }],
+    });
+    expect(r.body).toMatchObject({ status: 'stored' });
+    // F2 (402): the origin keeps descriptive fields only; the handle (media keys) is in bridge_media alone.
+    const [origin] = await database.query<{ media: Record<string, unknown>[] }>('select media from public.message_origins where message_id = $1',
+      [r.body.messageId]);
+    expect(origin!.media).toEqual([{ kind: 'document', mime: 'text/plain', fileName: 'deploy.log', size: 11 }]);
+    expect(JSON.stringify(origin!.media)).not.toContain('HANDLE-1');
+    const fetch = await until(() => frames.find((f): f is Extract<ServerFrame, { type: 'media.fetch' }> =>
+      f.type === 'media.fetch' && f.handle === 'HANDLE-1'));
+    expect(fetch).toMatchObject({ connectionId: connection, conversationId: GROUP });
+    const answer = await call('/v2/bridge-runtime/media', runtimeToken,
+      { requestId: fetch.requestId, mime: 'text/plain', data: Buffer.from('deploy: ok\n').toString('base64') });
+    expect(answer.status).toBe(204);
+    let rows: { attachments: { fileEntityId: string; name: string; mime: string }[] }[] = [];
+    for (let i = 0; i < 50; i++) {
+      rows = await database.query('select attachments from public.messages where entity_id = $1', [r.body.messageId]);
+      if (rows[0]?.attachments.length) break;
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    expect(rows[0]!.attachments).toEqual([expect.objectContaining({ name: 'deploy.log', mime: 'text/plain' })]);
+    const fileId = rows[0]!.attachments[0]!.fileEntityId;
+    const [file] = await database.query<{ size_bytes: string; kind: string }>(
+      `select f.size_bytes, e.kind from public.files f join public.entities e on e.id = f.entity_id where f.entity_id = $1`, [fileId]);
+    expect(file).toMatchObject({ size_bytes: '11', kind: 'file' });
+    const edge = await database.query(`select 1 from public.edges where src_id = $1 and dst_id = $2 and type = 'attached_to'`,
+      [fileId, r.body.messageId]);
+    expect(edge).toHaveLength(1);
+  });
+
   it('the watchdog job marks a silent runtime degraded with one fyi, and reacts ⚠️ on a failed turn (ac6)', async () => {
     const r = await call('/v2/bridge-runtime/inbound', runtimeToken, {
       connectionId: connection, conversationId: GROUP, externalMessageId: '3EB0SRV2',

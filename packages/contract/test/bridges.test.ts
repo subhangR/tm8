@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AuthSessionListingSchema,
   ActorSummarySchema, BridgeCreateInputSchema, BridgeEntitySchema, BridgeFactsSchema, BridgeHandleClaimInputSchema,
   BridgeListenInputSchema, BridgeUpdateInputSchema, CORE_KIND_INFO, CoreEntityKindSchema, CreatableEntityKindSchema,
   EntityStateSchema, OPERATIONS,
@@ -78,5 +79,21 @@ describe('catalog (§3.4)', () => {
   });
   it('create, retarget and remove are human-only; the session doors are not', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove']);
+  });
+});
+
+describe('auth session listing kinds (395/398 fix-forward)', () => {
+  const row = (kind: string) => ({
+    sessionId: '01a18b41-0000-7000-8000-000000000001', kind,
+    createdAt: '2026-10-30T07:00:00.000Z', lastUsedAt: null, expiresAt: '2026-11-06T07:00:00.000Z',
+    label: 'whatsapp-runtime', spaceId: null, spaceName: null, parentSessionId: null,
+    origin: 'login', originEntityId: null, owner: { identityId: 'owner', displayName: null }, current: false,
+  });
+  it('a bridge_runtime listing row validates, beside the existing kinds', () => {
+    for (const kind of ['browser', 'cli', 'agent', 'agent_runtime', 'bridge_runtime']) {
+      const parsed = AuthSessionListingSchema.safeParse(row(kind));
+      expect(parsed.success, kind).toBe(true);
+    }
+    expect(AuthSessionListingSchema.safeParse(row('rogue')).success).toBe(false);
   });
 });
