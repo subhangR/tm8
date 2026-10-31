@@ -35,9 +35,12 @@ import type {
   MessageView,
   NotificationItem,
   WorkspaceEvent,
+  MessageBridgeView,
 } from '@tm8/contract';
 
+import { bridgeMessageBadges } from '../db/bridge-badges.js';
 import type { Querier } from '../db/types.js';
+import { sessionChatOrigins } from '../db/authored-origins.js';
 import { OffContractEventError, assertWorkspaceEvent } from './emitter.js';
 import type { EntityProjector } from './projector.js';
 import { RUNS_ON } from '../facade/services/w2/runs-on-visibility.js';
@@ -206,6 +209,8 @@ interface LiveMessageContent {
   body: string;
   mentions: unknown[];
   attachments: unknown[];
+  /** The bridge mark and delivery tick, read live too: a tick moves by `message.updated` (409). */
+  bridge?: MessageBridgeView;
 }
 
 /** Which entity ids a row's projection will need hydrated. */
@@ -394,6 +399,11 @@ export class WorkspaceEventMapper {
         attachments: redacted || !Array.isArray(m.attachments) ? [] : m.attachments,
       });
     }
+    const bridged = await bridgeMessageBadges(q, [...out.keys()], 'events:bridge-badges');
+    for (const [id, bridge] of bridged) {
+      const content = out.get(id);
+      if (content) content.bridge = bridge;
+    }
     return out;
   }
 
@@ -409,12 +419,12 @@ export class WorkspaceEventMapper {
    * page contains message events. A message with NO `authored_from` edge is
    * human-authored provenance and yields `null` — that is normal, not an error,
    * so the arm must not throw. Read-only: this file never writes the edge.
+   * Bridge provenance edges (396) are not the sender (`sessionChatOrigins`).
    */
   private async messageSourceSessions(
     q: Querier,
     rows: readonly WorkspaceEventRow[],
   ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
     const ids = [
       ...new Set(
         rows
@@ -423,16 +433,7 @@ export class WorkspaceEventMapper {
           .filter((v): v is string => v !== null),
       ),
     ];
-    if (ids.length === 0) return out;
-
-    const provenance = await q.query<{ src_id: string; dst_id: string }>(
-      `select src_id, dst_id
-         from public.edges
-        where type = 'authored_from' and src_id = any($1::uuid[])`,
-      [ids],
-    );
-    for (const row of provenance) out.set(row.src_id, row.dst_id);
-    return out;
+    return sessionChatOrigins(q, ids);
   }
 
   mapRow(
@@ -587,6 +588,9 @@ export class WorkspaceEventMapper {
       }
       case 'session.process_changed': {
         const session = this.need(entities, str(p['id']), seq, 'session');
+        // 403: present only on an ending a node recorded itself, so every
+        // other event projects exactly as before.
+        const endedByNode = str(p['endedByNode']);
         return {
           type: row.event_type,
           sessionId: session.id,
@@ -594,6 +598,7 @@ export class WorkspaceEventMapper {
           to: str(p['to']),
           endedKind: str(p['endedKind']),
           endedReason: str(p['endedReason']),
+          ...(endedByNode ? { endedByNode } : {}),
         };
       }
       case 'edge.ended': {
@@ -692,6 +697,7 @@ export class WorkspaceEventMapper {
             attachments: live.attachments as MessageView['content']['attachments'],
           },
           replyCount: 0,
+          ...(live.bridge ? { bridge: live.bridge } : {}),
         };
         // Envelope-level SENDER provenance, hydrated live from the `authored_from`
         // edge rather than read from the captured payload (the payload has no such

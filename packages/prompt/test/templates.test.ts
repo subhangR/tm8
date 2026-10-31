@@ -684,3 +684,32 @@ describe('untrustedData', () => {
     expect(inner).not.toMatch(/<\s*\/?\s*(untrusted_data|trusted_control)/i);
   });
 });
+
+describe('§14.4 incoming message — the bridge origin (Bridges §2.3, B1b-3)', () => {
+  const facts = {
+    kind: 'anchored_message' as const,
+    messageId: 'msg_1', messageBatchId: 'batch_1', deliveryAttemptId: 'dl_1', deliveryAttemptNo: 1,
+    senderActorId: 'ent_a', senderActorKind: 'member', senderAttribution: 'verified' as const,
+    sourceSessionId: null, destinationSessionId: 'ses_b', sourceAnchorId: 'brg_1', sourceAnchorKind: 'bridge',
+    sourceMessageId: 'msg_1', body: '@keen-otter is the deploy done?',
+  };
+
+  it('renders the origin element with directed and unread, escaping provider-side names', () => {
+    const xml = incomingMessageInjection({
+      ...facts,
+      bridgeOrigin: {
+        bridgeId: 'brg_1', provider: 'whatsapp', conversation: 'Infra "on-call" <ops>', participant: 'Rahul & co',
+        trust: 'linked', externalMessageId: '3EB0', directed: true, unread: 7,
+      },
+    });
+    const line = xml.split('\n').find(l => l.includes('<origin kind="bridge"'))!;
+    expect(line).toContain('bridge_id="brg_1" provider="whatsapp"');
+    expect(line).toContain('trust="linked" external_message_id="3EB0" directed="true" unread="7" />');
+    expect(line).not.toMatch(/<ops>|"on-call"|Rahul & co/);
+    expect(xml.indexOf('<origin kind="bridge"')).toBeGreaterThan(xml.indexOf('<source '));
+  });
+
+  it('has no origin element for a message that did not come from a bridge', () => {
+    expect(incomingMessageInjection(facts)).not.toContain('<origin');
+  });
+});

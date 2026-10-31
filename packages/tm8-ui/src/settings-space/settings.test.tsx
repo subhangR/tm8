@@ -157,6 +157,9 @@ const LIVE_VERBS = [
   // not-wired state and add no control to this sweep.
   /^Sign-ins & devices$/,
   /^Member sign-ins$/,
+  // B3: `bridges.links.list/begin/revoke` are real executors; the fake port
+  // passes no reader, so the body draws the not-wired state.
+  /^Linked identities$/,
   // 187's two space defaults — real `spaces.update` writes, one key each.
   /^Session sharing$/,
   /^(Everyone in the space|Only its owner|Everyone who can watch)$/,
@@ -302,6 +305,12 @@ const LIVE_VERBS = [
   // this sweep sees no control from it; its own controls are held in
   // settings-mcp-tokens/mcp-tokens.test.tsx.
   /^MCP tokens$/,
+  // Bridges (BRIDGE-ENTITY-DESIGN §4.2): the NAV ROW only — `bridges.list|
+  // pause|resume|remove` are real executors on the seam (395). The body is
+  // owned by `bridges/` and injected by GateApp, so this shell shows its
+  // not-mounted state; the section's own live controls (each named for the
+  // operation that makes it live) are held in bridges/bridges-section.test.tsx.
+  /^Bridges$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

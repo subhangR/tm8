@@ -6,29 +6,40 @@
  * Who may call what is decided in SQL: create, retarget and remove are
  * human-only (and wrapped here so the catalog's `humanOnly` holds before the
  * call); the handle claim, the log read and listen take any session in the
- * space (D23). The People tab's write (participants.update, 404) is
+ * space (D23). The People tab's write (participants.update, 420) is
  * human-only too: an assertion makes a number count as a person (D52).
  */
 import {
-  BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeParticipantUpdateInputSchema,
-  BridgeRetargetInputSchema,
-  BridgeStateInputSchema, BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
-  type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
-  type BridgeLogEntry, type BridgeLogResult, type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
-  type BridgeRecentPoster, type BridgeView,
+  BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema,
+  BridgeConnectionViewSchema, BridgeConnectionWithdrawInputSchema, BridgeCreateInputSchema, BridgeHandoverOfferInputSchema, BridgeHandoverSettleInputSchema,
+  BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
+  BridgeUpdateInputSchema, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError, type BridgeDetailView,
+  type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult, type BridgeLogEntry,
+  type BridgeLogResult, type BridgeRecentPoster, type BridgeView, type BridgeConnectionBeginResult,
+  type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
+  type BridgeConnectionRemoveResult, type BridgeConversationListResult, type BridgeHandover, type BridgeHandoverResult, BridgeParticipantUpdateInputSchema,
+  BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema, BridgeMemoryProposalResolveInputSchema,
+  BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES, type BridgeIdentityLink,
+  type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
+  type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
 } from '@tm8/contract';
+import { randomUUID } from 'node:crypto';
+import type { BridgeRuntimeLink, ConnectionAuthRelay } from './connection-auth.js';
 import type { FacadeDeps } from '../facade/deps.js';
+import type { BridgeWorkStarter } from './commands/ports.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, isUuid, limitOf, requireParam, requireUuidParam } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
+import { bridgeMessageBadges } from '../db/bridge-badges.js';
 import type { Querier } from '../db/types.js';
+import { readBridgeChatSummary } from './summary.js';
 import type { RequestContext } from '../http/types.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
 
 /** The route names the target; a repeated body ID must agree with it. */
-function routeId(ctx: RequestContext, field: 'spaceId' | 'bridgeId'): string {
+function routeId(ctx: RequestContext, field: 'spaceId' | 'bridgeId' | 'connectionId' | 'handoverId'): string {
   const id = requireUuidParam(ctx, field);
   const bodyId = (ctx.body as Record<string, unknown> | undefined)?.[field];
   if (bodyId !== undefined && bodyId !== id) {
@@ -71,7 +82,9 @@ async function recentPosters(q: Querier, bridgeId: string): Promise<BridgeRecent
             (array_agg(h.handle order by ob.created_at desc) filter (where h.handle is not null))[1] as handle
        from public.bridge_outbox ob
        join public.messages m on m.entity_id = ob.message_id
-       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from'
+       -- The post's session origin only: bridge provenance (props.bridgeId, 399)
+       -- would otherwise count each post once per edge.
+       left join public.edges af on af.src_id = m.entity_id and af.type = 'authored_from' and not (af.props ? 'bridgeId')
        left join public.bridge_handles h on h.entity_id = af.dst_id
       where ob.bridge_id = $1 and m.author_id is not null
       group by m.author_id
@@ -117,13 +130,22 @@ interface LogRow {
 }
 
 /**
- * `bridges.log.read` (§2.7): a page of the log anchor, oldest first. A thin
- * verb over the anchor's messages plus the caller session's cursor: with
- * `unread`, the page starts after the cursor and the cursor advances to its
- * last row. Bodies are data; nothing here turns one into an instruction.
+ * `bridges.log.read` (§2.7): a page of the log anchor. A thin verb over the
+ * anchor's messages plus the caller session's cursor. Rows within a page are
+ * always oldest first; the page is chosen one of four ways:
+ *
+ * - default / `since`: the oldest page after `since` (or from the start);
+ * - `unread`: the page after the caller's cursor, and the cursor advances to
+ *   its last row;
+ * - `latest`: the NEWEST page (the bridge panel opens here);
+ * - `before`: the page immediately older than that message (scroll back).
+ *
+ * `latest` and `before` never move the cursor. `olderCursor` is what to pass as
+ * `before` next, null at the start of the log. Bodies are data; nothing here
+ * turns one into an instruction.
  */
 async function readLog(q: Querier, bridgeId: string, opts: {
-  since: string | null; thread: string | null; limit: number; unread: boolean;
+  since: string | null; before: string | null; latest: boolean; thread: string | null; limit: number; unread: boolean;
 }): Promise<BridgeLogResult> {
   const [row] = await q.query<{ ctx: { anchorId: string; sessionId: string | null; cursor: string | null } }>(
     'select public.bridge_log_context($1) as ctx', [bridgeId]);
@@ -133,7 +155,15 @@ async function readLog(q: Querier, bridgeId: string, opts: {
     throw new CollabError('forbidden', '--unread reads a session\'s own cursor: run it from inside a session in this space',
       { details: { reason: 'not_a_session' } });
   }
+  if (opts.before) {
+    const [onLog] = await q.query<{ ok: boolean }>(
+      'select exists (select 1 from public.messages where entity_id = $1 and anchor_id = $2) as ok', [opts.before, bridge.anchor]);
+    if (!onLog?.ok) throw new CollabError('invalid_input', 'before must be a message on this bridge\'s log', { details: { path: 'before' } });
+  }
+  const backward = opts.latest || opts.before !== null;
   const after = opts.unread ? bridge.cursor : opts.since;
+  // One select for every mode: forward pages read up from `after`, backward
+  // pages read down from `before` (or the newest row) and are then reversed.
   const rows = await q.query<LogRow>(
     `select m.entity_id as id, m.created_at, m.author_id, m.body, e.parent_id, m.root_message_id,
             o.direction, o.external_message_id,
@@ -150,11 +180,15 @@ async function readLog(q: Querier, bridgeId: string, opts: {
       where m.anchor_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)
         and ($2::uuid is null or (m.created_at, m.entity_id) >
              (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid))
+        and ($5::uuid is null or (m.created_at, m.entity_id) <
+             (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $5::uuid))
         and ($3::uuid is null or m.root_message_id = $3::uuid or m.entity_id = $3::uuid)
-      order by m.created_at, m.entity_id
-      limit $4`, [bridge.anchor, after, opts.thread, opts.limit + 1]);
-  const page = rows.slice(0, opts.limit);
+      order by case when $6 then m.created_at end desc, case when $6 then m.entity_id end desc,
+               m.created_at, m.entity_id
+      limit $4`, [bridge.anchor, backward ? null : after, opts.thread, opts.limit + 1, opts.before, backward]);
+  const page = backward ? rows.slice(0, opts.limit).reverse() : rows.slice(0, opts.limit);
   const actors = await loadActors(q, page.map(r => r.author_id).filter((x): x is string => x !== null));
+  const badges = await bridgeMessageBadges(q, page.map(r => r.id), 'bridges.log.read:badges');
   const items: BridgeLogEntry[] = page.map(r => {
     const actor = r.author_id ? actorOf(actors, r.author_id) : null;
     return {
@@ -166,11 +200,97 @@ async function readLog(q: Querier, bridgeId: string, opts: {
         ? { direction: r.direction, externalMessageId: r.external_message_id, participant: r.participant }
         : null,
       handle: r.handle,
+      delivery: badges.get(r.id)?.delivery ?? null,
+      trust: badges.get(r.id)?.trust ?? null,
     };
   });
+  const first = page[0]?.id ?? null;
   const last = page.at(-1)?.id ?? null;
+  // Older rows exist: a backward page knows from its extra row; a forward page asks.
+  let older = backward ? rows.length > opts.limit : false;
+  if (!backward && first) {
+    const [probe] = await q.query<{ older: boolean }>(
+      `select exists (
+         select 1 from public.messages m join public.entities e on e.id = m.entity_id
+          where m.anchor_id = $1 and e.deleted_at is null and internal.entity_readable(e.id)
+            and ($3::uuid is null or m.root_message_id = $3::uuid or m.entity_id = $3::uuid)
+            and (m.created_at, m.entity_id) < (select m2.created_at, m2.entity_id from public.messages m2 where m2.entity_id = $2::uuid)
+       ) as older`, [bridge.anchor, first, opts.thread]);
+    older = probe?.older === true;
+  }
   if (opts.unread && last) await q.rpc('advance_bridge_read_cursor', [bridgeId, last]);
-  return { bridgeId, logAnchorId: bridge.anchor, items, lastMessageId: last, more: rows.length > opts.limit };
+  return {
+    bridgeId, logAnchorId: bridge.anchor, items, lastMessageId: last,
+    // Newer rows follow: a forward page knows from its extra row; `before` always has its own message after it.
+    more: backward ? opts.before !== null && page.length > 0 : rows.length > opts.limit,
+    olderCursor: older ? first : null,
+  };
+}
+
+/** A proposal as the SQL doors answer it (416), with its times as ISO strings. */
+function proposalOf(raw: BridgeMemoryProposal): BridgeMemoryProposal {
+  return {
+    ...raw, version: Number(raw.version), decidedAt: iso(raw.decidedAt), expiresAt: iso(raw.expiresAt)!,
+    createdAt: iso(raw.createdAt)!, updatedAt: iso(raw.updatedAt)!,
+  };
+}
+
+/** 417's link rows carry timestamps as SQL renders them; the wire is ISO. */
+function linkOf(row: BridgeIdentityLink): BridgeIdentityLink {
+  return { ...row, verifiedAt: iso(row.verifiedAt)!, revokedAt: iso(row.revokedAt) };
+}
+
+/** The connection json 421's internal.bridge_connection_json builds, with its timestamps as ISO strings. */
+function connectionOf(raw: Record<string, unknown>): BridgeConnectionView {
+  const c = raw as unknown as BridgeConnectionView;
+  return BridgeConnectionViewSchema.parse({
+    ...c,
+    createdAt: iso(c.createdAt), lastSeenAt: iso(c.lastSeenAt),
+    offers: c.offers.map(o => ({ ...o, createdAt: iso(o.createdAt), bridges: Number(o.bridges) })),
+  });
+}
+
+async function loadConnection(q: Querier, connectionId: string): Promise<BridgeConnectionView> {
+  const rows = await q.rpc<Record<string, unknown>[]>('list_bridge_connections', [null]);
+  const row = rows.find(r => r['id'] === connectionId);
+  if (!row) throw new CollabError('not_found', 'Bridge connection is unavailable');
+  return connectionOf(row);
+}
+
+/** What begin needs beyond the database: the runtime hub (B1b-2) and the QR relay. Both absent on a node without a runtime. */
+export interface BridgeHandlerOptions {
+  readonly runtime?: BridgeRuntimeLink;
+  readonly connectionAuth?: ConnectionAuthRelay;
+}
+
+interface HandoverReceiving extends BridgeHandover {
+  runtimeId: string | null; connectionStatus: string; conversationId: string;
+}
+
+const handoverOf = (h: BridgeHandover): BridgeHandover => ({
+  ...h, createdAt: iso(h.createdAt)!, settledAt: iso(h.settledAt),
+});
+
+/**
+ * accept's group check (D55, D28): the receiving number must be in the group
+ * right now, by its own runtime's word. Anything short of an answer refuses;
+ * an accept is never decided on a stale or guessed list.
+ */
+async function liveGroupIds(options: BridgeHandlerOptions, receiving: HandoverReceiving, requestId: string): Promise<string[]> {
+  const offline = (why: string) => new CollabError('conflict',
+    `your connection must be linked and running to accept, so its groups can be checked (${why})`,
+    { details: { reason: 'connection_offline', connectionId: receiving.toConnectionId } });
+  if (!options.runtime) throw offline('no runtime on this node');
+  if (!receiving.runtimeId || receiving.connectionStatus !== 'linked') throw offline(receiving.connectionStatus);
+  let frame: Awaited<ReturnType<BridgeRuntimeLink['listConversations']>>;
+  try {
+    frame = await options.runtime.listConversations(receiving.runtimeId, receiving.toConnectionId, `handover-${receiving.id}-${requestId}`);
+  } catch (error) {
+    throw offline((error as Error).message);
+  }
+  if (!frame) throw offline('its runtime is not connected');
+  if ('error' in frame) throw offline(frame.error);
+  return frame.items.map(item => item.conversationId);
 }
 
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
@@ -180,11 +300,22 @@ function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
   return value;
 }
 
-export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
+export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDeps, options: BridgeHandlerOptions = {}): void {
   const command = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
     deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), work);
   const read = async <T>(ctx: RequestContext, work: (q: Querier) => Promise<T>) =>
     deps.db.tx(claimsFor(await deps.owner(), ctx), work);
+
+  /** decline and withdraw share one shape: settle the offer, answer it with its bridge. */
+  const handoverClose = (rpc: 'decline_bridge_handover' | 'withdraw_bridge_handover', refusal: string) =>
+    requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverSettleInputSchema.parse(ctx.body);
+      const handoverId = routeId(ctx, 'handoverId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover }>(rpc, [handoverId, input.clientMutationId]);
+        return { handover: handoverOf(result.handover), bridge: await loadBridgeView(q, result.handover.bridgeId) };
+      });
+    }, refusal);
 
   /** pause, resume and remove share one shape: a versioned call on the bridge. */
   const state = (rpc: 'pause_bridge' | 'resume_bridge' | 'remove_bridge') => async (ctx: RequestContext) => {
@@ -219,7 +350,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.get': async ctx => read(ctx, async (q): Promise<BridgeDetailView> => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       const view = await loadBridgeView(q, bridgeId);
-      return { ...view, recentPosters: await recentPosters(q, bridgeId) };
+      return { ...view, recentPosters: await recentPosters(q, bridgeId), summary: await readBridgeChatSummary(q, bridgeId) };
     }),
     'bridges.create': requireHumanSession(async ctx => {
       const input = BridgeCreateInputSchema.parse(ctx.body);
@@ -301,18 +432,216 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.log.read': async ctx => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       const unread = ctx.query.get('unread') === 'true';
+      const latest = ctx.query.get('latest') === 'true';
       const since = optionalUuidQuery(ctx, 'since');
-      if (unread && since) throw new CollabError('invalid_input', 'pass --unread or --since, not both');
+      const before = optionalUuidQuery(ctx, 'before');
+      // One way to choose the page: --unread, --since, --latest or --before.
+      if ([unread, since !== null, latest, before !== null].filter(Boolean).length > 1) {
+        throw new CollabError('invalid_input', 'pass one of --unread, --since, --latest or --before');
+      }
       const thread = optionalUuidQuery(ctx, 'thread');
       const limit = Math.min(limitOf(ctx.query.get('limit')), BRIDGE_LOG_LIMIT_MAX);
-      // --unread moves the caller's cursor, so it runs as a write transaction.
+      // --unread moves the caller's cursor, so it runs as a write transaction;
+      // --latest and --before never move it.
       const run = unread ? command : read;
-      return run(ctx, q => readLog(q, bridgeId, { since, thread, limit, unread }));
+      return run(ctx, q => readLog(q, bridgeId, { since, before, latest, thread, limit, unread }));
     },
+    'bridges.connections.list': async ctx => {
+      const provider = ctx.query.get('provider');
+      if (provider !== null && !(BRIDGE_PROVIDERS as readonly string[]).includes(provider)) {
+        throw new CollabError('invalid_input', `provider must be one of ${BRIDGE_PROVIDERS.join(', ')}`);
+      }
+      return read(ctx, async q => {
+        const rows = await q.rpc<Record<string, unknown>[]>('list_bridge_connections', [provider]);
+        return { items: rows.map(connectionOf) };
+      });
+    },
+    'bridges.connections.begin': requireHumanSession(async (ctx): Promise<BridgeConnectionBeginResult> => {
+      const input = BridgeConnectionBeginInputSchema.parse(ctx.body);
+      const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+      const row = await deps.db.tx(claims, q => q.rpc<Record<string, unknown>>('begin_bridge_connection', [
+        input.provider, input.label ?? null, input.connectionId ?? null, input.clientMutationId,
+      ]));
+      const connection = connectionOf(row);
+      const { runtime, connectionAuth } = options;
+      if (!runtime || !connectionAuth || !claims.identityId || connection.provider !== 'whatsapp') {
+        return { connection, runtime: 'offline' };
+      }
+      // Armed before the connect, so a QR the runtime sends at once is not dropped.
+      connectionAuth.expect(connection.id, { identityId: claims.identityId, autoOwner: ctx.identity.kind === 'auto-owner' });
+      try {
+        // The caller's own claims: the hub binds runtime_id as the number's owner, never as the worker.
+        const linked = await runtime.connect({
+          provider: 'whatsapp', connectionId: connection.id, ...(input.authFlow ? { authFlow: input.authFlow } : {}),
+        }, claims);
+        if (!linked) {
+          connectionAuth.settle(connection.id);
+          return { connection, runtime: 'offline' };
+        }
+        return { connection: { ...connection, runtimeId: linked.runtimeId }, runtime: 'connecting' };
+      } catch (error) {
+        connectionAuth.settle(connection.id);
+        throw error;
+      }
+    }, 'bridges.connections.begin is for a human: the number\'s owner, at a keyboard'),
+    'bridges.connections.offer': requireHumanSession(async (ctx): Promise<BridgeConnectionOfferResult> => {
+      const input = BridgeConnectionOfferInputSchema.parse(ctx.body);
+      const connectionId = routeId(ctx, 'connectionId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ entity: { id: string } }>('offer_bridge_connection', [
+          connectionId, input.spaceId, input.visibility ?? 'public', input.label ?? null, input.clientMutationId,
+        ]);
+        return { connection: await loadConnection(q, connectionId), credentialId: result.entity.id };
+      });
+    }, 'bridges.connections.offer is for a human: the number\'s owner'),
+    'bridges.connections.withdraw': requireHumanSession(async (ctx): Promise<BridgeConnectionWithdrawResult> => {
+      const input = BridgeConnectionWithdrawInputSchema.parse(ctx.body);
+      const connectionId = routeId(ctx, 'connectionId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ entity: { id: string }; patches: { id: string }[] }>('withdraw_bridge_connection', [
+          connectionId, input.spaceId, input.clientMutationId,
+        ]);
+        const credentialId = result.entity.id;
+        return {
+          connection: await loadConnection(q, connectionId), credentialId,
+          pausedBridgeIds: result.patches.map(p => p.id).filter(id => id !== credentialId),
+        };
+      });
+    }, 'bridges.connections.withdraw is for a human: the number\'s owner'),
+    'bridges.connections.remove': requireHumanSession(async (ctx): Promise<BridgeConnectionRemoveResult> => {
+      const input = BridgeConnectionRemoveInputSchema.parse(ctx.body ?? {});
+      const connectionId = routeId(ctx, 'connectionId');
+      const removed = await command(ctx, q => q.rpc<{
+        connection: Record<string, unknown>; endedBridgeIds: string[]; revokedCredentialIds: string[];
+      }>('remove_bridge_connection', [connectionId, input.clientMutationId]));
+      const connection = connectionOf(removed.connection);
+      options.connectionAuth?.settle(connectionId);
+      // After the commit: the bridges have ended, so the allowlist the hub pushes is already empty.
+      const told = options.runtime
+        ? await options.runtime.disconnect(connectionId, { logout: true, runtimeId: connection.runtimeId })
+        : false;
+      return {
+        connection, endedBridgeIds: removed.endedBridgeIds, revokedCredentialIds: removed.revokedCredentialIds,
+        runtime: told ? 'logged_out' : 'offline',
+      };
+    }, 'bridges.connections.remove is for a human: the number\'s owner'),
+    'bridges.conversations.list': requireHumanSession(async (ctx): Promise<BridgeConversationListResult> => {
+      const connectionId = requireUuidParam(ctx, 'connectionId');
+      // D28: the owner's own connection only; a node admin is not the owner.
+      const conn = await read(ctx, q => q.rpc<{ id: string; status: string; runtimeId: string | null }>(
+        'bridge_connection_for_owner', [connectionId]));
+      if (!options.runtime || !conn.runtimeId) {
+        throw new CollabError('upstream_unavailable', 'no bridge runtime holds this connection; link it with `tm8 bridge connection begin`',
+          { details: { reason: 'runtime_offline' } });
+      }
+      const frame = await options.runtime.listConversations(conn.runtimeId, connectionId, randomUUID());
+      if (!frame) {
+        throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
+          { details: { reason: 'runtime_offline' } });
+      }
+      if ('error' in frame) {
+        throw new CollabError('upstream_unavailable', `the bridge runtime could not list groups: ${frame.error}`,
+          { details: { reason: 'runtime_error' } });
+      }
+      // Answered as it came; nothing about it is kept.
+      return { connectionId, items: frame.items };
+    }, 'bridges.conversations.list is for a human: the number\'s owner'),
+    'bridges.work.start': async (ctx): Promise<BridgeWorkStartResult> => {
+      const input = BridgeWorkStartInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const starter = deps.bridgeCommands as (Partial<BridgeWorkStarter> & object) | undefined;
+      if (!starter?.workStart) {
+        throw new CollabError('not_implemented', 'this node runs no bridge command executor (it needs the execution runtime)');
+      }
+      const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+      return starter.workStart(claims, { ...input, bridgeId });
+    },
+    // B3 (417, §4.6): the caller's own links. Begin and revoke are human-only
+    // here and in SQL; an agent can neither mint a proof of its owner nor end one.
+    'bridges.links.begin': requireHumanSession(async ctx => {
+      const input = BridgeLinkBeginInputSchema.parse(ctx.body ?? {});
+      return command(ctx, async q => {
+        const row = await q.rpc<BridgeLinkCode>('begin_bridge_link', [input.provider]);
+        return { kind: 'json' as const, status: 201, data: { ...row, expiresAt: iso(row.expiresAt)!, createdAt: iso(row.createdAt)! } };
+      });
+    }, 'a link code is for a human: open Account → Linked identities'),
+    'bridges.links.list': async ctx => read(ctx, async (q): Promise<BridgeLinksList> => {
+      const out = await q.rpc<BridgeLinksList>('my_bridge_links', []);
+      return {
+        items: out.items.map(linkOf),
+        pending: out.pending.map(p => ({ ...p, expiresAt: iso(p.expiresAt)!, createdAt: iso(p.createdAt)! })),
+      };
+    }),
+    'bridges.links.revoke': requireHumanSession(async ctx => {
+      const input = BridgeLinkRevokeInputSchema.parse(ctx.body ?? {});
+      const linkId = requireUuidParam(ctx, 'linkId');
+      if (input.linkId !== undefined && input.linkId !== linkId) {
+        throw new CollabError('invalid_input', 'body linkId does not match route');
+      }
+      return command(ctx, async q => linkOf(await q.rpc<BridgeIdentityLink>('revoke_bridge_link', [linkId])));
+    }, 'unlinking is for a human: open Account → Linked identities'),
+    'bridges.handover.offer': requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverOfferInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover }>('offer_bridge_handover', [
+          bridgeId, input.toConnectionId, input.clientMutationId]);
+        return { handover: handoverOf(result.handover), bridge: await loadBridgeView(q, bridgeId) };
+      });
+    }, 'bridges.handover.offer is for a human: the connection\'s owner or a space admin'),
+    'bridges.handover.accept': requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+      const input = BridgeHandoverSettleInputSchema.parse(ctx.body);
+      const handoverId = routeId(ctx, 'handoverId');
+      // Who may accept is checked before the runtime is asked anything.
+      const receiving = await read(ctx, q => q.rpc<HandoverReceiving>('bridge_handover_receiving', [handoverId]));
+      // A settled offer goes straight to the door: it replays or refuses.
+      const live = receiving.status === 'offered' ? await liveGroupIds(options, receiving, ctx.requestId) : [];
+      return command(ctx, async q => {
+        const result = await q.rpc<{ handover: BridgeHandover; readdressed?: number }>('accept_bridge_handover', [
+          handoverId, live, input.clientMutationId]);
+        return {
+          handover: handoverOf(result.handover), bridge: await loadBridgeView(q, result.handover.bridgeId),
+          readdressed: Number(result.readdressed ?? 0),
+        };
+      });
+    }, 'bridges.handover.accept is for a human: the receiving number\'s owner, in tm8 (D9)'),
+    'bridges.handover.decline': handoverClose('decline_bridge_handover',
+      'bridges.handover.decline is for a human: the receiving number\'s owner'),
+    'bridges.handover.withdraw': handoverClose('withdraw_bridge_handover',
+      'bridges.handover.withdraw is for a human: who offered it, the connection\'s owner or a space admin'),
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');
       return command(ctx, q => q.rpc<BridgeListenResult>('set_bridge_listen', [bridgeId, input.wake]));
     },
+    // D29, D61-D63 (416): `/remember` proposals. Made only by the command
+    // executor (proposeBridgeMemory); listed and decided only here, in tm8.
+    'bridges.memories.proposals.list': async ctx => {
+      const bridgeId = requireUuidParam(ctx, 'bridgeId');
+      const status = ctx.query.get('status');
+      if (status !== null && !(BRIDGE_MEMORY_PROPOSAL_STATUSES as readonly string[]).includes(status)) {
+        throw new CollabError('invalid_input', `status must be one of ${BRIDGE_MEMORY_PROPOSAL_STATUSES.join(', ')}`);
+      }
+      const limit = Math.min(limitOf(ctx.query.get('limit')), 200);
+      return read(ctx, async (q): Promise<BridgeMemoryProposalListResult> => {
+        const rows = await q.rpc<BridgeMemoryProposal[]>('list_bridge_memory_proposals', [bridgeId, status, limit]);
+        return { items: rows.map(proposalOf) };
+      });
+    },
+    'bridges.memories.proposals.resolve': requireHumanSession(async ctx => {
+      const input = BridgeMemoryProposalResolveInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const proposalId = requireUuidParam(ctx, 'proposalId');
+      if (input.proposalId !== undefined && input.proposalId !== proposalId) {
+        throw new CollabError('invalid_input', 'body proposalId does not match route');
+      }
+      return command(ctx, async q => {
+        const row = proposalOf(await q.rpc<BridgeMemoryProposal>('resolve_bridge_memory_proposal',
+          [proposalId, input.decision, input.statement ?? null, input.note ?? null]));
+        // The route names the bridge; a proposal of another bridge is not here.
+        if (row.bridgeId !== bridgeId) throw new CollabError('not_found', 'Memory proposal is unavailable');
+        return row;
+      });
+    }, 'memory proposals are accepted in tm8 by a person, never by an agent or from WhatsApp (D29)'),
   });
 }

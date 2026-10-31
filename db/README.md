@@ -106,6 +106,19 @@ blew the wide entity reads up to ~1e13 rows on CI. Only the runner calls it: a
 database built by applying files directly (the w1 test harness) gets 225's own
 one-time call and nothing after it.
 
+**Deferred triggers on `messages` and `edges` ← any later `ALTER TABLE` of them.**
+Several triggers on these tables are `deferrable initially deferred` constraint
+triggers: on `messages`, 398's `messages_bridge_outbound` and the F follow-ups'
+`messages_bridge_fix_closeout` fire on EVERY insert; on `edges`, the progress
+fan-out (`contains`), the runs-on pairing (`runs_on`) and F's `edges_bridge_fix`
+(`tracks`, and an `authored_from` to a bridge) queue an event per matching row.
+PostgreSQL refuses `ALTER TABLE` on a table with pending trigger events
+("cannot ALTER TABLE … because it has pending trigger events"). So a migration
+or a test fixture that inserts messages (or writes such edges) and then ALTERs
+that table in the same transaction must run `set constraints all immediate`
+first. Nothing fails at authoring time: it fails on the first database that
+has such a row in the transaction.
+
 ## Tests
 
 ```bash

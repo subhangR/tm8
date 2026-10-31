@@ -1,4 +1,4 @@
-import { McpPicker } from '../mcp/McpPicker';
+import { McpPicker, usePickerGate } from '../mcp/McpPicker';
 import {
   CODEX_CONNECTORS_REASON,
   ChatConnectorsSheet,
@@ -44,6 +44,7 @@ import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
 import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
+import { BridgedFromChip } from '../bridges/bridge-marks';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ChatCredentialPicker, credentialValue } from './ChatCredentialPicker';
 import { ChatContextNumber, staleReason } from './ChatContextNumber';
@@ -130,8 +131,6 @@ import './chat-home.css';
 
 /** The send refusal for a new chat in a space with no agent teammate. */
 export const NO_TEAMMATE_REFUSAL = 'No agent teammate in this space yet — add one to start a chat.';
-/** The send refusal while the connectors are not ready (loading, or an account to choose). */
-const MCP_REFUSAL = 'Choose a connected account for each connector.';
 /** How close to the top of the transcript a scroll reads the next older page. */
 const OLDER_TURNS_TRIGGER_PX = 240;
 
@@ -552,7 +551,8 @@ export function ChatHomeScreen({
      the drafts, it shows beside the draft that survived and nowhere else, and
      — D26 — survives navigation and sends in other threads: nothing the
      viewer typed, or was told, vanishes because they moved. */
-  const [mcpReady, setMcpReady] = useState(true);
+  // The connectors' send gate and its sentence, from the headless picker below.
+  const [mcpGate, onMcpGate] = usePickerGate();
   const [submitFailures, setSubmitFailures] = useState<Readonly<Record<string, string>>>({});
   const submitError = submitFailures[draftKey] ?? null;
   const fileSubmitFailure = useCallback((key: string, message: string | null) => {
@@ -1511,14 +1511,13 @@ export function ChatHomeScreen({
    * It used to be `newThread && !mcpReady` because an existing thread's
    * selection could not be changed, so there was nothing a viewer could be
    * holding wrong. Now they can change it mid-conversation, and an explicit
-   * pick with no usable account is exactly what `bind` refuses out loud at the
-   * next turn (B9) — so saying it here, where the account can still be chosen,
-   * is the earlier and kinder place. S22 is what makes this safe to widen:
-   * `selectionProblem` reads only an EXPLICIT value, so a thread on Space
-   * defaults has nothing to report and is never blocked by a default it did
-   * not choose.
+   * pick `bind` would refuse is exactly what it refuses out loud at the next
+   * turn (B9) — so saying it here, in the gate's own words, is the earlier and
+   * kinder place. S22 is what makes this safe to widen: `selectionGate` reads
+   * only an EXPLICIT value, so a thread on Space defaults has nothing to
+   * report and is never blocked by a default it did not choose.
    */
-  const refusal = startUnavailable ?? selectionUnavailable ?? (!mcpReady ? MCP_REFUSAL : null);
+  const refusal = startUnavailable ?? selectionUnavailable ?? mcpGate.problem;
 
   /**
    * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
@@ -2566,7 +2565,7 @@ export function ChatHomeScreen({
       };
     }),
   ] : [];
-  const refusalShown = refusal !== null && !loading && !(compactComposer && refusal === MCP_REFUSAL);
+  const refusalShown = refusal !== null && !loading && !(compactComposer && refusal === mcpGate.problem);
   /* Send (■ Stop mid-turn): the toolbar's last control, or — compact — the
      field's, so the toolbar row can be ＋ · role · model alone. */
   const sendControl = (
@@ -2920,6 +2919,11 @@ export function ChatHomeScreen({
                 />
               </div>
             ) : null}
+            {/* BRIDGED FROM (§4.5): the chip names the provider conversation
+                this chat answers, and opens the bridge. */}
+            {openDetail?.summary.bridgedFrom ? (
+              <BridgedFromChip bridged={openDetail.summary.bridgedFrom} onOpen={onOpenEntity} />
+            ) : null}
             {/* THE CONTEXT NUMBER (Chat Context), read above. */}
             {openContext ? <ChatContextNumber context={openContext} stale={openContextStale} /> : null}
           </header>
@@ -3149,7 +3153,7 @@ export function ChatHomeScreen({
               targetId={aboutId ?? undefined}
               value={mcpSelections}
               onChange={connectors.change}
-              onReady={setMcpReady}
+              onReady={onMcpGate}
               disabled={busy}
               headless
             />

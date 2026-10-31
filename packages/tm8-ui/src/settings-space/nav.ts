@@ -85,6 +85,7 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
         rows: [
           space('account', { keywords: ['name', 'display name', 'avatar', 'identity', 'username'] }),
           space('my-sessions', { keywords: ['sessions', 'sign out', 'devices', 'logout', 'browsers'] }),
+          space('linked-identities', { keywords: ['whatsapp', 'link', 'phone', 'number', 'bridges', 'telegram', 'slack'] }),
           space('credentials', { keywords: ['api key', 'keys', 'token', 'claude', 'codex', 'github', 'login', 'credentials'] }),
           /* §10.7: a token acts as the member and spans the Spaces they chose,
              so it is an ACCOUNT row — it is minted outside any one Space, and a
@@ -132,6 +133,9 @@ export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupDef[] = [
           space('chat-defaults', { keywords: ['chat model', 'default', 'effort'] }),
           space('space-credentials', { keywords: ['api key', 'keys', 'token', 'shared', 'credentials'] }),
           space('connectors', { keywords: ['mcp', 'tools', 'integrations', 'servers'] }),
+          /* §4.2: a bridge brings another network's conversation into the
+             space, and agents answer it — so it sits with the agents' tools. */
+          space('bridges', { keywords: ['whatsapp', 'slack', 'telegram', 'discord', 'group'] }),
           space('projects', { keywords: ['repo', 'repository', 'git', 'trust', 'branches'] }),
         ],
       },

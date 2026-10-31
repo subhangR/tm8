@@ -177,7 +177,7 @@ const port: SpaceCredentialsPort = {
     rows[i] = { ...rows[i]!, status: 'active', displayLogin: 'team@example.com' };
     // Only a login provider has a login to finish; a server-only row never gets here.
     const provider = rows[i]!.provider;
-    if (provider === 'typesafe' || provider === 'mcp' || provider === 'tool') throw new Error('server-only credentials have no vendor login');
+    if (provider === 'typesafe' || provider === 'mcp' || provider === 'tool' || provider === 'whatsapp') throw new Error('server-only credentials have no vendor login');
     return { workSessionId, provider, connected: true, login: 'team@example.com', authMethod: 'oauth', status: 'active', stored: true, terminated: true, spaceCredential: rows[i] };
   },
 };

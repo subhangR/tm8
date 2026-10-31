@@ -88,7 +88,7 @@ export const OPERATIONS = [
   // bridges (BRIDGE-ENTITY-DESIGN §3.4, B0a, migration 395). The CLI noun
   // `bridge` now names these; the reserved `bridge.fetchBlob` row (files section) keeps
   // its slot until its retirement (D11) lands with its tests. create/retarget/remove are
-  // human-only in SQL, as is participants.update (404, D52); handles.claim, log.read and listen admit any session in the space (D23).
+  // human-only in SQL, as is participants.update (420, D52); handles.claim, log.read and listen admit any session in the space (D23).
   { name: 'bridges.list', method: 'GET', path: '/v2/spaces/:spaceId/bridges', kind: 'read', status: 'v1' },
   { name: 'bridges.get', method: 'GET', path: '/v2/bridges/:bridgeId', kind: 'read', status: 'v1' },
   { name: 'bridges.create', method: 'POST', path: '/v2/spaces/:spaceId/bridges', kind: 'command', status: 'v1', humanOnly: true },
@@ -103,6 +103,38 @@ export const OPERATIONS = [
   { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
   { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },
   { name: 'bridges.listen', method: 'POST', path: '/v2/bridges/:bridgeId/listen', kind: 'command', status: 'v1' },
+  // B1b-5 (421): the caller's own connections (numbers), offered to spaces as
+  // server-only credentials. begin's QR or pairing code arrives on the caller's
+  // own socket as `bridge.connection.auth`, never in a response (§2.5).
+  { name: 'bridges.connections.list', method: 'GET', path: '/v2/me/bridge-connections', kind: 'read', status: 'v1' },
+  { name: 'bridges.connections.begin', method: 'POST', path: '/v2/me/bridge-connections', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.connections.offer', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/offer', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.connections.withdraw', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
+  // B1b-7 (423): removing a number logs the device out and ends its bridges; the
+  // group list is the owner's only, asked of the runtime live and never stored (D28).
+  { name: 'bridges.connections.remove', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/remove', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.conversations.list', method: 'GET', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'read', status: 'v1', humanOnly: true },
+  // Q7/Q8 (D55, D56; 424): hand a bridge to another member's connection. All
+  // human-only (D9: never from a group). accept asks the receiving number's
+  // runtime for its live group list before the one-transaction move.
+  { name: 'bridges.handover.offer', method: 'POST', path: '/v2/bridges/:bridgeId/handover', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.accept', method: 'POST', path: '/v2/bridge-handovers/:handoverId/accept', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.decline', method: 'POST', path: '/v2/bridge-handovers/:handoverId/decline', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handover.withdraw', method: 'POST', path: '/v2/bridge-handovers/:handoverId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
+  // labels (410; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
+  { name: 'labels.list', method: 'GET', path: '/v2/spaces/:spaceId/labels', kind: 'read', status: 'v1' },
+  { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },
+  { name: 'labels.update', method: 'PATCH', path: '/v2/labels/:labelId', kind: 'command', status: 'v1' },
+  { name: 'labels.archive', method: 'POST', path: '/v2/labels/:labelId/archive', kind: 'command', status: 'v1' },
+  // v2 §4.3: the agent's door to /work — the same server path, handles, provenance and announcement.
+  { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
+  { name: 'bridges.memories.proposals.list', method: 'GET', path: '/v2/bridges/:bridgeId/memory-proposals', kind: 'read', status: 'v1' },
+  { name: 'bridges.memories.proposals.resolve', method: 'POST', path: '/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve', kind: 'command', status: 'v1', humanOnly: true },
+  // B3 (417, §4.6, D58): the caller's own identity links. Begin and revoke are
+  // human-only in SQL; the routes sit under /v2/identity, beside the profile.
+  { name: 'bridges.links.begin', method: 'POST', path: '/v2/identity/bridge-links', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.links.list', method: 'GET', path: '/v2/identity/bridge-links', kind: 'read', status: 'v1' },
+  { name: 'bridges.links.revoke', method: 'POST', path: '/v2/identity/bridge-links/:linkId/revoke', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },
@@ -524,6 +556,11 @@ export const OPERATIONS = [
   // build doing the reading rather than the launch being inspected. Pairs with
   // `execution.journal` on one debug surface: told, then did.
   { name: 'execution.launch',         method: 'GET',   path: '/v2/work-sessions/:workSessionId/launch',     kind: 'read',    status: 'v1' },
+  // A session's boot, and nothing else (404): status, boot phase, the ended
+  // reason. One row read, for a caller that follows a launch it was answered
+  // at admission for (`tm8 session spawn`'s wait) without paying for the full
+  // entity detail on every poll.
+  { name: 'execution.bootState',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/boot',       kind: 'read',    status: 'v1' },
   // The session git rail (Git UI wave): the #76 verbs behind the facade so a
   // BROWSER can drive them — the CLI runs argv git on its own machine; a
   // browser has no machine. The worktree path is resolved server-side from
@@ -721,6 +758,12 @@ export const OPERATIONS = [
   // so triggering it confers nothing on a caller who cannot read the box. It is
   // inert on a claimed node, exactly like the token it mints.
   { name: 'auth.claim.reissue',                          method: 'POST',   path: '/v2/auth/claim/reissue',                                             kind: 'command', status: 'v1' },
+  // `meta.get` — what this node speaks (TM8 Mobile s-lld §4, version signals):
+  // contract version, catalog digest, event schema version, the operations it
+  // mounts and the oldest clients it serves. The other bootstrap read beside
+  // `auth.claim.status`, and anonymous for the same reason: a client reads it
+  // before it signs in. See `MetaGetResult`.
+  { name: 'meta.get',                                    method: 'GET',    path: '/v2/meta',                                                           kind: 'read',    status: 'v1' },
 
   // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
   // vendor account in a login terminal tm8 opens for them, so an agent they

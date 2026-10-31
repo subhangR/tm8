@@ -13,6 +13,7 @@
  * The registry holds `EventSink`s, not sockets — it has no idea WebSocket
  * exists (T-L10: one socket, but the fan-out must not care what the socket is).
  */
+import { isHumanAuthKind } from '@tm8/contract';
 import type { EventSink } from './ws-connection.js';
 
 interface SubscriptionState {
@@ -104,6 +105,26 @@ export class SubscriptionRegistry {
     return this.byConnId.has(connId);
   }
 
+  /**
+   * Open sinks of ONE verified person, on human sockets only (an agent bearer
+   * sharing the identity is never one). Not keyed by space or by connection
+   * id: the identity is the only selector. `autoOwner` admits the node's own
+   * loopback UI, whose sockets carry no identity id.
+   */
+  connectionsForIdentity(to: IdentityAddress): EventSink[] {
+    const out: EventSink[] = [];
+    for (const { sink } of this.byConnId.values()) {
+      if (!sink.isOpen) continue;
+      const identity = sink.identity;
+      const mine = identity.kind === 'auto-owner'
+        ? to.autoOwner === true
+        : identity.kind === 'bearer' && identity.identityId !== undefined && identity.identityId === to.identityId
+          && isHumanAuthKind(identity.authKind);
+      if (mine) out.push(sink);
+    }
+    return out;
+  }
+
   /** Number of registered connections (not subscriptions). */
   size(): number {
     return this.byConnId.size;
@@ -145,6 +166,30 @@ export function fanOutDurable(registry: SubscriptionRegistry, spaceId: string, t
 export function fanOutPresence(registry: SubscriptionRegistry, spaceId: string, text: string): number {
   let delivered = 0;
   for (const sink of registry.presenceConnectionsFor(spaceId)) {
+    try {
+      sink.send(text);
+      delivered += 1;
+    } catch {
+      // See fanOutDurable.
+    }
+  }
+  return delivered;
+}
+
+/** Who an identity-addressed frame is for: the verified identity, and whether that is the node's auto-owner. */
+export interface IdentityAddress {
+  readonly identityId: string;
+  readonly autoOwner?: boolean;
+}
+
+/**
+ * Identity-addressed EPHEMERAL fan-out (Bridges §2.5: a connection's QR or
+ * pairing code). Structurally separate from both fan-outs above: no space, no
+ * seq, never the durable log, so nothing it carries can be polled or replayed.
+ */
+export function fanOutToIdentity(registry: SubscriptionRegistry, to: IdentityAddress, text: string): number {
+  let delivered = 0;
+  for (const sink of registry.connectionsForIdentity(to)) {
     try {
       sink.send(text);
       delivered += 1;

@@ -7,7 +7,8 @@
  * refused before SQL); target_has_bridge on create and retarget as a 409 with
  * its reason; the views parse as the contract; a worker session claims one
  * handle, sets its listen level and reads the log with its own cursor; the
- * generic entities.create refuses the kind.
+ * generic entities.create refuses the kind. Bridges R (416): `/remember`
+ * proposals are listed by any session and resolved only by a human (D29, D62).
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,7 @@ import { createFacadeServer, type FacadeServer } from '../../src/http/server.js'
 import { createSessionIdentityResolver } from '../../src/http/identity-resolver.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { registerBridgeHandlers } from '../../src/bridges/handlers.js';
+import { registerW2IdentitySpacesHandlers } from '../../src/facade/handlers/w2/identity-spaces.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
@@ -70,11 +72,17 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status)
       values ($1,'whatsapp',$2,'+91 …9494','linked'),($3,'whatsapp',$4,'+91 …1999','linked')`, [connection, account, adminConnection, adminAccount]);
   });
+  // D32 (421): a bridge rides its connection's offered credential in the space.
+  for (const [who, conn] of [[identityId, connection], [adminIdentity, adminConnection]] as const) {
+    await db.tx({ identityId: who, authKind: 'cli', requestId: randomUUID() },
+      q => q.rpc('offer_bridge_connection', [conn, space, 'public', null, randomUUID()]));
+  }
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
   const deps = { db, config, owner };
   registerBridgeHandlers(registry, deps);
   registerW2EntitiesCommandsTrackingHandlers(registry, deps);
+  registerW2IdentitySpacesHandlers(registry, deps);
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;
 });
@@ -203,6 +211,186 @@ describe('a worker session on the bridge (D21, D23)', () => {
     // A member without a session reads by --since, never by cursor.
     expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log`)).items).toHaveLength(2);
     refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?unread=true`), 403, 'forbidden');
+  });
+});
+
+describe('the newest page and scroll-back (bridges.log.read --latest / --before)', () => {
+  const sender = '919876543210@s.whatsapp.net';
+  const ids: string[] = [];
+  beforeAll(async () => {
+    // Five more after 'hello 0' and 'hello 1': 'hello 2' … 'hello 6', the fourth inbound from a guest.
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at) values ($1,$2,'Rahul',now(),now())`, [bridgeId, sender]);
+      for (let n = 2; n <= 6; n++) {
+        const id = randomUUID();
+        ids.push(id);
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'message',$3)", [id, space, member]);
+        await c.query(`insert into public.messages(entity_id,anchor_id,author_id,body,created_at)
+          values($1,$2,$3,$4, now() + ($5 || ' s')::interval)`, [id, bridgeId, member, `hello ${n}`, String(n * 10)]);
+        if (n === 4) {
+          await c.query(`insert into public.message_origins(message_id, bridge_id, connection_id, direction, external_message_id,
+              external_conversation_id, external_sender_id) values ($1,$2,$3,'in','3EB0-4','infra@g.us',$4)`, [id, bridgeId, connection, sender]);
+        }
+      }
+    });
+  });
+  const bodies = (page: any) => page.items.map((m: any) => m.body);
+
+  it('--latest answers the newest page, oldest first within it, and never the phone number', async () => {
+    const page = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=3`));
+    expect(bodies(page)).toEqual(['hello 4', 'hello 5', 'hello 6']);
+    expect(page).toMatchObject({ more: false, olderCursor: ids[2], lastMessageId: ids[4] });
+    expect(page.items[0]).toMatchObject({ authorName: 'Rahul', origin: { direction: 'in', participant: 'Rahul' } });
+    expect(JSON.stringify(page)).not.toContain('919876543210');
+  });
+
+  it('--before pages back to the start of the log, where olderCursor is null', async () => {
+    const first = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=3`));
+    const second = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${first.olderCursor}&limit=3`));
+    expect(bodies(second)).toEqual(['hello 1', 'hello 2', 'hello 3']);
+    expect(second.more).toBe(true);
+    const third = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${second.olderCursor}&limit=3`));
+    expect(bodies(third)).toEqual(['hello 0']);
+    expect(third.olderCursor).toBeNull();
+    // The default read starts at the beginning: nothing older.
+    expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?limit=2`)).olderCursor).toBeNull();
+    expect(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?since=${ids[0]}&limit=2`)).olderCursor).toBe(ids[1]);
+  });
+
+  it('--latest and --before never move the session cursor', async () => {
+    ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true`));
+    ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${ids[4]}`));
+    // The cursor still sits on 'hello 1' (the --unread test above): everything after it is unread.
+    expect(bodies(ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?unread=true`))))
+      .toEqual(['hello 2', 'hello 3', 'hello 4', 'hello 5', 'hello 6']);
+  });
+
+  it('pages at the boundaries: an empty page, exactly n, n+1', async () => {
+    // Nothing older than the first message: an empty page at the start.
+    const oldest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?limit=1`)).items[0].id;
+    const empty = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${oldest}`));
+    expect(empty).toMatchObject({ items: [], olderCursor: null, lastMessageId: null });
+    // Seven messages on the log ('hello 0' … 'hello 6'): exactly n leaves nothing older, n+1 leaves one.
+    const all = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=7`));
+    expect(all.items).toHaveLength(7);
+    expect(all.olderCursor).toBeNull();
+    const six = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=6`));
+    expect(six.items).toHaveLength(6);
+    expect(six.olderCursor).toBe(six.items[0].id);
+    expect(bodies(ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${six.olderCursor}&limit=6`)))).toEqual(['hello 0']);
+  });
+
+  it('takes one way to choose the page, and a before on this log', async () => {
+    for (const q of ['latest=true&unread=true', `latest=true&since=${ids[0]}`, `before=${ids[1]}&unread=true`, `before=${ids[1]}&latest=true`]) {
+      refused(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/log?${q}`), 400, 'invalid_input');
+    }
+    refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${randomUUID()}`), 400, 'invalid_input');
+  });
+
+  it('is stable under equal timestamps: ties break by id, with no row lost or repeated', async () => {
+    const tied = [randomUUID(), randomUUID(), randomUUID()].sort();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      for (const [n, id] of tied.entries()) {
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'message',$3)", [id, space, member]);
+        await c.query(`insert into public.messages(entity_id,anchor_id,author_id,body,created_at)
+          values($1,$2,$3,$4, now() + interval '1 hour')`, [id, bridgeId, member, `tie ${n}`]);
+      }
+    });
+    const newest = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?latest=true&limit=2`));
+    expect(newest.items.map((m: any) => m.id)).toEqual([tied[1], tied[2]]);
+    const back = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/log?before=${newest.olderCursor}&limit=2`));
+    expect(back.items.map((m: any) => m.id)).toEqual([ids[4], tied[0]]);
+  });
+});
+
+describe('/remember proposals (Bridges R, 416: D29, D62)', () => {
+  let proposal = '';
+  // This block links +911111 to the shared human identity; later blocks (B3's
+  // link list) read that identity's links, so the link and its participant go
+  // when the block ends. Each block stays independent of file order.
+  afterAll(async () => {
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`delete from public.bridge_identity_links where provider = 'whatsapp' and external_id = '+911111' and identity_id = $1`, [identityId]);
+      await c.query(`delete from public.bridge_participants where bridge_id = $1 and external_id = '+911111'`, [bridgeId]);
+    });
+  });
+  it('any session lists them; canDecide is the caller\'s own', async () => {
+    proposal = randomUUID();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      // The owner is a verified linked member of the group: a participant with a code link.
+      await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+        values ($1,'+911111','Owner',now(),now())`, [bridgeId]);
+      await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, verified_at)
+        values ('whatsapp','+911111',$1,'code',now())`, [identityId]);
+      await c.query(`insert into public.bridge_memory_proposals(id, space_id, bridge_id, statement, proposed_by, proposer_trust,
+          proposer_name, provider_message_id, expires_at)
+        values ($1,$2,$3,'Deploy windows are Tue/Thu',$4,'linked','Owner','wamid.http-1', now() + interval '14 days')`,
+        [proposal, space, bridgeId, member]);
+    });
+    const mine = ok(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals?status=pending`));
+    expect(mine.items).toEqual([expect.objectContaining({ id: proposal, status: 'pending', canDecide: true, proposerTrust: 'linked' })]);
+    const agents = ok(await request(agent.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals`));
+    expect(agents.items[0]).toMatchObject({ id: proposal, canDecide: false });
+    refused(await request(human.token, 'GET', `/v2/bridges/${bridgeId}/memory-proposals?status=maybe`), 400, 'invalid_input');
+  });
+
+  it('an agent cannot resolve one (humanOnly); a human linked member accepts it into a memory', async () => {
+    refused(await request(agent.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false), 403, 'forbidden');
+    refused(await request(human.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'drop', statement: 'x' }, false), 400, 'invalid_input');
+    refused(await request(human.token, 'POST', `/v2/bridges/${randomUUID()}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false), 404, 'not_found');
+    const done = ok(await request(human.token, 'POST', `/v2/bridges/${bridgeId}/memory-proposals/${proposal}/resolve`, { decision: 'accept' }, false));
+    expect(done).toMatchObject({ id: proposal, status: 'accepted', canDecide: false });
+    expect(done.memoryId).toEqual(expect.any(String));
+    const [edge] = await database.query(`select 1 from public.edges where src_id = $1 and dst_id = $2 and type = 'remembers'`, [bridgeId, done.memoryId]);
+    expect(edge).toBeTruthy();
+  });
+});
+
+describe('B3 links (417, §4.6, D58-D60)', () => {
+  it('begin answers the code once, to a human; the list shows its expiry, never the code', async () => {
+    refused(await request(agent.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }), 403, 'forbidden');
+    refused(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'fax' }), 400, 'invalid_input');
+    const minted = ok(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }));
+    expect(minted.code).toMatch(/^TM8-[A-HJ-NP-Z2-9]{6}$/);
+    expect(Number.isNaN(Date.parse(minted.expiresAt))).toBe(false);
+    const list = ok(await request(human.token, 'GET', '/v2/identity/bridge-links'));
+    expect(list.items).toEqual([]);
+    expect(list.pending).toHaveLength(1);
+    expect(JSON.stringify(list)).not.toContain(minted.code);
+  });
+
+  it('a redeemed code shows as a link; an agent cannot revoke it; its human can', async () => {
+    const { code } = ok(await request(human.token, 'POST', '/v2/identity/bridge-links', { provider: 'whatsapp' }));
+    const [row] = await database.query<{ r: { ok: boolean } }>('select internal.bridge_redeem_link_code($1,$2,$3) as r',
+      [bridgeId, '919000000123@s.whatsapp.net', code]);
+    expect(row!.r.ok).toBe(true);
+    const list = ok(await request(human.token, 'GET', '/v2/identity/bridge-links'));
+    expect(list.items).toEqual([expect.objectContaining({ masked: '…0123', method: 'code', trust: 'linked' })]);
+    const linkId = list.items[0].id;
+    refused(await request(agent.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}), 403, 'forbidden');
+    refused(await request(admin.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}), 404, 'not_found');
+    const revoked = ok(await request(human.token, 'POST', `/v2/identity/bridge-links/${linkId}/revoke`, {}));
+    expect(Number.isNaN(Date.parse(revoked.revokedAt))).toBe(false);
+    expect(ok(await request(human.token, 'GET', '/v2/identity/bridge-links')).items).toEqual([]);
+  });
+
+  it('spaces.invites.create pins a participant; more than one use is refused', async () => {
+    await database.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+      values ($1,'919000000456@s.whatsapp.net','Rahul',now(),now())`, [bridgeId]);
+    const bridgeParticipant = { bridgeId, externalId: '919000000456@s.whatsapp.net' };
+    refused(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { maxUses: 2, bridgeParticipant }), 400, 'invalid_input');
+    const invite = ok(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { bridgeParticipant }));
+    expect(invite.maxUses).toBe(1);
+    const [pin] = await database.query<{ external_id: string }>('select external_id from public.bridge_invite_pins where invite_id = $1', [invite.id]);
+    expect(pin!.external_id).toBe(bridgeParticipant.externalId);
+    // A failed pin leaves no invite behind: invite and pin are one transaction.
+    const before = await database.query('select 1 from public.space_invites where space_id = $1', [space]);
+    refused(await request(admin.token, 'POST', `/v2/spaces/${space}/invites`, { bridgeParticipant: { bridgeId, externalId: 'nobody' } }), 404, 'not_found');
+    expect(await database.query('select 1 from public.space_invites where space_id = $1', [space])).toHaveLength(before.length);
   });
 });
 

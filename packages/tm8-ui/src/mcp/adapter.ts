@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
+import { CollabError, detectMcpImportFormat, literalCredentialIn, literalCredentialInPath, McpImportError, McpServerDefinitionSchema, mcpCatalogEntry, selectMcpImports, translateMcpConfigText, type ChatMcpSelectionsResult, type McpAuditListResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpAddOutcome, McpDefinition, McpPort, McpServer } from './port';
@@ -264,6 +264,8 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     return Object.assign(items, { allowed });
   }
   const command = () => ({ clientMutationId: `mcp-${crypto.randomUUID()}` });
+  /** Per scope: the list's last answer to "may this viewer attach here" — decides whether the optional reads go out with it. */
+  const attachKnown = new Map<string, boolean>();
   /** B22/B25's ADOPT: approve the row that already exists, at the version it is at now. */
   async function approveById(serverId: string) {
     const current = await http.call<McpServerView>('mcp.servers.get', { params: { serverId } });
@@ -271,14 +273,33 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
   }
   return {
     async catalog(targetId, teamMemberId) {
-      const items = await allServers(targetId, teamMemberId);
-      const allowed = items.allowed;
-      const resolved = await http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } });
+      // Two round trips, not four, for a scope this port has read before:
+      // the connector list, the defaults and the target's attachments go out
+      // together, then the per-connector accounts. The two optional reads are
+      // asked only of a viewer who may ATTACH here — for anyone else they are
+      // refused and discarded, two logged failures per read. The list is the
+      // authority on that, so a scope seen for the first time asks it first.
+      const key = JSON.stringify([targetId, teamMemberId]);
+      const known = attachKnown.get(key);
+      const optional = () => Promise.allSettled([
+        http.call<McpResolveResult>('mcp.resolve', { params: { spaceId }, body: { spaceId, ...(targetId ? { targetIds: [targetId] } : {}), ...(teamMemberId ? { teamMemberId } : {}) } }),
+        targetId ? attachments(targetId) : Promise.resolve([]),
+      ] as const);
+      const listing = allServers(targetId, teamMemberId);
+      const early = known ? optional() : null;
+      const items = await listing;
+      const attach = items.allowed.attach;
+      attachKnown.set(key, attach);
+      const [resolving, attaching] = attach ? await (early ?? optional()) : [undefined, undefined];
+      if (resolving?.status === 'rejected') throw resolving.reason;
+      if (attaching?.status === 'rejected') throw attaching.reason;
+      const resolved = resolving?.status === 'fulfilled' ? resolving.value.selections : [];
+      const attached = attaching?.status === 'fulfilled' ? attaching.value : [];
       const servers = await Promise.all(items.map(async server => {
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
         return viewOf(server, accounts);
       }));
-      return { servers, attachedServerIds: targetId ? (await attachments(targetId)).map(e => e.serverId) : [], defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: allowed.register, canAttach: allowed.attach };
+      return { servers, attachedServerIds: attached.map(e => e.serverId), defaults: resolved.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: items.allowed.register, canAttach: attach };
     },
     async catalogEntries() {
       // Asked WITH the Space, so each entry carries `added` (B16) and Discover
@@ -377,6 +398,10 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     /** §10.6. A pass-through: the server owns §6 and the view only renders it. */
     async sessionProvenance(sessionId) {
       return http.call<McpSessionProvenance>('mcp.sessions.provenance', { params: { sessionId } });
+    },
+    /** §5.6. The newest calls to one connector; the server scopes the rows to what this caller may read (`scope`). */
+    async audit(serverId, limit = 20) {
+      return http.call<McpAuditListResult>('mcp.audit.list', { params: { spaceId }, query: { serverId, limit } });
     },
     async members() {
       const members: { id: string; label: string }[] = [];

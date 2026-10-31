@@ -33,6 +33,7 @@ import {
   incomingMessageInjection,
   utf8Bytes,
   type SessionInputAttachment,
+  type SessionInputBridgeOrigin,
 } from '@tm8/prompt';
 
 /**
@@ -80,6 +81,12 @@ export interface DispatchableRoute {
    * the size check, reservation and settlement below are the same.
    */
   readonly renderEnvelope?: (deliveryAttemptId: string) => string;
+  /**
+   * Bridges §2.3: the `<origin kind="bridge">` facts when this copy came from a
+   * provider conversation (`bridgeOriginFacts`, bridges/access.ts). Absent for
+   * every other message.
+   */
+  readonly bridgeOrigin?: SessionInputBridgeOrigin;
 }
 
 export interface MessageDeliveryPort {
@@ -242,6 +249,7 @@ export async function dispatchSessionMessages(
         threadRootMessageId: route.threadRootMessageId,
         body: route.body,
         attachments: route.attachments,
+        ...(route.bridgeOrigin ? { bridgeOrigin: route.bridgeOrigin } : {}),
         ...(parent
           ? {
               parentBody: parent.content.body,

@@ -59,6 +59,12 @@ export interface JoinScreenProps {
   onRedeem?: (code: string, spacePassword?: string) => Promise<InviteRedemption>;
   /** Where to go once membership exists. The host owns navigation. */
   onJoined: (spaceId: SpaceId, joined: boolean) => void;
+  /**
+   * `seam.commands.beginBridgeLink` (Bridges D58/D60). When the invite was made
+   * for a group participant, joining grants membership only; this mints the
+   * `/link` code the new member sends from that number in the group.
+   */
+  onBeginLink?: (provider: string) => Promise<{ code: string; expiresAt: string }>;
   /** Abandon the code and continue into whatever this account already has. */
   onDismiss: () => void;
 }
@@ -77,7 +83,8 @@ type Phase =
   | { kind: 'preview'; preview: InvitePreview }
   | { kind: 'unreadable'; why: string }
   | { kind: 'joining'; preview: ValidPreview }
-  | { kind: 'refused'; preview: ValidPreview; why: string };
+  | { kind: 'refused'; preview: ValidPreview; why: string }
+  | { kind: 'link'; preview: ValidPreview; spaceId: SpaceId; joined: boolean; code: string | null };
 
 /**
  * How a redeem refusal reads.
@@ -110,7 +117,7 @@ export function refusalOf(code: string, message: string): string {
   }
 }
 
-export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: JoinScreenProps) {
+export function JoinScreen({ code, onPreview, onRedeem, onJoined, onBeginLink, onDismiss }: JoinScreenProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'reading' });
   const [spacePassword, setSpacePassword] = useState('');
 
@@ -144,6 +151,14 @@ export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: J
       // whose effect had already happened. Same destination either way, so the
       // screen does not stop to explain a distinction the person never
       // experienced as a failure.
+      if (preview.bridgeLink && onBeginLink) {
+        // D60: the invite made the member; the number links only once its
+        // owner sends this code from the phone, in the group (D59).
+        let linkCode: string | null = null;
+        try { linkCode = (await onBeginLink(preview.bridgeLink.provider)).code; } catch { linkCode = null; }
+        setPhase({ kind: 'link', preview, spaceId: result.spaceId, joined: result.joined, code: linkCode });
+        return;
+      }
       onJoined(result.spaceId, result.joined);
     } catch (error) {
       const raw = (error as { code?: unknown })?.code;
@@ -175,6 +190,33 @@ export function JoinScreen({ code, onPreview, onRedeem, onJoined, onDismiss }: J
         </p>
         <p className="join__detail">{phase.why}</p>
         <Foot code={code} onDismiss={onDismiss} dismissLabel="Continue without joining" />
+      </Shell>
+    );
+  }
+
+  if (phase.kind === 'link') {
+    const masked = phase.preview.bridgeLink?.masked ?? 'your number';
+    return (
+      <Shell testId="join-link">
+        <h1 className="join__title">You’re in {phase.preview.spaceName}</h1>
+        {phase.code ? (
+          <>
+            <p className="join__why">
+              To have your messages from {masked} count as you, send this from that phone, in the group:
+            </p>
+            <p className="join__detail"><code data-testid="join-link-code">/link {phase.code}</code></p>
+            <p className="join__why">It works once, for ten minutes. Until then the group sees that number as a guest.</p>
+          </>
+        ) : (
+          <p className="join__why" data-testid="join-link-later">
+            To have your messages from {masked} count as you, make a code in Account → Linked identities and send
+            /link with it from that phone, in the group.
+          </p>
+        )}
+        <button type="button" className="join__primary" data-testid="join-link-continue"
+          onClick={() => onJoined(phase.spaceId, phase.joined)}>
+          Continue
+        </button>
       </Shell>
     );
   }

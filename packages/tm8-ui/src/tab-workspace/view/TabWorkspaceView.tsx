@@ -11,12 +11,15 @@ import { installDevHook } from '../runtime/devHook';
 import { initPersistence } from '../runtime/persistence';
 import { initUrlSync, type RouteFile } from '../runtime/url';
 import { drainWorkArrival, onWorkArrival } from '../runtime/arrival';
+import { onLaunchTabQueued } from '../runtime/launchTabs';
+import { landQueuedLaunches } from '../../views/useLaunchHandoff';
+import { LaunchPageHostProvider } from './LaunchPageHostProvider';
 import { getRailStore } from '../runtime/railStore';
 import { getWorkspaceListStore } from '../bridge/workspaceList';
-import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { isWorkspaceKind, type KindId } from '../runtime/types';
+import { noticeOfToast } from './toastNotice';
 import { Browser } from './Browser';
 import { Navigator } from './Navigator';
 import { browserBounds, isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
@@ -80,8 +83,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
         canCreate: canCreateKind,
         /* Spec C: tab/scope/layout commands from the bridge need this view. */
         viewMounted: () => true,
-        toast: (toast) =>
-          onNotice({ id: `tws-${Date.now()}`, tone: 'info', title: toast.text, body: '', ttlMs: NOTICE_TTL_MS }),
+        toast: (toast) => onNotice(noticeOfToast(toast)),
       }),
     [runtime, onNotice],
   );
@@ -127,6 +129,12 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
     drainWorkArrival(runtime, ctx);
     return onWorkArrival(() => drainWorkArrival(runtime, ctx));
   }, [runtime, viewerId, spaceId, resolveKind]);
+  /* Launches pressed on another screen (task 01a182d2): their tabs open here,
+     behind the restore for the same reason the arrivals above wait for it. */
+  useEffect(() => {
+    landQueuedLaunches(runtime);
+    return onLaunchTabQueued(() => landQueuedLaunches(runtime));
+  }, [runtime]);
   /* Keyboard commands from the shell (tabs, drafts, browser, the tab's
      controls) — installed AFTER the restore and arrivals above, so a command
      queued from another view lands on the restored tabs. */
@@ -163,6 +171,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
   } as CSSProperties;
   return (
     <WorkspaceProvider value={value}>
+      <LaunchPageHostProvider>
       <div
         className="tws-root"
         data-expanded={layout.expanded || undefined}
@@ -207,6 +216,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
         <ScopeRepairBanner />
         <RevealPrompt />
       </div>
+      </LaunchPageHostProvider>
     </WorkspaceProvider>
   );
 }
@@ -249,3 +259,4 @@ function RestoreNavigation() {
     </div>
   );
 }
+

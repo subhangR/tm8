@@ -588,6 +588,36 @@ export interface IncomingMessageFacts {
    * an element that is sometimes missing is one a model stops looking for.
    */
   attachments?: readonly SessionInputAttachment[];
+  /**
+   * Bridges §2.3 (B1b-3): set when the message came from a provider
+   * conversation. Rendered as `<origin kind="bridge" …/>`. `participant` and
+   * `conversation` are provider-side names, so they ride as escaped attributes
+   * of a server-built element and are never instructions; the body stays the
+   * untrusted block.
+   */
+  bridgeOrigin?: SessionInputBridgeOrigin;
+}
+
+/** The `<origin kind="bridge">` element: where a bridged message came from and how much the reader has not read. */
+export interface SessionInputBridgeOrigin {
+  bridgeId: string;
+  provider: string;
+  conversation: string;
+  participant: string;
+  trust: 'linked' | 'asserted' | 'guest';
+  externalMessageId: string;
+  /** True for @handle, a reply to the reader's message, /tell or its /work thread (§2.7). */
+  directed: boolean;
+  /** Log messages since the reader's cursor (D21). */
+  unread: number;
+}
+
+/** The bridge origin's control line, as rendered. Names are cut so a long group title cannot push the envelope over budget. */
+export function serializeBridgeOrigin(o: SessionInputBridgeOrigin): string {
+  const cut = (v: string) => (v.length > 120 ? `${v.slice(0, 120)}…` : v);
+  return `  <origin kind="bridge" bridge_id="${attr(o.bridgeId)}" provider="${attr(o.provider)}" conversation="${attr(cut(o.conversation))}"`
+    + ` participant="${attr(cut(o.participant))}" trust="${attr(o.trust)}" external_message_id="${attr(o.externalMessageId)}"`
+    + ` directed="${o.directed ? 'true' : 'false'}" unread="${attr(o.unread)}" />`;
 }
 
 /**
@@ -669,6 +699,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
     `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
+    ...(f.bridgeOrigin ? [serializeBridgeOrigin(f.bridgeOrigin)] : []),
     ...context,
     ...attachments.control,
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,

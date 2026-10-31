@@ -71,10 +71,16 @@ import {
   type WorkSessionUsage,
   type WorkSessionUsageSource,
   WorktreeManager,
+  emptySweep,
+  type WarmLanePool,
   type WorktreeAllocationRow,
   type WorktreeAllocationState,
-  type GhostReconcileReport,
+  type NodeEndingSweepReport,
+  type NodeEndedKind,
+  type NodeSessionEnding,
   type WorktreeReconcileReport,
+  SpawnPhaseTimer,
+  spawnLaunchFacts,
 } from '@tm8/execution';
 import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
@@ -82,6 +88,7 @@ import { dispatchRequestInjection } from '@tm8/prompt';
 import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { firingKeyFor } from '../loops/firing.js';
 import type { ToolRuntime } from '../tools/runtime.js';
+import type { BridgeCommandPorts } from '../bridges/commands/ports.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -89,6 +96,9 @@ import type {
   ExecutionDispatchers,
   ExecutionDispatchResult,
   ExecutionSpawnResult,
+  ExecutionSpawnLaunch,
+  SpawnAccessModeSource,
+  WorkSessionBootState,
   CommandResult,
   ExecutionLiveness,
   ExecutionResumeInput,
@@ -106,6 +116,8 @@ import type {
   SkippedSkill,
   SpawnSelection,
 } from '@tm8/contract';
+import { createSpawnLogger } from './spawn-logger.js';
+import { bootPhaseFacts } from './entity-read.js';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -126,7 +138,7 @@ import { projectLaunchContext } from './launch-context.js';
 import { loadContextV2 } from './services/w2/feed-context-v2.js';
 import { loadStoryContextForTask, putDerivedTasksInStories } from './spawn-story.js';
 import { loadDesignContextForTask } from './spawn-design.js';
-import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
+import { toCommandResultOnTwoClients, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
@@ -448,9 +460,15 @@ export class DbGraphPort implements GraphPort {
     // not recognise, an unreadable root) leaves the last cached references in
     // place and the spawn proceeds — RLS on the transaction below is what
     // decides whether this spawn is allowed at all.
+    //
+    // D2: it is also off the admission path. A full scan upserts every skill
+    // file (5–10 s at ~100 home skills), so the launch serves the references
+    // the last scan wrote and refreshes them in the background
+    // (`SkillScanDebouncer.serve`); only a space with no scan at all waits for
+    // its first. `skillsScannedAt` names the scan the briefing's set came from.
     let skillsScannedAt: string | null = null;
     try {
-      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, input.projectId ? { root: input.projectId } : { homesOnly: true })).scannedAt;
+      skillsScannedAt = (await scanSpaceSkills(this.db, this.claims(auth), input.spaceId, { ...(input.projectId ? { root: input.projectId } : { homesOnly: true }), serveStale: true })).scannedAt;
     } catch (error) {
       console.warn(`[tm8:skills] pre-spawn scan skipped for space ${input.spaceId}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1045,12 +1063,21 @@ export class DbGraphPort implements GraphPort {
     // new, so a retry naming a different entity cannot fail the retry.
     const about = input.aboutEntityId ?? null;
     const fromChat = input.aboutFromChatId ?? null;
-    const result = about !== null || fromChat !== null
+    // Bridges D22 (399): a session launched for a bridge gets its bridgeOrigins
+    // launch context and its own provenance edges in this same transaction, so
+    // nothing it creates can precede them. A failure fails the spawn.
+    const bridgeOrigins = input.bridgeOrigins?.length ? input.bridgeOrigins : null;
+    const result = about !== null || fromChat !== null || bridgeOrigins !== null
       ? await this.db.tx(this.claims(auth), async (q) => {
         const spawned = await q.rpc<Record<string, unknown>>('public.execution_spawn', args);
         const spawnedId = (spawned?.entity as { id?: unknown } | undefined)?.id;
         if (typeof spawnedId === 'string' && spawned?.__tm8_replayed !== true) {
-          await q.rpc('public.work_session_about', [spawnedId, about, fromChat]);
+          if (about !== null || fromChat !== null) {
+            await q.rpc('public.work_session_about', [spawnedId, about, fromChat]);
+          }
+          if (bridgeOrigins !== null) {
+            await q.rpc('public.bridge_launch_origins', [spawnedId, JSON.stringify(bridgeOrigins)]);
+          }
         }
         return spawned;
       })
@@ -1311,6 +1338,7 @@ export class DbGraphPort implements GraphPort {
       null, // p_client_mutation_id — an exit is not a client mutation
       input.endedKind ?? null, // p_ended_kind (171)
       input.endedReason ?? null, // p_ended_reason (171) — plain English
+      input.bootPhase ?? null, // p_boot_phase (404) — a booting launch's progress
     ]);
   }
 
@@ -1543,33 +1571,53 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * Non-terminal work sessions recorded against `nodeId` — the ghost candidates
-   * startup reconciliation retires.
-   *
-   * A plain READ rather than an RPC: nothing is written here, and the catalog
-   * has no "sessions on a node" operation because this is node-local
-   * maintenance, not a contract surface. RLS still applies through the caller's
-   * claims, so it can only ever see rows the caller is entitled to.
-   *
-   * `deleted_at is null` is load-bearing: a soft-deleted session is already gone
-   * as far as the graph is concerned, and transitioning it would write a ledger
-   * row resurrecting something nobody asked about.
+   * The node doors (403) behind boot reconciliation and the lost-session
+   * reaper. SECURITY DEFINER RPCs gated on the node-admin claim, deliberately
+   * not catalog operations: this is node-local maintenance, and the node's
+   * background identity is not a member of every space it hosts.
    */
-  async listNodeActiveSessions(
+  async listNodeLiveSessions(
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
-    const rows = await this.db.query<{ entity_id: string; status: string }>(
+    const rows = await this.db.query<{ session_id: string; status: string }>(
       this.claims(auth),
-      `select ws.entity_id, ws.status
-         from public.work_sessions ws
-         join public.entities e on e.id = ws.entity_id
-        where ws.node_id = $1
-          and ws.status in ('spawning', 'running', 'idle')
-          and e.deleted_at is null`,
+      'select session_id, status from public.node_live_work_sessions($1)',
       [nodeId],
     );
-    return rows.map((r) => ({ sessionId: r.entity_id, status: r.status as WorkSessionStatus }));
+    return rows.map((r) => ({ sessionId: r.session_id, status: r.status as WorkSessionStatus }));
+  }
+
+  async recordNodeSessionEnding(
+    auth: GraphAuth,
+    input: {
+      nodeId: string;
+      sessionId: string;
+      status: 'exited' | 'failed';
+      endedKind: NodeEndedKind;
+      endedReason: string;
+      error: string;
+    },
+  ): Promise<NodeSessionEnding> {
+    const result = await this.db.rpc<NodeSessionEnding | null>(
+      this.claims(auth),
+      'public.node_record_work_session_ending',
+      [input.nodeId, input.sessionId, input.status, input.endedKind, input.endedReason, input.error],
+    );
+    if (!result || result.recorded !== true) return { recorded: false, usageFacts: null };
+    return { recorded: true, usageFacts: result.usageFacts ?? null };
+  }
+
+  async recordNodeSessionUsage(
+    auth: GraphAuth,
+    input: { nodeId: string; sessionId: string; usage: WorkSessionUsage; source: WorkSessionUsageSource },
+  ): Promise<boolean> {
+    const stored = await this.db.rpc<boolean>(
+      this.claims(auth),
+      'public.node_record_work_session_usage',
+      [input.nodeId, input.sessionId, JSON.stringify(input.usage), input.source],
+    );
+    return stored === true;
   }
 
   async listCompletedSessionsToClose(
@@ -1578,7 +1626,7 @@ export class DbGraphPort implements GraphPort {
   ): Promise<Array<{ sessionId: string; minutes: number }>> {
     const rows = await this.db.query<{ session_id: string; minutes: number }>(
       this.claims(auth),
-      `select session_id, minutes from public.completed_sessions_to_close($1)`,
+      `select session_id, minutes from public.node_completed_sessions_to_close($1)`,
       [nodeId],
     );
     return rows.map((r) => ({ sessionId: r.session_id, minutes: Number(r.minutes) }));
@@ -1956,7 +2004,7 @@ export interface ExecutionRuntime {
    * the ordering (and so tests can drive it deliberately). Resolves to the count
    * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
    */
-  reconcileGhosts(): Promise<GhostReconcileReport>;
+  reconcileGhosts(): Promise<NodeEndingSweepReport>;
   /**
    * §6 — reconcile this node's worktree ALLOCATIONS. A sibling of
    * `reconcileGhosts`, called at the same point and with the same posture: the
@@ -1965,6 +2013,14 @@ export interface ExecutionRuntime {
    * checkout) and a node with no worktree area still wants the first.
    */
   reconcileWorktrees(): Promise<WorktreeReconcileReport>;
+  /**
+   * This node's warm lanes (`@tm8/execution`'s warm-pool.ts), or null when it
+   * keeps none (no data root, or TM8_WORKTREE_POOL=0). The composition root
+   * owns its upkeep and its shutdown: `maintainAll()` on the scheduler,
+   * `drain()` from the signal handler under a time bound. Launches use it
+   * through the worktree manager and never see it here.
+   */
+  worktreePool: WarmLanePool | null;
   /**
    * Annotate every live session with WHY it is about to die, from the process
    * that is dying (171). The mirror image of `reconcileGhosts`: that one infers
@@ -1979,9 +2035,9 @@ export interface ExecutionRuntime {
    * Spec D1 §4.4 — the ghost reaper. Records `failed / lost` for this node's
    * sessions that have had no process for `staleAfterMs`. Never rejects.
    */
-  reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
+  reapLost(staleAfterMs: number): Promise<NodeEndingSweepReport>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
-  closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  closeIdleCompleted(): Promise<NodeEndingSweepReport>;
   /**
    * Remove the per-session artifacts on this node that nothing can read
    * again (Codex homes, space-key homes, manifest files), and with a
@@ -2007,8 +2063,9 @@ export interface ExecutionRuntime {
  * node-admin bypass (002_identity.sql:297), so a PTY that exits with no captured
  * claims raises 42501, the transition is dropped, and the row sits at 'running'
  * forever — a ghost session the UI paints as a live agent and the concurrency
- * cap counts against every future spawn. A host built elsewhere and passed in
- * cannot have that sink, so the cycle is closed here with a lazy closure.
+ * cap counts against every future spawn (until the node jobs retire it through
+ * the node doors, 403). A host built elsewhere and passed in cannot have that
+ * sink, so the cycle is closed here with a lazy closure.
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
   const sessionCap = deps.sessionCap ?? resolveSessionCap(process.env);
@@ -2041,7 +2098,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
   // Its PRESENCE is what makes `workdir.mode:'worktree'` serviceable; a node
   // built without a data root simply does not advertise it (§7.4), rather than
   // quietly handing back the shared project directory.
-  const worktrees = resolveWorktreeManager(deps.dataDir);
+  const worktrees = resolveWorktreeManager(deps.dataDir, deps.logger ?? createSpawnLogger());
 
   const mcpBindings = new McpSessionBindings(deps.db);
   spawnService = new SpawnService({
@@ -2052,7 +2109,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId,
-    ...(deps.logger ? { logger: deps.logger } : {}),
+    // Its own JSON-line log when the root passes none: SpawnService's lines
+    // (the per-launch `spawn timings` among them) otherwise reach no log.
+    logger: deps.logger ?? createSpawnLogger(),
     // Per-member credential delivery. Wired ONLY when this node has a data
     // root, because the credential home is a path underneath it: with no data
     // root there is nowhere a login terminal could have written a credential,
@@ -2092,13 +2151,17 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     spawnService,
     graph,
+    worktreePool: worktrees?.pool ?? null,
     register: (registry, options) =>
-      registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, options),
+      registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, {
+        ...options,
+        nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
+      }),
     reconcileGhosts: async () => {
-      // Runs as the loopback OWNER. `work_session_transition` goes through
-      // `require_space_member` → `require_identity` with no node-admin bypass,
-      // so reconciliation needs a real identity; the node's owner is the honest
-      // one — they are whose node left the rows behind.
+      // Runs as the loopback OWNER, and `nodeAdmin: o.isNodeAdmin` is
+      // LOAD-BEARING: reconciliation reads and writes through the node doors
+      // (403), which refuse anyone without the node-admin claim. Through them
+      // it retires ghosts in every space, the owner's or not.
       //
       // Wrapped because resolving the owner touches the database, and a node
       // whose graph is briefly unreachable at boot must still start.
@@ -2133,7 +2196,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         // not.
         const message = error instanceof Error ? error.message : String(error);
         deps.logger?.warn?.('execution: ghost reconciliation skipped', { error: message });
-        return { retired: 0, errors: [{ message }] };
+        return emptySweep([{ message }]);
       }
     },
     closeIdleCompleted: async () => {
@@ -2143,7 +2206,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2160,8 +2223,8 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as for ghost reconciliation: the transition needs
-      // a real member, and the owner is whose node holds these rows.
+      // The loopback owner, as a node admin: the node doors (403) refuse anyone
+      // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
         return await spawnService.reapLostSessions(
@@ -2169,14 +2232,15 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
           { staleAfterMs },
         );
       } catch (error) {
-        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     recordShutdown: async (signal: string) => {
-      // Same loopback-owner identity as ghost reconciliation, and for the same
-      // reason: `work_session_transition` needs a real member. Wrapped for the
-      // same reason too — a node whose graph is unreachable must still be able
-      // to shut down.
+      // The loopback owner is only the FALLBACK identity here: each live
+      // session's ending is written under the claims it was launched with
+      // (`sessionAuth`), through the member door, because the launcher is a
+      // member of its space. Wrapped so a node whose graph is unreachable can
+      // still shut down.
       try {
         const o = await owner();
         return await spawnService.recordShutdown(
@@ -2220,9 +2284,32 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
  * inventing checkout locations in a user's home directory, and §7.4 would
  * rather the capability be absent than approximate.
  */
-function resolveWorktreeManager(dataDir: string | undefined): WorktreeManager | null {
+function resolveWorktreeManager(dataDir: string | undefined, logger: Logger): WorktreeManager | null {
   if (!dataDir) return null;
-  return new WorktreeManager({ worktreeRoot: resolvePath(dataDir, 'worktrees') });
+  return new WorktreeManager({
+    worktreeRoot: resolvePath(dataDir, 'worktrees'),
+    // Warm lanes sit beside the lane area, on its filesystem: a claim is a
+    // rename into it.
+    pool: { root: resolvePath(dataDir, 'worktrees-pool'), size: resolveWorktreePoolSize(), logger },
+  });
+}
+
+/** Warm lanes per project when TM8_WORKTREE_POOL is unset. */
+export const DEFAULT_WORKTREE_POOL = 2;
+/** Each one is a full checkout on disk; a typo must not fill the disk with them. */
+const MAX_WORKTREE_POOL = 8;
+
+/**
+ * How many checked-out lanes this node keeps ready per project
+ * (TM8_WORKTREE_POOL). 0 turns the pool off; absent or unparseable is the
+ * default; anything larger is capped.
+ */
+export function resolveWorktreePoolSize(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.TM8_WORKTREE_POOL?.trim();
+  if (!raw) return DEFAULT_WORKTREE_POOL;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0 || String(parsed) !== raw) return DEFAULT_WORKTREE_POOL;
+  return Math.min(parsed, MAX_WORKTREE_POOL);
 }
 
 /**
@@ -2269,7 +2356,7 @@ export function registerExecutionHandlers(
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const nodeId = `${deps.config.host}:${deps.config.port}`;
-  const worktrees = resolveWorktreeManager(deps.dataDir);
+  const worktrees = resolveWorktreeManager(deps.dataDir, deps.logger ?? createSpawnLogger());
   const mcpBindings = new McpSessionBindings(deps.db);
   const spawnService = new SpawnService({
     mcpBindings: { bind: (auth, input) => mcpBindings.bind(auth as McpBindingClaims, input) },
@@ -2278,7 +2365,7 @@ export function registerExecutionHandlers(
     baseUrl: `http://${deps.config.host}:${deps.config.port}`,
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId,
-    ...(deps.logger ? { logger: deps.logger } : {}),
+    logger: deps.logger ?? createSpawnLogger(),
     // Same wiring as `createExecutionRuntime` above, deliberately duplicated
     // rather than shared: a node on the legacy shape must not silently lose
     // per-member credentials just because it wires the runtime differently.
@@ -2309,7 +2396,9 @@ export function registerExecutionHandlers(
     worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir, {
+    nodeId: `${deps.config.host}:${deps.config.port}`,
+  });
   return {
     pty: deps.pty,
     nodeId,
@@ -2317,6 +2406,7 @@ export function registerExecutionHandlers(
     promptSettlement: new PromptSettlementWaiter(),
     spawnService,
     graph,
+    worktreePool: worktrees?.pool ?? null,
     register: () => {},
     // Same reconciliation as createExecutionRuntime — a node wired through the
     // legacy shape leaves the same ghosts behind and deserves the same cleanup.
@@ -2344,10 +2434,7 @@ export function registerExecutionHandlers(
           requestId: 'startup-reconcile',
         });
       } catch (error) {
-        return {
-          retired: 0,
-          errors: [{ message: error instanceof Error ? error.message : String(error) }],
-        };
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     closeIdleCompleted: async () => {
@@ -2357,7 +2444,7 @@ export function registerExecutionHandlers(
           { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'completed-auto-close' },
         );
       } catch (error) {
-        return { closed: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     reclaimSessionArtifacts: async (retention: SessionHomeRetention) => {
@@ -2374,8 +2461,8 @@ export function registerExecutionHandlers(
       }
     },
     reapLost: async (staleAfterMs: number) => {
-      // The loopback owner, as for ghost reconciliation: the transition needs
-      // a real member, and the owner is whose node holds these rows.
+      // The loopback owner, as a node admin: the node doors (403) refuse anyone
+      // else, and they see and write this node's rows in every space.
       try {
         const o = await owner();
         return await spawnService.reapLostSessions(
@@ -2383,14 +2470,15 @@ export function registerExecutionHandlers(
           { staleAfterMs },
         );
       } catch (error) {
-        return { reaped: 0, errors: [{ message: error instanceof Error ? error.message : String(error) }] };
+        return emptySweep([{ message: error instanceof Error ? error.message : String(error) }]);
       }
     },
     recordShutdown: async (signal: string) => {
-      // Same loopback-owner identity as ghost reconciliation, and for the same
-      // reason: `work_session_transition` needs a real member. Wrapped for the
-      // same reason too — a node whose graph is unreachable must still be able
-      // to shut down.
+      // The loopback owner is only the FALLBACK identity here: each live
+      // session's ending is written under the claims it was launched with
+      // (`sessionAuth`), through the member door, because the launcher is a
+      // member of its space. Wrapped so a node whose graph is unreachable can
+      // still shut down.
       try {
         const o = await owner();
         return await spawnService.recordShutdown(
@@ -2456,6 +2544,31 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * The spawn receipt's posture rows (`ExecutionSpawnLaunch`), rebuilt from a
+ * recorded manifest by the same `spawnLaunchFacts` the boot reports them with.
+ * `execution.spawn` answers at admission (404), before the credentials are
+ * resolved, so this is where a caller that waited for `running` reads them.
+ * Nothing for a manifest without a launch block, or one written before the
+ * access-mode source was recorded: a guessed `default` would misreport it.
+ */
+function launchReceiptOf(
+  manifest: Record<string, unknown> | null,
+  parentSessionId: string | null,
+): { launch?: ExecutionSpawnLaunch } {
+  const launch = manifest?.['launch'];
+  if (typeof launch !== 'object' || launch === null) return {};
+  const accessModeSource = (launch as { accessModeSource?: unknown }).accessModeSource;
+  if (typeof accessModeSource !== 'string') return {};
+  return {
+    launch: spawnLaunchFacts(
+      launch as Tm8Manifest['launch'],
+      accessModeSource as SpawnAccessModeSource,
+      parentSessionId,
+    ),
+  };
+}
+
+/**
  * Every execution.* command result goes through the SAME assembler the reads
  * use, and this is the whole point of the function.
  *
@@ -2471,10 +2584,11 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
  * returns snake_case, so fixing only `entity` would have left the same bug one
  * field deeper.
  *
- * It runs in its own transaction AFTER the flow completes rather than inside
- * the RPC's: holding a transaction open across a process spawn is its own
- * problem, and re-reading afterwards means the client sees the session as it
- * finally IS (status `running`) rather than mid-flight (`spawning`).
+ * It runs in its own transactions AFTER the command rather than inside the
+ * RPC's: holding a transaction open across a process spawn is its own
+ * problem. For `execution.spawn` that is after ADMISSION (404), so the client
+ * sees the session as it then is — `spawning`, its boot phase — and follows
+ * the rest of the boot through the ordinary entity events.
  */
 /** How a process closed after its work completed is recorded (Spec D1 §4.1). */
 const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: string } = {
@@ -2495,7 +2609,7 @@ async function assembleCommandResult(
   raw: unknown,
   viewerIdentityId: string,
 ): Promise<unknown> {
-  return db.tx(claims, (q) => toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId));
+  return toCommandResultOnTwoClients(db, claims, (raw ?? {}) as RpcCommandResult, viewerIdentityId);
 }
 
 /**
@@ -2943,6 +3057,14 @@ export type DispatchDelivery = NonNullable<
 
 export interface RegisterHandlersOptions {
   readonly dispatchDelivery?: DispatchDelivery;
+  /** This node's id, for the capacity read's `ghosts` count (403). */
+  readonly nodeId?: string;
+  /**
+   * The lost-session reaper's stale window (`lostAfterMsFromEnv`). `ghosts`
+   * counts only rows unchanged for this long, so it names what the reaper
+   * would retire, not a launch whose PTY is a second away. Default 10 min.
+   */
+  readonly ghostStaleAfterMs?: number;
 }
 
 /**
@@ -3118,6 +3240,14 @@ export function createLoopExecutorPort(deps: {
       // one place both the scheduled job and Run now fire through, rather than
       // run as a spawn (its persona) or a dispatch. The run records the reason.
       if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
+      // Bridges L (D26): a post loop starts no session and derives no task. Each
+      // target's text goes through the outbox; paused, held and refused groups
+      // are recorded on the run, and the run settles at delivery.
+      if (loop.action === 'post') {
+        if (!runId) throw new CollabError('invalid_input', 'a post loop fires only as a claimed run');
+        await db.tx(claims, q => q.rpc('loop_post_targets', [loop.entityId, runId]));
+        return { taskId: null, sessionId: null };
+      }
       // §3.4: the ACTION picks the branch, never the runner, so the port agrees
       // with the job, Run now and the projection by construction. A spawn loop
       // that lost its runner (team_member_id is `on delete set null`) is
@@ -3181,8 +3311,9 @@ export function createLoopExecutorPort(deps: {
           accessMode: (loop.config?.['accessMode'] as never) ?? null,
           title: loop.title,
           // The loop's instruction is launch-manifest context, not a runtime
-          // prompt — the same channel `--context` uses.
-          promptExtra: loop.prompt === '' ? null : loop.prompt,
+          // prompt — the same channel `--context` uses. A bridge loop's targets
+          // (D26) ride with it: each group's instruction, state and recent log.
+          promptExtra: loopLaunchContext(loop.prompt, await loadLoopTargets(db, claims, loop.entityId, runId ?? null)),
           clientMutationId: `loop-fire:${firingKey}`,
         }, {
           /*
@@ -3263,35 +3394,137 @@ export function createLoopExecutorPort(deps: {
      * share one path. A completed session that is merely still open closes as
      * `exited_clean`, exactly as the HTTP op records it.
      */
-    async stopSession(claims, sessionId, request) {
-      const rows = await db.query<{ outcome: string | null }>(
-        claims,
-        'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
-        [sessionId],
-      );
-      if (rows.length === 0) {
-        throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
-      }
-      const outcome = rows[0]!.outcome;
-      let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
-      if (outcome === 'completed') {
-        ending = CLOSED_AFTER_COMPLETION;
-      } else {
-        if (outcome !== 'stopped') {
-          await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
-        }
-        ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
-      }
-      await rethrowing(() =>
-        spawnService.terminate(claims, sessionId, {
-          force: false,
-          clientMutationId: request.clientMutationId,
-          reason: request.reason,
-          ...ending,
-        }),
-      );
-    },
+    stopSession: (claims, sessionId, request) => stopSessionAsOperator(db, spawnService, claims, sessionId, request),
   };
+}
+
+/**
+ * Stop a session the way `execution.terminate` does — `stop_work_session`
+ * while the outcome is open (claims released, outcome 'stopped'), then
+ * `SpawnService.terminate` with 171's ending facts — so a session stopped by
+ * a loop or from a bridge (`/stop`) is indistinguishable in the graph from an
+ * operator-stopped one. A completed session that is merely still open closes
+ * as `exited_clean`, exactly as the HTTP op records it.
+ */
+export async function stopSessionAsOperator(
+  db: Db,
+  spawnService: SpawnService,
+  claims: DbClaims,
+  sessionId: string,
+  request: { reason: string; endedReason: string; clientMutationId: string | null },
+): Promise<void> {
+  const rows = await db.query<{ outcome: string | null }>(
+    claims,
+    'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
+    [sessionId],
+  );
+  if (rows.length === 0) {
+    throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+  }
+  const outcome = rows[0]!.outcome;
+  let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
+  if (outcome === 'completed') {
+    ending = CLOSED_AFTER_COMPLETION;
+  } else {
+    if (outcome !== 'stopped') {
+      await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
+    }
+    ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
+  }
+  await rethrowing(() =>
+    spawnService.terminate(claims, sessionId, {
+      force: false,
+      clientMutationId: request.clientMutationId,
+      reason: request.reason,
+      ...ending,
+    }),
+  );
+}
+
+/**
+ * Bridges B1b-4: the command executor's worker seam (v2 §4.3). A `/work`
+ * worker is spawned as the linked member, on its task, with the bridge
+ * origins handed over as a SERVER fact (B1b-3: written with the session in
+ * the spawn's own transaction, so the worker never runs without them).
+ */
+export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnService }): {
+  spawnWorker: BridgeCommandPorts['spawnWorker'];
+  stopWorker: BridgeCommandPorts['stopWorker'];
+  resumeWorker: BridgeCommandPorts['resumeWorker'];
+} {
+  const { db, spawnService } = deps;
+  return {
+    async spawnWorker(claims, request) {
+      const spawned = await rethrowing(() => spawnService.spawn(claims, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        parentSessionId: null,
+        taskIds: [request.taskId],
+        projectId: request.projectId,
+        mode: null,
+        model: null,
+        agentTool: null,
+        reasoningEffort: request.effort,
+        accessMode: null,
+        title: request.title,
+        promptExtra: null,
+        clientMutationId: request.clientMutationId,
+      }, { bridgeOrigins: request.origins }));
+      return { sessionId: spawned.sessionId };
+    },
+    async resumeWorker(claims, sessionId, input) {
+      const resumed = await rethrowing(() => spawnService.resume(claims, { sessionId, clientMutationId: input.clientMutationId }));
+      return { sessionId: resumed.sessionId };
+    },
+    stopWorker: (claims, sessionId, input) => stopSessionAsOperator(db, spawnService, claims, sessionId, {
+      reason: input.reason, endedReason: input.reason, clientMutationId: input.clientMutationId,
+    }),
+  };
+}
+
+/** One target of a bridge loop as its worker sees it at launch (406's loop_fire_targets). */
+export interface LoopTargetContext {
+  bridgeId: string;
+  name: string;
+  purpose: string | null;
+  instruction: string | null;
+  state: 'live' | 'paused' | 'quiet' | 'ended';
+  recent: Array<{ messageId: string; at: string; from: string; text: string }>;
+}
+
+/** The targets, and for a claimed run the `paused`/`pending` result per group. */
+async function loadLoopTargets(db: Db, claims: DbClaims, loopId: string, runId: string | null): Promise<LoopTargetContext[]> {
+  return db.tx(claims, q => q.rpc<LoopTargetContext[]>('loop_fire_targets', [loopId, runId, 15]));
+}
+
+const TARGET_STATE_NOTE: Record<LoopTargetContext['state'], string> = {
+  live: 'post here',
+  paused: 'PAUSED: do not post here this run',
+  quiet: 'in quiet hours: an unprompted post is held and only your newest is sent when they end; replies go at once',
+  ended: 'REMOVED: do not post here',
+};
+
+/**
+ * The launch context of a bridge loop's worker (v2 §2.2): the loop's own
+ * instruction, then each target group with its own instruction, its state and
+ * its recent log, and how to post (`tm8 message send --to <bridge>`). Null
+ * when there is neither a prompt nor a target.
+ */
+export function loopLaunchContext(prompt: string, targets: readonly LoopTargetContext[]): string | null {
+  if (targets.length === 0) return prompt === '' ? null : prompt;
+  const lines: string[] = [];
+  if (prompt !== '') lines.push(prompt, '');
+  lines.push('Groups this loop updates (post with `tm8 message send --to <bridge-id> "<text>"`; it is signed with your handle):');
+  for (const t of targets) {
+    lines.push('', `## ${t.name || 'group'} — bridge ${t.bridgeId} (${TARGET_STATE_NOTE[t.state]})`);
+    if (t.purpose) lines.push(`Purpose: ${t.purpose}`);
+    if (t.instruction) lines.push(`Instruction for this group: ${t.instruction}`);
+    if (t.recent.length) {
+      lines.push('Recent messages:');
+      for (const m of t.recent) lines.push(`- [${m.at}] ${m.from}: ${m.text.replace(/\s+/g, ' ')}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /** Run history is the loop's inbound edge set; best-effort, never fatal. */
@@ -3366,11 +3599,21 @@ function registerHandlers(
               and e.deleted_at is null and e.id = any($2::uuid[])`,
           [spaceId, live],
         );
-    const capacityRows = await db.query<{ used: number | string }>(
+    // 403: `used` and `ghosts` in ONE read of ONE population, node-wide as the
+    // spawn gate counts it (`session_capacity` is a definer; the plain-SQL
+    // count under the caller's RLS saw only the caller's spaces). `ghosts` is
+    // the share of `used` the reaper would retire: on THIS node, no PTY here,
+    // unchanged for its stale window.
+    // OPT-IN (`?ghosts=1`): `capacity` is `.strict()` in the contract, so a
+    // client that does not ask gets exactly the bytes it got before.
+    const wantGhosts = options.nodeId !== undefined && ctx.query.get('ghosts') === '1';
+    const capacityRows = await db.query<{ used: number | string; ghosts: number | string | null }>(
       claims,
-      'select internal.live_work_session_count(null) as used',
+      'select used, ghosts from public.session_capacity($1, $2::uuid[], make_interval(secs => $3))',
+      [wantGhosts ? options.nodeId : null, live, (options.ghostStaleAfterMs ?? 10 * 60_000) / 1000],
     );
     const capacity = capacityRows?.[0];
+    const ghosts = wantGhosts && capacity?.ghosts != null ? Number(capacity.ghosts) : undefined;
     // Live chats ride the same read as live sessions (status strip) — see
     // `live-counts.ts` for what "live" and "working" mean for a chat.
     const chatRows = await db.query<LiveChatCountRow>(claims, LIVE_CHAT_COUNTS_SQL, [spaceId]);
@@ -3391,7 +3634,11 @@ function registerHandlers(
         : {}),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
-      capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },
+      capacity: {
+        used: Number(capacity?.used ?? 0),
+        total: sessionCap,
+        ...(ghosts !== undefined && Number.isFinite(ghosts) ? { ghosts } : {}),
+      },
       eventHwm,
     };
     return json(result);
@@ -3534,6 +3781,39 @@ function registerHandlers(
    * running `composePrompt` over the stored manifest — would render today's
    * build's output as though it were the text that agent received.
    */
+  /**
+   * execution.bootState (404) — a session's boot from its row: status, boot
+   * phase, ended reason. Read under the caller's claims, so an unreadable
+   * session is a not_found like a missing one. `tm8 session spawn` polls this
+   * while it waits, instead of the full entity detail.
+   */
+  registry.register('execution.bootState', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+    const rows = await db.query<{
+      status: WorkSessionStatus;
+      boot_phase: string | null;
+      boot_phase_at: Date | string | null;
+      ended_reason: string | null;
+    }>(
+      claims,
+      `select ws.status, ws.boot_phase, ws.boot_phase_at, ws.ended_reason
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+        where ws.entity_id = $1 and e.deleted_at is null`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such work session: ${sessionId}`);
+    const state: WorkSessionBootState = {
+      sessionId,
+      status: row.status,
+      ...bootPhaseFacts({ ws_boot_phase: row.boot_phase, ws_boot_phase_at: row.boot_phase_at }),
+      endedReason: row.ended_reason,
+    };
+    return json(state);
+  });
   registry.register('execution.launch', async (ctx) => {
     const owner = await resolveOwner();
     const claims = claimsFor(owner, ctx);
@@ -3545,9 +3825,14 @@ function registerHandlers(
       system_prompt: string | null;
       task_prompt: string | null;
       created_at: Date | string;
+      launched_by: string | null;
     }>(
       claims,
-      `select sm.manifest, sm.env_var_names, sm.system_prompt, sm.task_prompt, sm.created_at
+      // `launched_by` (330) is the parent the spawn resolved — what the
+      // receipt's `parent` row reports, read the way entity-read reads it.
+      `select sm.manifest, sm.env_var_names, sm.system_prompt, sm.task_prompt, sm.created_at,
+              (select lb.dst_id::text from public.edges lb
+                where lb.src_id = sm.work_session_id and lb.type = 'launched_by' limit 1) as launched_by
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -3597,6 +3882,7 @@ function registerHandlers(
       recordedAt:
         row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       launchContext: manifest ? await projectLaunchContext(db, claims, manifest) : null,
+      ...launchReceiptOf(manifest, row.launched_by),
     };
     return json(result);
   });
@@ -3727,8 +4013,11 @@ function registerHandlers(
       executionSpawn(ctx)));
   const executionSpawn = async (ctx: RequestContext) => {
     const input = ctx.body as ExecutionSpawnInput;
+    // The handler's own reads and writes, around SpawnService's: together they
+    // are the request's whole server-side time (`timings` on the result).
+    const timer = new SpawnPhaseTimer();
 
-    const owner = await resolveOwner();
+    const owner = await timer.time('handler.resolveOwner', () => resolveOwner());
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
     // 256 (W7p, ruling A') and W7b: a link session launches only through
@@ -3763,18 +4052,19 @@ function registerHandlers(
     // transaction, for an id deleted in between.
     if (input.selection) {
       const selection = input.selection;
-      await db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection));
+      await timer.time('handler.assertSelectionIds', () =>
+        db.tx(claims, (q) => assertSelectionIds(q, input.spaceId, selection)));
     }
 
     // taskIds accepts any entity and resolves it to a task assignment.
     // Direct storyId bypasses derivation and is persisted by execution_spawn.
     const anchorPairs: Array<{ subjectId: string; taskId: string }> = [];
     const taskIds = input.taskIds?.length
-      ? await rethrowing(() =>
+      ? await timer.time('handler.resolveAssignmentAnchors', () => rethrowing(() =>
           resolveAssignmentAnchors(
             db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false, anchorPairs,
           ),
-        )
+        ))
       : undefined;
 
     // Spawn-on-story: a launch ON a story runs on the task derived from it.
@@ -3783,7 +4073,7 @@ function registerHandlers(
     // story and the prompt's story read below finds it. Before the spawn, so
     // the hand-over sees it; best-effort, so a story never refuses a launch.
     try {
-      for (const r of await putDerivedTasksInStories(db, claims, anchorPairs)) {
+      for (const r of await timer.time('handler.putDerivedTasksInStories', () => putDerivedTasksInStories(db, claims, anchorPairs))) {
         if (r.outcome === 'failed') {
           console.warn(`[tm8:spawn] derived task ${r.taskId} not put in story ${r.storyId}: ${r.error ?? 'unknown'}`);
         }
@@ -3816,11 +4106,11 @@ function registerHandlers(
     const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
     const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
     // An agent that names no project works where its chat or session does.
-    const inheritedProjectId = await inheritedSpawnProjectId(db, claims, {
+    const inheritedProjectId = await timer.time('handler.inheritedSpawnProjectId', () => inheritedSpawnProjectId(db, claims, {
       input,
       agentCaller: isChatRuntimeBearer(ctx) || sourceWorkSessionId !== undefined,
       parentId: parentSessionId,
-    });
+    }));
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
@@ -3867,76 +4157,104 @@ function registerHandlers(
       clientMutationId: envelope.clientMutationId ?? null,
     };
 
-    const result = await rethrowing(() => spawnService.spawn({ ...claims, mcpSource: {
-      authSessionId: ctx.identity.sessionId,
-      sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
-    } }, request));
+    // ANSWERED AT ADMISSION: the row exists (`spawning`, boot phase
+    // `admitted`) and the boot runs on in this process, recording each phase
+    // on the row, which is how the caller follows it from here (404). A boot
+    // that fails says so on the row, not in this response.
+    // The boot starts once this answer is assembled (`answered`, settled in
+    // the finally below), so the two do not compete for the pool.
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => { answer = resolve; });
+    try {
+      const { admission, boot } = await rethrowing(() => spawnService.admit({ ...claims, mcpSource: {
+        authSessionId: ctx.identity.sessionId,
+        sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
+      } }, request, undefined, { bootAfter: answered }));
+      for (const [phase, ms] of Object.entries(admission.timings.phases)) timer.record(phase, ms);
+      const { sessionId } = admission;
 
-    // 327: a session records the chat or session that launched it (its
-    // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
-    // "created here" is one edge for every kind. Never at the spawn's expense.
-    const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
-    if (spawnOrigin && parentSessionId === spawnOrigin) {
-      try {
-        await db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin]));
-      } catch (error) {
-        console.warn(`[tm8:spawn] authored_from not recorded for ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-
-    // The Ask Jev run this launch came from (§6: per-launch cost). Only after
-    // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
-    // run that is absent, in another space or someone else's is logged, not
-    // turned into a failed launch.
-    if (input.jevRunId) {
-      const runId = input.jevRunId;
-      try {
-        const linked = await db.tx(claims, (q) => linkSession(q, runId, result.sessionId, input.spaceId));
-        if (!linked) {
-          console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: no such run of this caller in space ${input.spaceId}`);
+      // 327: a session records the chat or session that launched it (its
+      // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
+      // "created here" is one edge for every kind. Never at the spawn's expense.
+      // A fact about the launch, so it is true from admission.
+      const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
+      if (spawnOrigin && parentSessionId === spawnOrigin) {
+        try {
+          await timer.time('handler.recordAuthoredFrom', () =>
+            db.tx(claims, (q) => q.rpc('record_authored_from', [sessionId, spawnOrigin])));
+        } catch (error) {
+          console.warn(`[tm8:spawn] authored_from not recorded for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
         }
-      } catch (error) {
-        console.warn(`[tm8:jev] run ${runId} not linked to session ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    }
 
-    // Launched-by is the `launched_by` edge execution_spawn writes (330) from
-    // the parent resolved above (it defaults to the calling session or chat).
-    // The session gets no parentId: a chat is not a session's parent.
+      // The Ask Jev run this launch came from (§6: per-launch cost). Linked once
+      // the launch is admitted — the cost is the launch's whether or not its boot
+      // succeeds — and never at its expense: a run that is absent, in another
+      // space or someone else's is logged, not turned into a failed launch.
+      if (input.jevRunId) {
+        const runId = input.jevRunId;
+        try {
+          const linked = await timer.time('handler.linkJevRun', () =>
+            db.tx(claims, (q) => linkSession(q, runId, sessionId, input.spaceId)));
+          if (!linked) {
+            console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: no such run of this caller in space ${input.spaceId}`);
+          }
+        } catch (error) {
+          console.warn(`[tm8:jev] run ${runId} not linked to session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
 
-    // A dispatcher launched on tasks was told to route them in its first
-    // turn; the durable request is stored on each task now that the session
-    // exists (store only — the turn already delivered it). Best-effort, like
-    // provenance above: the session is live, and its turn carries the request.
-    for (const routedTaskId of result.routedTaskIds ?? []) {
-      try {
-        await sendDispatchRequest({
-          db,
-          claims,
-          taskId: routedTaskId,
-          subjectId: routedTaskId,
-          dispatcherSessionId: result.sessionId,
-          note: null,
-          requesterActorId: envelope.actorId ?? null,
-          requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
-          requestId: ctx.requestId,
-          clientMutationId: `${envelope.clientMutationId ?? result.sessionId}:route:${routedTaskId}`,
+      // Launched-by is the `launched_by` edge execution_spawn writes (330) from
+      // the parent resolved above (it defaults to the calling session or chat).
+      // The session gets no parentId: a chat is not a session's parent.
+
+      // A dispatcher launched on tasks was told to route them in its first
+      // turn; the durable request is stored on each task once the boot has
+      // delivered that turn (store only — the turn carries the request), so a
+      // dispatcher whose boot failed is never named on a task. This continuation
+      // cannot reject — `boot` never does, and each store is caught — so it needs
+      // no handler of its own; the boot's own failures are on the row already.
+      const routedTaskIds = admission.routedTaskIds ?? [];
+      if (routedTaskIds.length > 0) {
+        void boot.then(async (outcome) => {
+          if (!outcome.ok) return;
+          for (const routedTaskId of routedTaskIds) {
+            try {
+              await sendDispatchRequest({
+                db,
+                claims,
+                taskId: routedTaskId,
+                subjectId: routedTaskId,
+                dispatcherSessionId: sessionId,
+                note: null,
+                requesterActorId: envelope.actorId ?? null,
+                requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+                requestId: ctx.requestId,
+                clientMutationId: `${envelope.clientMutationId ?? sessionId}:route:${routedTaskId}`,
+              });
+            } catch (error) {
+              console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
         });
-      } catch (error) {
-        console.warn(`[tm8:dispatch] routing request not stored on ${routedTaskId}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    }
 
-    // 201: a spawn creates a work_session.
-    const spawnResult: ExecutionSpawnResult = {
-      ...((await assembleCommandResult(db, claims, result.commandResult, owner.identityId)) as CommandResult),
-      ...(result.createdTaskId ? { createdTaskId: result.createdTaskId } : {}),
-      // The resolved posture — access mode and where it came from, the
-      // credential each provider ran on, the parent — so the caller's receipt
-      // shows what the child inherited without a second read.
-      ...(result.launchFacts ? { launch: result.launchFacts } : {}),
-    };
-    return json(spawnResult, { status: 201 });
+      // 201: a spawn creates a work_session. The entity is read as it stands at
+      // admission — `spawning`, its boot phase — not as it will be once running.
+      const commandResult = await timer.time('handler.assembleCommandResult', () =>
+        assembleCommandResult(db, claims, admission.commandResult, owner.identityId));
+      const spawnResult: ExecutionSpawnResult = {
+        ...(commandResult as CommandResult),
+        ...(admission.createdTaskId ? { createdTaskId: admission.createdTaskId } : {}),
+        // `launch` — the resolved posture receipt — exists only once the boot has
+        // resolved the credentials, so an admitted answer carries none; a caller
+        // reads it from the session's launch record once it is running.
+        timings: timer.snapshot(),
+      };
+      return json(spawnResult, { status: 201 });
+    } finally {
+      answer();
+    }
   };
 
   /**

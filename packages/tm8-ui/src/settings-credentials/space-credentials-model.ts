@@ -30,8 +30,10 @@ export const SPACE_CREDENTIAL_PROVIDERS: readonly SpaceCredentialProviderName[] 
  */
 export const SPACE_STORED_PROVIDERS: readonly SpaceCredentialStoredProviderName[] = [...SPACE_CREDENTIAL_PROVIDERS, 'typesafe'];
 
-export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' | 'mcp' | 'tool' {
-  return provider === 'typesafe' || provider === 'mcp' || provider === 'tool';
+export function isServerOnlyProvider(provider: SpaceCredentialStoredProviderName): provider is 'typesafe' | 'mcp' | 'tool' | 'whatsapp' {
+  // 400 (B1b-5): a bridge connection's space credential (`whatsapp`, shape
+  // `connection`) is server-only too — no session ever receives it.
+  return provider === 'typesafe' || provider === 'mcp' || provider === 'tool' || provider === 'whatsapp';
 }
 
 export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, string> = {
@@ -41,6 +43,7 @@ export const SPACE_PROVIDER_NAME: Record<SpaceCredentialStoredProviderName, stri
   typesafe: 'TypeSafe (Ask Jev)',
   mcp: 'MCP connector',
   tool: 'Tool',
+  whatsapp: 'WhatsApp number (bridges)',
 };
 
 /** What a pasted secret is called for each provider. */
@@ -51,6 +54,7 @@ export const SPACE_SECRET_NOUN: Record<SpaceCredentialStoredProviderName, string
   typesafe: 'API key',
   mcp: 'API key',
   tool: 'secret',
+  whatsapp: 'linked number',
 };
 
 export const SOURCE_WORD: Record<CredentialPolicySource, string> = {
@@ -68,7 +72,7 @@ export function pasteShapeOf(provider: SpaceCredentialStoredProviderName): 'api_
 export function groupByProvider(
   rows: readonly SpaceCredentialView[],
 ): Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> {
-  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [], mcp: [], tool: [] };
+  const groups: Record<SpaceCredentialStoredProviderName, SpaceCredentialView[]> = { anthropic: [], openai: [], github: [], typesafe: [], mcp: [], tool: [], whatsapp: [] };
   for (const row of rows) {
     if (row.status === 'revoked') continue;
     groups[row.provider]?.push(row);

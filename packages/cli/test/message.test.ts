@@ -456,6 +456,14 @@ describe('message send', () => {
     });
   });
 
+  it('--here-only sends hereOnly: true, and its absence sends no hereOnly at all', async () => {
+    reply = () => envelope(batch([MESSAGE]));
+    expect((await dispatch(['message', 'send', '--to', ANCHOR, 'local', '--here-only', '--mutation-id', 'mut-here'])).code).toBe(0);
+    expect(seen[0]?.body).toMatchObject({ anchorIds: [ANCHOR], body: 'local', hereOnly: true });
+    expect((await dispatch(['message', 'send', '--to', ANCHOR, 'crosses', '--mutation-id', 'mut-there'])).code).toBe(0);
+    expect(seen[1]?.body).not.toHaveProperty('hereOnly');
+  });
+
   it('collapses duplicate anchors preserving first-occurrence order', async () => {
     reply = () => envelope(batch([MESSAGE]));
     await dispatch([
@@ -659,6 +667,18 @@ describe('message reply', () => {
       mentionIds: [ANCHOR_2],
       attachmentIds: [FILE],
       clientMutationId: 'reply-1',
+    });
+  });
+
+  it('--here-only on a reply sends hereOnly: true (a reply to a bridged message would otherwise cross)', async () => {
+    reply = () => envelope({ messageBatchId: 'reply-here', messages: [{ id: MESSAGE }] });
+    const r = await dispatch(['message', 'reply', MESSAGE, 'local', '--here-only', '--mutation-id', 'reply-here']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.body).toEqual({
+      replyToMessageId: MESSAGE,
+      body: 'local',
+      hereOnly: true,
+      clientMutationId: 'reply-here',
     });
   });
 

@@ -97,6 +97,9 @@ beforeAll(async () => {
       values ($1,'whatsapp',$2,'+91 …9494','linked'),($3,'whatsapp',$4,'+91 …1999','linked')`,
       [connection, ownerAccount, adminConnection, adminAccount]);
   });
+  // D32 (421): a bridge rides its connection's offered credential in the space.
+  await as(ownerIdentity, q => q.rpc('offer_bridge_connection', [connection, spaceId, 'public', null, randomUUID()]));
+  await as(adminIdentity, q => q.rpc('offer_bridge_connection', [adminConnection, spaceId, 'public', null, randomUUID()]));
 });
 afterAll(async () => { await db?.end(); await scratch?.destroy(); });
 
@@ -132,6 +135,17 @@ describe('bridges.create (§3.4, D20, D25, D28)', () => {
     });
     const edges = await scratch.query<{ dst_id: string }>(`select dst_id from public.edges where src_id = $1 and type = 'bridged_to'`, [infra.entity.id]);
     expect(edges.map(e => e.dst_id)).toEqual([chatA]);
+  });
+
+  it('hydrates the bridge through internal.entity_content, with no secret on it', async () => {
+    // Any later migration that REPLACES entity_content from an older body drops
+    // the bridge arm silently and this becomes '{}' (caught on B0b's 410).
+    const [row] = await scratch.query<{ c: Record<string, unknown> }>('select internal.entity_content($1) as c', [infra.entity.id]);
+    expect(row!.c).toMatchObject({
+      provider: 'whatsapp', connection_id: connection, external_conversation_id: '120363@g.us',
+      target_kind: 'chat', target_id: chatA, purpose: 'Infra on-call',
+    });
+    expect(Object.keys(row!.c).filter((k) => /secret|token|sealed|password|auth/i.test(k))).toEqual([]);
   });
 
   it('bridge_view answers nothing to a reader outside the bridge\'s space', async () => {

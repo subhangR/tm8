@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import type { ActorSummary, EntityId, SpaceId } from './contract.js';
+import type { ConversationItem } from './bridge-runtime-protocol.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -20,6 +21,30 @@ export type BridgeStatus = 'live' | 'degraded' | 'paused' | 'ended';
 export type BridgeConnectionStatus = 'linked' | 'connecting' | 'logged_out' | 'offline';
 /** A worker's wake level, and the bridge's ceiling for it (§2.7). */
 export type BridgeWake = 'directed' | 'thread' | 'all';
+
+/**
+ * Why the outbox refused to carry a post to the provider (§2.3, §2.7, D23,
+ * D28). The message stays in tm8; only the provider copy is refused.
+ */
+export type BridgeRefusalReason =
+  | 'bridge_paused' | 'bridge_ended' | 'direction_in' | 'worker_posting_off'
+  | 'rate_limited' | 'not_connected' | 'credential_text';
+
+/**
+ * The `bridge.delivery` badge of a message that crosses a bridge (§2.3): the
+ * delivery ledger's words, plus `refused` for a post the outbox turned away.
+ * `rate_limited` carries `retryAfterMs` (§2.7: never silently queued).
+ */
+export interface BridgeDelivery {
+  messageId: string;
+  bridgeId: string;
+  status: 'pending' | 'sent' | 'failed_retryable' | 'failed_permanent' | 'refused';
+  reason?: BridgeRefusalReason;
+  retryAfterMs?: number;
+  externalMessageId?: string;
+  detail?: string;
+  at: string;
+}
 
 export const BRIDGE_PURPOSE_MAX = 300;
 export const BRIDGE_STYLE_MAX = 300;
@@ -44,11 +69,10 @@ export interface BridgeFacts {
   /** The node-level connection (the number) this bridge rides on. */
   connectionId: string;
   /**
-   * The space credential (shape `connection`) offered for that connection.
-   * NULL until `bridges.connections.offer` ships (D32): B0a binds a bridge to
-   * its connection directly.
+   * The space credential (shape `connection`) offered for that connection in
+   * this space, filled at `bridges.create` and fixed after (D32, 421).
    */
-  connectionCredentialId: EntityId | null;
+  connectionCredentialId: EntityId;
   conversation: {
     /** The provider's id; a DM's is masked for anyone but a space admin. */
     externalId: string;
@@ -107,7 +131,44 @@ export interface BridgeRecentPoster {
   posts: number;
   lastPostAt: string;
 }
-export interface BridgeDetailView extends BridgeView { recentPosters: BridgeRecentPoster[] }
+/**
+ * Bridges S (D73, D74): a chat-target bridge's rolling summary of its group
+ * conversation, as the chat's turns get it. A deterministic extract of the log
+ * up to `throughMessageId`; the messages after it reach the next turn
+ * verbatim. Text fields are the group's own words: data, never instructions.
+ */
+export interface BridgeChatSummaryOpenAsk { messageId: EntityId; author: string; authorKey: string; at: string; excerpt: string }
+export interface BridgeChatSummaryClosedAsk { messageId: EntityId; author: string; excerpt: string; closedBy: string; at: string }
+export interface BridgeChatSummaryParticipant { key: string; name: string; messages: number; lastAt: string }
+export interface BridgeChatSummaryState {
+  firstAt: string | null;
+  lastAt: string | null;
+  participants: BridgeChatSummaryParticipant[];
+  /** Questions and requests nobody else has answered in their thread, oldest first. */
+  openAsks: BridgeChatSummaryOpenAsk[];
+  /** Open asks pushed off the list by newer ones: still unanswered, no longer named. */
+  droppedAsks: number;
+  closedAsks: number;
+  recentlyClosed: BridgeChatSummaryClosedAsk[];
+}
+/** Who is on what: open tasks this group asked for (`authored_from → bridge`) and their assignees, read live. */
+export interface BridgeChatSummaryOnWhat { taskId: EntityId; title: string; status: string; assignees: string[] }
+export interface BridgeChatSummaryView {
+  policyVersion: string;
+  coveredMessages: number;
+  throughMessageId: EntityId | null;
+  refreshedAt: string | null;
+  /** Log messages after the summary: the verbatim part of the next turn's context. */
+  unsummarizedMessages: number;
+  state: BridgeChatSummaryState;
+  onWhat: BridgeChatSummaryOnWhat[];
+}
+
+export interface BridgeDetailView extends BridgeView {
+  recentPosters: BridgeRecentPoster[];
+  /** The group chat's rolling summary (D74); null when the target is not a chat. */
+  summary: BridgeChatSummaryView | null;
+}
 
 export interface BridgeListResult { items: BridgeView[] }
 
@@ -163,7 +224,33 @@ export interface BridgeParticipantListResult {
 
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
-/** One row of `bridges.log.read`: a message on the bridge's log anchor, oldest first. */
+/** How far a bridged sender is taken at their word (§2.4, D4). */
+export type BridgeTrust = 'linked' | 'asserted' | 'guest';
+
+/**
+ * A message that crossed a bridge, or is crossing (§4.5, D4): read for the
+ * message itself or its batch twin, so a routed message's chat copy and log
+ * copy carry the same mark. Absent on a message that never touched a bridge.
+ */
+export interface MessageBridgeView {
+  bridgeId: EntityId;
+  provider: BridgeProvider;
+  /** The provider conversation's title (`Infra`); null when unreadable. */
+  conversation: string | null;
+  direction: 'in' | 'out';
+  /** Inbound only: the participant's name as the provider sent it; never a phone number. */
+  participant: string | null;
+  /** Inbound only: linked (verified), asserted (an admin's *This is…*), guest (unlinked, authored by the bridge). */
+  trust: BridgeTrust | null;
+  /**
+   * Outbound only: the outbox ledger's state, or the refusal (398's badge).
+   * There is no `delivered` or `read`: the runtime protocol carries no
+   * receipts (D64).
+   */
+  delivery: BridgeDelivery | null;
+}
+
+/** One row of `bridges.log.read`: a message on the bridge's log anchor. Rows within a page are oldest first. */
 export interface BridgeLogEntry {
   id: EntityId;
   createdAt: string;
@@ -182,6 +269,10 @@ export interface BridgeLogEntry {
   } | null;
   /** The poster's handle, when a session with one wrote it. */
   handle: string | null;
+  /** The outbound delivery badge (sent, queued, failed, refused), when this message crosses. */
+  delivery: BridgeDelivery | null;
+  /** Inbound only: how far the sender is taken at their word, as `MessageBridgeView.trust` reads it. */
+  trust: BridgeTrust | null;
 }
 export interface BridgeLogResult {
   bridgeId: EntityId;
@@ -192,6 +283,12 @@ export interface BridgeLogResult {
   lastMessageId: EntityId | null;
   /** True when more messages follow this page. */
   more: boolean;
+  /**
+   * Pass as `before` to read the page just older than this one (the id of this
+   * page's oldest row). Null when this page starts at the beginning of the log
+   * (or is empty).
+   */
+  olderCursor: EntityId | null;
 }
 
 interface BridgeCommand { clientMutationId: string; actorId?: EntityId }
@@ -248,6 +345,166 @@ export interface BridgeParticipantUpdateResult {
 }
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 
+// ---------------------------------------------------------------------------
+// Connections (§2.5, §3.4; migration 421): the numbers a human links, offered
+// to spaces as server-only credentials (provider whatsapp, shape connection).
+// ---------------------------------------------------------------------------
+
+/** Every state a connection row can be in; `removed` rows are never listed. */
+export type BridgeConnectionRowStatus = BridgeConnectionStatus | 'removed';
+/** 'public' is the space-visible credential (`--visibility space`). */
+export type BridgeConnectionOfferVisibility = 'private' | 'public';
+export type BridgeConnectionAuthFlow = { kind: 'qr' } | { kind: 'pairing'; phone: string };
+
+/** One space the connection is offered to: its credential there. */
+export interface BridgeConnectionOffer {
+  credentialId: EntityId;
+  spaceId: SpaceId;
+  visibility: BridgeConnectionOfferVisibility;
+  status: 'active' | 'stale' | 'needs_reconnect';
+  createdAt: string;
+  /** Live bridges riding this credential. */
+  bridges: number;
+}
+
+/** A connection as its owner (or a node admin) sees it. No secret, no state reference (§7.3 item 8). */
+export interface BridgeConnectionView {
+  id: string;
+  provider: BridgeProvider;
+  ownerAccountId: string;
+  label: string;
+  externalAccountId: string | null;
+  status: BridgeConnectionRowStatus;
+  runtimeId: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+  offers: BridgeConnectionOffer[];
+}
+export interface BridgeConnectionListResult { items: BridgeConnectionView[] }
+
+export interface BridgeConnectionBeginInput {
+  clientMutationId: string;
+  provider: BridgeProvider;
+  label?: string;
+  /** Relink one of the caller's own connections instead of linking a new number. */
+  connectionId?: string;
+  authFlow?: BridgeConnectionAuthFlow;
+}
+/**
+ * `runtime: 'connecting'`: the runtime was asked to connect and its QR or
+ * pairing code arrives as `bridge.connection.auth` on the caller's own event
+ * socket, never in this answer. `'offline'`: no runtime for the provider is
+ * running; begin again (with `connectionId`) once it is.
+ */
+export interface BridgeConnectionBeginResult {
+  connection: BridgeConnectionView;
+  runtime: 'connecting' | 'offline';
+}
+export interface BridgeConnectionOfferInput {
+  clientMutationId: string;
+  connectionId?: string;
+  spaceId: SpaceId;
+  visibility?: BridgeConnectionOfferVisibility;
+  label?: string;
+}
+export interface BridgeConnectionOfferResult { connection: BridgeConnectionView; credentialId: EntityId }
+export interface BridgeConnectionWithdrawInput { clientMutationId: string; connectionId?: string; spaceId: SpaceId }
+export interface BridgeConnectionWithdrawResult {
+  connection: BridgeConnectionView;
+  credentialId: EntityId;
+  /** The live bridges in that space this withdraw paused. */
+  pausedBridgeIds: EntityId[];
+}
+
+// ---------------------------------------------------------------------------
+// Hand-over (D55, D56; migration 424): a bridge moves to another member's
+// connection, keeping its id, history, handles and loops. Offered by the
+// current connection's owner or a space admin; accepted in tm8 only by the
+// receiving connection's owner, whose number's live group list must hold the
+// conversation (`not_in_group`). Nothing moves by itself (D56).
+// ---------------------------------------------------------------------------
+
+export type BridgeHandoverStatus = 'offered' | 'accepted' | 'declined' | 'withdrawn' | 'lapsed';
+export interface BridgeHandover {
+  id: string;
+  bridgeId: EntityId;
+  spaceId: SpaceId;
+  fromConnectionId: string;
+  toConnectionId: string;
+  /** The offerer's member id. */
+  offeredBy: EntityId;
+  status: BridgeHandoverStatus;
+  createdAt: string;
+  settledAt: string | null;
+  settledBy: EntityId | null;
+}
+export interface BridgeHandoverOfferInput { clientMutationId: string; bridgeId?: EntityId; toConnectionId: string }
+export interface BridgeHandoverSettleInput { clientMutationId: string; handoverId?: string }
+export interface BridgeHandoverResult {
+  handover: BridgeHandover;
+  /** The bridge after the call: on accept, riding the new connection. */
+  bridge: BridgeView;
+  /** accept only: outbox rows still pending that now go out on the new number. */
+  readdressed?: number;
+}
+export interface BridgeConnectionRemoveInput { clientMutationId: string; connectionId?: string }
+/**
+ * `runtime: 'logged_out'`: the runtime was told to log the device out and wipe
+ * its keys. `'offline'`: no runtime was connected; it never reconnects a
+ * removed connection, and the owner can unlink the device from the phone.
+ */
+export interface BridgeConnectionRemoveResult {
+  connection: BridgeConnectionView;
+  /** Every bridge on the connection that was live, now ended. */
+  endedBridgeIds: EntityId[];
+  /** Every space credential that offered it, now revoked. */
+  revokedCredentialIds: EntityId[];
+  runtime: 'logged_out' | 'offline';
+}
+/** The owner's live group list (§4.3, D28): asked of the runtime on each call, never stored. */
+export interface BridgeConversationListResult { connectionId: string; items: ConversationItem[] }
+
+/**
+ * The QR or pairing code for a `bridges.connections.begin`, pushed by the
+ * server to the begin caller's own human sockets only (selected by their
+ * verified identity) and never stored: it is not a `WorkspaceEvent`, has no
+ * space and no seq, and is never in the durable log, `events.poll` or a replay
+ * (§2.5, §7.3 item 8; coordinator ruling 2026-10-30 on §3.6).
+ */
+export interface BridgeConnectionAuthFrame {
+  type: 'bridge.connection.auth';
+  connectionId: string;
+  qrPng?: string;
+  pairingCode?: string;
+  expiresAt: string;
+}
+
+/** `bridges.work.start` (v2 §4.3): the agent's door to `/work`, the same server path. */
+export const BRIDGE_WORK_ITEMS_MAX = 5;
+export type BridgeWorkEffort = 'low' | 'high' | 'max';
+export interface BridgeWorkStartInput {
+  clientMutationId: string;
+  bridgeId?: EntityId;
+  /** One line each; one child task and one worker per item. */
+  items: string[];
+  options?: { teammate?: string; project?: string; effort?: BridgeWorkEffort };
+}
+export interface BridgeWorkStartItem {
+  taskId: EntityId;
+  sessionId: EntityId | null;
+  handle: string | null;
+  /** Why the worker did not start; the task stays. */
+  error: string | null;
+}
+export interface BridgeWorkStartResult {
+  bridgeId: EntityId;
+  /** The parent task, when there are two items or more. */
+  parentTaskId: EntityId | null;
+  items: BridgeWorkStartItem[];
+  /** The announcement posted to the group (absent when the outbox refused it). */
+  noticeMessageId: EntityId | null;
+}
+
 const Id = z.string().uuid();
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, bridgeId: Id.optional(), expectedVersion: z.number().int().positive() };
@@ -255,6 +512,26 @@ const OneLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\r\
 const Hhmm = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'must be HH:MM');
 
 export const BridgeProviderSchema = z.enum(BRIDGE_PROVIDERS);
+export const BridgeDeliverySchema: z.ZodType<BridgeDelivery> = z.object({
+  messageId: z.string().min(1),
+  bridgeId: z.string().min(1),
+  status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
+  reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
+    'not_connected', 'credential_text']).optional(),
+  retryAfterMs: z.number().int().nonnegative().optional(),
+  externalMessageId: z.string().min(1).optional(),
+  detail: z.string().min(1).optional(),
+  at: z.string().min(1),
+}).strict();
+export const MessageBridgeViewSchema: z.ZodType<MessageBridgeView> = z.object({
+  bridgeId: Id,
+  provider: BridgeProviderSchema,
+  conversation: z.string().nullable(),
+  direction: z.enum(['in', 'out']),
+  participant: z.string().nullable(),
+  trust: z.enum(['linked', 'asserted', 'guest']).nullable(),
+  delivery: BridgeDeliverySchema.nullable(),
+}).strict();
 export const BridgeWakeSchema = z.enum(['directed', 'thread', 'all']);
 export const BridgePolicySchema: z.ZodType<BridgePolicy> = z.object({
   trigger: z.enum(['mention', 'every', 'none']),
@@ -278,7 +555,7 @@ const QuietHoursSchema = z.object({ start: Hhmm, end: Hhmm }).strict()
 const BridgeFactsShape = {
   provider: BridgeProviderSchema,
   connectionId: Id,
-  connectionCredentialId: Id.nullable(),
+  connectionCredentialId: Id,
   conversation: z.object({
     externalId: z.string(), kind: z.enum(['group', 'channel', 'dm']), title: z.string(),
     memberCount: z.number().int().nonnegative().nullable(),
@@ -358,3 +635,169 @@ export const BridgeParticipantUpdateInputSchema = z.object({
     .refine(patch => Object.keys(patch).length > 0, 'patch must change something'),
 }).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
+
+const ConnectionLabel = z.string().trim().min(1).max(80).regex(/^[^\r\n]*$/, 'must be one line');
+export const BridgeConnectionAuthFlowSchema: z.ZodType<BridgeConnectionAuthFlow> = z.union([
+  z.object({ kind: z.literal('qr') }).strict(),
+  z.object({ kind: z.literal('pairing'), phone: z.string().regex(/^\+?[0-9]{6,20}$/, 'a phone number in international form, digits only') }).strict(),
+]);
+export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginInput> = z.object({
+  clientMutationId: z.string().min(1),
+  provider: BridgeProviderSchema,
+  label: ConnectionLabel.optional(),
+  connectionId: Id.optional(),
+  authFlow: BridgeConnectionAuthFlowSchema.optional(),
+}).strict();
+export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+  spaceId: Id,
+  visibility: z.enum(['private', 'public']).optional(),
+  label: ConnectionLabel.optional(),
+}).strict();
+export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWithdrawInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+  spaceId: Id,
+}).strict();
+export const BridgeHandoverOfferInputSchema: z.ZodType<BridgeHandoverOfferInput> = z.object({
+  clientMutationId: z.string().min(1),
+  bridgeId: Id.optional(),
+  toConnectionId: Id,
+}).strict();
+export const BridgeHandoverSettleInputSchema: z.ZodType<BridgeHandoverSettleInput> = z.object({
+  clientMutationId: z.string().min(1),
+  handoverId: Id.optional(),
+}).strict();
+export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemoveInput> = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+}).strict();
+export const BridgeConnectionOfferSchema: z.ZodType<BridgeConnectionOffer> = z.object({
+  credentialId: Id, spaceId: Id, visibility: z.enum(['private', 'public']),
+  status: z.enum(['active', 'stale', 'needs_reconnect']), createdAt: z.string(), bridges: z.number().int().nonnegative(),
+}).strict();
+export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.object({
+  id: Id, provider: BridgeProviderSchema, ownerAccountId: Id, label: z.string(),
+  externalAccountId: z.string().nullable(),
+  status: z.enum(['linked', 'connecting', 'logged_out', 'offline', 'removed']),
+  runtimeId: z.string().nullable(), createdAt: z.string(), lastSeenAt: z.string().nullable(),
+  offers: z.array(BridgeConnectionOfferSchema),
+}).strict();
+/** Exactly one of `qrPng` and `pairingCode`. */
+export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFrame> = z.object({
+  type: z.literal('bridge.connection.auth'),
+  connectionId: z.string().min(1),
+  qrPng: z.string().min(1).optional(),
+  pairingCode: z.string().min(1).max(32).optional(),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict().refine(f => (f.qrPng === undefined) !== (f.pairingCode === undefined), 'exactly one of qrPng and pairingCode');
+export const BridgeWorkStartInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  bridgeId: Id.optional(),
+  items: z.array(OneLine(500)).min(1).max(BRIDGE_WORK_ITEMS_MAX),
+  options: z.object({
+    teammate: OneLine(200).optional(),
+    project: OneLine(200).optional(),
+    effort: z.enum(['low', 'high', 'max']).optional(),
+  }).strict().optional(),
+}).strict();
+
+// ---------------------------------------------------------------------------
+// `/remember` proposals (D29, D61-D63; migration 416). A proposal is made from
+// the group by the command executor and decided only here, in tm8, by a human.
+// ---------------------------------------------------------------------------
+export const BRIDGE_MEMORY_PROPOSAL_STATUSES = ['pending', 'accepted', 'dropped', 'expired'] as const;
+export type BridgeMemoryProposalStatus = typeof BRIDGE_MEMORY_PROPOSAL_STATUSES[number];
+export const BRIDGE_MEMORY_PROPOSAL_TTL_DAYS = 14;
+
+export interface BridgeMemoryProposal {
+  id: string;
+  spaceId: SpaceId;
+  bridgeId: EntityId;
+  statement: string;
+  /** The member who sent `/remember`, and whether their link was verified (code, invite) or admin-asserted. */
+  proposedBy: EntityId;
+  proposerName: string;
+  proposerTrust: 'linked' | 'asserted';
+  /** The `/remember` message on the bridge's log, when known. */
+  messageId: EntityId | null;
+  /** The text names a secret (a password, a token): accept only if it holds none. */
+  mentionsSecret: boolean;
+  status: BridgeMemoryProposalStatus;
+  /** The memory an accept made. */
+  memoryId: EntityId | null;
+  decidedBy: EntityId | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  expiresAt: string;
+  /** Whether the caller may accept or drop it now (D62). */
+  canDecide: boolean;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+export interface BridgeMemoryProposalListResult { items: BridgeMemoryProposal[] }
+export interface BridgeMemoryProposalResolveInput {
+  bridgeId?: EntityId;
+  proposalId?: string;
+  decision: 'accept' | 'drop';
+  /** accept only: the corrected text to remember instead. */
+  statement?: string;
+  note?: string;
+}
+
+export const BridgeMemoryProposalResolveInputSchema = z.object({
+  bridgeId: Id.optional(),
+  proposalId: Id.optional(),
+  decision: z.enum(['accept', 'drop']),
+  statement: z.string().trim().min(1).max(4000).optional(),
+  note: z.string().trim().min(1).max(1000).optional(),
+}).strict().refine(i => i.decision === 'accept' || i.statement === undefined, 'statement is for accept only');
+
+// ---------------------------------------------------------------------------
+// B3 (417, §2.4, §4.6, D5, D58-D60): code and invite links.
+// ---------------------------------------------------------------------------
+
+/** A link code: `TM8-` and six characters, ten minutes, one use (D58). */
+export interface BridgeLinkCode { code: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+/** One of the caller's links: who a provider id IS (§2.4). */
+export interface BridgeIdentityLink {
+  id: string;
+  provider: BridgeProvider;
+  externalId: string;
+  /** '…0001': the last four characters only. */
+  masked: string;
+  method: 'code' | 'invite' | 'admin';
+  /** linked = identity-scoped (code, invite); asserted = an admin's, for one space (D5). */
+  trust: 'linked' | 'asserted';
+  spaceId: string | null;
+  spaceName: string | null;
+  verifiedAt: string;
+  revokedAt: string | null;
+}
+
+/** A live code, as the list shows it: never the code itself, which only begin answers (D58). */
+export interface BridgeLinkPending { id: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+export interface BridgeLinksList { items: BridgeIdentityLink[]; pending: BridgeLinkPending[] }
+
+export interface BridgeLinkBeginInput { provider: BridgeProvider; clientMutationId?: string }
+export interface BridgeLinkRevokeInput { linkId?: string; clientMutationId?: string }
+
+/** A participant pinned to `spaces.invites.create` (D60): redeeming makes a member; the number links by /link code. */
+export interface BridgeInviteParticipant { bridgeId: EntityId; externalId: string }
+
+export const BridgeLinkBeginInputSchema = z.object({
+  provider: BridgeProviderSchema, clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeLinkRevokeInputSchema = z.object({
+  linkId: Id.optional(), clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeInviteParticipantSchema = z.object({
+  bridgeId: Id, externalId: z.string().min(1).max(256),
+}).strict();
+
+/** The `/link` code shape, as the parser and the CLI check it (395's column check). */
+export const BRIDGE_LINK_CODE_PATTERN = /^TM8-[A-Z0-9]{4,8}$/i;

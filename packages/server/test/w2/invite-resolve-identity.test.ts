@@ -66,14 +66,17 @@ class ClaimRecordingDb implements Db {
 }
 
 /**
- * A LIVE code makes one more call (W5, 268): whether the invite's space asks
- * for a space password. It is claim-free on purpose — no identity rides on it —
- * so it cannot widen what the preview read can see.
+ * A LIVE code makes two more calls: whether the invite's space asks for a
+ * space password (W5, 268), and whether it was made for a bridge participant
+ * (Bridges D60, 418). Both are claim-free on purpose — no identity rides on
+ * them — so they cannot widen what the preview read can see.
  */
 function expectValidCodeCalls(db: ClaimRecordingDb): void {
-  expect(db.calls.map((c) => c.fn)).toEqual(['preview_invite', 'invite_requires_space_password']);
-  expect(db.calls[1]!.args).toEqual([CODE]);
-  expect(db.calls[1]!.claims).toEqual({});
+  expect(db.calls.map((c) => c.fn)).toEqual(['preview_invite', 'invite_requires_space_password', 'invite_bridge_link']);
+  for (const probe of db.calls.slice(1)) {
+    expect(probe.args).toEqual([CODE]);
+    expect(probe.claims).toEqual({});
+  }
 }
 
 function deps(db: Db): FacadeDeps {

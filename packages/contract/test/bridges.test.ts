@@ -4,10 +4,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AuthSessionListingSchema,
   BridgeParticipantUpdateInputSchema,
   ActorSummarySchema, BridgeCreateInputSchema, BridgeEntitySchema, BridgeFactsSchema, BridgeHandleClaimInputSchema,
   BridgeListenInputSchema, BridgeUpdateInputSchema, CORE_KIND_INFO, CoreEntityKindSchema, CreatableEntityKindSchema,
-  EntityStateSchema, OPERATIONS,
+  EntityStateSchema, OPERATIONS, BridgeConnectionAuthFrameSchema, SpaceCredentialShapeSchema, isServerOnlyCredentialProvider,
 } from '../src/index.js';
 import { FIXTURE_BRIDGE_FACTS } from './fixtures/bridge.js';
 
@@ -71,18 +72,74 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs, and the People tab\'s two (Bridges P, 404)', () => {
+  it('carries the twelve rows B1 needs, B1b-5\'s four connection rows (421), B3\'s three link rows, and the People tab\'s two (Bridges P, 420)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.participants.list', 'bridges.participants.update',
       'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
+      'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
+      'bridges.work.start', // B1b-6 (v2 §4.3)
+      // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
+      'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
+      'bridges.links.begin', 'bridges.links.list', 'bridges.links.revoke',
     ]);
   });
-  it('create, retarget, remove and the participant write are human-only; the session doors are not', () => {
-    expect(bridges.filter(op => op.humanOnly).map(op => op.name))
-      .toEqual(['bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update']);
+  it('create, retarget, remove, the participant write, the connection writes, the link begin and revoke, and the memory proposal decision are human-only; the session doors are not', () => {
+    expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
+      'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
+      'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
+      'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
+      'bridges.memories.proposals.resolve', 'bridges.links.begin', 'bridges.links.revoke',
+    ]);
+  });
+
+  it('the connection auth frame carries exactly one of a QR and a pairing code', () => {
+    const base = { type: 'bridge.connection.auth', connectionId: 'c1', expiresAt: '2026-10-30T05:10:00.000Z' } as const;
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, pairingCode: 'ABCD-1234' }).success).toBe(true);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, qrPng: 'iVBOR' }).success).toBe(true);
+    expect(BridgeConnectionAuthFrameSchema.safeParse(base).success).toBe(false);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, qrPng: 'iVBOR', pairingCode: 'ABCD-1234' }).success).toBe(false);
+    expect(BridgeConnectionAuthFrameSchema.safeParse({ ...base, pairingCode: 'ABCD-1234', spaceId: 'x' }).success).toBe(false);
+  });
+
+  it('whatsapp is a server-only credential provider with the connection shape', () => {
+    expect(isServerOnlyCredentialProvider('whatsapp')).toBe(true);
+    expect(SpaceCredentialShapeSchema.safeParse('connection').success).toBe(true);
   });
 });
+
+describe('auth session listing kinds (395/398 fix-forward)', () => {
+  const row = (kind: string) => ({
+    sessionId: '01a18b41-0000-7000-8000-000000000001', kind,
+    createdAt: '2026-10-30T07:00:00.000Z', lastUsedAt: null, expiresAt: '2026-11-06T07:00:00.000Z',
+    label: 'whatsapp-runtime', spaceId: null, spaceName: null, parentSessionId: null,
+    origin: 'login', originEntityId: null, owner: { identityId: 'owner', displayName: null }, current: false,
+  });
+  it('a bridge_runtime listing row validates, beside the existing kinds', () => {
+    for (const kind of ['browser', 'cli', 'agent', 'agent_runtime', 'bridge_runtime']) {
+      const parsed = AuthSessionListingSchema.safeParse(row(kind));
+      expect(parsed.success, kind).toBe(true);
+    }
+    expect(AuthSessionListingSchema.safeParse(row('rogue')).success).toBe(false);
+  });
+});
+
+
+describe('link inputs (B3, 417)', () => {
+  it('begin takes a known provider; an invite pins a bridge id and an external id; the code shape is TM8-', async () => {
+    const { BridgeLinkBeginInputSchema, BridgeInviteParticipantSchema, BRIDGE_LINK_CODE_PATTERN } = await import('../src/bridges.js');
+    expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'whatsapp' }).success).toBe(true);
+    expect(BridgeLinkBeginInputSchema.safeParse({ provider: 'fax' }).success).toBe(false);
+    expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: '11111111-1111-7111-8111-111111111111', externalId: '9190@s.whatsapp.net' }).success).toBe(true);
+    expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: 'x', externalId: '' }).success).toBe(false);
+    expect(BRIDGE_LINK_CODE_PATTERN.test('TM8-4F7KQ2')).toBe(true);
+    expect(BRIDGE_LINK_CODE_PATTERN.test('4F7K')).toBe(false);
+  });
+});
+
 
 describe('BridgeParticipantUpdateInputSchema (D52)', () => {
   const base = { clientMutationId: 'm-1' };

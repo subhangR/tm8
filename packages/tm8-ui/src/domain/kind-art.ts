@@ -282,6 +282,18 @@ export const KIND_ART = {
   ],
 
   /**
+   * Two posts and an arc between them — a `bridge` carries one conversation
+   * from another network across to a chat, session or channel here (395).
+   * Not `space_link`'s rings (two spaces joined) and not `channel`'s hash.
+   */
+  bridge: [
+    'M3.2 13V8.6',
+    'M12.8 13V8.6',
+    'M2.4 8.6c1.6-3.4 9.6-3.4 11.2 0',
+    'M2.4 13h11.2',
+  ],
+
+  /**
    * A globe — a `server` is another tm8 node (250, used from W8). Not a rack:
    * that silhouette is `container`'s.
    */
@@ -301,6 +313,16 @@ export const KIND_ART = {
     'M5.2 7.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
     'M7.6 5.4a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
     'M10.4 6a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
+  ],
+
+  /**
+   * A tag — a `label` is a name and a colour put on other entities (410).
+   * The punched hole is what keeps it from reading as `bridge`'s arc or as a
+   * plain arrow at 16px.
+   */
+  label: [
+    'M2.8 3.6v4l5.6 5.6 4.8-4.8-5.6-5.6h-4a.8.8 0 0 0-.8.8z',
+    'M5.4 6.2a0.8 0.8 0 1 0 0-1.6 0.8 0.8 0 0 0 0 1.6z',
   ],
 
   /**

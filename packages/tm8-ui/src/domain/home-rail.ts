@@ -145,7 +145,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     label: 'Agents & People',
     // A teammate and the two libraries it draws on, then the humans and the
     // channels they talk in.
-    kinds: ['team_member', 'skill', 'memory', 'member', 'channel'],
+    // channels they talk in — and the bridges that bring another network's
+    // conversation in beside them (BRIDGE-ENTITY-DESIGN §4.1: Talk).
+    kinds: ['team_member', 'skill', 'memory', 'member', 'channel', 'bridge'],
   },
   {
     id: 'code',
@@ -168,7 +170,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // shape. `spell` and `container` close it, what is left of the "Beta"
     // group (shipped and reachable, shape not settled) once `loop` and `tool`
     // moved to Work, so the settled kinds read first.
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'style', 'spell', 'container'],
+    // `label` (410) sits beside `style`: listed here, managed by `tm8 label`
+    // and (later) a Settings section, with no create door on Home.
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'style', 'label', 'spell', 'container'],
   },
 ];
 

@@ -1,6 +1,8 @@
 /**
  * §10.0 — THE SHARED ROW MODEL. One row is `{connector, access, status,
- * toggle, action}`, and this file is the only place that decides which.
+ * toggle, action}`, and this file is the only place that decides which —
+ * including which ACCOUNT a pick opens (`resolvedAccount`, §3's order) and how
+ * a switch or an account choice edits the selection (`toggled`, `pinned`).
  *
  * It is separated from `ConnectorToggleList` because three surfaces draw the
  * same rows in three shapes — the chat sheet, the launch section's grid, and
@@ -51,6 +53,8 @@ export interface ConnectorRow {
   glyph: string;
   /** §10.0's copy for this status, with the reason the catalog gave when it gave one. */
   text: string;
+  /** The status in a chip's width ("Reconnect", "Not connected"). */
+  short: string;
   /** "Just me", "Shared", or "—" for a connector that needs no account. */
   access: string;
   /**
@@ -70,11 +74,68 @@ export interface ConnectorRow {
   credentialId: string | undefined;
   /** Connected accounts the viewer may use — the account picker's options. */
   accounts: McpAccount[];
+  /**
+   * The connection a pick of this row opens: the pin when it is usable, else
+   * `resolvedAccount`'s. Undefined for a connector that needs no account, and
+   * when nothing would open — a pin to a dead account, or only a connection
+   * shared WITH the viewer, which the server never chooses by itself.
+   */
+  account: McpAccount | undefined;
+  /** The pick names an account that no longer opens (revoked, expired, removed). */
+  deadPin: boolean;
   action: ConnectorAction;
+  /** The viewer can use or fix it themselves; false while it waits on an admin (`ADMINS_TO_FIX`). */
+  actionable: boolean;
 }
 
-function usableAccounts(server: McpServer): McpAccount[] {
+/** Connected accounts the viewer may use. */
+export function usableAccounts(server: McpServer): McpAccount[] {
   return server.accounts.filter(a => a.canUse && a.status === 'connected');
+}
+
+/**
+ * The connection `bind` opens for a pick that names none, in the order
+ * `resolve_mcp_account` (341) takes them — §3 below the pin: the viewer's OWN
+ * connection first, then the Space's shared one (Space-owned before a member's
+ * public one), oldest first within each, which is the order the accounts
+ * arrive in.
+ *
+ * A connection merely shared WITH the viewer is deliberately not on the list:
+ * the resolver uses one only when it is pinned. "Own" is read without knowing
+ * who the viewer is: a usable account with no share at all can only be theirs,
+ * and a shared one is theirs when they manage it (`manageable` is "owner is
+ * me" for a member's row).
+ */
+export function resolvedAccount(server: McpServer, usable: readonly McpAccount[] = usableAccounts(server)): McpAccount | undefined {
+  return usable.find(a => a.sharing === 'private' || (a.ownerId !== undefined && a.canManage))
+    ?? usable.find(a => a.sharing === 'space' && a.ownerId === undefined)
+    ?? usable.find(a => a.sharing === 'space');
+}
+
+/** The account a pick opens: the usable pin, or §3's choice when there is no pin. */
+export function pickedAccount(server: McpServer, credentialId: string | undefined, usable: readonly McpAccount[] = usableAccounts(server)): McpAccount | undefined {
+  if (server.auth === 'none') return undefined;
+  if (credentialId) return usable.find(a => a.id === credentialId);
+  return resolvedAccount(server, usable);
+}
+
+/**
+ * One row switched on or off, starting from the EFFECTIVE set. Every surface
+ * that draws switches produces its explicit list here, so turning the last one
+ * off is `[]` everywhere and never `undefined` (the three-value rule in
+ * `ConnectorToggleList`).
+ */
+export function toggled(selected: readonly McpSelection[], serverId: string, on: boolean): McpSelection[] {
+  return on
+    ? [...selected.filter(s => s.serverId !== serverId), { serverId }]
+    : selected.filter(s => s.serverId !== serverId);
+}
+
+/** One pick's account pinned (or, with '', unpinned back to §3's choice). */
+export function pinned(selected: readonly McpSelection[], serverId: string, credentialId: string): McpSelection[] {
+  return selected.map(s => s.serverId === serverId
+    ? { serverId, ...(credentialId ? { credentialId } : {}) }
+    : s);
 }
 
 /**
@@ -104,19 +165,26 @@ function credentialStatus(server: McpServer): ConnectorStatus {
   return 'credential_required';
 }
 
-const COPY: Record<ConnectorStatus, { glyph: string; text: string }> = {
-  ready: { glyph: '●', text: 'Ready' },
-  credential_required: { glyph: '○', text: 'Not connected' },
-  credential_expired: { glyph: '⚠', text: 'Needs reconnect — the connection expired' },
-  credential_revoked: { glyph: '⚠', text: 'Needs reconnect — the connection was revoked' },
-  needs_reconnect: { glyph: '⚠', text: 'Needs reconnect' },
-  credential_definition_changed: { glyph: '⚠', text: 'Connector settings changed by an admin' },
-  not_approved: { glyph: '⏳', text: 'Awaiting approval' },
-  disabled: { glyph: '⦸', text: 'Disabled by an admin' },
-  stdio_not_trusted: { glyph: '⛔', text: 'Local command not trusted on this node' },
-  server_unavailable: { glyph: '⚠', text: 'Can’t reach this connector' },
-  access_denied: { glyph: '⛔', text: 'You can’t use this connection' },
+/** `short` is the same status in a chip's width; `text` stays the sentence (and the chip's tooltip). */
+const COPY: Record<ConnectorStatus, { glyph: string; text: string; short: string }> = {
+  ready: { glyph: '●', text: 'Ready', short: 'Ready' },
+  credential_required: { glyph: '○', text: 'Not connected', short: 'Not connected' },
+  credential_expired: { glyph: '⚠', text: 'Needs reconnect — the connection expired', short: 'Reconnect' },
+  credential_revoked: { glyph: '⚠', text: 'Needs reconnect — the connection was revoked', short: 'Reconnect' },
+  needs_reconnect: { glyph: '⚠', text: 'Needs reconnect', short: 'Reconnect' },
+  credential_definition_changed: { glyph: '⚠', text: 'Connector settings changed', short: 'Reconnect' },
+  not_approved: { glyph: '⏳', text: 'Awaiting approval', short: 'Awaiting approval' },
+  disabled: { glyph: '⦸', text: 'Disabled', short: 'Disabled' },
+  stdio_not_trusted: { glyph: '⛔', text: 'Local command not trusted on this node', short: 'Not trusted' },
+  server_unavailable: { glyph: '⚠', text: 'Can’t reach this connector', short: 'Unreachable' },
+  access_denied: { glyph: '⛔', text: 'You can’t use this connection', short: 'No access' },
 };
+
+/**
+ * Statuses whose remedy is an ADMIN's — approve it, enable it, trust its
+ * command, grant access — rather than the viewer's own switch or account.
+ */
+const ADMINS_TO_FIX: ReadonlySet<ConnectorStatus> = new Set<ConnectorStatus>(['not_approved', 'disabled', 'stdio_not_trusted', 'access_denied']);
 
 const ACTION: Record<ConnectorStatus, ConnectorAction> = {
   ready: 'none',
@@ -132,12 +200,31 @@ const ACTION: Record<ConnectorStatus, ConnectorAction> = {
   access_denied: 'none',
 };
 
-/** The §10.0 status of one connector, for this viewer. */
-export function connectorStatus(server: McpServer): ConnectorStatus {
-  if (!server.canAttach) return 'access_denied';
+/** The remedy §10.0 offers for this connector's status: connect, reconnect, approve… */
+export function connectorAction(server: McpServer): ConnectorAction {
+  return ACTION[connectorStatus(server)];
+}
+
+/**
+ * What `bind` refuses about the connector's DEFINITION, whoever asks: not
+ * approved, disabled, or a local command the node does not trust (an absent
+ * flag is untrusted: the server refuses on `!stdioTrusted`). Shared by the row
+ * status and the launch gate, which must refuse exactly what the row shows.
+ */
+export function definitionRefusal(server: McpServer): 'not_approved' | 'disabled' | 'stdio_not_trusted' | null {
   if (!server.approved) return 'not_approved';
   if (!server.enabled) return 'disabled';
-  if (server.transport === 'stdio' && server.source?.stdioTrusted === false) return 'stdio_not_trusted';
+  if (server.transport === 'stdio' && !server.source?.stdioTrusted) return 'stdio_not_trusted';
+  return null;
+}
+
+/** The §10.0 status of one connector, for this viewer. */
+export function connectorStatus(server: McpServer): ConnectorStatus {
+  // The definition first: the server clears `canAttach` for an unapproved or
+  // disabled connector, and the admin's state is the truer label.
+  const refused = definitionRefusal(server);
+  if (refused) return refused;
+  if (!server.canAttach) return 'access_denied';
   if (server.auth !== 'none' && usableAccounts(server).length === 0) return credentialStatus(server);
   // The health record is the viewer's own last test of this connector
   // (`mcp_server_health` is keyed by member), so an unreachable server is
@@ -149,24 +236,24 @@ export function connectorStatus(server: McpServer): ConnectorStatus {
 }
 
 /**
- * "Just me" / "Shared" — WHOSE connection would carry this connector.
- *
- * Read off the account that would actually be used, not off the connector:
- * one connector can hold a personal connection and a Space-owned one at once
- * (§5.2), and which of them answers is §3's order, not a property of the row.
- * A Space-owned connection has `ownerId: null` by construction (G2).
+ * "Just me" / "Shared" / "Shared with you" — WHOSE connection a pick opens,
+ * read off the account it would actually use (the usable pin, else §3's
+ * choice; nothing for a dead pin). A Space-owned connection has `ownerId: null`
+ * by construction (G2), and a member's row is the viewer's own exactly when
+ * they manage it (`manageable` is "owner is me"); anyone else's is shared
+ * WITH the viewer.
  */
-export function connectorAccess(server: McpServer, credentialId?: string): string {
-  if (server.auth === 'none') return '—';
-  const accounts = usableAccounts(server);
-  const pinned = credentialId ? accounts.find(a => a.id === credentialId) : undefined;
-  const account = pinned ?? accounts[0];
-  if (!account) return '—';
-  return account.ownerId ? 'Just me' : 'Shared';
+function accessOf(server: McpServer, account: McpAccount | undefined): string {
+  if (server.auth === 'none' || !account) return '—';
+  if (account.ownerId === undefined) return 'Shared';
+  return account.canManage ? 'Just me' : 'Shared with you';
 }
 
 /**
- * Every row the viewer may see, in catalog order.
+ * Every row the viewer may see, in catalog order: what they may attach, plus
+ * what an admin's state keeps from them (awaiting approval, disabled) — the
+ * server clears `canAttach` for those, but they are drawn inert with that
+ * state, never switchable on, so the launch shows what the Space holds.
  *
  * `selected` is the EFFECTIVE set — `value ?? catalog.defaults` — and
  * `explicit` says which of the two it was, because §10.4's header and §10.5's
@@ -179,10 +266,13 @@ export function connectorRows(
   selected: readonly McpSelection[],
   explicit: boolean,
 ): ConnectorRow[] {
-  return catalog.servers.filter(server => server.canAttach).map(server => {
+  return catalog.servers.filter(server => server.canAttach || definitionRefusal(server) !== null).map(server => {
     const pick = selected.find(s => s.serverId === server.id);
     const status = connectorStatus(server);
     const copy = COPY[status];
+    // Resolved ONCE per row; access, account and the dead pin all read it.
+    const usable = usableAccounts(server);
+    const account = pickedAccount(server, pick?.credentialId, usable);
     return {
       server,
       status,
@@ -190,13 +280,17 @@ export function connectorRows(
       // A catalog that named its own reason says it, rather than being
       // paraphrased into the generic line.
       text: status === 'access_denied' && server.unavailableReason ? server.unavailableReason : copy.text,
-      access: connectorAccess(server, pick?.credentialId),
+      short: copy.short,
+      access: accessOf(server, account),
       toggle: status === 'ready' || status === 'server_unavailable' || Boolean(pick),
       on: Boolean(pick),
       fromDefault: Boolean(pick) && !explicit,
       credentialId: pick?.credentialId,
-      accounts: usableAccounts(server),
+      accounts: usable,
+      account,
+      deadPin: Boolean(pick?.credentialId) && !account,
       action: ACTION[status],
+      actionable: !ADMINS_TO_FIX.has(status),
     };
   });
 }

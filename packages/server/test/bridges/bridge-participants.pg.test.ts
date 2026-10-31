@@ -1,5 +1,5 @@
 /**
- * Bridges P (BRIDGE-ENTITY-DESIGN §2.4, §4.4, D50-D52; migration 404): the
+ * Bridges P (BRIDGE-ENTITY-DESIGN §2.4, §4.4, D50-D52; migration 420): the
  * People tab's read and write over authenticated HTTP against a scratch
  * database with every migration applied.
  *
@@ -85,6 +85,9 @@ beforeAll(async () => {
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;
 
+  // D32 (#1427): a bridge rides its connection's offered credential in the space.
+  await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, q =>
+    q.rpc('offer_bridge_connection', [connection, space, 'public', null, randomUUID()]));
   const created = await request(ownerBearer.token, 'POST', `/v2/spaces/${space}/bridges`, {
     clientMutationId: randomUUID(), connectionId: connection, targetId: chat,
     conversation: { externalId: '120363@g.us', kind: 'group', title: 'Infra' }, teammateId: persona,
@@ -278,6 +281,9 @@ describe('cross-space: one space\'s admin and assertions never reach another', (
         ($1,$2,'cli',$3,$4,now()+interval '1 hour'),($5,$6,'cli',$3,$7,now()+interval '1 hour')`,
         [adminBBearer.id, adminBAccount, spaceB, hashToken(adminBBearer.secret), ownerBBearer.id, ownerAccount, hashToken(ownerBBearer.secret)]);
     });
+    // D32 (#1427): a bridge rides its connection's offered credential in the space.
+    await db.tx({ identityId: ownerIdentity, authKind: 'browser', requestId: randomUUID() }, q =>
+      q.rpc('offer_bridge_connection', [connection, spaceB, 'public', null, randomUUID()]));
     const created = await request(ownerBBearer.token, 'POST', `/v2/spaces/${spaceB}/bridges`, {
       clientMutationId: randomUUID(), connectionId: connection, targetId: chatB,
       conversation: { externalId: '120364@g.us', kind: 'group', title: 'Other' }, teammateId: personaB,

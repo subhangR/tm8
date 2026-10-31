@@ -247,9 +247,23 @@ describe('the backgroundJob claim', () => {
      *     in-process scheduler, and the firing path it hands back deliberately
      *     carries no background claim at all.
      *
+     *   - `bridges/outbox.ts`: `bridgesWorkerClaims()` (398), the in-process
+     *     bridges worker's constant `bridges.runtime` claim, never read from a
+     *     request. Its call sites on this branch:
+     *       1. bridges/runtime/hub.ts pump(): bridge_allowlists_due and
+     *          bridge_outbox_take, on a timer, pg LISTEN or kick(); the worker.
+     *       2. scheduler/jobs/bridge-watchdog.ts run(): bridge_watchdog_tick; a
+     *          scheduler job.
+     *       3. bridges/outbox.ts postBridgeNotice / reactBridgeMessage: called only
+     *          by the command executor after the runtime's inbound door commits,
+     *          and by its sweep; a runtime door and a scheduler job.
+     *       4. bridges/runtime/hub.ts connect(): bridge_runtime_connect; no caller
+     *          on this branch.
+     *     Any member-request caller must pass its own claims; see #1427.
+     *
      * (db/types.ts declares it as an optional field, which this pattern does
      * not match.)
      */
-    expect(setters).toEqual(['facade/execution-handlers.ts', 'main.ts']);
+    expect(setters).toEqual(['bridges/outbox.ts', 'facade/execution-handlers.ts', 'main.ts']);
   });
 });

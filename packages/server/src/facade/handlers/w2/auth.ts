@@ -73,6 +73,7 @@ import {
   claimNode,
   claimTokenIsLive,
   enterSpace,
+  inviteBridgeLink,
   inviteRequiresSpacePassword,
   resetSpaceLogin,
   setSpaceLoginLocked,
@@ -190,6 +191,11 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
         throw new CollabError('unauthenticated', 'bearer session is unresolved');
       }
       const session = await resolveBearerIdentity(deps.db, ctx.identity.token);
+      // 398: unreachable (the resolver refuses a bridge_runtime bearer on every
+      // catalog route), and stated so the session view never carries the kind.
+      if (session.kind === 'bridge_runtime') {
+        throw new CollabError('forbidden', 'a bridge runtime session may only call the bridgeRuntime doors');
+      }
       const displayName = await profileDisplayName(deps, session.identityId, ctx.requestId);
       const result: AuthSessionGetResult = {
         authKind: 'bearer',
@@ -333,7 +339,11 @@ function authInviteResolve(deps: FacadeDeps): OperationHandler {
     // W5 (K2): a live code into a space that requires a space password says
     // so, so the join form can ask for one. Dead codes answer as before.
     if (preview.status !== 'valid') return preview;
-    return { ...preview, requiresSpacePassword: await inviteRequiresSpacePassword(deps.db, body.code) };
+    const requiresSpacePassword = await inviteRequiresSpacePassword(deps.db, body.code);
+    // Bridges D60: an invite made for a group participant says so (masked), so
+    // the join page can hand the new member a /link code. Claim-free too.
+    const bridgeLink = await inviteBridgeLink(deps.db, body.code);
+    return { ...preview, requiresSpacePassword, ...(bridgeLink ? { bridgeLink } : {}) };
   };
 }
 
