@@ -149,6 +149,17 @@ export function AccountsBlock({
                         Offer {c.label} to this space
                       </button>
                     )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      title="Give it to a member who wants to hand you a bridge: they paste it in Hand over."
+                      onClick={() => {
+                        setMenuFor(null);
+                        void navigator.clipboard?.writeText(c.id).then(() => onChanged(`${c.label}: connection id copied.`), () => onChanged(`${c.label}: connection id ${c.id}`));
+                      }}
+                    >
+                      Copy connection id
+                    </button>
                     <button type="button" role="menuitem" onClick={() => { setMenuFor(null); setLinking({ relink: c }); }}>
                       Re-link {c.label}
                     </button>

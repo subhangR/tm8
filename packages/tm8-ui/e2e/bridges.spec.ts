@@ -186,3 +186,27 @@ test('PR2: the account menu, and the wizard in dark', async ({ page }, info) => 
   await expect(page.getByRole('option', { name: /Family/ })).toBeVisible();
   await page.screenshot({ path: info.outputPath('64-wizard-2-dark.png') });
 });
+
+test('hand-over: offer from ⋯, the banner, accept after one more ask', async ({ page }, info) => {
+  await openInfra(page);
+  await page.getByRole('button', { name: 'More for Infra' }).last().click();
+  await page.screenshot({ path: info.outputPath('60-handover-menu.png') });
+  await page.getByRole('menuitem', { name: 'Hand over to another number…' }).click();
+  const dialog = page.getByRole('dialog', { name: /Hand over the .* bridge/ });
+  await expect(dialog.getByRole('radio', { name: /Ada · personal/ })).toBeChecked();
+  await page.screenshot({ path: info.outputPath('61-handover-offer-dialog.png') });
+  await dialog.getByRole('radio', { name: 'Another member’s number' }).check();
+  await dialog.getByRole('textbox', { name: 'Their connection id' }).fill('bo');
+  await page.screenshot({ path: info.outputPath('62-handover-paste-id.png') });
+  await dialog.getByRole('radio', { name: /Ada · personal/ }).check();
+  await dialog.getByRole('button', { name: 'Offer hand-over' }).click();
+  const banner = page.getByTestId('bridge-handover');
+  await expect(banner).toContainText('it would move onto your number Ada · personal');
+  await page.screenshot({ path: info.outputPath('63-handover-banner.png') });
+  await banner.getByRole('button', { name: 'Accept…' }).click();
+  await page.screenshot({ path: info.outputPath('64-handover-accept-ask.png') });
+  await banner.getByRole('button', { name: 'Move it' }).click();
+  await expect(page.getByText('Handed over. The bridge now rides your number.')).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('65-handover-done.png') });
+});

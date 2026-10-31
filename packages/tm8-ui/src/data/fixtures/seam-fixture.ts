@@ -6324,6 +6324,24 @@ export function createFixtureSeam(): FixtureSeam {
         state: { kind: 'bridge', ...facts } as EntitySummary['state'],
       });
     },
+    (event) => {
+      /* A hand-over raises one attention item on the bridge, assigned to the receiver, and settling it clears it (411). */
+      const s = summaries.get(event.handover.bridgeId as EntityId);
+      if (!s) return;
+      const at = tick();
+      if (event.type === 'offered') {
+        attentionRows.push({
+          id: `att-handover-${event.handover.id}`, spaceId: s.spaceId, entityId: s.id, reason: event.reason,
+          points: 50, status: 'open', version: 1, requestedBy: clone(viewerActor), acknowledgedBy: null, resolvedBy: null,
+          resolutionNote: null, createdAt: at, updatedAt: at, acknowledgedAt: null, resolvedAt: null,
+          level: 'normal', actionType: 'decide', assigneeId: viewerActor.id,
+        });
+      } else {
+        const row = attentionRows.find((r) => r.id === `att-handover-${event.handover.id}`);
+        if (row) Object.assign(row, { status: 'cleared', version: row.version + 1, updatedAt: at, resolvedAt: at });
+      }
+      recomputeAttentionBadge(s);
+    },
   );
   seam.commands.bridges = bridgesPortFromSeam(fixtureBridges, seam, catalogServes, fixtureBridges.onConnectionAuth);
   return seam;

@@ -1,4 +1,5 @@
 import type {
+  ActorSummary,
   BridgeConnectionAuthFlow,
   BridgeConnectionAuthFrame,
   BridgeConnectionBeginResult,
@@ -11,10 +12,13 @@ import type {
   BridgeCreateInput,
   BridgeDetailView,
   BridgeHandleAppearance,
+  BridgeHandoverResult,
   BridgeLogResult,
   BridgeUpdateInput,
   BridgeView,
+  AttentionRequest,
   CommandResult,
+  EntityId,
   EdgeView,
   EntityKind,
   EntitySummary,
@@ -71,6 +75,56 @@ export interface BridgesClient {
   };
   /** The owner's live group list for one connection (B1b-7, D28): asked of the runtime, never stored. */
   conversations(connectionId: string): Promise<BridgeConversationListResult>;
+  /**
+   * Hand-over (D55, D56; #1455): move a bridge onto another member's number,
+   * keeping its id, history, handles and loops. Offered by the connection's
+   * owner or a space admin, settled only by the receiving number's owner;
+   * nothing moves until they accept. All four are human-only.
+   */
+  handover: {
+    offer(bridgeId: string, toConnectionId: string): Promise<BridgeHandoverResult>;
+    accept(handoverId: string): Promise<BridgeHandoverResult>;
+    decline(handoverId: string): Promise<BridgeHandoverResult>;
+    withdraw(handoverId: string): Promise<BridgeHandoverResult>;
+  };
+}
+
+/**
+ * An open hand-over offer on a bridge, as its attention item shows it. There
+ * is no `bridges.handover.list`: the offer raises one attention item on the
+ * bridge (`bridge.handover:<id>`), assigned to the receiver, and settling it
+ * clears the item. So the open item IS the pending offer.
+ */
+export interface PendingHandover {
+  handoverId: string;
+  /** The item's text without the CLI hint: who offers what, onto which number. */
+  summary: string;
+  offeredBy: ActorSummary;
+  /** The receiving member; null on a server that does not assign it. */
+  receiverId: EntityId | null;
+  createdAt: string;
+}
+
+/*
+ * The item carries the hand-over id only inside its reason, as the CLI hint
+ * the server writes (`… Accept in tm8: tm8 bridge handover accept <id> (or
+ * decline <id>)`, migration 411). Anchored on that exact phrase: a reason
+ * without it is some other item on the bridge. Interim until the item exposes
+ * the signal key or the id as a field.
+ */
+const HANDOVER_HINT = /\s*Accept in tm8: tm8 bridge handover accept ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b.*$/s;
+
+export function pendingHandoverOf(item: AttentionRequest): PendingHandover | null {
+  if (item.status !== 'open' && item.status !== 'acknowledged') return null;
+  const hit = HANDOVER_HINT.exec(item.reason);
+  if (!hit) return null;
+  return {
+    handoverId: hit[1]!,
+    summary: item.reason.slice(0, hit.index).trim(),
+    offeredBy: item.requestedBy,
+    receiverId: item.assigneeId ?? null,
+    createdAt: item.createdAt,
+  };
 }
 
 /** What a bridge may be bound to (§2.2): a chat, a work session or a channel in the space. */
@@ -96,6 +150,8 @@ export interface BridgesPort extends BridgesClient {
    * reason (`bridges.test`, `bridges.history.import`, the connection ops).
    */
   serves(op: string): boolean;
+  /** The bridge's open hand-over offers (at most one, D56), from its open attention items. */
+  pendingHandovers(spaceId: string, bridgeId: string): Promise<PendingHandover[]>;
   /**
    * The QR or pairing code for this member's own `connections.begin`, pushed
    * on their socket and never stored (§2.5). Absent on a seam with no socket:
@@ -109,6 +165,8 @@ const mutation = () => ({ clientMutationId: nextMutationId() });
 export function createBridgesClient(http: HttpClient): BridgesClient {
   const call = <T>(op: OperationName, bridgeId: string, body: Record<string, unknown>) =>
     http.call<T>(op, { params: { bridgeId }, body: { ...mutation(), ...body } });
+  const settle = (op: OperationName, handoverId: string) =>
+    http.call<BridgeHandoverResult>(op, { params: { handoverId }, body: mutation() });
   return {
     list: async (spaceId, opts = {}) => (await http.call<{ items: BridgeView[] }>('bridges.list', {
       params: { spaceId },
@@ -143,6 +201,12 @@ export function createBridgesClient(http: HttpClient): BridgesClient {
       }),
     },
     conversations: (connectionId) => http.call<BridgeConversationListResult>('bridges.conversations.list', { params: { connectionId } }),
+    handover: {
+      offer: (bridgeId, toConnectionId) => call('bridges.handover.offer', bridgeId, { toConnectionId }),
+      accept: (handoverId) => settle('bridges.handover.accept', handoverId),
+      decline: (handoverId) => settle('bridges.handover.decline', handoverId),
+      withdraw: (handoverId) => settle('bridges.handover.withdraw', handoverId),
+    },
   };
 }
 
@@ -153,7 +217,7 @@ export function createBridgesClient(http: HttpClient): BridgesClient {
  */
 export function bridgesPortFromSeam(
   client: BridgesClient,
-  seam: Pick<Seam, 'query' | 'connections' | 'commands'>,
+  seam: Pick<Seam, 'query' | 'connections' | 'commands' | 'attentionRequests'>,
   served: (op: string) => boolean,
   onConnectionAuth?: BridgesPort['onConnectionAuth'],
 ): BridgesPort {
@@ -170,6 +234,9 @@ export function bridgesPortFromSeam(
       seam.commands.createEdge({ srcId: bridgeId, dstId: memoryId, type: 'remembers', ...mutation() }),
     unlinkMemory: (edgeId) => seam.commands.deleteEdge(edgeId, mutation()),
     serves: served,
+    pendingHandovers: async (spaceId, bridgeId) =>
+      (await seam.attentionRequests({ spaceId, entityId: bridgeId, limit: 50 })).items
+        .flatMap((item) => pendingHandoverOf(item) ?? []),
     ...(onConnectionAuth ? { onConnectionAuth } : {}),
   };
 }
