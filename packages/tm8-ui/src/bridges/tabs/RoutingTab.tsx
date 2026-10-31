@@ -27,7 +27,7 @@ export function RoutingTab({
   onOpenEntity,
 }: {
   view: BridgeView;
-  port: Pick<BridgesPort, 'update' | 'retarget' | 'targets' | 'handles' | 'serves'>;
+  port: Pick<BridgesPort, 'update' | 'retarget' | 'targets' | 'handles' | 'serves' | 'startSession'>;
   onView(next: BridgeView): void;
   onOpenEntity?: (id: string) => void;
 }) {
@@ -109,6 +109,8 @@ export function RoutingTab({
         aria-label={`${view.title} routing`}
       >
         <fieldset disabled={busy || ended} className="brg-form__fields">
+          {/* R7: a channel mirrors everything; when tm8 answers, what goes back and who may start agents do not apply. */}
+          {view.target.kind !== 'channel' ? (<>
           <Choice
             legend="When does tm8 answer?"
             name="trigger"
@@ -126,10 +128,11 @@ export function RoutingTab({
             value={draft.policy.outbound}
             onChange={(v) => setPolicy('outbound', v)}
             options={[
-              ['replies', 'Only answers to the group', `e.g. tm8's reply to "@tm8 is the deploy done?"`],
-              ['all', `Everything posted in ${view.target.title}`, 'e.g. also your own notes and agents\' updates there'],
+              ['replies', 'Answers, and anything posted on the bridge', `e.g. tm8's reply to "@tm8 is the deploy done?"`],
+              ['all', `Also everything posted in ${view.target.title}`, 'e.g. your own notes and agents\' updates there'],
             ]}
           />
+          </>) : null}
           <Choice
             legend="Which way do messages flow?"
             name="direction"
@@ -141,16 +144,18 @@ export function RoutingTab({
               ['out', `tm8 → ${provider} only`],
             ]}
           />
-          <Choice
-            legend="Who can start agents?"
-            name="whoMayTrigger"
-            value={draft.policy.whoMayTrigger}
-            onChange={(v) => setPolicy('whoMayTrigger', v)}
-            options={[
-              ['linked', 'Linked people only'],
-              ['anyone', 'Anyone in the group', 'asks first'],
-            ]}
-          />
+          {view.target.kind !== 'channel' ? (
+            <Choice
+              legend="Who can start agents?"
+              name="whoMayTrigger"
+              value={draft.policy.whoMayTrigger}
+              onChange={(v) => setPolicy('whoMayTrigger', v)}
+              options={[
+                ['linked', 'Only people who have verified their number in tm8'],
+                ['anyone', 'Anyone in the group', 'you\'ll confirm'],
+              ]}
+            />
+          ) : null}
           <Choice
             legend="How replies are signed"
             name="voice"
@@ -251,7 +256,7 @@ export function RoutingTab({
               options={[
                 ['directed', 'Only messages addressed to it (@handle)'],
                 ['thread', 'Also replies in threads it is in'],
-                ['all', 'Every message', 'asks first'],
+                ['all', 'Every message', 'you\'ll confirm'],
               ]}
             />
           </Group>
@@ -344,7 +349,7 @@ function TargetCard({
   onConfirm,
 }: {
   view: BridgeView;
-  port: Pick<BridgesPort, 'retarget' | 'targets'>;
+  port: Pick<BridgesPort, 'retarget' | 'targets' | 'startSession'>;
   onView(next: BridgeView): void;
   onOpenEntity?: (id: string) => void;
   onConfirm(c: { title: string; lines: string[]; label: string; run: () => Promise<void> }): void;
@@ -359,7 +364,31 @@ function TargetCard({
     return () => { live = false; };
   }, [port, view.spaceId]);
 
-  const others = (targets ?? []).filter((t) => t.id !== view.target.id);
+  /* R3 (425): a channel is its own log, so a move never crosses the channel line. */
+  const channelSide = view.target.kind === 'channel';
+  const others = (targets ?? []).filter((t) => t.id !== view.target.id && (t.kind === 'channel') === channelSide);
+  const canStart = !channelSide && !!port.startSession && !!view.teammateId && view.status !== 'ended';
+  const startNew = () => onConfirm({
+    title: `Start a new session for ${view.title}?`,
+    lines: [
+      `A new session starts as the bridge's teammate, and ${view.title} lands there from now on.`,
+      `${view.target.title} keeps its history and its handle; nothing is stopped.`,
+      'The same as sending /new session in the group.',
+    ],
+    label: 'Start it',
+    run: async () => {
+      setMoving(true);
+      setError(null);
+      try {
+        const sessionId = await port.startSession!(view.spaceId, { teamMemberId: view.teammateId!, title: view.title.slice(0, 80) });
+        onView(await port.retarget(view.id, view.version, sessionId));
+      } catch (err) {
+        setError(bridgeFailureOf(err));
+      } finally {
+        setMoving(false);
+      }
+    },
+  });
   const chosen = others.find((t) => t.id === pick) ?? null;
   const move = () => {
     if (!chosen) return;
@@ -399,7 +428,7 @@ function TargetCard({
           onChange={(event) => setPick(event.target.value)}
           disabled={moving || view.status === 'ended' || targets === null}
         >
-          <option value="">{targets === null ? 'Loading targets…' : 'Move to another chat, session or channel…'}</option>
+          <option value="">{targets === null ? 'Loading targets…' : channelSide ? 'Move to another channel…' : 'Move to another chat or session…'}</option>
           {others.map((t) => (
             <option key={t.id} value={t.id}>{TARGET_GLYPH[t.kind as keyof typeof TARGET_GLYPH] ?? ''} {t.title}</option>
           ))}
@@ -407,7 +436,17 @@ function TargetCard({
         <button type="button" className="pn-btn" disabled={!chosen || moving} onClick={move}>
           {moving ? 'Moving…' : 'Move'}
         </button>
+        {canStart ? (
+          <button type="button" className="pn-btn" disabled={moving} onClick={startNew}>＋ New session</button>
+        ) : null}
       </div>
+      {view.target.live === false ? (
+        <p className="brg-hint" role="status" data-testid="bridge-target-stopped">
+          {view.target.kind === 'work_session'
+            ? 'This session has stopped. The next message to @tm8 resumes it, or starts a new one and tells the group.'
+            : `This ${TARGET_WORD[view.target.kind]} was deleted. Move the bridge to another one.`}
+        </p>
+      ) : null}
       {error ? <p className="brg-error" role="alert">{error}</p> : null}
     </section>
   );

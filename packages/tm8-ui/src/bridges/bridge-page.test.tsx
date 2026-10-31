@@ -156,7 +156,7 @@ describe('the bridge panel', () => {
     fireEvent.click(within(await screen.findByTestId('bridge-consequences')).getByRole('button', { name: 'Yes, change it' }));
     await waitFor(() => expect(port.update).toHaveBeenCalledTimes(1));
     // Narrow back: saves at once, offers Undo.
-    fireEvent.click(await screen.findByLabelText('Linked people only'));
+    fireEvent.click(await screen.findByLabelText('Only people who have verified their number in tm8'));
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(port.update).toHaveBeenCalledTimes(2));
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
@@ -193,16 +193,26 @@ describe('the bridge panel', () => {
   });
 
   it('moves the bridge only after a confirm, through retarget', async () => {
-    const { port } = await renderPage({}, 'ent-bridge-deploys');
+    const { port } = await renderPage();
     tab('Routing');
     const select = await screen.findByLabelText('Move to');
     await waitFor(() => expect(within(select).getAllByRole('option').length).toBeGreaterThan(1));
     fireEvent.change(select, { target: { value: 'ent-chat-launch' } });
     fireEvent.click(screen.getByRole('button', { name: 'Move' }));
     const dialog = await screen.findByTestId('bridge-consequences');
-    expect(dialog.textContent).toContain('deploys (channel) stops getting #deploys');
+    expect(dialog.textContent).toContain('gets it from now on');
+    expect(dialog.textContent).toContain("The group's history stays on the bridge.");
     fireEvent.click(within(dialog).getByRole('button', { name: 'Move it' }));
-    await waitFor(() => expect(port.retarget).toHaveBeenCalledWith('ent-bridge-deploys', 1, 'ent-chat-launch'));
+    await waitFor(() => expect(port.retarget).toHaveBeenCalledWith('ent-bridge-infra', expect.any(Number), 'ent-chat-launch'));
+  });
+
+  it('a channel bridge is never offered a chat or session to move to (425: the log would change)', async () => {
+    await renderPage({}, 'ent-bridge-deploys');
+    tab('Routing');
+    const select = await screen.findByLabelText('Move to');
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Move to another channel…' })).toBeTruthy());
+    expect(within(select).queryByRole('option', { name: /Launch plan/i })).toBeNull();
+    expect(within(select).getAllByRole('option')).toHaveLength(1);
   });
 
   it('lists the handles that have spoken, in Routing', async () => {

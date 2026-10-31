@@ -40,6 +40,7 @@ export function testPort(opts: { served?: readonly string[]; memories?: EdgeView
     targets: vi.fn(async (): Promise<EntitySummary[]> => [chatLaunchPlan]),
     memories: vi.fn(async () => edges),
     memoryCandidates: vi.fn(async (): Promise<EntitySummary[]> => [memoryTokens]),
+    teammates: vi.fn(async (): Promise<EntitySummary[]> => []),
     linkMemory: vi.fn(async (_bridgeId: string, memoryId: string) => {
       edges.push(memoryEdge('edge-new', memoryId === memoryTokens.id ? memoryTokens : memoryTokens));
       return ok;

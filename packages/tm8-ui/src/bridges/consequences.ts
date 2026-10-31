@@ -55,6 +55,6 @@ export function retargetConsequences(view: BridgeView, next: { title: string; ki
   return [
     `${view.target.title} (${TARGET_WORD[view.target.kind]}) stops getting ${view.title}.`,
     `${next.title} (${TARGET_WORD[next.kind as keyof typeof TARGET_WORD] ?? next.kind}) gets it from now on. Loops and memories move with the bridge.`,
-    'Live workers keep their handles.',
+    'Live workers keep their handles. The group\'s history stays on the bridge.',
   ];
 }

@@ -149,6 +149,14 @@ export const BRIDGE_TARGET_KINDS = ['chat', 'work_session', 'channel'] as const;
 export interface BridgesPort extends BridgesClient {
   /** Chats, work sessions and channels in the space, for Retarget. */
   targets(spaceId: string): Promise<EntitySummary[]>;
+  /** Teammates in the space: who a new session for a bridge runs as (R11). */
+  teammates(spaceId: string): Promise<EntitySummary[]>;
+  /**
+   * R11: start a session for a bridge to land in (`execution.spawn`, no task)
+   * and answer its id. Absent where spawn is not wired; the New session
+   * choice is then not offered.
+   */
+  startSession?(spaceId: string, input: { teamMemberId: string; title: string }): Promise<string>;
   /** The memories this bridge `remembers`, as edges (the edge id is what Unlink deletes). */
   memories(bridgeId: string): Promise<EdgeView[]>;
   /** Memories in the space, for *Link a memory*. */
@@ -245,6 +253,14 @@ export function bridgesPortFromSeam(
       (await seam.connections(bridgeId, { types: ['remembers'], direction: 'outgoing' })).items
         .filter((edge) => edge.source.id === bridgeId),
     memoryCandidates: (spaceId) => kindsQuery(spaceId, ['memory']),
+    teammates: (spaceId) => kindsQuery(spaceId, ['team_member']),
+    startSession: async (spaceId, input) => {
+      const result = await seam.commands.spawn({
+        ...mutation(), spaceId, teamMemberId: input.teamMemberId as EntityId, title: input.title,
+      });
+      if (!result.entity) throw new Error('The server did not return the session it started.');
+      return result.entity.id;
+    },
     linkMemory: (bridgeId, memoryId) =>
       seam.commands.createEdge({ srcId: bridgeId, dstId: memoryId, type: 'remembers', ...mutation() }),
     unlinkMemory: (edgeId) => seam.commands.deleteEdge(edgeId, mutation()),

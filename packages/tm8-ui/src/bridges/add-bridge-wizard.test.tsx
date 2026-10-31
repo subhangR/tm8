@@ -18,8 +18,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeView, EntitySummary } from '@tm8/contract';
-import { chatLaunchPlan, channelDesign } from '../fixtures/entities';
-import { AddBridgeWizard, connectedHere, defaultPolicy } from './AddBridgeWizard';
+import { chatLaunchPlan, channelDesign, teamMemberForge, teamMemberScout } from '../fixtures/entities';
+import { AddBridgeWizard, NEW_SESSION, connectedHere, defaultPolicy } from './AddBridgeWizard';
 import { BridgesSection } from './BridgesSection';
 import { testPort } from './test-port';
 
@@ -117,16 +117,21 @@ describe('the add-bridge wizard', () => {
     expect((screen.getByLabelText('WhatsApp → tm8 only') as HTMLInputElement).checked).toBe(true);
   });
 
-  it('a channel target pre-selects everything crossing, and widening choices confirm before Create', async () => {
+  it('a channel target asks only what applies; switching kind re-derives the defaults; widening choices confirm before Create', async () => {
     const { port } = await open();
     fireEvent.click(screen.getByRole('button', { name: 'Use Ada · work phone' }));
     fireEvent.click(await screen.findByRole('option', { name: /Release 1.4/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
     await screen.findByTestId('wizard-step-target');
     fireEvent.click(screen.getByLabelText(/^# Channel/));
-    expect((screen.getByLabelText(/^Everything posted in the target/) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText('Never — log only') as HTMLInputElement).checked).toBe(true);
+    // R7: a channel mirrors everything; when tm8 answers / what goes back / who may start agents do not apply.
+    expect(screen.queryByLabelText('Never — log only')).toBeNull();
+    expect(screen.queryByLabelText(/^Anyone in the group/)).toBeNull();
+    expect((screen.getByLabelText('Both ways') as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByLabelText(/^💬 Chat/));
+    // The chat's own defaults, not the channel's carried over.
+    expect((screen.getByLabelText('Only when someone writes @tm8 or replies to tm8') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText(/^Answers, and anything posted on the bridge/) as HTMLInputElement).checked).toBe(true);
     await waitFor(() => expect(within(screen.getByLabelText('Target')).getAllByRole('option').length).toBe(2));
     fireEvent.change(screen.getByLabelText('Target'), { target: { value: chatLaunchPlan.id } });
     fireEvent.click(screen.getByLabelText(/^Anyone in the group/));
@@ -137,6 +142,29 @@ describe('the add-bridge wizard', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Yes, create it' }));
     await screen.findByTestId('wizard-step-test');
     expect(port.create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ policy: expect.objectContaining({ whoMayTrigger: 'anyone' }) }));
+  });
+
+  it('R11: lands in a NEW session, started as the chosen teammate at Create', async () => {
+    const t = wizardPort();
+    const startSession = vi.fn(async () => 'ent-session-new');
+    const create = vi.fn(async (spaceId: string, input: Parameters<typeof t.client.create>[1]) =>
+      t.client.create(spaceId, { ...input, targetId: chatLaunchPlan.id }));
+    const port = { ...t.port, create, startSession, teammates: vi.fn(async () => [teamMemberForge, teamMemberScout]) };
+    render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Ada · work phone' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Release 1.4/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next: where it lands' }));
+    await screen.findByTestId('wizard-step-target');
+    fireEvent.click(screen.getByLabelText(/^▶ Session/));
+    expect((screen.getByLabelText('Target') as HTMLSelectElement).value).toBe(NEW_SESSION);
+    const runsAs = await screen.findByLabelText('Runs as');
+    await waitFor(() => expect(within(runsAs).getAllByRole('option')).toHaveLength(2));
+    fireEvent.change(runsAs, { target: { value: teamMemberScout.id } });
+    expect(startSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Create bridge' }));
+    await screen.findByTestId('wizard-step-test');
+    expect(startSession).toHaveBeenCalledWith(SPACE, { teamMemberId: teamMemberScout.id, title: 'Release 1.4 (WhatsApp)' });
+    expect(create).toHaveBeenCalledWith(SPACE, expect.objectContaining({ targetId: 'ent-session-new' }));
   });
 
   it('offers a number to the space before it can be used', async () => {
@@ -150,7 +178,7 @@ describe('the add-bridge wizard', () => {
     const { port, client } = await open();
     fireEvent.click(screen.getByRole('button', { name: '+ Link a new number' }));
     const dialog = screen.getByTestId('bridge-link-number');
-    fireEvent.click(within(dialog).getByLabelText(/^This phone/));
+    fireEvent.click(within(dialog).getByLabelText(/^Can't scan\?/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+91 98000 00094' } });
     fireEvent.change(within(dialog).getByLabelText('Number label'), { target: { value: 'Ops phone' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Get a code' }));
@@ -188,7 +216,7 @@ describe('review #1447 round 1', () => {
     render(<AddBridgeWizard port={port} spaceId={SPACE} onClose={() => {}} onCreated={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: '+ Link a new number' }));
     const dialog = screen.getByTestId('bridge-link-number');
-    fireEvent.click(within(dialog).getByLabelText(/^This phone/));
+    fireEvent.click(within(dialog).getByLabelText(/^Can't scan\?/));
     fireEvent.change(within(dialog).getByLabelText('Phone number'), { target: { value: '+919800000094' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Get a code' }));
     // Only the early frame reaches this stubbed socket; before the fix it was dropped and the dialog hung.
