@@ -201,6 +201,16 @@ describe('socket: parseFrame in isolation', () => {
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 1 }).kind).toBe('event');
   });
 
+  it('reads a bridge connection\'s QR or pairing code (B1b-5), and refuses one off its schema', () => {
+    const at = '2026-10-30T10:00:00.000Z';
+    const code = parseFrame({ type: 'bridge.connection.auth', connectionId: 'c1', pairingCode: 'K7Q2-9MXD', expiresAt: at });
+    expect(code).toEqual({ kind: 'bridge-connection-auth', frame: { type: 'bridge.connection.auth', connectionId: 'c1', pairingCode: 'K7Q2-9MXD', expiresAt: at } });
+    expect(parseFrame({ type: 'bridge.connection.auth', connectionId: 'c1', qrPng: 'iVBOR', expiresAt: at }).kind).toBe('bridge-connection-auth');
+    // Exactly one of qrPng and pairingCode, and a real instant: anything else is malformed, never half-drawn.
+    expect(parseFrame({ type: 'bridge.connection.auth', connectionId: 'c1', expiresAt: at }).kind).toBe('malformed');
+    expect(parseFrame({ type: 'bridge.connection.auth', connectionId: 'c1', pairingCode: 'X', qrPng: 'Y', expiresAt: at }).kind).toBe('malformed');
+  });
+
   it('reads the craft workspace pushes (lane L3): one workspace, or the open set', () => {
     const workspace = { craftId: 'c', revision: 1, state: { tabs: [], activeTabId: 'c' } };
     expect(parseFrame({ type: 'craft.workspace', spaceId: 's', workspace }).kind).toBe('craft-workspace');

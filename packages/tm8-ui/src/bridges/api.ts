@@ -1,6 +1,16 @@
 import type { BridgePeoplePort } from './people';
 import type { CreateInviteInput, SpaceId, SpaceInviteView } from '@tm8/contract';
 import type {
+  BridgeConnectionAuthFlow,
+  BridgeConnectionAuthFrame,
+  BridgeConnectionBeginResult,
+  BridgeConnectionListResult,
+  BridgeConnectionOfferResult,
+  BridgeConnectionRemoveResult,
+  BridgeConnectionView,
+  BridgeConnectionWithdrawResult,
+  BridgeConversationListResult,
+  BridgeCreateInput,
   BridgeDetailView,
   BridgeHandleAppearance,
   BridgeLogResult,
@@ -54,6 +64,19 @@ export interface BridgesClient {
   remove(bridgeId: string, expectedVersion: number): Promise<BridgeView>;
   handles(bridgeId: string): Promise<BridgeHandleAppearance[]>;
   log(bridgeId: string, query?: BridgeLogQuery): Promise<BridgeLogResult>;
+  /** `bridges.create` (human-only): the wizard's step 3 commit. */
+  create(spaceId: string, input: Omit<BridgeCreateInput, 'clientMutationId' | 'spaceId'>): Promise<BridgeView>;
+  /** The caller's OWN connections (B1b-5, `/v2/me/…`): numbers they linked, and where each is offered. */
+  connections: {
+    list(): Promise<BridgeConnectionView[]>;
+    /** Link a number (or relink one with `connectionId`); the QR or code arrives on `onConnectionAuth`. */
+    begin(input: { label?: string; connectionId?: string; authFlow?: BridgeConnectionAuthFlow }): Promise<BridgeConnectionBeginResult>;
+    offer(connectionId: string, spaceId: string): Promise<BridgeConnectionOfferResult>;
+    withdraw(connectionId: string, spaceId: string): Promise<BridgeConnectionWithdrawResult>;
+    remove(connectionId: string): Promise<BridgeConnectionRemoveResult>;
+  };
+  /** The owner's live group list for one connection (B1b-7, D28): asked of the runtime, never stored. */
+  conversations(connectionId: string): Promise<BridgeConversationListResult>;
 }
 
 /** What a bridge may be bound to (§2.2): a chat, a work session or a channel in the space. */
@@ -83,6 +106,12 @@ export interface BridgesPort extends BridgesClient {
   people?: BridgePeoplePort;
   /** B3's *Invite to space* door (`seam.commands.createInvite`); absent where invites are not wired. */
   createInvite?: (spaceId: SpaceId, input: CreateInviteInput) => Promise<SpaceInviteView>;
+  /**
+   * The QR or pairing code for this member's own `connections.begin`, pushed
+   * on their socket and never stored (§2.5). Absent on a seam with no socket:
+   * the link flow then says the code cannot be shown here.
+   */
+  onConnectionAuth?(cb: (frame: BridgeConnectionAuthFrame) => void): () => void;
 }
 
 const mutation = () => ({ clientMutationId: nextMutationId() });
@@ -107,6 +136,23 @@ export function createBridgesClient(http: HttpClient): BridgesClient {
       params: { bridgeId },
       query: Object.fromEntries(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])),
     }),
+    create: (spaceId, input) => http.call<BridgeView>('bridges.create', { params: { spaceId }, body: { ...mutation(), ...input } }),
+    connections: {
+      list: async () => (await http.call<BridgeConnectionListResult>('bridges.connections.list')).items,
+      begin: (input) => http.call<BridgeConnectionBeginResult>('bridges.connections.begin', {
+        body: { ...mutation(), provider: 'whatsapp', ...input },
+      }),
+      offer: (connectionId, spaceId) => http.call<BridgeConnectionOfferResult>('bridges.connections.offer', {
+        params: { connectionId }, body: { ...mutation(), spaceId },
+      }),
+      withdraw: (connectionId, spaceId) => http.call<BridgeConnectionWithdrawResult>('bridges.connections.withdraw', {
+        params: { connectionId }, body: { ...mutation(), spaceId },
+      }),
+      remove: (connectionId) => http.call<BridgeConnectionRemoveResult>('bridges.connections.remove', {
+        params: { connectionId }, body: mutation(),
+      }),
+    },
+    conversations: (connectionId) => http.call<BridgeConversationListResult>('bridges.conversations.list', { params: { connectionId } }),
   };
 }
 
@@ -119,6 +165,7 @@ export function bridgesPortFromSeam(
   client: BridgesClient,
   seam: Pick<Seam, 'query' | 'connections' | 'commands'>,
   served: (op: string) => boolean,
+  onConnectionAuth?: BridgesPort['onConnectionAuth'],
 ): BridgesPort {
   const kindsQuery = async (spaceId: string, kinds: readonly string[]) =>
     (await seam.query({ spaceId, kinds: [...kinds] as EntityKind[], limit: 200 })).page.items;
@@ -133,6 +180,7 @@ export function bridgesPortFromSeam(
       seam.commands.createEdge({ srcId: bridgeId, dstId: memoryId, type: 'remembers', ...mutation() }),
     unlinkMemory: (edgeId) => seam.commands.deleteEdge(edgeId, mutation()),
     serves: served,
+    ...(onConnectionAuth ? { onConnectionAuth } : {}),
   };
 }
 

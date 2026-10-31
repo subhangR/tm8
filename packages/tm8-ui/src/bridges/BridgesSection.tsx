@@ -26,6 +26,8 @@ import {
 } from './format';
 import { useDismissable } from '../panels/useDismissable';
 import { RemoveBridgeDialog } from './RemoveBridgeDialog';
+import { AccountsBlock } from './AccountsBlock';
+import { AddBridgeWizard } from './AddBridgeWizard';
 import { pendingReason, unservedReason } from './reasons';
 import './bridge-panel.css';
 
@@ -37,37 +39,7 @@ export interface BridgesSectionProps {
   onOpen?: (bridgeId: string) => void;
 }
 
-/** One account a bridge rides on, as the bridges in this space see it. */
-interface ConnectionRow {
-  id: string;
-  provider: BridgeView['provider'];
-  connection: BridgeView['health']['connection'];
-  bridges: number;
-  lastInboundAt: string | null;
-}
-
-/**
- * The connections this space's bridges ride on. `bridges.connections.*` (the
- * account list, offer and withdraw) is B1b-5's; until it is served the rows
- * are read off the bridges themselves, so an account with no bridge here is
- * not listed and the section says so.
- */
-export function connectionRowsOf(bridges: readonly BridgeView[]): ConnectionRow[] {
-  const rows = new Map<string, ConnectionRow>();
-  for (const b of bridges) {
-    const row = rows.get(b.connectionId);
-    if (!row) {
-      rows.set(b.connectionId, {
-        id: b.connectionId, provider: b.provider, connection: b.health.connection, bridges: 1,
-        lastInboundAt: b.health.lastInboundAt,
-      });
-    } else {
-      row.bridges += 1;
-      if ((b.health.lastInboundAt ?? '') > (row.lastInboundAt ?? '')) row.lastInboundAt = b.health.lastInboundAt;
-    }
-  }
-  return [...rows.values()];
-}
+export { connectionRowsOf } from './AccountsBlock';
 
 export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: BridgesSectionProps) {
   const [bridges, setBridges] = useState<BridgeView[] | null>(null);
@@ -94,9 +66,10 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
   const closeMenu = useCallback(() => setMenuFor(null), []);
   useDismissable(menuFor !== null, menuCell, closeMenu);
 
-  const connections = useMemo(() => connectionRowsOf(bridges ?? []), [bridges]);
-  const wizardReason = unservedReason(port, 'bridges.connections.begin', 'The add-bridge wizard');
-  const linkReason = unservedReason(port, 'bridges.connections.begin', 'Linking a new account');
+  /* The wizard needs the number list, the live group list and create. */
+  const wizardReason = unservedReason(port, 'bridges.connections.list', 'The add-bridge wizard')
+    ?? unservedReason(port, 'bridges.conversations.list', 'The add-bridge wizard');
+  const [adding, setAdding] = useState(false);
 
   if (loadError) {
     return (
@@ -129,7 +102,14 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
       measure={false}
       pad={false}
       action={(
-        <button type="button" className="set-chip" disabled={wizardReason !== null} title={wizardReason ?? undefined} data-testid="bridges-add">
+        <button
+          type="button"
+          className="set-chip"
+          disabled={wizardReason !== null}
+          title={wizardReason ?? undefined}
+          data-testid="bridges-add"
+          onClick={() => setAdding(true)}
+        >
           + Add bridge
         </button>
       )}
@@ -142,38 +122,12 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
           </div>
         ) : null}
 
-        <div className="brg-set__group">
-          <div className="brg-set__grouphead">
-            <span className="set-eyebrow">Accounts &amp; secrets</span>
-            <button type="button" className="set-chip set-chip--sm" disabled={linkReason !== null} title={linkReason ?? undefined}>
-              + Link a new account
-            </button>
-          </div>
-          {connections.length === 0 ? (
-            <p className="brg-set__empty set-prose">No account carries a bridge in this space yet.</p>
-          ) : (
-            <ul className="brg-set__rows" data-testid="bridges-connections">
-              {connections.map((c) => (
-                <li key={c.id} className="brg-set__conn">
-                  <BridgeProviderMark provider={c.provider} />
-                  <span className="brg-set__provider">{bridgeProviderLabel(c.provider)}</span>
-                  <span className="brg-set__mono" title={c.id}>account ···· {c.id.slice(-4)}</span>
-                  <Pill tone={CONNECTION_TONE[c.connection]} dot="solid">{CONNECTION_WORD[c.connection]}</Pill>
-                  <span className="brg-set__muted">{c.lastInboundAt ? `seen ${shortDate(c.lastInboundAt)}` : 'never seen'}</span>
-                  <span className="brg-set__count">{c.bridges} {c.bridges === 1 ? 'bridge' : 'bridges'}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="brg-set__note set-note" data-testid="bridges-connections-note">
-            Accounts are listed from the bridges they carry. Offering an account to another space, re-linking and
-            removing it arrive with the account operations.
-          </p>
-          <div className="brg-set__secrets">
-            <span className="brg-set__muted">Shared secrets</span>
-            <span className="brg-set__muted">coming soon — tracked in the Resources task</span>
-          </div>
-        </div>
+        <AccountsBlock
+          port={port}
+          spaceId={spaceId}
+          bridges={bridges ?? []}
+          onChanged={(message) => { setNotice(message); void reload(); }}
+        />
 
         <div className="brg-set__group">
           <div className="brg-set__grouphead"><span className="set-eyebrow">Bridges</span></div>
@@ -257,6 +211,19 @@ export function BridgesSection({ port, spaceId, heading = 'Bridges', onOpen }: B
           )}
         </div>
       </div>
+      {adding ? (
+        <AddBridgeWizard
+          port={port}
+          spaceId={spaceId}
+          onClose={() => { setAdding(false); void reload(); }}
+          onCreated={(view) => {
+            setAdding(false);
+            setNotice(`${view.title} is bridged to ${view.target.title}.`);
+            void reload();
+            onOpen?.(view.id);
+          }}
+        />
+      ) : null}
       {removing ? (
         <RemoveBridgeDialog
           bridge={removing}

@@ -1,4 +1,6 @@
 import type {
+  BridgeConnectionAuthFrame,
+  BridgeConnectionView,
   BridgeDetailView,
   BridgeFacts,
   BridgeHandleAppearance,
@@ -8,6 +10,7 @@ import type {
 } from '@tm8/contract';
 import { CollabError } from '@tm8/contract';
 import type { BridgesClient } from './api';
+import type { ConversationItem } from '@tm8/contract';
 
 /*
  * THE FIXTURE SEAM'S BRIDGES CLIENT — an in-memory store with the server's
@@ -73,10 +76,73 @@ function seedHandles(view: BridgeView): BridgeHandleAppearance[] {
   ].slice(0, view.handles);
 }
 
-export function createFixtureBridgesClient(seed: readonly BridgeView[] = []): BridgesClient & { readonly bridges: Map<string, BridgeView> } {
+
+/**
+ * A stand-in QR for the fixture: a 25x25 pattern with the three finder squares,
+ * drawn so a screenshot shows what the dialog looks like. It is NOT a scannable
+ * code and links nothing — the real one comes from the runtime, base64 PNG.
+ */
+export const FIXTURE_QR_PNG = 'iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAAAAADhgtq/AAAAiklEQVR4nF1SCQLAIAji/59mKwWxdlSKBhqgwf857wyecT1n2ZMshb8Te51focu3PFSqsLatJv24eGBZ9oEixUabu6MeWZPVDDBY0uFwSkZUkEWBByM9iORgOPc2sw1lywZdX7pg0hqt0M5WV6kZPj1lCsNg1GmJRfQpTlP4eLjyr5vidq6mem3VH+1iKOZ5SJ1xAAAAAElFTkSuQmCC';
+
+const FIXTURE_SPACE = 'sp-atelier';
+const NOW = '2026-07-28T10:40:00.000Z';
+
+/** The viewer's own numbers: one offered here (carrying Infra and Rahul), one linked but not offered here. */
+function seedConnections(views: readonly BridgeView[]): BridgeConnectionView[] {
+  const wa = views.find((v) => v.provider === 'whatsapp');
+  return [
+    {
+      id: wa?.connectionId ?? '0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494', provider: 'whatsapp', ownerAccountId: 'acct-ada',
+      label: 'Ada · work phone', externalAccountId: '+91 ···· 9494', status: 'linked', runtimeId: 'rt-1',
+      createdAt: NOW, lastSeenAt: NOW,
+      offers: [{
+        credentialId: '019f0000-0000-7000-8000-0000000000c1', spaceId: FIXTURE_SPACE, visibility: 'private',
+        status: 'active', createdAt: NOW, bridges: views.filter((v) => v.provider === 'whatsapp' && v.status !== 'ended').length,
+      }],
+    },
+    {
+      id: '6f1e2d3c-4b5a-4968-8776-655443322110', provider: 'whatsapp', ownerAccountId: 'acct-ada',
+      label: 'Ada · personal', externalAccountId: '+91 ···· 1999', status: 'linked', runtimeId: 'rt-1',
+      createdAt: NOW, lastSeenAt: NOW, offers: [],
+    },
+  ];
+}
+
+/** The live group list a runtime would answer for a linked number. */
+function seedConversations(views: readonly BridgeView[]): ConversationItem[] {
+  const infra = views.find((v) => v.conversation.kind === 'group');
+  return [
+    { conversationId: infra?.conversation.externalId ?? '1203630xxxx@g.us', kind: 'group', name: 'Infra', size: 14, canSend: true, reason: null },
+    { conversationId: '1203631gaming@g.us', kind: 'group', name: 'Gaming', size: 31, canSend: true, reason: null },
+    { conversationId: '1203632family@g.us', kind: 'group', name: 'Family', size: 9, canSend: false, reason: 'admins_only' },
+    { conversationId: '1203633release@g.us', kind: 'group', name: 'Release 1.4', size: 6, canSend: true, reason: null },
+    { conversationId: '919800000094@s.whatsapp.net', kind: 'self', name: 'Ada (you)', size: 1, canSend: true, reason: null },
+  ];
+}
+
+export function createFixtureBridgesClient(
+  seed: readonly BridgeView[] = [],
+  /** Resolves a target id to its row, so a created bridge names its target. */
+  targetOf: (id: string) => EntitySummary | undefined = () => undefined,
+  /** A created bridge, so a fixture seam can list it as an entity the way a server would. */
+  onCreated: (view: BridgeView) => void = () => {},
+): BridgesClient & {
+  readonly bridges: Map<string, BridgeView>;
+  readonly connectionsById: Map<string, BridgeConnectionView>;
+  /** The socket's auth frames, for a fixture seam's `onConnectionAuth`. */
+  onConnectionAuth(cb: (frame: BridgeConnectionAuthFrame) => void): () => void;
+} {
   const bridges = new Map(seed.map((b) => [b.id, b]));
   const logs = new Map(seed.map((b) => [b.id, seedLog(b)]));
   const handles = new Map(seed.map((b) => [b.id, seedHandles(b)]));
+  const connectionsById = new Map(seedConnections(seed).map((c) => [c.id, c]));
+  const conversationList = seedConversations(seed);
+  const authSubs = new Set<(frame: BridgeConnectionAuthFrame) => void>();
+  const connection = (id: string) => {
+    const c = connectionsById.get(id);
+    if (!c) throw new CollabError('not_found', 'Connection is unavailable');
+    return c;
+  };
   const find = (id: string) => {
     const bridge = bridges.get(id);
     if (!bridge) throw new CollabError('not_found', 'Bridge is unavailable');
@@ -94,6 +160,84 @@ export function createFixtureBridgesClient(seed: readonly BridgeView[] = []): Br
   };
   return {
     bridges,
+    connectionsById,
+    onConnectionAuth: (cb) => { authSubs.add(cb); return () => { authSubs.delete(cb); }; },
+    create: async (spaceId, input) => {
+      const taken = [...bridges.values()].find((b) => b.spaceId === spaceId && b.status !== 'ended'
+        && b.conversation.externalId === input.conversation.externalId);
+      if (taken) throw new CollabError('conflict', `already connected → ${taken.target.title}`, { details: { reason: 'conversation_connected' } });
+      if (input.targetId === 'none') throw new CollabError('invalid_input', 'pick a target');
+      const base = [...bridges.values()][0]!;
+      const id = `ent-bridge-${bridges.size + 1}`;
+      const view: BridgeView = {
+        ...base, id, spaceId, version: 1, title: input.conversation.title,
+        connectionId: input.connectionId,
+        conversation: { externalId: input.conversation.externalId, kind: input.conversation.kind, title: input.conversation.title, memberCount: input.conversation.memberCount ?? null },
+        target: (() => {
+          const t = targetOf(input.targetId);
+          const kind = t && (t.kind === 'chat' || t.kind === 'work_session' || t.kind === 'channel') ? t.kind : 'chat';
+          return { kind, id: input.targetId, title: t?.title ?? input.targetId };
+        })(),
+        policy: { ...base.policy, ...input.policy },
+        status: 'live', pausedAt: null, endedAt: null, handles: 0,
+        people: { participants: 0, linked: 0, guestsSeen7d: 0 },
+        purpose: input.purpose ?? null, retentionDays: input.retentionDays ?? null,
+        health: { ...base.health, queued: 0, failed24h: 0, detail: null },
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      bridges.set(id, view);
+      logs.set(id, []);
+      handles.set(id, []);
+      onCreated(view);
+      return view;
+    },
+    connections: {
+      list: async () => [...connectionsById.values()].filter((c) => c.status !== 'removed'),
+      begin: async (input) => {
+        const id = input.connectionId ?? `0c0c0c0c-0000-4000-8000-${String(connectionsById.size + 1).padStart(12, '0')}`;
+        const prev = connectionsById.get(id);
+        const next: BridgeConnectionView = {
+          id, provider: 'whatsapp', ownerAccountId: 'acct-ada', label: input.label ?? prev?.label ?? 'New number',
+          externalAccountId: prev?.externalAccountId ?? null, status: 'connecting', runtimeId: 'rt-1',
+          createdAt: prev?.createdAt ?? new Date().toISOString(), lastSeenAt: null, offers: prev?.offers ?? [],
+        };
+        connectionsById.set(id, next);
+        const expiresAt = new Date(Date.now() + 120_000).toISOString();
+        const frame: BridgeConnectionAuthFrame = input.authFlow?.kind === 'pairing'
+          ? { type: 'bridge.connection.auth', connectionId: id, pairingCode: 'K7Q2-9MXD', expiresAt }
+          : { type: 'bridge.connection.auth', connectionId: id, qrPng: FIXTURE_QR_PNG, expiresAt };
+        setTimeout(() => { for (const cb of authSubs) cb(frame); }, 50);
+        return { connection: next, runtime: 'connecting' };
+      },
+      offer: async (connectionId, spaceId) => {
+        const c = connection(connectionId);
+        const credentialId = `019f0000-0000-7000-8000-${String(c.offers.length + 200).padStart(12, '0')}`;
+        const next = { ...c, offers: [...c.offers, { credentialId, spaceId, visibility: 'private' as const, status: 'active' as const, createdAt: new Date().toISOString(), bridges: 0 }] };
+        connectionsById.set(connectionId, next);
+        return { connection: next, credentialId };
+      },
+      withdraw: async (connectionId, spaceId) => {
+        const c = connection(connectionId);
+        const offer = c.offers.find((o) => o.spaceId === spaceId);
+        if (!offer) throw new CollabError('not_found', 'not offered to that space');
+        const next = { ...c, offers: c.offers.filter((o) => o !== offer) };
+        connectionsById.set(connectionId, next);
+        return { connection: next, credentialId: offer.credentialId, pausedBridgeIds: [] };
+      },
+      remove: async (connectionId) => {
+        const c = connection(connectionId);
+        const ended = [...bridges.values()].filter((b) => b.connectionId === connectionId && b.status !== 'ended');
+        for (const b of ended) bridges.set(b.id, { ...b, status: 'ended', endedAt: new Date().toISOString() });
+        const next = { ...c, status: 'removed' as const, offers: [] };
+        connectionsById.set(connectionId, next);
+        return { connection: next, endedBridgeIds: ended.map((b) => b.id), revokedCredentialIds: c.offers.map((o) => o.credentialId), runtime: 'logged_out' };
+      },
+    },
+    conversations: async (connectionId) => {
+      const c = connection(connectionId);
+      if (c.status !== 'linked') throw new CollabError('conflict', 'the number is not linked: link it first', { details: { reason: 'not_linked' } });
+      return { connectionId, items: conversationList };
+    },
     list: async (spaceId, opts = {}) =>
       [...bridges.values()].filter((b) => b.spaceId === spaceId && (opts.includeEnded || b.status !== 'ended')),
     get: async (bridgeId): Promise<BridgeDetailView> => {

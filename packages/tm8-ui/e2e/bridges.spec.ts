@@ -158,3 +158,60 @@ test('Conversation opens on the newest page and scrolls back (#1446)', async ({ 
   await expect(conv.getByTestId('bridge-conversation-start')).toBeVisible();
   await page.screenshot({ path: info.outputPath('76-conversation-scrolled-back.png') });
 });
+
+test('PR2: the add-bridge wizard, step by step', async ({ page }, info) => {
+  await openSettings(page);
+  await expect(page.getByTestId('connection-0b9f3c1e-6b1a-4c55-9a51-7d3a0c1b9494')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('50-settings-my-accounts.png') });
+  await page.getByTestId('bridges-add').click();
+  await expect(page.getByTestId('wizard-step-connection')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('51-wizard-1-connection.png') });
+  await page.getByRole('button', { name: 'Use Ada · work phone' }).click();
+  await expect(page.getByRole('option', { name: /Gaming/ })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('52-wizard-2-conversation.png') });
+  await page.getByRole('option', { name: /Gaming/ }).click();
+  await page.getByRole('button', { name: 'Next: where it lands' }).click();
+  await expect(page.getByTestId('wizard-step-target')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Target', exact: true }).selectOption({ label: 'Plan the launch sequence' });
+  await page.screenshot({ path: info.outputPath('53-wizard-3-target.png') });
+  await page.getByLabel(/^Anyone in the group/).check();
+  await page.getByRole('button', { name: 'Create bridge' }).click();
+  await expect(page.getByTestId('bridge-consequences')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('54-wizard-3-confirm.png') });
+  await page.getByRole('button', { name: 'Yes, create it' }).click();
+  await expect(page.getByTestId('wizard-step-test')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('55-wizard-4-test.png') });
+  await page.getByRole('button', { name: 'Finish' }).click();
+  await expect(page.getByTestId('bridge-page')).toBeVisible({ timeout: 60_000 });
+  await page.screenshot({ path: info.outputPath('56-wizard-finished-opens-bridge.png') });
+});
+
+test('PR2: linking a number — QR and pairing code', async ({ page }, info) => {
+  await openSettings(page);
+  await page.getByRole('button', { name: '+ Link a new account' }).click();
+  await expect(page.getByTestId('bridge-link-number')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('60-link-choose.png') });
+  await page.getByRole('button', { name: 'Show the QR code' }).click();
+  await expect(page.getByAltText('WhatsApp link QR code')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('61-link-qr.png') });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: '+ Link a new account' }).click();
+  await page.getByLabel(/^This phone/).check();
+  await page.getByLabel('Phone number').fill('+91 98000 00094');
+  await page.getByRole('button', { name: 'Get a code' }).click();
+  await expect(page.getByTestId('bridge-link-code')).toHaveText('K7Q2-9MXD');
+  await page.screenshot({ path: info.outputPath('62-link-pairing-code.png') });
+});
+
+test('PR2: the account menu, and the wizard in dark', async ({ page }, info) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.addInitScript(() => window.localStorage.setItem('tm8ui.theme', 'dark'));
+  await openSettings(page);
+  await page.getByRole('button', { name: 'More for Ada · work phone' }).click();
+  await page.screenshot({ path: info.outputPath('63-account-menu-dark.png') });
+  await page.keyboard.press('Escape');
+  await page.getByTestId('bridges-add').click();
+  await page.getByRole('button', { name: 'Use Ada · work phone' }).click();
+  await expect(page.getByRole('option', { name: /Family/ })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('64-wizard-2-dark.png') });
+});

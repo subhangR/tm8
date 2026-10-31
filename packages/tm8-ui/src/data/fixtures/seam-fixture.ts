@@ -6367,10 +6367,20 @@ export function createFixtureSeam(): FixtureSeam {
   ]);
   seam.commands.loopForm = loopFormSourcesOf(seam);
   // Seeded from the fixture bridge entities, so Settings → Bridges and the bridge panel agree with the entity rows.
-  seam.commands.bridges = bridgesPortFromSeam(
-    createFixtureBridgesClient([...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? [])),
-    seam,
-    catalogServes,
+  const fixtureBridges = createFixtureBridgesClient(
+    [...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? []),
+    (id) => summaries.get(id as EntityId),
+    (view) => {
+      /* A created bridge is an entity, as on a server: list it beside the seeded ones. */
+      const template = [...summaries.values()].find((row) => row.kind === 'bridge');
+      if (!template) return;
+      const { id, spaceId: _space, version, title, createdAt, updatedAt, recentPosters: _p, ...facts } = view as typeof view & { recentPosters?: unknown };
+      summaries.set(id as EntityId, {
+        ...clone(template), id: id as EntityId, version, title, createdAt, updatedAt, activityAt: updatedAt,
+        state: { kind: 'bridge', ...facts } as EntitySummary['state'],
+      });
+    },
   );
+  seam.commands.bridges = bridgesPortFromSeam(fixtureBridges, seam, catalogServes, fixtureBridges.onConnectionAuth);
   return seam;
 }
