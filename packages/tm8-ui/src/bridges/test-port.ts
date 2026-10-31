@@ -1,12 +1,13 @@
 import { vi } from 'vitest';
-import type { BridgeView, CommandResult, EdgeView, EntitySummary } from '@tm8/contract';
+import type { BridgeView, CommandResult, CreateInviteInput, EdgeView, EntitySummary, SpaceInviteView } from '@tm8/contract';
 import { bridgeDeploys, bridgeInfra, bridgeRahul, chatLaunchPlan, memoryTokens } from '../fixtures/entities';
 import { ada } from '../fixtures/actors';
 import type { BridgesPort } from './api';
 import { createFixtureBridgesClient, fixtureBridgeViewOf } from './fixture';
+import { fixturePort } from './people/fixtures';
 
 /** A port over the fixture client, with the seam reads stubbed: what the bridge tests drive. */
-export function testPort(opts: { served?: readonly string[]; memories?: EdgeView[] } = {}) {
+export function testPort(opts: { served?: readonly string[]; memories?: EdgeView[]; people?: boolean } = {}) {
   const views = [bridgeInfra, bridgeDeploys, bridgeRahul].map((row) => fixtureBridgeViewOf(row)!);
   const client = createFixtureBridgesClient(views);
   const served = new Set(opts.served ?? []);
@@ -32,6 +33,14 @@ export function testPort(opts: { served?: readonly string[]; memories?: EdgeView
       return ok;
     }),
     serves: (op: string) => served.has(op),
+    // Lane P's roster and B3's invite door, only when a test asks for them.
+    ...(opts.people ? {
+      people: fixturePort(),
+      createInvite: vi.fn(async (spaceId: string, input: CreateInviteInput) => ({
+        id: 'inv-1', spaceId, code: 'JOIN-1234', role: input.role ?? 'member', maxUses: 1, useCount: 0,
+        expiresAt: null, revokedAt: null, createdAt: '2026-10-31T09:00:00.000Z',
+      }) as unknown as SpaceInviteView),
+    } : {}),
   } satisfies BridgesPort;
   return { port, client, views };
 }
