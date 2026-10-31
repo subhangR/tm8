@@ -102,13 +102,16 @@ export function PhoneEntityPage(props: PhoneEntityPageProps): ReactNode {
           <KindIcon kind={detail.kind} size={14} />
           {config.label}
         </span>
-        <h1 className="pp-title">{detail.title || 'Untitled'}</h1>
-        <p className="pp-meta">
+        {/* A kind with its own page body (the bridge page) draws its own title
+            line; repeating it here read as the same name twice (#1448 review).
+            The heading stays for screen readers, and the byline goes. */}
+        <h1 className={props.bodySlot ? 'pp-title pp-title--sr' : 'pp-title'}>{detail.title || 'Untitled'}</h1>
+        {props.bodySlot ? null : <p className="pp-meta">
           {author ? <span>{author}</span> : null}
           <span>
             updated <time dateTime={detail.updatedAt}>{phoneTime(detail.updatedAt, now)}</time>
           </span>
-        </p>
+        </p>}
       </header>
       {props.bodySlot ? <div className="pp-kindbody" data-testid="phone-kind-body">{props.bodySlot}</div> : body ? <div className="pp-body">{body}</div> : null}
       <section className="pp-sec" aria-label="Linked" data-testid="phone-linked">
