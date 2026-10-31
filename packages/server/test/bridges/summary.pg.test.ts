@@ -62,6 +62,9 @@ beforeAll(async () => {
   registerBridgeHandlers(registry, { db, config, owner });
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;
+  // D32 (#1427): a bridge rides its connection's offered credential in the space.
+  await db.tx({ identityId, authKind: 'browser', requestId: randomUUID() }, q =>
+    q.rpc('offer_bridge_connection', [connection, space, 'public', null, randomUUID()]));
   const created = await call('POST', `/v2/spaces/${space}/bridges`, { clientMutationId: randomUUID(), connectionId: connection,
     targetId: chat, conversation: { externalId: 'infra@g.us', kind: 'group', title: 'Infra' }, teammateId: persona, purpose: 'Infra on-call' });
   bridgeId = created.id;
