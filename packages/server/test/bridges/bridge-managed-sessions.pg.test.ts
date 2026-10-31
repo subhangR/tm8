@@ -184,9 +184,21 @@ describe('425: bridges manage their session', () => {
     expect(await keeper().ensure(bridge, stored.messageId)).toBe('live');
   });
 
-  it('R11: only the bridges worker may move a bridge onto a session it started', async () => {
+  it('R11: only the bridges worker may read the managed context or move a bridge onto a session it started', async () => {
     const other = await newSession('Someone else');
-    await expect(db.rpc(human(), 'bridge_managed_retarget', [bridge, other, null, 'new'])).rejects.toThrow();
+    const before = await targetOf();
+    // A member, an agent (its owner's identity, pinned to the space), and an
+    // agent that also claims the worker's job: all refused by both doors.
+    const callers: DbClaims[] = [
+      human(),
+      { identityId: ownerIdentity, authKind: 'agent', sessionSpaceId: spaceId, requestId: randomUUID() },
+      { identityId: ownerIdentity, authKind: 'agent', sessionSpaceId: spaceId, backgroundJob: 'bridges.runtime', requestId: randomUUID() },
+    ];
+    for (const claims of callers) {
+      await expect(db.rpc(claims, 'bridge_managed_context', [bridge])).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(db.rpc(claims, 'bridge_managed_retarget', [bridge, other, null, 'new'])).rejects.toMatchObject({ code: 'forbidden' });
+    }
+    expect(await targetOf()).toBe(before);
   });
 
   it('R3: a chat or session bridge cannot be moved onto a channel (its log would change)', async () => {
