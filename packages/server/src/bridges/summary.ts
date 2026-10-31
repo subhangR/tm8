@@ -88,11 +88,14 @@ const ASK = new RegExp([
   String.raw`(^|[^\w])@tm8\b`,
   String.raw`\b(todo|action item)\b`,
 ].join('|'), 'i');
+// A link's path and query carry `?`, `please-…` and the like; they say nothing about intent.
+// Trailing punctuation stays with the sentence: `is it up at https://x.test?` still asks.
+const LINK = /\b(?:(?:https?|ftp):\/\/|www\.)\S+?(?=[.,;:!?)]*(?:\s|$))/gi;
 const SELF_CLOSE = /\b(done|fixed|resolved|sorted|never ?mind|nvm|no longer needed|thanks|thank you)\b/i;
 
 /** A question or a request: what a group expects someone to answer. */
 export function isAsk(body: string): boolean {
-  return ASK.test(body);
+  return ASK.test(body.replace(LINK, ' '));
 }
 
 function excerpt(body: string, max: number): string {
@@ -272,7 +275,7 @@ const START: Cursor = { id: null, at: null };
 async function bridgeOf(q: Querier, where: 'chat' | 'bridge', id: string): Promise<BridgeRow | null> {
   const [row] = await q.query<BridgeRow>(
     `select b.entity_id as id, b.target_kind, b.conversation ->> 'title' as title, b.purpose,
-            case when b.target_kind = 'channel' then b.target_id else b.entity_id end as anchor
+            internal.bridge_log_anchor(b.entity_id::uuid) as anchor
        from public.bridges b
        join public.entities e on e.id = b.entity_id and e.deleted_at is null
       where ${where === 'chat' ? `b.target_id = $1 and b.target_kind = 'chat' and b.ended_at is null` : 'b.entity_id = $1'}`, [id]);

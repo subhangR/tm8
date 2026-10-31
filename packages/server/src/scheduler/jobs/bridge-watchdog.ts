@@ -24,6 +24,8 @@ interface TickResult { runtimeDown: number; runtimeBack: number; warned: number;
 export function bridgeWatchdogJob(deps: {
   db: Db;
   commands?: () => BridgeCommandHook | undefined;
+  /** 413 §4: media fetches a restart interrupted, or that wait for a retry. */
+  media?: { kick(): Promise<number> };
   /** After a tick that changed something, the hub pushes and dispatches at once. */
   onChanged?: () => void;
 }): ScheduledJob {
@@ -37,10 +39,11 @@ export function bridgeWatchdogJob(deps: {
     async run() {
       const tick = await deps.db.rpc<TickResult>(bridgesWorkerClaims('bridges.watchdog'), 'internal.bridge_watchdog_tick', []);
       const swept = (await deps.commands?.()?.sweep()) ?? 0;
-      const affected = tick.runtimeDown + tick.runtimeBack + tick.warned + tick.requeued + swept;
+      const media = (await deps.media?.kick()) ?? 0;
+      const affected = tick.runtimeDown + tick.runtimeBack + tick.warned + tick.requeued + swept + media;
       if (affected === 0) return { skipped: true, reason: 'nothing to watch' };
       deps.onChanged?.();
-      return { affected, detail: { ...tick, commandsSwept: swept } };
+      return { affected, detail: { ...tick, commandsSwept: swept, mediaAttached: media } };
     },
   };
 }

@@ -88,6 +88,7 @@ import { dispatchRequestInjection } from '@tm8/prompt';
 import { TOOL_LOOP_NOT_RUNNABLE, type LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import { firingKeyFor } from '../loops/firing.js';
 import type { ToolRuntime } from '../tools/runtime.js';
+import type { BridgeCommandPorts } from '../bridges/commands/ports.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -3239,6 +3240,14 @@ export function createLoopExecutorPort(deps: {
       // one place both the scheduled job and Run now fire through, rather than
       // run as a spawn (its persona) or a dispatch. The run records the reason.
       if (loop.action === 'tool') throw new CollabError('not_implemented', TOOL_LOOP_NOT_RUNNABLE);
+      // Bridges L (D26): a post loop starts no session and derives no task. Each
+      // target's text goes through the outbox; paused, held and refused groups
+      // are recorded on the run, and the run settles at delivery.
+      if (loop.action === 'post') {
+        if (!runId) throw new CollabError('invalid_input', 'a post loop fires only as a claimed run');
+        await db.tx(claims, q => q.rpc('loop_post_targets', [loop.entityId, runId]));
+        return { taskId: null, sessionId: null };
+      }
       // §3.4: the ACTION picks the branch, never the runner, so the port agrees
       // with the job, Run now and the projection by construction. A spawn loop
       // that lost its runner (team_member_id is `on delete set null`) is
@@ -3302,8 +3311,9 @@ export function createLoopExecutorPort(deps: {
           accessMode: (loop.config?.['accessMode'] as never) ?? null,
           title: loop.title,
           // The loop's instruction is launch-manifest context, not a runtime
-          // prompt — the same channel `--context` uses.
-          promptExtra: loop.prompt === '' ? null : loop.prompt,
+          // prompt — the same channel `--context` uses. A bridge loop's targets
+          // (D26) ride with it: each group's instruction, state and recent log.
+          promptExtra: loopLaunchContext(loop.prompt, await loadLoopTargets(db, claims, loop.entityId, runId ?? null)),
           clientMutationId: `loop-fire:${firingKey}`,
         }, {
           /*
@@ -3384,35 +3394,137 @@ export function createLoopExecutorPort(deps: {
      * share one path. A completed session that is merely still open closes as
      * `exited_clean`, exactly as the HTTP op records it.
      */
-    async stopSession(claims, sessionId, request) {
-      const rows = await db.query<{ outcome: string | null }>(
-        claims,
-        'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
-        [sessionId],
-      );
-      if (rows.length === 0) {
-        throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
-      }
-      const outcome = rows[0]!.outcome;
-      let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
-      if (outcome === 'completed') {
-        ending = CLOSED_AFTER_COMPLETION;
-      } else {
-        if (outcome !== 'stopped') {
-          await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
-        }
-        ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
-      }
-      await rethrowing(() =>
-        spawnService.terminate(claims, sessionId, {
-          force: false,
-          clientMutationId: request.clientMutationId,
-          reason: request.reason,
-          ...ending,
-        }),
-      );
-    },
+    stopSession: (claims, sessionId, request) => stopSessionAsOperator(db, spawnService, claims, sessionId, request),
   };
+}
+
+/**
+ * Stop a session the way `execution.terminate` does — `stop_work_session`
+ * while the outcome is open (claims released, outcome 'stopped'), then
+ * `SpawnService.terminate` with 171's ending facts — so a session stopped by
+ * a loop or from a bridge (`/stop`) is indistinguishable in the graph from an
+ * operator-stopped one. A completed session that is merely still open closes
+ * as `exited_clean`, exactly as the HTTP op records it.
+ */
+export async function stopSessionAsOperator(
+  db: Db,
+  spawnService: SpawnService,
+  claims: DbClaims,
+  sessionId: string,
+  request: { reason: string; endedReason: string; clientMutationId: string | null },
+): Promise<void> {
+  const rows = await db.query<{ outcome: string | null }>(
+    claims,
+    'select ws.outcome from public.work_sessions ws where ws.entity_id = $1',
+    [sessionId],
+  );
+  if (rows.length === 0) {
+    throw new CollabError('not_found', 'work session not found', { details: { sessionId } });
+  }
+  const outcome = rows[0]!.outcome;
+  let ending: { endedKind: WorkSessionEndedKind; endedReason: string };
+  if (outcome === 'completed') {
+    ending = CLOSED_AFTER_COMPLETION;
+  } else {
+    if (outcome !== 'stopped') {
+      await db.rpc(claims, 'stop_work_session', [sessionId, request.endedReason, null, null]);
+    }
+    ending = { endedKind: 'stopped_by_operator', endedReason: request.endedReason };
+  }
+  await rethrowing(() =>
+    spawnService.terminate(claims, sessionId, {
+      force: false,
+      clientMutationId: request.clientMutationId,
+      reason: request.reason,
+      ...ending,
+    }),
+  );
+}
+
+/**
+ * Bridges B1b-4: the command executor's worker seam (v2 §4.3). A `/work`
+ * worker is spawned as the linked member, on its task, with the bridge
+ * origins handed over as a SERVER fact (B1b-3: written with the session in
+ * the spawn's own transaction, so the worker never runs without them).
+ */
+export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnService }): {
+  spawnWorker: BridgeCommandPorts['spawnWorker'];
+  stopWorker: BridgeCommandPorts['stopWorker'];
+  resumeWorker: BridgeCommandPorts['resumeWorker'];
+} {
+  const { db, spawnService } = deps;
+  return {
+    async spawnWorker(claims, request) {
+      const spawned = await rethrowing(() => spawnService.spawn(claims, {
+        spaceId: request.spaceId,
+        teamMemberId: request.teamMemberId,
+        parentSessionId: null,
+        taskIds: [request.taskId],
+        projectId: request.projectId,
+        mode: null,
+        model: null,
+        agentTool: null,
+        reasoningEffort: request.effort,
+        accessMode: null,
+        title: request.title,
+        promptExtra: null,
+        clientMutationId: request.clientMutationId,
+      }, { bridgeOrigins: request.origins }));
+      return { sessionId: spawned.sessionId };
+    },
+    async resumeWorker(claims, sessionId, input) {
+      const resumed = await rethrowing(() => spawnService.resume(claims, { sessionId, clientMutationId: input.clientMutationId }));
+      return { sessionId: resumed.sessionId };
+    },
+    stopWorker: (claims, sessionId, input) => stopSessionAsOperator(db, spawnService, claims, sessionId, {
+      reason: input.reason, endedReason: input.reason, clientMutationId: input.clientMutationId,
+    }),
+  };
+}
+
+/** One target of a bridge loop as its worker sees it at launch (406's loop_fire_targets). */
+export interface LoopTargetContext {
+  bridgeId: string;
+  name: string;
+  purpose: string | null;
+  instruction: string | null;
+  state: 'live' | 'paused' | 'quiet' | 'ended';
+  recent: Array<{ messageId: string; at: string; from: string; text: string }>;
+}
+
+/** The targets, and for a claimed run the `paused`/`pending` result per group. */
+async function loadLoopTargets(db: Db, claims: DbClaims, loopId: string, runId: string | null): Promise<LoopTargetContext[]> {
+  return db.tx(claims, q => q.rpc<LoopTargetContext[]>('loop_fire_targets', [loopId, runId, 15]));
+}
+
+const TARGET_STATE_NOTE: Record<LoopTargetContext['state'], string> = {
+  live: 'post here',
+  paused: 'PAUSED: do not post here this run',
+  quiet: 'in quiet hours: an unprompted post is held and only your newest is sent when they end; replies go at once',
+  ended: 'REMOVED: do not post here',
+};
+
+/**
+ * The launch context of a bridge loop's worker (v2 §2.2): the loop's own
+ * instruction, then each target group with its own instruction, its state and
+ * its recent log, and how to post (`tm8 message send --to <bridge>`). Null
+ * when there is neither a prompt nor a target.
+ */
+export function loopLaunchContext(prompt: string, targets: readonly LoopTargetContext[]): string | null {
+  if (targets.length === 0) return prompt === '' ? null : prompt;
+  const lines: string[] = [];
+  if (prompt !== '') lines.push(prompt, '');
+  lines.push('Groups this loop updates (post with `tm8 message send --to <bridge-id> "<text>"`; it is signed with your handle):');
+  for (const t of targets) {
+    lines.push('', `## ${t.name || 'group'} — bridge ${t.bridgeId} (${TARGET_STATE_NOTE[t.state]})`);
+    if (t.purpose) lines.push(`Purpose: ${t.purpose}`);
+    if (t.instruction) lines.push(`Instruction for this group: ${t.instruction}`);
+    if (t.recent.length) {
+      lines.push('Recent messages:');
+      for (const m of t.recent) lines.push(`- [${m.at}] ${m.from}: ${m.text.replace(/\s+/g, ' ')}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /** Run history is the loop's inbound edge set; best-effort, never fatal. */

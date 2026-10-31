@@ -81,6 +81,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'story-page',          // entity get: explicit full story page
   'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
+  'latest',              // bridge log --latest — the newest page
   'until-match',         // event watch --until-match
   'events',              // event changes --events — thin rows instead of the digest
   'overwrite',           // file download --overwrite
@@ -96,6 +97,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'confirm-untrusted',   // session spawn --confirm-untrusted
   'force-new-task',      // session spawn/dispatch --force-new-task
   'no-wait',             // session spawn --no-wait — return at admission, not once running
+  'here-only',           // message send|reply --here-only — no bridge sends it (Bridges §4.5, D76)
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
@@ -143,8 +145,13 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'trust-css',           // style use — allow the named space style's css
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
+  'post', 'interactive', 'one-shot', 'clear-targets', // tm8 loop create|edit (Bridges L)
   'include-ended',       // tm8 bridge list
   'no-wait',             // tm8 bridge connection begin — return once the runtime is asked
+  'archived', 'restore', // tm8 label list --archived / label update --restore (410)
+  'linked',              // tm8 bridge people (Bridges P, 420)
+  'guests',              // tm8 bridge people (Bridges P, 420)
+  'unassert',            // tm8 bridge participant (Bridges P, 420)
   // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
   // particular has to be listed or it would eat the next token and turn a
   // rehearsal into a write.

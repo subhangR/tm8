@@ -101,6 +101,8 @@ export const ENTITY_COLUMNS = `
   -- will carry a status in a later phase. MIRRORED by projector.ts's
   -- SUMMARY_SQL — the two column lists must not drift.
   e.status_category,
+  -- 410: label ids on the envelope. MIRRORED by projector.ts's SUMMARY_SQL.
+  e.labels,
   coalesce(ec.likes, 0)    as likes,
   coalesce(ec.dislikes, 0) as dislikes,
   coalesce(ec.stars, 0)    as stars,
@@ -231,6 +233,9 @@ export const ENTITY_COLUMNS = `
   -- in order) — one SQL function the projector twin selects too.
   dsg.title as craft_title, dsg.description as craft_description,
   case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
+  -- 410: a label's own row facts (name, colour, description, archive mark).
+  lbl.name as label_name, lbl.colour as label_colour,
+  lbl.description as label_description, lbl.archived_at as label_archived_at,
   -- 307: points-weighted subtree progress, the same function the projector
   -- twin selects. Computed on read, never stored.
   case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
@@ -465,6 +470,7 @@ export const ENTITY_FROM = `
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.stories sty            on sty.entity_id = e.id
   left join public.crafts dsg            on e.kind = 'craft' and dsg.entity_id = e.id
+  left join public.labels lbl            on e.kind = 'label' and lbl.entity_id = e.id
   left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
   left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
@@ -523,6 +529,8 @@ export interface EntityRow {
   created_by: string;
   /** 147; optional keeps legacy row fixtures source-compatible. */
   status_category?: string | null;
+  /** 410; optional keeps legacy row fixtures source-compatible. */
+  labels?: string[] | null;
   likes: number;
   dislikes: number;
   stars: number;
@@ -695,6 +703,10 @@ export interface EntityRow {
   craft_title?: string | null;
   craft_description?: string | null;
   craft_summary?: unknown;
+  label_name?: string | null;
+  label_colour?: string | null;
+  label_description?: string | null;
+  label_archived_at?: Date | string | null;
   task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
@@ -1723,6 +1735,9 @@ export function titleOf(row: EntityRow): string {
     case 'craft':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.craft_title ?? 'Craft';
+    case 'label':
+      // 410: its name. MIRRORS the projector twin.
+      return row.label_name ?? 'Label';
     case 'style':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.sty_title ?? 'Style';
@@ -2183,6 +2198,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // 304: `internal.craft_summary`, which the projector twin selects
       // too — the mirror is the shared function.
       return craftSummaryOf(row.craft_summary);
+    case 'label':
+      // 410: the label's own row facts. MIRRORS the projector twin.
+      return labelFactsOf(row);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
       return {
@@ -2599,6 +2617,8 @@ export function entityCapabilities(row: EntityRow): EntityCapabilities {
   if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
   // 395: edited and ended only through bridges.* (generic delete is refused in SQL); flat, never completed.
   if (row.kind === 'bridge') return { ...base, canEdit: false, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
+  // 410: edited through `labels.update`, archived (never deleted) through `labels.archive`.
+  if (row.kind === 'label') return { ...base, canEdit: live, canDelete: false, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
     return {
@@ -2741,6 +2761,8 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
     // reason: an entity with no status must OMIT the key rather than claim a
     // bucket. MIRRORED by projector.ts's summary literal.
     ...categoryFragment(row.status_category, row.id),
+    // 410: spread when non-empty. MIRRORED by projector.ts's summary literal.
+    ...labelsFragment(row.labels),
     counters: {
       likes: row.likes,
       dislikes: row.dislikes,
@@ -2947,6 +2969,9 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'craft':
       // The prose; `hydrateDetail` adds the ordered pages on a detail read.
       return { kind: 'craft', description: row.craft_description ?? '', pages: null };
+    case 'label':
+      // 410: content is the state; a label has nothing a detail read adds.
+      return labelFactsOf(row);
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
       // order, so a detail read renders the panel in one call while a list row
@@ -3328,6 +3353,25 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
 export function taskProgressOf(raw: unknown): { progress?: TaskProgress } {
   const parsed = TaskProgressSchema.safeParse(raw);
   return parsed.success ? { progress: parsed.data } : {};
+}
+
+/** 410: a summary's `labels`, present only when the entity carries any. Shared with the projector. */
+export function labelsFragment(raw: readonly string[] | null | undefined): { labels?: string[] } {
+  return Array.isArray(raw) && raw.length > 0 ? { labels: [...raw] } : {};
+}
+
+/** 410: a label entity's state and content (both read paths). */
+export function labelFactsOf(row: {
+  label_name?: string | null; label_colour?: string | null;
+  label_description?: string | null; label_archived_at?: Date | string | null;
+}): Extract<EntityState, { kind: 'label' }> {
+  return {
+    kind: 'label',
+    name: row.label_name ?? '',
+    colour: row.label_colour ?? '#6b7280',
+    description: row.label_description ?? '',
+    archivedAt: isoOrNull(row.label_archived_at ?? null),
+  };
 }
 
 /**

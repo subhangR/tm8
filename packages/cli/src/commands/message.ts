@@ -360,6 +360,7 @@ async function messageSend(cmd: CommandContext): Promise<ExitCode> {
   if (replyTo) request.parentMessageId = replyTo;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
   if (cmd.ctx.sessionId) request.workSessionId = cmd.ctx.sessionId;
+  if (cmd.options.bool('here-only')) request.hereOnly = true;
 
   return postMessage(cmd, request, wait, 'message.send');
 }
@@ -384,6 +385,7 @@ async function messageReply(cmd: CommandContext): Promise<ExitCode> {
   if (mentionIds.length > 0) request.mentionIds = mentionIds;
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
+  if (cmd.options.bool('here-only')) request.hereOnly = true;
   return postMessage(cmd, request, wait, 'message.reply');
 }
 
@@ -669,12 +671,12 @@ export const MESSAGE_COMMANDS: CommandModule[] = [
   { path: ['message', 'list'], run: known(['for', 'limit', 'root', 'order', 'cursor', 'mutation-id'], messageList) },
   {
     path: ['message', 'send'],
-    run: known(['to', 'conversation', 'reply-to', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageSend),
+    run: known(['to', 'conversation', 'reply-to', 'body', 'mention', 'attach', 'here-only', 'wait', 'mutation-id'], messageSend),
   },
   {
     path: ['message', 'reply'],
     // --to/--conversation are read only to refuse them with a reason.
-    run: known(['to', 'conversation', 'body', 'mention', 'attach', 'wait', 'mutation-id'], messageReply),
+    run: known(['to', 'conversation', 'body', 'mention', 'attach', 'here-only', 'wait', 'mutation-id'], messageReply),
   },
   // --mention is read only to refuse it with a reason (refuseMentionEdit).
   { path: ['message', 'update'], run: known(['body', 'mention', 'expect-version', 'mutation-id'], messageUpdate) },

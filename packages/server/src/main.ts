@@ -65,6 +65,8 @@ import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-bin
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
+import { createBridgeFixSweepJob } from './scheduler/jobs/bridge-fix-sweep.js';
+import { createBridgeMemoryProposalExpiryJob } from './scheduler/jobs/bridge-memory-proposal-expiry.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -120,8 +122,11 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
+import { createBridgeCommands } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
+import { BridgeMediaFetcher } from './bridges/runtime/media.js';
+import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
 import { bridgeWatchdogJob } from './scheduler/jobs/bridge-watchdog.js';
 import { LOCAL_KEY_ID, localKeyProvider } from './credentials/key-provider.js';
@@ -546,6 +551,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   let loopExecutor: LoopExecutorPort | undefined;
   // Tools v2 PR-C: also handed to the loop executor below, so a loop can run a tool.
   let tools: ToolRuntime | undefined;
+  /**
+   * Bridges B1b-4: the command executor (v2 §4), built once where the spawn
+   * service exists. The SAME instance fills the `bridgeCommands` slot below,
+   * which the runtime's inbound route and the watchdog's sweep read; without
+   * it nothing a group sends is a command.
+   */
+  const bridgeCommandExecutor = db && execution
+    ? createBridgeCommands({
+        db,
+        spawnService: execution.spawnService,
+        logger: { warn: (message) => console.warn(`[bridges] ${message}`) },
+      })
+    : undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -584,6 +602,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       ...(tools ? { tools } : {}),
       // Bridges B1b-5: the QR relay. B1b-2 adds `runtime: <BridgeRuntimeHub>` beside it.
       bridges: { connectionAuth: bridgeConnectionAuth },
+      // The same instance as the `bridgeCommands` slot below.
+      ...(bridgeCommandExecutor ? { bridgeCommands: bridgeCommandExecutor } : {}),
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
       mcp: {
         dataDir,
@@ -872,7 +892,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * Idle until a runtime connects. The command executor (B1b-4) is assigned to
    * `bridgeCommands`; until then nothing a group sends is a command.
    */
-  let bridgeCommands: BridgeCommandHook | undefined;
+  let bridgeCommands: BridgeCommandHook | undefined = bridgeCommandExecutor;
   const bridgeHub = db && config.databaseUrl
     ? new BridgeRuntimeHub({
         db,
@@ -923,6 +943,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }
     : baseUpgrades;
 
+  const bridgeMedia = db && bridgeHub && blobStore
+    ? new BridgeMediaFetcher({ db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line) })
+    : undefined;
+  // 413 §5: session targets and directed workers, through the same delivery
+  // loop every message uses. Absent with no execution runtime: stored only.
+  const bridgeDeliver = db && delivery
+    ? createBridgeSessionDelivery({ db, delivery: delivery.messageDelivery as unknown as MessageDeliveryPort })
+    : undefined;
   const bridgeRuntimeRoute = db && bridgeHub
     ? createBridgeRuntimeRoute({
         db,
@@ -930,6 +958,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         disableAutoOwner: config.disableAutoOwner === true,
         hub: bridgeHub,
         commands: () => bridgeCommands,
+        ...(bridgeMedia ? { media: bridgeMedia } : {}),
+        ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
         log: (line) => console.warn(line),
       })
@@ -1277,7 +1307,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // Bridges D19 (398): the watchdog — degraded runtimes, failed turns, stuck
     // dispatches — and the command executor's sweep.
     if (bridgeHub) {
-      scheduler.register(bridgeWatchdogJob({ db, commands: () => bridgeCommands, onChanged: () => bridgeHub.kick() }));
+      scheduler.register(bridgeWatchdogJob({
+        db, commands: () => bridgeCommands, ...(bridgeMedia ? { media: bridgeMedia } : {}), onChanged: () => bridgeHub.kick(),
+      }));
     }
     // Forms W2 (214): the backstop for the hooks above — a restart, a lost
     // hook, or a session that went live through a path that fired none.
@@ -1343,6 +1375,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-oauth-pending-sweep' };
+        },
+      }),
+    );
+    // Bridges F (412): the fix-notice waits that need a clock (D70, D72).
+    scheduler.register(createBridgeFixSweepJob({ db }));
+    // Bridges D63 (416): /remember proposals nobody decided expire after 14 days.
+    scheduler.register(
+      createBridgeMemoryProposalExpiryJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridge-memory-proposal-expiry' };
         },
       }),
     );

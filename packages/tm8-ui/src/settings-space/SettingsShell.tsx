@@ -16,6 +16,7 @@ import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
+import { LinkedIdentitiesSection } from './LinkedIdentitiesSection';
 import { SectionAbsent, SectionFrame, SectionScopeContext } from './SectionFrame';
 import { OverviewSection } from './OverviewSection';
 import { SETTINGS_SCOPE_CHIP, scopeOfSection, settingsNavRowLabel, visibleSettingsNav, type SettingsAccess } from './nav';
@@ -636,6 +637,15 @@ function SectionBody({
           {...(port.loadOwnSessions ? { load: port.loadOwnSessions } : {})}
           {...(port.revokeSession ? { revoke: port.revokeSession } : {})}
           {...(port.signOutHere ? { signOutHere: port.signOutHere } : {})}
+        />
+      );
+    case 'linked-identities':
+      return (
+        <LinkedIdentitiesSection
+          heading={def.heading}
+          {...(port.loadBridgeLinks ? { load: port.loadBridgeLinks } : {})}
+          {...(port.beginBridgeLink ? { begin: port.beginBridgeLink } : {})}
+          {...(port.revokeBridgeLink ? { revoke: port.revokeBridgeLink } : {})}
         />
       );
     case 'sessions':

@@ -160,7 +160,7 @@ export class BridgeRuntimeHub {
 
   /** B1b-5's `BridgeRuntimeLink.connect`: start or re-link one connection on its provider's runtime. */
   /**
-   * `claims` are the begin caller's OWN (406): bridge_runtime_connect admits
+   * `claims` are the begin caller's OWN (422): bridge_runtime_connect admits
    * the connection's human owner or the bridges worker, so a member request
    * never binds the worker's backgroundJob claim.
    */

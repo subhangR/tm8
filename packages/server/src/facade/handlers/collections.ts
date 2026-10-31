@@ -347,6 +347,16 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`e.kind = any(${p.add(query.kinds)}::text[])`);
   }
 
+  // Labels (410): all of (`@>`) and any of (`&&`), kind-neutral. Both are
+  // operators `entities_labels_gin` serves, so a label filter is an index
+  // probe rather than a scan of the space.
+  if (f.labels && f.labels.length > 0) {
+    where.push(`e.labels @> ${p.add(assertUuids(f.labels, 'labels'))}::uuid[]`);
+  }
+  if (f.labelsAny && f.labelsAny.length > 0) {
+    where.push(`e.labels && ${p.add(assertUuids(f.labelsAny, 'labelsAny'))}::uuid[]`);
+  }
+
   // G6 (232): a member who left or was removed is not a list row — the
   // members screen and `member_count` already say so — and neither is a
   // persona whose OWNER's membership ended, or it would stay pickable in the

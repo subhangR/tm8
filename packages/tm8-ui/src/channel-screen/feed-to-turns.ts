@@ -38,5 +38,6 @@ export function chatTurnFromMessage(message: MessageView): ChatTurn {
     parts,
     attachments: message.content.attachments,
     ...(message.turnInFlight ? { turnInFlight: true } : {}),
+    ...(message.bridge ? { bridge: message.bridge } : {}),
   };
 }

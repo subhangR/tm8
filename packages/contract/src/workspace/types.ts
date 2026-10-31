@@ -53,6 +53,9 @@ export const WORKSPACE_KINDS = [
   'space_link',
   'server',
   'style',
+  // 395: a bridge opens in Work like every core kind (its page is the
+  // `bridge-page` block); Settings → Bridges, the Home rail and links open it here.
+  'bridge',
 ] as const;
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number] | `c:${string}`;
 

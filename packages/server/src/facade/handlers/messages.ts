@@ -22,6 +22,7 @@ import {
   type Page,
 } from '@tm8/contract';
 import { createHash } from 'node:crypto';
+import { bridgeMessageBadges } from '../../db/bridge-badges.js';
 import type { Querier } from '../../db/types.js';
 import { sessionChatOrigins } from '../../db/authored-origins.js';
 import type { OperationHandler } from '../../http/types.js';
@@ -168,6 +169,8 @@ export async function toMessageViews(
   // Same read as `entities.feed:provenance`, so a transcript page carries its
   // own provenance instead of needing a feed read beside it.
   const authoredFrom = await sessionChatOrigins(q, rows.map((r) => r.id));
+  // The bridge mark and delivery tick (§4.5): one read per page, like provenance.
+  const bridged = await bridgeMessageBadges(q, rows.map((r) => r.id));
 
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
@@ -213,6 +216,7 @@ export async function toMessageViews(
       ...(messageParts ? { parts: messageParts } : {}),
       ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
       ...(authoredFrom.has(row.id) ? { sourceWorkSessionId: authoredFrom.get(row.id) as EntityId } : {}),
+      ...(bridged.has(row.id) ? { bridge: bridged.get(row.id) } : {}),
     });
   }
   return views;

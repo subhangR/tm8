@@ -9,7 +9,7 @@
  * never computed by a client.
  */
 import { z } from 'zod';
-import type { EntityId, SpaceId } from './contract.js';
+import type { ActorSummary, EntityId, SpaceId } from './contract.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -69,7 +69,7 @@ export interface BridgeFacts {
   connectionId: string;
   /**
    * The space credential (shape `connection`) offered for that connection in
-   * this space, filled at `bridges.create` and fixed after (D32, 400).
+   * this space, filled at `bridges.create` and fixed after (D32, 421).
    */
   connectionCredentialId: EntityId;
   conversation: {
@@ -183,9 +183,73 @@ export interface BridgeHandle {
 export interface BridgeHandleAppearance extends BridgeHandle { firstAt: string; lastAt: string }
 export interface BridgeHandleListResult { items: BridgeHandleAppearance[] }
 
+/** How a participant is known in the bridge's space (§2.4): the resolver's answer, as on inbound. */
+export type BridgeParticipantTrust = 'linked' | 'asserted' | 'guest';
+export const BRIDGE_PARTICIPANT_TRUSTS = ['linked', 'asserted', 'guest'] as const satisfies readonly BridgeParticipantTrust[];
+
+/**
+ * One row of `bridges.participants.list` (§2.4, §4.4, D50): presence, not an
+ * entity. External ids are masked ('…9494') unless the caller is an admin of
+ * the bridge's space; then `masked` is false and the alternate ids are listed.
+ * The link that resolved the row is reported as its outcome only.
+ */
+export interface BridgeParticipant {
+  externalId: string;
+  /** Empty for a non-admin: withheld, not masked. */
+  altExternalIds: string[];
+  masked: boolean;
+  displayName: string | null;
+  avatarRef: string | null;
+  muted: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  messageCount: number;
+  trust: BridgeParticipantTrust;
+  /** The member the participant counts as; null for a guest. */
+  memberId: EntityId | null;
+  /** The member's actor chip; null for a guest. */
+  member: ActorSummary | null;
+  link: { method: 'code' | 'invite' | 'admin'; verifiedAt: string } | null;
+  /** The link names the caller's own identity. */
+  you: boolean;
+}
+export interface BridgeParticipantListResult {
+  bridgeId: EntityId;
+  spaceId: SpaceId;
+  /** The caller is an admin of the bridge's space: ids are unmasked and the row actions are theirs (D52). */
+  admin: boolean;
+  items: BridgeParticipant[];
+}
+
 export interface BridgeListenResult { bridgeId: EntityId; sessionId: EntityId; wake: BridgeWake; ceiling: BridgeWake }
 
-/** One row of `bridges.log.read`: a message on the bridge's log anchor, oldest first. */
+/** How far a bridged sender is taken at their word (§2.4, D4). */
+export type BridgeTrust = 'linked' | 'asserted' | 'guest';
+
+/**
+ * A message that crossed a bridge, or is crossing (§4.5, D4): read for the
+ * message itself or its batch twin, so a routed message's chat copy and log
+ * copy carry the same mark. Absent on a message that never touched a bridge.
+ */
+export interface MessageBridgeView {
+  bridgeId: EntityId;
+  provider: BridgeProvider;
+  /** The provider conversation's title (`Infra`); null when unreadable. */
+  conversation: string | null;
+  direction: 'in' | 'out';
+  /** Inbound only: the participant's name as the provider sent it; never a phone number. */
+  participant: string | null;
+  /** Inbound only: linked (verified), asserted (an admin's *This is…*), guest (unlinked, authored by the bridge). */
+  trust: BridgeTrust | null;
+  /**
+   * Outbound only: the outbox ledger's state, or the refusal (398's badge).
+   * There is no `delivered` or `read`: the runtime protocol carries no
+   * receipts (D64).
+   */
+  delivery: BridgeDelivery | null;
+}
+
+/** One row of `bridges.log.read`: a message on the bridge's log anchor. Rows within a page are oldest first. */
 export interface BridgeLogEntry {
   id: EntityId;
   createdAt: string;
@@ -204,6 +268,10 @@ export interface BridgeLogEntry {
   } | null;
   /** The poster's handle, when a session with one wrote it. */
   handle: string | null;
+  /** The outbound delivery badge (sent, queued, failed, refused), when this message crosses. */
+  delivery: BridgeDelivery | null;
+  /** Inbound only: how far the sender is taken at their word, as `MessageBridgeView.trust` reads it. */
+  trust: BridgeTrust | null;
 }
 export interface BridgeLogResult {
   bridgeId: EntityId;
@@ -214,6 +282,12 @@ export interface BridgeLogResult {
   lastMessageId: EntityId | null;
   /** True when more messages follow this page. */
   more: boolean;
+  /**
+   * Pass as `before` to read the page just older than this one (the id of this
+   * page's oldest row). Null when this page starts at the beginning of the log
+   * (or is empty).
+   */
+  olderCursor: EntityId | null;
 }
 
 interface BridgeCommand { clientMutationId: string; actorId?: EntityId }
@@ -248,10 +322,30 @@ export interface BridgeUpdateInput extends BridgeCommand {
 export interface BridgeRetargetInput extends BridgeCommand { bridgeId?: EntityId; expectedVersion: number; targetId: EntityId }
 export interface BridgeStateInput extends BridgeCommand { bridgeId?: EntityId; expectedVersion: number }
 export interface BridgeHandleClaimInput { spaceId?: SpaceId; title?: string }
+/**
+ * `bridges.participants.update` (D52): human-only, space admin. `memberId`
+ * asserts *This is <member>* (a space-scoped link); null revokes this space's
+ * assertion. Refused `link_conflict` when a verified link, or this space's
+ * live assertion, names someone else. Mute needs a participant row; an
+ * assertion does not (B1c's import asserts before anyone has spoken).
+ */
+export interface BridgeParticipantUpdateInput extends BridgeCommand {
+  bridgeId?: EntityId;
+  externalId?: string;
+  patch: { muted?: boolean; memberId?: EntityId | null };
+}
+export interface BridgeParticipantUpdateResult {
+  bridgeId: EntityId;
+  externalId: string;
+  /** False when the call was a no-op (already so). */
+  changed: boolean;
+  /** The roster row after the change; null when nobody with this id has spoken yet. */
+  participant: BridgeParticipant | null;
+}
 export interface BridgeListenInput { bridgeId?: EntityId; wake: BridgeWake }
 
 // ---------------------------------------------------------------------------
-// Connections (§2.5, §3.4; migration 400): the numbers a human links, offered
+// Connections (§2.5, §3.4; migration 421): the numbers a human links, offered
 // to spaces as server-only credentials (provider whatsapp, shape connection).
 // ---------------------------------------------------------------------------
 
@@ -336,6 +430,32 @@ export interface BridgeConnectionAuthFrame {
   expiresAt: string;
 }
 
+/** `bridges.work.start` (v2 §4.3): the agent's door to `/work`, the same server path. */
+export const BRIDGE_WORK_ITEMS_MAX = 5;
+export type BridgeWorkEffort = 'low' | 'high' | 'max';
+export interface BridgeWorkStartInput {
+  clientMutationId: string;
+  bridgeId?: EntityId;
+  /** One line each; one child task and one worker per item. */
+  items: string[];
+  options?: { teammate?: string; project?: string; effort?: BridgeWorkEffort };
+}
+export interface BridgeWorkStartItem {
+  taskId: EntityId;
+  sessionId: EntityId | null;
+  handle: string | null;
+  /** Why the worker did not start; the task stays. */
+  error: string | null;
+}
+export interface BridgeWorkStartResult {
+  bridgeId: EntityId;
+  /** The parent task, when there are two items or more. */
+  parentTaskId: EntityId | null;
+  items: BridgeWorkStartItem[];
+  /** The announcement posted to the group (absent when the outbox refused it). */
+  noticeMessageId: EntityId | null;
+}
+
 const Id = z.string().uuid();
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, bridgeId: Id.optional(), expectedVersion: z.number().int().positive() };
@@ -343,6 +463,26 @@ const OneLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\r\
 const Hhmm = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'must be HH:MM');
 
 export const BridgeProviderSchema = z.enum(BRIDGE_PROVIDERS);
+export const BridgeDeliverySchema: z.ZodType<BridgeDelivery> = z.object({
+  messageId: z.string().min(1),
+  bridgeId: z.string().min(1),
+  status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
+  reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
+    'not_connected', 'credential_text']).optional(),
+  retryAfterMs: z.number().int().nonnegative().optional(),
+  externalMessageId: z.string().min(1).optional(),
+  detail: z.string().min(1).optional(),
+  at: z.string().min(1),
+}).strict();
+export const MessageBridgeViewSchema: z.ZodType<MessageBridgeView> = z.object({
+  bridgeId: Id,
+  provider: BridgeProviderSchema,
+  conversation: z.string().nullable(),
+  direction: z.enum(['in', 'out']),
+  participant: z.string().nullable(),
+  trust: z.enum(['linked', 'asserted', 'guest']).nullable(),
+  delivery: BridgeDeliverySchema.nullable(),
+}).strict();
 export const BridgeWakeSchema = z.enum(['directed', 'thread', 'all']);
 export const BridgePolicySchema: z.ZodType<BridgePolicy> = z.object({
   trigger: z.enum(['mention', 'every', 'none']),
@@ -438,6 +578,13 @@ export const BridgeHandleClaimInputSchema = z.object({
   title: z.string().trim().min(1).max(80)
     .refine(t => t.split(/\s+/).length <= BRIDGE_HANDLE_TITLE_MAX_WORDS, 'at most four words').optional(),
 }).strict();
+export const BridgeParticipantUpdateInputSchema = z.object({
+  ...Command,
+  bridgeId: Id.optional(),
+  externalId: z.string().min(1).max(256).optional(),
+  patch: z.object({ muted: z.boolean().optional(), memberId: Id.nullable().optional() }).strict()
+    .refine(patch => Object.keys(patch).length > 0, 'patch must change something'),
+}).strict();
 export const BridgeListenInputSchema = z.object({ bridgeId: Id.optional(), wake: BridgeWakeSchema }).strict();
 
 const ConnectionLabel = z.string().trim().min(1).max(80).regex(/^[^\r\n]*$/, 'must be one line');
@@ -483,3 +630,112 @@ export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFram
   pairingCode: z.string().min(1).max(32).optional(),
   expiresAt: z.string().datetime({ offset: true }),
 }).strict().refine(f => (f.qrPng === undefined) !== (f.pairingCode === undefined), 'exactly one of qrPng and pairingCode');
+export const BridgeWorkStartInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  bridgeId: Id.optional(),
+  items: z.array(OneLine(500)).min(1).max(BRIDGE_WORK_ITEMS_MAX),
+  options: z.object({
+    teammate: OneLine(200).optional(),
+    project: OneLine(200).optional(),
+    effort: z.enum(['low', 'high', 'max']).optional(),
+  }).strict().optional(),
+}).strict();
+
+// ---------------------------------------------------------------------------
+// `/remember` proposals (D29, D61-D63; migration 416). A proposal is made from
+// the group by the command executor and decided only here, in tm8, by a human.
+// ---------------------------------------------------------------------------
+export const BRIDGE_MEMORY_PROPOSAL_STATUSES = ['pending', 'accepted', 'dropped', 'expired'] as const;
+export type BridgeMemoryProposalStatus = typeof BRIDGE_MEMORY_PROPOSAL_STATUSES[number];
+export const BRIDGE_MEMORY_PROPOSAL_TTL_DAYS = 14;
+
+export interface BridgeMemoryProposal {
+  id: string;
+  spaceId: SpaceId;
+  bridgeId: EntityId;
+  statement: string;
+  /** The member who sent `/remember`, and whether their link was verified (code, invite) or admin-asserted. */
+  proposedBy: EntityId;
+  proposerName: string;
+  proposerTrust: 'linked' | 'asserted';
+  /** The `/remember` message on the bridge's log, when known. */
+  messageId: EntityId | null;
+  /** The text names a secret (a password, a token): accept only if it holds none. */
+  mentionsSecret: boolean;
+  status: BridgeMemoryProposalStatus;
+  /** The memory an accept made. */
+  memoryId: EntityId | null;
+  decidedBy: EntityId | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  expiresAt: string;
+  /** Whether the caller may accept or drop it now (D62). */
+  canDecide: boolean;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+export interface BridgeMemoryProposalListResult { items: BridgeMemoryProposal[] }
+export interface BridgeMemoryProposalResolveInput {
+  bridgeId?: EntityId;
+  proposalId?: string;
+  decision: 'accept' | 'drop';
+  /** accept only: the corrected text to remember instead. */
+  statement?: string;
+  note?: string;
+}
+
+export const BridgeMemoryProposalResolveInputSchema = z.object({
+  bridgeId: Id.optional(),
+  proposalId: Id.optional(),
+  decision: z.enum(['accept', 'drop']),
+  statement: z.string().trim().min(1).max(4000).optional(),
+  note: z.string().trim().min(1).max(1000).optional(),
+}).strict().refine(i => i.decision === 'accept' || i.statement === undefined, 'statement is for accept only');
+
+// ---------------------------------------------------------------------------
+// B3 (417, §2.4, §4.6, D5, D58-D60): code and invite links.
+// ---------------------------------------------------------------------------
+
+/** A link code: `TM8-` and six characters, ten minutes, one use (D58). */
+export interface BridgeLinkCode { code: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+/** One of the caller's links: who a provider id IS (§2.4). */
+export interface BridgeIdentityLink {
+  id: string;
+  provider: BridgeProvider;
+  externalId: string;
+  /** '…0001': the last four characters only. */
+  masked: string;
+  method: 'code' | 'invite' | 'admin';
+  /** linked = identity-scoped (code, invite); asserted = an admin's, for one space (D5). */
+  trust: 'linked' | 'asserted';
+  spaceId: string | null;
+  spaceName: string | null;
+  verifiedAt: string;
+  revokedAt: string | null;
+}
+
+/** A live code, as the list shows it: never the code itself, which only begin answers (D58). */
+export interface BridgeLinkPending { id: string; provider: BridgeProvider; expiresAt: string; createdAt: string }
+
+export interface BridgeLinksList { items: BridgeIdentityLink[]; pending: BridgeLinkPending[] }
+
+export interface BridgeLinkBeginInput { provider: BridgeProvider; clientMutationId?: string }
+export interface BridgeLinkRevokeInput { linkId?: string; clientMutationId?: string }
+
+/** A participant pinned to `spaces.invites.create` (D60): redeeming makes a member; the number links by /link code. */
+export interface BridgeInviteParticipant { bridgeId: EntityId; externalId: string }
+
+export const BridgeLinkBeginInputSchema = z.object({
+  provider: BridgeProviderSchema, clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeLinkRevokeInputSchema = z.object({
+  linkId: Id.optional(), clientMutationId: z.string().min(1).optional(),
+}).strict();
+export const BridgeInviteParticipantSchema = z.object({
+  bridgeId: Id, externalId: z.string().min(1).max(256),
+}).strict();
+
+/** The `/link` code shape, as the parser and the CLI check it (395's column check). */
+export const BRIDGE_LINK_CODE_PATTERN = /^TM8-[A-Z0-9]{4,8}$/i;

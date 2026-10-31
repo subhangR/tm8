@@ -1,7 +1,8 @@
 -- =============================================================================
--- 405 — Bridges B1b-5: a connection is offered to a space as a credential.
+-- 421 — Bridges B1b-5: a connection is offered to a space as a credential.
 -- (Authored as 400; renumbered to 405 on the rebase over batch 5, whose 400 is
--- 400_bridge_chat_summaries. Provisional; the bridges merger assigns the final one.)
+-- 400_bridge_chat_summaries; renumbered to 421 on the merge of batch 7 cut A,
+-- whose 405 is 405_mcp_members_add_connectors and whose last is 420.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md (FINAL v4)
 -- §2.5 (connections are credentials), §3.4 (bridges.connections.* rows), D28,
@@ -83,7 +84,7 @@ create unique index space_credentials_one_live_offer
   where bridge_connection_id is not null and status <> 'revoked';
 
 comment on column public.space_credentials.bridge_connection_id is
-  '400 (Bridges §2.5): the node-level connection this space credential offers. '
+  '421 (Bridges §2.5): the node-level connection this space credential offers. '
   'Set exactly when shape = connection; the bytes stay sealed on the node.';
 
 -- -----------------------------------------------------------------------------
@@ -441,7 +442,7 @@ alter table public.bridges enable trigger bridges_touch;
 alter table public.bridges alter column credential_id set not null;
 
 comment on column public.bridges.credential_id is
-  '400 (D32): the space credential (shape connection) offered for this bridge''s connection in its space; '
+  '421 (D32): the space credential (shape connection) offered for this bridge''s connection in its space; '
   'filled at bridges.create, fixed after.';
 
 reset role;

@@ -18,6 +18,8 @@ import type { AuthoringCommands } from '../../authoring';
 import { LoopDefinitionHost, LoopHeaderBlock, LoopRunsBlock, definitionSection } from '../../loops/LoopPageBlocks';
 import type { LoopsClient } from '../../loops/api';
 import type { LoopFormSources } from '../../loops/sources';
+import { BridgePageBlock } from '../../bridges/BridgePage';
+import type { BridgesPort } from '../../bridges/api';
 import { BlueprintBlock } from './BlueprintBlock';
 import { DrawingBlock } from './DrawingBlock';
 import { StoryStaticHost } from '../../story/StoryHost';
@@ -29,6 +31,7 @@ import { MembershipBlock, type MembershipAuthoring } from './MembershipBlock';
 import { SettingsHomeLink } from '../SettingsHomeLink';
 import type { ManagedPort } from '../../managed/port';
 import { ManagedBlock } from './ManagedBlock';
+import { ConnectorEntityBlock } from '../../mcp/ConnectorEntityBlock';
 import type { EntityListPanelProps } from '../EntityListPanel';
 
 /**
@@ -47,6 +50,7 @@ export interface ArtifactPreviewCommands {
 type GenericBodyCommands = Partial<
   ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'> & { managed: ManagedPort }
   & { loops: LoopsClient; loopForm: LoopFormSources; deleteEntity: LoopDeleteEntity }
+  & { bridges: BridgesPort }
 >;
 type LoopDeleteEntity = NonNullable<Parameters<typeof LoopHeaderBlock>[0]['deleteEntity']>;
 
@@ -263,6 +267,10 @@ function ContentBlock({
         );
       case 'loop-runs':
         return <LoopRunsBlock detail={detail} port={commands?.loops} onOpenEntity={onOpenEntity} />;
+      /* The bridge page (BRIDGE-ENTITY-DESIGN §4.4): the client is the seam's
+         `commands.bridges`, the same way the loop page reads `commands.loops`. */
+      case 'bridge-page':
+        return <BridgePageBlock detail={detail} port={commands?.bridges} loops={commands?.loops} onOpenEntity={onOpenEntity} />;
       /* The same extracted block `ProfileBody` and `SubtreeBody` draw — one
          implementation, three bodies, so a generic kind can list its peers
          over one edge type as registry data. */
@@ -306,6 +314,10 @@ function ContentBlock({
           <ManagedBlock detail={detail} spec={spec} port={commands?.managed} serverBaseUrl={serverBaseUrl} />
         ) : null;
       }
+      /* The connector page: the same detail body the Connectors drawer draws,
+         over the MCP catalog read (`McpProvider` wraps every panel). */
+      case 'mcp-connector':
+        return <ConnectorEntityBlock detail={detail} {...(onOpenEntity ? { onOpenEntity } : {})} />;
       default:
         return null;
     }
