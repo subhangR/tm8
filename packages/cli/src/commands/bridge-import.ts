@@ -42,6 +42,8 @@ export interface ImportOptions {
   purposes: Record<string, string>;
   members: Record<string, string>;
   ownerMember: string | null;
+  /** B1c is the self chat only: a group channel is refused unless this is set (B1c-groups, 01a18b59-688b). */
+  allowGroups?: boolean;
 }
 
 export interface PlannedLink { externalId: string; memberId: string; why: 'owner' | 'trusted' }
@@ -83,6 +85,7 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
       `this config has: ${channels.map(c => c.id).join(', ') || 'no channels'}`);
   }
   const plan: PlannedBridge[] = [];
+  const planned = new Set<string>();
   for (const id of opts.channels) {
     const ch = channels.find(c => c.id === id);
     if (!ch) { problems.push(`${id}: no such channel in the config`); continue; }
@@ -92,6 +95,9 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
     }
     if (ch.deliverTo) problems.push(`${id}: shadow mode (deliverTo ${ch.deliverTo}) has no bridge equivalent; take it live in Phase 1 first`);
     const kind = ch.jid.endsWith('@g.us') ? 'group' : 'dm';
+    if (kind === 'group' && !opts.allowGroups) {
+      problems.push(`${id}: a group; this cutover imports the self chat only (pass --allow-groups when the groups move)`);
+    }
     if (kind === 'dm' && !owners.includes(ch.jid)) {
       problems.push(`${id}: a non-group channel must be the owner's self chat (one of ownerJids)`);
     }
@@ -102,19 +108,26 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
 
     // ownerJids always (the owner's /work keeps working everywhere it did);
     // "owner" in a trusted list means the same addresses.
-    const trusted = [...(config.trustedSenders ?? []), ...(ch.trustedSenders ?? [])];
-    const addresses = new Map<string, 'owner' | 'trusted'>();
-    for (const jid of owners) addresses.set(jid, 'owner');
-    for (const entry of trusted) {
+    // Each address keeps where it came from, so a problem can name it without printing the number.
+    const addresses = new Map<string, { why: 'owner' | 'trusted'; at: string }>();
+    owners.forEach((jid, i) => { if (!addresses.has(jid)) addresses.set(jid, { why: 'owner', at: `ownerJids[${i}]` }); });
+    const trusted: Array<[string, string]> = [
+      ...(config.trustedSenders ?? []).map((e, i): [string, string] => [e, `trustedSenders[${i}]`]),
+      ...(ch.trustedSenders ?? []).map((e, i): [string, string] => [e, `channels[${id}].trustedSenders[${i}]`]),
+    ];
+    for (const [entry, at] of trusted) {
       if (entry === 'owner') continue;
-      if (!addresses.has(entry)) addresses.set(entry, 'trusted');
+      if (!addresses.has(entry)) addresses.set(entry, { why: 'trusted', at });
     }
     const links: PlannedLink[] = [];
-    for (const [externalId, why] of addresses) {
-      if (!PERSON_JID.test(externalId)) { problems.push(`${id}: ${externalId} is not a person's WhatsApp address`); continue; }
+    for (const [externalId, { why, at }] of addresses) {
+      planned.add(externalId);
+      const named = `${at} ${mask(externalId)}`;
+      if (!PERSON_JID.test(externalId)) { problems.push(`${id}: ${named} is not a person's WhatsApp address`); continue; }
       const memberId = opts.members[externalId] ?? (why === 'owner' ? opts.ownerMember : null);
       if (!memberId) {
-        problems.push(`${id}: ${externalId} (${why}) has no member; pass ${why === 'owner' ? '--owner-member <member-id> or ' : ''}--member ${externalId}=<member-id>`);
+        problems.push(`${id}: ${named} (${why}) has no member; pass ${why === 'owner' ? '--owner-member <member-id> or ' : ''}` +
+          `--member <the address at ${at} in config.json>=<member-id>`);
         continue;
       }
       links.push({ externalId, memberId, why });
@@ -138,6 +151,13 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
   }
   const unused = Object.keys(opts.mainChats).filter(k => !opts.channels.includes(k));
   if (unused.length) problems.push(`--main-chat names channels not being imported: ${unused.join(', ')}`);
+  const unusedPurposes = Object.keys(opts.purposes).filter(k => !opts.channels.includes(k));
+  if (unusedPurposes.length) problems.push(`--purpose names channels not being imported: ${unusedPurposes.join(', ')}`);
+  // A typo'd --member key would otherwise be ignored and resurface as "has no member".
+  const unusedMembers = Object.keys(opts.members).filter(k => !planned.has(k));
+  if (unusedMembers.length) {
+    problems.push(`--member names addresses that are no owner or trusted sender of the channels imported: ${unusedMembers.map(mask).join(', ')}`);
+  }
   if (problems.length) throw usage(`nothing was imported:\n  ${problems.join('\n  ')}`);
   return plan;
 }
@@ -165,12 +185,13 @@ interface ImportResult {
   dryRun: boolean;
   bridges: Array<{
     channel: string; bridgeId: string | null; created: boolean;
+    /** `externalId` is masked (`…0001@s.whatsapp.net`): this output gets pasted onto tasks. */
     links: Array<{ externalId: string; memberId: string; outcome: LinkOutcome | 'planned'; message?: string }>;
   }>;
 }
 
 export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['config', 'channel', 'connection', 'main-chat', 'purpose', 'member', 'owner-member', 'dry-run']);
+  assertKnownOptions(cmd, ['config', 'channel', 'connection', 'main-chat', 'purpose', 'member', 'owner-member', 'allow-groups', 'dry-run']);
   if (cmd.args.length || cmd.passthrough.length) throw usage('tm8 bridge import-config takes flags only; see its help');
   const source = cmd.options.value('config');
   if (!source) throw usage('--config <path> is required: the Phase-1 wa-bridge config.json');
@@ -189,6 +210,7 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     purposes: pairs('purpose', cmd.options.values('purpose')),
     members: pairs('member', cmd.options.values('member')),
     ownerMember: cmd.options.value('owner-member') ?? null,
+    allowGroups: cmd.options.bool('allow-groups'),
   });
   const dryRun = cmd.options.bool('dry-run');
   const connectionId = cmd.options.value('connection');
@@ -197,7 +219,7 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   const result: ImportResult = { dryRun, bridges: [] };
   if (dryRun) {
     result.bridges = plan.map(p => ({ channel: p.channel, bridgeId: null, created: false,
-      links: p.links.map(l => ({ externalId: l.externalId, memberId: l.memberId, outcome: 'planned' as const })) }));
+      links: p.links.map(l => ({ externalId: mask(l.externalId), memberId: l.memberId, outcome: 'planned' as const })) }));
     cmd.out.data(result, () => `dry run, nothing written:\n${renderPlan(plan)}`);
     return EXIT_OK;
   }
@@ -240,13 +262,13 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
           body: { clientMutationId: randomUUID(), patch: { memberId: l.memberId } },
         });
         const outcome: LinkOutcome = r.changed ? 'asserted' : 'unchanged';
-        links.push({ externalId: l.externalId, memberId: l.memberId, outcome });
+        links.push({ externalId: mask(l.externalId), memberId: l.memberId, outcome });
         lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: ${outcome}`);
       } catch (err) {
         const ROW: Record<string, LinkOutcome> = { not_found: 'member_not_active', invalid_input: 'invalid_address', conflict: 'link_conflict' };
         if (!(err instanceof ApiError) || !(err.code in ROW)) throw err;
         const outcome = ROW[err.code]!;
-        links.push({ externalId: l.externalId, memberId: l.memberId, outcome, message: err.message });
+        links.push({ externalId: mask(l.externalId), memberId: l.memberId, outcome, message: err.message });
         lines.push(`  link ${mask(l.externalId)} → member ${l.memberId}: REFUSED ${outcome} (${err.message})`);
         failure ??= outcome === 'member_not_active' ? EXIT_NOT_FOUND : outcome === 'link_conflict' ? EXIT_CONFLICT : EXIT_USAGE;
       }

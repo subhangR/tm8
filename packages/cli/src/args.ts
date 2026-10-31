@@ -143,6 +143,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
   'include-ended',       // tm8 bridge list
+  'allow-groups',        // tm8 bridge import-config — B1c imports the self chat only unless set
   'linked',              // tm8 bridge people (Bridges P, 404)
   'guests',              // tm8 bridge people (Bridges P, 404)
   'unassert',            // tm8 bridge participant (Bridges P, 404)

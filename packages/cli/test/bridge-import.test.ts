@@ -46,7 +46,7 @@ describe('planPhase1Import (pure)', () => {
 
   it('maps a group: its own teammate, trigger all → every, everyone → anyone, style, channel-trusted senders', () => {
     const [infra] = planPhase1Import(config, {
-      ...base, channels: ['infra'], members: { [TRUSTED]: RAHUL, '910000000003@s.whatsapp.net': ASHA },
+      ...base, channels: ['infra'], allowGroups: true, members: { [TRUSTED]: RAHUL, '910000000003@s.whatsapp.net': ASHA },
       purposes: { infra: 'infra on-call' },
     });
     expect(infra!.conversation).toEqual({ externalId: '120300000000000001@g.us', kind: 'group', title: 'Infra' });
@@ -66,11 +66,32 @@ describe('planPhase1Import (pure)', () => {
     } catch (err) { message = (err as Error).message; }
     expect(message).toMatch(/^nothing was imported/);
     expect(message).toContain('self: no target chat; pass --main-chat self=<chat-id>');
-    expect(message).toContain(`self: ${PN} (owner) has no member`);
-    expect(message).toContain(`self: ${TRUSTED} (trusted) has no member`);
+    expect(message).toContain('self: ownerJids[0] …0001@s.whatsapp.net (owner) has no member');
+    expect(message).toContain('self: trustedSenders[1] …0002@s.whatsapp.net (trusted) has no member; pass ' +
+      '--member <the address at trustedSenders[1] in config.json>=<member-id>');
     expect(message).toContain('lvlup: belongs to space 88888888-8888-7888-8888-888888888888');
+    expect(message).toContain('lvlup: a group; this cutover imports the self chat only');
     expect(message).toContain('feedback: shadow mode');
     expect(message).toContain('nope: no such channel');
+    // F1: the refusal is pasted onto tasks during the cutover; it never carries a whole number.
+    expect(message).not.toMatch(/[0-9]{8,}@/);
+  });
+
+  it('imports the self chat only: a group channel is refused unless --allow-groups (B1c-groups passes it)', () => {
+    const opts = { ...base, channels: ['infra'], members: { [TRUSTED]: RAHUL, '910000000003@s.whatsapp.net': ASHA } };
+    expect(() => planPhase1Import(config, opts)).toThrow(/infra: a group; this cutover imports the self chat only \(pass --allow-groups/);
+    expect(planPhase1Import(config, { ...opts, allowGroups: true }).map(p => p.conversation.kind)).toEqual(['group']);
+  });
+
+  it('refuses --member and --purpose keys that name nothing in the plan', () => {
+    const selfOnly = { ...base, channels: ['self'], mainChats: { self: SELF_CHAT } };
+    let message = '';
+    try {
+      planPhase1Import(config, { ...selfOnly, members: { [TRUSTED]: RAHUL, '910000000099@s.whatsapp.net': ASHA }, purposes: { infra: 'x' } });
+    } catch (err) { message = (err as Error).message; }
+    expect(message).toContain('--member names addresses that are no owner or trusted sender of the channels imported: …0099@s.whatsapp.net');
+    expect(message).toContain('--purpose names channels not being imported: infra');
+    expect(message).not.toContain('910000000099');
   });
 
   it('touches only the channels named, and refuses with none named', () => {
@@ -173,6 +194,17 @@ describe('tm8 bridge import-config (fake server)', () => {
     expect(stdout).toContain('dry run, nothing written');
     expect(stdout).toContain(`self: dm "Self chat" → chat ${SELF_CHAT}`);
     expect(stdout).not.toContain('910000000001');
+  });
+
+  it('--json is masked too, for dry runs and real runs (F1)', async () => {
+    expect(await run([...args, '--dry-run', '--format', 'json'])).toBe(0);
+    expect(stdout).toContain('…0001@s.whatsapp.net');
+    expect(stdout).not.toMatch(/[0-9]{8,}@/);
+    stdout = ''; requests = [];
+    expect(await run([...args, '--format', 'json'])).toBe(0);
+    expect(requests.some(r => r.method === 'PATCH' && r.path.endsWith(`/participants/${PN}`))).toBe(true); // the wire carries the real id
+    expect(stdout).not.toMatch(/[0-9]{8,}@/);
+    bridges = []; asserted.clear(); // the next case starts from an empty space
   });
 
   it('creates the Self bridge, asserts every link, and a rerun changes nothing', async () => {

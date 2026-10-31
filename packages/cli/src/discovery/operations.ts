@@ -4662,12 +4662,13 @@ const COMMAND_ALIASES = new Map<string, {
   // never sent, and every write is an existing door (B1c, §7.2).
   ['bridge import-config', {
     path: ['bridge', 'import-config'],
-    syntax: 'tm8 bridge import-config --config <path> --channel <id>... [--connection <connection-id>] [--main-chat <channel>=<chat-id>...] [--owner-member <member-id>] [--member <jid>=<member-id>...] [--purpose <channel>=<text>...] [--dry-run]',
+    syntax: 'tm8 bridge import-config --config <path> --channel <id>... [--connection <connection-id>] [--main-chat <channel>=<chat-id>...] [--owner-member <member-id>] [--member <jid>=<member-id>...] [--purpose <channel>=<text>...] [--allow-groups] [--dry-run]',
     summary: 'Import Phase-1 wa-bridge channels as bridges, and their owner and trusted senders as admin-asserted links',
     notes: [
       'sugar over bridges.list + bridges.create + bridges.participants.update; the config file is read locally and never sent',
       'only the channels named by --channel are touched; any gap (no target chat, an unmapped address, another space, shadow mode) refuses the whole run before a write',
       'idempotent: a bridge already on the conversation is reused and an assertion that already holds is a no-op',
+      'a group channel is refused unless --allow-groups is given (B1c moves the self chat only); addresses are printed masked, in the JSON result too',
       'human-only like the doors under it: a space admin who owns the connection',
     ],
     examples: [
