@@ -74,10 +74,18 @@ describe('unknown and planned words are answered, never routed (§4.2)', () => {
     expect(parseBridgeCommand('/xyzzy')).toMatchObject({ kind: 'unknown', suggestion: null });
     expect(isBridgeCommandText('/xyzzy')).toBe(true);
   });
-  it.each(['remember', 'remind', 'loops', 'forget', 'queue'])(
+  it.each(['remind', 'loops', 'forget', 'queue'])(
     '/%s is a later verb: planned, not a did-you-mean', word => {
       expect(parseBridgeCommand(`/${word} something`)).toMatchObject({ kind: 'planned', verb: word });
     });
+});
+
+describe('/remember (Bridges R, D29)', () => {
+  it('is a verb now, its text the rest of the line and the lines under it', () => {
+    expect(parseBridgeCommand('/remember deploy windows are Tue/Thu\n14:00-16:00 IST')).toMatchObject({
+      kind: 'command', verb: 'remember', body: ['14:00-16:00 IST'],
+    });
+  });
 });
 
 describe('/work items (§4.3)', () => {

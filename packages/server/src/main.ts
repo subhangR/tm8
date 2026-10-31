@@ -66,6 +66,7 @@ import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credenti
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
 import { createBridgeFixSweepJob } from './scheduler/jobs/bridge-fix-sweep.js';
+import { createBridgeMemoryProposalExpiryJob } from './scheduler/jobs/bridge-memory-proposal-expiry.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1374,6 +1375,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     );
     // Bridges F (412): the fix-notice waits that need a clock (D70, D72).
     scheduler.register(createBridgeFixSweepJob({ db }));
+    // Bridges D63 (409): /remember proposals nobody decided expire after 14 days.
+    scheduler.register(
+      createBridgeMemoryProposalExpiryJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridge-memory-proposal-expiry' };
+        },
+      }),
+    );
     // §5.6 (346): MCP call audit rows past the node's retention window.
     scheduler.register(
       createMcpAuditRetentionJob({

@@ -34,6 +34,7 @@ import {
   isConfirmText, parseBridgeCommand, parseDuration, parseWorkItems, parseWorkerRef, stripTail, titleOf,
   type BridgeVerb, type ParsedBridgeCommand, type WorkItem, type WorkerRef,
 } from './parse.js';
+import { proposeBridgeMemory } from '../memory-proposals.js';
 import type {
   BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeWorkStarter,
 } from './ports.js';
@@ -57,7 +58,7 @@ export const MAX_LIST_LINES = 8;
 export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'linked' | 'admin'>> = {
   help: 'everyone', whoami: 'everyone', link: 'everyone',
   workers: 'reader', status: 'reader', tasks: 'reader', docs: 'reader',
-  work: 'linked', task: 'linked', stop: 'linked',
+  work: 'linked', task: 'linked', stop: 'linked', remember: 'linked',
   who: 'reader', bridge: 'everyone',
   mute: 'admin', unmute: 'admin', new: 'admin',
   start: 'linked', retry: 'linked', tell: 'linked', result: 'reader',
@@ -273,6 +274,9 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       lines.push('/task <title> — make a task, no worker');
       lines.push('/stop <worker> — stop your worker');
     }
+    if (cmd.sender.memberId && (t === '' || t.startsWith('rem') || t.startsWith('mem'))) {
+      lines.push('/remember <text> — propose a memory; a linked member accepts it in tm8');
+    }
     if (cmd.sender.reader && (t === '' || t.startsWith('work') || t.startsWith('task') || t.startsWith('doc'))) {
       lines.push('/workers [all] · /status <worker> — what is running');
       lines.push('/tasks [open] · /docs [artifacts|drawings] — what this group made');
@@ -291,6 +295,38 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     const how = s.trust === 'linked' ? 'linked ✓' : 'asserted by an admin';
     const can = s.admin ? 'you can start and stop any worker' : 'you can start workers';
     return { text: `you are ${s.displayName || 'a member'} (${how}) in ${cmd.bridge.title || 'this group'} — ${can}` };
+  }
+
+  /** The reasons propose_bridge_memory refuses with (403), as the sender reads them. */
+  const REMEMBER_REFUSALS: Readonly<Record<string, string>> = {
+    remember_needs_link: GUEST_FIRST,
+    proposal_holds_secret: 'that looks like a password or key — a memory never holds one, so nothing was saved. Send it again without the secret',
+    too_many_proposals: 'this group already has 20 memory proposals waiting — accept or drop some in tm8 first',
+    bridge_ended: 'this group is no longer connected',
+  };
+
+  /**
+   * D29, D61: `/remember <text>` records a PROPOSAL, never a memory. A linked
+   * member of this group accepts it in tm8, from the inbox item it raises;
+   * nothing sent here (a YES, `/remember accept`) can accept one.
+   */
+  async function rememberProposal(cmd: Command): Promise<Answer> {
+    requireLinked(cmd);
+    const statement = cmd.input.text.replace(/^\s*[/!]\S+[ \t]*\n?/, '').trim();
+    if (statement === '') throw new Refusal('usage: /remember <what agents working for this group should know>');
+    try {
+      const proposal = await exec(q => proposeBridgeMemory(q, {
+        bridgeId: cmd.input.bridgeId, senderExternalId: cmd.input.senderExternalId, statement,
+        messageId: cmd.input.messageId, providerMessageId: cmd.input.externalMessageId,
+      }));
+      const warn = proposal.mentionsSecret ? ' It mentions a secret: whoever accepts it should check it holds none.' : '';
+      return { text: `memory proposed — a linked member of this group accepts it in tm8 within 14 days.${warn}` };
+    } catch (error) {
+      const reason = error instanceof CollabError ? (error.details as { reason?: string } | undefined)?.reason : undefined;
+      const text = reason ? REMEMBER_REFUSALS[reason] : undefined;
+      if (text) throw new Refusal(text);
+      throw error;
+    }
   }
 
   async function task(cmd: Command, args: string): Promise<Answer> {
@@ -790,6 +826,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'whoami': return whoami(cmd);
       case 'link': return { text: 'linking a number by code isn\'t available yet — ask a space admin in tm8 to link it' };
       case 'task': return task(cmd, parsed.args);
+      case 'remember': return rememberProposal(cmd);
       case 'work': return work(cmd, parsed.args, parsed.body, false);
       case 'workers': return workers(cmd, parsed.args);
       case 'status': return status(cmd, parsed.args);

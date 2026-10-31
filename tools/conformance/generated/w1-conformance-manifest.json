@@ -2,15 +2,15 @@
   "schemaVersion": "tm8.conformance.w1.v1",
   "catalogDigest": "sha256:751f592ee5ac30f76d972c4f522c0b436d3ea572167c9f435290bf65d43db875",
   "catalog": {
-    "total": 415,
-    "v1": 413,
+    "total": 417,
+    "v1": 415,
     "reserved": 2,
-    "http": 413,
+    "http": 415,
     "ws": 1,
-    "registerableV1Http": 411,
+    "registerableV1Http": 413,
     "methods": {
       "GET": 139,
-      "POST": 205,
+      "POST": 206,
       "PATCH": 24,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 146,
-      "command": 267,
+      "command": 268,
       "stream": 2
     },
-    "uniqueNames": 415,
-    "uniqueBindings": 414
+    "uniqueNames": 417,
+    "uniqueBindings": 416
   },
   "reservedOperations": [
     "search.query",
@@ -491,6 +491,20 @@
         "operation": "bridges.work.start",
         "method": "POST",
         "path": "/v2/bridges/:bridgeId/work",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.memories.proposals.list",
+        "method": "GET",
+        "path": "/v2/bridges/:bridgeId/memory-proposals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.memories.proposals.resolve",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve",
         "status": "registered",
         "source": "server-router"
       },
@@ -3309,7 +3323,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 383
+    "unimplementedV1Http": 385
   },
   "schemas": {
     "additive": {
@@ -4154,6 +4168,42 @@
           "bridges",
           "work",
           "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.memories.proposals.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.memories.proposals.list",
+        "intentTags": [
+          "bridges",
+          "memories",
+          "proposals",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.memories.proposals.resolve",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.memories.proposals.resolve",
+        "intentTags": [
+          "bridges",
+          "memories",
+          "proposals",
+          "resolve"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

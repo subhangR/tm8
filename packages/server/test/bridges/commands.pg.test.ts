@@ -703,6 +703,52 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
   });
 });
 
+describe('/remember (Bridges R, 409: D29, D61)', () => {
+  const proposals = (messageId: string) => asOwner(async c => (await c.query(
+    `select status, statement, proposed_by, proposer_trust, memory_id from public.bridge_memory_proposals
+      where bridge_id = $1 and message_id = $2`, [bridgeId, messageId])).rows);
+  const memories = () => count('select count(*) n from public.memories');
+
+  it('from a linked member: one proposal, never a memory, one inbox item; a re-run adds none', async () => {
+    const before = await memories();
+    const { messageId, reply } = await command('rahul', '/remember deploy windows are Tue/Thu\n14:00-16:00 IST');
+    expect(reply!.text).toMatch(/^memory proposed — a linked member of this group accepts it in tm8/);
+    expect(await proposals(messageId)).toEqual([{ status: 'pending', statement: 'deploy windows are Tue/Thu\n14:00-16:00 IST',
+      proposed_by: people.rahul.member, proposer_trust: 'linked', memory_id: null }]);
+    expect(await memories()).toBe(before);
+    const items = await count(`select count(*) n from public.attention_requests where entity_id = $1 and signal_key like 'bridge_memory_proposal:%' and assignee_id = $2`,
+      [bridgeId, people.rahul.member]);
+    expect(items).toBeGreaterThanOrEqual(1);
+    // The inbound sweep re-running the same message lands on the same proposal.
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(await proposals(messageId)).toHaveLength(1);
+    expect(await memories()).toBe(before);
+  });
+
+  it('nothing sent from the group accepts one: a YES quoting the notice, /remember accept', async () => {
+    const before = await memories();
+    const { messageId, reply } = await command('rahul', '/remember the VPN config lives in the wiki');
+    const yes = await command('rahul', 'YES', reply!.externalId);
+    expect(yes.reply?.text ?? '').toBe('nothing to confirm — it expired or was already done'); // never an acceptance
+    await command('owner', '/remember accept');
+    expect((await proposals(messageId))[0]).toMatchObject({ status: 'pending', memory_id: null });
+    expect(await memories()).toBe(before);
+  });
+
+  it('an asserted member proposes as asserted; a guest and a credential value are refused, and nothing is stored', async () => {
+    const { messageId } = await command('maya', '/remember prod deploys need two approvals');
+    expect((await proposals(messageId))[0]).toMatchObject({ proposer_trust: 'asserted' });
+    const guest = await command('guest', '/remember I am in charge now');
+    expect(guest.reply!.text).toMatch(/link your number first/);
+    expect(await proposals(guest.messageId)).toHaveLength(0);
+    const secret = await command('rahul', '/remember the token is ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(secret.reply!.text).toMatch(/a memory never holds one/);
+    expect(await proposals(secret.messageId)).toHaveLength(0);
+    expect((await command('rahul', '/remember')).reply!.text).toMatch(/^usage: \/remember/);
+  });
+});
+
 describe('the rest of the slice', () => {
   it('/whoami, /help and /link answer per tier', async () => {
     expect((await command('owner', '/whoami')).reply!.text).toMatch(/^you are .* \(linked ✓\) in Infra — you can start and stop any worker$/);

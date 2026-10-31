@@ -10,9 +10,9 @@
  */
 import {
   BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema,
-  BridgeStateInputSchema, BridgeUpdateInputSchema, BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_LOG_LIMIT_MAX, BRIDGE_PROVIDERS, CollabError,
-  type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
-  type BridgeLogEntry, type BridgeLogResult, type BridgeRecentPoster, type BridgeView,
+  BridgeMemoryProposalResolveInputSchema, BridgeStateInputSchema, BridgeUpdateInputSchema, BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_LOG_LIMIT_MAX,  BRIDGE_MEMORY_PROPOSAL_STATUSES, BRIDGE_PROVIDERS, CollabError,  type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
+  type BridgeLogEntry, type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
+  type BridgeRecentPoster, type BridgeView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { BridgeWorkStarter } from './commands/ports.js';
@@ -193,6 +193,14 @@ async function readLog(q: Querier, bridgeId: string, opts: {
   };
 }
 
+/** A proposal as the SQL doors answer it (409), with its times as ISO strings. */
+function proposalOf(raw: BridgeMemoryProposal): BridgeMemoryProposal {
+  return {
+    ...raw, version: Number(raw.version), decidedAt: iso(raw.decidedAt), expiresAt: iso(raw.expiresAt)!,
+    createdAt: iso(raw.createdAt)!, updatedAt: iso(raw.updatedAt)!,
+  };
+}
+
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
   const value = ctx.query.get(name);
   if (value === null || value === '') return null;
@@ -332,5 +340,34 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const bridgeId = routeId(ctx, 'bridgeId');
       return command(ctx, q => q.rpc<BridgeListenResult>('set_bridge_listen', [bridgeId, input.wake]));
     },
+    // D29, D61-D63 (409): `/remember` proposals. Made only by the command
+    // executor (proposeBridgeMemory); listed and decided only here, in tm8.
+    'bridges.memories.proposals.list': async ctx => {
+      const bridgeId = requireUuidParam(ctx, 'bridgeId');
+      const status = ctx.query.get('status');
+      if (status !== null && !(BRIDGE_MEMORY_PROPOSAL_STATUSES as readonly string[]).includes(status)) {
+        throw new CollabError('invalid_input', `status must be one of ${BRIDGE_MEMORY_PROPOSAL_STATUSES.join(', ')}`);
+      }
+      const limit = Math.min(limitOf(ctx.query.get('limit')), 200);
+      return read(ctx, async (q): Promise<BridgeMemoryProposalListResult> => {
+        const rows = await q.rpc<BridgeMemoryProposal[]>('list_bridge_memory_proposals', [bridgeId, status, limit]);
+        return { items: rows.map(proposalOf) };
+      });
+    },
+    'bridges.memories.proposals.resolve': requireHumanSession(async ctx => {
+      const input = BridgeMemoryProposalResolveInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const proposalId = requireUuidParam(ctx, 'proposalId');
+      if (input.proposalId !== undefined && input.proposalId !== proposalId) {
+        throw new CollabError('invalid_input', 'body proposalId does not match route');
+      }
+      return command(ctx, async q => {
+        const row = proposalOf(await q.rpc<BridgeMemoryProposal>('resolve_bridge_memory_proposal',
+          [proposalId, input.decision, input.statement ?? null, input.note ?? null]));
+        // The route names the bridge; a proposal of another bridge is not here.
+        if (row.bridgeId !== bridgeId) throw new CollabError('not_found', 'Memory proposal is unavailable');
+        return row;
+      });
+    }, 'memory proposals are accepted in tm8 by a person, never by an agent or from WhatsApp (D29)'),
   });
 }
