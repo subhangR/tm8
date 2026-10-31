@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import type { BridgeView } from '@tm8/contract';
 import { run } from '../src/run.js';
-import { mask, maskJids, pairs, planPhase1Import, type Phase1Config } from '../src/commands/bridge-import.js';
+import { mask, maskJids, pairs, planPhase1Import, scrubNumbers, type Phase1Config } from '../src/commands/bridge-import.js';
 
 const FIXTURE = fileURLToPath(new URL('./fixtures/phase1-wa-config.json', import.meta.url));
 const config = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Phase1Config;
@@ -18,6 +18,9 @@ const RAHUL = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb';
 const ASHA = 'cccccccc-cccc-7ccc-8ccc-cccccccccccc';
 const CONNECTION = '44444444-4444-7444-8444-444444444444';
 const BRIDGE = '11111111-1111-7111-8111-111111111111';
+// Every way an operator might write one number (review r5).
+const SHAPES = ['919876543210', '+91 98765 43210', '98765-43210', '(987) 654-3210', '+91.98765.43210', 'a@919876543210',
+  '919876543210@s.whatsapp.net', '919876543210%40s.whatsapp.net', '+91 98765 43210@s.whatsapp.net'];
 const GONE = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd', GONE_ADDR = '910000000008@s.whatsapp.net', BAD = '910000000005@s.whatsapp.net', CLASH = '910000000006@s.whatsapp.net', DROP = '910000000007@s.whatsapp.net';
 const PN = '910000000001@s.whatsapp.net', LID = '100000000000001@lid', TRUSTED = '910000000002@s.whatsapp.net';
 
@@ -108,6 +111,16 @@ describe('planPhase1Import (pure)', () => {
       channels: [{ id: 'dm', jid: '910000000009@s.whatsapp.net', mainChatId: SELF_CHAT }] };
     expect(() => planPhase1Import(odd, { ...base, channels: ['dm'] }))
       .toThrow(/must be the owner's self chat[\s\S]*is not a person's WhatsApp address/);
+  });
+
+  it('scrubNumbers masks a number in every shape, keeps its last 4, and leaves UUIDs and short numbers alone', () => {
+    for (const n of SHAPES) {
+      const out = scrubNumbers(`x ${n} y`);
+      expect(out, n).toContain('…3210');
+      expect(out.replace(/(?<=[0-9])[ .()+-]+(?=[0-9])/g, ''), n).not.toMatch(/[0-9]{5,}/);
+    }
+    expect(scrubNumbers(`bridge ${BRIDGE} → chat ${SELF_CHAT}`)).toBe(`bridge ${BRIDGE} → chat ${SELF_CHAT}`);
+    expect(scrubNumbers('trustedSenders[1] · exit 5 · 1234')).toBe('trustedSenders[1] · exit 5 · 1234');
   });
 
   it('parses key=value flags and masks addresses', () => {
@@ -323,12 +336,9 @@ describe('tm8 bridge import-config (fake server)', () => {
     await withConfig(config, ['--channel', 'infra']);                                     // a group without --allow-groups
     await withConfig({ ...config, trustedSenders: ['120300000000000009@g.us'] }, []);     // not a person
     await withConfig('{"ownerJids": [x"919876543210@s.whatsapp.net"]}', []);             // not JSON
-    // F10, table-driven: EVERY flag that takes a value, given a 12-digit number in each form and each slot.
-    // (--allow-groups and --dry-run take no value.)
-    const N = '919876543210';
-    for (const n of [N, `${N}@s.whatsapp.net`, `${N}%40s.whatsapp.net`]) {
+    // r5, property-style: a number in every shape, in every flag slot and in every config-sourced field.
+    for (const n of SHAPES) {
       const cases: Array<[string[], string[]]> = [
-        [['--config', n], []],
         [['--channel', n], []],
         [['--connection', n], ['--connection']],
         [['--main-chat', `${n}=x`], []], [['--main-chat', `self=${n}`], ['--main-chat']],
@@ -336,15 +346,15 @@ describe('tm8 bridge import-config (fake server)', () => {
         [['--member', `${n}=${ASHA}`], []], [['--member', `${TRUSTED}=${n}`], ['--member']], [['--member', n], ['--member']],
         [['--owner-member', n], ['--owner-member']],
       ];
-      for (const [extra, drop] of cases) {
-        if (extra[0] === '--config') {
-          // --config replaces the fixture path, so it goes on the plain args with the path dropped.
-          await run([...args.filter((x, i, all) => !(x === '--config' || all[i - 1] === '--config')), ...extra, '--dry-run']);
-          take();
-        } else {
-          await withConfig(config, [...extra, '--dry-run'], drop);
-        }
-      }
+      for (const [extra, drop] of cases) await withConfig(config, [...extra, '--dry-run'], drop);
+      await run([...args.filter((x, i, all) => !(x === '--config' || all[i - 1] === '--config')), '--config', n, '--dry-run']);
+      take();
+      // config-sourced: the channel id, its title, an owner JID and a trusted sender
+      const self = config.channels!.find(c => c.id === 'self')!;
+      await withConfig({ ...config, channels: [{ ...self, id: n }] }, ['--channel', n, '--dry-run'], ['--channel', '--main-chat']);
+      await withConfig({ ...config, channels: [{ ...self, title: n }] }, ['--dry-run']);
+      await withConfig({ ...config, trustedSenders: [n] }, ['--dry-run'], ['--member']);
+      await withConfig({ ...config, ownerJids: [n, ...(config.ownerJids ?? [])] }, ['--dry-run']);
     }
     await withConfig({ ...config, trustedSenders: [...(config.trustedSenders ?? []), GONE_ADDR, BAD, CLASH] },
       ['--member', `${GONE_ADDR}=${GONE}`, '--member', `${BAD}=${RAHUL}`, '--member', `${CLASH}=${RAHUL}`]);   // 404 / 400 / 409 rows
@@ -361,6 +371,8 @@ describe('tm8 bridge import-config (fake server)', () => {
     expect(text).toContain('purpose: …3210');
     expect(text).toContain('%40s.whatsapp.net failed');
     expect(text).not.toMatch(/[0-9]{8,}/);
+    // and with the separators people write numbers with taken out
+    expect(text.replace(/(?<=[0-9])[ .()+-]+(?=[0-9])/g, '')).not.toMatch(/[0-9]{8,}/);
   });
 
   it('refuses a real run without --connection', async () => {

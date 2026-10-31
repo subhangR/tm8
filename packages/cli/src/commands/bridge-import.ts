@@ -168,7 +168,7 @@ export function planPhase1Import(config: Phase1Config, opts: ImportOptions): Pla
   if (unusedMembers.length) {
     problems.push(`--member names addresses that are no owner or trusted sender of the channels imported: ${unusedMembers.map(mask).join(', ')}`);
   }
-  if (problems.length) throw usage(`nothing was imported:\n  ${problems.join('\n  ')}`);
+  if (problems.length) throw usage(scrubNumbers(`nothing was imported:\n  ${problems.join('\n  ')}`));
   return plan;
 }
 
@@ -181,14 +181,42 @@ function renderPlan(plan: PlannedBridge[]): string {
   ].join('\n')).join('\n');
 }
 
+const UUID_G = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+/** A phone-like run: digits joined by the separators people write numbers with (space . - ( ) +). */
+const NUMBER_RUN = /\+?[0-9](?:[ .()+-]*[0-9])*/g;
+
 /**
- * Every phone number in free text, masked the way mask() masks one address: a run of 5+ digits before
- * `@` or a URL-encoded `%40` (a request path). With `bare`, every 5+ digit run, for text that holds
- * nothing but addresses (a `--member` key may come without its `@…` suffix).
+ * THE output boundary of `tm8 bridge import-config` (review r5): every line it prints, every error that
+ * leaves it and every string in its JSON result goes through here. Any run holding 5 or more digits,
+ * however it is written (bare, `+91 98765 43210`, `98765-43210`, `(987) 654-3210`), wherever it sits
+ * (before or after an `@`, in a `%40`-encoded path), keeps only its last 4 digits: `…3210`. UUIDs are
+ * protected first and stay whole, because they are ids, not numbers.
  */
-export function maskJids(text: string, bare = false): string {
-  return text.replace(bare ? /[0-9]{5,}/g : /[0-9]{5,}(?=@|%40)/gi, digits => `…${digits.slice(-4)}`);
+export function scrubNumbers(text: string): string {
+  const ids: string[] = [];
+  const held = text.replace(UUID_G, id => `\u0000${ids.push(id) - 1}\u0000`);
+  const scrubbed = held.replace(NUMBER_RUN, run => {
+    const digits = run.replace(/[^0-9]/g, '');
+    return digits.length >= 5 ? `…${digits.slice(-4)}` : run;
+  });
+  return scrubbed.replace(/\u0000([0-9]+)\u0000/g, (_, n: string) => ids[Number(n)]!);
 }
+
+/** Kept for the call sites inside the planner; the same scrub. */
+export function maskJids(text: string, _bare = false): string {
+  return scrubNumbers(text);
+}
+
+/** Every string inside a JSON-able value, scrubbed. */
+function scrubDeep<T>(value: T): T {
+  if (typeof value === 'string') return scrubNumbers(value) as T;
+  if (Array.isArray(value)) return value.map(scrubDeep) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubDeep(v)])) as T;
+  }
+  return value;
+}
+
 
 /** `+…1999@s.whatsapp.net`: enough to tell addresses apart in a log, not a number. */
 export function mask(jid: string): string {
@@ -210,6 +238,24 @@ interface ImportResult {
 }
 
 export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode> {
+  // The boundary: output goes out scrubbed, and so does anything thrown.
+  const out = { data: <T>(result: T, render: () => string) => cmd.out.data(scrubDeep(result), () => scrubNumbers(render())) };
+  try {
+    return await importConfig(cmd, out);
+  } catch (err) {
+    if (err instanceof CliError) {
+      throw new CliError(scrubNumbers(err.message), err.exitCode, { detail: scrubDeep(err.detail), hint: err.hint && scrubNumbers(err.hint) });
+    }
+    if (err instanceof Error) {
+      err.message = scrubNumbers(err.message);
+      const withHint = err as Error & { hint?: string };
+      if (typeof withHint.hint === 'string') withHint.hint = scrubNumbers(withHint.hint);
+    }
+    throw err;
+  }
+}
+
+async function importConfig(cmd: CommandContext, out: { data: <T>(result: T, render: () => string) => void }): Promise<ExitCode> {
   assertKnownOptions(cmd, ['config', 'channel', 'connection', 'main-chat', 'purpose', 'member', 'owner-member', 'allow-groups', 'dry-run']);
   if (cmd.args.length || cmd.passthrough.length) throw usage('tm8 bridge import-config takes flags only; see its help');
   const source = cmd.options.value('config');
@@ -244,7 +290,7 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
   if (dryRun) {
     result.bridges = plan.map(p => ({ channel: p.channel, bridgeId: null, created: false,
       links: p.links.map(l => ({ externalId: mask(l.externalId), memberId: l.memberId, outcome: 'planned' as const })) }));
-    cmd.out.data(result, () => `dry run, nothing written:\n${renderPlan(plan)}`);
+    out.data(result, () => `dry run, nothing written:\n${renderPlan(plan)}`);
     return EXIT_OK;
   }
 
@@ -302,6 +348,6 @@ export async function bridgeImportConfig(cmd: CommandContext): Promise<ExitCode>
     result.bridges.push({ channel: p.channel, bridgeId: bridge.id, created, links });
   }
   if (failure !== undefined) lines.push('some links were refused: fix them and rerun; the rest is already in place');
-  cmd.out.data(result, () => lines.join('\n'));
+  out.data(result, () => lines.join('\n'));
   return failure ?? EXIT_OK;
 }
