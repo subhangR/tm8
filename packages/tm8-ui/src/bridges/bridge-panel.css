@@ -21,7 +21,7 @@
 .brg-set__grouphead { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--set-gutter, 18px) 6px; }
 .brg-set__rows { list-style: none; margin: 0; padding: 0; }
 .brg-set__conn {
-  display: grid; grid-template-columns: auto 90px minmax(110px, 1fr) auto minmax(90px, auto) auto;
+  display: grid; grid-template-columns: auto minmax(90px, max-content) minmax(110px, 1fr) auto minmax(90px, auto) auto auto;
   align-items: center; gap: 10px; padding: 7px var(--set-gutter, 18px);
   border-top: 1px solid var(--pn-x-hairline-soft); font-size: var(--pn-fs-body);
 }
@@ -177,3 +177,67 @@
 /* Under lane P's roster, the posters sit on the roster's own inset (.brp's
    14px), not flush at the card edge. */
 .brg-people__posters { padding: 0 14px 12px; }
+
+/* --- the add-bridge wizard and the link dialog (§4.3, v2 §1.6) ------------ */
+.brg-wiz { width: min(720px, 100%); }
+.brg-wiz__steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; font-size: var(--pn-fs-sm); color: var(--pn-ink-4); }
+.brg-wiz__steps li { padding: 2px 8px; border-radius: var(--pn-r-pill); border: 1px solid var(--pn-line-2); }
+.brg-wiz__steps li[aria-current='step'] { color: var(--pn-ink); border-color: var(--pn-brand); font-weight: 600; }
+.brg-wiz__steps li[data-done] { color: var(--pn-run); }
+.brg-wiz__list { list-style: none; margin: 6px 0 10px; padding: 0; }
+.brg-wiz__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--pn-x-hairline-soft); font-size: var(--pn-fs-body); }
+.brg-wiz__row > .pn-btn { margin-left: auto; }
+.brg-wiz__name { font-weight: 600; }
+.brg-wiz__search { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 10px; margin: 6px 0; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); background: var(--pn-card); color: var(--pn-ink); }
+.brg-wiz__pick {
+  appearance: none; width: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; text-align: left;
+  font: inherit; font-size: var(--pn-fs-body); color: var(--pn-ink); background: none; border: 0; border-bottom: 1px solid var(--pn-x-hairline-soft);
+  padding: 8px 6px; cursor: pointer;
+}
+.brg-wiz__pick:hover:not(:disabled) { background: var(--pn-hover); }
+.brg-wiz__pick[aria-selected='true'] { background: var(--pn-brand-soft); }
+.brg-wiz__pick:disabled { color: var(--pn-ink-4); cursor: not-allowed; }
+.brg-warn { color: var(--pn-wait); font-size: var(--pn-fs-sm); }
+.brg-wiz__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.brg-wiz__card { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--pn-line-2); border-radius: var(--pn-r-md); background: var(--pn-card); cursor: pointer; }
+.brg-wiz__card[data-selected] { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.brg-wiz__card input { position: absolute; opacity: 0; pointer-events: none; }
+.brg-wiz__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--pn-fs-body); }
+.brg-wiz__checks li[data-ok] { color: var(--pn-run); }
+.brg-link__qr { display: block; width: 220px; height: 220px; margin: 10px auto; image-rendering: pixelated; background: var(--pn-paper); border: 8px solid var(--pn-paper); outline: 1px solid var(--pn-line); }
+.brg-link__code { font-family: var(--pn-mono); font-size: var(--pn-fs-h2); letter-spacing: 0.12em; text-align: center; margin: 10px 0; }
+@media (max-width: 640px) {
+  .brg-dialog { padding: 14px; }
+  .brg-wiz__cards { grid-template-columns: 1fr; }
+}
+
+.brg-set__conn .brg-set__menu { position: relative; }
+.brg-set__provider { white-space: nowrap; }
+
+/* On a phone the header's menus open as a bottom sheet: anchored to the pill
+   they ran off the right edge at 390px (found by the phone-shell check). */
+@media (max-width: 640px) {
+  .brg-head .brg-menu {
+    position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; min-width: 0; z-index: 160;
+    padding: 8px; box-shadow: var(--pn-sh-pop);
+  }
+  .brg-head .brg-menu button { padding: 10px 8px; }
+}
+
+/* On the phone the shell's floating action button sits over the bottom-right
+   corner (#1448 review): the Routing tab's sticky Save bar keeps clear of it,
+   and the page ends above it — the same tokens the phone lists use
+   (mobile-screens.css), never a hand-typed number. */
+.cv2-root[data-shell='mobile'] .brg-form__save {
+  padding-inline-end: calc(var(--mobile-fab-size, 56px) + var(--pn-space-3) * 2);
+}
+.cv2-root[data-shell='mobile'] .brg-page { padding-bottom: var(--mobile-fab-reserve, 72px); }
+
+/* An open hand-over offer (HandoverBanner): above the tabs, in the wait tone (--pn-wait: someone has to decide). */
+.brg-handover {
+  margin: 8px 0 4px; padding: 10px 12px; border: 1px solid var(--pn-line); border-left: 3px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm); background: var(--pn-card);
+}
+.brg-handover__text { margin: 0 0 8px; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); }
+.brg-handover__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.brg-handover__ask { flex-basis: 100%; font-size: var(--pn-fs-sm); color: var(--pn-ink-2); }

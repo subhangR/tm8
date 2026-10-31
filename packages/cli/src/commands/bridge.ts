@@ -21,6 +21,7 @@ import { observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 import { assertKnownOptions, enumOption, requireArg } from './entity.js';
 import { client, mutation } from './tool.js';
+import { bridgeImportConfig } from './bridge-import.js';
 
 const usage = (message: string, hint?: string): CliError => new CliError(message, EXIT_USAGE, hint ? { hint } : {});
 const WAKES = ['directed', 'thread', 'all'] as const satisfies readonly BridgeWake[];
@@ -740,4 +741,5 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'link', 'list'], run: bridgeLinkList },
   { path: ['bridge', 'link', 'revoke'], run: bridgeLinkRevoke },
   { path: ['bridge', 'invite'], run: bridgeInvite },
+  { path: ['bridge', 'import-config'], run: bridgeImportConfig },
 ];

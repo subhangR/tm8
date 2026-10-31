@@ -50,6 +50,7 @@
  */
 import {
   CollabError,
+  type BridgeConnectionAuthFrame,
   type DurableWorkspaceEvent,
   type SpaceId,
   type WorkspaceBridgeCommandFrame,
@@ -251,6 +252,8 @@ export interface ConnectionManager {
   onWorkspaceSync(cb: (frame: WorkspaceSyncFrame) => void): Unsubscribe;
   /** Lane L3: this page's identity's craft workspaces changed. */
   onCraftWorkspacePush(cb: (frame: CraftWorkspacePushFrame) => void): Unsubscribe;
+  /** Bridges B1b-5: a QR or pairing code for this page's identity's own `bridges.connections.begin`. */
+  onBridgeConnectionAuth(cb: (frame: BridgeConnectionAuthFrame) => void): Unsubscribe;
   /**
    * Replace the socket now, because the credential it upgraded with is no
    * longer the page's: `auth.space.enter` swapped the session cookie (W3 F1).
@@ -316,6 +319,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const workspaceCommandSubs = new Set<(frame: WorkspaceBridgeCommandFrame) => void>();
   const workspaceSyncSubs = new Set<(frame: WorkspaceSyncFrame) => void>();
   const craftWorkspaceSubs = new Set<(frame: CraftWorkspacePushFrame) => void>();
+  const bridgeAuthSubs = new Set<(frame: BridgeConnectionAuthFrame) => void>();
 
   let socket: SocketHandle | null = null;
   let phase: ConnectionState = { phase: 'connecting' };
@@ -598,6 +602,11 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
           if (disposed) return;
           lastInboundAtMs = now();
           fanout(craftWorkspaceSubs, frame);
+        },
+        onBridgeConnectionAuth: (frame) => {
+          if (disposed) return;
+          lastInboundAtMs = now();
+          fanout(bridgeAuthSubs, frame);
         },
         onRefused: handleRefused,
         onClose: handleClose,
@@ -902,6 +911,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     onSocketOpen(cb) { socketOpenSubs.add(cb); return () => { socketOpenSubs.delete(cb); }; },
     onWorkspaceSync(cb) { workspaceSyncSubs.add(cb); return () => { workspaceSyncSubs.delete(cb); }; },
     onCraftWorkspacePush(cb) { craftWorkspaceSubs.add(cb); return () => { craftWorkspaceSubs.delete(cb); }; },
+    onBridgeConnectionAuth(cb) { bridgeAuthSubs.add(cb); return () => { bridgeAuthSubs.delete(cb); }; },
 
     reconnect() {
       if (disposed) return;

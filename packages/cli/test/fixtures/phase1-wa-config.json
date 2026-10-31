@@ -1,0 +1,29 @@
+{
+  "pairingPhone": "910000000001",
+  "ownerJids": ["910000000001@s.whatsapp.net", "100000000000001@lid"],
+  "trustedSenders": ["owner", "910000000002@s.whatsapp.net"],
+  "http": { "host": "127.0.0.1", "port": 8787 },
+  "tm8": {
+    "baseUrl": "http://127.0.0.1:17777",
+    "spaceId": "33333333-3333-7333-8333-333333333333",
+    "tokenFile": "secrets/tm8-token",
+    "defaultTeammate": "55555555-5555-7555-8555-555555555555"
+  },
+  "channels": [
+    {
+      "id": "self", "jid": "910000000001@s.whatsapp.net", "altJids": ["100000000000001@lid"],
+      "title": "Self chat", "allowedSenders": ["owner"], "mainChatId": null
+    },
+    {
+      "id": "infra", "jid": "120300000000000001@g.us", "title": "Infra",
+      "teammate": "66666666-6666-7666-8666-666666666666",
+      "allowedSenders": ["everyone"], "trustedSenders": ["910000000003@s.whatsapp.net"],
+      "mainChatId": "77777777-7777-7777-8777-777777777777", "trigger": "all", "style": "casual & short"
+    },
+    {
+      "id": "lvlup", "jid": "120300000000000002@g.us", "title": "lvlup",
+      "tm8": { "spaceId": "88888888-8888-7888-8888-888888888888" }, "mainChatId": "99999999-9999-7999-8999-999999999999"
+    },
+    { "id": "feedback", "jid": "120300000000000003@g.us", "title": "Feedback", "deliverTo": "self", "mainChatId": "77777777-7777-7777-8777-777777777778" }
+  ]
+}

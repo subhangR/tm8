@@ -307,15 +307,17 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     deps.db.tx(claimsFor(await deps.owner(), ctx), work);
 
   /** decline and withdraw share one shape: settle the offer, answer it with its bridge. */
-  const handoverClose = (rpc: 'decline_bridge_handover' | 'withdraw_bridge_handover', refusal: string) =>
-    requireHumanSession(async (ctx): Promise<BridgeHandoverResult> => {
+  // The human guard is applied where each op is registered, so the catalog's
+  // humanOnly <=> wrapped check (human-auth-kinds.test) can see it.
+  const handoverClose = (rpc: 'decline_bridge_handover' | 'withdraw_bridge_handover') =>
+    async (ctx: RequestContext): Promise<BridgeHandoverResult> => {
       const input = BridgeHandoverSettleInputSchema.parse(ctx.body);
       const handoverId = routeId(ctx, 'handoverId');
       return command(ctx, async q => {
         const result = await q.rpc<{ handover: BridgeHandover }>(rpc, [handoverId, input.clientMutationId]);
         return { handover: handoverOf(result.handover), bridge: await loadBridgeView(q, result.handover.bridgeId) };
       });
-    }, refusal);
+    };
 
   /** pause, resume and remove share one shape: a versioned call on the bridge. */
   const state = (rpc: 'pause_bridge' | 'resume_bridge' | 'remove_bridge') => async (ctx: RequestContext) => {
@@ -614,9 +616,9 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         return { items: out.items.map(item => ({ ...item, ...handoverOf(item) })) };
       });
     },
-    'bridges.handover.decline': handoverClose('decline_bridge_handover',
+    'bridges.handover.decline': requireHumanSession(handoverClose('decline_bridge_handover'),
       'bridges.handover.decline is for a human: the receiving number\'s owner'),
-    'bridges.handover.withdraw': handoverClose('withdraw_bridge_handover',
+    'bridges.handover.withdraw': requireHumanSession(handoverClose('withdraw_bridge_handover'),
       'bridges.handover.withdraw is for a human: who offered it, the connection\'s owner or a space admin'),
     'bridges.listen': async ctx => {
       const input = BridgeListenInputSchema.parse(ctx.body);

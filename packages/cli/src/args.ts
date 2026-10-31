@@ -147,6 +147,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'dispatch', 'enabled', 'disabled', 'clear-tool', 'clear-inputs', // tm8 loop create|edit|list
   'post', 'interactive', 'one-shot', 'clear-targets', // tm8 loop create|edit (Bridges L)
   'include-ended',       // tm8 bridge list
+  'allow-groups',        // tm8 bridge import-config — B1c imports the self chat only unless set
   'no-wait',             // tm8 bridge connection begin — return once the runtime is asked
   'archived', 'restore', // tm8 label list --archived / label update --restore (410)
   'linked',              // tm8 bridge people (Bridges P, 420)

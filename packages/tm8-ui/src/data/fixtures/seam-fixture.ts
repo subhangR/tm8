@@ -6367,10 +6367,38 @@ export function createFixtureSeam(): FixtureSeam {
   ]);
   seam.commands.loopForm = loopFormSourcesOf(seam);
   // Seeded from the fixture bridge entities, so Settings → Bridges and the bridge panel agree with the entity rows.
-  seam.commands.bridges = bridgesPortFromSeam(
-    createFixtureBridgesClient([...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? [])),
-    seam,
-    catalogServes,
+  const fixtureBridges = createFixtureBridgesClient(
+    [...summaries.values()].flatMap((row) => fixtureBridgeViewOf(row) ?? []),
+    (id) => summaries.get(id as EntityId),
+    (view) => {
+      /* A created bridge is an entity, as on a server: list it beside the seeded ones. */
+      const template = [...summaries.values()].find((row) => row.kind === 'bridge');
+      if (!template) return;
+      const { id, spaceId: _space, version, title, createdAt, updatedAt, recentPosters: _p, ...facts } = view as typeof view & { recentPosters?: unknown };
+      summaries.set(id as EntityId, {
+        ...clone(template), id: id as EntityId, version, title, createdAt, updatedAt, activityAt: updatedAt,
+        state: { kind: 'bridge', ...facts } as EntitySummary['state'],
+      });
+    },
+    (event) => {
+      /* A hand-over raises one attention item on the bridge, assigned to the receiver, and settling it clears it (411). */
+      const s = summaries.get(event.handover.bridgeId as EntityId);
+      if (!s) return;
+      const at = tick();
+      if (event.type === 'offered') {
+        attentionRows.push({
+          id: `att-handover-${event.handover.id}`, spaceId: s.spaceId, entityId: s.id, reason: event.reason,
+          points: 50, status: 'open', version: 1, requestedBy: clone(viewerActor), acknowledgedBy: null, resolvedBy: null,
+          resolutionNote: null, createdAt: at, updatedAt: at, acknowledgedAt: null, resolvedAt: null,
+          level: 'normal', actionType: 'decide', assigneeId: viewerActor.id,
+        });
+      } else {
+        const row = attentionRows.find((r) => r.id === `att-handover-${event.handover.id}`);
+        if (row) Object.assign(row, { status: 'cleared', version: row.version + 1, updatedAt: at, resolvedAt: at });
+      }
+      recomputeAttentionBadge(s);
+    },
   );
+  seam.commands.bridges = bridgesPortFromSeam(fixtureBridges, seam, catalogServes, fixtureBridges.onConnectionAuth);
   return seam;
 }

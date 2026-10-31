@@ -705,7 +705,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   seam.commands.tools = createToolPort(http, seam);
   seam.commands.loops = createLoopsClient(http);
   seam.commands.bridges = {
-    ...bridgesPortFromSeam(createBridgesClient(http), seam, catalogServes),
+    ...bridgesPortFromSeam(
+      createBridgesClient(http), seam, catalogServes, (cb) => connection.onBridgeConnectionAuth(cb),
+    ),
     people: createBridgePeoplePort(http),
     createInvite: (spaceId, input) => seam.commands.createInvite(spaceId, input),
   };
