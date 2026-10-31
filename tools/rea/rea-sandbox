@@ -14,10 +14,15 @@ read-only from <lab>/engines; licensed engines only once their slot is READY.
   rea-sandbox doctor [provider]    `rea doctor --json` with this session's engines
   rea-sandbox engines              every engine slot: missing / present / ready
   rea-sandbox intake <src>...      copy files, dirs or https URLs into the case
-  rea-sandbox scope                role, families, tools, engines, case, limits
+  rea-sandbox scope                role, families, tools, engines, case and its targets, limits
   rea-sandbox jeb <target>         start JEB's MCP server in this session's container
   rea-sandbox setup <slot>         install the owner's IDA, JEB or Hopper, then smoke-test it
   rea-sandbox ps                   running sandbox containers
+
+Options go before the subcommand: rea-sandbox --case <case> --profile exec call ...
+Exit status: 0 ok; 1 REA answered with an error; 2 bad input, an unknown tool, a refused
+--role, or REA unreachable; 3 the tool is outside this role or profile (the message names
+who has it, and no warm REA starts).
 
 Scope comes from TM8_TEAM_MEMBER_ID (config "members" -> role), the case from
 TM8_TASK_IDS (first id) or TM8_SESSION_ID. REA 6.8.0 cannot filter tool families
@@ -305,18 +310,39 @@ def kill_on_signal(name):
 # ---------------------------------------------------------------- mcp
 
 
+def owners(cfg, name):
+    """Titles of the specialist roles that may call REA tool `name` (not 'all', not the Verifier)."""
+    t = cfg["_catalog"]["tools"].get(name)
+    if not t:
+        return []
+    effects = set(t.get("effects") or [])
+    return [r["title"] for key, r in cfg["roles"].items()
+            if key not in ("all", "verifier") and t["family"] in r["families"]
+            and not effects & set(r.get("exclude_effects", []))]
+
+
 def refusal(req_id, name, s):
+    t = s.cfg["_catalog"]["tools"].get(name)
     if name in s.role_tools:  # it runs the target, and this sandbox may hold a licence
         text = (
             f"REA tool {name!r} runs the target, so it runs only in the exec profile: use "
             "`rea-sandbox --profile exec call ...` (a separate sandbox with an executable /exec and "
             "no Ghidra or licensed engines), and keep every call of that debug or capture session on it."
         )
-    else:
+    elif t and t["family"] in s.role["families"]:
+        hit = sorted(set(t.get("effects") or []) & set(s.role.get("exclude_effects", [])))
         text = (
-            f"REA tool {name!r} is outside this session's scope (role {s.role_name}: "
-            f"{', '.join(s.role['families'])}). Ask the RE Lead Investigator to route it to the "
-            "specialist that owns it, or run it from a session with that role."
+            f"REA tool {name!r} is excluded for role {s.role_name}: its effects include "
+            f"{', '.join(hit)}, which this role never runs."
+        )
+    else:
+        who = owners(s.cfg, name)
+        route = (f"{' or '.join(who)} has it: hand the question to them" if who
+                 else "No RE specialist has it (only the 'all' role, for humans)")
+        text = (
+            f"REA tool {name!r} (family {t['family'] if t else 'unknown'}) is outside this session's "
+            f"scope (role {s.role_name}: {', '.join(s.role['families'])}). {route}, or ask the "
+            "RE Lead Investigator to route it."
         )
     return {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": text}], "isError": True}}
 
@@ -645,6 +671,10 @@ def daemon_request(s, req, start=True, path=None):
 
 
 def cmd_call(s, args):
+    if args.tool not in s.cfg["_catalog"]["tools"]:
+        print(f"REA has no tool {args.tool!r}: `rea-sandbox tools` lists the ones this role may call.",
+              file=sys.stderr)
+        return 2
     if args.tool not in s.tools:
         print(refusal(None, args.tool, s)["result"]["content"][0]["text"], file=sys.stderr)
         s.ensure_case()
@@ -686,20 +716,31 @@ def cmd_call(s, args):
 
 
 def cmd_tools(s, args):
+    # A named tool outside this role is refused as `call` refuses it (exit 3, naming who has
+    # it), before any warm REA starts.
+    catalog = s.cfg["_catalog"]["tools"]
+    outside = [n for n in args.names if n not in s.role_tools]
+    for name in outside:
+        print(refusal(None, name, s)["result"]["content"][0]["text"] if name in catalog
+              else f"REA has no tool {name!r}: `rea-sandbox tools` lists the ones this role may call.",
+              file=sys.stderr)
+    status = (2 if any(n not in catalog for n in outside) else 3) if outside else 0
+    if args.names and len(outside) == len(args.names):
+        return status
     resp = daemon_request(s, {"op": "tools"})
     if "error" in resp:
         print(json.dumps(resp["error"]), file=sys.stderr)
         return 2
     tools = resp["result"]["tools"]
     if args.names:
-        missing = sorted(set(args.names) - {t["name"] for t in tools})
+        unlisted = sorted(set(args.names) - set(outside) - {t["name"] for t in tools})
         for t in tools:
             if t["name"] in args.names:
                 print(json.dumps({"name": t["name"], "description": t.get("description"),
                                   "inputSchema": t.get("inputSchema")}, indent=1))
-        if missing:
-            note(f"not available to role {s.role_name}: {', '.join(missing)}")
-        return 1 if missing else 0
+        if unlisted:  # in this role's catalog, but this REA did not list it
+            note(f"REA did not list {', '.join(unlisted)}")
+        return status or (1 if unlisted else 0)
     for t in tools:
         first = (t.get("description") or "").strip().split(". ")[0].replace("\n", " ")
         mark = "exec" if t["name"] in s.foreign else ""
@@ -949,6 +990,17 @@ def intake_one(src, dest_root, name, cap):
 # ---------------------------------------------------------------- scope / jeb / ps
 
 
+def intake_records(s):
+    """The case's intake log: each target's sandbox path, sha256 and gate note."""
+    recs = []
+    with contextlib.suppress(OSError):
+        for line in (s.case / "work" / "intake.jsonl").read_text().splitlines():
+            with contextlib.suppress(ValueError):
+                r = json.loads(line)
+                recs.append({k: r.get(k) for k in ("target", "sha256", "bytes", "note", "ts")})
+    return recs
+
+
 def cmd_scope(s, args):
     info = {
         "role": s.role_name, "title": s.role.get("title"), "member": s.member or None,
@@ -956,7 +1008,9 @@ def cmd_scope(s, args):
         "profile": s.profile, "tools": len(s.tools), "role_tools": len(s.role_tools),
         "runs_target": sorted(s.foreign), "engines": s.engines,
         "engines_not_ready": [e for e in s.role.get("engines", []) if e not in s.engines],
-        "case": str(s.case), "limits": s.limits(), "config": s.cfg["_path"],
+        "case_id": s.case_id, "case": str(s.case),
+        "targets": intake_records(s),  # empty: nothing taken in, so ask the Lead before opening anything
+        "limits": s.limits(), "config": s.cfg["_path"],
     }
     if args.tools:
         info["tool_names"] = s.tools

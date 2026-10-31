@@ -1,0 +1,1 @@
+Read the tm8 skills **re-lab-rules**, then **reverse-engineer-anything** (REA's own skill), with `tm8 skill show <skill-id> 2>/dev/null | jq -r .content.content` and the ids your context index lists. They are tm8 space skills, so the harness's Skill tool doesn't have them. The rules win wherever the two differ.
