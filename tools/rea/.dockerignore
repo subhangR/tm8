@@ -1,0 +1,3 @@
+# The image needs only bin/ from here; nothing else, and never a licence, enters the build context.
+*
+!bin/

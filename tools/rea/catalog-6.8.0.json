@@ -1,0 +1,2310 @@
+{
+ "rea_version": "6.8.0",
+ "generated_from": "rea-agents 6.8.0 dist/mcp-catalog.json (annotations) + morluto/rea main@23de10bb src/server/createServer.ts registerToolFamilies (families); 6.8.0 has no REA_MCP_TOOL_FAMILIES, so rea-sandbox filters by this map; effects from main@23de10bb src/contracts/toolEffects.ts",
+ "tools": {
+  "inspect_analysis_settings": {
+   "family": "application",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "update_analysis_settings": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_desktop_application": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_model_artifact": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_gpu_code_objects": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "annotate_native_function": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_native_load_image": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_native_data_type": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_native_instruction": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "resolve_native_call_targets": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "address_name": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "comment": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "current_address": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "current_procedure": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "current_document": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "goto_address": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "changesUiState",
+    "mutatesSession"
+   ]
+  },
+  "inline_comment": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_bookmarks": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_documents": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_names": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_procedures": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_segments": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_strings": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "next_address": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "prev_address": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_address": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_assembly": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_callees": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_callers": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_info": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "read_function_instructions": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "search_bytes": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "read_bytes": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "address_to_file_offset": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_references": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "procedure_pseudo_code": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "resolve_containing_procedure": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "search_procedures": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "search_strings": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "set_address_name": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "set_addresses_names": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "set_bookmark": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "set_comment": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "set_inline_comment": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "unset_bookmark": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "xrefs": {
+   "family": "direct",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "trace_native_values": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_native_dispatch_metadata": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "get_objc_classes": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "get_objc_protocols": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "batch_decompile": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "decompile_all": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "get_call_graph": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "analyze_swift_types": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "find_xrefs_to_name": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "binary_overview": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "analyze_function": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_native_api": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "trace_feature": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "trace_call_path": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "trace_native_ui_action": {
+   "family": "enhanced",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "observe_native_ui": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "capture_native_ui_scenario": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "observe_native_calls": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_macho": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_signature": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": null
+  },
+  "inspect_plist": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_architectures": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "demangle_swift": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_artifact": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "extract_artifact": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "decode_interface_builder": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_keyed_archive": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_asset_catalog": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "trace_dylib_resolution": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_managed_artifact": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_managed_members": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_managed_native_boundaries": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_managed_members": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "verify_managed_native_boundaries": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "import_managed_reconstruction": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "project_managed_application_graph": {
+   "family": "managed",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_with_objdump": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "execute_rizin_command": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "list_frida_devices": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess"
+   ]
+  },
+  "list_frida_processes": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess"
+   ]
+  },
+  "start_frida_session": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "load_frida_script": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "resume_frida_session": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "unload_frida_script": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "frida_session_status": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "close_frida_session": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "instrument_with_frida": {
+   "family": "frida",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "list_cutter_sessions": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork"
+   ]
+  },
+  "cutter_command": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "start_gdb_session": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "gdb_console": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "gdb_session_status": {
+   "family": "native",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "close_gdb_session": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "start_rizin_debug_session": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "rizin_debug_command": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "rizin_debug_session_status": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "close_rizin_debug_session": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "inspect_packet_capture": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_packet_fields": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "decode_signal_recording": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_signal_decoders": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_android_package": {
+   "family": "android",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "search_android_classes": {
+   "family": "android",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_android_class": {
+   "family": "android",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_android_method": {
+   "family": "android",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "trace_android_references": {
+   "family": "android",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_jeb_client": {
+   "family": "jeb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "open_jeb_project": {
+   "family": "jeb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "list_jeb_units": {
+   "family": "jeb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "decompile_jeb_item": {
+   "family": "jeb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "inspect_byte_entropy": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_binary_layout": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_analysis_view": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_pe_resources": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_native_exports": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_devicetree": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_elf_notes": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_apple_ips": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_kernel_module": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_pe_load_config": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_pe_certificates": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_pe_imports": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_go_binary": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_il2cpp_metadata": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_rust_binary": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_python_pyc": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_erlang_beam": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_wasm_interfaces": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_wasm_artifact": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_apk_signature": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_evm_interface": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_sqlite_database": {
+   "family": "artifact",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_recorded_crash": {
+   "family": "native",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_firmware_regions": {
+   "family": "firmware",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "extract_firmware": {
+   "family": "firmware",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "trace_web_module_imports": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "trace_web_source_location": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "observe_web_execution": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "inspect_web_event_listeners": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "inspect_web_network_capture": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "recover_javascript_sources": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_adb_client": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_adb_devices": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_adb_device": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_adb_packages": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "pull_adb_package": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "read_adb_logcat": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_adb_package": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "pull_adb_file": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "push_adb_file": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "capture_adb_screen": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "list_adb_processes": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_adb_directory": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_adb_features": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "list_adb_services": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_adb_display": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "inspect_adb_window": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "read_adb_setting": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "collect_adb_bugreport": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "resolve_adb_packages": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "install_adb_package": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "uninstall_adb_package": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "start_adb_app": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "start_adb_activity": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "stop_adb_app": {
+   "family": "adb",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "launchesProcess",
+    "mutatesDevice",
+    "mutatesSession",
+    "mutatesTarget"
+   ]
+  },
+  "inspect_pcap_client": {
+   "family": "pcap",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_pcap_capture": {
+   "family": "pcap",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "identify_flutter_build": {
+   "family": "flutter",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_dart_aot": {
+   "family": "flutter",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_apktool_client": {
+   "family": "apktool",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "decode_android_resources": {
+   "family": "apktool",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "export_web_scripts": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "list_browser_targets": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "inspect_web_page": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "analyze_web_bundle": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "writesFilesystem"
+   ]
+  },
+  "observe_web_session": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "discover_webmcp_tools": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "compare_web_captures": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "capture_web_screenshot": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "compare_web_screenshots": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "capture_browser_scenario": {
+   "family": "browser",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "inspect_electron_fuses": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_electron_targets": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "inspect_electron_page": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "analyze_javascript_application": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "reconcile_javascript_runtime": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "capture_electron_scenario": {
+   "family": "electron",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "changesUiState",
+    "executesForeignCode",
+    "launchesProcess",
+    "mayDiscardData",
+    "mutatesSession",
+    "mutatesTarget",
+    "writesFilesystem"
+   ]
+  },
+  "list_javascript_runtime_targets": {
+   "family": "javascript-runtime",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "observe_javascript_runtime": {
+   "family": "javascript-runtime",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "mutatesSession"
+   ]
+  },
+  "trace_application_feature": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "trace_javascript_semantics": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_application_versions": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_source_to_bundle": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_javascript_export_shapes": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "build_reconstruction_obligation_ledger": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "evaluate_reconstruction_coverage": {
+   "family": "application",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "export_environment_bundle": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "writesFilesystem"
+   ]
+  },
+  "project_android_application_graph": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "project_apple_application_graph": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "project_harmony_application_graph": {
+   "family": "application",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "open_bundle_resources": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "open_binary": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess",
+    "mutatesSession"
+   ]
+  },
+  "close_binary": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "binary_session": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": true,
+   "effects": [
+    "launchesProcess"
+   ]
+  },
+  "export_evidence_bundle": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": false,
+   "effects": [
+    "mayDiscardData",
+    "writesFilesystem"
+   ]
+  },
+  "import_evidence_bundle": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "get_evidence_bundle": {
+   "family": "session",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "capture_process_scenario": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": true,
+   "openWorld": true,
+   "effects": [
+    "accessesNetwork",
+    "executesForeignCode",
+    "launchesProcess",
+    "mutatesSession",
+    "writesFilesystem"
+   ]
+  },
+  "compare_process_captures": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_artifacts": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_functions": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "match_native_functions": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "compare_bundles": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "find_changed_behavior": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "build_call_path": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "correlate_static_and_runtime": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "verify_reconstruction": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "list_unknowns": {
+   "family": "session",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "record_unknown": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "update_unknown": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "verify_unknown_resolution": {
+   "family": "session",
+   "readOnly": true,
+   "destructive": false,
+   "openWorld": false,
+   "effects": []
+  },
+  "get_navigation_context": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  },
+  "inspect_address_context": {
+   "family": "session",
+   "readOnly": false,
+   "destructive": false,
+   "openWorld": false,
+   "effects": [
+    "mutatesSession"
+   ]
+  }
+ }
+}

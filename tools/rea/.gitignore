@@ -1,0 +1,13 @@
+# Licensed-engine material belongs in <lab>/engines/<slot>/drop on the host, never in git.
+# members.json maps this space's team members to roles; it sits beside the config, per host.
+members.json
+drop/
+install/
+home/
+*.hexlic
+*.lic
+*.key
+*.run
+*.deb
+*.zip
+ida.reg

@@ -1,0 +1,3 @@
+#!/bin/sh
+# REA_APKTOOL_COMMAND: apktool from the read-only engine mount.
+exec "$JAVA_HOME/bin/java" -Xmx1536m -jar /engines/apktool/apktool_3.0.3.jar "$@"

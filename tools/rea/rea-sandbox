@@ -1,0 +1,1108 @@
+#!/usr/bin/env -S python3 -I
+"""rea-sandbox: run REA (rea-agents) for tm8 inside gVisor, scoped per teammate.
+
+Every REA process runs in a fresh container: gVisor (runsc), no network, read-only
+root, all capabilities dropped, capped CPU / memory / pids, the case's targets
+read-only and only the case's out/ and work/ writable. Engines are mounted
+read-only from <lab>/engines; licensed engines only once their slot is READY.
+
+  rea-sandbox call <tool> [json]   one REA MCP tool call in this session's warm REA
+  rea-sandbox tools [<tool>...]    the tools this role may call; with names, their schemas
+  rea-sandbox stop                 end this session's warm REAs now (with --case, only that case's)
+  rea-sandbox mcp                  stdio MCP server for an MCP client
+  rea-sandbox run -- <rea args>    one REA CLI command; prints REA's output
+  rea-sandbox doctor [provider]    `rea doctor --json` with this session's engines
+  rea-sandbox engines              every engine slot: missing / present / ready
+  rea-sandbox intake <src>...      copy files, dirs or https URLs into the case
+  rea-sandbox scope                role, families, tools, engines, case and its targets, limits
+  rea-sandbox jeb <target>         start JEB's MCP server in this session's container
+  rea-sandbox setup <slot>         install the owner's IDA, JEB or Hopper, then smoke-test it
+  rea-sandbox ps                   running sandbox containers
+
+Options go before the subcommand: rea-sandbox --case <case> --profile exec call ...
+Exit status: 0 ok; 1 REA answered with an error; 2 bad input, an unknown tool, a refused
+--role, or REA unreachable; 3 the tool is outside this role or profile (the message names
+who has it, and no warm REA starts).
+
+Scope comes from TM8_TEAM_MEMBER_ID (config "members" -> role), the case from
+TM8_TASK_IDS (first id) or TM8_SESSION_ID. REA 6.8.0 cannot filter tool families
+itself, so `mcp` and `call` filter tools/list and refuse out-of-scope tools/call here.
+Roles route work between teammates; they are not a security boundary (every session
+runs as the same host user). The boundary is the sandbox around REA and its targets.
+
+Profiles keep licences away from target code. `static` (the default) mounts every
+ready engine, including the owner's licensed IDA, Hopper and JEB, and refuses tools
+that run the target. `exec` is for running it (process capture, GDB, Rizin debug,
+browser): no licensed or heavy engines, plus an executable tmpfs at /exec (install a
+target there first; /tmp is noexec). `run` passes REA's CLI through unfiltered, so it
+never mounts a licensed engine.
+"""
+
+import argparse
+import collections
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.parse
+import urllib.request
+import uuid
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+CASE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+# The image's PATH (tools/rea/Dockerfile); engines may append to it, never prepend.
+IMAGE_PATH = "/opt/rea/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def die(msg, code=2):
+    print(f"rea-sandbox: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def note(msg):
+    print(f"rea-sandbox: {msg}", file=sys.stderr, flush=True)
+
+
+def load_config():
+    explicit = os.environ.get("REA_SANDBOX_CONFIG")
+    for p in [Path(explicit)] if explicit else [Path("/home/tm8/rea-lab/etc/rea-sandbox.json"), HERE / "rea-sandbox.json"]:
+        if p.is_file():
+            cfg = json.loads(p.read_text())
+            cfg["_path"] = str(p)
+            cat = Path(cfg["catalog"])
+            cfg["_catalog"] = json.loads((cat if cat.is_absolute() else p.parent / cat).read_text())
+            # Which teammate gets which role is per space, so it lives beside the
+            # installed config (written in Phase 2), never in the repo.
+            members = p.parent / cfg.get("members_file", "members.json")
+            if members.is_file():
+                cfg.setdefault("members", {}).update(json.loads(members.read_text()))
+            return cfg
+    die("no config: set REA_SANDBOX_CONFIG or install rea-sandbox.json")
+
+
+class Session:
+    """What this invocation resolves to: role, tools, engines, case, limits."""
+
+    def __init__(self, cfg, role=None, case=None, profile="static"):
+        self.cfg = cfg
+        self.lab = Path(cfg["lab"])
+        self.member = os.environ.get("TM8_TEAM_MEMBER_ID", "").strip()
+        self.session = os.environ.get("TM8_SESSION_ID", "").strip()
+        tasks = [t for t in re.split(r"[,\s]+", os.environ.get("TM8_TASK_IDS", "")) if t]
+        self.tasks = [t for t in tasks if ID_RE.match(t)]
+        mapped = cfg.get("members", {}).get(self.member) if self.member else None
+        if role and mapped and role != mapped:
+            die(f"this teammate's role is {mapped!r} (members.json); --role {role} is refused")
+        if role:
+            self.role_name = role
+        elif mapped:
+            self.role_name = mapped
+        else:
+            self.role_name = cfg.get("default_role", "lead")
+        if self.role_name not in cfg["roles"]:
+            die(f"unknown role {self.role_name!r}; roles: {', '.join(cfg['roles'])}")
+        self.role = cfg["roles"][self.role_name]
+        families = set(self.role["families"])
+        excluded = set(self.role.get("exclude_effects", []))
+        catalog = cfg["_catalog"]["tools"]
+        self.role_tools = sorted(
+            name
+            for name, t in catalog.items()
+            if t["family"] in families and not (excluded & set(t.get("effects") or []))
+        )
+        self.foreign = {n for n in self.role_tools if "executesForeignCode" in (catalog[n].get("effects") or [])}
+        self.case_id = self._case_id(case)
+        self.case = self.lab / "cases" / self.case_id
+        ready = [e for e in self.role.get("engines", []) if self.engine_state(e) == "ready"]
+        engines = cfg["engines"]
+        self.profile = profile
+        if profile == "static":  # licences mount only where no tool runs the target
+            self.tools = [n for n in self.role_tools if n not in self.foreign]
+            self.engines = ready
+        elif profile == "exec":
+            self.tools = list(self.role_tools)
+            self.engines = [e for e in ready if not engines[e].get("licensed") and not engines[e].get("heavy")]
+        elif profile == "cli":  # REA's CLI has no per-command filter
+            self.tools = list(self.role_tools)
+            self.engines = [e for e in ready if not engines[e].get("licensed")]
+        else:
+            die(f"unknown profile {profile!r}")
+        self.exec_tmpfs = profile != "static" and bool(self.foreign)
+        self.setup_engine = None  # `rea-sandbox setup` mounts this one slot read-write
+
+    def _case_id(self, case):
+        if case:
+            if not CASE_RE.match(case):
+                die(f"bad case name {case!r}")
+            return case
+        if self.tasks:
+            return self.tasks[0]
+        if ID_RE.match(self.session):
+            return f"session-{self.session}"
+        return "adhoc"
+
+    def engine_dir(self, name):
+        return self.lab / "engines" / self.cfg["engines"][name]["dir"]
+
+    def engine_state(self, name):
+        spec = self.cfg["engines"].get(name)
+        if spec is None:
+            return "unknown"
+        if spec.get("unsupported"):
+            return "unsupported"
+        d = self.engine_dir(name)
+        if (d / spec["check"]).exists():
+            return "ready"
+        if "owner_dirs" in spec:  # a licensed slot: its scaffolding (README, setup, bridge) is not the engine
+            owned = [d / o for o in spec["owner_dirs"]]
+            return "present" if any(o.is_dir() and any(o.iterdir()) for o in owned) else "missing"
+        if not d.is_dir() or not any(p.name != "README.md" for p in d.iterdir()):
+            return "missing"
+        return "present"
+
+    def ensure_case(self):
+        for sub in ("targets", "out", "work"):
+            (self.case / sub).mkdir(parents=True, exist_ok=True)
+
+    def heavy(self):
+        return any(self.cfg["engines"][e].get("heavy") for e in self.engines)
+
+    def limits(self):
+        return self.cfg["limits"]["heavy" if self.heavy() else "default"]
+
+
+@contextlib.contextmanager
+def ghidra_slot(s):
+    """Hold one of N Ghidra slots for the container's life; without one, run without Ghidra."""
+    if "ghidra" not in s.engines:
+        yield
+        return
+    slots = s.lab / "run" / "ghidra-slots"
+    slots.mkdir(parents=True, exist_ok=True)
+    held = None
+    for i in range(int(s.cfg.get("ghidra_slots", 2))):
+        f = open(slots / f"slot-{i}.lock", "a+")
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps({"pid": os.getpid(), "case": s.case_id, "member": s.member, "since": time.time()}))
+            f.flush()
+            held = f
+            break
+        except BlockingIOError:
+            f.close()
+    if held is None:
+        note(f"all {s.cfg.get('ghidra_slots', 2)} Ghidra slots are busy; this container runs without Ghidra (Kuna/Rizin still work)")
+        s.engines = [e for e in s.engines if e != "ghidra"]
+    try:
+        yield
+    finally:
+        if held is not None:
+            held.close()
+
+
+def container_env(s):
+    env = dict(s.cfg.get("env", {}))
+    env.update({
+        "HOME": "/home/rea",
+        "XDG_CACHE_HOME": "/case/work/.cache",
+        "XDG_CONFIG_HOME": "/home/rea/.config",
+        "TM8_REA_ROLE": s.role_name,
+        "TM8_REA_CASE": s.case_id,
+    })
+    extra_path = []
+    for e in s.engines:
+        spec = s.cfg["engines"][e]
+        path = f"/engines/{spec['dir']}"
+        for k, v in spec.get("env", {}).items():
+            env[k] = v.replace("{path}", path)
+        extra_path += [d.replace("{path}", path) for d in spec.get("path_append", [])]
+        slot_env = s.engine_dir(e) / "slot-env.json"
+        if spec.get("licensed") and slot_env.is_file():
+            for k, v in json.loads(slot_env.read_text()).items():
+                if re.match(r"^[A-Z][A-Z0-9_]*$", k):
+                    env[k] = str(v).replace("{path}", path)
+    if extra_path:
+        env["PATH"] = ":".join([env.get("PATH", IMAGE_PATH)] + extra_path)
+    # With Ghidra and Kuna both mounted REA's automatic choice is "ambiguous" and the
+    # agent loses a turn; preset the role's first mounted preference. An explicit
+    # provider_id / --provider still wins.
+    for provider in s.role.get("analysis_provider", []):
+        if provider in s.engines:
+            env["REA_ANALYSIS_PROVIDER"] = provider
+            break
+    return env
+
+
+def docker_argv(s, rea_args, interactive, name, extra_env=None, entrypoint=None, tty=False):
+    lim = s.limits()
+    uid, gid = s.cfg.get("run_uid", 110), s.cfg.get("run_gid", 114)
+    argv = [
+        "docker", "run", "--rm", "--name", name,
+        "--runtime", s.cfg.get("runtime", "runsc"),
+        "--network", "none",
+        "--read-only",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "--cpus", str(lim["cpus"]),
+        "--memory", lim["memory"], "--memory-swap", lim["memory"],
+        "--pids-limit", str(lim["pids"]),
+        "--tmpfs", f"/tmp:rw,nosuid,nodev,size={lim['tmp']}",
+        "--tmpfs", f"/home/rea:rw,nosuid,nodev,size=512m,uid={uid},gid={gid},mode=0700",
+        *(["--tmpfs", f"/exec:rw,exec,nosuid,nodev,size={lim['tmp']},uid={uid},gid={gid},mode=0700"] if s.exec_tmpfs else []),
+        "-v", f"{s.case}/targets:/case/targets:ro",
+        "-v", f"{s.case}/out:/case/out:rw",
+        "-v", f"{s.case}/work:/case/work:rw",
+        # A fixed host identity: a licensed engine that fingerprints the machine sees the same
+        # one in every container (Docker's default hostname is the container id).
+        "--hostname", "rea-lab",
+        *(["-v", f"{s.lab}/etc/machine-id:/etc/machine-id:ro"] if (s.lab / "etc" / "machine-id").is_file() else []),
+        "--label", "tm8.rea=1",
+        "--label", f"tm8.rea.role={s.role_name}",
+        "--label", f"tm8.rea.profile={s.profile}",
+        "--label", f"tm8.rea.case={s.case_id}",
+        "--label", f"tm8.rea.member={s.member or '-'}",
+        "--label", f"tm8.rea.session={s.session or '-'}",
+    ]
+    if interactive:
+        argv.insert(2, "-i")
+    if tty:
+        argv.insert(2, "-t")
+    for e in s.engines:
+        d = s.cfg["engines"][e]["dir"]
+        mode = "rw" if e == s.setup_engine else "ro"
+        argv += ["-v", f"{s.engine_dir(e)}:/engines/{d}:{mode}"]
+    env = container_env(s)
+    env.update(extra_env or {})
+    for k, v in sorted(env.items()):
+        argv += ["-e", f"{k}={v}"]
+    if entrypoint:
+        argv += ["--entrypoint", entrypoint]
+    return argv + [s.cfg["image"]] + list(rea_args)
+
+
+def container_name(s, mode):
+    tag = re.sub(r"[^a-z0-9]", "", (s.session or s.case_id).lower())[:12] or "x"
+    return f"rea-{mode}-{tag}-{uuid.uuid4().hex[:6]}"
+
+
+def kill_on_signal(name):
+    def handler(signum, _frame):
+        subprocess.run(["docker", "kill", name], capture_output=True)
+        sys.exit(128 + signum)
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, handler)
+
+
+# ---------------------------------------------------------------- mcp
+
+
+def owners(cfg, name):
+    """Titles of the specialist roles that may call REA tool `name` (not 'all', not the Verifier)."""
+    t = cfg["_catalog"]["tools"].get(name)
+    if not t:
+        return []
+    effects = set(t.get("effects") or [])
+    return [r["title"] for key, r in cfg["roles"].items()
+            if key not in ("all", "verifier") and t["family"] in r["families"]
+            and not effects & set(r.get("exclude_effects", []))]
+
+
+def refusal(req_id, name, s):
+    t = s.cfg["_catalog"]["tools"].get(name)
+    if name in s.role_tools:  # it runs the target, and this sandbox may hold a licence
+        text = (
+            f"REA tool {name!r} runs the target, so it runs only in the exec profile: use "
+            "`rea-sandbox --profile exec call ...` (a separate sandbox with an executable /exec and "
+            "no Ghidra or licensed engines), and keep every call of that debug or capture session on it."
+        )
+    elif t and t["family"] in s.role["families"]:
+        hit = sorted(set(t.get("effects") or []) & set(s.role.get("exclude_effects", [])))
+        text = (
+            f"REA tool {name!r} is excluded for role {s.role_name}: its effects include "
+            f"{', '.join(hit)}, which this role never runs."
+        )
+    else:
+        who = owners(s.cfg, name)
+        route = (f"{' or '.join(who)} has it: hand the question to them" if who
+                 else "No RE specialist has it (only the 'all' role, for humans)")
+        text = (
+            f"REA tool {name!r} (family {t['family'] if t else 'unknown'}) is outside this session's "
+            f"scope (role {s.role_name}: {', '.join(s.role['families'])}). {route}, or ask the "
+            "RE Lead Investigator to route it."
+        )
+    return {"jsonrpc": "2.0", "id": req_id, "result": {"content": [{"type": "text", "text": text}], "isError": True}}
+
+
+class McpFilter:
+    """Line-delimited JSON-RPC filter between the MCP client and REA's stdio server."""
+
+    def __init__(self, allowed, session):
+        self.allowed = set(allowed)
+        self.s = session
+        self.pending = set()
+        self.lock = threading.Lock()
+        self.calls = collections.Counter()
+        self.refused = collections.Counter()
+
+    @staticmethod
+    def _key(req_id):
+        return json.dumps(req_id, sort_keys=True)
+
+    def client_message(self, msg):
+        """Returns (forward, reply): forward to REA or answer the client directly."""
+        if not isinstance(msg, dict):
+            return msg, None
+        method = msg.get("method")
+        if method == "tools/list" and "id" in msg:
+            with self.lock:
+                self.pending.add(self._key(msg["id"]))
+        elif method == "tools/call":
+            name = (msg.get("params") or {}).get("name")
+            if name not in self.allowed:
+                self.refused[str(name)] += 1
+                return None, (refusal(msg.get("id"), name, self.s) if "id" in msg else None)
+            self.calls[name] += 1
+        return msg, None
+
+    def server_message(self, msg):
+        """Drops out-of-scope tools from a tools/list result; True when it changed msg."""
+        if not (isinstance(msg, dict) and "id" in msg and isinstance(msg.get("result"), dict)):
+            return False
+        key = self._key(msg["id"])
+        with self.lock:
+            hit = key in self.pending
+            self.pending.discard(key)
+        if hit and isinstance(msg["result"].get("tools"), list):
+            msg["result"]["tools"] = [t for t in msg["result"]["tools"] if t.get("name") in self.allowed]
+            return True
+        return False
+
+
+def encode(msg):
+    return (json.dumps(msg, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
+
+def cmd_mcp(s, _args):
+    s.ensure_case()
+    filt = McpFilter(s.tools, s)
+    with ghidra_slot(s), tempfile.TemporaryDirectory(prefix="rea-sandbox-") as tmp:
+        name = container_name(s, "mcp")
+        cidfile = Path(tmp) / "cid"
+        argv = docker_argv(s, ["mcp"], interactive=True, name=name)
+        argv.insert(2, f"--cidfile={cidfile}")
+        note(f"role={s.role_name} tools={len(s.tools)} engines={','.join(s.engines) or '-'} case={s.case}")
+        t0 = time.monotonic()
+        proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        kill_on_signal(name)
+        watch = PeakWatcher(cidfile)
+        out = sys.stdout.buffer
+        out_lock = threading.Lock()
+
+        def to_client(data):
+            with out_lock:
+                out.write(data)
+                out.flush()
+
+        def pump_client():
+            try:
+                for line in sys.stdin.buffer:
+                    try:
+                        msg = json.loads(line)
+                    except ValueError:
+                        proc.stdin.write(line)
+                        proc.stdin.flush()
+                        continue
+                    if isinstance(msg, list):
+                        fwd, replies = [], []
+                        for m in msg:
+                            f, r = filt.client_message(m)
+                            if f is not None:
+                                fwd.append(f)
+                            if r is not None:
+                                replies.append(r)
+                        if replies:
+                            to_client(encode(replies))
+                        if fwd:
+                            proc.stdin.write(encode(fwd))
+                            proc.stdin.flush()
+                        continue
+                    fwd, reply = filt.client_message(msg)
+                    if reply is not None:
+                        to_client(encode(reply))
+                    if fwd is not None:
+                        proc.stdin.write(line if fwd is msg else encode(fwd))
+                        proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
+            finally:
+                with contextlib.suppress(OSError):
+                    proc.stdin.close()
+
+        threading.Thread(target=pump_client, daemon=True).start()
+        rc = None
+        try:
+            for line in proc.stdout:
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    to_client(line)
+                    continue
+                changed = [filt.server_message(m) for m in msg] if isinstance(msg, list) else [filt.server_message(msg)]
+                to_client(encode(msg) if any(changed) else line)
+            rc = proc.wait()
+        except SystemExit as e:  # kill_on_signal: the container is already killed
+            rc = e.code
+            raise
+        finally:
+            watch.stop()
+            record_use(s, "mcp", rc if rc is not None else proc.poll(), time.monotonic() - t0, watch.peak,
+                       calls=dict(filt.calls), refused=dict(filt.refused))
+    return rc
+
+
+# ---------------------------------------------------------------- warm session over Bash
+#
+# tm8 lanes run Claude Code with --strict-mcp-config, and tm8's connector bridge
+# gives each request 15 s (packages/server/src/mcp/stdio.ts and transport.ts), so
+# REA's long, stateful analyses cannot reach a lane as an MCP server. `call` reaches
+# them from Bash instead: the first call starts `serve`, one REA MCP container per
+# session and role kept warm behind a unix socket (Ghidra analyses a binary once),
+# and later calls reuse it until it has been idle for mcp_idle_seconds.
+
+
+def daemon_socket(s):
+    # One warm REA per session, role, profile and case: a call for one case must never reach a
+    # warm REA whose /case is another case's folder. The session's own case keeps the plain key.
+    key = f"{s.session or 'case-' + s.case_id}-{s.role_name}-{s.profile}"
+    if s.case_id != s._case_id(None):
+        key += "-" + hashlib.sha256(s.case_id.encode()).hexdigest()[:12]
+    path = s.lab / "run" / "mcp" / f"{key}.sock"
+    if len(str(path)) > 100:  # a unix socket path must stay under 108 bytes
+        path = path.with_name(hashlib.sha256(key.encode()).hexdigest()[:32] + ".sock")
+    return path
+
+
+class McpPipe:
+    """JSON-RPC client over a REA `mcp` container's stdio; requests may overlap."""
+
+    def __init__(self, proc):
+        self.proc, self.lock, self.waiting, self.next_id, self.closed = proc, threading.Lock(), {}, 0, False
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        for line in self.proc.stdout:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            with self.lock:
+                slot = self.waiting.pop(msg.get("id"), None) if isinstance(msg, dict) else None
+            if slot:
+                slot["msg"] = msg
+                slot["done"].set()
+        with self.lock:  # REA is gone: wake every caller still waiting
+            self.closed = True
+            for slot in self.waiting.values():
+                slot["done"].set()
+            self.waiting.clear()
+
+    def request(self, method, params):
+        with self.lock:
+            if self.closed:
+                raise OSError("REA has exited")
+            self.next_id += 1
+            slot = self.waiting[self.next_id] = {"done": threading.Event()}
+            self.proc.stdin.write(encode({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params}))
+            self.proc.stdin.flush()
+        slot["done"].wait()
+        if "msg" not in slot:
+            raise OSError("REA exited before answering")
+        return slot["msg"]
+
+    def notify(self, method):
+        with self.lock:
+            self.proc.stdin.write(encode({"jsonrpc": "2.0", "method": method}))
+            self.proc.stdin.flush()
+
+
+def cmd_serve(s, _args):
+    s.ensure_case()
+    sock_path = daemon_socket(s)
+    sock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    owner = open(sock_path.with_suffix(".lock"), "a+")
+    try:
+        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0  # another serve already owns this session and role
+    owner.seek(0)
+    owner.truncate()
+    owner.write(json.dumps({"pid": os.getpid(), "role": s.role_name, "case": s.case_id, "member": s.member, "since": time.time()}))
+    owner.flush()
+    idle = float(s.cfg.get("mcp_idle_seconds", 1200))
+    filt = McpFilter(s.tools, s)
+    with ghidra_slot(s), tempfile.TemporaryDirectory(prefix="rea-sandbox-") as tmp:
+        name = container_name(s, "serve")
+        cidfile = Path(tmp) / "cid"
+        argv = docker_argv(s, ["mcp"], interactive=True, name=name)
+        argv.insert(2, f"--cidfile={cidfile}")
+        note(f"serve role={s.role_name} profile={s.profile} tools={len(s.tools)} engines={','.join(s.engines) or '-'} case={s.case}")
+        t0 = time.monotonic()
+        proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        kill_on_signal(name)
+        watch = PeakWatcher(cidfile)
+        rea = McpPipe(proc)
+        state = {"busy": 0, "last": time.monotonic(), "stop": False}
+        state_lock = threading.Lock()
+        rc = None
+
+        def answer(conn, tools):
+            with conn, conn.makefile("rwb") as f:
+                with state_lock:
+                    state["busy"] += 1
+                try:
+                    req = json.loads(f.readline() or b"{}")
+                    op = req.get("op")
+                    if op == "tools":
+                        resp = {"result": {"tools": tools}}
+                    elif op == "stop":
+                        state["stop"] = True
+                        resp = {"result": {"stopping": True}}
+                    elif op == "call":
+                        params = {"name": req.get("name"), "arguments": req.get("arguments") or {}}
+                        fwd, refused = filt.client_message({"jsonrpc": "2.0", "id": 0, "method": "tools/call", "params": params})
+                        resp = refused if fwd is None else rea.request("tools/call", params)
+                    else:
+                        resp = {"error": {"message": f"unknown op {op!r}"}}
+                except (OSError, ValueError, AttributeError) as e:
+                    resp = {"error": {"message": str(e)}}
+                finally:
+                    with state_lock:
+                        state["busy"] -= 1
+                        state["last"] = time.monotonic()
+                with contextlib.suppress(OSError):
+                    f.write(encode(resp))
+                    f.flush()
+
+        try:
+            rea.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                       "clientInfo": {"name": "rea-sandbox", "version": "1"}})
+            rea.notify("notifications/initialized")
+            listed = rea.request("tools/list", {}).get("result") or {}
+            tools = [t for t in listed.get("tools", []) if t.get("name") in set(s.role_tools)]
+            sock_path.unlink(missing_ok=True)
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            srv.bind(str(sock_path))
+            sock_path.chmod(0o600)
+            srv.listen(16)
+            srv.settimeout(2)
+            while not state["stop"] and proc.poll() is None:
+                try:
+                    conn, _ = srv.accept()
+                except socket.timeout:
+                    with state_lock:
+                        if state["busy"] == 0 and time.monotonic() - state["last"] > idle:
+                            note(f"idle for {int(idle)} s; stopping")
+                            break
+                    continue
+                threading.Thread(target=answer, args=(conn, tools), daemon=True).start()
+        except SystemExit as e:  # kill_on_signal: the container is already killed
+            rc = e.code
+            raise
+        finally:
+            sock_path.unlink(missing_ok=True)
+            with contextlib.suppress(OSError):
+                proc.stdin.close()
+            try:
+                rc = proc.wait(30) if rc is None else rc
+            except subprocess.TimeoutExpired:
+                subprocess.run(["docker", "kill", name], capture_output=True)
+                rc = proc.wait()
+            watch.stop()
+            record_use(s, "serve", rc, time.monotonic() - t0, watch.peak,
+                       calls=dict(filt.calls), refused=dict(filt.refused))
+    return rc or 0
+
+
+def daemon_request(s, req, start=True, path=None):
+    """Send one request to this session's warm REA for the case, starting it first if needed."""
+    path = path or daemon_socket(s)
+    child, deadline = None, time.monotonic() + float(s.cfg.get("mcp_start_seconds", 300))
+    while True:
+        try:
+            conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            conn.connect(str(path))
+            break
+        except (FileNotFoundError, ConnectionRefusedError):
+            conn.close()
+            if not start:
+                return None
+            if child is None:
+                s.ensure_case()
+                log = open(s.case / "work" / "serve.log", "ab")
+                child = subprocess.Popen(
+                    [sys.executable, "-I", str(Path(__file__).resolve()), "--role", s.role_name, "--case", s.case_id,
+                     "--profile", s.profile, "serve"],
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+                note(f"starting a warm REA for role {s.role_name}, profile {s.profile} (first call only; log {s.case}/work/serve.log)")
+            elif child.poll() not in (None, 0):
+                die(f"the warm REA failed to start (exit {child.returncode}); see {s.case}/work/serve.log", 1)
+            if time.monotonic() > deadline:
+                die(f"the warm REA did not come up; see {s.case}/work/serve.log", 1)
+            time.sleep(0.5)
+    with conn, conn.makefile("rwb") as f:
+        f.write(encode(req))
+        f.flush()
+        line = f.readline()
+    return json.loads(line) if line else {"error": {"message": "the warm REA ended before answering"}}
+
+
+def cmd_call(s, args):
+    if args.tool not in s.cfg["_catalog"]["tools"]:
+        print(f"REA has no tool {args.tool!r}: `rea-sandbox tools` lists the ones this role may call.",
+              file=sys.stderr)
+        return 2
+    if args.tool not in s.tools:
+        print(refusal(None, args.tool, s)["result"]["content"][0]["text"], file=sys.stderr)
+        s.ensure_case()
+        record_use(s, "call", 3, 0, None, echo=False, refused={args.tool: 1})
+        return 3
+    raw = args.arguments
+    if raw == "-":
+        raw = sys.stdin.read()
+    elif raw and raw.startswith("@"):
+        raw = Path(raw[1:]).read_text()
+    try:
+        arguments = json.loads(raw) if raw else {}
+    except ValueError as e:
+        die(f"arguments are not JSON: {e}")
+    if not isinstance(arguments, dict):
+        die("arguments must be a JSON object")
+    resp = daemon_request(s, {"op": "call", "name": args.tool, "arguments": arguments})
+    if "error" in resp:
+        print(json.dumps(resp["error"]), file=sys.stderr)
+        return 2
+    result = resp.get("result") or {}
+    texts = [c.get("text", "") for c in result.get("content", []) if c.get("type") == "text"]
+    body = "\n".join(texts) if texts else json.dumps(result.get("structuredContent"))
+    out = args.out
+    if not out and len(body.encode()) > int(s.cfg.get("call_inline_max_bytes", 100000)):
+        # Keep a huge evidence bundle out of the agent's context; say where it went.
+        calls = s.case / "out" / "calls"
+        calls.mkdir(parents=True, exist_ok=True)
+        out = str(calls / f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{args.tool}-{uuid.uuid4().hex[:6]}.json")
+    if out:
+        Path(out).write_text(body)
+        summary = {"written": out, "bytes": len(body.encode())}
+        with contextlib.suppress(ValueError, AttributeError):
+            summary["evidence_id"] = json.loads(body).get("evidence_id")
+        print(json.dumps(summary))
+    else:
+        print(body)
+    return 1 if result.get("isError") else 0
+
+
+def cmd_tools(s, args):
+    # A named tool outside this role is refused as `call` refuses it (exit 3, naming who has
+    # it), before any warm REA starts.
+    catalog = s.cfg["_catalog"]["tools"]
+    outside = [n for n in args.names if n not in s.role_tools]
+    for name in outside:
+        print(refusal(None, name, s)["result"]["content"][0]["text"] if name in catalog
+              else f"REA has no tool {name!r}: `rea-sandbox tools` lists the ones this role may call.",
+              file=sys.stderr)
+    status = (2 if any(n not in catalog for n in outside) else 3) if outside else 0
+    if args.names and len(outside) == len(args.names):
+        return status
+    resp = daemon_request(s, {"op": "tools"})
+    if "error" in resp:
+        print(json.dumps(resp["error"]), file=sys.stderr)
+        return 2
+    tools = resp["result"]["tools"]
+    if args.names:
+        unlisted = sorted(set(args.names) - set(outside) - {t["name"] for t in tools})
+        for t in tools:
+            if t["name"] in args.names:
+                print(json.dumps({"name": t["name"], "description": t.get("description"),
+                                  "inputSchema": t.get("inputSchema")}, indent=1))
+        if unlisted:  # in this role's catalog, but this REA did not list it
+            note(f"REA did not list {', '.join(unlisted)}")
+        return status or (1 if unlisted else 0)
+    for t in tools:
+        first = (t.get("description") or "").strip().split(". ")[0].replace("\n", " ")
+        mark = "exec" if t["name"] in s.foreign else ""
+        print(f"{t['name']:<44} {mark:<5} {first[:150]}")
+    if s.foreign:
+        note("tools marked exec run the target: call them with --profile exec")
+    return 0
+
+
+def cmd_stop(s, args):
+    # Every warm REA this session owns, whatever its case, role or profile; with --case, only
+    # that case's.
+    mine = daemon_socket(s)
+    paths = {mine}
+    if not args.case and s.session:
+        paths |= set(mine.parent.glob(f"{s.session}-*.sock"))
+    stopped = sum(1 for p in sorted(paths) if daemon_request(s, {"op": "stop"}, start=False, path=p))
+    note(f"stopping {stopped} warm REA(s)" if stopped else "no warm REA is running for this session")
+    return 0
+
+
+# ---------------------------------------------------------------- run / doctor
+
+
+def cgroup_peak(cid):
+    for base in (f"/sys/fs/cgroup/system.slice/docker-{cid}.scope", f"/sys/fs/cgroup/docker/{cid}"):
+        p = Path(base) / "memory.peak"
+        with contextlib.suppress(OSError, ValueError):
+            return int(p.read_text().strip())
+    return None
+
+
+class PeakWatcher:
+    """Polls the container's cgroup memory.peak (gVisor reports it too) until stopped."""
+
+    def __init__(self, cidfile):
+        self.cidfile, self.peak, self.done = cidfile, None, threading.Event()
+        self.thread = threading.Thread(target=self._poll, daemon=True)
+        self.thread.start()
+
+    def _poll(self):
+        cid = None
+        while not self.done.wait(0.25):
+            if cid is None and self.cidfile.exists():
+                cid = self.cidfile.read_text().strip() or None
+            if cid:
+                self.peak = cgroup_peak(cid) or self.peak
+
+    def stop(self):
+        self.done.set()
+        self.thread.join()
+
+
+def record_use(s, mode, rc, wall, peak, echo=True, **extra):
+    """One line per container (or refused call) in the case's work/runs.jsonl, echoed on stderr."""
+    record = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "mode": mode, **extra,
+        "exit": rc, "wall_s": round(wall, 2), "peak_mem_mib": round(peak / 1048576, 1) if peak else None,
+        "role": s.role_name, "profile": s.profile, "engines": s.engines, "member": s.member or None,
+        "session": s.session or None,
+    }
+    with contextlib.suppress(OSError):
+        with open(s.case / "work" / "runs.jsonl", "a") as f:
+            f.write(json.dumps(record) + "\n")
+    if echo:
+        print(json.dumps({"rea_sandbox": record}), file=sys.stderr)
+
+
+def run_container(s, rea_args, extra_env=None, interactive=False, entrypoint=None, tty=False):
+    s.ensure_case()
+    with ghidra_slot(s), tempfile.TemporaryDirectory(prefix="rea-sandbox-") as tmp:
+        name = container_name(s, "run")
+        cidfile = Path(tmp) / "cid"
+        argv = docker_argv(s, rea_args, interactive=interactive, name=name, extra_env=extra_env,
+                           entrypoint=entrypoint, tty=tty)
+        argv.insert(2, f"--cidfile={cidfile}")
+        kill_on_signal(name)
+        t0 = time.monotonic()
+        proc = subprocess.Popen(argv)
+        watch = PeakWatcher(cidfile)
+        rc = None
+        try:
+            rc = proc.wait()
+        except SystemExit as e:  # kill_on_signal: the container is already killed
+            rc = e.code
+            raise
+        finally:
+            watch.stop()
+            record_use(s, "run", rc if rc is not None else proc.poll(), time.monotonic() - t0, watch.peak,
+                       argv=list(rea_args))
+    return rc
+
+
+def cmd_run(s, args):
+    rea_args = list(args.rea_args)
+    if rea_args and rea_args[0] == "--":
+        rea_args = rea_args[1:]
+    if not rea_args:
+        die("usage: rea-sandbox run -- <rea command and arguments>")
+    return run_container(s, rea_args)
+
+
+def cmd_doctor(s, args):
+    rea_args = ["doctor", "--json"] + (["--provider", args.provider] if args.provider else [])
+    return run_container(s, rea_args)
+
+
+# ---------------------------------------------------------------- engines
+
+
+def sha256_file(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def cmd_engines(s, args):
+    rows = []
+    for name, spec in s.cfg["engines"].items():
+        state = s.engine_state(name)
+        row = {"engine": name, "state": state, "dir": str(s.engine_dir(name)), "licensed": bool(spec.get("licensed"))}
+        if state == "ready" and spec.get("file_sha256"):
+            got = sha256_file(s.engine_dir(name) / spec["check"])
+            row["sha256_ok"] = got == spec["file_sha256"]
+            if not row["sha256_ok"]:
+                row["state"] = "tampered"
+        if spec.get("licensed") and row["state"] != "ready":
+            readme = f"{s.engine_dir(name)}/README.md"
+            row["next"] = {"missing": f"drop your files as {readme} says",
+                           "present": f"rea-sandbox setup {name}",
+                           "unsupported": f"{spec.get('unsupported')} ({readme})"}.get(row["state"], f"see {readme}")
+        rows.append(row)
+    if args.json:
+        print(json.dumps(rows, indent=1))
+    else:
+        for r in rows:
+            extra = " (licensed)" if r["licensed"] else ""
+            nxt = f"  -> {r['next']}" if r.get("next") else ""
+            print(f"{r['engine']:<8} {r['state']:<11} {r['dir']}{extra}{nxt}")
+    return 0 if all(r["state"] in ("ready", "missing", "present", "unsupported") for r in rows) else 1
+
+
+def cmd_setup(s, args):
+    """Run a licensed slot's setup.sh in the sandbox, with only that slot mounted, read-write."""
+    name = args.engine
+    spec = s.cfg["engines"].get(name)
+    if not spec or not spec.get("licensed"):
+        die(f"setup is for the licensed slots: {', '.join(n for n, e in s.cfg['engines'].items() if e.get('licensed'))}")
+    if spec.get("unsupported"):
+        die(f"{name}: {spec['unsupported']}")
+    d = s.engine_dir(name)
+    if not (d / "setup.sh").is_file():
+        die(f"{d}/setup.sh is missing; run tools/rea/install.sh")
+    s.ensure_case()
+    fixture, dest = s.lab / "fixtures" / "hello", s.case / "targets" / "hello"
+    if fixture.is_file() and not dest.exists():  # the smoke test's target
+        shutil.copyfile(fixture, dest)
+        dest.chmod(0o444)
+    s.engines, s.setup_engine, s.exec_tmpfs = [name], name, True  # installers unpack into /exec
+    return run_container(s, [f"/engines/{spec['dir']}/setup.sh"], extra_env={"TMPDIR": "/exec"},
+                         interactive=args.interactive, entrypoint="/bin/sh",
+                         tty=args.interactive and sys.stdin.isatty())
+
+
+# ---------------------------------------------------------------- intake
+
+
+def cmd_intake(s, args):
+    s.ensure_case()
+    dest_root = s.case / "targets"
+    cap = int(s.cfg.get("intake_max_bytes", 4 << 30))
+    rc = 0
+    for src in args.sources:
+        try:
+            rec = intake_one(src, dest_root, args.name if len(args.sources) == 1 else None, cap)
+        except (OSError, ValueError) as e:
+            note(f"intake refused {src!r}: {e}")
+            rc = 1
+            continue
+        rec.update({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "member": s.member or None,
+                    "session": s.session or None, "case": s.case_id, "note": args.note})
+        with open(s.case / "work" / "intake.jsonl", "a") as f:
+            f.write(json.dumps(rec) + "\n")
+        print(json.dumps(rec))
+    return rc
+
+
+def safe_name(name):
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name).lstrip(".") or "target"
+    return name[:120]
+
+
+def intake_one(src, dest_root, name, cap):
+    if re.match(r"^[a-z]+://", src):
+        u = urllib.parse.urlparse(src)
+        if u.scheme != "https":
+            raise ValueError("only https URLs")
+        dest = dest_root / safe_name(name or Path(u.path).name or u.netloc)
+        if dest.exists():
+            raise ValueError(f"{dest.name} already exists in the case")
+        h, n = hashlib.sha256(), 0
+        part = dest.with_name(dest.name + ".part")
+        with urllib.request.urlopen(src, timeout=60) as r, open(part, "wb") as f:
+            while chunk := r.read(1 << 20):
+                n += len(chunk)
+                if n > cap:
+                    part.unlink(missing_ok=True)
+                    raise ValueError(f"larger than {cap} bytes")
+                h.update(chunk)
+                f.write(chunk)
+        part.rename(dest)
+        dest.chmod(0o444)
+        return {"source": src, "target": f"/case/targets/{dest.name}", "sha256": h.hexdigest(), "bytes": n}
+    p = Path(src)
+    if p.is_symlink():
+        raise ValueError("symlinks are not taken; pass the real path")
+    p = p.resolve(strict=True)
+    dest = dest_root / safe_name(name or p.name)
+    if dest.exists():
+        raise ValueError(f"{dest.name} already exists in the case")
+    if p.is_file():
+        if p.stat().st_size > cap:
+            raise ValueError(f"larger than {cap} bytes")
+        shutil.copyfile(p, dest)
+        dest.chmod(0o444)
+        return {"source": str(p), "target": f"/case/targets/{dest.name}", "sha256": sha256_file(dest), "bytes": dest.stat().st_size}
+    if p.is_dir():
+        total = 0
+        for q in p.rglob("*"):
+            if q.is_file() and not q.is_symlink():
+                total += q.stat().st_size
+                if total > cap:
+                    raise ValueError(f"directory larger than {cap} bytes")
+        shutil.copytree(p, dest, symlinks=True)
+        manifest = hashlib.sha256()
+        files = 0
+        for q in sorted(dest.rglob("*")):
+            if q.is_file() and not q.is_symlink():
+                manifest.update(f"{q.relative_to(dest)}\0{sha256_file(q)}\n".encode())
+                files += 1
+        return {"source": str(p), "target": f"/case/targets/{dest.name}", "tree_sha256": manifest.hexdigest(), "files": files, "bytes": total}
+    raise ValueError("not a regular file or directory")
+
+
+# ---------------------------------------------------------------- scope / jeb / ps
+
+
+def intake_records(s):
+    """The case's intake log: each target's sandbox path, sha256 and gate note."""
+    recs = []
+    with contextlib.suppress(OSError):
+        for line in (s.case / "work" / "intake.jsonl").read_text().splitlines():
+            with contextlib.suppress(ValueError):
+                r = json.loads(line)
+                recs.append({k: r.get(k) for k in ("target", "sha256", "bytes", "note", "ts")})
+    return recs
+
+
+def cmd_scope(s, args):
+    info = {
+        "role": s.role_name, "title": s.role.get("title"), "member": s.member or None,
+        "families": s.role["families"], "excluded_effects": s.role.get("exclude_effects", []),
+        "profile": s.profile, "tools": len(s.tools), "role_tools": len(s.role_tools),
+        "runs_target": sorted(s.foreign), "engines": s.engines,
+        "engines_not_ready": [e for e in s.role.get("engines", []) if e not in s.engines],
+        "case_id": s.case_id, "case": str(s.case),
+        "targets": intake_records(s),  # empty: nothing taken in, so ask the Lead before opening anything
+        "limits": s.limits(), "config": s.cfg["_path"],
+    }
+    if args.tools:
+        info["tool_names"] = s.tools
+    print(json.dumps(info, indent=1))
+    return 0
+
+
+def session_containers(s):
+    if not s.session:
+        die("TM8_SESSION_ID is not set; run this from the session that owns the container")
+    out = subprocess.run(["docker", "ps", "--filter", "label=tm8.rea=1", "--filter", f"label=tm8.rea.session={s.session}",
+                          "--filter", f"label=tm8.rea.profile={s.profile}",
+                          "--format", "{{.Names}}"], capture_output=True, text=True, check=True).stdout.split()
+    return out
+
+
+def cmd_jeb(s, args):
+    if "jeb" not in s.engines:
+        die("JEB is not ready for this role; run `rea-sandbox engines`")
+    target = args.target
+    if not target.startswith("/case/targets/"):
+        target = f"/case/targets/{Path(target).name}"
+    names = session_containers(s)
+    if not names:
+        die("no running REA container for this session; JEB starts inside the session's MCP container")
+    rc = 0
+    for n in names:
+        rc |= subprocess.run(["docker", "exec", "-d", n, "/engines/jeb/start-jeb-mcp.sh", target]).returncode
+    note(f"JEB MCP starting for {target} in {', '.join(names)}; check with the inspect_jeb_client tool")
+    return rc
+
+
+def cmd_ps(_s, _args):
+    return subprocess.run(["docker", "ps", "--filter", "label=tm8.rea=1", "--format",
+                           "{{.Names}}\t{{.RunningFor}}\t{{.Label \"tm8.rea.role\"}}\t{{.Label \"tm8.rea.profile\"}}\t{{.Label \"tm8.rea.case\"}}\t{{.Label \"tm8.rea.member\"}}"]).returncode
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="rea-sandbox", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--role", help="the role for a session no teammate mapping covers (default: from TM8_TEAM_MEMBER_ID)")
+    ap.add_argument("--case", help="case folder name under <lab>/cases (default: first TM8_TASK_IDS)")
+    ap.add_argument("--profile", choices=["static", "exec"], help="static (default): every engine, no tool that runs "
+                    "the target; exec: run the target, without licensed or heavy engines")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("call")
+    p.add_argument("tool")
+    p.add_argument("arguments", nargs="?", help="JSON object, @file or - for stdin (default {})")
+    p.add_argument("--out", help="write the full result here and print only its size and evidence id "
+                   "(automatic, under the case's out/calls, past call_inline_max_bytes)")
+    p = sub.add_parser("tools")
+    p.add_argument("names", nargs="*")
+    sub.add_parser("stop")
+    sub.add_parser("serve")
+    sub.add_parser("mcp")
+    p = sub.add_parser("run")
+    p.add_argument("rea_args", nargs=argparse.REMAINDER)
+    p = sub.add_parser("doctor")
+    p.add_argument("provider", nargs="?")
+    p = sub.add_parser("engines")
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("intake")
+    p.add_argument("sources", nargs="+")
+    p.add_argument("--name", help="file name in the case (single source only)")
+    p.add_argument("--note", help="provenance note: where it came from, who authorized it")
+    p = sub.add_parser("scope")
+    p.add_argument("--tools", action="store_true")
+    p = sub.add_parser("jeb")
+    p.add_argument("target")
+    p = sub.add_parser("setup")
+    p.add_argument("engine", help="a licensed slot (ida, jeb, hopper); see <lab>/engines/<slot>/README.md")
+    p.add_argument("--interactive", action="store_true", help="attach a terminal for a vendor's first-use prompts")
+    sub.add_parser("ps")
+    args = ap.parse_args()
+    if args.cmd in ("run", "setup") and args.profile:
+        die(f"{args.cmd} sets its own profile; --profile applies to call, tools, stop and mcp")
+    s = Session(load_config(), role=args.role, case=args.case or (f"setup-{args.engine}" if args.cmd == "setup" else None),
+                profile="cli" if args.cmd == "run" else args.profile or "static")
+    handler = {"call": cmd_call, "tools": cmd_tools, "stop": cmd_stop, "serve": cmd_serve, "mcp": cmd_mcp, "run": cmd_run, "doctor": cmd_doctor, "engines": cmd_engines, "intake": cmd_intake,
+               "scope": cmd_scope, "jeb": cmd_jeb, "setup": cmd_setup, "ps": cmd_ps}[args.cmd]
+    if args.cmd not in ("mcp", "serve"):
+        sys.exit(handler(s, args))
+    # Their reader threads are daemons blocked on a pipe, and a normal interpreter
+    # shutdown aborts on that buffer's lock (SIGABRT), so leave without one once the
+    # container is gone, the Ghidra slot released and the session recorded.
+    try:
+        rc = handler(s, args)
+    except SystemExit as e:
+        rc = e.code
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc if isinstance(rc, int) else 1)
+
+
+if __name__ == "__main__":
+    main()

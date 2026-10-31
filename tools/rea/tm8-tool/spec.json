@@ -1,0 +1,81 @@
+{
+  "help": "Reverse-engineer files with REA (rea-agents 6.8.0) in tm8's RE Lab on tm8-server.\n\nREA covers native binaries, APKs, firmware, pcaps, wasm, SQLite and more, and every finding is an Evidence record (ev_...): the provider, the subject's sha256, and the result with its limitations. Each call runs in a fresh gVisor container with no network. Only the case is mounted: targets/ read-only, out/ and work/ writable. Inside the sandbox, a case's files are at /case/targets/<name>.\n\n1. Put a file into a case: --command intake --case <name> --source <file> (or --url <https-url>).\n2. See what you may call: --command tools; add --tool <name> for that tool's input schema.\n3. Call a tool: --command call --case <name> --tool <tool> --arguments '<json>'.\n\nRuns on the same case, role and profile share one warm REA. The first call pays for the analysis (a cold Ghidra call takes ~40 s); later runs reuse the opened binary until --command stop or 15 idle minutes end it. A tool run carries no teammate id, so members.json does not apply: the role is --role, or all. A teammate calling rea-sandbox from their own session gets the role members.json gives them. The static profile (the default) never runs the target. --profile exec runs it, without licensed or heavy engines.\n\nExample, run in this order on 2026-10-31:\n  tm8 tool run rea --command intake --case demo --source ./hello\n  tm8 tool run rea --case demo --tool open_binary --arguments '{\"path\":\"/case/targets/hello\"}'\n  tm8 tool run rea --case demo --tool procedure_pseudo_code --arguments '{\"procedure\":\"main\"}'\nThe last call returns Ghidra Evidence (evidence_id ev_..., the binary's sha256, the decompiled main).\n\nExit status: 0 ok; 1 REA answered with an error; 2 bad input, REA unavailable or not installed; 3 the tool is outside your role or profile (the message names who to route it to); 64 a missing --tool, --source or --url. See tools/rea/README.md.",
+  "tm8Access": "none",
+  "timeoutSeconds": 1800,
+  "inputs": [
+    {
+      "name": "command",
+      "type": "enum",
+      "options": [
+        "call",
+        "tools",
+        "intake",
+        "doctor",
+        "engines",
+        "scope",
+        "ps",
+        "stop"
+      ],
+      "default": "call",
+      "env": "REA_CMD",
+      "description": "call: one REA tool call. tools: the tools your role may call (with --tool, that tool's schema). intake: copy --source or --url into the case. doctor, engines, scope, ps: lab health and your scope. stop: end this case's warm REA."
+    },
+    {
+      "name": "tool",
+      "type": "string",
+      "env": "REA_TOOL_NAME",
+      "description": "The REA tool, e.g. inspect_artifact, open_binary, procedure_pseudo_code. --command tools lists them."
+    },
+    {
+      "name": "arguments",
+      "type": "string",
+      "default": "{}",
+      "env": "REA_TOOL_ARGS",
+      "description": "The tool's arguments as a JSON object. Paths are inside the sandbox: /case/targets/<name>."
+    },
+    {
+      "name": "case",
+      "type": "string",
+      "env": "REA_CASE",
+      "description": "The case folder under /home/tm8/rea-lab/cases: letters, digits, dot, dash or underscore. Use a task id to file the work under that task. Default: adhoc."
+    },
+    {
+      "name": "role",
+      "type": "enum",
+      "options": [
+        "lead",
+        "native",
+        "mobile",
+        "web",
+        "firmware",
+        "verifier",
+        "all"
+      ],
+      "env": "REA_ROLE",
+      "description": "Which tool families and engines to use (default all). Narrow it to see what a teammate with that role sees."
+    },
+    {
+      "name": "profile",
+      "type": "enum",
+      "options": [
+        "static",
+        "exec"
+      ],
+      "default": "static",
+      "env": "REA_PROFILE",
+      "description": "static never runs the target and may use the owner's licensed engines. exec may run it, without licensed or heavy engines."
+    },
+    {
+      "name": "source",
+      "type": "path",
+      "env": "REA_SOURCE",
+      "description": "--command intake: a file or folder to copy into the case's targets/ (read-only there, sha256 logged in work/intake.jsonl)."
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "env": "REA_URL",
+      "description": "--command intake: an https URL to download into the case's targets/ (at most 4 GiB)."
+    }
+  ]
+}
