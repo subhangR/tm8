@@ -6,20 +6,23 @@
  * Who may call what is decided in SQL: create, retarget and remove are
  * human-only (and wrapped here so the catalog's `humanOnly` holds before the
  * call); the handle claim, the log read and listen take any session in the
- * space (D23).
+ * space (D23). The People tab's write (participants.update, 404) is
+ * human-only too: an assertion makes a number count as a person (D52).
  */
 import {
-  BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeRetargetInputSchema,
+  BridgeCreateInputSchema, BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeParticipantUpdateInputSchema,
+  BridgeRetargetInputSchema,
   BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
   BridgeMemoryProposalResolveInputSchema, BridgeStateInputSchema, BridgeUpdateInputSchema, BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_LOG_LIMIT_MAX,  BRIDGE_MEMORY_PROPOSAL_STATUSES, BRIDGE_PROVIDERS, CollabError,  type BridgeDetailView, type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult,
   type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList,
   type BridgeLogEntry, type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
+  type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
   type BridgeRecentPoster, type BridgeView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { BridgeWorkStarter } from './commands/ports.js';
 import type { HandlerRegistry } from '../facade/registry.js';
-import { claimsFor, commandEnvelope, isUuid, limitOf, requireUuidParam } from '../facade/context.js';
+import { claimsFor, commandEnvelope, isUuid, limitOf, requireParam, requireUuidParam } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { actorOf, loadActors } from '../facade/entity-read.js';
 import { bridgeMessageBadges } from '../db/bridge-badges.js';
@@ -89,6 +92,28 @@ async function recentPosters(q: Querier, bridgeId: string): Promise<BridgeRecent
       handle: r.handle, posts: Number(r.posts), lastPostAt: iso(r.last_post_at)!,
     };
   });
+}
+
+type ParticipantRow = Omit<BridgeParticipant, 'member'>;
+
+/**
+ * `bridges.participants.list` (§2.4, D50): the roster, most recently seen
+ * first. The SQL view resolves each row's trust as inbound does and masks
+ * external ids for non-admins; here only the member chips are joined.
+ */
+async function readParticipants(q: Querier, bridgeId: string): Promise<BridgeParticipantListResult> {
+  const [row] = await q.query<{ view: { spaceId: string; admin: boolean; items: ParticipantRow[] } | null }>(
+    'select internal.bridge_participants_view($1) as view', [bridgeId]);
+  if (!row?.view) throw new CollabError('not_found', 'Bridge is unavailable');
+  const { spaceId, admin, items: rows } = row.view;
+  const actors = await loadActors(q, rows.flatMap(r => (r.memberId ? [r.memberId] : [])));
+  const items = rows.map((r): BridgeParticipant => ({
+    ...r,
+    firstSeenAt: iso(r.firstSeenAt)!, lastSeenAt: iso(r.lastSeenAt)!,
+    member: r.memberId ? actorOf(actors, r.memberId) : null,
+    link: r.link ? { method: r.link.method, verifiedAt: iso(r.link.verifiedAt)! } : null,
+  }));
+  return { bridgeId, spaceId, admin, items };
 }
 
 interface LogRow {
@@ -290,6 +315,24 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.pause': state('pause_bridge'),
     'bridges.resume': state('resume_bridge'),
     'bridges.remove': requireHumanSession(state('remove_bridge'), 'bridges.remove is for a human space admin'),
+    'bridges.participants.list': async ctx => read(ctx, q => readParticipants(q, requireUuidParam(ctx, 'bridgeId'))),
+    'bridges.participants.update': requireHumanSession(async ctx => {
+      const input = BridgeParticipantUpdateInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const externalId = requireParam(ctx, 'externalId');
+      if (input.externalId !== undefined && input.externalId !== externalId) {
+        throw new CollabError('invalid_input', 'body externalId does not match route');
+      }
+      return command(ctx, async q => {
+        const result = await q.rpc<{ changed: boolean }>('update_bridge_participant',
+          [bridgeId, externalId, JSON.stringify(input.patch), input.actorId ?? null, input.clientMutationId]);
+        // The caller is an admin (the door checked), so the roster names the row unmasked.
+        // By key or alternate (a number and its LID are one row); unmasked for the admin caller.
+        const participant = (await readParticipants(q, bridgeId)).items
+          .find(p => p.externalId === externalId || p.altExternalIds.includes(externalId)) ?? null;
+        return { bridgeId, externalId, changed: result.changed, participant } satisfies BridgeParticipantUpdateResult;
+      });
+    }, 'bridges.participants.update is for a human space admin'),
     'bridges.handles.list': async ctx => read(ctx, async q => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');
       await loadBridgeView(q, bridgeId);

@@ -147,6 +147,9 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'post', 'interactive', 'one-shot', 'clear-targets', // tm8 loop create|edit (Bridges L)
   'include-ended',       // tm8 bridge list
   'archived', 'restore', // tm8 label list --archived / label update --restore (410)
+  'linked',              // tm8 bridge people (Bridges P, 404)
+  'guests',              // tm8 bridge people (Bridges P, 404)
+  'unassert',            // tm8 bridge participant (Bridges P, 404)
   // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
   // particular has to be listed or it would eat the next token and turn a
   // rehearsal into a write.

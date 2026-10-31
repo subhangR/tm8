@@ -88,7 +88,7 @@ export const OPERATIONS = [
   // bridges (BRIDGE-ENTITY-DESIGN §3.4, B0a, migration 395). The CLI noun
   // `bridge` now names these; the reserved `bridge.fetchBlob` row (files section) keeps
   // its slot until its retirement (D11) lands with its tests. create/retarget/remove are
-  // human-only in SQL; handles.claim, log.read and listen admit any session in the space (D23).
+  // human-only in SQL, as is participants.update (404, D52); handles.claim, log.read and listen admit any session in the space (D23).
   { name: 'bridges.list', method: 'GET', path: '/v2/spaces/:spaceId/bridges', kind: 'read', status: 'v1' },
   { name: 'bridges.get', method: 'GET', path: '/v2/bridges/:bridgeId', kind: 'read', status: 'v1' },
   { name: 'bridges.create', method: 'POST', path: '/v2/spaces/:spaceId/bridges', kind: 'command', status: 'v1', humanOnly: true },
@@ -97,6 +97,8 @@ export const OPERATIONS = [
   { name: 'bridges.pause', method: 'POST', path: '/v2/bridges/:bridgeId/pause', kind: 'command', status: 'v1' },
   { name: 'bridges.resume', method: 'POST', path: '/v2/bridges/:bridgeId/resume', kind: 'command', status: 'v1' },
   { name: 'bridges.remove', method: 'POST', path: '/v2/bridges/:bridgeId/remove', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.participants.list', method: 'GET', path: '/v2/bridges/:bridgeId/participants', kind: 'read', status: 'v1' },
+  { name: 'bridges.participants.update', method: 'PATCH', path: '/v2/bridges/:bridgeId/participants/:externalId', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.handles.list', method: 'GET', path: '/v2/bridges/:bridgeId/handles', kind: 'read', status: 'v1' },
   { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
   { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },

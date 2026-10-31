@@ -1,6 +1,9 @@
 import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
-  BridgeHandleClaimInputSchema, BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema, BridgeListenInputSchema, BridgeMemoryProposalResolveInputSchema, BridgeWorkStartInputSchema,  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,  LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
+  BridgeHandleClaimInputSchema, BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
+  BridgeListenInputSchema, BridgeMemoryProposalResolveInputSchema, BridgeParticipantUpdateInputSchema, BridgeWorkStartInputSchema,
+  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,
+  LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
   LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
 } from '@tm8/contract';
 import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
@@ -289,6 +292,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // B3 (417): the caller's own links.
   'bridges.links.begin': BridgeLinkBeginInputSchema,
   'bridges.links.revoke': BridgeLinkRevokeInputSchema,
+  'bridges.participants.update': BridgeParticipantUpdateInputSchema, // 404 (Bridges P)
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

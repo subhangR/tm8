@@ -307,6 +307,7 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'bridges.memories.proposals.resolve', // Bridges R (416)
   'bridges.links.begin',
   'bridges.links.revoke',
+  'bridges.participants.update', // Bridges P (404)
   'loops.create',
   'loops.update',
   'loops.enable',
@@ -467,6 +468,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'bridges.memories.proposals.resolve': contract.BridgeMemoryProposalResolveInputSchema,
       'bridges.links.begin': contract.BridgeLinkBeginInputSchema,
       'bridges.links.revoke': contract.BridgeLinkRevokeInputSchema,
+      'bridges.participants.update': contract.BridgeParticipantUpdateInputSchema,
       'loops.create': contract.LoopCreateInputSchema,
       'loops.update': contract.LoopUpdateInputSchema,
       'loops.enable': contract.LoopEnableInputSchema,

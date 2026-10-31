@@ -3,7 +3,12 @@
 // renders them. Speaking needs no verb here: `tm8 message reply|send` crosses.
 import {
   BRIDGE_PROVIDERS,
-  type BridgeDetailView, type BridgeHandle, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList,  type BridgeProvider, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,  type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgePolicy,  type BridgeView, type BridgeWake, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES,} from '@tm8/contract';
+  type BridgeDetailView, type BridgeHandle, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList,
+  type BridgeProvider, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
+  type BridgeLogResult, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
+  type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult, type BridgePolicy,
+  type BridgeView, type BridgeWake, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES,
+} from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { observedInvoke } from '../discovery/observe.js';
@@ -193,6 +198,47 @@ async function bridgeState(cmd: CommandContext, operation: 'bridges.pause' | 'br
   cmd.out.data(await observedInvoke<BridgeView>(client(cmd), operation, {
     params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, body: { ...mutation(cmd), expectedVersion: version },
   }), renderBridge);
+  return EXIT_OK;
+}
+
+function renderParticipant(p: BridgeParticipant): string {
+  const who = p.member ? `${p.member.displayName}${p.you ? ' (you)' : ''}` : 'guest';
+  const word = p.trust === 'linked' ? 'linked ✓' : p.trust;
+  return `${(p.displayName ?? '(no name)').padEnd(20)} ${p.externalId.padEnd(16)} ${word.padEnd(9)} ${who}`
+    + ` · ${p.messageCount} msg · last ${p.lastSeenAt}${p.muted ? ' · muted' : ''}`;
+}
+
+async function bridgePeople(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['guests', 'linked']); argumentsCount(cmd, 1);
+  const guests = cmd.options.bool('guests');
+  const linked = cmd.options.bool('linked');
+  if (guests && linked) throw usage('pass --guests or --linked, not both');
+  const page = await observedInvoke<BridgeParticipantListResult>(client(cmd), 'bridges.participants.list', { params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') } });
+  // Linked means counted as a member: verified (linked) or an admin's assertion.
+  const items = page.items.filter(p => (guests ? p.trust === 'guest' : linked ? p.trust !== 'guest' : true));
+  cmd.out.data({ ...page, items }, p => p.items.length
+    ? p.items.map(renderParticipant).join('\n')
+    : guests ? 'no guests on this bridge' : linked ? 'nobody on this bridge is linked' : 'nobody has spoken on this bridge yet');
+  return EXIT_OK;
+}
+
+// One door for the row actions (D52): mute, and the admin's assertion or its revocation.
+async function bridgeParticipant(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['member', 'unassert', 'mute', 'mutation-id']); argumentsCount(cmd, 2);
+  const patch: { muted?: boolean; memberId?: string | null } = {};
+  const member = cmd.options.value('member');
+  if (member !== undefined && cmd.options.bool('unassert')) throw usage('pass --member or --unassert, not both');
+  if (member !== undefined) patch.memberId = member;
+  if (cmd.options.bool('unassert')) patch.memberId = null;
+  const mute = choice(cmd, 'mute', ['on', 'off'] as const);
+  if (mute) patch.muted = mute === 'on';
+  if (Object.keys(patch).length === 0) throw usage('nothing to change', 'pass --member <member-id>, --unassert or --mute on|off');
+  const result = await observedInvoke<BridgeParticipantUpdateResult>(client(cmd), 'bridges.participants.update', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>'), externalId: requireArg(cmd, 1, '<external-id>') },
+    body: { ...mutation(cmd), patch },
+  });
+  cmd.out.data(result, r => `${r.changed ? 'updated' : 'already so; nothing changed'}`
+    + (r.participant ? `\n${renderParticipant(r.participant)}` : ` · ${r.externalId} has not spoken on this bridge yet`));
   return EXIT_OK;
 }
 
@@ -404,6 +450,8 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'pause'], run: cmd => bridgeState(cmd, 'bridges.pause') },
   { path: ['bridge', 'resume'], run: cmd => bridgeState(cmd, 'bridges.resume') },
   { path: ['bridge', 'remove'], run: cmd => bridgeState(cmd, 'bridges.remove') },
+  { path: ['bridge', 'people'], run: bridgePeople },
+  { path: ['bridge', 'participant'], run: bridgeParticipant },
   { path: ['bridge', 'handles'], run: bridgeHandles },
   { path: ['bridge', 'handle', 'claim'], run: bridgeHandleClaim },
   { path: ['bridge', 'log'], run: bridgeLog },

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AuthSessionListingSchema,
+  BridgeParticipantUpdateInputSchema,
   ActorSummarySchema, BridgeCreateInputSchema, BridgeEntitySchema, BridgeFactsSchema, BridgeHandleClaimInputSchema,
   BridgeListenInputSchema, BridgeUpdateInputSchema, CORE_KIND_INFO, CoreEntityKindSchema, CreatableEntityKindSchema,
   EntityStateSchema, OPERATIONS,
@@ -71,20 +72,21 @@ describe('input schemas', () => {
 
 describe('catalog (§3.4)', () => {
   const bridges = OPERATIONS.filter(op => op.name.startsWith('bridges.'));
-  it('carries the twelve rows B1 needs and B3\'s three link rows', () => {
+  it('carries the twelve rows B1 needs, B3\'s three link rows, and the People tab\'s two (Bridges P, 404)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
-      'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
+      'bridges.resume', 'bridges.remove', 'bridges.participants.list', 'bridges.participants.update',
+      'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.work.start', // B1b-6 (v2 §4.3)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
       'bridges.links.begin', 'bridges.links.list', 'bridges.links.revoke',
     ]);
   });
-  it('create, retarget, remove, the link begin and revoke, and the memory proposal decision are human-only; the session doors are not', () => {
+  it('create, retarget, remove, the participant write, the link begin and revoke, and the memory proposal decision are human-only; the session doors are not', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
-      'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.links.begin', 'bridges.links.revoke',
-      'bridges.memories.proposals.resolve',
+      'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
+      'bridges.links.begin', 'bridges.links.revoke', 'bridges.memories.proposals.resolve',
     ]);
   });
 });
@@ -112,5 +114,16 @@ describe('link inputs (B3, 417)', () => {
     expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: 'x', externalId: '' }).success).toBe(false);
     expect(BRIDGE_LINK_CODE_PATTERN.test('TM8-4F7KQ2')).toBe(true);
     expect(BRIDGE_LINK_CODE_PATTERN.test('4F7K')).toBe(false);
+
+describe('BridgeParticipantUpdateInputSchema (D52)', () => {
+  const base = { clientMutationId: 'm-1' };
+  it('takes a mute, an assertion and a revocation (memberId null)', () => {
+    for (const patch of [{ muted: true }, { memberId: '01a18b41-e900-79ed-8eb2-52a11dbf4292' }, { memberId: null }]) {
+      expect(BridgeParticipantUpdateInputSchema.safeParse({ ...base, patch }).success, JSON.stringify(patch)).toBe(true);
+    }
+  });
+  it('refuses an empty patch and an unknown field', () => {
+    expect(BridgeParticipantUpdateInputSchema.safeParse({ ...base, patch: {} }).success).toBe(false);
+    expect(BridgeParticipantUpdateInputSchema.safeParse({ ...base, patch: { trust: 'linked' } }).success).toBe(false);
   });
 });
