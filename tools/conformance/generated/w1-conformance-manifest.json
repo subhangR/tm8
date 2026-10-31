@@ -1,6 +1,6 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:751f592ee5ac30f76d972c4f522c0b436d3ea572167c9f435290bf65d43db875",
+  "catalogDigest": "sha256:d3d7828f082e15331c30b7c59d4963cde0408df123040d886bd4d7374361f30b",
   "catalog": {
     "total": 422,
     "v1": 420,
@@ -9,15 +9,15 @@
     "ws": 1,
     "registerableV1Http": 418,
     "methods": {
-      "GET": 140,
+      "GET": 142,
       "POST": 208,
-      "PATCH": 24,
+      "PATCH": 25,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 147,
+      "read": 149,
       "command": 271,
       "stream": 2
     },
