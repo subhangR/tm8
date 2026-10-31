@@ -616,3 +616,80 @@ describe('H9. bridges.handovers.list and who sees the attention item (425, D81)'
     expect(item!.reason).toContain(`tm8 bridge handover accept ${id}`);
   });
 });
+
+describe('H10. accept racing remove_bridge_connection of the from-number never deadlocks (425, D82)', () => {
+  // Two real connections, each bound to a person's claims (the db client's own
+  // set_config shape); the first holds its transaction open as the barrier.
+  const open = async (who: keyof typeof people) => {
+    const c = new Client({ connectionString: database.url });
+    await c.connect();
+    await c.query('begin');
+    await c.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.auth_kind', 'browser', true),
+      set_config('tm8.request_id', $2, true), set_config('role', 'tm8_app', true)`, [people[who].identity, randomUUID()]);
+    return c;
+  };
+  /** A fresh number of Asha's, offered to the space, with one bridge on it offered to Bina's number B. */
+  const fixture = async (n: number) => {
+    const conn = randomUUID(), target = randomUUID(), group = `120363-race${n}@g.us`;
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status, runtime_id, heartbeat_at)
+        values ($1,'whatsapp',$2,$3,'linked',$4, now() + interval '1 hour')`, [conn, people.asha.account, `+91 …99${n}0`, RUNTIME]);
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [target, spaceId, people.asha.member]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,$3,$4,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/handover', gen_random_uuid(), $5, $6, $7)`,
+        [target, spaceId, `Race ${n}`, teammate, people.asha.identity, people.asha.member, `ho-${randomUUID()}`]);
+    });
+    await db.tx(claims('asha'), q => q.rpc('offer_bridge_connection', [conn, spaceId, 'public', null, randomUUID()]));
+    const b = (await db.tx(claims('asha'), q => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, conn, group,
+      JSON.stringify({ kind: 'group', title: `Race ${n}`, memberCount: 3 }), target, '{}', teammate, null, null, true, null, null, randomUUID()]))).entity.id;
+    const h = (await db.tx(claims('asha'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [b, connB, randomUUID()]))).handover.id;
+    return { conn, group, b, h };
+  };
+  const pending = <T>(p: Promise<T>) => {
+    const state = { done: false, error: undefined as undefined | { code?: string } };
+    const settled = p.then((v) => { state.done = true; return v; }, (e) => { state.done = true; state.error = e; return undefined; });
+    return { state, settled };
+  };
+  const rowOf = async (b: string) => (await owner<{ c: string; ended: boolean }>(
+    'select connection_id::text c, ended_at is not null ended from public.bridges where entity_id = $1', [b]))[0]!;
+
+  it('accept first: the remove waits on the connection lock, then ends nothing on it; no 40P01', async () => {
+    const f = await fixture(1);
+    const accept = await open('bina'), remove = await open('asha');
+    try {
+      await accept.query('select public.accept_bridge_handover($1, $2, $3)', [f.h, [f.group], randomUUID()]);
+      const r = pending(remove.query('select public.remove_bridge_connection($1, $2)', [f.conn, randomUUID()]));
+      await new Promise((res) => setTimeout(res, 400));
+      expect(r.state.done).toBe(false); // waiting on the accept's connection lock
+      await accept.query('commit');
+      await r.settled;
+      expect(r.state.error?.code).toBeUndefined();
+      await remove.query('commit');
+    } finally {
+      await accept.end(); await remove.end();
+    }
+    expect(await rowOf(f.b)).toEqual({ c: connB, ended: false });
+  });
+
+  it('remove first: the accept waits on the connection lock, then refuses cleanly (the offer lapsed); no 40P01', async () => {
+    const f = await fixture(2);
+    const remove = await open('asha'), accept = await open('bina');
+    try {
+      await remove.query('select public.remove_bridge_connection($1, $2)', [f.conn, randomUUID()]);
+      const a = pending(accept.query('select public.accept_bridge_handover($1, $2, $3)', [f.h, [f.group], randomUUID()]));
+      await new Promise((res) => setTimeout(res, 400));
+      expect(a.state.done).toBe(false); // waiting on the remove's connection lock
+      await remove.query('commit');
+      await a.settled;
+      expect(a.state.error?.code).not.toBe('40P01');
+      expect(a.state.error?.code).toBe('TBC01'); // handover_not_open / bridge_ended, a refusal
+      await accept.query('rollback');
+    } finally {
+      await remove.end(); await accept.end();
+    }
+    expect((await rowOf(f.b)).ended).toBe(true);
+    expect((await handoverRow(f.h)).status).toBe('lapsed');
+  });
+});
