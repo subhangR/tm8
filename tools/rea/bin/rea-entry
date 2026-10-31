@@ -1,0 +1,12 @@
+#!/bin/sh
+# Container entrypoint. Restores the owner's licensed-engine user state (a ready slot's home/,
+# e.g. IDA's ~/.idapro or Hopper's activation) into this container's fresh $HOME, starts JEB's
+# MCP server when asked, then hands over to `rea`. Never prints licence material.
+set -eu
+for seed in /engines/*/home; do
+  if [ -d "$seed" ]; then cp -R "$seed/." "$HOME/" 2>/dev/null || true; fi
+done
+if [ -n "${REA_SANDBOX_START_JEB:-}" ] && [ -x /engines/jeb/start-jeb-mcp.sh ]; then
+  /engines/jeb/start-jeb-mcp.sh >/tmp/jeb-mcp.log 2>&1 &
+fi
+exec rea "$@"

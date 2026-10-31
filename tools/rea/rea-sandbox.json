@@ -1,0 +1,205 @@
+{
+  "image": "tm8/rea:6.8.0",
+  "runtime": "runsc",
+  "lab": "/home/tm8/rea-lab",
+  "catalog": "catalog-6.8.0.json",
+  "run_uid": 110,
+  "run_gid": 114,
+  "ghidra_slots": 2,
+  "intake_max_bytes": 4294967296,
+  "mcp_idle_seconds": 900,
+  "mcp_start_seconds": 300,
+  "call_inline_max_bytes": 100000,
+  "limits": {
+    "default": { "cpus": 2, "memory": "3g", "pids": 512, "tmp": "1g" },
+    "heavy": { "cpus": 2, "memory": "6g", "pids": 1024, "tmp": "2g" }
+  },
+  "env": {
+    "REA_LOG_LEVEL": "warn",
+    "REA_MCP_OUTPUT_SCHEMA_PROFILE": "off",
+    "REA_OBJDUMP_COMMAND": "/usr/bin/objdump",
+    "REA_TSHARK_COMMAND": "/usr/bin/tshark",
+    "REA_CAPINFOS_COMMAND": "/usr/bin/capinfos",
+    "REA_GHIDRA_STARTUP_TIMEOUT_MS": "330000",
+    "REA_JADX_HEAP_MIB": "1536",
+    "REA_JADX_ACTIVE_PROCESSOR_COUNT": "2"
+  },
+  "engines": {
+    "ghidra": {
+      "dir": "ghidra_12.1.4_PUBLIC",
+      "check": "support/analyzeHeadless",
+      "heavy": true,
+      "env": {
+        "GHIDRA_INSTALL_DIR": "{path}"
+      },
+      "source": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip",
+      "archive_sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db"
+    },
+    "kuna": {
+      "dir": "kuna-1.833",
+      "check": "kuna-v1.833-linux-x86_64/kuna",
+      "env": {
+        "REA_KUNA_COMMAND": "{path}/kuna-v1.833-linux-x86_64/kuna",
+        "REA_KUNA_CACHE_DIR": "/case/work/kuna-cache"
+      },
+      "source": "https://github.com/Noelo-Lab/kuna/releases/download/v1.833/kuna-v1.833-linux-x86_64.tar.gz",
+      "archive_sha256": "e9f047fb5a93925ede6d869df22c26c1c0ced90764ace7467ae90f880625d530"
+    },
+    "jadx": {
+      "dir": "jadx",
+      "check": "jadx-headless-mcp-0.7.1-all.jar",
+      "file_sha256": "6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75",
+      "env": {
+        "REA_JADX_MCP_JAR": "{path}/jadx-headless-mcp-0.7.1-all.jar"
+      },
+      "source": "https://github.com/1013503897/jadx-headless-mcp/releases/download/v0.7.1/jadx-headless-mcp-0.7.1-all.jar"
+    },
+    "apktool": {
+      "dir": "apktool",
+      "check": "apktool_3.0.3.jar",
+      "file_sha256": "dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423",
+      "env": { "REA_APKTOOL_COMMAND": "/opt/rea/bin/apktool" },
+      "source": "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar"
+    },
+    "rizin": {
+      "dir": "rizin-0.7.4",
+      "check": "bin/rizin",
+      "env": {
+        "REA_RIZIN_COMMAND": "{path}/bin/rizin"
+      },
+      "source": "https://github.com/rizinorg/rizin/releases/download/v0.7.4/rizin-v0.7.4-static-x86_64.tar.xz",
+      "archive_sha256": "db51f7c2def9c5c09df4e4102e9e294a030c77bd92a319ced6ec216293064d63"
+    },
+    "wabt": {
+      "dir": "wabt-1.0.42",
+      "check": "wabt-1.0.42/bin/wat2wasm",
+      "env": {
+        "REA_WABT_BIN_DIRECTORY": "{path}/wabt-1.0.42/bin"
+      },
+      "source": "https://github.com/WebAssembly/wabt/releases/download/1.0.42/wabt-1.0.42-linux-x64.tar.gz",
+      "archive_sha256": "84895407a6bbb80e918f33b16b2fb2206021c150b6bc9ff6f761263a745ab131"
+    },
+    "binwalk": {
+      "dir": "binwalk-3.1.0",
+      "check": "BUILT",
+      "env": {
+        "REA_BINWALK_COMMAND": "{path}/bin/binwalk"
+      },
+      "source": "crates.io binwalk 3.1.0 (cargo install --locked), built by tools/rea/build-engines.sh firmware"
+    },
+    "unblob": {
+      "dir": "unblob-26.6.4",
+      "check": "BUILT",
+      "env": {
+        "REA_UNBLOB_COMMAND": "{path}/bin/unblob"
+      },
+      "path_append": [
+        "{path}/bin"
+      ],
+      "source": "PyPI unblob==26.6.4 in a venv, built by tools/rea/build-engines.sh firmware"
+    },
+    "pwntools": {
+      "dir": "pwntools-4.15.0",
+      "check": "BUILT",
+      "env": {
+        "REA_PWNTOOLS_PYTHON": "{path}/bin/python"
+      },
+      "source": "PyPI pwntools==4.15.0 pyelftools==0.33 unicorn==2.1.2 in a venv (REA's third_party/pwntools profile), built by tools/rea/build-engines.sh python"
+    },
+    "pwndbg": {
+      "dir": "pwndbg-2026.09.15",
+      "check": "BUILT",
+      "env": {
+        "REA_PWNDBG_GDB": "/usr/bin/gdb",
+        "REA_PWNDBG_GDBINIT": "{path}/src/gdbinit.py",
+        "REA_PWNDBG_VENV_PATH": "{path}/venv"
+      },
+      "source": "github.com/pwndbg/pwndbg tag 2026.09.15 = 55596aa676a2756efb8d67034f31675170eabe48, uv sync --frozen --no-dev, built by tools/rea/build-engines.sh python"
+    },
+    "chromium": {
+      "dir": "chromium-156.0.8078.73",
+      "check": "BUILT",
+      "env": {
+        "REA_BROWSER_EXECUTABLE": "{path}/bin/chromium",
+        "REA_BROWSER_NO_SANDBOX": "true"
+      },
+      "source": "Debian trixie-security chromium 156.0.8078.73-1~deb13u1 and the 65 packages tm8/rea:6.8.0 lacks, apt-verified and unpacked with dpkg-deb -x (DEBS.sha256), built by tools/rea/build-engines.sh browser. No-sandbox: gVisor is the boundary."
+    },
+    "ida": {
+      "dir": "ida",
+      "licensed": true,
+      "heavy": true,
+      "check": "READY",
+      "owner_dirs": ["drop", "install"],
+      "env": {
+        "REA_IDA_MCP_CONFIG": "{path}/rea-ida-mcp.json"
+      },
+      "source": "the owner's IDA Pro 9.x (idalib) and licence, installed by rea-sandbox setup ida; bridge mrexodia/ida-pro-mcp c133c3853faa111a9b00ee615c013b720d0c4acd, built by tools/rea/build-engines.sh ida"
+    },
+    "jeb": {
+      "dir": "jeb",
+      "licensed": true,
+      "heavy": true,
+      "check": "READY",
+      "owner_dirs": ["drop", "install"],
+      "env": { "REA_JEB_MCP_URL": "http://127.0.0.1:8425/mcp", "REA_JEB_MCP_TIMEOUT_MS": "300000" },
+      "source": "the owner's JEB build and licence, unpacked and activated by rea-sandbox setup jeb; served on loopback by start-jeb-mcp.sh"
+    },
+    "hopper": {
+      "dir": "hopper",
+      "licensed": true,
+      "heavy": true,
+      "check": "READY",
+      "owner_dirs": ["drop", "install"],
+      "env": {},
+      "source": "the owner's Hopper Linux package and activated user state, installed by rea-sandbox setup hopper, which records HOPPER_LAUNCHER_PATH in the slot's slot-env.json; REA runs it on a private Xvfb display"
+    }
+  },
+  "roles": {
+    "lead": {
+      "title": "RE · Lead Investigator",
+      "families": ["session", "application", "artifact"],
+      "engines": [],
+      "exclude_effects": ["executesForeignCode"]
+    },
+    "native": {
+      "title": "RE · Native Binary Analyst",
+      "families": ["session", "application", "native", "enhanced", "direct", "artifact", "managed"],
+      "engines": ["ghidra", "kuna", "rizin", "pwntools", "pwndbg", "ida", "hopper"],
+      "analysis_provider": ["ghidra", "kuna", "ida", "hopper"]
+    },
+    "mobile": {
+      "title": "RE · Mobile Analyst",
+      "families": ["session", "application", "android", "apktool", "flutter", "artifact", "managed", "jeb"],
+      "engines": ["jadx", "apktool", "kuna", "jeb"],
+      "analysis_provider": ["kuna"]
+    },
+    "web": {
+      "title": "RE · Web & Electron Analyst",
+      "families": ["session", "application", "browser", "electron", "javascript-runtime", "artifact"],
+      "engines": ["wabt", "chromium"]
+    },
+    "firmware": {
+      "title": "RE · Firmware & Protocol Analyst",
+      "families": ["session", "application", "firmware", "pcap", "artifact", "native"],
+      "engines": ["binwalk", "unblob", "rizin", "kuna", "ghidra", "pwntools"],
+      "analysis_provider": ["ghidra", "kuna"]
+    },
+    "verifier": {
+      "title": "RE · Evidence Verifier",
+      "families": ["session", "application", "artifact", "native", "enhanced", "direct", "managed", "android", "apktool", "flutter", "firmware", "pcap", "electron", "jeb"],
+      "exclude_effects": ["executesForeignCode", "mutatesTarget", "mutatesDevice", "mayDiscardData"],
+      "engines": ["kuna", "ghidra", "rizin", "jadx", "apktool", "wabt", "binwalk", "pwntools", "pwndbg"],
+      "analysis_provider": ["kuna", "ghidra"]
+    },
+    "all": {
+      "title": "Everything (humans and unmapped sessions)",
+      "families": ["direct", "enhanced", "native", "artifact", "managed", "firmware", "android", "pcap", "flutter", "frida", "apktool", "jeb", "adb", "browser", "electron", "javascript-runtime", "application", "session"],
+      "engines": ["ghidra", "kuna", "jadx", "apktool", "rizin", "wabt", "binwalk", "unblob", "pwntools", "pwndbg", "chromium", "ida", "jeb", "hopper"],
+      "analysis_provider": ["ghidra", "kuna", "ida", "hopper"]
+    }
+  },
+  "members_file": "members.json",
+  "members": {},
+  "default_role": "all"
+}
