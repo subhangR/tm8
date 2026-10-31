@@ -120,14 +120,14 @@ export function LinkNumberDialog({
         {!pending ? (
           <form onSubmit={(event) => { event.preventDefault(); void begin(); }}>
             <fieldset className="brg-choice" disabled={busy}>
-              <legend className="set-eyebrow">Which phone has the number?</legend>
+              <legend className="set-eyebrow">How do you want to link it?</legend>
               <label className="brg-choice__opt">
                 <input type="radio" name="flow" checked={flow === 'qr'} onChange={() => setFlow('qr')} />
-                <span>Another phone — show a QR code here to scan</span>
+                <span>Scan a QR code — tm8 is open on a computer</span>
               </label>
               <label className="brg-choice__opt">
                 <input type="radio" name="flow" checked={flow === 'pairing'} onChange={() => setFlow('pairing')} />
-                <span>This phone — get a pairing code to type into WhatsApp</span>
+                <span>Type a pairing code — tm8 is open on the phone itself</span>
               </label>
             </fieldset>
             {flow === 'pairing' ? (
