@@ -602,6 +602,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   'bridges.connections.remove', 'bridges.conversations.list',
   // Q7/Q8 (424).
   'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw',
+  'bridges.handovers.list',
   // Spec D1 (301): `tm8 task release` joins the entities-commands module.
   'entities.commands.release',
   // Chat turn management: the composer's Stop finally has an operation.
