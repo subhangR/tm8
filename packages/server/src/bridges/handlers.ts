@@ -17,7 +17,7 @@ import {
   type BridgeFacts, type BridgeHandle, type BridgeHandleAppearance, type BridgeListenResult, type BridgeLogEntry,
   type BridgeLogResult, type BridgeRecentPoster, type BridgeView, type BridgeConnectionBeginResult,
   type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
-  type BridgeConnectionRemoveResult, type BridgeConversationListResult, type BridgeHandover, type BridgeHandoverResult, BridgeParticipantUpdateInputSchema,
+  type BridgeConnectionRemoveResult, type BridgeConversationListResult, type BridgeHandover, type BridgeHandoverItem, type BridgeHandoverListResult, type BridgeHandoverResult, BridgeParticipantUpdateInputSchema,
   BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema, BridgeMemoryProposalResolveInputSchema,
   BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES, type BridgeIdentityLink,
   type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
@@ -605,6 +605,15 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         };
       });
     }, 'bridges.handover.accept is for a human: the receiving number\'s owner, in tm8 (D9)'),
+    'bridges.handovers.list': async (ctx): Promise<BridgeHandoverListResult> => {
+      const bridgeId = requireUuidParam(ctx, 'bridgeId');
+      const status = ctx.query.get('status') ?? 'offered';
+      if (status !== 'offered' && status !== 'all') throw new CollabError('invalid_input', 'status is offered or all');
+      return read(ctx, async q => {
+        const out = await q.rpc<{ items: BridgeHandoverItem[] }>('list_bridge_handovers', [bridgeId, status]);
+        return { items: out.items.map(item => ({ ...item, ...handoverOf(item) })) };
+      });
+    },
     'bridges.handover.decline': handoverClose('decline_bridge_handover',
       'bridges.handover.decline is for a human: the receiving number\'s owner'),
     'bridges.handover.withdraw': handoverClose('withdraw_bridge_handover',

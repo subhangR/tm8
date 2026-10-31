@@ -8,7 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath, type BridgeConnectionAuthFrame,
   type BridgeConnectionBeginResult, type BridgeConnectionListResult, type BridgeConnectionOfferResult,
   type BridgeConnectionView, type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult,
-  type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
+  type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverListResult, type BridgeHandoverResult, type BridgeHandleListResult,
   type BridgeListResult, type BridgeListenResult, type BridgeLogResult, type BridgePolicy, type BridgeView,
   type BridgeWake, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeProvider,
   type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgeParticipant,
@@ -682,6 +682,21 @@ async function handoverOffer(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function handoverList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['all']); argumentsCount(cmd, 1);
+  const query: Record<string, string> = {};
+  if (cmd.options.bool('all')) query.status = 'all';
+  cmd.out.data(await observedInvoke<BridgeHandoverListResult>(client(cmd), 'bridges.handovers.list', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, query,
+  }), r => r.items.length
+    ? r.items.map(h => `hand-over ${h.id} · ${h.status} · ${h.fromConnectionLabel} → ${h.toConnectionLabel}` +
+        `${h.viewer.roles.length ? ` · you: ${h.viewer.roles.join(', ')}` : ''}` +
+        `${h.viewer.canAccept ? ` · accept: tm8 bridge handover accept ${h.id}` : ''}` +
+        `${h.viewer.canWithdraw ? ` · withdraw: tm8 bridge handover withdraw ${h.id}` : ''}`).join('\n')
+    : 'no open hand-over on this bridge');
+  return EXIT_OK;
+}
+
 async function handoverSettle(cmd: CommandContext,
   operation: 'bridges.handover.accept' | 'bridges.handover.decline' | 'bridges.handover.withdraw'): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
@@ -698,6 +713,7 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },
   { path: ['bridge', 'connection', 'withdraw'], run: connectionWithdraw },
+  { path: ['bridge', 'handover', 'list'], run: handoverList },
   { path: ['bridge', 'handover', 'offer'], run: handoverOffer },
   { path: ['bridge', 'handover', 'accept'], run: cmd => handoverSettle(cmd, 'bridges.handover.accept') },
   { path: ['bridge', 'handover', 'decline'], run: cmd => handoverSettle(cmd, 'bridges.handover.decline') },

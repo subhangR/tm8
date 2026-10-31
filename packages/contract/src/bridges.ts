@@ -438,6 +438,15 @@ export interface BridgeHandover {
   settledAt: string | null;
   settledBy: EntityId | null;
 }
+/** Who the caller is on an offer, and what it may do; computed by the server (425). */
+export type BridgeHandoverRole = 'offerer' | 'receiver' | 'from_owner' | 'admin';
+export interface BridgeHandoverItem extends BridgeHandover {
+  fromConnectionLabel: string;
+  toConnectionLabel: string;
+  viewer: { roles: BridgeHandoverRole[]; canAccept: boolean; canDecline: boolean; canWithdraw: boolean };
+}
+/** `bridges.handovers.list`: a bridge's offers, newest first (open ones unless `status=all`). */
+export interface BridgeHandoverListResult { items: BridgeHandoverItem[] }
 export interface BridgeHandoverOfferInput { clientMutationId: string; bridgeId?: EntityId; toConnectionId: string }
 export interface BridgeHandoverSettleInput { clientMutationId: string; handoverId?: string }
 export interface BridgeHandoverResult {
