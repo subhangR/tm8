@@ -8,8 +8,10 @@ import { bridgeFailureOf } from '../format';
 const PAGE = 50;
 
 /**
- * CONVERSATION (§4.4): the log anchor's thread, oldest first — the bridge's
- * own discussion, or the channel's for a channel target. Inbound bubbles name
+ * CONVERSATION (§4.4): the log anchor's thread — the bridge's own
+ * discussion, or the channel's for a channel target. It opens on the NEWEST
+ * page and scrolls back a page at a time (#1446's latest/before); rows read
+ * oldest first within what is shown. Inbound bubbles name
  * the participant (never a number); outbound ones say they were sent, and a
  * worker's carry its `Title (handle)` signature (D23).
  *
@@ -21,6 +23,8 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   const [items, setItems] = useState<BridgeLogEntry[] | null>(null);
   /* The id to pass as `before` for the next older page; null at the start of the log. */
   const [older, setOlder] = useState<string | null>(null);
+  /* One read at a time: a second click on a slow link would prepend the same page twice. */
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const provider = bridgeProviderLabel(view.provider);
 
@@ -28,6 +32,7 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
      before=olderCursor; rows stay oldest-first within a page, so an older page
      goes in front. Neither read moves anyone's unread cursor. */
   const load = useCallback(async (before: string | null) => {
+    setLoading(true);
     try {
       const page = await port.log(view.id, { limit: PAGE, ...(before ? { before } : { latest: true }) });
       setItems((prev) => (before ? [...page.items, ...(prev ?? [])] : page.items));
@@ -35,6 +40,8 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
       setError(null);
     } catch (err) {
       setError(bridgeFailureOf(err));
+    } finally {
+      setLoading(false);
     }
   }, [port, view.id]);
 
@@ -46,8 +53,8 @@ export function ConversationTab({ view, port }: { view: BridgeView; port: Pick<B
   return (
     <div className="brg-conv" data-testid="bridge-conversation">
       {older ? (
-        <button type="button" className="pn-btn brg-conv__older" onClick={() => void load(older)} data-testid="bridge-conversation-older">
-          Show earlier messages
+        <button type="button" className="pn-btn brg-conv__older" disabled={loading} onClick={() => void load(older)} data-testid="bridge-conversation-older">
+          {loading ? 'Loading earlier messages…' : 'Show earlier messages'}
         </button>
       ) : items.length > 0 ? (
         <p className="brg-hint" data-testid="bridge-conversation-start">The start of the conversation.</p>

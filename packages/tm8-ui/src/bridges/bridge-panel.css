@@ -123,7 +123,7 @@
 .brg-choice__opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; font-size: var(--pn-fs-body); }
 .brg-choice__opt .brg-muted { font-size: var(--pn-fs-sm); }
 .brg-form__line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: var(--pn-fs-body); }
-.brg-form__line input[type='text'] { flex: 1; min-width: 12rem; font: inherit; padding: 4px 8px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); background: var(--pn-card); color: var(--pn-ink); }
+.brg-form__line input[type='text'] { flex: 1; min-width: min(12rem, 100%); box-sizing: border-box; font: inherit; padding: 4px 8px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); background: var(--pn-card); color: var(--pn-ink); }
 .brg-form__line input[type='number'] { width: 6rem; font: inherit; padding: 3px 6px; }
 .brg-form__times { display: inline-flex; gap: 6px; align-items: center; }
 .brg-group { margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--pn-x-hairline-soft); }
@@ -166,7 +166,8 @@
 .brg-loops__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .brg-loops__add { margin-top: 12px; }
 .brg-loops__form { margin-top: 10px; padding: 10px; border: 1px dashed var(--pn-line-2); border-radius: var(--pn-r-md); }
-.brg-loops__form input[type='text'], .brg-loops__form select { flex: 1; min-width: 12rem; font: inherit; padding: 4px 8px; }
+/* The form's inputs are the base .brg-form__line inputs; only the select needs its own width. */
+.brg-loops__form select { flex: 1; min-width: min(12rem, 100%); box-sizing: border-box; font: inherit; padding: 4px 8px; }
 .brg-loops__textline { align-items: flex-start; flex-direction: column; }
 .brg-loops__edit textarea, .brg-loops__textline textarea {
   width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm);

@@ -106,6 +106,24 @@ describe('the bridge panel', () => {
     expect(screen.getByTestId('bridge-conversation-where').textContent).toContain('reply in WhatsApp');
   });
 
+  it('reads one older page at a time: the button is off while a read is in flight (#1470 review)', async () => {
+    const t = testPort();
+    let release: () => void = () => {};
+    const real = t.port.log.bind(t.port);
+    const log = vi.spyOn(t.port, 'log').mockImplementation(async (id, q) => {
+      if (q?.before) await new Promise<void>((r) => { release = r; });
+      return real(id, q);
+    });
+    render(<BridgePageBlock detail={detail()} port={t.port} />);
+    const older = await screen.findByTestId('bridge-conversation-older');
+    fireEvent.click(older);
+    await waitFor(() => expect((screen.getByTestId('bridge-conversation-older') as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByTestId('bridge-conversation-older'));
+    expect(log.mock.calls.filter(([, q]) => q?.before)).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByTestId('bridge-conversation').textContent).toContain('@tm8 is the deploy done?'));
+  });
+
   it('saves a narrowing change at once and offers Undo with the same patch back', async () => {
     const { port } = await renderPage();
     tab('Routing');

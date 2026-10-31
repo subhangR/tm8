@@ -299,6 +299,8 @@ function NewPostLoop({
   const [schedule, setSchedule] = useState('every weekday at 09:30');
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<{ valid: boolean; summary: string; problem: string | null } | null>(null);
+  /* Why there is no preview: nothing typed, or the preview call failed. Null while one is in flight. */
+  const [previewGap, setPreviewGap] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const zone = useMemo(browserZone, []);
@@ -306,11 +308,12 @@ function NewPostLoop({
 
   useEffect(() => {
     const mine = ++seq.current;
-    if (!schedule.trim()) { setPreview(null); return; }
+    if (!schedule.trim()) { setPreview(null); setPreviewGap('Type a schedule, e.g. every weekday at 09:30.'); return; }
+    setPreviewGap(null);
     const t = setTimeout(() => {
       void loops.schedulePreview(view.spaceId, schedule, zone).then(
         (p) => { if (seq.current === mine) setPreview(p); },
-        () => { if (seq.current === mine) setPreview(null); },
+        (err) => { if (seq.current === mine) { setPreview(null); setPreviewGap(`The schedule could not be checked: ${bridgeFailureOf(err)}`); } },
       );
     }, 300);
     return () => clearTimeout(t);
@@ -342,7 +345,7 @@ function NewPostLoop({
         <input type="text" aria-label="Schedule" value={schedule} onChange={(e) => setSchedule(e.target.value)} />
       </label>
       <p className="brg-hint" role="status" data-testid="bridge-new-loop-preview">
-        {preview === null ? 'Checking the schedule…' : preview.valid ? `${preview.summary}` : preview.problem ?? 'That schedule is not understood.'}
+        {previewGap ?? (preview === null ? 'Checking the schedule…' : preview.valid ? preview.summary : preview.problem ?? 'That schedule is not understood.')}
       </p>
       <label className="brg-form__line brg-loops__textline">
         <span className="set-eyebrow">What it posts in {view.title}</span>
