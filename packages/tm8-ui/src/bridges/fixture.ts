@@ -35,7 +35,7 @@ function seedLog(view: BridgeView): BridgeLogEntry[] {
   if (view.conversation.kind !== 'group') return [];
   const entry = (n: number, over: Partial<BridgeLogEntry>): BridgeLogEntry => ({
     id: `${view.id}-msg-${n}`, createdAt: at(40 + n), authorId: view.id, authorKind: 'bridge', authorName: '',
-    body: '', parentMessageId: null, rootMessageId: null, origin: null, handle: null, delivery: null, ...over,
+    body: '', parentMessageId: null, rootMessageId: null, origin: null, handle: null, delivery: null, trust: null, ...over,
   });
   return [
     entry(1, {
