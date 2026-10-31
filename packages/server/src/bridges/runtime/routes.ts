@@ -49,6 +49,10 @@ export interface BridgeRuntimeRouteOptions {
   /** B1b-4's executor. Absent: nothing is a command. */
   readonly commands?: () => BridgeCommandHook | undefined;
   readonly connectionAuth?: BridgeConnectionAuthPort;
+  /** Delivers a stored inbound message to its session target and its directed workers (413 §5). */
+  readonly deliver?: (messageId: string) => Promise<unknown>;
+  /** Fetches inbound media into file entities after commit (413 §4). */
+  readonly media?: { kick(): Promise<number> };
   /** Starts a queued chat turn (the orchestrator's wake). */
   readonly wakeChat?: (chatId: string, requesterIdentityId: string) => void;
   /** A media frame carries base64 bytes; everything else is small. */
@@ -208,5 +212,10 @@ async function inbound(
     void hook.run(messageId).catch((err) => o.log?.(`[bridges] command ${messageId} failed: ${(err as Error).message}`));
   }
   if (result.status === 'stored' && result.wakeChat) o.wakeChat?.(result.wakeChat.chatId, result.wakeChat.identityId);
+  if (result.status === 'stored' && Array.isArray(frame.media) && frame.media.length > 0) void o.media?.kick();
+  if (result.status === 'stored' && !result.command && result.messageId && o.deliver) {
+    const messageId = result.messageId;
+    void o.deliver(messageId).catch((err) => o.log?.(`[bridges] delivery of ${messageId} failed: ${(err as Error).message}`));
+  }
   return { status: result.status === 'refused' ? 409 : 200, body: result };
 }

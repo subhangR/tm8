@@ -1,5 +1,5 @@
 /**
- * Q7/Q8 (D55, D56; migration 411) over a real bootstrap() and a fake runtime
+ * Q7/Q8 (D55, D56; migration 424) over a real bootstrap() and a fake runtime
  * on the runtime socket. Two members' numbers (Asha's A, Bina's B) are offered
  * to the space; the Infra bridge rides A. The runtime answers accept's
  * `conversation.list` with each number's groups from `groups` below.
@@ -497,3 +497,4 @@ describe('H7. review fixes', () => {
     expect(direct!.c).toBe(connA);
   });
 });
+

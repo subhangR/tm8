@@ -1,5 +1,5 @@
 /**
- * Bridges B1b-5 (migration 400, BRIDGE-ENTITY-DESIGN §2.5, §3.4, D28, D32): a
+ * Bridges B1b-5 (migration 421, BRIDGE-ENTITY-DESIGN §2.5, §3.4, D28, D32): a
  * connection is offered to a space as a server-only `credential` (provider
  * whatsapp, shape connection). Pinned here: the owner, a member, offers it;
  * anyone else is refused; the spawn reader refuses it; withdraw pauses every
@@ -56,9 +56,9 @@ const bridgeRow = async (id: string) => (await scratch.query<{ credential_id: st
 beforeAll(async () => {
   scratch = await createW1ScratchDatabase('bridge_conns');
   const files = migrationFiles();
-  const cut = files.findIndex(f => f.startsWith('408_bridge_connection_credentials'));
+  const cut = files.findIndex(f => f.startsWith('421_bridge_connection_credentials'));
   expect(cut).toBeGreaterThan(0);
-  // Up to B0a first, so a bridge created the B0a way (no credential) is there for 400's backfill.
+  // Up to B0a first, so a bridge created the B0a way (no credential) is there for 421's backfill.
   scratch.apply(files.slice(0, cut));
   db = createDb(scratch.url, { max: 4 });
   await scratch.transaction(async c => {
@@ -94,7 +94,7 @@ beforeAll(async () => {
   });
   legacyBridge = (await createBridge(ownerIdentity, spaceId, connection, 'legacy@g.us', chatA)).entity.id;
   expect((await bridgeRow(legacyBridge)).credential_id).toBeNull();
-  // A REMOVED B0a bridge too: 395's guard refuses any update of a tombstone, and 400 must still fill it.
+  // A REMOVED B0a bridge too: 395's guard refuses any update of a tombstone, and 421 must still fill it.
   const removed = await createBridge(ownerIdentity, spaceId, connection, 'removed@g.us', chatRemoved);
   removedBridge = removed.entity.id;
   await as(ownerIdentity, q => q.rpc('remove_bridge', [removedBridge, removed.entity.version, null, randomUUID()]));

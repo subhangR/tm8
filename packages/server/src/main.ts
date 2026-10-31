@@ -65,6 +65,8 @@ import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-bin
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
 import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { createMcpOAuthPendingSweepJob } from './scheduler/jobs/mcp-oauth-pending-sweep.js';
+import { createBridgeFixSweepJob } from './scheduler/jobs/bridge-fix-sweep.js';
+import { createBridgeMemoryProposalExpiryJob } from './scheduler/jobs/bridge-memory-proposal-expiry.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -123,6 +125,8 @@ import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.
 import { createBridgeCommands } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
+import { BridgeMediaFetcher } from './bridges/runtime/media.js';
+import { createBridgeSessionDelivery } from './bridges/runtime/deliver.js';
 import type { BridgeCommandHook } from './bridges/runtime/command-hook.js';
 import { bridgeWatchdogJob } from './scheduler/jobs/bridge-watchdog.js';
 import { LOCAL_KEY_ID, localKeyProvider } from './credentials/key-provider.js';
@@ -599,6 +603,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       // Bridges B1b-5/B1b-7: the QR relay, and the runtime hub (built further down,
       // so reached per call; B1b-7 closed the gap where begin answered 'offline').
       bridges: { connectionAuth: bridgeConnectionAuth, runtime: lazyRuntimeLink(() => bridgeHub) },
+      // The same instance as the `bridgeCommands` slot below.
+      ...(bridgeCommandExecutor ? { bridgeCommands: bridgeCommandExecutor } : {}),
       ...(loopExecutor ? { loops: { executor: loopExecutor } } : {}),
       mcp: {
         dataDir,
@@ -938,6 +944,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }
     : baseUpgrades;
 
+  const bridgeMedia = db && bridgeHub && blobStore
+    ? new BridgeMediaFetcher({ db, hub: bridgeHub, blobStore, maxBytes: fileMaxSizeBytes, log: (line) => console.warn(line) })
+    : undefined;
+  // 413 §5: session targets and directed workers, through the same delivery
+  // loop every message uses. Absent with no execution runtime: stored only.
+  const bridgeDeliver = db && delivery
+    ? createBridgeSessionDelivery({ db, delivery: delivery.messageDelivery as unknown as MessageDeliveryPort })
+    : undefined;
   const bridgeRuntimeRoute = db && bridgeHub
     ? createBridgeRuntimeRoute({
         db,
@@ -947,6 +961,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         // B1b-7: the auth door relays the QR, the state door settles it (B1b-5's relay).
         connectionAuth: bridgeConnectionAuth,
         commands: () => bridgeCommands,
+        ...(bridgeMedia ? { media: bridgeMedia } : {}),
+        ...(bridgeDeliver ? { deliver: bridgeDeliver } : {}),
         ...(chat ? { wakeChat: (chatId: string, identityId: string) => { void chat.wake(chatId, identityId); } } : {}),
         log: (line) => console.warn(line),
       })
@@ -1294,7 +1310,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     // Bridges D19 (398): the watchdog — degraded runtimes, failed turns, stuck
     // dispatches — and the command executor's sweep.
     if (bridgeHub) {
-      scheduler.register(bridgeWatchdogJob({ db, commands: () => bridgeCommands, onChanged: () => bridgeHub.kick() }));
+      scheduler.register(bridgeWatchdogJob({
+        db, commands: () => bridgeCommands, ...(bridgeMedia ? { media: bridgeMedia } : {}), onChanged: () => bridgeHub.kick(),
+      }));
     }
     // Forms W2 (214): the backstop for the hooks above — a restart, a lost
     // hook, or a session that went live through a path that fired none.
@@ -1360,6 +1378,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-oauth-pending-sweep' };
+        },
+      }),
+    );
+    // Bridges F (412): the fix-notice waits that need a clock (D70, D72).
+    scheduler.register(createBridgeFixSweepJob({ db }));
+    // Bridges D63 (416): /remember proposals nobody decided expire after 14 days.
+    scheduler.register(
+      createBridgeMemoryProposalExpiryJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'bridge-memory-proposal-expiry' };
         },
       }),
     );

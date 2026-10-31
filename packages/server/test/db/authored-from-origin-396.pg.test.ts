@@ -63,6 +63,9 @@ async function authored(src: string, dst: string, props: Record<string, unknown>
        values ($1, $2, $3, 'authored_from', $4, $5::jsonb) returning id::text`,
       [fixture.space, src, dst, fixture.member, JSON.stringify(props)],
     );
+    // Fire any deferred constraint triggers on edges first (F's bridge-fix trigger
+    // watches bridge-marked edges): ALTER TABLE refuses a table with pending trigger events.
+    if (marked) await client.query('set constraints all immediate');
     if (marked) await client.query('alter table public.edges enable trigger edges_authored_from_bridge');
     return rows[0]!.id;
   });

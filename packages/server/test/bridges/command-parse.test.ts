@@ -28,6 +28,10 @@ describe('what is a command (§4.2)', () => {
     ['/mute 1h', 'mute'],
     ['/who', 'who'],
     ['/bridge', 'bridge'],
+    ['/start #2', 'start'],
+    ['/retry keen-otter', 'retry'],
+    ['/result keen-otter', 'result'],
+    ['/tell keen-otter the logs are in #ops', 'tell'],
     ['\n\n/task write the notes', 'task'],
     // Not commands: a slash mid-sentence, a path, a URL, nothing.
     ['can you /stop it', null],
@@ -70,10 +74,18 @@ describe('unknown and planned words are answered, never routed (§4.2)', () => {
     expect(parseBridgeCommand('/xyzzy')).toMatchObject({ kind: 'unknown', suggestion: null });
     expect(isBridgeCommandText('/xyzzy')).toBe(true);
   });
-  it.each(['tell', 'result', 'retry', 'remember', 'remind', 'loops', 'start'])(
+  it.each(['remind', 'loops', 'forget', 'queue'])(
     '/%s is a later verb: planned, not a did-you-mean', word => {
       expect(parseBridgeCommand(`/${word} something`)).toMatchObject({ kind: 'planned', verb: word });
     });
+});
+
+describe('/remember (Bridges R, D29)', () => {
+  it('is a verb now, its text the rest of the line and the lines under it', () => {
+    expect(parseBridgeCommand('/remember deploy windows are Tue/Thu\n14:00-16:00 IST')).toMatchObject({
+      kind: 'command', verb: 'remember', body: ['14:00-16:00 IST'],
+    });
+  });
 });
 
 describe('/work items (§4.3)', () => {

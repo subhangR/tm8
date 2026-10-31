@@ -1,5 +1,5 @@
 /**
- * Bridges B1b-5, migration 406 (option B): internal.bridge_runtime_connect,
+ * Bridges B1b-5, migration 422 (option B): internal.bridge_runtime_connect,
  * which the hub's `connect` calls for bridges.connections.begin, admits the
  * connection's human owner under their own claims, or the bridges worker, and
  * nobody else.
@@ -52,7 +52,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await db?.end(); await scratch?.destroy(); });
 
-describe('internal.bridge_runtime_connect (406)', () => {
+describe('internal.bridge_runtime_connect (422)', () => {
   it('admits the connection\'s owner on their own human session, and binds the runtime', async () => {
     for (const kind of ['browser', 'cli'] as const) {
       const r = await connect(claims(ownerIdentity, kind), `wa-${kind}`);

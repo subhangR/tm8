@@ -21,6 +21,7 @@
  * Kept as a seam, not imports, so the executor is testable against a scratch
  * database with fakes for the PTY host and the outbox.
  */
+import type { BridgeWorkStartInput, BridgeWorkStartResult } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
 import type { BridgeAuthor } from '../runtime/command-hook.js';
@@ -69,6 +70,11 @@ export interface BridgeCommandInput {
   edited?: boolean;
 }
 
+/** bridges.work.start's door into the executor (v2 §4.3): the /work path, as the caller. */
+export interface BridgeWorkStarter {
+  workStart(claims: DbClaims, input: BridgeWorkStartInput & { bridgeId: string }): Promise<BridgeWorkStartResult>;
+}
+
 export interface BridgeCommandPorts {
   readonly db: Db;
   /** Claims for the executor's server-only doors: bridgesWorkerClaims() ('bridges.runtime'). */
@@ -81,6 +87,8 @@ export interface BridgeCommandPorts {
   recordOrigin(q: Querier, entityId: string, origin: BridgeCommandOrigin): Promise<void>;
   spawnWorker(claims: DbClaims, request: SpawnWorkerRequest): Promise<{ sessionId: string }>;
   stopWorker(claims: DbClaims, sessionId: string, input: { reason: string; clientMutationId: string }): Promise<void>;
+  /** `session resume`: the same session, relaunched (/retry). */
+  resumeWorker(claims: DbClaims, sessionId: string, input: { clientMutationId: string }): Promise<{ sessionId: string }>;
   workerHandle(claims: DbClaims, bridgeId: string, sessionId: string): Promise<{ handle: string; title: string | null } | null>;
   readonly logger?: { warn(message: string): void; debug?(message: string): void };
   readonly now?: () => Date;

@@ -1,7 +1,9 @@
 -- =============================================================================
--- 407 — Bridges B1b-7: a connection's lifecycle in its spaces.
+-- 423 — Bridges B1b-7: a connection's lifecycle in its spaces.
 -- (Authored as 401; renumbered to 407 so it follows #1427's 405, whose
--- internal.bridge_credential_guard it restates. Provisional; the merger assigns the final one.)
+-- internal.bridge_credential_guard it restates; renumbered to 423 on the merge
+-- of batch 7 cut A, after #1427's 421/422. The guard body here still starts
+-- from 421's, which nothing in 400-420 redefines.)
 --
 -- Design of record: docs/features/bridges/BRIDGE-ENTITY-DESIGN.md §2.5 (the
 -- owner leaving the space pauses every bridge on their connection there;
@@ -11,15 +13,15 @@
 --
 -- Predecessors: 398 (B1b-2: the allowlist follows bridges.paused_at and
 -- ended_at in the database, so everything here reaches the runtime without a
--- TS hook) and 405 (B1b-5: the offered credential and its guard).
+-- TS hook) and 421 (B1b-5: the offered credential and its guard).
 --
 -- WHAT THIS FILE DOES
 --   §1  the owner leaving or being removed already pauses: end_membership
 --       (239) revokes every credential the member owns in the space before the
 --       tombstone (and 239's guard refuses a tombstone over a live one), so the
---       offer is revoked and 405's trigger pauses its bridges. Nothing new here;
+--       offer is revoked and 421's trigger pauses its bridges. Nothing new here;
 --       the test pins that path (leave_space, remove_space_member);
---   §2  internal.bridge_credential_guard, restated from 405 (its latest
+--   §2  internal.bridge_credential_guard, restated from 421 (its latest
 --       definition) plus one arm: a bridge whose connection's owner is not an
 --       active member of its space cannot be resumed (`owner_not_member`);
 --   §3  remove_bridge_connection (owner, human-only): the connection becomes
@@ -37,7 +39,7 @@ set role tm8_graph_owner;
 
 -- -----------------------------------------------------------------------------
 -- §2. A bridge resumes only while its connection's owner is an active member.
---     Restated from 405 (the latest definition); the new arm is marked.
+--     Restated from 421 (the latest definition); the new arm is marked.
 -- -----------------------------------------------------------------------------
 create or replace function internal.bridge_credential_guard() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
@@ -65,7 +67,7 @@ begin
   if new.credential_id is distinct from old.credential_id then
     raise exception 'a bridge''s credential is fixed' using errcode = '42501';
   end if;
-  -- 407: the owner of the number left the space (§2.5). Checked first: it is the
+  -- 423: the owner of the number left the space (§2.5). Checked first: it is the
   -- reason to name, since leaving also revoked the offer.
   if old.paused_at is not null and new.paused_at is null and new.ended_at is null
      and not exists (select 1 from public.bridge_connections c

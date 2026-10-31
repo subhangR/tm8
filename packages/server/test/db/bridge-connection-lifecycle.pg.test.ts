@@ -1,5 +1,5 @@
 /**
- * Bridges B1b-7 (migration 401, BRIDGE-ENTITY-DESIGN §2.5, §3.4, D28): the
+ * Bridges B1b-7 (migration 423, BRIDGE-ENTITY-DESIGN §2.5, §3.4, D28): the
  * owner leaving a space pauses their bridges there (DB-driven, so the 398
  * allowlist push follows) and keeps them paused; removing a connection ends
  * every bridge on it and revokes its offers; the runtime a connection is on is

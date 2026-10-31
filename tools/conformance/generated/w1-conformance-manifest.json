@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b20126666f00c13c7f1efb24dfd5ece4eb7d239486bf65c8c8520fc3ece9e66d",
+  "catalogDigest": "sha256:f5e7e351a4ded91f7e9d5ec149adc2409905406f11240372bfd9982fc79226e3",
   "catalog": {
-    "total": 420,
-    "v1": 418,
+    "total": 432,
+    "v1": 430,
     "reserved": 2,
-    "http": 418,
+    "http": 430,
     "ws": 1,
-    "registerableV1Http": 416,
+    "registerableV1Http": 428,
     "methods": {
-      "GET": 140,
-      "POST": 210,
-      "PATCH": 23,
+      "GET": 144,
+      "POST": 216,
+      "PATCH": 25,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 147,
-      "command": 271,
+      "read": 151,
+      "command": 279,
       "stream": 2
     },
-    "uniqueNames": 420,
-    "uniqueBindings": 419
+    "uniqueNames": 432,
+    "uniqueBindings": 431
   },
   "reservedOperations": [
     "search.query",
@@ -432,6 +432,20 @@
         "source": "server-router"
       },
       {
+        "operation": "bridges.participants.list",
+        "method": "GET",
+        "path": "/v2/bridges/:bridgeId/participants",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.participants.update",
+        "method": "PATCH",
+        "path": "/v2/bridges/:bridgeId/participants/:externalId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "bridges.handles.list",
         "method": "GET",
         "path": "/v2/bridges/:bridgeId/handles",
@@ -526,6 +540,76 @@
         "operation": "bridges.handover.withdraw",
         "method": "POST",
         "path": "/v2/bridge-handovers/:handoverId/withdraw",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/labels",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/labels",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.update",
+        "method": "PATCH",
+        "path": "/v2/labels/:labelId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "labels.archive",
+        "method": "POST",
+        "path": "/v2/labels/:labelId/archive",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.work.start",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/work",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.memories.proposals.list",
+        "method": "GET",
+        "path": "/v2/bridges/:bridgeId/memory-proposals",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.memories.proposals.resolve",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.links.begin",
+        "method": "POST",
+        "path": "/v2/identity/bridge-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.links.list",
+        "method": "GET",
+        "path": "/v2/identity/bridge-links",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.links.revoke",
+        "method": "POST",
+        "path": "/v2/identity/bridge-links/:linkId/revoke",
         "status": "registered",
         "source": "server-router"
       },
@@ -3344,7 +3428,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 388
+    "unimplementedV1Http": 400
   },
   "schemas": {
     "additive": {
@@ -4050,6 +4134,40 @@
         "publicComposite": null
       },
       {
+        "operation": "bridges.participants.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.participants.list",
+        "intentTags": [
+          "bridges",
+          "participants",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.participants.update",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.participants.update",
+        "intentTags": [
+          "bridges",
+          "participants",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "bridges.handles.list",
         "noun": "bridge",
         "exposure": "public",
@@ -4278,6 +4396,174 @@
           "bridges",
           "handover",
           "withdraw"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.list",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.list",
+        "intentTags": [
+          "labels",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.create",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.create",
+        "intentTags": [
+          "labels",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.update",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.update",
+        "intentTags": [
+          "labels",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "labels.archive",
+        "noun": "label",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/labels.archive",
+        "intentTags": [
+          "labels",
+          "archive"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.work.start",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.work.start",
+        "intentTags": [
+          "bridges",
+          "work",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.memories.proposals.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.memories.proposals.list",
+        "intentTags": [
+          "bridges",
+          "memories",
+          "proposals",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.memories.proposals.resolve",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.memories.proposals.resolve",
+        "intentTags": [
+          "bridges",
+          "memories",
+          "proposals",
+          "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.links.begin",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.links.begin",
+        "intentTags": [
+          "bridges",
+          "links",
+          "begin"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.links.list",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.links.list",
+        "intentTags": [
+          "bridges",
+          "links",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.links.revoke",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.links.revoke",
+        "intentTags": [
+          "bridges",
+          "links",
+          "revoke"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -11688,6 +11974,39 @@
         },
         "migration": {
           "strategy": "craft-detail"
+        }
+      },
+      "label": {
+        "kind": "label",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "labels"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "label-detail"
         }
       },
       "style": {

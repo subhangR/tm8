@@ -1,6 +1,7 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
 import { ToolEntitySchema, ToolRunSchema } from './tools.js';
-import { BridgeEntitySchema } from './bridges.js';
+import { BridgeDeliverySchema, BridgeEntitySchema, MessageBridgeViewSchema } from './bridges.js';
+import { ENTITY_LABELS_MAX, EntityLabelsPatchSchema, LabelEntitySchema } from './labels.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -253,6 +254,8 @@ export const CoreEntityKindSchema = z.enum([
   'craft',
   // Bridges (395). Not in `CreatableEntityKind`: `bridges.create` is its door.
   'bridge',
+  // Labels (410). Not in `CreatableEntityKind`: `labels.create` is its door.
+  'label',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -781,6 +784,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   CraftStateSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  // 410 — a label's name, colour, description and archive mark.
+  LabelEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -978,6 +983,8 @@ function entitySummaryShape() {
     // in this phase AND the truth a pre-column node reports. See the field's
     // docblock on `EntitySummary`.
     category: StatusCategorySchema.optional(),
+    // 410: label ids, spread when non-empty (see `EntitySummary.labels`).
+    labels: z.array(EntityIdSchema).optional(),
   };
 }
 
@@ -1228,6 +1235,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   CraftContentSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
+  LabelEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -1396,6 +1404,10 @@ const CollectionFiltersSchema = z.object({
   titleContains: z.string().trim().min(1).max(200).optional(),
   // Every word, in title or description (collections.ts). Same trim rule.
   words: z.string().trim().min(1).max(200).optional(),
+  // Labels (410): all of / any of these label ids. Non-empty: an empty
+  // all-of matches everything and an empty any-of matches nothing.
+  labels: z.array(EntityIdSchema).min(1).max(32).optional(),
+  labelsAny: z.array(EntityIdSchema).min(1).max(32).optional(),
 }).strict().superRefine((f, ctx) => {
   // A22: refused, not silently empty. The two filters are kind-disjoint (no
   // row is both a task and a work_session), so their conjunction can only
@@ -1781,6 +1793,7 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   parts: z.array(MessagePartSchema).optional(),
   turnInFlight: z.boolean().optional(),
   sourceWorkSessionId: EntityIdSchema.optional(),
+  bridge: MessageBridgeViewSchema.optional(),
 }).strict());
 
 export const MessageDeliveryDispositionSchema: z.ZodType<MessageDeliveryDisposition> = z.lazy(() =>
@@ -1799,17 +1812,7 @@ export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(()
   // Optional, not nullable: absent means the batch named no session. An empty
   // array would read as "every target failed" and is therefore never emitted.
   delivery: z.array(MessageDeliveryDispositionSchema).min(1).optional(),
-  bridgeDelivery: z.array(z.object({
-    messageId: z.string().min(1),
-    bridgeId: z.string().min(1),
-    status: z.enum(['pending', 'sent', 'failed_retryable', 'failed_permanent', 'refused']),
-    reason: z.enum(['bridge_paused', 'bridge_ended', 'direction_in', 'worker_posting_off', 'rate_limited',
-      'not_connected', 'credential_text']).optional(),
-    retryAfterMs: z.number().int().nonnegative().optional(),
-    externalMessageId: z.string().min(1).optional(),
-    detail: z.string().min(1).optional(),
-    at: z.string().min(1),
-  }).strict()).min(1).optional(),
+  bridgeDelivery: z.array(BridgeDeliverySchema).min(1).optional(),
   warnings: z.array(ResultWarningSchema).min(1).optional(),
 }).strict());
 
@@ -2418,7 +2421,7 @@ export const AuthSessionsListInputSchema: z.ZodType<AuthSessionsListInput> = z.o
 
 export const AuthSessionListingSchema: z.ZodType<AuthSessionListing> = z.object({
   sessionId: z.string().uuid(),
-  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime']),
+  kind: z.enum(['browser', 'cli', 'agent', 'agent_runtime', 'bridge_runtime']),
   createdAt: IsoTimestamp,
   lastUsedAt: IsoTimestamp.nullable(),
   expiresAt: IsoTimestamp,
@@ -3146,7 +3149,7 @@ export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `form` likewise: `forms.create` writes its questions and requesting
   // session in the same call (FORMS-DESIGN §6). `credential` is human-only
   // and born under a SQL guard from credentials.space.* (W10a).
-  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge']),
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'style', 'bridge', 'label']),
   CustomEntityKindSchema,
 ]));
 
@@ -3162,6 +3165,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   attachTo: attachToSchema.optional(),
   connections: uniqueArray(InitialConnectionInputSchema).optional(),
   header: HeaderTextInputSchema.optional(),
+  labels: z.array(EntityIdSchema).min(1).max(ENTITY_LABELS_MAX).optional(),
 }).strict() as z.ZodType<CreateEntityInput>;
 
 export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
@@ -3169,6 +3173,7 @@ export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
   expectedVersion: z.number().finite(),
   title: z.string().optional(),
   content: z.record(z.unknown()).optional(),
+  labels: EntityLabelsPatchSchema.optional(),
 }).strict();
 
 // artifacts — command inputs (TM8-ARTIFACTS-DESIGN §8.1). The manifest is the
@@ -3378,6 +3383,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
   team: ChatTurnTeamSchema.optional(),
+  hereOnly: z.boolean().optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =

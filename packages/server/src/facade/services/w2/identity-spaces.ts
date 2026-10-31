@@ -1,4 +1,5 @@
 import {
+  BridgeInviteParticipantSchema,
   CollabError,
   decodeCursor,
   encodeCursor,
@@ -558,7 +559,7 @@ export class W2IdentitySpacesService {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const body = bodyObject(ctx.body);
-    assertStrictKeys(body, ['actorId', 'clientMutationId', 'maxUses', 'expiresAt', 'role']);
+    assertStrictKeys(body, ['actorId', 'clientMutationId', 'maxUses', 'expiresAt', 'role', 'bridgeParticipant']);
     const clientMutationId = requireMutationId(body);
     const actorId = optionalActorId(body);
     const maxUses = body.maxUses ?? 1;
@@ -578,11 +579,22 @@ export class W2IdentitySpacesService {
     if (role !== 'admin' && role !== 'member') {
       throw new CollabError('invalid_input', "role must be 'admin' or 'member': an invite cannot confer ownership");
     }
-    const result = await this.deps.db.rpc<InviteMutationResult>(
-      claimsFor(owner, ctx, commandEnvelope(ctx)),
-      'create_invite',
-      [spaceId, maxUses, expiresAt, actorId, clientMutationId, role],
-    );
+    // Bridges B3 (417, D60): an invite for one bridge participant. The invite
+    // and its pin are one transaction; a replay re-pins the same pair quietly.
+    const pinned = body.bridgeParticipant === undefined
+      ? null
+      : BridgeInviteParticipantSchema.parse(body.bridgeParticipant);
+    if (pinned && maxUses !== 1) {
+      throw new CollabError('invalid_input', 'an invite for one bridge participant has maxUses 1');
+    }
+    const result = await this.deps.db.tx(claimsFor(owner, ctx, commandEnvelope(ctx)), async (q) => {
+      const created = await q.rpc<InviteMutationResult>(
+        'create_invite',
+        [spaceId, maxUses, expiresAt, actorId, clientMutationId, role],
+      );
+      if (pinned) await q.rpc('pin_bridge_invite', [created.invite.id, pinned.bridgeId, pinned.externalId]);
+      return created;
+    });
     return { kind: 'json' as const, status: 201, data: toInvite(result.invite) };
   };
 

@@ -40,80 +40,6 @@ let bridgeId = '';
 
 const memberClaims = (identityId: string): DbClaims => ({ identityId, nodeAdmin: false, requestId: `t-${randomUUID()}` });
 
-/** Create `fn` only when the applied migrations have not (the sibling lanes' real doors win). */
-const STUBS: Array<[string, string]> = [
-  ['internal.is_bridges_worker()', `create function internal.is_bridges_worker() returns boolean language sql stable as $$
-     select coalesce(internal.claim_text('tm8.background_job') = 'bridges.runtime', false) $$;
-     grant execute on function internal.is_bridges_worker() to tm8_app;`],
-  ['internal.is_bridge_runtime()', `create function internal.is_bridge_runtime() returns boolean language sql stable as $$ select false $$;
-     grant execute on function internal.is_bridge_runtime() to tm8_app;`],
-  ['internal.bridge_command_claim(uuid)', `
-     alter table public.message_origins add column if not exists command_state text;
-     alter table public.message_origins add column if not exists command_claimed_at timestamptz;
-     alter table public.message_origins add column if not exists command_settled_at timestamptz;
-     create function internal.bridge_command_claim(p uuid) returns boolean language plpgsql security definer
-     set search_path = public, internal, pg_temp as $$
-     declare n int;
-     begin
-       if not internal.is_bridges_worker() then raise exception 'not the bridges worker' using errcode = '42501'; end if;
-       update public.message_origins set command_state = 'running', command_claimed_at = now()
-        where message_id = p and (command_state = 'pending'
-          or (command_state = 'running' and command_claimed_at < now() - interval '2 minutes'));
-       get diagnostics n = row_count; return n = 1;
-     end $$;
-     grant execute on function internal.bridge_command_claim(uuid) to tm8_app;`],
-  ['internal.bridge_command_settle(uuid,text)', `create function internal.bridge_command_settle(p uuid, o text) returns void language plpgsql security definer
-     set search_path = public, internal, pg_temp as $$
-     begin
-       if not internal.is_bridges_worker() then raise exception 'not the bridges worker' using errcode = '42501'; end if;
-       update public.message_origins set command_state = o, command_settled_at = now() where message_id = p;
-     end $$;
-     grant execute on function internal.bridge_command_settle(uuid, text) to tm8_app;`],
-  // D31's shape: one edge per (entity, bridge), origins[] appended, deduped on providerMessageId.
-  ['public.record_bridge_provenance(uuid,jsonb)', `create function public.record_bridge_provenance(p_entity uuid, p_origins jsonb) returns void
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     declare o jsonb; e public.entities; existing public.edges;
-     begin
-       select * into e from public.entities where id = p_entity;
-       perform internal.w1_set_writer('entity_recorder');
-       for o in select * from jsonb_array_elements(p_origins) loop
-         select * into existing from public.edges where src_id = p_entity and dst_id = (o->>'bridgeId')::uuid and type = 'authored_from';
-         if existing.id is null then
-           insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
-           values (e.space_id, p_entity, (o->>'bridgeId')::uuid, 'authored_from',
-                   jsonb_build_object('bridgeId', o->>'bridgeId', 'origins', jsonb_build_array(o || '{"inherited":false,"depth":0}'::jsonb)), e.created_by);
-         elsif not exists (select 1 from jsonb_array_elements(existing.props->'origins') x where x->>'providerMessageId' = o->>'providerMessageId') then
-           update public.edges set props = jsonb_set(props, '{origins}', (props->'origins') || jsonb_build_array(o)) where id = existing.id;
-         end if;
-       end loop;
-       perform internal.w1_set_writer(null);
-     end $$;
-     grant execute on function public.record_bridge_provenance(uuid, jsonb) to tm8_app;`],
-  ['public.bridge_set_mute(uuid,timestamptz)', `
-     alter table public.bridges add column if not exists muted_until timestamptz;
-     create function public.bridge_set_mute(p_bridge uuid, p_until timestamptz) returns jsonb
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     begin
-       perform internal.require_space_admin((select space_id from public.bridges where entity_id = p_bridge));
-       update public.bridges set muted_until = p_until where entity_id = p_bridge;
-       return jsonb_build_object('mutedUntil', p_until);
-     end $$;
-     grant execute on function public.bridge_set_mute(uuid, timestamptz) to tm8_app;`],
-  ['public.bridge_poster_handle(uuid,uuid)', `create function public.bridge_poster_handle(p_bridge uuid, p_session uuid) returns jsonb
-     language plpgsql security definer set search_path = public, internal, pg_temp as $$
-     declare s uuid; h public.bridge_handles;
-     begin
-       select space_id into s from public.bridges where entity_id = p_bridge;
-       insert into public.bridge_handles(space_id, handle, entity_id, kind, title)
-       values (s, internal.bridge_new_handle(s), p_session, 'work_session',
-               left(nullif((select title from public.work_sessions where entity_id = p_session), ''), 80))
-       on conflict (space_id, entity_id) do nothing;
-       select * into h from public.bridge_handles where space_id = s and entity_id = p_session;
-       return jsonb_build_object('handle', h.handle, 'title', h.title);
-     end $$;
-     grant execute on function public.bridge_poster_handle(uuid, uuid) to tm8_app;`],
-];
-
 async function asOwner<T>(fn: (c: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> }) => Promise<T>): Promise<T> {
   return database.transaction(async c => {
     await c.query('set local role tm8_graph_owner');
@@ -125,12 +51,6 @@ beforeAll(async () => {
   database = await createW1ScratchDatabase('bridge_commands');
   database.apply(migrationFiles());
   db = createDb(database.url);
-  await database.transaction(async c => {
-    for (const [signature, sql] of STUBS) {
-      const { rows } = await c.query('select to_regprocedure($1) is not null as present', [signature]);
-      if (!rows[0].present) await c.query(sql);
-    }
-  });
   await asOwner(async c => {
     const all = Object.values(people);
     for (const p of all) {
@@ -215,6 +135,9 @@ async function endWorkers(sessionId: string | null = null, reason: string | null
   });
 }
 
+let resumes: string[] = [];
+let failResume = false;
+
 /** One injected fault in the provenance write (a crash inside the task transaction). */
 let failNextOrigin = false;
 
@@ -266,6 +189,15 @@ function makeExecutor(): BridgeCommandExecutor {
     async stopWorker(_claims, sessionId, input) {
       stops.push(sessionId);
       await endWorkers(sessionId, input.reason);
+    },
+    async resumeWorker(_claims, sessionId, input) {
+      resumes.push(input.clientMutationId);
+      if (failResume) throw new Error('nothing to resume');
+      await asOwner(async c => {
+        await c.query("select set_config('tm8.work_session_transition', 'on', true)");
+        await c.query("update public.work_sessions set status = 'running' where entity_id = $1", [sessionId]);
+      });
+      return { sessionId };
     },
     workerHandle: async (claims, bridge, sessionId) =>
       db.rpc<{ handle: string; title: string | null }>(claims, 'bridge_poster_handle', [bridge, sessionId]),
@@ -576,6 +508,178 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
     expect(await bridgeTasks()).toBe(tasks + 1);
   });
 
+  it('B1b-6 /start #n: a worker on an existing task from this group, once', async () => {
+    await endWorkers();
+    await command('rahul', '/task start me later');
+    const { reply: list } = await command('rahul', '/tasks');
+    expect(list!.text.split('\n')[0]).toMatch(/^1 Start me later · open$/);
+    const before = spawns.length;
+    const { messageId, reply } = await command('rahul', '/start #1');
+    expect(reply!.text).toMatch(/^Start me later \([a-z]+-[a-z]+(-\d+)?\) — starting$/);
+    expect(spawns.length).toBe(before + 1);
+    expect(spawns.at(-1)!.origins).toEqual([expect.objectContaining({ command: '/start', messageId })]);
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(spawns.length).toBe(before + 1);
+    expect((await command('guest', '/start #1')).reply!.text).toMatch(/^link your number first/);
+  });
+
+  it('B1b-6 /retry: resumes an ended worker; when it cannot, a new launch on its task, once', async () => {
+    await endWorkers();
+    await command('rahul', '/work retry target');
+    const { reply: list } = await command('rahul', '/workers');
+    const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
+    expect((await command('rahul', `/retry ${handle}`)).reply!.text).toMatch(/is still working$/);
+    await endWorkers();
+    expect((await command('rahul', `/retry ${handle}`)).reply!.text).toMatch(new RegExp(`\\(${handle}\\) resumed$`));
+    await endWorkers();
+    failResume = true;
+    const before = spawns.length;
+    const { messageId, reply } = await command('rahul', `/retry ${handle}`);
+    expect(reply!.text).toMatch(/couldn't resume — started [a-z]+-[a-z]+(-\d+)? on "Retry target"$/);
+    expect(spawns.length).toBe(before + 1);
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(spawns.length).toBe(before + 1);
+    failResume = false;
+  });
+
+  it('B1b-6 /result: the latest report, at most 10 lines, never secret-shaped; guests read space-visible ones', async () => {
+    await endWorkers();
+    await command('rahul', '/work report target');
+    const { reply: list } = await command('rahul', '/workers');
+    const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
+    const session = (await asOwner(c => c.query('select entity_id from public.bridge_handles where handle = $1', [handle]))).rows[0].entity_id as string;
+    expect((await command('rahul', `/result ${handle}`)).reply!.text).toMatch(/hasn't reported yet$/);
+    const report = async (body: string) => {
+      const id = await storeMessage(people.rahul.member, body);
+      await asOwner(async c => {
+        await c.query("select set_config('tm8.w1_writer', 'entity_recorder', true)");
+        await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'authored_from',$4)",
+          [space, id, session, people.rahul.member]);
+      });
+    };
+    await report(Array.from({ length: 14 }, (_, i) => `line ${i + 1}`).join('\n'));
+    const text = (await command('rahul', `/result ${handle}`)).reply!.text.split('\n');
+    expect(text[0]).toMatch(new RegExp(`\\(${handle}\\):$`));
+    expect(text.slice(1, 3)).toEqual(['line 1', 'line 2']);
+    expect(text.at(-1)).toBe('… more in tm8');
+    expect(text.length).toBeLessThanOrEqual(10);
+    // whoMayTrigger 'linked': a guest is not a reader here.
+    expect((await command('guest', `/result ${handle}`)).reply!.text).toMatch(/^link your number first/);
+    // With whoMayTrigger 'anyone' a guest reads through the executor-only door: this bridge's worker, space-visible.
+    const guestRows = await db.query<{ body: string }>(bridgesWorkerClaims(),
+      'select body from public.bridge_command_guest_result($1, $2) as body', [bridgeId, session]);
+    expect(guestRows[0]!.body.split('\n')[0]).toBe('line 1');
+    expect(await db.query(bridgesWorkerClaims(), 'select * from public.bridge_command_guest_result($1, $2)', [bridgeId, randomUUID()])).toEqual([]);
+    await expect(db.query(memberClaims(people.owner.identity), 'select * from public.bridge_command_guest_result($1, $2)', [bridgeId, session]))
+      .rejects.toMatchObject({ code: 'forbidden' });
+    // F1: a newer message the worker wrote ELSEWHERE (a task thread) is never quoted into the group.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const elsewhere = randomUUID();
+    const [{ id: taskAnchor }] = (await asOwner(c => c.query(
+      `select ed.src_id::text id from public.edges ed join public.entities e on e.id = ed.src_id
+        where ed.dst_id = $1 and ed.type = 'authored_from' and e.kind = 'task' limit 1`, [bridgeId]))).rows;
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'message',0,$3)", [elsewhere, space, people.rahul.member]);
+      await c.query('insert into public.messages(entity_id,anchor_id,author_id,body) values($1,$2,$3,$4)', [elsewhere, taskAnchor, people.rahul.member, 'private note on a task']);
+      await c.query("select set_config('tm8.w1_writer', 'entity_recorder', true)");
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'authored_from',$4)",
+        [space, elsewhere, session, people.rahul.member]);
+    });
+    // ...and nor is a newer post on ANOTHER bridge's log.
+    const otherChat = randomUUID();
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'chat',0,$3)", [otherChat, space, people.owner.member]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,'Ops main',$3,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/b1b4', gen_random_uuid(), $4, $5, $6)`,
+        [otherChat, space, persona, people.owner.identity, people.owner.member, `b1b6-${randomUUID()}`]);
+    });
+    const other = await db.rpc<{ entity: { id: string } }>(
+      { identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli', requestId: 'b1b6-other' }, 'create_bridge',
+      [space, connection, '120363-ops@g.us', JSON.stringify({ kind: 'group', title: 'Ops', memberCount: null }), otherChat,
+        '{}', persona, null, null, true, null, null, `b1b6-other-${randomUUID()}`]);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const otherPost = randomUUID();
+    await asOwner(async c => {
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'message',0,$3)", [otherPost, space, people.rahul.member]);
+      await c.query('insert into public.messages(entity_id,anchor_id,author_id,body) values($1,$2,$3,$4)', [otherPost, other.entity.id, people.rahul.member, 'said in the Ops group']);
+      await c.query("select set_config('tm8.w1_writer', 'entity_recorder', true)");
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'authored_from',$4)",
+        [space, otherPost, session, people.rahul.member]);
+    });
+    expect((await command('rahul', `/result ${handle}`)).reply!.text.split('\n')[1]).toBe('line 1');
+    expect((await db.query<{ body: string }>(bridgesWorkerClaims(),
+      'select body from public.bridge_command_guest_result($1, $2) as body', [bridgeId, session]))[0]!.body.split('\n')[0]).toBe('line 1');
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await report('done. token: ghp_' + 'a'.repeat(36));
+    expect((await command('rahul', `/result ${handle}`)).reply!.text).toMatch(/looks like it holds a secret — read it in tm8$/);
+  });
+
+  it('B1b-6 /tell: directs the message to a live worker (origin /tell, answerer); unknown handles are answered', async () => {
+    await endWorkers();
+    await command('rahul', '/work tell target');
+    const { reply: list } = await command('rahul', '/workers');
+    const handle = /\(([a-z]+-[a-z]+(?:-\d+)?)\)/.exec(list!.text)![1]!;
+    const session = (await asOwner(c => c.query('select entity_id from public.bridge_handles where handle = $1', [handle]))).rows[0].entity_id as string;
+    const { messageId, reply } = await command('rahul', `/tell @${handle} the logs are in #ops`);
+    expect(reply!.text).toBe(`told ${handle}`);
+    expect(await count(`select count(*) n from public.session_bridge_origins where holder_id = $1 and command = '/tell' and message_id = $2`,
+      [session, messageId])).toBe(1);
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(await count(`select count(*) n from public.session_bridge_origins where holder_id = $1 and command = '/tell'`, [session])).toBe(1);
+    expect((await command('rahul', '/tell nobody-here hi')).reply!.text).toMatch(/^no live worker called nobody-here/);
+    expect((await command('rahul', `/tell ${handle}`)).reply!.text).toBe('usage: /tell <worker> <message>');
+    expect((await command('guest', `/tell ${handle} hi`)).reply!.text).toMatch(/^link your number first/);
+  });
+
+  it('B1b-6: when 398 fails a command after its attempts, the group is told once', async () => {
+    const messageId = await inbound(people.rahul.phone, people.rahul.member, '/task never lands');
+    await asOwner(c => c.query("update public.message_origins set command_attempts = 5 where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    const finals = () => attempted.filter(a => a.key.endsWith(':failed') && notices.some(n => n.key === a.key && n.replyToMessageId === messageId));
+    expect((await asOwner(c => c.query('select command_state from public.message_origins where message_id = $1', [messageId]))).rows[0].command_state).toBe('failed');
+    expect(notices.filter(n => n.replyToMessageId === messageId).map(n => n.text)).toEqual(['couldn\'t do that after several tries — please send it again later']);
+    await executor.run(messageId);
+    expect(notices.filter(n => n.replyToMessageId === messageId)).toHaveLength(1);
+    expect(finals().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('B1b-6 bridges.work.start: the /work path as the caller, announced, idempotent on the mutation id', async () => {
+    await endWorkers();
+    const tasks = await bridgeTasks();
+    const before = spawns.length;
+    const cmid = `api-${randomUUID()}`;
+    const input = { bridgeId, clientMutationId: cmid, items: ['api item one', 'api item two'], options: { effort: 'high' as const } };
+    const result = await executor.workStart(memberClaims(people.rahul.identity), input);
+    expect(result.parentTaskId).not.toBeNull();
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every(i => i.sessionId && i.handle && !i.error)).toBe(true);
+    expect(await bridgeTasks()).toBe(tasks + 3);
+    expect(spawns.length).toBe(before + 2);
+    expect(spawns.at(-1)).toMatchObject({ effort: 'high', origins: [expect.objectContaining({ command: '/work', messageId: null, sender: { memberId: people.rahul.member } })] });
+    const [edge] = (await asOwner(c => c.query(
+      `select props from public.edges where src_id = $1 and dst_id = $2 and type = 'authored_from'`, [result.items[0]!.taskId, bridgeId]))).rows;
+    expect(edge.props.origins[0]).toMatchObject({ command: '/work', providerMessageId: `api:${cmid}` });
+    expect(result.noticeMessageId).toBe(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.messageId);
+    expect(notices.find(n => n.key === `work:${bridgeId}:${cmid}`)!.text).toMatch(/^2 workers on it/);
+    // The same provenance as /work, so /tasks lists them like any /work task.
+    expect((await command('rahul', '/tasks')).reply!.text).toContain('Api item one');
+    // Replay: the same tasks, sessions and announcement.
+    const again = await executor.workStart(memberClaims(people.rahul.identity), input);
+    expect(again).toEqual(result);
+    expect(await bridgeTasks()).toBe(tasks + 3);
+    expect(spawns.length).toBe(before + 2);
+    // A stranger to the space is refused; so are too many items.
+    await expect(executor.workStart(memberClaims(`stranger-${randomUUID()}`), { ...input, clientMutationId: randomUUID() }))
+      .rejects.toMatchObject({ code: expect.stringMatching(/forbidden|not_found/) });
+    await expect(executor.workStart(memberClaims(people.rahul.identity), {
+      bridgeId, clientMutationId: randomUUID(), items: ['1', '2', '3', '4', '5', '6'],
+    })).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
   it('F4: a /work re-run does not count its own workers against the live cap', async () => {
     await endWorkers();
     const body = ['/work', ...Array.from({ length: 3 }, (_, i) => `f4 item ${i}`)].join('\n');
@@ -602,6 +706,52 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
   });
 });
 
+describe('/remember (Bridges R, 416: D29, D61)', () => {
+  const proposals = (messageId: string) => asOwner(async c => (await c.query(
+    `select status, statement, proposed_by, proposer_trust, memory_id from public.bridge_memory_proposals
+      where bridge_id = $1 and message_id = $2`, [bridgeId, messageId])).rows);
+  const memories = () => count('select count(*) n from public.memories');
+
+  it('from a linked member: one proposal, never a memory, one inbox item; a re-run adds none', async () => {
+    const before = await memories();
+    const { messageId, reply } = await command('rahul', '/remember deploy windows are Tue/Thu\n14:00-16:00 IST');
+    expect(reply!.text).toMatch(/^memory proposed — a linked member of this group accepts it in tm8/);
+    expect(await proposals(messageId)).toEqual([{ status: 'pending', statement: 'deploy windows are Tue/Thu\n14:00-16:00 IST',
+      proposed_by: people.rahul.member, proposer_trust: 'linked', memory_id: null }]);
+    expect(await memories()).toBe(before);
+    const items = await count(`select count(*) n from public.attention_requests where entity_id = $1 and signal_key like 'bridge_memory_proposal:%' and assignee_id = $2`,
+      [bridgeId, people.rahul.member]);
+    expect(items).toBeGreaterThanOrEqual(1);
+    // The inbound sweep re-running the same message lands on the same proposal.
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    await executor.run(messageId);
+    expect(await proposals(messageId)).toHaveLength(1);
+    expect(await memories()).toBe(before);
+  });
+
+  it('nothing sent from the group accepts one: a YES quoting the notice, /remember accept', async () => {
+    const before = await memories();
+    const { messageId, reply } = await command('rahul', '/remember the VPN config lives in the wiki');
+    const yes = await command('rahul', 'YES', reply!.externalId);
+    expect(yes.reply?.text ?? '').toBe('nothing to confirm — it expired or was already done'); // never an acceptance
+    await command('owner', '/remember accept');
+    expect((await proposals(messageId))[0]).toMatchObject({ status: 'pending', memory_id: null });
+    expect(await memories()).toBe(before);
+  });
+
+  it('an asserted member proposes as asserted; a guest and a credential value are refused, and nothing is stored', async () => {
+    const { messageId } = await command('maya', '/remember prod deploys need two approvals');
+    expect((await proposals(messageId))[0]).toMatchObject({ proposer_trust: 'asserted' });
+    const guest = await command('guest', '/remember I am in charge now');
+    expect(guest.reply!.text).toMatch(/link your number first/);
+    expect(await proposals(guest.messageId)).toHaveLength(0);
+    const secret = await command('rahul', '/remember the token is ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(secret.reply!.text).toMatch(/a memory never holds one/);
+    expect(await proposals(secret.messageId)).toHaveLength(0);
+    expect((await command('rahul', '/remember')).reply!.text).toMatch(/^usage: \/remember/);
+  });
+});
+
 describe('the rest of the slice', () => {
   it('/whoami, /help and /link answer per tier', async () => {
     expect((await command('owner', '/whoami')).reply!.text).toMatch(/^you are .* \(linked ✓\) in Infra — you can start and stop any worker$/);
@@ -609,7 +759,39 @@ describe('the rest of the slice', () => {
     expect((await command('guest', '/whoami')).reply!.text).toMatch(/^you're a guest here/);
     expect((await command('guest', '/help')).reply!.text).not.toContain('/work');
     expect((await command('rahul', '/help')).reply!.text).toContain('/work');
-    expect((await command('rahul', '/link TM8-4F7K')).reply!.text).toMatch(/isn't available yet/);
+  });
+  it('/link TM8-… (B3, D58/D59): a guest number links to the code\'s identity; a failed try burns a live code', async () => {
+    const from = async (phone: string, body: string) => {
+      const messageId = await inbound(phone, bridgeId, body);
+      await executor.run(messageId);
+      return notices.find(n => n.replyToMessageId === messageId)!.text;
+    };
+    const mint = async (identity: string) => (await db.rpc<{ code: string }>(
+      { ...memberClaims(identity), authKind: 'browser' }, 'begin_bridge_link', ['whatsapp'])).code;
+    const newPhone = '919000000071@s.whatsapp.net';
+    const rahulCode = await mint(people.rahul.identity);
+    expect(await from(newPhone, `/link ${rahulCode.toLowerCase()}`)).toMatch(/^linked ✓ — messages from this number now count as you/);
+    expect(await count(`select count(*) n from public.bridge_identity_links where external_id = $1 and identity_id = $2
+      and method = 'code' and space_id is null and revoked_at is null`, [newPhone, people.rahul.identity])).toBe(1);
+    expect(await from(newPhone, `/link ${rahulCode}`)).toMatch(/already used/);
+    expect(await from(newPhone, '/link')).toMatch(/^usage: \/link TM8-/);
+    expect(await from('919000000072@s.whatsapp.net', '/link TM8-ZZZZZZ')).toMatch(/not a valid code/);
+    // The number is rahul's proof: maya's code does not take it, and is burned
+    // because the whole group has now read it.
+    const mayaCode = await mint(people.maya.identity);
+    expect(await from(newPhone, `/link ${mayaCode}`)).toMatch(/linked to another tm8 account.*used up now/);
+    expect(await from('919000000073@s.whatsapp.net', `/link ${mayaCode}`)).toMatch(/already used/);
+    await expect(db.rpc(memberClaims(people.owner.identity), 'bridge_command_link_redeem', [bridgeId, newPhone, mayaCode]))
+      .rejects.toMatchObject({ code: 'forbidden' });
+    // B3 follow-up (D59): a code split and autocorrected on the phone still links;
+    // a near miss of a live code burns it.
+    const ownerCode = await mint(people.owner.identity);
+    const split = `TM8 \u2013 ${ownerCode.slice(4, 7)} ${ownerCode.slice(7)}`;
+    expect(await from('919000000074@s.whatsapp.net', `/link ${split} thanks`)).toMatch(/^linked ✓/);
+    const mayaAgain = await mint(people.maya.identity);
+    const typo = `${mayaAgain.slice(0, 9)}${mayaAgain[9] === 'A' ? 'B' : 'A'}`;
+    expect(await from('919000000075@s.whatsapp.net', `/link ${typo}`)).toMatch(/not a valid code.*used up now/);
+    expect(await from('919000000076@s.whatsapp.net', `/link ${mayaAgain}`)).toMatch(/already used/);
   });
   it('/status names one worker; unknown and planned verbs are answered', async () => {
     const { reply: list } = await command('rahul', '/workers all');
@@ -617,7 +799,7 @@ describe('the rest of the slice', () => {
     expect((await command('rahul', `/status ${handle}`)).reply!.text).toMatch(new RegExp(`\\(${handle}\\) · working \\d+m · task: `));
     expect((await command('rahul', '/status #1')).reply!.text).toContain(handle);
     expect((await command('rahul', '/remind tomorrow 9am')).reply!.text).toBe('coming soon: /remind — /help for what works now');
-    expect((await command('rahul', '/start #1')).reply!.text).toBe('coming soon: /start — /help for what works now');
+    expect((await command('rahul', '/forget #1')).reply!.text).toBe('coming soon: /forget — /help for what works now');
   });
   it('/who and /bridge describe the group', async () => {
     expect((await command('guest', '/bridge')).reply!.text).toMatch(/^Infra → Infra main \(chat\) · (live|muted until .*)\nanswers: messages that mention tm8, from linked members\ncrosses back: replies to this group$/);

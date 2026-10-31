@@ -1,0 +1,128 @@
+/* Bridged messages (BRIDGE-ENTITY-DESIGN §4.5): provider mark, via line,
+   delivery tick. Status is colour AND word (tokens.css). */
+
+.cv2-root .bridge-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+  font-size: 10px;
+  line-height: 1;
+  flex: none;
+}
+.cv2-root .bridge-mark[data-provider='whatsapp'] { background: var(--pn-run-soft); color: var(--pn-run); }
+.cv2-root .bridge-mark[data-provider='telegram'],
+.cv2-root .bridge-mark[data-provider='messenger'] { background: var(--pn-info-soft); color: var(--pn-info); }
+
+.cv2-root .bridge-via {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-tick);
+}
+.cv2-root .bridge-via__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.cv2-root button.bridge-via__open { cursor: pointer; }
+.cv2-root button.bridge-via__open:hover { color: var(--pn-ink); text-decoration: underline; }
+.cv2-root .bridge-via__trust[data-trust='linked'] { color: var(--pn-run); }
+.cv2-root .bridge-via__trust[data-trust='asserted'] { color: var(--pn-wait); }
+.cv2-root .bridge-via__trust[data-trust='guest'] { color: var(--pn-ink-3); }
+
+.cv2-root .bridge-tick {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* Under the body column (`.tch-turn__attachments`, `.tch-parts`: 26px). */
+  margin: 4px 0 0 26px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-tick);
+}
+.cv2-root .bridge-tick__glyph { font-weight: 600; }
+.cv2-root .bridge-tick[data-tone='run'] .bridge-tick__glyph,
+.cv2-root .bridge-tick[data-tone='run'] .bridge-tick__word { color: var(--pn-run); }
+.cv2-root .bridge-tick[data-tone='wait'] .bridge-tick__glyph,
+.cv2-root .bridge-tick[data-tone='wait'] .bridge-tick__word { color: var(--pn-wait); }
+.cv2-root .bridge-tick[data-tone='block'] .bridge-tick__glyph,
+.cv2-root .bridge-tick[data-tone='block'] .bridge-tick__word { color: var(--pn-block); }
+.cv2-root .bridge-tick__at::before { content: '·'; margin-right: 5px; color: var(--pn-ink-4); }
+
+/* A guest's avatar is initials in the idle tone (§4.5): no member colour for
+   someone who is not a member. A linked member keeps theirs, with the mark. */
+.cv2-root .kit-avatar.bridge-avatar--guest { --kit-avatar-tone: var(--pn-idle); }
+.cv2-root .bridge-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.cv2-root .bridge-avatar > .bridge-mark {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 11px;
+  height: 11px;
+  font-size: 8px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1.5px var(--pn-surface);
+}
+
+.cv2-root .bridged-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-tick);
+  white-space: nowrap;
+}
+.cv2-root button.bridged-from { cursor: pointer; }
+.cv2-root button.bridged-from:hover { color: var(--pn-ink); border-color: var(--pn-ink-3); }
+.cv2-root .bridged-from__status { color: var(--pn-wait); }
+.cv2-root .bridged-from__status[data-status='ended'] { color: var(--pn-ink-3); }
+
+/* The composer's reply target (§4.5, D76): two pressed-state buttons. */
+.cv2-root .bridge-reply {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: var(--pn-surface);
+  font-size: var(--pn-fs-tick);
+}
+.cv2-root .bridge-reply__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.cv2-root .bridge-reply__option:hover { color: var(--pn-ink); }
+.cv2-root .bridge-reply__option[aria-pressed='true'] {
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink);
+  font-weight: 600;
+}

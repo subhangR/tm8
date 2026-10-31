@@ -38,6 +38,21 @@ const view: BridgeDetailView = {
   recentPosters: [{ actorId: CHAT, actorKind: 'team_member', displayName: 'Infra', handle: 'keen-otter', posts: 3, lastPostAt: '2026-10-29T22:10:00.000Z' }],
 };
 
+const LINK = {
+  id: CONNECTION, provider: 'whatsapp', externalId: '919000000001@s.whatsapp.net', masked: '…0001', method: 'code', trust: 'linked',
+  spaceId: null, spaceName: null, verifiedAt: '2026-10-28T10:00:00.000Z', revokedAt: null,
+};
+
+// Bridges P (420, D50-D52): one linked member and one guest, masked as a member sees them.
+const PEOPLE = [
+  { externalId: '…0001', altExternalIds: [], masked: true, displayName: 'Subhang', avatarRef: null, muted: false,
+    firstSeenAt: view.createdAt, lastSeenAt: view.createdAt, messageCount: 214, trust: 'linked', memberId: CHAT,
+    member: { id: CHAT, kind: 'member', displayName: 'Subhang' }, link: { method: 'code', verifiedAt: view.createdAt }, you: true },
+  { externalId: '…9494', altExternalIds: [], masked: true, displayName: 'Rahul', avatarRef: null, muted: false,
+    firstSeenAt: view.createdAt, lastSeenAt: view.createdAt, messageCount: 37, trust: 'guest', memberId: null,
+    member: null, link: null, you: false },
+];
+
 let server: Server;
 let requests: Array<{ method: string; path: string; query: URLSearchParams; body: Record<string, any> }> = [];
 let stdout = '', stderr = '';
@@ -62,6 +77,13 @@ beforeAll(async () => {
         { conversationId: '1203@g.us', kind: 'group', name: 'Infra', size: 7, canSend: true, reason: null },
         { conversationId: '9999@g.us', kind: 'group', name: 'Announcements', size: 120, canSend: false, reason: 'admins_only' }] };
       else if (url.pathname.endsWith('/withdraw')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL, pausedBridgeIds: [BRIDGE] };
+      else if (url.pathname.endsWith('/work')) data = { bridgeId: BRIDGE, parentTaskId: null, items: [{ taskId: CHAT, sessionId: CHAT, handle: 'keen-otter', error: null }], noticeMessageId: CHAT };
+      else if (url.pathname === '/v2/identity/bridge-links' && req.method === 'POST') data = { code: 'TM8-4F7KQ2', provider: body.provider, expiresAt: '2026-10-30T06:40:00.000Z', createdAt: '2026-10-30T06:30:00.000Z' };
+      else if (url.pathname === '/v2/identity/bridge-links') data = { items: [LINK], pending: [{ id: CHAT, provider: 'whatsapp', expiresAt: '2026-10-30T06:40:00.000Z', createdAt: '2026-10-30T06:30:00.000Z' }] };
+      else if (url.pathname.endsWith('/revoke')) data = { ...LINK, revokedAt: '2026-10-30T06:35:00.000Z' };
+      else if (url.pathname.endsWith('/invites')) data = { id: CHAT, code: 'inv_abc', role: 'member', maxUses: 1, uses: 0, expiresAt: null, revoked: false };
+      else if (url.pathname.endsWith('/participants')) data = { bridgeId: BRIDGE, spaceId: SPACE, admin: false, items: PEOPLE };
+      else if (url.pathname.includes('/participants/')) data = { bridgeId: BRIDGE, externalId: decodeURIComponent(url.pathname.split('/').pop()!), changed: true, participant: { ...PEOPLE[1], muted: body.patch?.muted ?? false } };
       else if (url.pathname.endsWith('/log')) data = { bridgeId: BRIDGE, logAnchorId: BRIDGE, items: [], lastMessageId: null, more: false };
       res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data, requestId: 'test' }));
     });
@@ -98,9 +120,21 @@ describe('tm8 bridge (B0a)', () => {
 
   it('the noun shard lists every B0a verb', () => {
     const paths = nounHelp('bridge')!.commands.map(c => c.command);
-    for (const p of ['list', 'show', 'get', 'create', 'update', 'retarget', 'pause', 'resume', 'remove', 'handles', 'handle claim', 'log', 'listen']) {
+    for (const p of ['list', 'show', 'get', 'create', 'update', 'retarget', 'pause', 'resume', 'remove', 'handles', 'handle claim', 'log', 'listen', 'work']) {
       expect(paths).toContain(`bridge ${p}`);
     }
+  });
+
+  it('work sends the items and options to bridges.work.start (B1b-6)', async () => {
+    expect(await run(['bridge', 'work', BRIDGE, '--item', 'fix the login timeout', '--item', 'release notes',
+      '--teammate', 'Infra Bot', '--effort', 'high', '--mutation-id', 'mid-1'])).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'POST', path: `/v2/bridges/${BRIDGE}/work` });
+    expect(requests[0]!.body).toMatchObject({
+      clientMutationId: 'mid-1', items: ['fix the login timeout', 'release notes'], options: { teammate: 'Infra Bot', effort: 'high' },
+    });
+    expect(stdout).toContain('keen-otter starting');
+    expect(await run(['bridge', 'work', BRIDGE])).not.toBe(0);
+    expect(await run(['bridge', 'work', BRIDGE, '--item', 'x', '--effort', 'huge'])).not.toBe(0);
   });
 
   it('list sends the filters to bridges.list', async () => {
@@ -161,6 +195,50 @@ describe('tm8 bridge (B0a)', () => {
     expect(await run(['entity', 'create', 'bridge', 'Infra'])).toBe(2);
     expect(stderr).toMatch(/use `tm8 bridge create`/);
     expect(requests).toEqual([]);
+  });
+
+  it('link begin prints the /link line once; list and revoke reach their doors (B3, D58)', async () => {
+    expect(await run(['bridge', 'link', 'begin'])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: '/v2/identity/bridge-links', body: { provider: 'whatsapp' } });
+    expect(stdout).toMatch(/\/link TM8-4F7KQ2/);
+    expect(await run(['bridge', 'link', 'begin', '--provider', 'fax'])).toBe(2);
+    expect(await run(['bridge', 'link', 'list'])).toBe(0);
+    expect(stdout).toMatch(/…0001 · linked ✓ by code/);
+    expect(stdout).toMatch(/pending whatsapp code/);
+    expect(await run(['bridge', 'link', 'revoke', CONNECTION])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'POST', path: `/v2/identity/bridge-links/${CONNECTION}/revoke` });
+    expect(stdout).toMatch(/unlinked:/);
+  });
+
+  it('invite pins the participant to a one-use invite in the bridge\'s space (D60)', async () => {
+    expect(await run(['bridge', 'invite', BRIDGE, '919000000002@s.whatsapp.net'])).toBe(0);
+    expect(requests.map(r => `${r.method} ${r.path}`)).toEqual([`GET /v2/bridges/${BRIDGE}`, `POST /v2/spaces/${SPACE}/invites`]);
+    expect(requests[1]!.body).toMatchObject({ maxUses: 1, bridgeParticipant: { bridgeId: BRIDGE, externalId: '919000000002@s.whatsapp.net' } });
+    expect(stdout).toMatch(/\/join\/inv_abc/);
+    expect(await run(['bridge', 'invite', BRIDGE])).toBe(2);
+  });
+
+  it('people reads the roster and filters linked from guests (Bridges P, D50)', async () => {
+    expect(await run(['bridge', 'people', BRIDGE, '--guests'])).toBe(0);
+    expect(requests[0]).toMatchObject({ method: 'GET', path: `/v2/bridges/${BRIDGE}/participants` });
+    expect(stdout).toContain('Rahul'); expect(stdout).toContain('…9494'); expect(stdout).not.toContain('Subhang');
+    stdout = '';
+    expect(await run(['bridge', 'people', BRIDGE, '--linked'])).toBe(0);
+    expect(stdout).toContain('linked ✓'); expect(stdout).toContain('(you)'); expect(stdout).not.toContain('Rahul');
+    expect(await run(['bridge', 'people', BRIDGE, '--linked', '--guests'])).toBe(2);
+  });
+
+  it('participant sends exactly the patch it was given (Bridges P, D52)', async () => {
+    const ext = '919811109494@s.whatsapp.net';
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--mute', 'on'])).toBe(0);
+    expect(requests.at(-1)).toMatchObject({ method: 'PATCH', path: `/v2/bridges/${BRIDGE}/participants/${encodeURIComponent(ext)}`, body: { patch: { muted: true } } });
+    expect(stdout).toContain('updated'); expect(stdout).toContain('muted');
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--member', CHAT])).toBe(0);
+    expect(requests.at(-1)!.body.patch).toEqual({ memberId: CHAT });
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--unassert'])).toBe(0);
+    expect(requests.at(-1)!.body.patch).toEqual({ memberId: null });
+    expect(await run(['bridge', 'participant', BRIDGE, ext])).toBe(2);
+    expect(await run(['bridge', 'participant', BRIDGE, ext, '--member', CHAT, '--unassert'])).toBe(2);
   });
 });
 

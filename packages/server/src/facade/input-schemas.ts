@@ -1,9 +1,11 @@
 import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
-  BridgeHandleClaimInputSchema, BridgeListenInputSchema,
-  BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionWithdrawInputSchema,
+  BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeConnectionBeginInputSchema,
+  BridgeConnectionOfferInputSchema, BridgeConnectionWithdrawInputSchema, BridgeConnectionRemoveInputSchema,
   BridgeHandoverOfferInputSchema, BridgeHandoverSettleInputSchema,
-  BridgeConnectionRemoveInputSchema,
+  BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
+  BridgeMemoryProposalResolveInputSchema, BridgeParticipantUpdateInputSchema, BridgeWorkStartInputSchema,
+  LabelArchiveInputSchema, LabelCreateInputSchema, LabelUpdateInputSchema,
   LoopCreateInputSchema, LoopUpdateInputSchema, LoopEnableInputSchema, LoopDisableInputSchema, LoopPauseInputSchema,
   LoopResumeInputSchema, LoopRunNowInputSchema, LoopRunStopInputSchema, LoopSchedulePreviewInputSchema,
 } from '@tm8/contract';
@@ -232,6 +234,9 @@ const InviteCreateInputSchema = z.object({
   expiresAt: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
     message: 'expiresAt must be an ISO timestamp',
   }).nullable().optional(),
+  // Bridges B3 (417, D60): pin the invite to one participant of a bridge;
+  // redeeming it links the joiner. One use only.
+  bridgeParticipant: BridgeInviteParticipantSchema.optional(),
 }).strict();
 
 const InviteRedeemInputSchema = z.object({
@@ -264,6 +269,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'tools.secrets.bind': ToolSecretBindInputSchema,
   'tools.secrets.unbind': ToolSecretUnbindInputSchema,
   'tools.run': ToolRunInputSchema,
+  'labels.create': LabelCreateInputSchema,
+  'labels.update': LabelUpdateInputSchema,
+  'labels.archive': LabelArchiveInputSchema,
   'loops.create': LoopCreateInputSchema,
   'loops.update': LoopUpdateInputSchema,
   'loops.enable': LoopEnableInputSchema,
@@ -285,11 +293,17 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'bridges.connections.begin': BridgeConnectionBeginInputSchema,
   'bridges.connections.offer': BridgeConnectionOfferInputSchema,
   'bridges.connections.withdraw': BridgeConnectionWithdrawInputSchema,
+  'bridges.connections.remove': BridgeConnectionRemoveInputSchema,
   'bridges.handover.offer': BridgeHandoverOfferInputSchema,
   'bridges.handover.accept': BridgeHandoverSettleInputSchema,
   'bridges.handover.decline': BridgeHandoverSettleInputSchema,
   'bridges.handover.withdraw': BridgeHandoverSettleInputSchema,
-  'bridges.connections.remove': BridgeConnectionRemoveInputSchema,
+  'bridges.work.start': BridgeWorkStartInputSchema,
+  'bridges.memories.proposals.resolve': BridgeMemoryProposalResolveInputSchema,
+  // B3 (417): the caller's own links.
+  'bridges.links.begin': BridgeLinkBeginInputSchema,
+  'bridges.links.revoke': BridgeLinkRevokeInputSchema,
+  'bridges.participants.update': BridgeParticipantUpdateInputSchema, // 420 (Bridges P)
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

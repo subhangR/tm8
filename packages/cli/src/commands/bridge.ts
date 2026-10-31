@@ -5,12 +5,15 @@ import { lstatSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath,
-  type BridgeConnectionAuthFrame, type BridgeConnectionBeginResult, type BridgeConnectionListResult,
-  type BridgeConnectionOfferResult, type BridgeConnectionView, type BridgeConnectionWithdrawResult,
-  type BridgeConnectionRemoveResult, type BridgeConversationListResult,
-  type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult, type BridgeListResult, type BridgeListenResult,
-  type BridgeLogResult, type BridgePolicy, type BridgeView, type BridgeWake,
+  BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath, type BridgeConnectionAuthFrame,
+  type BridgeConnectionBeginResult, type BridgeConnectionListResult, type BridgeConnectionOfferResult,
+  type BridgeConnectionView, type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult,
+  type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
+  type BridgeListResult, type BridgeListenResult, type BridgeLogResult, type BridgePolicy, type BridgeView,
+  type BridgeWake, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeProvider,
+  type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgeParticipant,
+  type BridgeParticipantListResult, type BridgeParticipantUpdateResult, type BridgeWorkStartResult,
+  BRIDGE_MEMORY_PROPOSAL_STATUSES,
 } from '@tm8/contract';
 import { requireSpace, type CliContext } from '../context.js';
 import { CliError, EXIT_OK, EXIT_RETRYABLE, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -204,6 +207,47 @@ async function bridgeState(cmd: CommandContext, operation: 'bridges.pause' | 'br
   return EXIT_OK;
 }
 
+function renderParticipant(p: BridgeParticipant): string {
+  const who = p.member ? `${p.member.displayName}${p.you ? ' (you)' : ''}` : 'guest';
+  const word = p.trust === 'linked' ? 'linked ✓' : p.trust;
+  return `${(p.displayName ?? '(no name)').padEnd(20)} ${p.externalId.padEnd(16)} ${word.padEnd(9)} ${who}`
+    + ` · ${p.messageCount} msg · last ${p.lastSeenAt}${p.muted ? ' · muted' : ''}`;
+}
+
+async function bridgePeople(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['guests', 'linked']); argumentsCount(cmd, 1);
+  const guests = cmd.options.bool('guests');
+  const linked = cmd.options.bool('linked');
+  if (guests && linked) throw usage('pass --guests or --linked, not both');
+  const page = await observedInvoke<BridgeParticipantListResult>(client(cmd), 'bridges.participants.list', { params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') } });
+  // Linked means counted as a member: verified (linked) or an admin's assertion.
+  const items = page.items.filter(p => (guests ? p.trust === 'guest' : linked ? p.trust !== 'guest' : true));
+  cmd.out.data({ ...page, items }, p => p.items.length
+    ? p.items.map(renderParticipant).join('\n')
+    : guests ? 'no guests on this bridge' : linked ? 'nobody on this bridge is linked' : 'nobody has spoken on this bridge yet');
+  return EXIT_OK;
+}
+
+// One door for the row actions (D52): mute, and the admin's assertion or its revocation.
+async function bridgeParticipant(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['member', 'unassert', 'mute', 'mutation-id']); argumentsCount(cmd, 2);
+  const patch: { muted?: boolean; memberId?: string | null } = {};
+  const member = cmd.options.value('member');
+  if (member !== undefined && cmd.options.bool('unassert')) throw usage('pass --member or --unassert, not both');
+  if (member !== undefined) patch.memberId = member;
+  if (cmd.options.bool('unassert')) patch.memberId = null;
+  const mute = choice(cmd, 'mute', ['on', 'off'] as const);
+  if (mute) patch.muted = mute === 'on';
+  if (Object.keys(patch).length === 0) throw usage('nothing to change', 'pass --member <member-id>, --unassert or --mute on|off');
+  const result = await observedInvoke<BridgeParticipantUpdateResult>(client(cmd), 'bridges.participants.update', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>'), externalId: requireArg(cmd, 1, '<external-id>') },
+    body: { ...mutation(cmd), patch },
+  });
+  cmd.out.data(result, r => `${r.changed ? 'updated' : 'already so; nothing changed'}`
+    + (r.participant ? `\n${renderParticipant(r.participant)}` : ` · ${r.externalId} has not spoken on this bridge yet`));
+  return EXIT_OK;
+}
+
 async function bridgeHandles(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
   const page = await observedInvoke<BridgeHandleListResult>(client(cmd), 'bridges.handles.list', { params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') } });
@@ -259,7 +303,8 @@ async function bridgeLog(cmd: CommandContext): Promise<ExitCode> {
       const who = `${m.authorName || m.authorId || 'unknown'}${m.handle ? ` (${m.handle})` : ''}`;
       const via = m.origin ? ` [${m.origin.direction === 'in' ? 'from' : 'to'} ${m.origin.externalMessageId}]` : '';
       const reply = m.parentMessageId ? ` ↳${m.parentMessageId}` : '';
-      return `${m.createdAt} ${m.id}${reply} ${who}${via}: ${m.body.replace(/\s+/g, ' ')}`;
+      const tick = m.delivery ? ` {${m.delivery.status}${m.delivery.reason ? `: ${m.delivery.reason}` : ''}}` : '';
+      return `${m.createdAt} ${m.id}${reply} ${who}${via}${tick}: ${m.body.replace(/\s+/g, ' ')}`;
     });
     if (p.olderCursor) lines.push(`older: tm8 bridge log ${p.bridgeId} --before ${p.olderCursor}`);
     if (p.more) lines.push(`more: tm8 bridge log ${p.bridgeId} --since ${p.lastMessageId}`);
@@ -279,7 +324,7 @@ async function bridgeListen(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-// ── connections (§2.5, §3.4; migration 400) ─────────────────────────────────
+// ── connections (§2.5, §3.4; migration 421) ─────────────────────────────────
 
 export function renderConnection(c: BridgeConnectionView): string {
   const lines = [
@@ -468,6 +513,156 @@ async function connectionWithdraw(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function connectionRemove(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
+  const result = await observedInvoke<BridgeConnectionRemoveResult>(client(cmd), 'bridges.connections.remove', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body: mutation(cmd),
+  });
+  cmd.out.data(result, r => [
+    `removed connection ${r.connection.id} "${r.connection.label}"`,
+    `ended ${r.endedBridgeIds.length} bridge${r.endedBridgeIds.length === 1 ? '' : 's'}${r.endedBridgeIds.length ? `: ${r.endedBridgeIds.join(', ')}` : ''}`,
+    `revoked ${r.revokedCredentialIds.length} space credential${r.revokedCredentialIds.length === 1 ? '' : 's'}`,
+    r.runtime === 'logged_out'
+      ? 'the device was logged out'
+      : 'no runtime was connected: unlink the device on the phone (WhatsApp → Linked devices)',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+/** `tm8 bridge work` (v2 §4.3): bridges.work.start — the /work path, for agents asked in natural language. */
+async function bridgeWork(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['item', 'teammate', 'project', 'effort', 'mutation-id']); argumentsCount(cmd, 1);
+  const items = cmd.options.values('item').map(i => i.trim()).filter(i => i !== '');
+  if (items.length === 0) throw usage('--item "<one line of work>" is required (repeat it, at most 5)');
+  const effort = cmd.options.value('effort');
+  if (effort !== undefined && !['low', 'high', 'max'].includes(effort)) throw usage('--effort takes low, high or max');
+  const teammate = cmd.options.value('teammate');
+  const project = cmd.options.value('project');
+  const options = {
+    ...(teammate ? { teammate } : {}), ...(project ? { project } : {}), ...(effort ? { effort } : {}),
+  };
+  const result = await observedInvoke<BridgeWorkStartResult>(client(cmd), 'bridges.work.start', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') },
+    body: { ...mutation(cmd), items, ...(Object.keys(options).length > 0 ? { options } : {}) },
+  });
+  cmd.out.data(result, r => [
+    ...(r.parentTaskId ? [`parent task ${r.parentTaskId}`] : []),
+    ...r.items.map((item, i) => item.sessionId
+      ? `${i + 1} task ${item.taskId} · ${item.handle ?? item.sessionId} starting`
+      : `${i + 1} task ${item.taskId} · not started: ${item.error ?? 'unknown'}`),
+    r.noticeMessageId ? 'announced in the group' : 'not announced (the bridge refused the post)',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
+  const page = await observedInvoke<BridgeConversationListResult>(client(cmd), 'bridges.conversations.list', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') },
+  });
+  cmd.out.data(page, p => p.items.length
+    ? p.items.map(c => `${c.conversationId}  ${c.kind.padEnd(5)} "${c.name}"${c.size === null ? '' : ` · ${c.size} members`}` +
+      `${c.canSend ? '' : ` · read-only (${c.reason ?? 'cannot send'}): a bridge here falls back to direction in`}`).join('\n')
+    : 'no groups on this number');
+  return EXIT_OK;
+}
+
+function renderProposal(p: BridgeMemoryProposal): string {
+  const who = `${p.proposerName || p.proposedBy} (${p.proposerTrust === 'linked' ? 'verified link' : 'admin-asserted link'})`;
+  const state = p.status === 'pending'
+    ? `pending until ${p.expiresAt}${p.canDecide ? ' · you can accept or drop it' : ''}`
+    : `${p.status}${p.decidedAt ? ` ${p.decidedAt}` : ''}${p.memoryId ? ` → memory ${p.memoryId}` : ''}`;
+  return `${p.id} ${who} · ${state}${p.mentionsSecret ? '\n  ⚠ mentions a secret: accept only if it holds none' : ''}\n  "${p.statement.replace(/\s+/g, ' ')}"`;
+}
+
+// D29: `/remember` proposals are listed and decided here, in tm8, by a person.
+async function bridgeProposals(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['status', 'limit']); argumentsCount(cmd, 1);
+  const query: Record<string, string> = {};
+  const status = choice(cmd, 'status', BRIDGE_MEMORY_PROPOSAL_STATUSES); if (status) query.status = status;
+  const limit = cmd.options.integer('limit');
+  if (limit !== undefined) {
+    if (limit < 1 || limit > 200) throw usage('--limit must be between 1 and 200');
+    query.limit = String(limit);
+  }
+  const page = await observedInvoke<BridgeMemoryProposalListResult>(client(cmd), 'bridges.memories.proposals.list', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, query,
+  });
+  cmd.out.data(page, p => p.items.length ? p.items.map(renderProposal).join('\n') : 'no memory proposals');
+  return EXIT_OK;
+}
+
+async function bridgeProposalResolve(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['statement', 'note']); argumentsCount(cmd, 3);
+  const decision = requireArg(cmd, 2, 'accept|drop');
+  if (decision !== 'accept' && decision !== 'drop') throw usage('a proposal is resolved with accept or drop');
+  const statement = cmd.options.value('statement');
+  if (statement !== undefined && decision !== 'accept') throw usage('--statement corrects the text to accept; it is for accept only');
+  const note = cmd.options.value('note');
+  const result = await observedInvoke<BridgeMemoryProposal>(client(cmd), 'bridges.memories.proposals.resolve', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>'), proposalId: requireArg(cmd, 1, '<proposal-id>') },
+    body: { decision, ...(statement !== undefined ? { statement } : {}), ...(note !== undefined ? { note } : {}) },
+  });
+  cmd.out.data(result, renderProposal);
+  return EXIT_OK;
+}
+
+// B3 (417, §4.6, D58): the caller's own links. A code is shown once, here.
+async function bridgeLinkBegin(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['provider']); argumentsCount(cmd, 0);
+  const provider = (choice(cmd, 'provider', BRIDGE_PROVIDERS) ?? 'whatsapp') as BridgeProvider;
+  const code = await observedInvoke<BridgeLinkCode>(client(cmd), 'bridges.links.begin', { body: { provider } });
+  cmd.out.data(code, c => [
+    `/link ${c.code}`,
+    `Send that from your phone, in a ${c.provider} conversation connected to tm8. It works once and expires at ${c.expiresAt}.`,
+    'When it arrives, your messages from that number count as you, here and in every space you are in.',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+const renderLink = (l: BridgeIdentityLink): string =>
+  `${l.id} ${l.provider} ${l.masked} · ${l.trust === 'linked' ? `linked ✓ by ${l.method}` : `asserted in ${l.spaceName ?? l.spaceId}`} · ${l.verifiedAt}${l.revokedAt ? ` · revoked ${l.revokedAt}` : ''}`;
+
+async function bridgeLinkList(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 0);
+  const list = await observedInvoke<BridgeLinksList>(client(cmd), 'bridges.links.list', {});
+  cmd.out.data(list, l => {
+    const lines = l.items.map(renderLink);
+    for (const p of l.pending) lines.push(`pending ${p.provider} code, expires ${p.expiresAt} (shown once when minted)`);
+    return lines.length ? lines.join('\n') : 'no linked identities; mint a code with `tm8 bridge link begin`';
+  });
+  return EXIT_OK;
+}
+
+async function bridgeLinkRevoke(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
+  const link = await observedInvoke<BridgeIdentityLink>(client(cmd), 'bridges.links.revoke', {
+    params: { linkId: requireArg(cmd, 0, '<link-id>') }, body: {},
+  });
+  cmd.out.data(link, l => `unlinked: ${renderLink(l)}`);
+  return EXIT_OK;
+}
+
+// D60: a one-use invite pinned to a participant. The bridge never DMs (D28):
+// the admin shares the join link themselves.
+async function bridgeInvite(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['role', 'mutation-id']); argumentsCount(cmd, 2);
+  const bridgeId = requireArg(cmd, 0, '<bridge-id>');
+  const externalId = requireArg(cmd, 1, '<external-id>');
+  const role = choice(cmd, 'role', ['member', 'admin'] as const);
+  const view = await observedInvoke<BridgeView>(client(cmd), 'bridges.get', { params: { bridgeId } });
+  const invite = await observedInvoke<{ id: string; code: string }>(client(cmd), 'spaces.invites.create', {
+    params: { spaceId: view.spaceId },
+    body: { ...mutation(cmd), maxUses: 1, ...(role ? { role } : {}), bridgeParticipant: { bridgeId, externalId } },
+  });
+  cmd.out.data(invite, i => [
+    `invite ${i.id} for ${externalId} on ${view.title}`,
+    `Share this join link with them yourself (tm8 never messages them): /join/${i.code} on your tm8 server.`,
+    'When they join with it, their number is linked to their account.',
+  ].join('\n'));
+  return EXIT_OK;
+}
+
 // Hand-over (D55): offer, then the receiving number's owner accepts in tm8.
 function renderHandover(r: BridgeHandoverResult): string {
   const h = r.handover;
@@ -496,34 +691,6 @@ async function handoverSettle(cmd: CommandContext,
   return EXIT_OK;
 }
 
-async function connectionRemove(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['mutation-id']); argumentsCount(cmd, 1);
-  const result = await observedInvoke<BridgeConnectionRemoveResult>(client(cmd), 'bridges.connections.remove', {
-    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body: mutation(cmd),
-  });
-  cmd.out.data(result, r => [
-    `removed connection ${r.connection.id} "${r.connection.label}"`,
-    `ended ${r.endedBridgeIds.length} bridge${r.endedBridgeIds.length === 1 ? '' : 's'}${r.endedBridgeIds.length ? `: ${r.endedBridgeIds.join(', ')}` : ''}`,
-    `revoked ${r.revokedCredentialIds.length} space credential${r.revokedCredentialIds.length === 1 ? '' : 's'}`,
-    r.runtime === 'logged_out'
-      ? 'the device was logged out'
-      : 'no runtime was connected: unlink the device on the phone (WhatsApp → Linked devices)',
-  ].join('\n'));
-  return EXIT_OK;
-}
-
-async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, []); argumentsCount(cmd, 1);
-  const page = await observedInvoke<BridgeConversationListResult>(client(cmd), 'bridges.conversations.list', {
-    params: { connectionId: requireArg(cmd, 0, '<connection-id>') },
-  });
-  cmd.out.data(page, p => p.items.length
-    ? p.items.map(c => `${c.conversationId}  ${c.kind.padEnd(5)} "${c.name}"${c.size === null ? '' : ` · ${c.size} members`}` +
-      `${c.canSend ? '' : ` · read-only (${c.reason ?? 'cannot send'}): a bridge here falls back to direction in`}`).join('\n')
-    : 'no groups on this number');
-  return EXIT_OK;
-}
-
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'remove'], run: connectionRemove },
   { path: ['bridge', 'conversations'], run: bridgeConversations },
@@ -544,8 +711,17 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'pause'], run: cmd => bridgeState(cmd, 'bridges.pause') },
   { path: ['bridge', 'resume'], run: cmd => bridgeState(cmd, 'bridges.resume') },
   { path: ['bridge', 'remove'], run: cmd => bridgeState(cmd, 'bridges.remove') },
+  { path: ['bridge', 'people'], run: bridgePeople },
+  { path: ['bridge', 'participant'], run: bridgeParticipant },
   { path: ['bridge', 'handles'], run: bridgeHandles },
   { path: ['bridge', 'handle', 'claim'], run: bridgeHandleClaim },
   { path: ['bridge', 'log'], run: bridgeLog },
   { path: ['bridge', 'listen'], run: bridgeListen },
+  { path: ['bridge', 'work'], run: bridgeWork },
+  { path: ['bridge', 'proposals'], run: bridgeProposals },
+  { path: ['bridge', 'proposal', 'resolve'], run: bridgeProposalResolve },
+  { path: ['bridge', 'link', 'begin'], run: bridgeLinkBegin },
+  { path: ['bridge', 'link', 'list'], run: bridgeLinkList },
+  { path: ['bridge', 'link', 'revoke'], run: bridgeLinkRevoke },
+  { path: ['bridge', 'invite'], run: bridgeInvite },
 ];

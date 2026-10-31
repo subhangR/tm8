@@ -209,6 +209,10 @@ import {
   type SpaceConfigsView,
   type AuthSessionsListResult,
   type AuthSessionsRevokeResult,
+  type BridgeIdentityLink,
+  type BridgeLinkCode,
+  type BridgeLinksList,
+  type BridgeProvider,
   type ChatDefault,
   type ChatDefaultsView,
   type PersonalStyleCreateInput,
@@ -1062,6 +1066,18 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     authSessions(spaceId: SpaceId | null): Promise<AuthSessionsListResult> {
       return http.call<AuthSessionsListResult>('auth.sessions.list', spaceId ? { query: { spaceId } } : {});
+    },
+
+    bridgeLinks(): Promise<BridgeLinksList> {
+      return http.call<BridgeLinksList>('bridges.links.list', {});
+    },
+
+    beginBridgeLink(provider: BridgeProvider): Promise<BridgeLinkCode> {
+      return http.call<BridgeLinkCode>('bridges.links.begin', { body: { provider } });
+    },
+
+    revokeBridgeLink(linkId: string): Promise<BridgeIdentityLink> {
+      return http.call<BridgeIdentityLink>('bridges.links.revoke', { params: { linkId }, body: {} });
     },
 
     revokeAuthSession(sessionId: string): Promise<AuthSessionsRevokeResult> {

@@ -95,6 +95,10 @@ const PATCH_DOORS = [
   // The detector fired on the independent catalog enumeration, exactly as this
   // file's header says a twelfth door should be noticed.
   'rename_work_session',
+  // 2026-10-29: migration 410 (labels) added `set_entity_labels`, the door
+  // `entities.patch` takes for `labels: {add, remove}`, bound from birth.
+  // Nineteen -> twenty.
+  'set_entity_labels',
   'update_channel',
   'update_collection',
   'update_commit_entity',
@@ -204,9 +208,10 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
   // freeze the same number, so both move together or the second hides.
   // 2026-10-02: eighteen — 283's update_story_entity (story kind), bound from birth.
   // 2026-10-06: nineteen — 304's update_craft_entity (design kind), bound from birth.
-  it('the frozen list is exactly nineteen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(19);
-    expect(new Set(PATCH_DOORS).size).toBe(19);
+  // 2026-10-29: twenty — 410's set_entity_labels (labels), bound from birth.
+  it('the frozen list is exactly twenty and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(20);
+    expect(new Set(PATCH_DOORS).size).toBe(20);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

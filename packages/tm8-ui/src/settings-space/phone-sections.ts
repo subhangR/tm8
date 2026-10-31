@@ -24,12 +24,12 @@ export interface PhoneSettingsGroup {
 }
 
 export const PHONE_SETTINGS_GROUPS: readonly PhoneSettingsGroup[] = [
-  { title: 'You', ids: ['account', 'my-sessions'] },
+  { title: 'You', ids: ['account', 'my-sessions', 'linked-identities'] },
   { title: 'Space & people', ids: ['profile', 'members', 'invites', 'sessions', 'sharing'] },
   { title: 'Chat & models', ids: ['models', 'chat-defaults'] },
   {
     title: 'Credentials & access',
-    ids: ['connectors', 'credentials', 'mcp-tokens', 'space-credentials', 'node-credentials', 'filesystem-access', 'space-links', 'projects'],
+    ids: ['connectors', 'credentials', 'mcp-tokens', 'space-credentials', 'node-credentials', 'filesystem-access', 'space-links', 'bridges', 'projects'],
   },
   { title: 'Structure', ids: ['axes', 'workflows', 'menu', 'kinds'] },
   { title: 'Reference', ids: ['configs', 'danger'] },
@@ -70,6 +70,7 @@ export const PHONE_SECTION_ICONS: Record<SettingsSectionId, { glyph: string; ton
   overview: { glyph: '◫', tone: 'idle' },
   account: { glyph: '👤', tone: 'info' },
   'my-sessions': { glyph: '🔑', tone: 'info' },
+  'linked-identities': { glyph: '⇋', tone: 'info' },
   profile: { glyph: '⌂', tone: 'run' },
   members: { glyph: '👥', tone: 'run' },
   invites: { glyph: '✉', tone: 'run' },
@@ -84,6 +85,7 @@ export const PHONE_SECTION_ICONS: Record<SettingsSectionId, { glyph: string; ton
   'node-credentials': { glyph: '🖥', tone: 'idle' },
   'filesystem-access': { glyph: '📁', tone: 'idle' },
   'space-links': { glyph: '🔗', tone: 'brand' },
+  bridges: { glyph: '⌒', tone: 'brand' },
   projects: { glyph: '⎇', tone: 'idle' },
   axes: { glyph: '⇅', tone: 'merged' },
   workflows: { glyph: '⟲', tone: 'idle' },
@@ -138,6 +140,7 @@ function liveInvites(invites: readonly SpaceInviteView[] | null): number | null 
 export const PHONE_SECTION_HINTS: Partial<Record<SettingsSectionId, string>> = {
   account: 'Your name and how you appear',
   'my-sessions': 'Where you are signed in',
+  'linked-identities': 'Numbers that count as you',
   profile: 'Name and description',
   members: 'Who is in this space',
   invites: 'Links that let people join',
@@ -152,6 +155,7 @@ export const PHONE_SECTION_HINTS: Partial<Record<SettingsSectionId, string>> = {
   'node-credentials': 'Admins only',
   'filesystem-access': 'Admins only',
   'space-links': 'Your other spaces',
+  bridges: 'WhatsApp · Slack groups',
   projects: 'Needs a folder picker',
   axes: 'Axes and their values',
   workflows: 'Authored next to axes',

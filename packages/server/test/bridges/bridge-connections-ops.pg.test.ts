@@ -1,5 +1,5 @@
 /**
- * Bridges B1b-5 (§2.5, §3.4, §7.3 item 8; migration 400): bridges.connections.*
+ * Bridges B1b-5 (§2.5, §3.4, §7.3 item 8; migration 421): bridges.connections.*
  * over authenticated HTTP, with a real event socket on the same server.
  *
  * Pinned here: begin's pairing code reaches the begin caller's own human

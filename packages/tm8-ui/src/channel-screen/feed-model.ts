@@ -357,6 +357,8 @@ export interface ChannelPostInput {
   attachmentIds?: EntityId[];
   /** Client-only Channel routing selections; the host resolves these to anchors. */
   tagTargetIds?: EntityId[];
+  /** §4.5 *Reply here only*: a reply to a bridged message that must not cross (D76). */
+  hereOnly?: boolean;
 }
 
 /** A read that was refused, as a replacement state rather than an overlay. */

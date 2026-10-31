@@ -17,6 +17,7 @@
 import type { ReactNode } from 'react';
 import type { ChatMode, EntityId, Mention } from '@tm8/contract';
 import { actorName } from '../domain';
+import { BridgeDeliveryTick, BridgeProviderMark, BridgeVia } from '../bridges/bridge-marks';
 import { Avatar, Markdown, Timestamp, type MarkdownComponents } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { MessageAttachments } from '../files/MessageAttachments';
@@ -75,8 +76,20 @@ export function ChatTurn({
    *  reply preview. The turn itself stays chat's. */
   footer?: ReactNode;
 }) {
-  const label = (turn.author ? actorName(turn.author) : null) ?? (turn.role === 'assistant' ? 'Agent' : 'You');
-  const actorId = turn.author?.id ?? `chat-${turn.role}`;
+  /**
+   * A BRIDGED SENDER (§4.5, D4). A guest's message is authored by the bridge,
+   * so the author's name is the bridge's: the participant's name is the one
+   * to show, on an avatar of initials in the idle tone (keyed per participant,
+   * so two guests are never one colour-identity). A linked member keeps their
+   * own name and avatar, with the provider's mark overlaid.
+   */
+  const bridgedIn = turn.bridge?.direction === 'in' ? turn.bridge : null;
+  const guest = bridgedIn?.trust === 'guest';
+  const label = (guest && bridgedIn?.participant)
+    || ((turn.author ? actorName(turn.author) : null) ?? (turn.role === 'assistant' ? 'Agent' : 'You'));
+  const actorId = guest && bridgedIn
+    ? `bridge-guest:${bridgedIn.bridgeId}:${label}`
+    : turn.author?.id ?? `chat-${turn.role}`;
   const agent = turn.author?.isAgent ?? turn.role === 'assistant';
   /**
    * Sidedness is decided by AUTHOR IDENTITY, not role — in a shared thread
@@ -149,14 +162,30 @@ export function ChatTurn({
       data-testid={testId}
     >
       <header className="tch-turn__byline">
-        <Avatar
-          actorId={actorId}
-          provenance={agent ? 'agent' : 'human'}
-          label={label}
-          size={20}
-          src={turn.author?.avatar}
-        />
+        {bridgedIn ? (
+          <span className="bridge-avatar" data-testid="bridge-avatar">
+            <Avatar
+              actorId={actorId}
+              provenance="human"
+              label={label}
+              size={20}
+              initials={guest ? initialsOf(label) : undefined}
+              src={guest ? null : turn.author?.avatar}
+              className={guest ? 'bridge-avatar--guest' : undefined}
+            />
+            {guest ? null : <BridgeProviderMark provider={bridgedIn.provider} />}
+          </span>
+        ) : (
+          <Avatar
+            actorId={actorId}
+            provenance={agent ? 'agent' : 'human'}
+            label={label}
+            size={20}
+            src={turn.author?.avatar}
+          />
+        )}
         <strong>{label}</strong>
+        {bridgedIn ? <BridgeVia bridge={bridgedIn} onOpen={onOpenEntity} /> : null}
         {/* THE SOURCE, AS A CHIP — the same `EntityChip` a tool call's entity
             reference gets, resolving kind mark and title through the same
             cached reader. A bare id would say "this came from elsewhere"
@@ -222,7 +251,21 @@ export function ChatTurn({
            closes the calls it abandoned. */
         settled={!live}
       />
+      {/* THE DELIVERY TICK, under the message it is about (§4.5): an agent's
+          turn answer or a post that crosses back carries the outbox state. */}
+      {turn.bridge?.direction === 'out' && turn.bridge.delivery ? (
+        <BridgeDeliveryTick delivery={turn.bridge.delivery} provider={turn.bridge.provider} />
+      ) : null}
       {footer}
     </article>
   );
+}
+
+/** Two letters for a guest: *Rahul Mehta* → RM, *Rahul* → R. */
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  const first = [...words[0]!][0] ?? '';
+  const last = words.length > 1 ? ([...words[words.length - 1]!][0] ?? '') : '';
+  return (first + last).toUpperCase();
 }
