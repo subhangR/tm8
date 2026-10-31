@@ -8,7 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath, type BridgeConnectionAuthFrame,
   type BridgeConnectionBeginResult, type BridgeConnectionListResult, type BridgeConnectionOfferResult,
   type BridgeConnectionView, type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult,
-  type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
+  type BridgeConversationCreateResult, type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
   type BridgeListResult, type BridgeListenResult, type BridgeLogResult, type BridgePolicy, type BridgeView,
   type BridgeWake, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeProvider,
   type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgeParticipant,
@@ -568,6 +568,30 @@ async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+// A new group on your own number; with --to it is bridged in the same call.
+async function bridgeGroupCreate(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['title', 'participant', 'to', 'mutation-id', ...SETTING_OPTIONS]); argumentsCount(cmd, 1);
+  const title = cmd.options.value('title');
+  if (!title) throw usage('--title <group name> is required');
+  const targetId = cmd.options.value('to');
+  const bridgeSettings = settings(cmd);
+  if (!targetId && Object.keys(bridgeSettings).length) throw usage('bridge settings need --to <chat|session|channel id>: the group is bridged there');
+  const body = {
+    ...mutation(cmd), title, participants: cmd.options.values('participant'),
+    ...(targetId ? { bridge: { spaceId: requireSpace(cmd.ctx), targetId, ...bridgeSettings } } : {}),
+  };
+  const result = await observedInvoke<BridgeConversationCreateResult>(client(cmd), 'bridges.conversations.create', {
+    params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body,
+  });
+  cmd.out.data(result, r => [
+    `group ${r.group.conversationId} "${r.group.subject}"`,
+    ...r.group.results.map(p => `  ${p.id} ${p.status === 'invite_needed' ? 'not added (their privacy settings): send them the invite link' : p.status}`),
+    ...(r.group.inviteLink ? [`invite link: ${r.group.inviteLink}`] : []),
+    r.bridge ? renderBridge(r.bridge) : `not bridged; bridge it with: tm8 bridge create --connection ${r.connectionId} --conversation ${r.group.conversationId} --title "${r.group.subject}" --to <id>`,
+  ].join('\n'));
+  return EXIT_OK;
+}
+
 function renderProposal(p: BridgeMemoryProposal): string {
   const who = `${p.proposerName || p.proposedBy} (${p.proposerTrust === 'linked' ? 'verified link' : 'admin-asserted link'})`;
   const state = p.status === 'pending'
@@ -695,6 +719,7 @@ async function handoverSettle(cmd: CommandContext,
 export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'remove'], run: connectionRemove },
   { path: ['bridge', 'conversations'], run: bridgeConversations },
+  { path: ['bridge', 'group', 'create'], run: bridgeGroupCreate },
   { path: ['bridge', 'connection', 'list'], run: connectionList },
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },

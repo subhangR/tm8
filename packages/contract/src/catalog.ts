@@ -114,6 +114,9 @@ export const OPERATIONS = [
   // group list is the owner's only, asked of the runtime live and never stored (D28).
   { name: 'bridges.connections.remove', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/remove', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.conversations.list', method: 'GET', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'read', status: 'v1', humanOnly: true },
+  // A new group on the owner's number, bridged in the same call when asked: owner only,
+  // and a space admin of the bridge's space, checked before the group is made.
+  { name: 'bridges.conversations.create', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'command', status: 'v1', humanOnly: true },
   // Q7/Q8 (D55, D56; 424): hand a bridge to another member's connection. All
   // human-only (D9: never from a group). accept asks the receiving number's
   // runtime for its live group list before the one-transaction move.
