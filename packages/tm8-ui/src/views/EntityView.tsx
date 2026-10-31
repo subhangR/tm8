@@ -854,7 +854,7 @@ export function EntityView(props: EntityViewProps) {
         messages={messages}
         onOpenEntity={(id, entityKind) => props.onOpenEntityPage?.(id as EntityId, entityKind)}
         onViewAllMessages={viewAllMessages}
-        bodySlot={phoneBodyFor(detail, data.seam.commands.bridges, (id) =>
+        bodySlot={phoneBodyFor(detail, data.seam.commands, (id) =>
           withEntityKind(id, (ref) => data.detailOf(ref)?.kind, (ref) => data.seam.entity(ref), (ref, entityKind) => props.onOpenEntityPage?.(ref, entityKind)))}
       />
     ) : null;

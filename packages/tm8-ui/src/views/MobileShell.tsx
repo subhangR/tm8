@@ -1274,7 +1274,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
           connections={data.connectionsOf(activeTarget.ref)}
           messages={data.messagesOf(activeTarget.ref)}
           onOpenEntity={(id, kind) => openEntityOnPhone(props.navigateTo, id as EntityId, kind)}
-          bodySlot={phoneBodyFor(detail, data.seam.commands.bridges, (id) =>
+          bodySlot={phoneBodyFor(detail, data.seam.commands, (id) =>
             withEntityKind(
               id,
               (ref) => data.detailOf(ref)?.kind,
