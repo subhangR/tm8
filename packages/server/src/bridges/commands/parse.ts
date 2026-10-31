@@ -20,7 +20,7 @@ export const BRIDGE_VERBS = [
   'work', 'task', 'help', 'whoami', 'workers', 'stop', 'status', 'tasks', 'docs', 'link',
   'who', 'bridge', 'mute', 'unmute', 'new',
   'start', 'retry', 'result', 'tell',
-  // Bridges R (409, D29): a proposal, accepted only in tm8.
+  // Bridges R (416, D29): a proposal, accepted only in tm8.
   'remember',
 ] as const;
 export type BridgeVerb = (typeof BRIDGE_VERBS)[number];

@@ -446,7 +446,7 @@ export const BridgeWorkStartInputSchema = z.object({
 }).strict();
 
 // ---------------------------------------------------------------------------
-// `/remember` proposals (D29, D61-D63; migration 409). A proposal is made from
+// `/remember` proposals (D29, D61-D63; migration 416). A proposal is made from
 // the group by the command executor and decided only here, in tm8, by a human.
 // ---------------------------------------------------------------------------
 export const BRIDGE_MEMORY_PROPOSAL_STATUSES = ['pending', 'accepted', 'dropped', 'expired'] as const;

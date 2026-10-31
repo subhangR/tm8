@@ -76,7 +76,7 @@ describe('catalog (§3.4)', () => {
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
       'bridges.resume', 'bridges.remove', 'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.work.start', // B1b-6 (v2 §4.3)
-      // Bridges R (409): /remember proposals, listed and decided in tm8 (D29, D61-D63).
+      // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
     ]);
   });

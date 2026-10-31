@@ -304,7 +304,7 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'labels.update',
   'labels.archive',
   'bridges.work.start', // B1b-6: the contract schema is unannotated, like B0a's bridges rows
-  'bridges.memories.proposals.resolve', // Bridges R (409)
+  'bridges.memories.proposals.resolve', // Bridges R (416)
   'loops.create',
   'loops.update',
   'loops.enable',

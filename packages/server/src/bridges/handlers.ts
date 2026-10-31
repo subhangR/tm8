@@ -193,7 +193,7 @@ async function readLog(q: Querier, bridgeId: string, opts: {
   };
 }
 
-/** A proposal as the SQL doors answer it (409), with its times as ISO strings. */
+/** A proposal as the SQL doors answer it (416), with its times as ISO strings. */
 function proposalOf(raw: BridgeMemoryProposal): BridgeMemoryProposal {
   return {
     ...raw, version: Number(raw.version), decidedAt: iso(raw.decidedAt), expiresAt: iso(raw.expiresAt)!,
@@ -340,7 +340,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const bridgeId = routeId(ctx, 'bridgeId');
       return command(ctx, q => q.rpc<BridgeListenResult>('set_bridge_listen', [bridgeId, input.wake]));
     },
-    // D29, D61-D63 (409): `/remember` proposals. Made only by the command
+    // D29, D61-D63 (416): `/remember` proposals. Made only by the command
     // executor (proposeBridgeMemory); listed and decided only here, in tm8.
     'bridges.memories.proposals.list': async ctx => {
       const bridgeId = requireUuidParam(ctx, 'bridgeId');

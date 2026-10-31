@@ -1,5 +1,5 @@
 /**
- * `/remember` proposals (BRIDGE-ENTITY-DESIGN D29, D61-D63; migration 409):
+ * `/remember` proposals (BRIDGE-ENTITY-DESIGN D29, D61-D63; migration 416):
  * the door the bridge command executor (B1b-4) calls for `/remember <text>`.
  *
  * It records a PROPOSAL, never a memory: the memory is made only when a

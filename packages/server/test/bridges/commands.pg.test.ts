@@ -703,7 +703,7 @@ describe('§4.6 confirms: YES quoting the notice, same sender, once', () => {
   });
 });
 
-describe('/remember (Bridges R, 409: D29, D61)', () => {
+describe('/remember (Bridges R, 416: D29, D61)', () => {
   const proposals = (messageId: string) => asOwner(async c => (await c.query(
     `select status, statement, proposed_by, proposer_trust, memory_id from public.bridge_memory_proposals
       where bridge_id = $1 and message_id = $2`, [bridgeId, messageId])).rows);
