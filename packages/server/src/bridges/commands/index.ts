@@ -9,17 +9,48 @@ import { createBridgeWorkerPort } from '../../facade/execution-handlers.js';
 import { bridgesWorkerClaims, postBridgeNotice, reactBridgeMessage } from '../outbox.js';
 import { createBridgeCommandExecutor, type BridgeCommandExecutor } from './executor.js';
 import { createBridgeSessionKeeper, type BridgeSessionKeeper } from '../runtime/keeper.js';
-import type { BridgeCommandPorts } from './ports.js';
+import type { BridgeCommandPorts, BridgeGroupPort, BridgeGroupResult } from './ports.js';
+import type { BridgeRuntimeHub } from '../runtime/hub.js';
+import type { GroupFrame } from '@tm8/contract';
 
 export { createBridgeCommandExecutor, VERB_TIER } from './executor.js';
 export type { BridgeCommandExecutor } from './executor.js';
 export type { BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts } from './ports.js';
 export { isBridgeCommandText, parseBridgeCommand } from './parse.js';
 
+/**
+ * 426: the number's group powers, through the runtime that runs it. The hub
+ * is read when a command runs (it is built after the executor).
+ */
+export function bridgeGroupPort(db: Db, hub: () => BridgeRuntimeHub | undefined): BridgeGroupPort {
+  const runtimeOf = async (connectionId: string): Promise<{ hub: BridgeRuntimeHub; runtimeId: string }> => {
+    const h = hub();
+    const runtimeId = await db.rpc<string | null>(bridgesWorkerClaims(), 'bridge_runtime_of', [connectionId]);
+    if (!h || !runtimeId) throw new Error('WhatsApp is not connected on this number right now');
+    return { hub: h, runtimeId };
+  };
+  const settled = (frame: GroupFrame): BridgeGroupResult => {
+    if ('error' in frame) throw new Error(frame.error);
+    return { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
+  };
+  return {
+    async create(input) {
+      const { hub: h, runtimeId } = await runtimeOf(input.connectionId);
+      return settled(await h.createGroup(runtimeId, input));
+    },
+    async add(input) {
+      const { hub: h, runtimeId } = await runtimeOf(input.connectionId);
+      return settled(await h.addToGroup(runtimeId, input));
+    },
+  };
+}
+
 export function createBridgeCommands(deps: {
   db: Db;
   spawnService: SpawnService;
   logger?: BridgeCommandPorts['logger'];
+  /** 426: /split and /invite; absent, both say this node cannot make groups. */
+  groups?: BridgeGroupPort;
 }): BridgeCommandExecutor {
   const { db } = deps;
   const workers = createBridgeWorkerPort({ db, spawnService: deps.spawnService });
@@ -46,6 +77,7 @@ export function createBridgeCommands(deps: {
       return raw?.handle ? { handle: raw.handle, title: raw.title ?? null } : null;
     },
     ...(deps.logger ? { logger: deps.logger } : {}),
+    ...(deps.groups ? { groups: deps.groups } : {}),
   });
 }
 

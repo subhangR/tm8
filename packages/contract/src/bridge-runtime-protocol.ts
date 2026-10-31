@@ -132,7 +132,18 @@ export type HeartbeatFrame = {
 
 export type MediaFrame = { requestId: string; mime: string | null; data: string } | { requestId: string; error: string; tooLarge?: boolean }
 
-export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media'
+/**
+ * What happened to each person asked into a group (`group.create`, `group.add`). `invite_needed`: their privacy
+ * settings refuse adds, so they need the group's invite link instead; `already`: in the group already.
+ */
+export type GroupMemberResult = { id: string; status: 'added' | 'already' | 'invite_needed' | 'failed' }
+
+/** The answer to `group.create` / `group.add`. `inviteLink` is set only when someone needs it. */
+export type GroupFrame =
+  | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }
+  | { requestId: string; connectionId: string; error: string }
+
+export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group'
 
 export type RuntimeFrames = {
   hello: HelloFrame
@@ -144,6 +155,7 @@ export type RuntimeFrames = {
   sent: SentFrame
   heartbeat: HeartbeatFrame
   media: MediaFrame
+  group: GroupFrame
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -174,5 +186,12 @@ export type ServerFrame =
   | { type: 'read'; connectionId: string; conversationId: string; messages: { externalMessageId: string; senderExternalId: string | null }[] }
   | { type: 'conversation.list'; requestId: string; connectionId: string }
   | { type: 'media.fetch'; requestId: string; connectionId: string; conversationId: string; handle: string; maxBytes: number }
+  /**
+   * Make a new group on the number with these people (JIDs) in it; the number is its admin. It is not on the allowlist
+   * until the server connects it (a bridge), so nothing in it is read or sent before then.
+   */
+  | { type: 'group.create'; requestId: string; connectionId: string; subject: string; participants: string[] }
+  /** Add people to a connected group (the number must be its admin). */
+  | { type: 'group.add'; requestId: string; connectionId: string; conversationId: string; participants: string[] }
 
 export type ServerFrameType = ServerFrame['type']

@@ -31,12 +31,13 @@
 import { CollabError, type BridgeWorkStartInput, type BridgeWorkStartResult } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import {
-  isConfirmText, parseBridgeCommand, parseDuration, parseWorkItems, parseWorkerRef, stripTail, titleOf,
-  type BridgeVerb, type ParsedBridgeCommand, type WorkItem, type WorkerRef,
+  isConfirmText, parseBridgeCommand, parseDuration, parsePeople, parseSplit, parseWorkItems, parseWorkerRef, stripTail, titleOf,
+  type BridgeVerb, type ParsedBridgeCommand, type PersonRef, type WorkItem, type WorkerRef,
 } from './parse.js';
 import { proposeBridgeMemory } from '../memory-proposals.js';
 import type {
-  BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeWorkStarter,
+  BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeGroupResult,
+  BridgeWorkStarter,
 } from './ports.js';
 
 /** v2 §4.3 Routing → Workers defaults; the bridge row does not carry them yet. */
@@ -62,6 +63,8 @@ export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'lin
   who: 'reader', bridge: 'everyone',
   mute: 'admin', unmute: 'admin', new: 'linked',
   start: 'linked', retry: 'linked', tell: 'linked', result: 'reader',
+  // 426: they act through the number owner's own WhatsApp, so a verified space admin only.
+  split: 'admin', invite: 'admin',
 };
 
 const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
@@ -303,6 +306,10 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     }
     if (cmd.sender.admin && (t === '' || t.startsWith('admin') || t.startsWith('mute'))) {
       lines.push('/mute 1h · /unmute — hold tm8\'s posts here; commands keep working');
+    }
+    if (cmd.sender.admin && (t.startsWith('admin') || t.startsWith('group') || t.startsWith('split') || t.startsWith('invite'))) {
+      lines.push('/split <name> with @a @b — a new group with them, on its own session');
+      lines.push('/invite @a +91… — add people to this group');
     }
     lines.push('/whoami · /bridge — who you are, where this group goes');
     if (!cmd.sender.memberId) lines.push(GUEST_FIRST);
@@ -824,6 +831,123 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     };
   }
 
+  // ---------------------------------------------------------------- groups (426)
+  interface RosterRow { external_id: string; alt_external_ids: string[]; display_name: string | null; muted: boolean }
+
+  /** A participant's best address to add to a group: their phone-number JID when known, else the id they used. */
+  const addressOf = (r: RosterRow): string =>
+    [r.external_id, ...r.alt_external_ids].find(j => j.endsWith('@s.whatsapp.net')) ?? r.external_id;
+
+  /** Names on a /split or /invite, against this group's roster (the people who have spoken here). */
+  async function resolvePeople(cmd: Command, claims: DbClaims, refs: PersonRef[]) {
+    const roster = await ports.db.query<RosterRow>(claims,
+      `select external_id, alt_external_ids, display_name, muted from public.bridge_participants where bridge_id = $1`,
+      [cmd.input.bridgeId]);
+    const jids = new Map<string, string>();  // address -> how to name it in the answer
+    const unknown: string[] = [];
+    const named = (r: RosterRow) => r.display_name || `…${r.external_id.replace(/@.*$/, '').slice(-4)}`;
+    for (const ref of refs) {
+      if (ref.kind === 'everyone') {
+        for (const r of roster) if (!r.muted) jids.set(addressOf(r), named(r));
+      } else if (ref.kind === 'mention' || ref.kind === 'phone') {
+        const hit = roster.find(r => [r.external_id, ...r.alt_external_ids].some(j => j.startsWith(`${ref.digits}@`)));
+        jids.set(hit ? addressOf(hit) : `${ref.digits}@s.whatsapp.net`, hit ? named(hit) : `+${ref.digits}`);
+      } else {
+        const want = ref.text.toLowerCase();
+        const exact = roster.filter(r => (r.display_name ?? '').toLowerCase() === want);
+        const prefix = exact.length ? exact : roster.filter(r => (r.display_name ?? '').toLowerCase().startsWith(want));
+        if (prefix.length === 1) jids.set(addressOf(prefix[0]!), named(prefix[0]!));
+        else unknown.push(prefix.length > 1 ? `"${ref.text}" (several people)` : `"${ref.text}"`);
+      }
+    }
+    return { jids, unknown, roster };
+  }
+
+  /** "added 3; Maya needs the invite link: https://…" — one line per outcome that happened. */
+  function groupOutcome(g: BridgeGroupResult, names: Map<string, string>): string {
+    const who = (status: string) => g.results.filter(r => r.status === status).map(r => names.get(r.id) ?? `…${r.id.replace(/@.*$/, '').slice(-4)}`);
+    const parts: string[] = [];
+    const added = who('added'), already = who('already'), invite = who('invite_needed'), failed = who('failed');
+    if (added.length) parts.push(`added ${added.join(', ')}`);
+    if (already.length) parts.push(`already in: ${already.join(', ')}`);
+    if (invite.length) parts.push(`${invite.join(', ')} can't be added directly (their privacy settings)${g.inviteLink ? ` — send them ${g.inviteLink}` : ''}`);
+    if (failed.length) parts.push(`couldn't add ${failed.join(', ')}`);
+    return parts.join('. ');
+  }
+
+  /**
+   * /split <name> with <people> (426): a new WhatsApp group on this number,
+   * with the sender and the people named (from this group's roster, or by
+   * +number), connected by its own bridge onto a new session as this bridge's
+   * teammate, with this bridge's policy. A retry never makes a second group:
+   * the group is recorded on the command message the moment WhatsApp answers.
+   */
+  async function split(cmd: Command, args: string, body: string[]): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    if (!ports.groups) throw new Refusal('this node cannot make groups yet');
+    const { name, people } = parseSplit(args, body);
+    if (!name) throw new Refusal('usage: /split <group name> with @someone @someone — @mention them, give a +number, a name, or everyone');
+    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null } | null>('bridge_split_of', [cmd.input.messageId]));
+    if (done?.bridgeId) return { text: `"${done.title}" is made and connected` };
+
+    let title = name;
+    let outcome = '';
+    let size: number | null = null;
+    if (!done) {
+      const { jids, unknown, roster } = await resolvePeople(cmd, claims, people);
+      if (unknown.length) throw new Refusal(`I don't know ${unknown.join(', ')} in this group — @mention them or give a +number`);
+      const me = roster.find(r => r.external_id === cmd.input.senderExternalId);
+      jids.set(me ? addressOf(me) : cmd.input.senderExternalId, cmd.sender.displayName || 'you');
+      const g = await ports.groups.create({
+        connectionId: cmd.input.connectionId, subject: titleOf(name, 100), participants: [...jids.keys()], requestId: `${cmd.key}:split`,
+      });
+      title = g.subject || name;
+      await exec(q => q.rpc('bridge_split_record', [cmd.input.messageId, cmd.input.bridgeId, g.conversationId, title]));
+      outcome = groupOutcome(g, jids);
+      size = g.results.filter(r => r.status === 'added').length + 1;
+    } else {
+      title = done.title;
+    }
+
+    const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [cmd.input.bridgeId]));
+    const teammate = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId ?? facts?.teammateId ?? null;
+    if (!teammate) {
+      return { text: `made "${title}"${outcome ? `: ${outcome}` : ''}. It isn't connected to tm8: this bridge has no teammate for its session — connect it in tm8` };
+    }
+    const provider = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
+    const { sessionId } = await ports.spawnWorker(claims, {
+      spaceId: cmd.input.spaceId, teamMemberId: teammate, taskId: null, projectId: null, effort: null,
+      title: titleOf(`${title} (${provider})`, 80), clientMutationId: `${cmd.key}:spawn:split`, origins: [cmd.origin('/split')],
+    });
+    const connected = await exec(q => q.rpc<{ bridgeId: string }>('bridge_split_connect', [cmd.input.messageId, sessionId, cmd.sender.memberId, size]));
+    const handle = await ports.workerHandle(claims, connected.bridgeId, sessionId).catch(() => null);
+    return {
+      text: `made "${title}"${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
+    };
+  }
+
+  /** /invite <people> (426): add them to this group through the number (it must be the group's admin). */
+  async function invite(cmd: Command, args: string, body: string[]): Promise<Answer> {
+    const claims = requireLinked(cmd);
+    if (!ports.groups) throw new Refusal('this node cannot add people to groups yet');
+    const refs = parsePeople([args, ...body].join('\n'));
+    if (refs.length === 0) throw new Refusal('usage: /invite @someone +91… — @mention them or give a +number');
+    if (refs.some(r => r.kind === 'everyone')) throw new Refusal('everyone here is in this group already — name who to add');
+    const { jids, unknown } = await resolvePeople(cmd, claims, refs);
+    if (unknown.length) throw new Refusal(`I don't know ${unknown.join(', ')} — give a +number for someone who isn't in this group`);
+    const [row] = await ports.db.query<{ conv: string }>(claims,
+      'select external_conversation_id conv from public.bridges where entity_id = $1', [cmd.input.bridgeId]);
+    if (!row) throw new Refusal('this group is no longer connected to tm8');
+    let g: BridgeGroupResult;
+    try {
+      g = await ports.groups.add({ connectionId: cmd.input.connectionId, conversationId: row.conv, participants: [...jids.keys()], requestId: `${cmd.key}:invite` });
+    } catch (error) {
+      if (/not-authorized|forbidden|403/i.test(errorText(error))) throw new Refusal('this number has to be an admin of the group to add people');
+      throw error;
+    }
+    return { text: groupOutcome(g, jids) || 'nobody to add' };
+  }
+
   /** /result <worker> (§4.4): its latest post on this group's log, ≤ 10 lines, never secret-shaped text (§4.8). */
   async function result(cmd: Command, args: string): Promise<Answer> {
     requireReader(cmd);
@@ -927,6 +1051,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'retry': return retry(cmd, parsed.args);
       case 'result': return result(cmd, parsed.args);
       case 'tell': return tell(cmd, parsed.args, parsed.body);
+      case 'split': return split(cmd, parsed.args, parsed.body);
+      case 'invite': return invite(cmd, parsed.args, parsed.body);
     }
   }
 

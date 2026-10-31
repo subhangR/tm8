@@ -204,8 +204,24 @@ function makeExecutor(): BridgeCommandExecutor {
     },
     workerHandle: async (claims, bridge, sessionId) =>
       db.rpc<{ handle: string; title: string | null }>(claims, 'bridge_poster_handle', [bridge, sessionId]),
+    groups: {
+      async create(input) {
+        groupCalls.push({ op: 'create', ...input });
+        const conversationId = `120363-split-${++groupSeq}@g.us`;
+        return { conversationId, subject: input.subject, inviteLink: input.participants.some(j => privateJids.has(j)) ? 'https://chat.whatsapp.com/INV' : null,
+          results: input.participants.map(id => ({ id, status: privateJids.has(id) ? 'invite_needed' as const : 'added' as const })) };
+      },
+      async add(input) {
+        groupCalls.push({ op: 'add', ...input });
+        return { conversationId: input.conversationId, subject: 'Infra', inviteLink: input.participants.some(j => privateJids.has(j)) ? 'https://chat.whatsapp.com/INV' : null,
+          results: input.participants.map(id => ({ id, status: privateJids.has(id) ? 'invite_needed' as const : 'added' as const })) };
+      },
+    },
   });
 }
+const groupCalls: Array<{ op: 'create' | 'add'; participants: string[]; subject?: string; conversationId?: string }> = [];
+const privateJids = new Set<string>();
+let groupSeq = 0;
 
 /** An inbound command as B1b-2 stores it: the message on the log, its origin, command_state pending. */
 async function inbound(sender: string, authorId: string, body: string, replyToExternalId: string | null = null): Promise<string> {
@@ -864,5 +880,62 @@ describe('/new (R11, 425): the bridge starts its own session and moves to it', (
       'retarget_bridge', [bridgeId, Number((await asOwner(c => c.query('select version from public.entities where id = $1', [bridgeId]))).rows[0].version),
         chat, null, `r11-back-${randomUUID()}`]);
     expect((await target()).target_id).toBe(chat);
+  });
+});
+
+describe('/split and /invite (426): the bridge makes and fills groups on its number', () => {
+  beforeAll(async () => {
+    await asOwner(async c => {
+      for (const [p, name] of [[people.rahul.phone, 'Rahul'], [people.maya.phone, 'Maya'], [people.owner.phone, 'Owner']] as const) {
+        await c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+          values ($1,$2,$3,now(),now()) on conflict do nothing`, [bridgeId, p, name]);
+      }
+    });
+  });
+
+  it('is for verified space admins only', async () => {
+    const before = groupCalls.length;
+    expect((await command('rahul', '/split Crew with Maya')).reply!.text).toMatch(/space admin/);
+    expect((await command('guest', '/invite +919000000077')).reply!.text).toMatch(/link your number first/);
+    expect(groupCalls.length).toBe(before);
+  });
+
+  it('/split makes a group with the sender and the people named, and connects it on its own session', async () => {
+    const { messageId, reply } = await command('owner', '/split Release crew with @919000000002 and maya');
+    expect(reply!.text).toMatch(/^made "Release crew": added Rahul, Maya, Owner\. It has its own session/);
+    const call = groupCalls.at(-1)!;
+    expect(call).toMatchObject({ op: 'create', subject: 'Release crew' });
+    expect(new Set(call.participants)).toEqual(new Set([people.rahul.phone, people.maya.phone, people.owner.phone]));
+    const [row] = (await asOwner(c => c.query(`select s.conversation_id, b.target_kind, b.policy, p.policy parent_policy, b.teammate_id::text,
+        b.connection_id::text from public.bridge_splits s join public.bridges b on b.entity_id = s.bridge_id
+        join public.bridges p on p.entity_id = s.from_bridge_id where s.message_id = $1`, [messageId]))).rows;
+    expect(row).toMatchObject({ target_kind: 'work_session', teammate_id: persona, connection_id: connection });
+    expect(row.policy).toEqual(row.parent_policy);
+    expect(spawns.at(-1)).toMatchObject({ taskId: null, title: 'Release crew (WhatsApp)' });
+    // A retried command (the sweep after a crash) never makes a second group.
+    const made = groupCalls.length;
+    const answered = notices.length;
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    notices = notices.filter(n => n.replyToMessageId !== messageId);
+    await executor.run(messageId);
+    expect(groupCalls.length).toBe(made);
+    expect(notices.length).toBeLessThanOrEqual(answered);
+  });
+
+  it('/split refuses a name nobody here has, before anything is made', async () => {
+    const before = groupCalls.length;
+    expect((await command('owner', '/split Ops with Zed')).reply!.text).toMatch(/I don't know "Zed" in this group/);
+    expect((await command('owner', '/split')).reply!.text).toMatch(/^usage: \/split/);
+    expect(groupCalls.length).toBe(before);
+  });
+
+  it('/invite adds people to this group and hands out the invite link to those who need it', async () => {
+    privateJids.add('919000000077@s.whatsapp.net');
+    const { reply } = await command('owner', '/invite +91 90000 00088, +919000000077');
+    const call = groupCalls.at(-1)!;
+    expect(call).toMatchObject({ op: 'add', conversationId: '120363-infra@g.us' });
+    expect(call.participants).toEqual(['919000000088@s.whatsapp.net', '919000000077@s.whatsapp.net']);
+    expect(reply!.text).toBe("added +919000000088. +919000000077 can't be added directly (their privacy settings) — send them https://chat.whatsapp.com/INV");
+    expect((await command('owner', '/invite everyone')).reply!.text).toMatch(/name who to add/);
   });
 });

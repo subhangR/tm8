@@ -122,7 +122,7 @@ import {
 } from './pty/index.js';
 import { readTm8SessionCookie } from './http/session-cookie.js';
 import { BridgeRuntimeHub, isBridgeRuntimeUpgrade } from './bridges/runtime/hub.js';
-import { createBridgeCommands, createBridgeKeeper } from './bridges/commands/index.js';
+import { bridgeGroupPort, createBridgeCommands, createBridgeKeeper } from './bridges/commands/index.js';
 import { createBridgeRuntimeRoute } from './bridges/runtime/routes.js';
 import { BridgeRuntimeSupervisor } from './bridges/runtime/supervisor.js';
 import { BridgeMediaFetcher } from './bridges/runtime/media.js';
@@ -557,11 +557,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * which the runtime's inbound route and the watchdog's sweep read; without
    * it nothing a group sends is a command.
    */
+  // 426: set once the runtime hub below exists; the group port reads it per command.
+  let bridgeHubRef: BridgeRuntimeHub | undefined;
   const bridgeCommandExecutor = db && execution
     ? createBridgeCommands({
         db,
         spawnService: execution.spawnService,
         logger: { warn: (message) => console.warn(`[bridges] ${message}`) },
+        // 426: the hub is built further down; the port reads it when a command runs.
+        groups: bridgeGroupPort(db, () => bridgeHubRef),
       })
     : undefined;
   if (db) {
@@ -918,6 +922,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: (line) => console.warn(line),
       })
     : undefined;
+  bridgeHubRef = bridgeHub || undefined;
 
   const baseUpgrades: UpgradeTarget = ptyWs
     ? {
