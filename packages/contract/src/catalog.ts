@@ -121,6 +121,7 @@ export const OPERATIONS = [
   { name: 'bridges.handover.accept', method: 'POST', path: '/v2/bridge-handovers/:handoverId/accept', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.handover.decline', method: 'POST', path: '/v2/bridge-handovers/:handoverId/decline', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.handover.withdraw', method: 'POST', path: '/v2/bridge-handovers/:handoverId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.handovers.list', method: 'GET', path: '/v2/bridges/:bridgeId/handovers', kind: 'read', status: 'v1' },
   // labels (410; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
   { name: 'labels.list', method: 'GET', path: '/v2/spaces/:spaceId/labels', kind: 'read', status: 'v1' },
   { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },

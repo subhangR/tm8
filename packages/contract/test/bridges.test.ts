@@ -80,6 +80,7 @@ describe('catalog (§3.4)', () => {
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
       'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
+      'bridges.handovers.list', // Q7/Q8 follow-up (425)
       'bridges.work.start', // B1b-6 (v2 §4.3)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',

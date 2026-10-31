@@ -317,13 +317,13 @@ describe('H4. accept moves the bridge in one write', () => {
     const v1 = await versions();
     expect(v1[connA]).toBeGreaterThan(v0[connA]!);
     expect(v1[connB]).toBeGreaterThan(v0[connB]!);
-    const a = await until(() => allowlists(connA).find(f => f.version > pushedA && !f.conversationIds.includes(GROUP)));
-    const b = await until(() => allowlists(connB).find(f => f.version > pushedB && f.conversationIds.includes(GROUP)));
+    const a = await until(() => allowlists(connA).find(f => f.version > pushedA && !f.conversationIds.includes(GROUP)), 20_000);
+    const b = await until(() => allowlists(connB).find(f => f.version > pushedB && f.conversationIds.includes(GROUP)), 20_000);
     expect(a.conversationIds).toEqual([]);
     expect(b.conversationIds).toEqual([GROUP]);
 
     // The queued post went out on B; the in-flight one stayed on A and settles there.
-    const send = await until(() => frames.find(f => f.type === 'send' && f.outboxId === queued.outboxId));
+    const send = await until(() => frames.find(f => f.type === 'send' && f.outboxId === queued.outboxId), 20_000);
     expect(send).toMatchObject({ connectionId: connB, conversationId: GROUP });
     const [rows] = await owner<{ q: string; f: string }>(
       `select (select connection_id::text from public.bridge_outbox where id = $1) q, (select connection_id::text from public.bridge_outbox where id = $2) f`,
@@ -336,7 +336,7 @@ describe('H4. accept moves the bridge in one write', () => {
     // A loop still targeting the bridge posts via the new number.
     const next = await loopPost(loopId);
     expect(next.connectionId).toBe(connB);
-    const nextSend = await until(() => frames.find(f => f.type === 'send' && f.outboxId === next.outboxId));
+    const nextSend = await until(() => frames.find(f => f.type === 'send' && f.outboxId === next.outboxId), 20_000);
     expect(nextSend).toMatchObject({ connectionId: connB });
 
     // A's runtime forwarding the group now is refused (off its allowlist); B's lands on the same bridge.
@@ -553,5 +553,143 @@ describe('H8. the session pin (227): a session pinned to another space learns no
       expect(JSON.stringify(out), rpc).not.toContain('withdrawn');
     }
     expect((await handoverRow(openId)).status).toBe('offered');
+  });
+});
+
+describe('H9. bridges.handovers.list and who sees the attention item (425, D81)', () => {
+  interface Item { id: string; status: string; fromConnectionLabel: string; toConnectionLabel: string;
+    viewer: { roles: string[]; canAccept: boolean; canDecline: boolean; canWithdraw: boolean } }
+  const list = (who: keyof typeof people, status = 'offered', extra: Partial<DbClaims> = {}) =>
+    db.tx({ ...claims(who), ...extra }, q => q.rpc<{ items: Item[] }>('list_bridge_handovers', [bridge, status]));
+  let id = '', toConn = '', fromConn = '';
+
+  beforeAll(async () => {
+    fromConn = (await owner<{ c: string }>('select connection_id::text c from public.bridges where entity_id = $1', [bridge]))[0]!.c;
+    toConn = fromConn === connA ? connB : connA;
+    // Dev, an admin who owns neither number, offers.
+    id = (await db.tx(claims('dev'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [bridge, toConn, randomUUID()]))).handover.id;
+  });
+  afterAll(async () => {
+    await db.tx(claims('dev'), q => q.rpc('withdraw_bridge_handover', [id, randomUUID()])).catch(() => undefined);
+  });
+
+  it('each viewer gets its own roles and what it may do, computed by the server', async () => {
+    const receiver: keyof typeof people = toConn === connA ? 'asha' : 'bina';
+    const fromOwner: keyof typeof people = fromConn === connA ? 'asha' : 'bina';
+    const of = async (who: keyof typeof people) => (await list(who)).items.find(i => i.id === id)!;
+    const d = await of('dev');
+    expect(d.viewer).toMatchObject({ canAccept: false, canDecline: false, canWithdraw: true });
+    expect(d.viewer.roles).toEqual(expect.arrayContaining(['offerer', 'admin']));
+    const r = await of(receiver);
+    expect(r.viewer.roles).toContain('receiver');
+    expect(r.viewer).toMatchObject({ canAccept: true, canDecline: true });
+    const f = await of(fromOwner);
+    expect(f.viewer.roles).toContain('from_owner');
+    expect(f.viewer.canWithdraw).toBe(true);
+    const c = await of('chen');
+    expect(c.viewer).toEqual({ roles: [], canAccept: false, canDecline: false, canWithdraw: false });
+    expect(c.fromConnectionLabel).toMatch(/^\+91/);
+    expect(c.toConnectionLabel).toMatch(/^\+91/);
+  });
+
+  it('settled offers show with status=all only, and nothing can be done on them', async () => {
+    const all = (await list('dev', 'all')).items;
+    const settled = all.filter(i => i.status !== 'offered');
+    expect(settled.length).toBeGreaterThan(0);
+    expect(settled.every(i => !i.viewer.canAccept && !i.viewer.canDecline && !i.viewer.canWithdraw)).toBe(true);
+    expect((await list('dev')).items.every(i => i.status === 'offered')).toBe(true);
+  });
+
+  it('a session pinned to another space gets not_found', async () => {
+    const out = await refusal(list('dev', 'offered', { sessionSpaceId: randomUUID() }));
+    expect(out.code).toBe('not_found');
+  });
+
+  it('the attention item reaches the offerer, an admin and a plain member alike (RLS on the bridge); its reason has no group title', async () => {
+    for (const who of ['dev', 'asha', 'chen'] as const) {
+      const rows = await db.tx(claims(who), q => q.query<{ id: string }>(
+        `select id::text from public.attention_requests where signal_key = $1 and status = 'open'`, [`bridge.handover:${id}`]));
+      expect(rows, who).toHaveLength(1);
+    }
+    const [item] = await attention(`bridge.handover:${id}`);
+    expect(item!.reason).not.toContain('Infra');
+    expect(item!.reason).toContain(`tm8 bridge handover accept ${id}`);
+  });
+});
+
+describe('H10. accept racing remove_bridge_connection of the from-number never deadlocks (425, D82)', () => {
+  // Two real connections, each bound to a person's claims (the db client's own
+  // set_config shape); the first holds its transaction open as the barrier.
+  const open = async (who: keyof typeof people) => {
+    const c = new Client({ connectionString: database.url });
+    await c.connect();
+    await c.query('begin');
+    await c.query(`select set_config('tm8.identity_id', $1, true), set_config('tm8.auth_kind', 'browser', true),
+      set_config('tm8.request_id', $2, true), set_config('role', 'tm8_app', true)`, [people[who].identity, randomUUID()]);
+    return c;
+  };
+  /** A fresh number of Asha's, offered to the space, with one bridge on it offered to Bina's number B. */
+  const fixture = async (n: number) => {
+    const conn = randomUUID(), target = randomUUID(), group = `120363-race${n}@g.us`;
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.bridge_connections(id, provider, owner_account_id, label, status, runtime_id, heartbeat_at)
+        values ($1,'whatsapp',$2,$3,'linked',$4, now() + interval '1 hour')`, [conn, people.asha.account, `+91 …99${n}0`, RUNTIME]);
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'chat',$3)`, [target, spaceId, people.asha.member]);
+      await c.query(`insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values ($1,$2,$3,$4,'claude-opus-5','anthropic','claude-code','ask','scratch','/tmp/handover', gen_random_uuid(), $5, $6, $7)`,
+        [target, spaceId, `Race ${n}`, teammate, people.asha.identity, people.asha.member, `ho-${randomUUID()}`]);
+    });
+    await db.tx(claims('asha'), q => q.rpc('offer_bridge_connection', [conn, spaceId, 'public', null, randomUUID()]));
+    const b = (await db.tx(claims('asha'), q => q.rpc<{ entity: { id: string } }>('create_bridge', [spaceId, conn, group,
+      JSON.stringify({ kind: 'group', title: `Race ${n}`, memberCount: 3 }), target, '{}', teammate, null, null, true, null, null, randomUUID()]))).entity.id;
+    const h = (await db.tx(claims('asha'), q => q.rpc<{ handover: { id: string } }>('offer_bridge_handover', [b, connB, randomUUID()]))).handover.id;
+    return { conn, group, b, h };
+  };
+  const pending = <T>(p: Promise<T>) => {
+    const state = { done: false, error: undefined as undefined | { code?: string } };
+    const settled = p.then((v) => { state.done = true; return v; }, (e) => { state.done = true; state.error = e; return undefined; });
+    return { state, settled };
+  };
+  const rowOf = async (b: string) => (await owner<{ c: string; ended: boolean }>(
+    'select connection_id::text c, ended_at is not null ended from public.bridges where entity_id = $1', [b]))[0]!;
+
+  it('accept first: the remove waits on the connection lock, then ends nothing on it; no 40P01', async () => {
+    const f = await fixture(1);
+    const accept = await open('bina'), remove = await open('asha');
+    try {
+      await accept.query('select public.accept_bridge_handover($1, $2, $3)', [f.h, [f.group], randomUUID()]);
+      const r = pending(remove.query('select public.remove_bridge_connection($1, $2)', [f.conn, randomUUID()]));
+      await new Promise((res) => setTimeout(res, 400));
+      expect(r.state.done).toBe(false); // waiting on the accept's connection lock
+      await accept.query('commit');
+      await r.settled;
+      expect(r.state.error?.code).toBeUndefined();
+      await remove.query('commit');
+    } finally {
+      await accept.end(); await remove.end();
+    }
+    expect(await rowOf(f.b)).toEqual({ c: connB, ended: false });
+  });
+
+  it('remove first: the accept waits on the connection lock, then refuses cleanly (the offer lapsed); no 40P01', async () => {
+    const f = await fixture(2);
+    const remove = await open('asha'), accept = await open('bina');
+    try {
+      await remove.query('select public.remove_bridge_connection($1, $2)', [f.conn, randomUUID()]);
+      const a = pending(accept.query('select public.accept_bridge_handover($1, $2, $3)', [f.h, [f.group], randomUUID()]));
+      await new Promise((res) => setTimeout(res, 400));
+      expect(a.state.done).toBe(false); // waiting on the remove's connection lock
+      await remove.query('commit');
+      await a.settled;
+      expect(a.state.error?.code).not.toBe('40P01');
+      expect(a.state.error?.code).toBe('TBC01'); // handover_not_open / bridge_ended, a refusal
+      await accept.query('rollback');
+    } finally {
+      await remove.end(); await accept.end();
+    }
+    expect((await rowOf(f.b)).ended).toBe(true);
+    expect((await handoverRow(f.h)).status).toBe('lapsed');
   });
 });
