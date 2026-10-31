@@ -86,7 +86,7 @@ describe('catalog (§3.4)', () => {
   it('create, retarget, remove, the participant write, the link begin and revoke, and the memory proposal decision are human-only; the session doors are not', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
       'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
-      'bridges.links.begin', 'bridges.links.revoke', 'bridges.memories.proposals.resolve',
+      'bridges.memories.proposals.resolve', 'bridges.links.begin', 'bridges.links.revoke',
     ]);
   });
 });
@@ -104,6 +104,9 @@ describe('auth session listing kinds (395/398 fix-forward)', () => {
       expect(parsed.success, kind).toBe(true);
     }
     expect(AuthSessionListingSchema.safeParse(row('rogue')).success).toBe(false);
+  });
+});
+
 
 describe('link inputs (B3, 417)', () => {
   it('begin takes a known provider; an invite pins a bridge id and an external id; the code shape is TM8-', async () => {
@@ -114,6 +117,9 @@ describe('link inputs (B3, 417)', () => {
     expect(BridgeInviteParticipantSchema.safeParse({ bridgeId: 'x', externalId: '' }).success).toBe(false);
     expect(BRIDGE_LINK_CODE_PATTERN.test('TM8-4F7KQ2')).toBe(true);
     expect(BRIDGE_LINK_CODE_PATTERN.test('4F7K')).toBe(false);
+  });
+});
+
 
 describe('BridgeParticipantUpdateInputSchema (D52)', () => {
   const base = { clientMutationId: 'm-1' };
