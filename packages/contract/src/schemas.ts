@@ -3383,6 +3383,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
   team: ChatTurnTeamSchema.optional(),
+  hereOnly: z.boolean().optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =

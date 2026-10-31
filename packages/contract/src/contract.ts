@@ -4188,6 +4188,12 @@ export interface PostMessageInput extends CommandContext {
    * appears in the message body or the transcript. Omitted ⇒ no team line.
    */
   team?: ChatTurnTeam;
+  /**
+   * Bridges §4.5, D76: *Reply here only*. True keeps this message, and every
+   * copy of its batch, in tm8: no bridge sends it, even a reply to a bridged
+   * message, which crosses by default (§2.3). Omitted ⇒ the outbound rule.
+   */
+  hereOnly?: boolean;
 }
 
 /** One owner a Coordinator may hand work to: a teammate, or a model-only worker. */

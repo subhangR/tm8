@@ -9,7 +9,9 @@
  *     unknown provider falls back);
  *   · `BridgeVia` — *via WhatsApp* with the sender's trust word on an
  *     inbound bubble;
- *   · `BridgeDeliveryTick` — the outbox ledger's state under an outbound one.
+ *   · `BridgeDeliveryTick` — the outbox ledger's state under an outbound one;
+ *   · `BridgeReplyTarget` — the composer's *Reply in WhatsApp* / *Reply here
+ *     only* switch when the reply's parent is a bridged message.
  *
  * Status is colour AND word, never colour alone (tokens.css). The ledger
  * has no `delivered` or `read`: the runtime protocol carries no receipts
@@ -221,4 +223,49 @@ export function BridgedFromChip({
       {body}
     </button>
   ) : <span className="bridged-from" data-testid="bridged-from">{body}</span>;
+}
+
+/**
+ * *Reply in WhatsApp* | *Reply here only* (§4.5, D76): the composer's switch
+ * when the message being replied to crossed a bridge. A reply to a bridged
+ * message crosses by default (§2.3), so the default is *Reply in WhatsApp*;
+ * one tap keeps it in tm8, and the post then carries `hereOnly`, which the
+ * server's outbound rule honours. Two pressed-state buttons, so the choice is
+ * a word and not only a colour.
+ */
+export function BridgeReplyTarget({
+  bridge,
+  hereOnly,
+  onChange,
+}: {
+  bridge: Pick<MessageBridgeView, 'provider' | 'conversation'>;
+  hereOnly: boolean;
+  onChange: (hereOnly: boolean) => void;
+}) {
+  const provider = bridgeProviderLabel(bridge.provider);
+  const where = bridge.conversation ? `${provider} · ${bridge.conversation}` : provider;
+  return (
+    <div className="bridge-reply" role="group" aria-label="Where this reply goes" data-testid="bridge-reply"
+      data-target={hereOnly ? 'here' : 'bridge'}>
+      <button
+        type="button"
+        className="bridge-reply__option"
+        aria-pressed={!hereOnly}
+        title={`Posted here and sent to ${where}`}
+        onClick={() => onChange(false)}
+      >
+        <BridgeProviderMark provider={bridge.provider} />
+        <span>Reply in {provider}</span>
+      </button>
+      <button
+        type="button"
+        className="bridge-reply__option"
+        aria-pressed={hereOnly}
+        title={`Posted here only; nothing is sent to ${where}`}
+        onClick={() => onChange(true)}
+      >
+        <span>Reply here only</span>
+      </button>
+    </div>
+  );
 }
