@@ -357,7 +357,7 @@ export function createLinkDispatcher(
 
     let body: unknown;
     try {
-      body = validate(op, normalizeCommandInputForIdempotencyMode(binding, request.input, idempotencyEnabled));
+      body = validate(op, normalizeCommandInputForIdempotencyMode(binding, request.input, idempotencyEnabled, INPUT_SCHEMAS[op]));
     } catch (error) {
       throw new SpaceLinkExecuteFailure(isCollabError(error) ? error.code : 'invalid_input', error);
     }

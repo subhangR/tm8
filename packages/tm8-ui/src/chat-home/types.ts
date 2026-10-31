@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ChatCredentialIntent, ChatRuntimeState, ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ChatCredentialIntent, ChatRuntimeState, ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, BridgeProvider, BridgeStatus, LaunchModelEffort, MessageBridgeView, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -152,6 +152,14 @@ export interface ChatThreadConfig {
   canSetModel?: boolean;
 }
 
+/** The one bridge a chat is the target of (D25: one chat per bridge). */
+export interface ChatBridgedFrom {
+  bridgeId: EntityId;
+  provider: BridgeProvider;
+  conversation: string;
+  status: BridgeStatus;
+}
+
 export interface ChatThreadSummary {
   /** The chat entity's id (176). It used to be the root message's. */
   rootId: EntityId;
@@ -178,6 +186,12 @@ export interface ChatThreadSummary {
    * `readThread` still reads the edge for the ONE chat being opened.
    */
   aboutId: EntityId | null;
+  /**
+   * THE BRIDGE THIS CHAT IS THE TARGET OF (§4.5): the `bridged_to` edge's
+   * source, read with the open thread like `aboutId`. Drawn as the header
+   * chip *Bridged from WhatsApp · Infra*. Absent when no bridge targets it.
+   */
+  bridgedFrom?: ChatBridgedFrom;
   /**
    * The subject's kind and title, for the Chats list's "about ‹title›" chip.
    * Present only when the list read carried them (`state.about`); a port or a
@@ -299,6 +313,12 @@ export interface ChatTurn {
   /** Server wire marker: this is a chat turn's agent message and the turn has
    *  not completed, so `body` is the claim placeholder, not content. */
   turnInFlight?: boolean;
+  /**
+   * THE BRIDGE THIS MESSAGE CROSSED (`MessageView.bridge`, §4.5): an inbound
+   * one names its participant and trust, an outbound one carries the delivery
+   * tick. Absent on a message no bridge touched, and on an optimistic turn.
+   */
+  bridge?: MessageBridgeView;
   /**
    * CLIENT-ONLY: this turn was painted on Send, before the server acked it. Its
    * `messageId` is `optimistic:<clientMutationId>` until the ack names the real

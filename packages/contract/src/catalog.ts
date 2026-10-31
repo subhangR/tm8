@@ -88,7 +88,7 @@ export const OPERATIONS = [
   // bridges (BRIDGE-ENTITY-DESIGN §3.4, B0a, migration 395). The CLI noun
   // `bridge` now names these; the reserved `bridge.fetchBlob` row (files section) keeps
   // its slot until its retirement (D11) lands with its tests. create/retarget/remove are
-  // human-only in SQL; handles.claim, log.read and listen admit any session in the space (D23).
+  // human-only in SQL, as is participants.update (420, D52); handles.claim, log.read and listen admit any session in the space (D23).
   { name: 'bridges.list', method: 'GET', path: '/v2/spaces/:spaceId/bridges', kind: 'read', status: 'v1' },
   { name: 'bridges.get', method: 'GET', path: '/v2/bridges/:bridgeId', kind: 'read', status: 'v1' },
   { name: 'bridges.create', method: 'POST', path: '/v2/spaces/:spaceId/bridges', kind: 'command', status: 'v1', humanOnly: true },
@@ -97,21 +97,37 @@ export const OPERATIONS = [
   { name: 'bridges.pause', method: 'POST', path: '/v2/bridges/:bridgeId/pause', kind: 'command', status: 'v1' },
   { name: 'bridges.resume', method: 'POST', path: '/v2/bridges/:bridgeId/resume', kind: 'command', status: 'v1' },
   { name: 'bridges.remove', method: 'POST', path: '/v2/bridges/:bridgeId/remove', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.participants.list', method: 'GET', path: '/v2/bridges/:bridgeId/participants', kind: 'read', status: 'v1' },
+  { name: 'bridges.participants.update', method: 'PATCH', path: '/v2/bridges/:bridgeId/participants/:externalId', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.handles.list', method: 'GET', path: '/v2/bridges/:bridgeId/handles', kind: 'read', status: 'v1' },
   { name: 'bridges.handles.claim', method: 'POST', path: '/v2/spaces/:spaceId/handles', kind: 'command', status: 'v1' },
   { name: 'bridges.log.read', method: 'GET', path: '/v2/bridges/:bridgeId/log', kind: 'read', status: 'v1' },
   { name: 'bridges.listen', method: 'POST', path: '/v2/bridges/:bridgeId/listen', kind: 'command', status: 'v1' },
-  // B1b-5 (400): the caller's own connections (numbers), offered to spaces as
+  // B1b-5 (421): the caller's own connections (numbers), offered to spaces as
   // server-only credentials. begin's QR or pairing code arrives on the caller's
   // own socket as `bridge.connection.auth`, never in a response (§2.5).
   { name: 'bridges.connections.list', method: 'GET', path: '/v2/me/bridge-connections', kind: 'read', status: 'v1' },
   { name: 'bridges.connections.begin', method: 'POST', path: '/v2/me/bridge-connections', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.connections.offer', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/offer', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.connections.withdraw', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/withdraw', kind: 'command', status: 'v1', humanOnly: true },
-  // B1b-7 (401): removing a number logs the device out and ends its bridges; the
+  // B1b-7 (423): removing a number logs the device out and ends its bridges; the
   // group list is the owner's only, asked of the runtime live and never stored (D28).
   { name: 'bridges.connections.remove', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/remove', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.conversations.list', method: 'GET', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'read', status: 'v1', humanOnly: true },
+  // labels (410; BRIDGE-ENTITY-DESIGN §3.8, D27). Archive is the delete.
+  { name: 'labels.list', method: 'GET', path: '/v2/spaces/:spaceId/labels', kind: 'read', status: 'v1' },
+  { name: 'labels.create', method: 'POST', path: '/v2/spaces/:spaceId/labels', kind: 'command', status: 'v1' },
+  { name: 'labels.update', method: 'PATCH', path: '/v2/labels/:labelId', kind: 'command', status: 'v1' },
+  { name: 'labels.archive', method: 'POST', path: '/v2/labels/:labelId/archive', kind: 'command', status: 'v1' },
+  // v2 §4.3: the agent's door to /work — the same server path, handles, provenance and announcement.
+  { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
+  { name: 'bridges.memories.proposals.list', method: 'GET', path: '/v2/bridges/:bridgeId/memory-proposals', kind: 'read', status: 'v1' },
+  { name: 'bridges.memories.proposals.resolve', method: 'POST', path: '/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve', kind: 'command', status: 'v1', humanOnly: true },
+  // B3 (417, §4.6, D58): the caller's own identity links. Begin and revoke are
+  // human-only in SQL; the routes sit under /v2/identity, beside the profile.
+  { name: 'bridges.links.begin', method: 'POST', path: '/v2/identity/bridge-links', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'bridges.links.list', method: 'GET', path: '/v2/identity/bridge-links', kind: 'read', status: 'v1' },
+  { name: 'bridges.links.revoke', method: 'POST', path: '/v2/identity/bridge-links/:linkId/revoke', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },

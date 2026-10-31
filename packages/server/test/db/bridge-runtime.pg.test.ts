@@ -98,7 +98,7 @@ beforeAll(async () => {
     await c.query(`insert into public.bridge_identity_links(provider, external_id, identity_id, method, verified_at)
       values ('whatsapp',$1,$2,'code',now())`, [LINKED_JID, linkedIdentity]);
   });
-  // 400 (B1b-5, D32): a bridge rides its connection's offered credential in the space.
+  // 421 (B1b-5, D32): a bridge rides its connection's offered credential in the space.
   for (const conn of [connection, otherConnection]) {
     await human(q => q.rpc('offer_bridge_connection', [conn, spaceId, 'public', null, randomUUID()]));
   }
@@ -157,6 +157,114 @@ describe('shared functions keep their existing arms (398 replaces validate_messa
     expect(await insertMessage(infra)).toBeTruthy();
     await expect(insertMessage(chatA)).rejects.toMatchObject({ code: '23514' });
     await expect(insertMessage(session)).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+describe('internal.bridge_signed is VOLATILE: a worker signature writes through bridge_poster_handle', () => {
+  it('is marked volatile, and every row of one statement gets its own handle write', async () => {
+    const [p] = await owner<{ v: string }>(`select provolatile as v from pg_proc where oid = 'internal.bridge_signed(public.bridges,uuid,uuid,text,text)'::regprocedure`);
+    expect(p!.v).toBe('v');
+    // A stand-in for B1b-3's door where it is absent: it writes, as the real one does.
+    await owner(`create table if not exists public.b1b2_handle_writes(n serial primary key, session uuid)`);
+    const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.bridge_poster_handle(uuid,uuid)')::text as r`))[0]!.r;
+    if (!real) {
+      await owner(`create function public.bridge_poster_handle(p_bridge uuid, p_session uuid) returns jsonb language plpgsql volatile as $f$
+        begin insert into public.b1b2_handle_writes(session) values (p_session);
+              return jsonb_build_object('handle', 'keen-otter', 'title', 'Deploy fixer'); end $f$`);
+    }
+    const rows = await owner<{ s: string }>(`select internal.bridge_signed(b, $2, $3, 'worker', 'hi ' || g) as s
+      from public.bridges b, generate_series(1, 3) g where b.entity_id = $1 order by g`, [infra, teammate, session]);
+    expect(rows.map(r => r.s)).toEqual(['hi 1', 'hi 2', 'hi 3'].map(t => expect.stringMatching(new RegExp(`\\): ${t}$`))));
+    if (!real) {
+      expect(rows[0]!.s).toBe('Deploy fixer (keen-otter): hi 1');
+      const [n] = await owner<{ n: number }>(`select count(*)::int as n from public.b1b2_handle_writes`);
+      expect(n!.n).toBe(3);
+      await owner(`drop function public.bridge_poster_handle(uuid, uuid)`);
+    }
+  });
+});
+
+describe('413 (B1b-8): review fixes N1 and N3 on 398', () => {
+  it('N1: a routed message hands add_bridge_origin the participant display STRING (D22)', async () => {
+    const real = (await owner<{ r: string | null }>(`select to_regprocedure('public.add_bridge_origin(uuid,jsonb)')::text as r`))[0]!.r;
+    if (!real) {
+      // A tree without 399 (B1b-3): record what inbound would hand the door.
+      await owner(`create table if not exists public.b1b8_origins(holder uuid, origin jsonb)`);
+      await owner(`create function public.add_bridge_origin(p_holder uuid, p_origin jsonb) returns jsonb language plpgsql volatile as $f$
+        begin insert into public.b1b8_origins values (p_holder, p_origin); return p_origin; end $f$`);
+    }
+    try {
+      const r = await inbound(frame({ body: '@tm8 origin please', sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
+      expect(r.routed).toBe(true);
+      const [ext] = await owner<{ e: string }>('select external_message_id as e from public.message_origins where message_id = $1', [r.messageId]);
+      const [row] = real
+        // The real door (399) stores the origin on the target chat, keyed by the provider id.
+        ? await owner<{ participant: unknown }>(`select sender -> 'participant' as participant from public.session_bridge_origins
+            where holder_id = $1 and provider_message_id = $2`, [chatA, ext!.e])
+        : await owner<{ participant: unknown }>(`select origin #> '{sender,participant}' as participant from public.b1b8_origins
+            where holder = $1 and origin ->> 'providerMessageId' = $2`, [chatA, ext!.e]);
+      expect(row).toBeDefined();
+      expect(row!.participant).toBe('Priya');
+    } finally {
+      if (!real) await owner(`drop function public.add_bridge_origin(uuid, jsonb)`);
+    }
+  });
+
+  it('N3: an admins-only fallback to direction in bumps the bridge entity version', async () => {
+    const before = (await owner<{ version: number }>('select version from public.entities where id = $1', [gaming]))[0]!.version;
+    await door('bridge_runtime_conversation_state', JSON.stringify({ connectionId: connection, conversationId: GROUP_B, canSend: false, reason: 'admins_only' }));
+    const [after] = await owner<{ version: number; dir: string }>(`select e.version, b.policy ->> 'direction' as dir
+      from public.entities e join public.bridges b on b.entity_id = e.id where e.id = $1`, [gaming]);
+    expect(after).toMatchObject({ dir: 'in' });
+    expect(after!.version).toBeGreaterThan(before);
+    await owner(`update public.bridges set policy = policy || '{"direction":"both"}' where entity_id = $1`, [gaming]);
+  });
+});
+
+describe('413 (B1b-8): reactions and poll votes are stored (D39)', () => {
+  it('a reaction is one per (message, sender): stored, replaced by a later one, removed by an empty emoji', async () => {
+    const m = await inbound(frame({ body: 'react to me' }));
+    // The reaction names the provider id of the message it is about.
+    const [o] = await owner<{ ext: string }>('select external_message_id as ext from public.message_origins where message_id = $1', [m.messageId]);
+    const send = (emoji: string, ts: number) => inbound(frame({ body: '', kind: 'other', ts, reaction: { externalMessageId: o!.ext, emoji } }));
+    expect(await send('👍', 1_790_100_000)).toMatchObject({ status: 'stored', kind: 'reaction', messageId: m.messageId });
+    expect(await send('❤️', 1_790_100_010)).toMatchObject({ status: 'stored' });
+    await send('😂', 1_790_100_005);   // older than the stored one: ignored
+    const rows = await owner<{ emoji: string; author_id: string }>('select emoji, author_id from public.bridge_reactions where message_id = $1', [m.messageId]);
+    expect(rows).toEqual([{ emoji: '❤️', author_id: infra }]);
+    // No message was stored for any of them.
+    const [n] = await owner<{ n: number }>(`select count(*)::int as n from public.messages where body = '' or body = '[message]'`);
+    expect(n!.n).toBe(0);
+    expect(await send('', 1_790_100_020)).toMatchObject({ removed: true });
+    expect(await owner('select 1 from public.bridge_reactions where message_id = $1', [m.messageId])).toEqual([]);
+    expect(await inbound(frame({ body: '', kind: 'other', reaction: { externalMessageId: 'NOPE', emoji: '👍' } })))
+      .toMatchObject({ status: 'ignored', reason: 'reaction_target_unknown' });
+  });
+
+  it('a vote on our poll is stored per voter, opened or sealed; the sealed payload never reaches the app role', async () => {
+    const poll = randomUUID();
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'message',$3)`, [poll, spaceId, infra]);
+      await c.query(`insert into public.messages(entity_id, anchor_id, author_id, body) values ($1,$2,$2,'Lunch? Yes/No')`, [poll, infra]);
+      await c.query(`insert into public.message_origins(message_id, bridge_id, connection_id, direction, external_message_id, external_conversation_id)
+        values ($1,$2,$3,'out','POLL0001',$4)`, [poll, infra, connection, GROUP]);
+    });
+    const opened = await inbound(frame({ body: '', kind: 'poll', pollVote: { pollMessageId: 'POLL0001', voterIds: [RAHUL], selectedHashes: ['aGFzaA'] } }));
+    expect(opened).toMatchObject({ status: 'stored', kind: 'poll_vote', messageId: poll, votes: 1 });
+    const sealed = await inbound(frame({ body: '', kind: 'poll', sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false },
+      pollVote: { pollMessageId: 'POLL0001', voterIds: [LINKED_JID], sealed: { encPayload: 'cGF5', encIv: 'aXY' } } }));
+    expect(sealed).toMatchObject({ status: 'stored', votes: 1 });
+    const votes = await owner<{ voter_external_id: string; author_id: string; selected_hashes: string[] | null; sealed: unknown }>(
+      'select voter_external_id, author_id, selected_hashes, sealed from public.bridge_poll_votes where poll_message_id = $1 order by voter_external_id', [poll]);
+    expect(votes).toEqual([
+      { voter_external_id: LINKED_JID, author_id: linkedMember, selected_hashes: null, sealed: { encPayload: 'cGF5', encIv: 'aXY' } },
+      { voter_external_id: RAHUL, author_id: infra, selected_hashes: ['aGFzaA'], sealed: null },
+    ]);
+    const leak = await refusal(human(q => q.query('select sealed from public.bridge_poll_votes limit 1')));
+    expect(leak.code).toBeDefined();
+    expect(await inbound(frame({ body: '', kind: 'poll', pollVote: { pollMessageId: 'NOPOLL', voterIds: [RAHUL], selectedHashes: ['x'] } })))
+      .toMatchObject({ status: 'ignored', reason: 'poll_unknown' });
   });
 });
 
@@ -301,6 +409,50 @@ describe('inbound (§2.3, D14, D20, ac1, ac3)', () => {
   });
 });
 
+describe('internal.bridge_log_anchor: 398 (a bridges row) and 399 (a uuid) agree', () => {
+  it('both forms name the same log anchor: the bridge for chat/session targets, the channel for a channel target', async () => {
+    const rows = await owner<{ id: string; target_kind: string; target_id: string; by_row: string }>(
+      `select b.entity_id as id, b.target_kind, b.target_id, internal.bridge_log_anchor(b) as by_row from public.bridges b`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.by_row).toBe(r.target_kind === 'channel' ? r.target_id : r.id);
+    const [form] = await owner<{ ok: boolean }>(`select to_regprocedure('internal.bridge_log_anchor(uuid)') is not null as ok`);
+    if (!form!.ok) return;   // 399 (B1b-3) adds the uuid form
+    for (const r of rows) {
+      const [byId] = await owner<{ a: string }>('select internal.bridge_log_anchor($1::uuid) as a', [r.id]);
+      expect(byId!.a).toBe(r.by_row);
+    }
+  });
+});
+
+describe('413 (B1b-8): delivery to sessions (§2.2, D30)', () => {
+  it('a session target gets the routed copy, routed once, with the reply route recorded', async () => {
+    // The 'Ops' bridge on the second number targets a work session (created above).
+    const r = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: '@tm8 restart the job',
+      sender: { externalId: LINKED_JID, altId: null, name: 'Priya', fromMe: false } }));
+    expect(r).toMatchObject({ status: 'stored', routed: true });
+    const [copy] = await owner<{ entity_id: string }>(`select entity_id from public.messages
+      where message_batch_id = (select message_batch_id from public.messages where entity_id = $1) and anchor_id = $2`, [r.messageId, session]);
+    expect(copy).toBeDefined();
+    const routes = await worker<Record<string, unknown>[]>('internal.bridge_inbound_deliveries', [r.messageId]);
+    expect(routes).toEqual([expect.objectContaining({
+      targetMessageId: copy!.entity_id, targetWorkSessionId: session, sourceAnchorId: session, sourceAnchorKind: 'work_session',
+      body: '@tm8 restart the job', senderActorId: linkedMember, addressingKind: 'anchored_message', sessionInputAllowed: true,
+    })]);
+    expect(await worker('internal.bridge_inbound_deliveries', [r.messageId])).toEqual([]);
+    const reply = await scratch.query(`select 1 from public.session_message_reply_routes where target_message_id = $1 and target_work_session_id = $2`,
+      [copy!.entity_id, session]);
+    expect(reply).toHaveLength(1);
+  });
+
+  it('a command and an un-routed message owe no route', async () => {
+    const cmd = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: '/status' }), true);
+    expect(await worker('internal.bridge_inbound_deliveries', [cmd.messageId])).toEqual([]);
+    const chatter = await inbound(frame({ connectionId: otherConnection, conversationId: '120363003@g.us', body: 'just chatting' }));
+    expect(chatter.routed).toBe(false);
+    expect(await worker('internal.bridge_inbound_deliveries', [chatter.messageId])).toEqual([]);
+  });
+});
+
 describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
   let answer = '';
   it("a chat turn's answer is queued signed with the teammate, quoting the routed message, and badged sent on settle (ac1)", async () => {
@@ -337,6 +489,11 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     const [out] = await owner<{ direction: string; provider_payload: unknown }>(
       'select direction, provider_payload from public.message_origins where message_id = $1', [answer]);
     expect(out).toMatchObject({ direction: 'out', provider_payload: { conversation: 'Infra Bot: Deployed at 10:40.' } });
+    // F2 (413): nor do the runtime's media items (fetch handles, media keys) in message_origins.media.
+    const media = await refusal(human(q => q.query('select media from public.message_origins limit 1')));
+    expect(media.code).toBeDefined();
+    const ok = await human(q => q.query('select external_message_id from public.message_origins limit 1'));
+    expect(Array.isArray(ok)).toBe(true);
     // provider_payload never reaches the app role.
     const leak = await refusal(human(q => q.query('select provider_payload from public.message_origins limit 1')));
     expect(leak.code).toBeDefined();

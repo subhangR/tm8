@@ -41,9 +41,17 @@
  * also settles runs whose session has exited (so the open set stays small) and
  * fails a launch that never recorded a session within LAUNCH_GRACE_MS (the
  * server died mid-firing).
+ *
+ * BRIDGE LOOPS (Bridges L, D26, migration 406). A loop's `targets` are the
+ * groups it posts to. `post` fires no session: the port posts each target's
+ * text through the outbox and the run settles at delivery, like dispatch.
+ * `concurrency: replace` stops the previous live run before the claim, so the
+ * new run is no overlap. Each tick also releases posts held by quiet hours
+ * whose window has ended (newest only, D67), and closes an `interactive` run
+ * whose session has had nothing addressed to it for 30 minutes.
  */
 
-import type { LoopAction, LoopConcurrency, ToolJsonValue } from '@tm8/contract';
+import { LOOP_INTERACTIVE_IDLE_MINUTES, type LoopAction, type LoopConcurrency, type ToolJsonValue } from '@tm8/contract';
 import type { Db, DbClaims } from '../../db/types.js';
 import {
   claimLoopRun,
@@ -74,6 +82,14 @@ export const TOOL_LOOP_NOT_RUNNABLE = 'tool loops cannot run yet: the tool actio
  * firing is never mistaken for a dead one.
  */
 export const LAUNCH_GRACE_MS = 10 * 60_000;
+
+/** D26: how long an interactive loop session waits with nothing addressed to it. */
+export const INTERACTIVE_IDLE_MS = LOOP_INTERACTIVE_IDLE_MINUTES * 60_000;
+
+/** Runs done when delivered: dispatch (the shared dispatcher) and post (no session at all). */
+export function settlesAtDelivery(action: LoopAction): boolean {
+  return action === 'dispatch' || action === 'post';
+}
 
 /** A row of `loops_claimable` — everything a firing branches on, in one read (§2.1). */
 export interface DueLoop {
@@ -177,7 +193,8 @@ export interface LoopExecutorPort {
   readonly nodeId?: string | null;
   /**
    * Fire a claimed run per `loop.action` (§3.4): spawn, dispatch or tool.
-   * Returns the derived task (null for a tool firing) and the session.
+   * Returns the derived task (null for a tool firing) and the session (null
+   * for a post firing, which starts none).
    *
    * `firedAt` is the firing instant and `runId` the claimed run: together they
    * key every mutation id the firing mints (loops/firing.ts), so two firings of
@@ -188,7 +205,7 @@ export interface LoopExecutorPort {
     claims: DbClaims,
     firedAt: Date,
     runId?: string,
-  ): Promise<{ taskId: string | null; sessionId: string }>;
+  ): Promise<{ taskId: string | null; sessionId: string | null }>;
   /**
    * Stop a run's session through the server's own stop path — the one
    * `execution.terminate` takes (`stop_work_session`, then
@@ -360,6 +377,14 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         if (ctx.signal.aborted) break;
 
         const { nextRunAt: advance, scheduleError } = advanceFor(loop, now);
+        if (loop.concurrency === 'replace' && loop.actAsIdentity !== null) {
+          try {
+            await replacePreviousRuns({ db, port, worker, loop, actAsIdentity: loop.actAsIdentity });
+          } catch (error) {
+            // Left open, the old run makes this claim an overlap skip: never two live runs.
+            ctx.logger.warn(`loop ${loop.entityId} could not end its previous run: ${errorText(error)}`);
+          }
+        }
         let claim: Awaited<ReturnType<typeof claimLoopRun>>;
         try {
           claim = await claimLoopRun(db, worker, {
@@ -405,7 +430,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           continue;
         }
         const loopClaims = port.claimsForLoop(loop, loop.actAsIdentity);
-        let launched: { taskId: string | null; sessionId: string };
+        let launched: { taskId: string | null; sessionId: string | null };
         try {
           launched = await port.fire(loop, loopClaims, now, runId);
         } catch (error) {
@@ -435,15 +460,23 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           // A dispatch firing is DONE when the request is delivered: the
           // dispatcher session is long-lived and shared by the whole space, so
           // it must never count as this run's liveness (it would overlap forever).
-          if (loop.action === 'dispatch') await retryOnce(() => settleLoopRun(db, worker, runId, 'completed', null));
+          if (settlesAtDelivery(loop.action)) await retryOnce(() => settleLoopRun(db, worker, runId, 'completed', null));
         } catch (cause) {
           ctx.logger.warn(`loop ${loop.entityId} fired session ${launched.sessionId} but run ${runId} could not record it: ${errorText(cause)}`);
         }
       }
 
       const sweep = await sweepOpenRuns({ db, port, worker, now, live: port.liveSessionIds(), launchGraceMs, missingSince, ctx });
+      const idleClosed = await closeIdleInteractiveRuns({ db, port, worker, now, ctx });
+      let released = 0;
+      try {
+        released = Number(await db.rpc<number>(worker, 'loop_release_held', [nowIso])) || 0;
+      } catch (error) {
+        ctx.logger.warn(`held loop posts could not be released: ${errorText(error)}`);
+      }
 
-      if (due.length === 0 && parked.length === 0 && sweep.timedOut + sweep.settled + sweep.abandoned + sweep.lost === 0) {
+      if (due.length === 0 && parked.length === 0 && idleClosed + released === 0
+        && sweep.timedOut + sweep.settled + sweep.abandoned + sweep.lost === 0) {
         return { skipped: true, reason: 'no loops are due' };
       }
       return {
@@ -460,6 +493,8 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
           ...(sweep.settled > 0 ? { settled: sweep.settled } : {}),
           ...(sweep.abandoned > 0 ? { abandoned: sweep.abandoned } : {}),
           ...(sweep.lost > 0 ? { lost: sweep.lost } : {}),
+          ...(idleClosed > 0 ? { idleClosed } : {}),
+          ...(released > 0 ? { released } : {}),
         },
       };
     },
@@ -586,4 +621,71 @@ async function sweepOpenRuns(input: {
   }
 
   return { timedOut, settled, abandoned, lost };
+}
+
+/**
+ * `concurrency: replace` (D26): end this loop's live runs before a new one is
+ * claimed. Each session is stopped through the port (the operator stop path)
+ * and its run settled 'stopped', so the claim that follows sees no overlap.
+ */
+export async function replacePreviousRuns(input: {
+  db: Db;
+  port: LoopExecutorPort;
+  /** Claims that may read the loop's runs and settle them: the executor's, or the Run now caller's. */
+  worker: DbClaims;
+  loop: Pick<DueLoop, 'entityId' | 'spaceId'>;
+  actAsIdentity: string;
+}): Promise<number> {
+  const { db, port, worker, loop } = input;
+  const previous = await db.query<{ runId: string; sessionId: string }>(worker,
+    'select r.run_id::text "runId", r.session_id::text "sessionId" from public.loop_runs_to_replace($1) r', [loop.entityId]);
+  const claims = port.claimsForLoop(loop, input.actAsIdentity);
+  for (const run of previous) {
+    await port.stopSession(claims, run.sessionId, {
+      reason: 'replaced by a newer run of its loop',
+      endedReason: 'Stopped by its loop: a newer run replaces this one.',
+      clientMutationId: `loop-replace:${run.runId}`,
+    });
+    await settleLoopRun(db, worker, run.runId, 'stopped', 'replaced by a newer run');
+  }
+  return previous.length;
+}
+
+/**
+ * D26 interactive mode: a run whose session has had nothing addressed to it
+ * (no bridge message whose answerer it became) for INTERACTIVE_IDLE_MS is
+ * closed; replies to its posts then go to the group's chat.
+ */
+async function closeIdleInteractiveRuns(input: {
+  db: Db; port: LoopExecutorPort; worker: DbClaims; now: Date; ctx: JobContext;
+}): Promise<number> {
+  const { db, port, worker, now, ctx } = input;
+  let closed = 0;
+  let idle: Array<{ runId: string; loopId: string; spaceId: string; sessionId: string; actAsIdentity: string | null }>;
+  try {
+    idle = await db.query(worker,
+      `select i.run_id::text "runId", i.loop_id::text "loopId", i.space_id::text "spaceId",
+              i.session_id::text "sessionId", i.act_as_identity "actAsIdentity"
+         from public.loop_runs_idle_interactive($1, make_interval(secs => $2)) i`,
+      [now.toISOString(), INTERACTIVE_IDLE_MS / 1000]);
+  } catch (error) {
+    ctx.logger.warn(`idle interactive loop runs could not be read: ${errorText(error)}`);
+    return 0;
+  }
+  for (const run of idle) {
+    if (ctx.signal.aborted) break;
+    if (run.actAsIdentity === null) continue;
+    try {
+      await port.stopSession(port.claimsForLoop({ entityId: run.loopId, spaceId: run.spaceId }, run.actAsIdentity), run.sessionId, {
+        reason: `interactive loop idle for ${LOOP_INTERACTIVE_IDLE_MINUTES} minutes`,
+        endedReason: `Closed by its loop: nothing was addressed to it for ${LOOP_INTERACTIVE_IDLE_MINUTES} minutes.`,
+        clientMutationId: `loop-idle:${run.runId}`,
+      });
+      await settleLoopRun(db, worker, run.runId, 'completed', null);
+      closed += 1;
+    } catch (error) {
+      ctx.logger.warn(`interactive loop run ${run.runId} could not be closed: ${errorText(error)}`);
+    }
+  }
+  return closed;
 }

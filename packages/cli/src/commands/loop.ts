@@ -5,7 +5,7 @@ import {
   LOOP_MAX_RUNTIME_MAX_SECONDS, LOOP_MAX_RUNTIME_MIN_SECONDS, LOOP_PAUSE_MAX_DAYS, LOOP_PREVIEW_MAX_COUNT,
   LOOP_RETRY_ATTEMPTS_MAX, LOOP_RETRY_DELAY_MAX_SECONDS, LOOP_RETRY_DELAY_MIN_SECONDS,
   LoopActionSchema, LoopConcurrencySchema, LoopRunStatusSchema, LoopSpawnConfigSchema,
-  type ActorSummary, type LoopAction, type LoopListResult, type LoopRun, type LoopRunListResult, type LoopRunResult,
+  type ActorSummary, type BridgeListResult, type LoopAction, type LoopListResult, type LoopTarget, type LoopRun, type LoopRunListResult, type LoopRunResult,
   type LoopSchedulePreview, type LoopView, type ToolJsonValue, type ToolView, type WorkSessionWorkdirMode,
 } from '@tm8/contract';
 import { readTextSource } from '../args.js';
@@ -35,8 +35,10 @@ const WORKDIR_MODES = ['project', 'worktree', 'scratch'] as const satisfies read
 // Every flag `create` takes; `edit` takes all of them plus the clears.
 const DEFINITION_OPTIONS = ['schedule', 'timezone', 'teammate', 'dispatch', 'tool', 'input', 'subject', 'prompt',
   'model', 'agent-tool', 'reasoning-effort', 'access-mode', 'mode', 'launch-project', 'workdir', 'base-ref',
-  'memory', 'credential-source', 'interaction-profile', 'concurrency', 'max-runtime', 'retry', 'retry-delay'];
-const EDIT_OPTIONS = [...DEFINITION_OPTIONS, 'title', 'clear-tool', 'clear-inputs'];
+  'memory', 'credential-source', 'interaction-profile', 'concurrency', 'max-runtime', 'retry', 'retry-delay',
+  // Bridges L (D26): the groups it posts to, the post action, its mode and the admin's exemption.
+  'target', 'post', 'interactive', 'one-shot', 'quiet-hours-exempt'];
+const EDIT_OPTIONS = [...DEFINITION_OPTIONS, 'title', 'clear-tool', 'clear-inputs', 'clear-targets'];
 
 function argumentsCount(cmd: CommandContext, count: number): void {
   if (cmd.args.length !== count || cmd.passthrough.length) {
@@ -132,6 +134,33 @@ async function resolveTeammate(cmd: CommandContext, spaceId: string, ref: string
   if (matches.length > 1) throw usage(`${matches.length} teammates are named ${JSON.stringify(name)}; use an id: ${matches.join(', ')}`);
   return matches[0]!;
 }
+/**
+ * `--target <bridge>[=<text>]` (D26): a bridge id, or a group's name as
+ * `tm8 bridge list` shows it; the text after the first `=` is that group's
+ * message (a post loop) or its own instruction (an agent loop).
+ */
+async function parseTargets(cmd: CommandContext, spaceId: string, raws: readonly string[]): Promise<LoopTarget[]> {
+  let bridges: BridgeListResult['items'] | null = null;
+  const targets: LoopTarget[] = [];
+  for (const raw of raws) {
+    const eq = raw.indexOf('=');
+    const ref = (eq < 0 ? raw : raw.slice(0, eq)).trim();
+    const text = eq < 0 ? null : raw.slice(eq + 1).trim() || null;
+    if (!ref) throw usage('--target takes <bridge-id|group name>[=<text>]');
+    let bridgeId = ref;
+    if (!UUID_PATTERN.test(ref)) {
+      bridges ??= (await observedInvoke<BridgeListResult>(client(cmd), 'bridges.list', { params: { spaceId } })).items;
+      const matches = bridges.filter(b => b.title.trim().toLowerCase() === ref.toLowerCase());
+      if (matches.length === 0) throw new CliError(`No bridge in this Space is named ${JSON.stringify(ref)}`, EXIT_NOT_FOUND, { hint: 'list them with `tm8 bridge list`' });
+      if (matches.length > 1) throw usage(`${matches.length} bridges are named ${JSON.stringify(ref)}; use an id: ${matches.map(b => b.id).join(', ')}`);
+      bridgeId = matches[0]!.id;
+    }
+    if (targets.some(t => t.bridgeId === bridgeId)) throw usage(`--target ${ref} is given twice`);
+    targets.push({ bridgeId, text });
+  }
+  return targets;
+}
+
 /** A tool by id or by its definition name in the loop's Space, read whole: its inputs type `--input`. */
 async function loadTool(cmd: CommandContext, spaceId: string, ref: string): Promise<ToolView> {
   let toolId = ref;
@@ -261,19 +290,21 @@ async function definitionFlags(cmd: CommandContext, current: LoopView | null): P
   const o = cmd.options;
   const spaceId = current?.spaceId ?? requireSpace(cmd.ctx);
   const dispatch = flag(cmd, 'dispatch'), clearTool = flag(cmd, 'clear-tool'), clearInputs = flag(cmd, 'clear-inputs');
+  const post = flag(cmd, 'post');
   const teammateRef = o.value('teammate'), toolRef = o.value('tool');
   const before: LoopAction | undefined = current?.definition.action;
   if (dispatch && (teammateRef !== undefined || toolRef !== undefined)) throw usage('--dispatch takes neither --teammate nor --tool');
-  if (!current && teammateRef === undefined && !dispatch && toolRef === undefined) {
-    throw usage('Supply one of --teammate <id|name>, --dispatch or --tool <name|id>');
+  if (post && (dispatch || toolRef !== undefined)) throw usage('--post takes neither --dispatch nor --tool');
+  if (!current && teammateRef === undefined && !dispatch && toolRef === undefined && !post) {
+    throw usage('Supply one of --teammate <id|name>, --dispatch, --tool <name|id> or --post');
   }
   if (clearTool && toolRef !== undefined) throw usage('--clear-tool and --tool cannot be combined');
   if (clearTool && before !== 'tool') throw usage('--clear-tool applies to a tool loop');
   if (clearTool && teammateRef === undefined) {
     throw usage('--clear-tool makes the loop a spawn loop: name its teammate', 'add --teammate <id|name>, or use --dispatch instead of --clear-tool');
   }
-  const action: LoopAction = toolRef !== undefined ? 'tool' : dispatch ? 'dispatch'
-    : teammateRef !== undefined && !(before === 'tool' && !clearTool) ? 'spawn' : before!;
+  const action: LoopAction = post ? 'post' : toolRef !== undefined ? 'tool' : dispatch ? 'dispatch'
+    : teammateRef !== undefined && !(before === 'tool' && !clearTool) && before !== 'post' ? 'spawn' : before!;
   if (action !== before) def.action = action;
 
   let tool: ToolView | null = null;
@@ -324,6 +355,21 @@ async function definitionFlags(cmd: CommandContext, current: LoopView | null): P
     if (!UUID_PATTERN.test(subject)) throw usage('--subject takes an entity id (or none to clear it)');
     def.subjectId = subject;
   }
+  // Bridges L (D26): --target replaces the whole list; --clear-targets empties it.
+  const clearTargets = cmd.options.has('clear-targets') && flag(cmd, 'clear-targets');
+  if (clearTargets && o.has('target')) throw usage('--clear-targets and --target cannot be combined');
+  if (o.has('target')) def.targets = await parseTargets(cmd, spaceId, o.values('target'));
+  else if (clearTargets) def.targets = [];
+  if (action === 'post' && !current && !o.has('target')) throw usage('--post needs at least one --target <bridge>[=<text>]');
+  const interactive = flag(cmd, 'interactive'), oneShot = flag(cmd, 'one-shot');
+  if (interactive && oneShot) throw usage('--interactive and --one-shot cannot be combined');
+  if (interactive) def.mode = 'interactive';
+  if (oneShot) def.mode = 'one-shot';
+  const exempt = o.value('quiet-hours-exempt');
+  if (exempt !== undefined) {
+    if (exempt !== 'on' && exempt !== 'off') throw usage('--quiet-hours-exempt takes on or off');
+    def.quietHoursExempt = exempt === 'on';
+  }
   for (const [option, field] of [['schedule', 'schedule'], ['timezone', 'timezone']] as const) {
     const value = o.value(option); if (value !== undefined) def[field] = value;
   }
@@ -357,7 +403,8 @@ async function definitionFlags(cmd: CommandContext, current: LoopView | null): P
 
 // ── human rendering ───────────────────────────────────────────────────────
 const actor = (a: Actor): string => a?.displayName ?? 'nobody';
-const runner = (loop: LoopView): string => loop.definition.action === 'spawn' ? `spawn ${loop.definition.teamMemberId ?? '?'}`
+const runner = (loop: LoopView): string => loop.definition.action === 'post' ? `post${loop.definition.teamMemberId ? ` as ${loop.definition.teamMemberId}` : ''}`
+  : loop.definition.action === 'spawn' ? `spawn ${loop.definition.teamMemberId ?? '?'}`
   : loop.definition.action === 'tool'
     ? `tool ${loop.definition.toolId ?? '?'}${loop.definition.teamMemberId ? ` as ${loop.definition.teamMemberId}` : ''}` : 'dispatch';
 /** A pause that has run out still sits in `pausedUntil` (only resume clears it); the due read ignores it, and so does this. */
@@ -379,6 +426,12 @@ export function renderLoop(loop: LoopView): string {
     `next run: ${s.nextRunAt ?? 'none'} · last run: ${s.lastRunAt ?? 'never'}${s.waitingOnRunId ? ` · waiting on run ${s.waitingOnRunId}` : ''}`,
     `acts as: ${actor(s.actingAs.identity)} (${s.actingAs.via})`,
   ];
+  // A server without Bridges L answers no targets.
+  const targets = d.targets ?? [];
+  if (targets.length) {
+    lines.push(`targets (${d.mode}${d.quietHoursExempt ? ' · exempt from quiet hours' : ''}):`,
+      ...targets.map(t => `  ${t.bridgeId}${t.text ? `: ${t.text.split('\n')[0]}` : ''}`));
+  }
   if (s.lastError) lines.push(`last error: ${s.lastError}`);
   // The server counts these from the moment of the read, not from the stored next run: an interval
   // loop's real cadence runs from its last firing, so they are the schedule's shape, not its timetable.

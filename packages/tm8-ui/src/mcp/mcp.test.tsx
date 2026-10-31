@@ -153,9 +153,9 @@ describe('native MCP management', () => {
     render(<McpProvider port={fixture()}><McpSettings /></McpProvider>);
     fireEvent.click(await screen.findByRole('button', { name: 'Custom connector…' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Connection' }), { target: { value: 'stdio' } });
-    expect((screen.getByRole('button', { name: 'Register connector' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Add connector' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('checkbox', { name: /I trust this command/ }));
-    expect((screen.getByRole('button', { name: 'Register connector' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Add connector' }) as HTMLButtonElement).disabled).toBe(false);
   });
   it('does not claim an attachment succeeded after rejection', async () => {
     const port = fixture(); port.attach = vi.fn().mockRejectedValue(new Error('denied'));
@@ -260,7 +260,7 @@ it('blocks a changed connector account and offers reconnect without key rotation
   const onReady=vi.fn();
   render(<McpProvider port={fixture(data)}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
   fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
-  expect(screen.getAllByText(/Connector settings changed by an admin/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Connector settings changed/).length).toBeGreaterThan(0);
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
   // §10.0: a changed definition offers RECONNECT, not a key rotation.
   expect(drawer().getByRole('button',{name:'Reconnect'}).hasAttribute('disabled')).toBe(false);

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 406 — Bridges B1b-5 (option B, B1b coordinator ruling 2026-10-30): the hub's
+-- 422 — Bridges B1b-5 (option B, B1b coordinator ruling 2026-10-30): the hub's
 -- `connect` is a member request, so it runs under the begin caller's own
 -- claims and internal.bridge_runtime_connect admits that caller only when
 -- they own the connection.
@@ -24,7 +24,7 @@ create or replace function internal.bridge_runtime_connect(p_connection uuid, p_
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare conn public.bridge_connections;
 begin
-  -- 406: the worker, or the number's human owner (was internal.require_bridges_worker()).
+  -- 422: the worker, or the number's human owner (was internal.require_bridges_worker()).
   -- The human test is 083's internal.require_human_auth_kind itself, not a copy
   -- of its kind list, so a later human kind (mobile) is admitted here too.
   if not internal.is_bridges_worker() then

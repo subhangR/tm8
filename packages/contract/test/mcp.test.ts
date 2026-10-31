@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSchema, McpCredentialViewSchema, McpReadinessReasonSchema,
-  MCP_RESERVED_SERVER_KEYS, assignMcpServerKeys, mcpServerKey } from '../src/mcp.js';
+  McpToolSchema, McpTestResultSchema, MCP_RESERVED_SERVER_KEYS, assignMcpServerKeys, mcpServerKey } from '../src/mcp.js';
 import { EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema } from '../src/schemas.js';
 const definition = { name: 'fixture', transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false };
 describe('MCP metadata boundary', () => {
@@ -149,5 +149,21 @@ describe('readable connector server keys (§4.2, G8)', () => {
       expect(keys([{ serverId: id(1), serverKey }]))
         .toEqual(['connector_00000000000040008000000000000001']);
     }
+  });
+});
+
+describe('a connector tool as a real MCP server lists it', () => {
+  // Context7's tools/list, abridged: the 2025-06-18 `title` and `annotations`
+  // fields made the strict schema refuse the whole connection test.
+  const context7Tool = {
+    name: 'resolve-library-id', title: 'Resolve Context7 Library ID', description: 'Resolves a package name.',
+    inputSchema: { type: 'object', properties: { libraryName: { type: 'string' } }, required: ['libraryName'] },
+    annotations: { readOnlyHint: true }, _meta: { vendor: 'x' },
+  };
+  it('accepts the spec-added fields and strips keys tm8 does not know', () => {
+    const parsed = McpToolSchema.parse(context7Tool);
+    expect(parsed).toMatchObject({ name: 'resolve-library-id', title: 'Resolve Context7 Library ID', annotations: { readOnlyHint: true } });
+    expect('_meta' in parsed).toBe(false);
+    expect(McpTestResultSchema.safeParse({ ready: true, reason: 'ready', tools: [context7Tool], checkedAt: new Date().toISOString() }).success).toBe(true);
   });
 });

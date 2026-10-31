@@ -12,8 +12,8 @@ import { claimsFor, commandEnvelope, requireUuidParam, optionalUuid, limitOf } f
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { encodeCursor, decodeCursor } from '@tm8/contract';
 
-type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; definition: unknown; admin: boolean; health?: unknown };
-const SELECT = `select e.id,e.space_id,e.version,m.mcp_security_revision as security_revision,m.definition,internal.is_space_admin(e.space_id) as admin,
+type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; definition: unknown; member: boolean; health?: unknown };
+const SELECT = `select e.id,e.space_id,e.version,m.mcp_security_revision as security_revision,m.definition,internal.is_space_member(e.space_id) as member,
   (select h.result from public.mcp_server_health h where h.server_id=e.id and h.member_id=internal.current_member_id(e.space_id) and h.definition_version=e.version) as health
   from public.entities e join public.mcp_servers m on m.entity_id=e.id
   where e.kind='mcp_server' and e.deleted_at is null`;
@@ -27,7 +27,8 @@ export async function canAttachMcp(q: Querier, spaceId: string, targetId?: strin
 function view(row: DefinitionRow, attach: boolean): McpServerView & {securityRevision?:number} {
   const definition=McpServerDefinitionSchema.parse(row.definition);
   return { id:row.id, spaceId:row.space_id, version:row.version, ...(row.security_revision !== undefined ? {securityRevision:Number(row.security_revision)} : {}), definition, ...(row.health ? {health:McpTestResultSchema.parse(row.health)} : {}),
-    allowed:{register:row.admin,approve:row.admin,manage:row.admin,attach:attach && definition.approved && definition.enabled !== false} };
+    // 405: there is no approval step, so any member registers and manages.
+    allowed:{register:row.member,approve:row.member,manage:row.member,attach:attach && definition.approved && definition.enabled !== false} };
 }
 function publicView(server: McpServerView & {securityRevision?:number}): McpServerView {
   const {securityRevision: _securityRevision, ...publicServer}=server;
@@ -252,11 +253,11 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
     const cursor=ctx.query.get('cursor'); let after:string|null=null;
     if(cursor){const {k}=decodeCursor(cursor);if(k.length!==2||k[0]!==spaceId||typeof k[1]!=='string')throw new CollabError('invalid_cursor','Invalid MCP cursor');after=k[1];}
     return deps.db.tx(claimsFor(await deps.owner(),ctx),async q=>{
-      const [permission]=await q.query<{admin:boolean}>(`select internal.is_space_admin($1::uuid) as admin`,[spaceId]);
+      const [permission]=await q.query<{member:boolean}>(`select internal.is_space_member($1::uuid) as member`,[spaceId]);
       const attach=await canAttachMcp(q,spaceId,ctx.query.get('targetId')??undefined);
       const rows=await q.query<DefinitionRow>(`${SELECT} and e.space_id=$1 and ($2::uuid is null or e.id>$2::uuid) order by e.id limit $3`,[spaceId,after,limit+1]);
       const page=rows.slice(0,limit);
-      return {items:page.map(row=>publicView(view(row,attach))),allowed:{register:permission?.admin??false,attach},nextCursor:rows.length>limit?encodeCursor([spaceId,page.at(-1)!.id]):null};
+      return {items:page.map(row=>publicView(view(row,attach))),allowed:{register:permission?.member??false,attach},nextCursor:rows.length>limit?encodeCursor([spaceId,page.at(-1)!.id]):null};
     });
   });
   registry.register('mcp.servers.get',async ctx=>deps.db.tx(claimsFor(await deps.owner(),ctx),async q=>publicView(await loadMcpServer(q,requireUuidParam(ctx,'serverId'),ctx.query.get('targetId')??undefined))));
@@ -282,9 +283,12 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
   registry.register('mcp.servers.delete',async ctx=>{
     const input=McpServerDeleteInputSchema.parse({...(ctx.body as Record<string, unknown>),serverId:requireUuidParam(ctx,'serverId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
-      await q.query('select id from public.entities where id=$1 for update',[input.serverId]);
+      // Serialize with definition edits and credential writes on the advisory
+      // lock they already take (297). NOT `select ... for update`: tm8_app has
+      // no UPDATE privilege on public.entities, so that refused every delete.
+      await q.query('select pg_advisory_xact_lock(hashtextextended($1::text,297))',[input.serverId]);
       const server=await loadMcpServer(q,input.serverId);
-      if(!server.allowed.manage) throw new CollabError('forbidden','Only administrators can delete MCP connectors');
+      if(!server.allowed.manage) throw new CollabError('forbidden','Only space members can delete MCP connectors');
       if(server.version!==input.expectedVersion) throw new CollabError('version_conflict','MCP connector changed');
       await q.rpc('delete_entity',[input.serverId,input.actorId??null,input.clientMutationId]);
       return {deleted:true,serverId:input.serverId};

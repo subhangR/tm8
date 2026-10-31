@@ -297,14 +297,17 @@ it('lets the requester withdraw their own unapproved request, and nobody else', 
   expect(gone!.deleted).toBe(true);
 });
 
-it('keeps connector creation and editing administrator-only', async () => {
-  // The relaxation is for the REQUEST shape only: a member still cannot create
-  // an approved connector, and still cannot edit one at all.
-  expect(await refusal(MEMBER, 'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4)',
-    [space, request('memberdirect', { approved: true }), plainMember, `cr-${randomUUID()}`])).toBe('42501');
-  const [row] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [approvedServer]);
-  expect(await refusal(MEMBER, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
-    [approvedServer, row!.version, request('reqfixture'), plainMember, `up-${randomUUID()}`])).toBe('42501');
+it('lets any member create (approved on arrival) and edit a connector, and still refuses an outsider (405)', async () => {
+  const [made] = await q<{ result: { entity: { id: string } } }>(MEMBER, 'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4) as result',
+    [space, request('memberdirect'), plainMember, `cr-${randomUUID()}`]);
+  const [stored] = await q<{ approved: string }>(MEMBER, "select definition->>'approved' as approved from public.mcp_servers where entity_id=$1", [made!.result.entity.id]);
+  expect(stored!.approved).toBe('true');
+  const [row] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [made!.result.entity.id]);
+  await q(MEMBER, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
+    [made!.result.entity.id, row!.version, request('memberdirect', { approved: true, enabled: false }), plainMember, `up-${randomUUID()}`]);
+  expect(await refusal(OUTSIDE, 'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4)',
+    [space, request('outsidedirect'), null, `cr-${randomUUID()}`])).toBe('42501');
+  await q(MEMBER, 'select public.delete_entity($1,$2,$3)', [made!.result.entity.id, plainMember, `del-${randomUUID()}`]);
 });
 
 it('upserts a chat selection, clears it with NULL, and validates structure at the write', async () => {
@@ -485,27 +488,15 @@ it('frees a connector name on delete and refuses a restore into a taken one', as
   await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [first, adminMember, `del-${randomUUID()}`]);
 });
 
-it('lets a member withdraw only a NEVER-approved request', async () => {
+it('lets a member delete a connector that has been approved (405)', async () => {
   const id = await requestConnector(MEMBER, plainMember, request('onceapproved'));
   const [v] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [id]);
-  // An admin approves it, then suspends it. `approved` is false again, but it
-  // has BEEN approved, and `approved_at` is what remembers that (finding 6).
-  const definition = (approved: boolean) => JSON.stringify({
-    name: 'onceapproved', transport: 'http', url: 'https://docs.example.test/mcp',
-    envKeys: [], headerKeys: [], auth: { type: 'oauth2' }, approved, enabled: true,
-  });
   await q(ADMIN, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
-    [id, v!.version, definition(true), adminMember, `up-${randomUUID()}`]);
-  const [v2] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [id]);
-  await q(ADMIN, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
-    [id, v2!.version, definition(false), adminMember, `up-${randomUUID()}`]);
+    [id, v!.version, request('onceapproved', { approved: true }), adminMember, `up-${randomUUID()}`]);
   const [stamp] = await q<{ stamped: boolean }>(MEMBER,
     'select approved_at is not null as stamped from public.mcp_servers where entity_id=$1', [id]);
   expect(stamp!.stamped).toBe(true);
-  expect(await refusal(MEMBER, 'select public.delete_entity($1,$2,$3)', [id, plainMember, `del-${randomUUID()}`]))
-    .toBe('42501');
-  // The admin still can, and that also frees the cap slot this test used.
-  await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [id, adminMember, `del-${randomUUID()}`]);
+  await q(MEMBER, 'select public.delete_entity($1,$2,$3)', [id, plainMember, `del-${randomUUID()}`]);
 });
 
 /**

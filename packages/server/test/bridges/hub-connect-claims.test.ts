@@ -1,5 +1,5 @@
 /**
- * BridgeRuntimeHub.connect (406, option B): a member request. The hub calls
+ * BridgeRuntimeHub.connect (422, option B): a member request. The hub calls
  * internal.bridge_runtime_connect under the CALLER's claims, never the bridges
  * worker's backgroundJob claim.
  */
