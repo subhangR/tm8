@@ -935,11 +935,28 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     });
   });
 
-  it('is for verified space admins only', async () => {
+  it('a guest is refused with how to link, and nothing is made', async () => {
     const before = groupCalls.length;
-    expect((await command('rahul', '/split Crew with Maya')).reply!.text).toMatch(/space admin/);
-    expect((await command('guest', '/invite +919000000077')).reply!.text).toMatch(/link your number first/);
+    for (const body of ['/split Crew with Maya', '/invite +919000000077']) {
+      const text = (await command('guest', body)).reply!.text;
+      expect(text).toMatch(/^\/(split|invite) is for linked members of this group, and your number isn't linked yet/);
+      expect(text).toMatch(/send \/link TM8-XXXXXX here, or ask a space admin in tm8 to link your number/);
+    }
     expect(groupCalls.length).toBe(before);
+  });
+
+  it('a linked member may, whether the link is verified or an admin\'s assertion', async () => {
+    // Maya's number is only ASSERTED by an admin; Rahul is a plain member with a verified link.
+    const split = await command('maya', '/split Asserted crew with rahul');
+    expect(split.reply!.text).toMatch(/^made "Asserted crew": added Rahul, [^.]+\. It has its own session/);
+    expect(groupCalls.at(-1)).toMatchObject({ op: 'create', subject: 'Asserted crew' });
+    expect((await asOwner(c => c.query('select count(*)::int n from public.bridge_splits where message_id = $1 and bridge_id is not null',
+      [split.messageId]))).rows[0].n).toBe(1);
+    const before = groupCalls.length;
+    expect((await command('rahul', '/invite +919000000066')).reply!.text).toMatch(/^added /);
+    expect(groupCalls.length).toBe(before + 1);
+    expect(groupCalls.at(-1)).toMatchObject({ op: 'add' });
+    expect((await command('rahul', '/help split')).reply!.text).toMatch(/\/split <name> with @a @b/);
   });
 
   it('/split makes a group with the sender and the people named, and connects it on its own session', async () => {
