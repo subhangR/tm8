@@ -63,8 +63,12 @@ class FakeSocket {
   groupParticipantsUpdate = async (jid: string, participants: string[], action: string) => {
     this.rec('groupParticipantsUpdate', [jid, participants, action])
     const inGroup = new Set((this.groups[jid]?.participants ?? []).map((p: { id: string }) => p.id))
+    if (action === 'remove') return participants.map((p) => ({ jid: p, status: inGroup.has(p) && !this.stuck.has(p) ? '200' : '404' }))
     return participants.map((p) => ({ jid: p, status: this.private.has(p) ? '403' : inGroup.has(p) ? '409' : '200' }))
   }
+  /** People WhatsApp will not remove (group.close answers them `failed`). */
+  stuck = new Set<string>()
+  groupLeave = async (jid: string) => this.rec('groupLeave', [jid])
   groupInviteCode = async (jid: string) => {
     this.rec('groupInviteCode', [jid])
     return 'INVITE123'
@@ -149,6 +153,45 @@ describe('groups (the bridge makes and fills groups)', () => {
     assert.equal(sock.calls.filter((c) => c.fn === 'groupParticipantsUpdate' && c.args[0] === G2).length, 0)
   })
 
+  test('group.close posts the note, removes everyone but the number, then leaves', async () => {
+    const { conn, sock } = await connection()
+    sock.groups[G1].participants = [{ id: ME_LID, phoneNumber: ME, admin: 'superadmin' }, { id: ALICE }, { id: BOB }]
+    sock.stuck.add(BOB)
+    const g = await conn.closeGroup({ type: 'group.close', requestId: 'g4', connectionId: CONN, conversationId: G1, note: ' Closing: back to Infra ' })
+    assert.deepEqual(g.results, [{ id: ALICE, status: 'removed' }, { id: BOB, status: 'failed' }])
+    assert.equal(g.inviteLink, null)
+    const order = sock.touched(G1).map((c) => c.fn).filter((f) => f !== 'groupMetadata')
+    assert.deepEqual(order, ['sendMessage', 'groupParticipantsUpdate', 'groupLeave'])
+    assert.match((sock.calls.find((c) => c.fn === 'sendMessage')!.args[1] as { text: string }).text, /^Closing: back to Infra/)
+    assert.deepEqual(sock.calls.find((c) => c.fn === 'groupParticipantsUpdate')!.args, [G1, [ALICE, BOB], 'remove'])
+  })
+
+  test('group.close refuses a group that is not connected, and one where the number is not admin, touching nothing', async () => {
+    const { conn, sock } = await connection([G1, G2])
+    await assert.rejects(conn.closeGroup({ type: 'group.close', requestId: 'g5', connectionId: CONN, conversationId: 'x@g.us', note: 'bye' }), OutboundRefused)
+    // G1: the number is in it but not an admin.
+    await assert.rejects(conn.closeGroup({ type: 'group.close', requestId: 'g6', connectionId: CONN, conversationId: G1, note: 'bye' }), /admin/)
+    assert.deepEqual(sock.touched(G1).map((c) => c.fn).filter((f) => f !== 'groupMetadata'), [])
+    // G2: the number alone, not admin — nobody to remove, so it just leaves (no note when empty).
+    const g = await conn.closeGroup({ type: 'group.close', requestId: 'g7', connectionId: CONN, conversationId: G2, note: '  ' })
+    assert.deepEqual(g.results, [])
+    assert.deepEqual(sock.touched(G2).map((c) => c.fn).filter((f) => f !== 'groupMetadata'), ['groupLeave'])
+  })
+
+  test('group.close on a group the number already left says not_in_group (a retry finishes on the server)', async () => {
+    const { conn, sock } = await connection()
+    sock.groupMetadata = async () => { throw new Error('forbidden') }
+    await assert.rejects(conn.closeGroup({ type: 'group.close', requestId: 'g8', connectionId: CONN, conversationId: G1, note: 'bye' }), /^Error: not_in_group/)
+    assert.deepEqual(sock.touched(G1).map((c) => c.fn).filter((f) => f !== 'groupMetadata'), [])
+  })
+
+  test('group.close links back to the parent group when it is connected too', async () => {
+    const { conn, sock } = await connection([G1, G2])
+    sock.groups[G1].participants = [{ id: ME_LID, phoneNumber: ME, admin: 'superadmin' }, { id: ALICE }]
+    await conn.closeGroup({ type: 'group.close', requestId: 'g9', connectionId: CONN, conversationId: G1, note: 'closed', backTo: G2 })
+    assert.match((sock.calls.find((c) => c.fn === 'sendMessage')!.args[1] as { text: string }).text, /^closed\nhttps:\/\/chat\.whatsapp\.com\/INVITE123/)
+    assert.deepEqual(sock.calls.find((c) => c.fn === 'groupInviteCode')!.args, [G2])
+  })
 })
 
 describe('allowlist', () => {

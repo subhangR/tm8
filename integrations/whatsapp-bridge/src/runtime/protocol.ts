@@ -134,11 +134,15 @@ export type MediaFrame = { requestId: string; mime: string | null; data: string 
 
 /**
  * What happened to each person asked into a group (`group.create`, `group.add`). `invite_needed`: their privacy
- * settings refuse adds, so they need the group's invite link instead; `already`: in the group already.
+ * settings refuse adds, so they need the group's invite link instead; `already`: in the group already. `removed`:
+ * taken out by `group.close`.
  */
-export type GroupMemberResult = { id: string; status: 'added' | 'already' | 'invite_needed' | 'failed' }
+export type GroupMemberResult = { id: string; status: 'added' | 'already' | 'invite_needed' | 'failed' | 'removed' }
 
-/** The answer to `group.create` / `group.add`. `inviteLink` is set only when someone needs it. */
+/**
+ * The answer to `group.create` / `group.add` / `group.close`. `inviteLink` is set only when someone needs it; on
+ * `group.close` it is always null and a success means the number has left.
+ */
 export type GroupFrame =
   | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }
   | { requestId: string; connectionId: string; error: string }
@@ -193,5 +197,12 @@ export type ServerFrame =
   | { type: 'group.create'; requestId: string; connectionId: string; subject: string; participants: string[] }
   /** Add people to a connected group (the number must be its admin). */
   | { type: 'group.add'; requestId: string; connectionId: string; conversationId: string; participants: string[] }
+  /**
+   * Dissolve a connected group (WhatsApp has no real delete): post `note` (when not empty), remove every participant
+   * but the number (it must be the group's admin), then leave. Sent before the server ends the bridge, while the
+   * group is still on the allowlist. `backTo`: a connected group the note links back to (its invite link is added
+   * when the number can get one). A group the number is no longer in answers the error `not_in_group: …`.
+   */
+  | { type: 'group.close'; requestId: string; connectionId: string; conversationId: string; note: string; backTo?: string }
 
 export type ServerFrameType = ServerFrame['type']

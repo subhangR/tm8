@@ -44,9 +44,12 @@ export type Emit = <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) =
 export type WaSocketLike = Pick<
   WASocket,
   'ev' | 'user' | 'sendMessage' | 'sendPresenceUpdate' | 'readMessages' | 'groupMetadata' | 'groupFetchAllParticipating' | 'requestPairingCode' | 'logout' | 'end' | 'updateMediaMessage'
-  | 'groupCreate' | 'groupParticipantsUpdate' | 'groupInviteCode'
+  | 'groupCreate' | 'groupParticipantsUpdate' | 'groupInviteCode' | 'groupLeave'
 >
 export type SocketFactory = (config: UserFacingSocketConfig) => WaSocketLike
+
+/** `group.close` on a group the number is no longer in (the protocol's error text; the server matches it). */
+export const NOT_IN_GROUP = 'not_in_group: the number is not in this group'
 
 /** Our own recent sends: Baileys' getMessage (retries) and poll vote keys. Memory only, bounded. */
 const SENT_CAP = 1000
@@ -457,6 +460,35 @@ export class RuntimeConnection {
     }))
     const meta = await sock.groupMetadata(f.conversationId).catch(() => null)
     return { conversationId: f.conversationId, subject: meta?.subject ?? '', results, inviteLink: await this.inviteLinkIf(f.conversationId, results) }
+  }
+
+  /**
+   * Dissolve a connected group (WhatsApp has no delete): the closing note, then every participant but the number out,
+   * then the number leaves. Removal needs the number to be the group's admin; when WhatsApp refuses it, nothing more
+   * is done and the error goes back, so the server keeps the bridge. A person WhatsApp would not remove is `failed`;
+   * the number leaves anyway.
+   */
+  async closeGroup(f: Extract<ServerFrame, { type: 'group.close' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }> {
+    const sock = this.guard(f.conversationId, 'group.close')
+    // A group the number already left answers 403/404: the server reads NOT_IN_GROUP as "already dissolved" (a retry).
+    const meta = await sock.groupMetadata(f.conversationId).catch((e: Error) => {
+      if (/forbidden|item-not-found|not-authorized|40[34]/i.test(e.message)) throw new Error(NOT_IN_GROUP)
+      throw e
+    })
+    const me = meta.participants.find((p) => [p.id, p.lid, p.phoneNumber].some((j) => !!j && this.allowlist.isOwn(j)))
+    if (!me) throw new Error(NOT_IN_GROUP)
+    const others = meta.participants.filter((p) => p !== me).map((p) => p.id)
+    if (others.length && !me.admin) throw new Error('the number has to be an admin of the group to remove people')
+    const back = f.backTo && this.allowlist.allows(f.backTo) ? await this.sock!.groupInviteCode(f.backTo).catch(() => undefined) : undefined
+    const note = [f.note.trim(), back ? `https://chat.whatsapp.com/${back}` : ''].filter(Boolean).join('\n')
+    if (note) {
+      const sent = await sock.sendMessage(f.conversationId, { text: withBridgeMark(note) })
+      if (sent?.key.id) this.remember(sent.key.id, sent.message)
+    }
+    const answer = others.length ? await sock.groupParticipantsUpdate(f.conversationId, others, 'remove') : []
+    const results: GroupMemberResult[] = answer.map((r) => ({ id: bareJid(r.jid ?? ''), status: r.status === '200' ? 'removed' : 'failed' }))
+    await sock.groupLeave(f.conversationId)
+    return { conversationId: f.conversationId, subject: meta.subject ?? '', results, inviteLink: null }
   }
 
   private async inviteLinkIf(conversationId: string, results: GroupMemberResult[]): Promise<string | null> {

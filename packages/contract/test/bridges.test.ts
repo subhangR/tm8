@@ -75,10 +75,13 @@ describe('catalog (§3.4)', () => {
   it('carries the twelve rows B1 needs, B1b-5\'s four connection rows (421), B3\'s three link rows, and the People tab\'s two (Bridges P, 420)', () => {
     expect(bridges.map(op => op.name)).toEqual([
       'bridges.list', 'bridges.get', 'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause',
-      'bridges.resume', 'bridges.remove', 'bridges.participants.list', 'bridges.participants.update',
+      'bridges.resume', 'bridges.remove',
+      'bridges.close', // 433 (D84): a forked group only; agent-callable
+      'bridges.participants.list', 'bridges.participants.update',
       'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.conversations.create', // a new WhatsApp group (main added it without this pin)
       'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.work.start', // B1b-6 (v2 §4.3)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
@@ -91,6 +94,7 @@ describe('catalog (§3.4)', () => {
       'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
       'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
       'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.conversations.create', // owner only (D28); main added it without this pin
       'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.memories.proposals.resolve', 'bridges.links.begin', 'bridges.links.revoke',
     ]);

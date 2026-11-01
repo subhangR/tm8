@@ -108,7 +108,7 @@ export type CoreEntityKind =
   | 'craft'
   // Bridges (migration 395, BRIDGE-ENTITY-DESIGN §3.1): one provider
   // conversation bound to one chat, session or channel. Born only from
-  // `bridges.create`; ended only by `bridges.remove`. See ./bridges.ts.
+  // `bridges.create`; ended only by `bridges.remove` (or `bridges.close` for a fork). See ./bridges.ts.
   | 'bridge'
   // Labels (migration 410, BRIDGE-ENTITY-DESIGN §3.8): a flat, space-level
   // name/colour/description. Born only from `labels.create`; entities carry

@@ -97,6 +97,8 @@ export const OPERATIONS = [
   { name: 'bridges.pause', method: 'POST', path: '/v2/bridges/:bridgeId/pause', kind: 'command', status: 'v1' },
   { name: 'bridges.resume', method: 'POST', path: '/v2/bridges/:bridgeId/resume', kind: 'command', status: 'v1' },
   { name: 'bridges.remove', method: 'POST', path: '/v2/bridges/:bridgeId/remove', kind: 'command', status: 'v1', humanOnly: true },
+  // 433 (D84): a FORKED group only (/split or an agent fork): note, everyone out, the number leaves, the bridge ends.
+  { name: 'bridges.close', method: 'POST', path: '/v2/bridges/:bridgeId/close', kind: 'command', status: 'v1' },
   { name: 'bridges.participants.list', method: 'GET', path: '/v2/bridges/:bridgeId/participants', kind: 'read', status: 'v1' },
   { name: 'bridges.participants.update', method: 'PATCH', path: '/v2/bridges/:bridgeId/participants/:externalId', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.handles.list', method: 'GET', path: '/v2/bridges/:bridgeId/handles', kind: 'read', status: 'v1' },

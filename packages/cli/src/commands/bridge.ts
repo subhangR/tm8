@@ -8,7 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath, type BridgeConnectionAuthFrame,
   type BridgeConnectionBeginResult, type BridgeConnectionListResult, type BridgeConnectionOfferResult,
   type BridgeConnectionView, type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult,
-  type BridgeConversationCreateResult, type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
+  type BridgeConversationCreateResult, type BridgeCloseResult, type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
   type BridgeListResult, type BridgeListenResult, type BridgeLogResult, type BridgePolicy, type BridgeView,
   type BridgeWake, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeProvider,
   type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgeParticipant,
@@ -205,6 +205,23 @@ async function bridgeState(cmd: CommandContext, operation: 'bridges.pause' | 'br
   cmd.out.data(await observedInvoke<BridgeView>(client(cmd), operation, {
     params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, body: { ...mutation(cmd), expectedVersion: version },
   }), renderBridge);
+  return EXIT_OK;
+}
+
+/** 433 (D84): close a forked group — note, everyone out, the number leaves, the bridge ends. */
+async function bridgeClose(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['expect-version', 'note', 'mutation-id']); argumentsCount(cmd, 1);
+  const version = expectedVersion(cmd);
+  const note = cmd.options.value('note');
+  const result = await observedInvoke<BridgeCloseResult>(client(cmd), 'bridges.close', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') }, body: { ...mutation(cmd), expectedVersion: version, ...(note ? { note } : {}) },
+  });
+  cmd.out.data(result, r => [
+    `closed "${r.bridge.title}": ${r.results.filter(p => p.status === 'removed').length} removed, the number left`,
+    ...r.results.filter(p => p.status !== 'removed').map(p => `  ${p.id} not removed`),
+    r.parent ? `parent ${r.parent.bridgeId} "${r.parent.title}" ${r.parent.noticeMessageId ? `told (${r.parent.noticeMessageId})` : 'not told (it has ended)'}` : '',
+    renderBridge(r.bridge),
+  ].filter(Boolean).join('\n'));
   return EXIT_OK;
 }
 
@@ -737,6 +754,7 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'pause'], run: cmd => bridgeState(cmd, 'bridges.pause') },
   { path: ['bridge', 'resume'], run: cmd => bridgeState(cmd, 'bridges.resume') },
   { path: ['bridge', 'remove'], run: cmd => bridgeState(cmd, 'bridges.remove') },
+  { path: ['bridge', 'close'], run: bridgeClose },
   { path: ['bridge', 'people'], run: bridgePeople },
   { path: ['bridge', 'participant'], run: bridgeParticipant },
   { path: ['bridge', 'handles'], run: bridgeHandles },
