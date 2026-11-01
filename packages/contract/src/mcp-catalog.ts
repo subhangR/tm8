@@ -149,13 +149,14 @@ const google = (
 
 const GOOGLE_REQUIREMENT = 'Served by tm8 itself: Google hosts no MCP server. A server operator must register a Google OAuth client with <tm8 public origin>/mcp/oauth/callback as its redirect URI and set TM8_GOOGLE_OAUTH_CLIENT_ID and TM8_MCP_CLIENT_SECRET_GOOGLE; until then Connect reports that Google is not configured on this server.';
 
-/** Slack's advertised user scopes (https://mcp.slack.com/.well-known/oauth-authorization-server). Edit to narrow. */
+/** Official MCP tool scopes, including conversation creation. https://docs.slack.dev/ai/slack-mcp-server/ */
 const SLACK_SCOPES = [
   'search:read.public', 'search:read.private', 'search:read.mpim', 'search:read.im', 'search:read.files', 'search:read.users',
   'channels:history', 'groups:history', 'mpim:history', 'im:history',
   'channels:read', 'groups:read', 'mpim:read', 'im:read', 'users:read', 'users:read.email',
   'chat:write', 'reactions:read', 'reactions:write', 'files:read', 'files:write',
   'canvases:read', 'canvases:write', 'lists:read', 'lists:write', 'emoji:read',
+  'channels:write', 'groups:write', 'im:write', 'mpim:write',
 ];
 
 /** Curated catalog. Provider adapters live in the reusable integrations package. */

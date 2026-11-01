@@ -1,5 +1,7 @@
 # Connect Apps PR scope
 
+**Merge blocked:** production acceptance requires real content reads and supported writes, with granted permissions verified for GitHub, Slack, Notion, Figma, Atlassian and Gmail. The evidence below is partial and does not satisfy that gate. A connected account, a listed tool or passing fixture tests alone do not establish production readiness.
+
 This change supplies TM8-native branded app discovery/account management, deployment-owned provider OAuth clients, a reusable integration runtime, provider tool metadata compatibility, OAuth callback recovery, and chat connector access for both supported harnesses.
 
 ## Verified account/runtime paths
