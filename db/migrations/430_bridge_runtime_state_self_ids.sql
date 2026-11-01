@@ -1,6 +1,6 @@
 -- =============================================================================
--- 428 — Bridges: public.bridge_runtime_state could never succeed.
--- (428: main holds 425–427 and #1479 425.)
+-- 430 — Bridges: public.bridge_runtime_state could never succeed.
+-- (430: main holds 425–429.)
 --
 -- 398 declared a plpgsql variable `self_ids` in a function whose UPDATE sets
 -- the column `bridge_connections.self_ids`. The bare `self_ids` on the SET
