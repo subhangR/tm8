@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import {
   BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema, BridgeConnectionWithdrawInputSchema,
-  BridgeConversationCreateInputSchema, BridgeWorkStartInputSchema,
+  BridgeConversationCreateInputSchema, BridgeGroupForkInputSchema, BridgeWorkStartInputSchema,
   type BridgeConnectionAuthFrame, type BridgeConnectionView, type BridgeDetailView,
 } from '@tm8/contract';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -77,8 +77,10 @@ beforeAll(async () => {
       else if (url.pathname === '/v2/me/bridge-connections') data = { connection: connectionView('connecting'), runtime: beginRuntime };
       else if (url.pathname.endsWith('/offer')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL };
       else if (url.pathname.endsWith('/remove')) data = { connection: { ...connectionView('linked'), status: 'removed', offers: [] }, endedBridgeIds: [BRIDGE], revokedCredentialIds: [CREDENTIAL], runtime: 'logged_out' };
-      else if (url.pathname.endsWith('/conversations') && req.method === 'POST') data = { connectionId: CONNECTION, bridge: null,
+      else if (url.pathname.endsWith('/conversations') && req.method === 'POST') data = { connectionId: CONNECTION, bridge: view, sessionId: CHAT,
         group: { conversationId: '1204@g.us', subject: body.title, results: [], inviteLink: null } };
+      else if (url.pathname.endsWith('/fork')) data = { bridgeId: BRIDGE, forkId: CHAT, newBridgeId: BRIDGE, sessionId: CHAT, handle: 'keen-otter',
+        noticeMessageId: CHAT, group: { conversationId: '1205@g.us', subject: body.title, results: [], inviteLink: null } };
       else if (url.pathname.endsWith('/conversations')) data = { connectionId: CONNECTION, items: [
         { conversationId: '1203@g.us', kind: 'group', name: 'Infra', size: 7, canSend: true, reason: null },
         { conversationId: '9999@g.us', kind: 'group', name: 'Announcements', size: 120, canSend: false, reason: 'admins_only' }] };
@@ -392,7 +394,9 @@ describe('tm8 bridge connection (B1b-5)', () => {
     vi.stubEnv('TM8_ACTOR_ID', ACTOR);
     try {
       const cases: Array<[string[], { safeParse(v: unknown): { success: boolean; error?: unknown } }]> = [
-        [['bridge', 'group', 'create', CONNECTION, '--title', 'bridges-test', '--participant', '+91 98765 43210'], BridgeConversationCreateInputSchema],
+        [['bridge', 'group', 'create', CONNECTION, '--title', 'bridges-test', '--participant', '+91 98765 43210', '--teammate', BRIDGE], BridgeConversationCreateInputSchema],
+        [['bridge', 'group', 'fork', BRIDGE, '--title', 'bridge-bugs', '--participant', 'Maya', '--brief', 'the bridge bugs'], BridgeGroupForkInputSchema],
+        [['bridge', 'connection', 'offer', CONNECTION, '--agent-groups', 'on'], BridgeConnectionOfferInputSchema],
         [['bridge', 'work', BRIDGE, '--item', 'fix the login timeout'], BridgeWorkStartInputSchema],
         [['bridge', 'connection', 'offer', CONNECTION], BridgeConnectionOfferInputSchema],
         [['bridge', 'connection', 'withdraw', CONNECTION], BridgeConnectionWithdrawInputSchema],
@@ -407,6 +411,9 @@ describe('tm8 bridge connection (B1b-5)', () => {
       }
       expect(requests.at(0)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/conversations` });
       expect(stdout).toMatch(/group 1204@g.us "bridges-test"/);
+      expect(stdout).toMatch(/group 1205@g.us "bridge-bugs" \(fork /);
+      expect(requests.find(r => r.path.endsWith('/fork'))).toMatchObject({ method: 'POST', path: `/v2/bridges/${BRIDGE}/fork` });
+      expect(requests.find(r => r.path.endsWith('/offer') && r.body.agentGroups === true)).toBeTruthy();
     } finally {
       vi.stubEnv('TM8_ACTOR_ID', '');
     }

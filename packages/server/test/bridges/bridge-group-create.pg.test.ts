@@ -1,12 +1,14 @@
 /**
  * `bridges.conversations.create` over authenticated HTTP: a new WhatsApp group
- * made on the caller's own number and, with `bridge`, bridged in the same call.
+ * made on the caller's own number and always bridged in the same call, to the
+ * target named or to a new session started for a teammate.
  *
  * Pinned here: only a human who owns the number may make a group (never an
  * agent, never another member); every refusal the bridge could meet is met
- * before the runtime is asked, so a refusal leaves no group on WhatsApp; the
- * preflight leaves nothing behind; a retry with the same mutation id answers
- * the first call's bridge and makes no second group.
+ * before the runtime is asked, so a refusal leaves no group on WhatsApp (and a
+ * session started for it is stopped); the preflight leaves nothing behind; a
+ * retry with the same mutation id answers the first call's bridge and makes no
+ * second group or session.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -52,6 +54,26 @@ const runtime = {
   },
 } satisfies BridgeRuntimeLink;
 
+/** The executor's session doors (task 01a195da): a start inserts the session row; a stop is recorded. */
+const started: Array<{ teamMemberId: string; title: string; clientMutationId: string; sessionId: string }> = [];
+const stopped: string[] = [];
+const sessions = {
+  async workStart() { throw new Error('not used'); },
+  async startSession(_claims: unknown, input: { spaceId: string; teamMemberId: string; title: string; clientMutationId: string }) {
+    const prior = started.find(s => s.clientMutationId === input.clientMutationId);
+    if (prior) return { sessionId: prior.sessionId };
+    const sessionId = randomUUID();
+    await database.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by,visibility) values($1,$2,'work_session',0,$3,'space')", [sessionId, input.spaceId, member]);
+      await c.query("insert into public.work_sessions(entity_id,title,status,share_mode,started_at) values($1,$2,'running','none',now())", [sessionId, input.title]);
+    });
+    started.push({ ...input, sessionId });
+    return { sessionId };
+  },
+  async stopSession(_claims: unknown, sessionId: string) { stopped.push(sessionId); },
+};
+
 beforeAll(async () => {
   database = await createW1ScratchDatabase('bridge_group_create');
   database.apply(migrationFiles());
@@ -87,7 +109,7 @@ beforeAll(async () => {
     q.rpc('offer_bridge_connection', [connection, space, 'public', null, randomUUID()]));
   const config = { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024 * 1024, databaseUrl: database.url, disableAutoOwner: true };
   const registry = new HandlerRegistry();
-  registerBridgeHandlers(registry, { db, config, owner }, { runtime });
+  registerBridgeHandlers(registry, { db, config, owner, bridgeCommands: sessions as never }, { runtime });
   server = createFacadeServer({ config, registry, identityResolver: createSessionIdentityResolver({ db, owner }) });
   base = (await server.listen()).url;
 });
@@ -118,7 +140,7 @@ const refused = (result: { status: number; json: any }, status: number, code: st
 
 describe('who may make a group (D28)', () => {
   it('refuses an agent, even one acting for the number\'s owner, and asks the runtime nothing', async () => {
-    refused(await create(agent.token, { title: 'agile cheetah', participants: [] }), 403, 'forbidden');
+    refused(await create(agent.token, { title: 'agile cheetah', participants: [], bridge: { spaceId: space, teammateId: persona } }), 403, 'forbidden');
     expect(creates).toEqual([]);
   });
 
@@ -126,18 +148,18 @@ describe('who may make a group (D28)', () => {
   // run always has one): the body passes the strict input schema, and the agent
   // meets the human-only refusal, not invalid_input.
   it('refuses an agent whose body names its actor, as the CLI sends it, as forbidden', async () => {
-    refused(await create(agent.token, { actorId: persona, title: 'bridges-test', participants: [] }), 403, 'forbidden');
+    refused(await create(agent.token, { actorId: persona, title: 'bridges-test', participants: [], bridge: { spaceId: space, teammateId: persona } }), 403, 'forbidden');
     expect(creates).toEqual([]);
   });
 
   it('refuses another member: only the number\'s owner makes groups on it', async () => {
-    const error = refused(await create(other.token, { title: 'agile cheetah', participants: [] }), 403, 'forbidden');
+    const error = refused(await create(other.token, { title: 'agile cheetah', participants: [], bridge: { spaceId: space, targetId: chat } }), 403, 'forbidden');
     expect(error.details.reason).toBe('not_connection_owner');
     expect(creates).toEqual([]);
   });
 
   it('refuses a participant that is not a phone number, before asking the runtime', async () => {
-    const error = refused(await create(human.token, { title: 'x', participants: ['+91 98765 43210', 'agile-cheetah'] }), 400, 'invalid_input');
+    const error = refused(await create(human.token, { title: 'x', participants: ['+91 98765 43210', 'agile-cheetah'], bridge: { spaceId: space, targetId: chat } }), 400, 'invalid_input');
     expect(error.details.path).toBe('participants.1');
     expect(creates).toEqual([]);
   });
@@ -152,25 +174,53 @@ describe('who may make a group (D28)', () => {
 });
 
 describe('bridges.conversations.create', () => {
-  it('makes a group with its participants as WhatsApp ids, and bridges nothing without `bridge`', async () => {
-    const result = ok(await create(human.token, { title: 'Scratch', participants: ['+91 98765-43210', '922222222222@s.whatsapp.net'] }));
-    expect(creates.at(-1)).toEqual({
-      runtimeId: RUNTIME, connectionId: connection, subject: 'Scratch',
-      participants: ['919876543210@s.whatsapp.net', '922222222222@s.whatsapp.net'],
-    });
-    expect(result).toEqual({
-      connectionId: connection, bridge: null,
-      group: {
-        conversationId: expect.stringMatching(/@g\.us$/), subject: 'Scratch', inviteLink: 'https://chat.whatsapp.com/INVITE',
-        results: [{ id: '919876543210@s.whatsapp.net', status: 'added' }, { id: '922222222222@s.whatsapp.net', status: 'invite_needed' }],
-      },
-    });
+  it('always bridges: refuses a call with no bridge, or with neither a target nor a teammate', async () => {
+    refused(await create(human.token, { title: 'Scratch', participants: [] }), 400, 'invalid_input');
+    refused(await create(human.token, { title: 'Scratch', participants: [], bridge: { spaceId: space } }), 400, 'invalid_input');
+    expect(creates).toEqual([]);
+    expect(started).toEqual([]);
   });
 
-  it('takes the command envelope\'s actorId from a human acting as their own member', async () => {
-    const result = ok(await create(human.token, { actorId: member, title: 'bridges-test', participants: [] }));
-    expect(result).toMatchObject({ connectionId: connection, bridge: null, group: { subject: 'bridges-test' } });
-    expect(creates.at(-1)).toMatchObject({ connectionId: connection, subject: 'bridges-test', participants: [] });
+  it('with no target, starts a session for the teammate and bridges the group to it; a retry starts nothing new', async () => {
+    const mutationId = randomUUID();
+    const body = { clientMutationId: mutationId, title: 'bridge-bugs', participants: ['+91 98765-43210', '922222222222@s.whatsapp.net'],
+      bridge: { spaceId: space, teammateId: persona } };
+    const made = ok(await create(human.token, body));
+    expect(creates.at(-1)).toEqual({
+      runtimeId: RUNTIME, connectionId: connection, subject: 'bridge-bugs',
+      participants: ['919876543210@s.whatsapp.net', '922222222222@s.whatsapp.net'],
+    });
+    expect(started).toEqual([expect.objectContaining({ teamMemberId: persona, title: 'bridge-bugs (WhatsApp)', sessionId: made.sessionId })]);
+    expect(made.group).toEqual({
+      conversationId: expect.stringMatching(/@g\.us$/), subject: 'bridge-bugs', inviteLink: 'https://chat.whatsapp.com/INVITE',
+      results: [{ id: '919876543210@s.whatsapp.net', status: 'added' }, { id: '922222222222@s.whatsapp.net', status: 'invite_needed' }],
+    });
+    expect(made.bridge).toMatchObject({ teammateId: persona, target: { kind: 'work_session', id: made.sessionId },
+      conversation: { externalId: made.group.conversationId, title: 'bridge-bugs' } });
+    const asked = creates.length;
+    const again = ok(await create(human.token, body));
+    expect(creates.length).toBe(asked);
+    expect(started).toHaveLength(1);
+    expect(again.bridge.id).toBe(made.bridge.id);
+    expect(stopped).toEqual([]);
+  });
+
+  it('with no target, a refusal makes no group and stops the session it started', async () => {
+    const asked = creates.length;
+    const result = await create(other.token, { title: 'nobody\'s', participants: [], bridge: { spaceId: space, teammateId: persona } });
+    refused(result, 403, 'forbidden');
+    expect(creates.length).toBe(asked);
+    // The owner check runs before any session is started.
+    expect(started).toHaveLength(1);
+    // A refusal the preflight meets after the session started: the session is stopped, no group is made.
+    const result2 = await create(human.token, { title: 'no such teammate', participants: [], bridge: { spaceId: space, teammateId: randomUUID() } });
+    expect(result2.status, JSON.stringify(result2.json)).toBeGreaterThanOrEqual(400);
+    expect(creates.length).toBe(asked);
+    expect(started).toHaveLength(2);
+    expect(stopped).toEqual([started[1]!.sessionId]);
+    const [left] = await database.query<{ n: string }>(
+      "select count(*) as n from public.bridges where external_conversation_id like 'tm8-preflight-%'");
+    expect(Number(left!.n)).toBe(0);
   });
 
   it('makes the group and bridges it to a chat with a teammate in one call; a retry makes no second group', async () => {

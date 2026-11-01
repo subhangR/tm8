@@ -250,7 +250,7 @@ export interface MessageBridgeView {
   /**
    * Outbound only: the outbox ledger's state, or the refusal (398's badge).
    * There is no `delivered` or `read`: the runtime protocol carries no
-   * receipts (D64).
+   * receipts (D83).
    */
   delivery: BridgeDelivery | null;
 }
@@ -370,6 +370,8 @@ export interface BridgeConnectionOffer {
   createdAt: string;
   /** Live bridges riding this credential. */
   bridges: number;
+  /** The owner lets agent sessions in this space fork groups on the number (D83, 432). */
+  agentGroups: boolean;
 }
 
 /** A connection as its owner (or a node admin) sees it. No secret, no state reference (§7.3 item 8). */
@@ -409,6 +411,12 @@ export interface BridgeConnectionOfferInput extends BridgeCommand {
   spaceId: SpaceId;
   visibility?: BridgeConnectionOfferVisibility;
   label?: string;
+  /**
+   * D83: let agent sessions in this space fork groups on the number
+   * (`bridges.groups.fork`). Given for a space the number is already offered
+   * to, it changes only this.
+   */
+  agentGroups?: boolean;
 }
 export interface BridgeConnectionOfferResult { connection: BridgeConnectionView; credentialId: EntityId }
 export interface BridgeConnectionWithdrawInput extends BridgeCommand { connectionId?: string; spaceId: SpaceId }
@@ -472,18 +480,24 @@ export const BRIDGE_GROUP_TITLE_MAX = 100;
 export const BRIDGE_GROUP_PARTICIPANTS_MAX = 256;
 
 /**
- * `bridges.conversations.create`: a new group made on the caller's own number,
- * and (with `bridge`) bridged in the same call. Human-only, the number's owner
- * only (D28); with `bridge`, also a space admin of `bridge.spaceId`, checked
- * before the group is made, so a refusal leaves no group behind.
+ * `bridges.conversations.create`: a new group made on the caller's own number
+ * and bridged in the same call. Human-only, the number's owner only (D28), and
+ * a space admin of `bridge.spaceId`, checked before the group is made, so a
+ * refusal leaves no group behind. Without `bridge.targetId` the bridge lands
+ * on a new session started for `bridge.teammateId`.
  */
 export interface BridgeConversationCreateInput extends BridgeCommand {
   connectionId?: string;
   title: string;
   /** Phone numbers in international form (`+91 98765 43210`) or WhatsApp user JIDs; the number itself is added anyway. */
   participants: string[];
-  /** Bridge the new group at once: `bridges.create`'s settings, minus the conversation (it is the new group). */
-  bridge?: Omit<BridgeCreateInput, 'clientMutationId' | 'connectionId' | 'conversation'> & { spaceId: SpaceId };
+  /**
+   * How the new group is bridged: `bridges.create`'s settings, minus the
+   * conversation (it is the new group). With no `targetId`, a new session is
+   * started for `teammateId` (required then) and the bridge lands on it.
+   */
+  bridge: Omit<BridgeCreateInput, 'clientMutationId' | 'connectionId' | 'conversation' | 'targetId'>
+    & { spaceId: SpaceId; targetId?: EntityId };
 }
 export interface BridgeConversationCreateResult {
   connectionId: string;
@@ -493,8 +507,47 @@ export interface BridgeConversationCreateResult {
    * when someone's privacy settings refused the add.
    */
   group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null };
-  /** The bridge made in the same call; null when none was asked for. */
-  bridge: BridgeView | null;
+  /** The bridge made in the same call. */
+  bridge: BridgeView;
+  /** The session started for the bridge when no `targetId` was given; null otherwise. */
+  sessionId: EntityId | null;
+}
+
+/** D83: the longest topic a fork's brief carries. */
+export const BRIDGE_FORK_BRIEF_MAX = 2000;
+
+/**
+ * `bridges.groups.fork` (D83, 432): the session a bridge lands on forks its
+ * group into a new WhatsApp group on the same number, bridged to a new
+ * session. Only where the number's owner turned `agentGroups` on for the
+ * space; people come from the source group's roster only; rate limited.
+ */
+export interface BridgeGroupForkInput extends BridgeCommand {
+  bridgeId?: EntityId;
+  title: string;
+  /**
+   * People from the source group, as `bridges.participants.list` shows them:
+   * a display name, a +phone number or WhatsApp id, the masked id (`…9494`),
+   * or `everyone`. Anyone not in the source group is refused.
+   */
+  participants: string[];
+  /** The new session's teammate, by name; the source bridge's teammate by default. */
+  teammate?: string;
+  /** The topic, for the new session's brief (with a link back to the source group). */
+  brief?: string;
+}
+export interface BridgeGroupForkResult {
+  /** The source bridge. */
+  bridgeId: EntityId;
+  /** The fork's audit row (bridge_group_forks). */
+  forkId: string;
+  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null };
+  /** The new group's bridge and the session it lands on. */
+  newBridgeId: EntityId;
+  sessionId: EntityId;
+  handle: string | null;
+  /** The announcement in the source group. */
+  noticeMessageId: EntityId | null;
 }
 
 /**
@@ -702,6 +755,7 @@ export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferIn
   spaceId: Id,
   visibility: z.enum(['private', 'public']).optional(),
   label: ConnectionLabel.optional(),
+  agentGroups: z.boolean().optional(),
 }).strict();
 export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWithdrawInput> = z.object({
   ...Command,
@@ -724,6 +778,7 @@ export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemove
 export const BridgeConnectionOfferSchema: z.ZodType<BridgeConnectionOffer> = z.object({
   credentialId: Id, spaceId: Id, visibility: z.enum(['private', 'public']),
   status: z.enum(['active', 'stale', 'needs_reconnect']), createdAt: z.string(), bridges: z.number().int().nonnegative(),
+  agentGroups: z.boolean(),
 }).strict();
 export const BridgeConnectionViewSchema: z.ZodType<BridgeConnectionView> = z.object({
   id: Id, provider: BridgeProviderSchema, ownerAccountId: Id, label: z.string(),
@@ -756,8 +811,19 @@ export const BridgeConversationCreateInputSchema = z.object({
   connectionId: Id.optional(),
   title: OneLine(BRIDGE_GROUP_TITLE_MAX),
   participants: z.array(z.string().trim().min(1).max(64)).max(BRIDGE_GROUP_PARTICIPANTS_MAX),
-  bridge: BridgeCreateInputSchema.omit({ clientMutationId: true, connectionId: true, conversation: true, spaceId: true })
-    .extend({ spaceId: Id }).strict().optional(),
+  bridge: BridgeCreateInputSchema.omit({ clientMutationId: true, connectionId: true, conversation: true, spaceId: true, targetId: true })
+    .extend({ spaceId: Id, targetId: Id.optional() }).strict()
+    .refine(b => b.targetId !== undefined || (b.teammateId ?? null) !== null,
+      { message: 'name a target (targetId), or a teammate (teammateId) to start a new session for', path: ['teammateId'] }),
+}).strict();
+
+export const BridgeGroupForkInputSchema = z.object({
+  ...Command,
+  bridgeId: Id.optional(),
+  title: OneLine(BRIDGE_GROUP_TITLE_MAX),
+  participants: z.array(z.string().trim().min(1).max(200)).min(1).max(BRIDGE_GROUP_PARTICIPANTS_MAX),
+  teammate: OneLine(200).optional(),
+  brief: z.string().trim().min(1).max(BRIDGE_FORK_BRIEF_MAX).optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------

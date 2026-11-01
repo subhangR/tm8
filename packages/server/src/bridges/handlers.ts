@@ -9,9 +9,11 @@
  * space (D23). The People tab's write (participants.update, 420) is
  * human-only too: an assertion makes a number count as a person (D52).
  * A new group (`bridges.conversations.create`) is made only by a human who
- * owns the number, and bridged in the same call only by one who may run
- * `bridges.create` in that space: an agent can neither make a group nor add
- * people to one.
+ * owns the number, and bridged in the same call (always: to the target named,
+ * or to a new session for a teammate) only by one who may run `bridges.create`
+ * in that space. The one door an agent has (D83, 432) is `bridges.groups.fork`:
+ * the session a bridge lands on forks its group, where the number's owner
+ * turned `agentGroups` on, with people from that group only, rate limited.
  */
 import {
   BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema,
@@ -27,7 +29,7 @@ import {
   type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
   type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
   BridgeConversationCreateInputSchema, bridgeParticipantJid, type BridgeConversationCreateInput,
-  type BridgeConversationCreateResult,
+  type BridgeConversationCreateResult, BridgeGroupForkInputSchema, type BridgeGroupForkResult,
 } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { BridgeRuntimeLink, ConnectionAuthRelay } from './connection-auth.js';
@@ -299,7 +301,7 @@ async function liveGroupIds(options: BridgeHandlerOptions, receiving: HandoverRe
   return frame.items.map(item => item.conversationId);
 }
 
-type CreateBridgeSettings = NonNullable<BridgeConversationCreateInput['bridge']>;
+type CreateBridgeSettings = BridgeConversationCreateInput['bridge'] & { targetId: string };
 
 /** `create_bridge`'s arguments for a conversation; one list for the preflight and the real call. */
 function createBridgeArgs(connectionId: string, conversation: { externalId: string; title: string; memberCount: number | null },
@@ -520,10 +522,15 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       const input = BridgeConnectionOfferInputSchema.parse(ctx.body);
       const connectionId = routeId(ctx, 'connectionId');
       return command(ctx, async q => {
-        const result = await q.rpc<{ entity: { id: string } }>('offer_bridge_connection', [
+        // D83: agentGroups on a space already offered changes only that.
+        const offered = input.agentGroups !== undefined
+          && (await loadConnection(q, connectionId)).offers.some(o => o.spaceId === input.spaceId);
+        const credentialId = offered ? null : (await q.rpc<{ entity: { id: string } }>('offer_bridge_connection', [
           connectionId, input.spaceId, input.visibility ?? 'public', input.label ?? null, input.clientMutationId,
-        ]);
-        return { connection: await loadConnection(q, connectionId), credentialId: result.entity.id };
+        ])).entity.id;
+        const set = input.agentGroups === undefined ? null
+          : await q.rpc<{ credentialId: string }>('set_bridge_offer_agent_groups', [connectionId, input.spaceId, input.agentGroups]);
+        return { connection: await loadConnection(q, connectionId), credentialId: credentialId ?? set!.credentialId };
       });
     }, 'bridges.connections.offer is for a human: the number\'s owner'),
     'bridges.connections.withdraw': requireHumanSession(async (ctx): Promise<BridgeConnectionWithdrawResult> => {
@@ -595,8 +602,30 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       });
       const conn = await read(ctx, q => q.rpc<{ id: string; status: string; runtimeId: string | null }>(
         'bridge_connection_for_owner', [connectionId]));
-      const settings = input.bridge;
-      if (settings) {
+      // No target: the bridge lands on a new session for the teammate, started
+      // first so the preflight checks it like any target, and stopped again if
+      // the group is never bridged. A retry starts no second one.
+      let sessionId: string | null = null;
+      if (!input.bridge.targetId) {
+        const starter = deps.bridgeCommands as (Partial<BridgeWorkStarter> & object) | undefined;
+        if (!starter?.startSession) {
+          throw new CollabError('not_implemented', 'this node cannot start a session for the group (it needs the execution runtime); name a target with targetId');
+        }
+        const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+        ({ sessionId } = await starter.startSession(claims, {
+          spaceId: input.bridge.spaceId, teamMemberId: input.bridge.teammateId!,
+          title: `${input.title} (WhatsApp)`.slice(0, 80), clientMutationId: `${input.clientMutationId}:session`,
+        }));
+      }
+      const settings: CreateBridgeSettings = { ...input.bridge, targetId: input.bridge.targetId ?? sessionId! };
+      const abandon = async () => {
+        const starter = deps.bridgeCommands as (Partial<BridgeWorkStarter> & object) | undefined;
+        if (!sessionId || !starter?.stopSession) return;
+        const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+        await starter.stopSession(claims, sessionId, { reason: 'its WhatsApp group was not bridged', clientMutationId: `${input.clientMutationId}:session:stop` })
+          .catch(() => undefined);
+      };
+      try {
         const probe = { externalId: `tm8-preflight-${randomUUID()}@g.us`, title: input.title, memberCount: null };
         try {
           await command(ctx, async q => {
@@ -608,41 +637,56 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
         } catch (error) {
           if (!(error instanceof PreflightPassed)) throw error;
           // The same mutation id already made its group and bridge: answer that, make nothing.
-          if (error.replayed) return { connectionId, group: recordedGroup(error.replayed), bridge: error.replayed };
+          if (error.replayed) return { connectionId, group: recordedGroup(error.replayed), bridge: error.replayed, sessionId };
         }
-      }
-      if (!options.runtime || !conn.runtimeId || conn.status !== 'linked') {
-        throw new CollabError('upstream_unavailable', 'this number must be linked and its runtime running to make a group; link it with `tm8 bridge connection begin`',
-          { details: { reason: 'runtime_offline' } });
-      }
-      const frame = await options.runtime.createGroup(conn.runtimeId,
-        { requestId: randomUUID(), connectionId, subject: input.title, participants });
-      if (!frame) {
-        throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
-          { details: { reason: 'runtime_offline' } });
-      }
-      if ('error' in frame) {
-        throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${frame.error}`,
-          { details: { reason: 'runtime_error' } });
-      }
-      const group = { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
-      if (!settings) return { connectionId, group, bridge: null };
-      // The number itself, and everyone WhatsApp added.
-      const memberCount = 1 + group.results.filter(r => r.status === 'added').length;
-      try {
-        const bridge = await command(ctx, async q => {
-          const result = await q.rpc<{ entity: { id: string } }>('create_bridge', createBridgeArgs(connectionId,
-            { externalId: group.conversationId, title: group.subject, memberCount }, settings, input.clientMutationId));
-          return loadBridgeView(q, result.entity.id);
-        });
-        return { connectionId, group, bridge };
+        if (!options.runtime || !conn.runtimeId || conn.status !== 'linked') {
+          throw new CollabError('upstream_unavailable', 'this number must be linked and its runtime running to make a group; link it with `tm8 bridge connection begin`',
+            { details: { reason: 'runtime_offline' } });
+        }
+        const frame = await options.runtime.createGroup(conn.runtimeId,
+          { requestId: randomUUID(), connectionId, subject: input.title, participants });
+        if (!frame) {
+          throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
+            { details: { reason: 'runtime_offline' } });
+        }
+        if ('error' in frame) {
+          throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${frame.error}`,
+            { details: { reason: 'runtime_error' } });
+        }
+        const group = { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
+        // The number itself, and everyone WhatsApp added.
+        const memberCount = 1 + group.results.filter(r => r.status === 'added').length;
+        try {
+          const bridge = await command(ctx, async q => {
+            const result = await q.rpc<{ entity: { id: string } }>('create_bridge', createBridgeArgs(connectionId,
+              { externalId: group.conversationId, title: group.subject, memberCount }, settings, input.clientMutationId));
+            return loadBridgeView(q, result.entity.id);
+          });
+          return { connectionId, group, bridge, sessionId };
+        } catch (error) {
+          // Something changed since the preflight: the group stands, so name it for `tm8 bridge create`.
+          if (!(error instanceof CollabError)) throw error;
+          throw new CollabError(error.code, `the group was made (${group.conversationId}) but not bridged: ${error.message}`,
+            { details: { ...(error.details ?? {}), conversationId: group.conversationId } });
+        }
       } catch (error) {
-        // Something changed since the preflight: the group stands, so name it for `tm8 bridge create`.
-        if (!(error instanceof CollabError)) throw error;
-        throw new CollabError(error.code, `the group was made (${group.conversationId}) but not bridged: ${error.message}`,
-          { details: { ...(error.details ?? {}), conversationId: group.conversationId } });
+        await abandon();
+        throw error;
       }
     }, 'bridges.conversations.create is for a human: the number\'s owner, at a keyboard'),
+    // D83 (432): the session a bridge lands on forks its group. Not human-only:
+    // the guards are the owner's agentGroups, that session, the source roster
+    // and the rate limits, all checked in SQL and the executor.
+    'bridges.groups.fork': async (ctx): Promise<BridgeGroupForkResult> => {
+      const input = BridgeGroupForkInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const starter = deps.bridgeCommands as (Partial<BridgeWorkStarter> & object) | undefined;
+      if (!starter?.forkStart) {
+        throw new CollabError('not_implemented', 'this node runs no bridge command executor (it needs the execution runtime)');
+      }
+      const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
+      return starter.forkStart(claims, { ...input, bridgeId });
+    },
     'bridges.work.start': async (ctx): Promise<BridgeWorkStartResult> => {
       const input = BridgeWorkStartInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');

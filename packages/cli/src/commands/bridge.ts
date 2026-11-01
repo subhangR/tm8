@@ -8,7 +8,7 @@ import {
   BRIDGE_PROVIDERS, BridgeConnectionAuthFrameSchema, bindPath, type BridgeConnectionAuthFrame,
   type BridgeConnectionBeginResult, type BridgeConnectionListResult, type BridgeConnectionOfferResult,
   type BridgeConnectionView, type BridgeConnectionWithdrawResult, type BridgeConnectionRemoveResult,
-  type BridgeConversationCreateResult, type BridgeConversationListResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
+  type BridgeConversationCreateResult, type BridgeConversationListResult, type BridgeGroupForkResult, type BridgeDetailView, type BridgeHandle, type BridgeHandoverResult, type BridgeHandleListResult,
   type BridgeListResult, type BridgeListenResult, type BridgeLogResult, type BridgePolicy, type BridgeView,
   type BridgeWake, type BridgeIdentityLink, type BridgeLinkCode, type BridgeLinksList, type BridgeProvider,
   type BridgeMemoryProposal, type BridgeMemoryProposalListResult, type BridgeParticipant,
@@ -492,11 +492,13 @@ async function connectionBegin(cmd: CommandContext): Promise<ExitCode> {
 }
 
 async function connectionOffer(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['visibility', 'label', 'mutation-id']); argumentsCount(cmd, 1);
+  assertKnownOptions(cmd, ['visibility', 'label', 'agent-groups', 'mutation-id']); argumentsCount(cmd, 1);
   const visibility = choice(cmd, 'visibility', ['private', 'space'] as const);
   const body: Record<string, unknown> = { ...mutation(cmd), spaceId: requireSpace(cmd.ctx) };
   if (visibility) body.visibility = visibility === 'space' ? 'public' : 'private';
   const label = cmd.options.value('label'); if (label !== undefined) body.label = label;
+  // D83: agent sessions here may fork groups on this number (on an existing offer, only this changes).
+  const agentGroups = choice(cmd, 'agent-groups', ['on', 'off'] as const); if (agentGroups) body.agentGroups = agentGroups === 'on';
   const result = await observedInvoke<BridgeConnectionOfferResult>(client(cmd), 'bridges.connections.offer', {
     params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body,
   });
@@ -568,17 +570,19 @@ async function bridgeConversations(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-// A new group on your own number; with --to it is bridged in the same call.
+// A new group on your own number, always bridged in the same call: to --to, or a new session for --teammate.
 async function bridgeGroupCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['title', 'participant', 'to', 'mutation-id', ...SETTING_OPTIONS]); argumentsCount(cmd, 1);
   const title = cmd.options.value('title');
   if (!title) throw usage('--title <group name> is required');
   const targetId = cmd.options.value('to');
   const bridgeSettings = settings(cmd);
-  if (!targetId && Object.keys(bridgeSettings).length) throw usage('bridge settings need --to <chat|session|channel id>: the group is bridged there');
+  if (!targetId && !bridgeSettings.teammateId) {
+    throw usage('name --teammate <id> to start a new session for the group, or --to <chat|session|channel id> to bridge it there');
+  }
   const body = {
     ...mutation(cmd), title, participants: cmd.options.values('participant'),
-    ...(targetId ? { bridge: { spaceId: requireSpace(cmd.ctx), targetId, ...bridgeSettings } } : {}),
+    bridge: { spaceId: requireSpace(cmd.ctx), ...(targetId ? { targetId } : {}), ...bridgeSettings },
   };
   const result = await observedInvoke<BridgeConversationCreateResult>(client(cmd), 'bridges.conversations.create', {
     params: { connectionId: requireArg(cmd, 0, '<connection-id>') }, body,
@@ -587,7 +591,31 @@ async function bridgeGroupCreate(cmd: CommandContext): Promise<ExitCode> {
     `group ${r.group.conversationId} "${r.group.subject}"`,
     ...r.group.results.map(p => `  ${p.id} ${p.status === 'invite_needed' ? 'not added (their privacy settings): send them the invite link' : p.status}`),
     ...(r.group.inviteLink ? [`invite link: ${r.group.inviteLink}`] : []),
-    r.bridge ? renderBridge(r.bridge) : `not bridged; bridge it with: tm8 bridge create --connection ${r.connectionId} --conversation ${r.group.conversationId} --title "${r.group.subject}" --to <id>`,
+    ...(r.sessionId ? [`new session ${r.sessionId}`] : []),
+    renderBridge(r.bridge),
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+// D83: the session a bridge lands on forks its group into a new one, bridged to a new session.
+async function bridgeGroupFork(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['title', 'participant', 'teammate', 'brief', 'mutation-id']); argumentsCount(cmd, 1);
+  const title = cmd.options.value('title');
+  if (!title) throw usage('--title <group name> is required');
+  const participants = cmd.options.values('participant');
+  if (participants.length === 0) throw usage('--participant <name|+phone|…1234|everyone> is required (repeat it): people from this group');
+  const teammate = cmd.options.value('teammate');
+  const brief = cmd.options.value('brief');
+  const result = await observedInvoke<BridgeGroupForkResult>(client(cmd), 'bridges.groups.fork', {
+    params: { bridgeId: requireArg(cmd, 0, '<bridge-id>') },
+    body: { ...mutation(cmd), title, participants, ...(teammate ? { teammate } : {}), ...(brief ? { brief } : {}) },
+  });
+  cmd.out.data(result, r => [
+    `group ${r.group.conversationId} "${r.group.subject}" (fork ${r.forkId})`,
+    ...r.group.results.map(p => `  ${p.id} ${p.status === 'invite_needed' ? 'not added (their privacy settings): send them the invite link' : p.status}`),
+    ...(r.group.inviteLink ? [`invite link: ${r.group.inviteLink}`] : []),
+    `bridge ${r.newBridgeId} → session ${r.sessionId}${r.handle ? ` (${r.handle})` : ''}`,
+    r.noticeMessageId ? 'announced in the source group' : 'not announced (the bridge refused the post)',
   ].join('\n'));
   return EXIT_OK;
 }
@@ -720,6 +748,7 @@ export const BRIDGE_COMMANDS: CommandModule[] = [
   { path: ['bridge', 'connection', 'remove'], run: connectionRemove },
   { path: ['bridge', 'conversations'], run: bridgeConversations },
   { path: ['bridge', 'group', 'create'], run: bridgeGroupCreate },
+  { path: ['bridge', 'group', 'fork'], run: bridgeGroupFork },
   { path: ['bridge', 'connection', 'list'], run: connectionList },
   { path: ['bridge', 'connection', 'begin'], run: connectionBegin },
   { path: ['bridge', 'connection', 'offer'], run: connectionOffer },

@@ -98,7 +98,7 @@ function seedConnections(views: readonly BridgeView[]): BridgeConnectionView[] {
       createdAt: NOW, lastSeenAt: NOW,
       offers: [{
         credentialId: '019f0000-0000-7000-8000-0000000000c1', spaceId: FIXTURE_SPACE, visibility: 'private',
-        status: 'active', createdAt: NOW, bridges: views.filter((v) => v.provider === 'whatsapp' && v.status !== 'ended').length,
+        status: 'active', createdAt: NOW, bridges: views.filter((v) => v.provider === 'whatsapp' && v.status !== 'ended').length, agentGroups: false,
       }],
     },
     {
@@ -233,7 +233,7 @@ export function createFixtureBridgesClient(
       offer: async (connectionId, spaceId) => {
         const c = connection(connectionId);
         const credentialId = `019f0000-0000-7000-8000-${String(c.offers.length + 200).padStart(12, '0')}`;
-        const next = { ...c, offers: [...c.offers, { credentialId, spaceId, visibility: 'private' as const, status: 'active' as const, createdAt: new Date().toISOString(), bridges: 0 }] };
+        const next = { ...c, offers: [...c.offers, { credentialId, spaceId, visibility: 'private' as const, status: 'active' as const, createdAt: new Date().toISOString(), bridges: 0, agentGroups: false }] };
         connectionsById.set(connectionId, next);
         return { connection: next, credentialId };
       },

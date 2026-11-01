@@ -309,6 +309,7 @@ const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'bridges.links.revoke',
   'bridges.participants.update', // Bridges P (420)
   'bridges.conversations.create', // a new group, bridged with bridges.create's own settings schema
+  'bridges.groups.fork', // D83 (432): /split for an agent, unannotated like bridges.work.start
   'loops.create',
   'loops.update',
   'loops.enable',
@@ -467,6 +468,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       'bridges.connections.withdraw': contract.BridgeConnectionWithdrawInputSchema,
       'bridges.connections.remove': contract.BridgeConnectionRemoveInputSchema,
       'bridges.conversations.create': contract.BridgeConversationCreateInputSchema,
+      'bridges.groups.fork': contract.BridgeGroupForkInputSchema,
       'bridges.handover.offer': contract.BridgeHandoverOfferInputSchema,
       'bridges.handover.accept': contract.BridgeHandoverSettleInputSchema,
       'bridges.handover.decline': contract.BridgeHandoverSettleInputSchema,
