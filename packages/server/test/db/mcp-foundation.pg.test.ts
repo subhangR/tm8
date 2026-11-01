@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mcpCatalogEntry } from '@tm8/contract';
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { createDb } from '../../src/db/client.js';
@@ -131,4 +132,13 @@ it('persists large provider catalogs without removing the bounded health cache l
  const oversized={...result,tools:[{...result.tools[0],description:'x'.repeat(4_194_304)}]};
  await expect(as(ownerIdentity,q=>q.rpc('record_mcp_server_health',[c.entity.id,JSON.stringify(oversized)]))).rejects.toThrow(/invalid MCP health result/);
  expect((await as(memberIdentity,q=>loadMcpServer(q,c.entity.id))).health).toBeUndefined();
+});
+
+it('keeps Figma API and official remote MCP resource identities distinct in SQL',async()=>{
+ const entry=mcpCatalogEntry('figma.api');
+ if(!entry?.definition)throw Error('Missing Figma API catalog');
+ const made=await as(memberIdentity,q=>q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[spaceId,JSON.stringify(entry.definition),null,randomUUID()]));
+ expect((await as(memberIdentity,q=>loadMcpServer(q,made.entity.id))).definition).toMatchObject({catalogId:'figma.api',firstParty:true,url:'https://api.figma.com/v1'});
+ await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify({...entry.definition,name:'forged-figma',url:'https://mcp.figma.com/mcp'}),null,randomUUID()]))).rejects.toBeTruthy();
+ await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify({...entry.definition,name:'forged-remote',firstParty:false}),null,randomUUID()]))).rejects.toBeTruthy();
 });

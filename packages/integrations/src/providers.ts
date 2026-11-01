@@ -24,6 +24,11 @@ export function providerRequestHeaders(catalogId: string | undefined, resource: 
     ? { 'X-MCP-Toolsets': 'all' } : {};
 }
 
+/** GitHub returns comma-delimited scopes; other OAuth servers retain RFC 6749 space semantics. */
+export function providerGrantedScopes(resource: string, scope: string): string[] {
+  return [...new Set(scope.split(resource === 'https://api.githubcopilot.com/mcp/' ? /[,\s]+/ : /\s+/).filter(Boolean))];
+}
+
 /** Curated official endpoints. Registration policy is distinct from account consent. */
 export const PROVIDERS: readonly Provider[] = [
   { id: 'github', title: 'GitHub', publisher: 'GitHub', category: 'Development',
@@ -69,3 +74,9 @@ export class ProviderCatalog {
   get(id: string): Provider | undefined { return this.providers.get(id); }
   list(): Provider[] { return [...this.providers.values()]; }
 }
+
+/** Native API identity for hosts that cannot enter Figma's remote MCP catalog. */
+export const FIGMA_NATIVE = {
+  catalogId: 'figma.api', resource: 'https://api.figma.com/v1',
+  scopes: ['current_user:read', 'file_content:read', 'file_metadata:read', 'file_comments:read', 'file_comments:write', 'file_versions:read', 'library_assets:read', 'library_content:read', 'team_library_content:read', 'file_dev_resources:read', 'file_dev_resources:write', 'folder_metadata:read', 'folders:read'],
+} as const;

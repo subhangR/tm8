@@ -5,7 +5,7 @@ import { isIP, type LookupFunction } from 'node:net';
 import { resolvePublicAddresses } from './outbound-guard.js';
 
 export interface McpHttpResult { status: number; headers: Record<string,string>; body: string }
-export interface McpHttpInput { url: string; method: 'GET'|'POST'|'PATCH'|'DELETE'; headers?: Record<string,string>; body?: string }
+export interface McpHttpInput { url: string; method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE'; headers?: Record<string,string>; body?: string }
 /** Policy must come from the approved definition, never request input. */
 export async function mcpHttp(input: McpHttpInput, allowPrivateNetwork = false): Promise<McpHttpResult> {
   const url = new URL(input.url);
@@ -35,7 +35,7 @@ export async function mcpHttp(input: McpHttpInput, allowPrivateNetwork = false):
         // Never forward credentials to a redirect destination.
         if(status>=300 && status<400) { reject(new Error('MCP endpoint redirect refused'));return; }
         const headers: Record<string,string>={};
-        for(const name of ['content-type','mcp-session-id','www-authenticate']) {const value=res.headers[name];if(typeof value==='string')headers[name]=value;}
+        for(const name of ['content-type','mcp-session-id','www-authenticate','retry-after']) {const value=res.headers[name];if(typeof value==='string')headers[name]=value;}
         resolve({status,headers,body:Buffer.concat(chunks).toString('utf8')});
       });
     });

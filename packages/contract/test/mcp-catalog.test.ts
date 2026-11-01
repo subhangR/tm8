@@ -30,6 +30,14 @@ describe('the launch catalog', () => {
     expect(mcpCatalogEntry('figma')?.setup).toBe('approval');
   });
 
+  it('separates Figma API credentials and identity from the approved remote MCP client', () => {
+    expect(mcpCatalogEntry('figma.api')).toMatchObject({kind:'first_party',logo:'figma',setup:'registration',
+      definition:{catalogId:'figma.api',firstParty:true,url:'https://api.figma.com/v1',approved:false}});
+    expect(mcpCatalogEntry('figma')).toMatchObject({kind:'remote',setup:'approval',
+      definition:{catalogId:'figma',url:'https://mcp.figma.com/mcp',approved:false}});
+    expect(mcpCatalogEntry('figma.api')?.requirement).toContain('TM8_MCP_CLIENT_SECRET_FIGMA_API');
+  });
+
   it('serves the three Google cards as first-party, at the host\'s own identity URL', () => {
     const google = MCP_CATALOG.filter((entry) => entry.id.startsWith('google.'));
     expect(google).toHaveLength(3);

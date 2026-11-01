@@ -5,6 +5,7 @@ export interface OAuthIdentity { readonly identityId?: string }
 import type { IntegrationKeyProvider as KeyProvider } from './credentials.js';
 import { openSecret, sealSecret, type OAuthPendingSecretBinding } from './secret-box.js';
 import { mcpHttp } from './transport.js';
+import { providerGrantedScopes } from './providers.js';
 import { readOAuthToken } from './oauth-token.js';
 import type { McpOAuthSecret } from './credentials.js';
 
@@ -506,7 +507,7 @@ export class McpOAuth<Claims extends OAuthIdentity = OAuthIdentity> {
       `OAuth token exchange failed: ${new URL(pending.metadata.token_endpoint).origin} answered ${status}${code ? ` (${code})` : ''}.${code === 'invalid_grant' || code === 'invalid_request' ? redirectDiagnosis(pending.redirectUri) : ''}`,
       'upstream_unavailable'));
     // RFC 6749 §5.1: an omitted scope is the requested grant, not an empty grant.
-    const grantedScopes = grantedScope === undefined ? pending.requestedScopes : grantedScope.split(' ').filter(Boolean);
+    const grantedScopes = grantedScope === undefined ? pending.requestedScopes : providerGrantedScopes(pending.resource, grantedScope);
     return {
       ...target,
       label: taken.label,

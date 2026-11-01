@@ -20,6 +20,8 @@ import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafel
 import { GOOGLE_OAUTH_ISSUER, McpToolSchema } from '@tm8/contract';
 import { GoogleFirstPartyHost } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
+import { FIGMA_NATIVE } from '@tm8/integrations';
+import { FigmaFirstPartyHost, type FigmaHostOptions } from './first-party/figma.js';
 import { GOOGLE_FIRST_PARTY } from '@tm8/contract';
 import { FirstPartyRefused, type FirstPartyOAuthHost } from './first-party/host.js';
 import { createMcpEndpointRoute, type McpEndpointRoute } from './endpoint.js';
@@ -37,6 +39,7 @@ export interface McpRuntimeHandlerOptions {
  keys?:KeyProvider;
  /** The Google first-party host (§8.1). Defaults to Google's endpoints with no client configured. */
  google?:GoogleHostOptions;
+ figma?:FigmaHostOptions;
  /**
   * §7.1 / G14: receives the `POST /mcp` route for the HTTP server to mount, built
   * from the very same proxy ports as `mcp.proxy.request` — one credential
@@ -87,6 +90,8 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const google=new GoogleFirstPartyHost(options.google??{client:()=>undefined});
  const hosts=new Map<string,FirstPartyOAuthHost>(GOOGLE_FIRST_PARTY.map(service=>[service.catalogId,google]));
  const resources=new Map<string,FirstPartyOAuthHost>(GOOGLE_FIRST_PARTY.map(service=>[service.resource,google]));
+ const figma=new FigmaFirstPartyHost(options.figma??{client:()=>undefined});
+ hosts.set(FIGMA_NATIVE.catalogId,figma);resources.set(FIGMA_NATIVE.resource,figma);
  const firstParty=(value:{catalogId?:string;firstParty?:boolean}):FirstPartyOAuthHost|undefined=>value.firstParty===true?hosts.get(value.catalogId??''):undefined;
  const proxy=new McpProxy({credentials,authorize:options.authorize,definition,firstParty});
  // §7.1: the remote endpoint is NOT a catalog operation — it authenticates its

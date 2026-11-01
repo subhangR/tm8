@@ -1,4 +1,4 @@
-import { PROVIDERS } from '@tm8/integrations/providers';
+import { FIGMA_NATIVE, PROVIDERS } from '@tm8/integrations/providers';
 /**
  * The connector catalog (§8.2) — what the Connectors page's **Discover** tab
  * offers, and the source `mcp.catalog.list` serves.
@@ -188,6 +188,16 @@ export const MCP_CATALOG: readonly McpCatalogEntry[] = [
     requirement: GOOGLE_REQUIREMENT + ' Drive access is limited to the files you open with tm8, not your whole Drive.',
     scopeLabels: ['Read files you open with tm8', 'Create files'],
     definition: google('google.drive', 'Google Drive served in-process by tm8 (first-party), limited to files opened with tm8.'),
+  },
+  {
+    id: FIGMA_NATIVE.catalogId, title: 'Figma API', logo: 'figma', kind: 'first_party', available: true,
+    category: 'Design', publisher: 'Figma', setup: 'registration',
+    summary: 'Read design files and libraries, and manage comments, reactions and development links.',
+    docsUrl: 'https://developers.figma.com/docs/rest-api/',
+    requirement: 'Register a Figma OAuth app for this server and set TM8_MCP_CLIENT_ID_FIGMA_API and TM8_MCP_CLIENT_SECRET_FIGMA_API. File permissions, seats and plan limits still apply. This API connection is separate from Figma’s remote MCP server.',
+    definition: {name:'figma-api',transport:'http',url:FIGMA_NATIVE.resource,envKeys:[],headerKeys:[],
+      auth:{type:'oauth2',scopes:[...FIGMA_NATIVE.scopes]},approved:false,enabled:true,
+      catalogId:FIGMA_NATIVE.catalogId,firstParty:true,provenance:'Figma OAuth and REST API served in-process by TM8.'},
   },
   ...PROVIDERS.map((provider): McpCatalogEntry => ({
     id: provider.id, title: provider.title, logo: provider.id, kind: 'remote', available: true,
