@@ -122,6 +122,14 @@ describe('who may make a group (D28)', () => {
     expect(creates).toEqual([]);
   });
 
+  // The CLI's mutation envelope carries the caller's actor as `actorId` (an agent
+  // run always has one): the body passes the strict input schema, and the agent
+  // meets the human-only refusal, not invalid_input.
+  it('refuses an agent whose body names its actor, as the CLI sends it, as forbidden', async () => {
+    refused(await create(agent.token, { actorId: persona, title: 'bridges-test', participants: [] }), 403, 'forbidden');
+    expect(creates).toEqual([]);
+  });
+
   it('refuses another member: only the number\'s owner makes groups on it', async () => {
     const error = refused(await create(other.token, { title: 'agile cheetah', participants: [] }), 403, 'forbidden');
     expect(error.details.reason).toBe('not_connection_owner');
@@ -157,6 +165,12 @@ describe('bridges.conversations.create', () => {
         results: [{ id: '919876543210@s.whatsapp.net', status: 'added' }, { id: '922222222222@s.whatsapp.net', status: 'invite_needed' }],
       },
     });
+  });
+
+  it('takes the command envelope\'s actorId from a human acting as their own member', async () => {
+    const result = ok(await create(human.token, { actorId: member, title: 'bridges-test', participants: [] }));
+    expect(result).toMatchObject({ connectionId: connection, bridge: null, group: { subject: 'bridges-test' } });
+    expect(creates.at(-1)).toMatchObject({ connectionId: connection, subject: 'bridges-test', participants: [] });
   });
 
   it('makes the group and bridges it to a chat with a teammate in one call; a retry makes no second group', async () => {

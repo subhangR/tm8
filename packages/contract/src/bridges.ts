@@ -387,8 +387,7 @@ export interface BridgeConnectionView {
 }
 export interface BridgeConnectionListResult { items: BridgeConnectionView[] }
 
-export interface BridgeConnectionBeginInput {
-  clientMutationId: string;
+export interface BridgeConnectionBeginInput extends BridgeCommand {
   provider: BridgeProvider;
   label?: string;
   /** Relink one of the caller's own connections instead of linking a new number. */
@@ -405,15 +404,14 @@ export interface BridgeConnectionBeginResult {
   connection: BridgeConnectionView;
   runtime: 'connecting' | 'offline';
 }
-export interface BridgeConnectionOfferInput {
-  clientMutationId: string;
+export interface BridgeConnectionOfferInput extends BridgeCommand {
   connectionId?: string;
   spaceId: SpaceId;
   visibility?: BridgeConnectionOfferVisibility;
   label?: string;
 }
 export interface BridgeConnectionOfferResult { connection: BridgeConnectionView; credentialId: EntityId }
-export interface BridgeConnectionWithdrawInput { clientMutationId: string; connectionId?: string; spaceId: SpaceId }
+export interface BridgeConnectionWithdrawInput extends BridgeCommand { connectionId?: string; spaceId: SpaceId }
 export interface BridgeConnectionWithdrawResult {
   connection: BridgeConnectionView;
   credentialId: EntityId;
@@ -443,8 +441,8 @@ export interface BridgeHandover {
   settledAt: string | null;
   settledBy: EntityId | null;
 }
-export interface BridgeHandoverOfferInput { clientMutationId: string; bridgeId?: EntityId; toConnectionId: string }
-export interface BridgeHandoverSettleInput { clientMutationId: string; handoverId?: string }
+export interface BridgeHandoverOfferInput extends BridgeCommand { bridgeId?: EntityId; toConnectionId: string }
+export interface BridgeHandoverSettleInput extends BridgeCommand { handoverId?: string }
 export interface BridgeHandoverResult {
   handover: BridgeHandover;
   /** The bridge after the call: on accept, riding the new connection. */
@@ -452,7 +450,7 @@ export interface BridgeHandoverResult {
   /** accept only: outbox rows still pending that now go out on the new number. */
   readdressed?: number;
 }
-export interface BridgeConnectionRemoveInput { clientMutationId: string; connectionId?: string }
+export interface BridgeConnectionRemoveInput extends BridgeCommand { connectionId?: string }
 /**
  * `runtime: 'logged_out'`: the runtime was told to log the device out and wipe
  * its keys. `'offline'`: no runtime was connected; it never reconnects a
@@ -479,8 +477,7 @@ export const BRIDGE_GROUP_PARTICIPANTS_MAX = 256;
  * only (D28); with `bridge`, also a space admin of `bridge.spaceId`, checked
  * before the group is made, so a refusal leaves no group behind.
  */
-export interface BridgeConversationCreateInput {
-  clientMutationId: string;
+export interface BridgeConversationCreateInput extends BridgeCommand {
   connectionId?: string;
   title: string;
   /** Phone numbers in international form (`+91 98765 43210`) or WhatsApp user JIDs; the number itself is added anyway. */
@@ -532,8 +529,7 @@ export interface BridgeConnectionAuthFrame {
 /** `bridges.work.start` (v2 §4.3): the agent's door to `/work`, the same server path. */
 export const BRIDGE_WORK_ITEMS_MAX = 5;
 export type BridgeWorkEffort = 'low' | 'high' | 'max';
-export interface BridgeWorkStartInput {
-  clientMutationId: string;
+export interface BridgeWorkStartInput extends BridgeCommand {
   bridgeId?: EntityId;
   /** One line each; one child task and one worker per item. */
   items: string[];
@@ -556,6 +552,8 @@ export interface BridgeWorkStartResult {
 }
 
 const Id = z.string().uuid();
+// The command envelope: the CLI sends `actorId` on every mutation when it has an
+// actor (an agent run always does), so every strict command input spreads this.
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, bridgeId: Id.optional(), expectedVersion: z.number().int().positive() };
 const OneLine = (max: number) => z.string().trim().min(1).max(max).regex(/^[^\r\n]*$/, 'must be one line');
@@ -692,35 +690,35 @@ export const BridgeConnectionAuthFlowSchema: z.ZodType<BridgeConnectionAuthFlow>
   z.object({ kind: z.literal('pairing'), phone: z.string().regex(/^\+?[0-9]{6,20}$/, 'a phone number in international form, digits only') }).strict(),
 ]);
 export const BridgeConnectionBeginInputSchema: z.ZodType<BridgeConnectionBeginInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   provider: BridgeProviderSchema,
   label: ConnectionLabel.optional(),
   connectionId: Id.optional(),
   authFlow: BridgeConnectionAuthFlowSchema.optional(),
 }).strict();
 export const BridgeConnectionOfferInputSchema: z.ZodType<BridgeConnectionOfferInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   connectionId: Id.optional(),
   spaceId: Id,
   visibility: z.enum(['private', 'public']).optional(),
   label: ConnectionLabel.optional(),
 }).strict();
 export const BridgeConnectionWithdrawInputSchema: z.ZodType<BridgeConnectionWithdrawInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   connectionId: Id.optional(),
   spaceId: Id,
 }).strict();
 export const BridgeHandoverOfferInputSchema: z.ZodType<BridgeHandoverOfferInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   bridgeId: Id.optional(),
   toConnectionId: Id,
 }).strict();
 export const BridgeHandoverSettleInputSchema: z.ZodType<BridgeHandoverSettleInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   handoverId: Id.optional(),
 }).strict();
 export const BridgeConnectionRemoveInputSchema: z.ZodType<BridgeConnectionRemoveInput> = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   connectionId: Id.optional(),
 }).strict();
 export const BridgeConnectionOfferSchema: z.ZodType<BridgeConnectionOffer> = z.object({
@@ -743,7 +741,7 @@ export const BridgeConnectionAuthFrameSchema: z.ZodType<BridgeConnectionAuthFram
   expiresAt: z.string().datetime({ offset: true }),
 }).strict().refine(f => (f.qrPng === undefined) !== (f.pairingCode === undefined), 'exactly one of qrPng and pairingCode');
 export const BridgeWorkStartInputSchema = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   bridgeId: Id.optional(),
   items: z.array(OneLine(500)).min(1).max(BRIDGE_WORK_ITEMS_MAX),
   options: z.object({
@@ -754,7 +752,7 @@ export const BridgeWorkStartInputSchema = z.object({
 }).strict();
 
 export const BridgeConversationCreateInputSchema = z.object({
-  clientMutationId: z.string().min(1),
+  ...Command,
   connectionId: Id.optional(),
   title: OneLine(BRIDGE_GROUP_TITLE_MAX),
   participants: z.array(z.string().trim().min(1).max(64)).max(BRIDGE_GROUP_PARTICIPANTS_MAX),
