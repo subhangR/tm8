@@ -90,10 +90,10 @@ export function connectFailure(error: unknown, context: { name: string; admin: b
   // if tm8's callback URL is still the bind address then that is the one thing
   // an administrator has to change, so it replaces the row's own hint rather
   // than sitting behind it (#1296's `redirectDiagnosis`).
-  if (!context.admin || !/loopback address/.test(messageOf(error))) return failure;
+  if (!context.admin || failure.status === 'provider_blocked' || !/loopback address/.test(messageOf(error))) return failure;
   return {
     ...failure,
-    adminHint: `tm8 is asking ${context.name} to redirect back to a loopback address, which hosted providers refuse. Set TM8_PUBLIC_ORIGIN to this server's public HTTPS origin and restart tm8, then register its /mcp/oauth/callback with the provider.`,
+    adminHint: `tm8 is asking ${context.name} to redirect back to a loopback address. Some providers require a public HTTPS redirect. Set TM8_PUBLIC_ORIGIN to this server's public HTTPS origin and restart tm8, then register its /mcp/oauth/callback with the provider.`,
     copyable: 'TM8_PUBLIC_ORIGIN',
     settings: true,
   };
@@ -112,6 +112,9 @@ function classify(error: unknown, context: { name: string; admin: boolean }): Co
     ? { ...base, message: hint, retry: false, settings: true, ...(copyable ? { copyable } : {}) }
     : { ...base, message: `An administrator needs to finish setting up ${name}.`, retry: false };
 
+  if (/^OAuth client setup required:/.test(raw)) {
+    return adminSetup(`${name} needs this tm8 server’s own OAuth client configured before sign-in can start.`);
+  }
   // An admin changed the connector mid-flow. The state was already spent, so
   // the only way forward is a fresh Connect.
   if (/^MCP connector changed/.test(raw) || code === 'conflict') {

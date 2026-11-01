@@ -118,8 +118,8 @@ describe('native MCP management', () => {
     const scroll = screen.getByTestId('connectors-body');
     expect(container.querySelectorAll('.set-section')).toHaveLength(1);
     expect(container.querySelectorAll('.set-section__scroll')).toHaveLength(1);
-    expect(scroll.contains(screen.getByRole('button', { name: 'Continue to sign-in' }))).toBe(true);
-    expect(screen.getAllByText('Connectors')).toHaveLength(1);
+    expect(scroll.contains(await screen.findByRole('link', { name: 'Continue to Calendar' }))).toBe(true);
+    expect(screen.getAllByText('Connect Apps')).toHaveLength(1);
   });
 
   it('tests with the connection it would use and displays discovered tools', async () => {

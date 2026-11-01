@@ -72,14 +72,13 @@ describe('S14(c)/S2 — a logo slug is a bundled mark, never an address', () => 
     }
   });
 
-  it('renders the catalog with no image element and no fetch', async () => {
+  it('uses only reviewed local brand assets and no provider fetch', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     renderDiscover([entry({ logo: 'notion' }), entry({ id: 'odd', title: 'Odd', logo: 'an-unknown-provider-slug' })], true);
     await screen.findByText('Notion');
     await screen.findByText('Odd');
-    // Any of these would mean a slug had been turned into an address: an image,
-    // an SVG sprite reference, or a CSS background URL.
-    expect(document.querySelectorAll('img, image, picture, source, use, [src], [srcset]')).toHaveLength(0);
+    expect([...document.querySelectorAll('img')].map(image=>image.getAttribute('src'))).toEqual(['/connector-logos/notion.png']);
+    expect(document.querySelectorAll('image, picture, source, use, [srcset]')).toHaveLength(0);
     expect([...document.querySelectorAll<HTMLElement>('[style]')].some(el => el.style.cssText.includes('url('))).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
@@ -190,7 +189,7 @@ describe('S7 — the Discover card has one button, and B22/B25 decides which', (
     expect(requested.getAttribute('aria-disabled')).toBe('true');
     cleanup();
     renderDiscover([entry({ added: [{ serverId: '22222222-2222-4222-8222-222222222222', approved: true }] })], false);
-    expect(await screen.findByRole('button', { name: 'Added' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Manage accounts' })).toBeTruthy();
   });
 
   it('refuses Connect and Add on an entry that is not available yet', async () => {
@@ -214,5 +213,26 @@ describe('an administrator\'s custom connector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add connector' }));
     await waitFor(() => expect(live.register).toHaveBeenCalledWith(expect.objectContaining({ approved: true })));
     expect(live.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('Connect Apps browsing', () => {
+  it('filters by category and search, and opens provider details without inventing tools', async () => {
+    renderDiscover([
+      entry({ category: 'Productivity', publisher: 'Notion' }),
+      entry({ id: 'github', title: 'GitHub', logo: 'github', category: 'Development', publisher: 'GitHub' }),
+    ], true);
+    await screen.findByRole('button', { name: 'About GitHub' });
+    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    expect(screen.queryByRole('button', { name: 'About Notion' })).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'missing app' } });
+    expect(screen.getByText('No apps match your search.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Notion' }));
+    const detail = screen.getByRole('dialog', { name: 'Notion app details' });
+    expect(detail.textContent).toContain('Available tools are discovered');
+    expect(detail.textContent).not.toContain('69 tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Close app details' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

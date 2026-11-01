@@ -14,7 +14,7 @@
 import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { captureMcpCallback, rememberMcpOAuth, takeConnectedToast, type McpCallback } from './oauth-callback';
+import { captureMcpCallback, rememberMcpOAuth, takeConnectedToast, takeConnectionFailure, type McpCallback } from './oauth-callback';
 import { McpOAuthCallback } from './McpOAuthCallback';
 import { OAUTH_MESSAGE_TYPE } from './useConnect';
 afterEach(()=>{cleanup();sessionStorage.clear();localStorage.clear();});
@@ -49,10 +49,12 @@ it('follows the stash HINT to the node the connect was begun against',()=>{
 });
 const callback: McpCallback={valid:true,serverId:'local',spaceId:'space',input:{state:'one',code:'private-code'}};
 it('completes once under StrictMode without displaying callback secrets',async()=>{
-  const complete=vi.fn(async()=>({id:'cred'})); render(<StrictMode><McpOAuthCallback callback={callback} complete={complete} opener={null}/></StrictMode>);
-  await screen.findByText(/Your account is connected/);expect(complete).toHaveBeenCalledTimes(1);
+  const replace=vi.fn(); const view={location:{origin:window.location.origin,replace},setTimeout:window.setTimeout.bind(window),close:vi.fn(),opener:null} as unknown as Window;
+  const complete=vi.fn(async()=>({id:'cred'})); render(<StrictMode><McpOAuthCallback callback={callback} complete={complete} opener={null} view={view}/></StrictMode>);
+  await screen.findByRole('heading',{name:'Account connected'});expect(complete).toHaveBeenCalledTimes(1);
   expect(document.body.textContent).not.toContain('private-code');
-  expect(screen.getByRole('link').getAttribute('href')).toBe('/#/s/space/settings/connectors');
+  await waitFor(()=>expect(replace).toHaveBeenCalledWith('/#/s/space/settings/connectors'));
+  expect(screen.queryByRole('link')).toBeNull();
 });
 it('S14(a): posts one type, to its own origin, and nothing else',async()=>{
   const postMessage=vi.fn();
@@ -86,7 +88,30 @@ it('§10.2: with no opener it lands on the return_to the SERVER kept',async()=>{
 });
 it('offers recovery without showing provider error text',async()=>{
   const complete=vi.fn().mockRejectedValue(new Error('provider-token-secret'));
-  render(<McpOAuthCallback callback={callback} complete={complete} opener={null}/>);
-  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('start a new connection'));
+  const replace=vi.fn(); const view={location:{origin:window.location.origin,replace},setTimeout:window.setTimeout.bind(window),close:vi.fn(),opener:null} as unknown as Window;
+  render(<McpOAuthCallback callback={callback} complete={complete} opener={null} view={view}/>);
+  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('couldn’t finish'));
+  expect(screen.getByRole('link',{name:'Open Connect Apps'}).getAttribute('href')).toBe('/#/s/space/settings/connectors');
   expect(document.body.textContent).not.toContain('provider-token-secret');
+  await waitFor(()=>expect(replace).toHaveBeenCalledWith('/#/s/space/settings/connectors'));
+  expect(takeConnectionFailure()).toBe('Sign-in couldn’t finish. Choose the app and connect again.');
+  expect(takeConnectionFailure()).toBeNull();
+});
+it('returns to the app if the browser refuses to close a completed popup',async()=>{
+  const replace=vi.fn(); const close=vi.fn(); const opener={postMessage:vi.fn()} as unknown as Window;
+  const view={location:{origin:window.location.origin,replace},setTimeout:window.setTimeout.bind(window),close,closed:false,opener} as unknown as Window;
+  render(<McpOAuthCallback callback={callback} complete={async()=>({id:'cred'})} opener={opener} view={view}/>);
+  await waitFor(()=>expect(replace).toHaveBeenCalledWith('/#/s/space/settings/connectors'));
+  expect(close).toHaveBeenCalled();
+});
+it('does not exchange the single-use code again when auth boot remounts the callback',async()=>{
+  let finish!: (result: {id:string})=>void;
+  const complete=vi.fn(()=>new Promise<{id:string}>(resolve=>{finish=resolve;}));
+  const view={location:{origin:window.location.origin,replace:vi.fn()},setTimeout:window.setTimeout.bind(window),close:vi.fn(),opener:null} as unknown as Window;
+  const first=render(<McpOAuthCallback callback={callback} complete={complete} opener={null} view={view}/>);
+  first.unmount();
+  render(<McpOAuthCallback callback={callback} complete={complete} opener={null} view={view}/>);
+  finish({id:'cred'});
+  await screen.findByRole('heading',{name:'Account connected'});
+  expect(complete).toHaveBeenCalledTimes(1);
 });

@@ -418,7 +418,10 @@ export function ConnectorDetail({ server, port, admin, busy, run, onDeleted, pro
   async function patchDefinition(patch: Parameters<McpPort['patch']>[1], success: string) {
     await run(() => port.patch(server, patch), success);
   }
-  const startAdding = (as: McpCredentialScope) => { setAdding(true); setScope(as); };
+  const startAdding = (as: McpCredentialScope) => {
+    if (as === 'member' && server.auth === 'oauth' && mine.length === 0) { void connect.start(server, { label: server.title, scope: as }); return; }
+    setAdding(true); setScope(as);
+  };
 
   return <div className="mcp-detail">
     <div className="mcp-detail__status">

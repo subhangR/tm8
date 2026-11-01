@@ -116,3 +116,13 @@ it('deletes a connector through mcp.servers.delete and through the generic entit
  const live=await scratch.query<{id:string}>('select id from public.entities where id=any($1::uuid[]) and deleted_at is null',[[viaMcp.entity.id,viaGeneric.entity.id]]);
  expect(live).toEqual([]);
 });
+
+it('persists large provider catalogs without removing the bounded health cache limit',async()=>{
+ const c=await create('large_catalog');
+ const result={ready:true,reason:'ready',tools:[{name:'read_page',description:'x'.repeat(300_000),inputSchema:{type:'object'}}],checkedAt:new Date().toISOString()};
+ await as(ownerIdentity,q=>q.rpc('record_mcp_server_health',[c.entity.id,JSON.stringify(result)]));
+ expect((await as(ownerIdentity,q=>loadMcpServer(q,c.entity.id))).health?.tools[0]?.description).toHaveLength(300_000);
+ const oversized={...result,tools:[{...result.tools[0],description:'x'.repeat(4_194_304)}]};
+ await expect(as(ownerIdentity,q=>q.rpc('record_mcp_server_health',[c.entity.id,JSON.stringify(oversized)]))).rejects.toThrow(/invalid MCP health result/);
+ expect((await as(memberIdentity,q=>loadMcpServer(q,c.entity.id))).health).toBeUndefined();
+});

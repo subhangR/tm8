@@ -1272,3 +1272,47 @@
     margin-left: 0;
   }
 }
+
+/* Connect Apps uses the settings palette in both themes. */
+.connect-apps { padding-top: 12px; }
+.connect-apps__intro h3 { font-size: 25px; letter-spacing: -.6px; margin: 12px 0 6px; }
+.connect-apps__intro p { color: var(--pn-ink-2); margin: 0 0 24px; }
+.connect-apps__search { display: flex; align-items: center; gap: 10px; border: 1px solid var(--pn-line-2); border-radius: 10px; padding: 10px 14px; background: var(--pn-paper); }
+.connect-apps__search input { width: 100%; font: inherit; color: var(--pn-ink); border: 0; outline: 0; background: transparent; }
+.connect-apps__search:focus-within { outline: 2px solid rgba(var(--pn-brand-rgb), .6); outline-offset: 2px; }
+.connect-apps__categories { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 24px; }
+.connect-apps__categories button { min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--pn-ink-2); font-weight: 500; }
+.connect-apps__categories button[aria-pressed='true'] { color: var(--pn-ink); background: rgba(var(--pn-brand-rgb), .12); }
+.connect-apps__heading { display: flex; justify-content: space-between; align-items: baseline; color: var(--pn-ink-2); font-size: 12px; }
+.connect-apps__heading h4 { color: var(--pn-ink); font-size: 16px; margin: 0 0 14px; }
+.connect-apps__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr)); gap: 14px; }
+.connect-apps__card { min-width: 0; display: flex; flex-direction: column; align-items: stretch; padding: 20px; border: 1px solid var(--pn-line); background: var(--pn-card); border-radius: 12px; transition: border-color .15s, box-shadow .15s; }
+.connect-apps__card:hover { border-color: var(--pn-line-2); box-shadow: 0 4px 18px rgba(var(--pn-brand-rgb), .06); }
+.mcp-settings .connect-apps__card-open { display: flex; gap: 12px; align-items: center; padding: 0; border: 0; background: transparent; text-align: left; }
+.connect-apps__card-open span { display: grid; gap: 5px; }
+.connect-apps__card-open strong { font-size: 16px; }
+.connect-apps__card-open small { font-size: 11px; font-weight: 400; color: var(--pn-ink-2); }
+.connect-apps__card > p { font-size: 13px; color: var(--pn-ink-2); flex: 1; margin: 16px 0 22px; }
+.connect-apps__card footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+.connect-apps__card footer button { min-height: 30px; font-size: 12px; padding: 5px 9px; }
+.connect-apps__connected { color: var(--pn-ink); }
+.connect-apps__detail p { line-height: 1.6; }
+.mcp-logo[data-brand="official"] { width: 32px; height: 32px; padding: 0; overflow: hidden; box-sizing: border-box; background: #fff; border-color: #e5e7eb; }
+.mcp-logo img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.mcp-logo[data-logo="github"] img { transform: scale(1.3); }
+.mcp-logo[data-logo="notion"] img { transform: scale(1.2); }
+.mcp-logo[data-logo="google-calendar"] img { transform: scale(1.2); }
+.mcp-logo[data-logo="google-drive"] img,
+.mcp-logo[data-logo="google-gmail"] img { transform: scale(1.04); }
+.mcp-chip .mcp-logo[data-brand="official"] { width: 20px; height: 20px; padding: 0; }
+@media (prefers-reduced-motion: reduce) { .connect-apps__card { transition: none; } }
+.mcp-drawer[data-view] [data-pane] { display: none; }
+.mcp-drawer[data-view='Accounts'] [data-pane='Accounts'],
+.mcp-drawer[data-view='Tools'] [data-pane='Tools'],
+.mcp-drawer[data-view='Information'] [data-pane='Information'],
+.mcp-drawer[data-view='Settings'] [data-pane='Settings'] { display: block; }
+.mcp-drawer.connect-apps__dialog { position: fixed; inset: 0; margin: auto; width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; box-sizing: border-box; padding: 24px; color: var(--pn-ink); background: var(--pn-card); border: 1px solid var(--pn-line-2); border-radius: 14px; }
+.connect-apps__dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); }
+.connect-apps__dialog .mcp-drawer__head { align-items: center; margin-bottom: 20px; }
+.connect-apps__dialog .mcp-drawer__head h3 { font-size: 22px; }
+.connect-apps__dialog .mcp-drawer__head > button { margin-left: auto; }

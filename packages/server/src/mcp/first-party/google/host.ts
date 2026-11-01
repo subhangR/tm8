@@ -73,6 +73,10 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     return TOOLS[this.service(definition).catalogId].some(tool => tool.scopes.some(scope => granted.has(scope)));
   }
 
+  scopesFor(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): string[] {
+    return googleScopesFor(this.service(definition), grantedScopes);
+  }
+
   /**
    * The tools this connection is MISSING for want of a scope — for the health
    * check only, never for a model's tool list. A gated-off tool is not missing:

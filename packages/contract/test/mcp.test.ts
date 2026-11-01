@@ -4,6 +4,16 @@ import { McpServerDefinitionSchema, McpSelectionsSchema, McpOAuthCallbackInputSc
 import { EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema } from '../src/schemas.js';
 const definition = { name: 'fixture', transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false };
 describe('MCP metadata boundary', () => {
+  it('preserves standard provider tool metadata when recording connector health', () => {
+    const tool = { name: 'read_status', title: 'Read status', inputSchema: { type: 'object' },
+      outputSchema: { type: 'object', properties: { ready: { type: 'boolean' } } },
+      annotations: { title: 'Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      icons: [{ src: 'https://example.com/status.svg', mimeType: 'image/svg+xml', sizes: ['any'] }],
+      execution: { taskSupport: 'forbidden' }, _meta: { 'example.com/tool': 'status' } };
+    const health = { ready: true, reason: 'ready', checkedAt: new Date().toISOString(), tools: [tool] };
+    expect(McpTestResultSchema.parse(health).tools).toEqual([tool]);
+    expect(McpTestResultSchema.safeParse({ ...health, tools: [{ ...tool, annotations: { readOnlyHint: 'yes' } }] }).success).toBe(false);
+  });
   it('admits a public definition and state', () => {
     expect(McpServerDefinitionSchema.safeParse(definition).success).toBe(true);
     expect(EntityStateSchema.safeParse({kind:'mcp_server',definition}).success).toBe(true);

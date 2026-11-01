@@ -1,3 +1,4 @@
+import { PROVIDERS } from '@tm8/integrations/providers';
 /**
  * The connector catalog (§8.2) — what the Connectors page's **Discover** tab
  * offers, and the source `mcp.catalog.list` serves.
@@ -55,12 +56,15 @@ export const McpCatalogEntrySchema = z.object({
   requirement: z.string().max(2000).optional(),
   /**
    * `remote` relays to a provider-hosted MCP server; `first_party` is served by
-   * tm8's own in-process resource server, because the provider hosts none
+   * tm8's own in-process resource server over the provider API
    * (§8.1). The UI derives its Type column from this plus `definition.transport`
    * rather than from a label computed here.
    */
   kind: z.enum(['remote', 'first_party']),
   logo: LogoSlug,
+  category: z.enum(['Development', 'Design', 'Communication', 'Productivity', 'Data', 'Research']).optional(),
+  publisher: z.string().min(1).max(80).optional(),
+  setup: z.enum(['ready', 'registration', 'approval']).optional(),
   /**
    * False while the entry is announced but not usable yet — the Google cards
    * until the first-party host and its Google OAuth path land (B15). The UI
@@ -154,17 +158,10 @@ const SLACK_SCOPES = [
   'canvases:read', 'canvases:write', 'lists:read', 'lists:write', 'emoji:read',
 ];
 
-/**
- * §8.2's launch catalog.
- *
- * `linear`, `github` and `atlassian` are deliberately ABSENT: the plan marks
- * each provider's dynamic-client-registration support unverified, and a card
- * whose Connect always fails is worse than no card (B15). They join once a live
- * registration check passes.
- */
+/** Curated catalog. Provider adapters live in the reusable integrations package. */
 export const MCP_CATALOG: readonly McpCatalogEntry[] = [
   {
-    id: 'google.gmail', title: 'Gmail', logo: 'google-gmail', kind: 'first_party', available: true,
+    id: 'google.gmail', title: 'Gmail', logo: 'google-gmail', kind: 'first_party', available: true, category: 'Productivity', publisher: 'Google', setup: 'registration',
     docsUrl: 'https://developers.google.com/workspace/gmail/api/guides',
     summary: 'Search and read mail, and prepare drafts, as the signed-in Google account.',
     requirement: GOOGLE_REQUIREMENT + ' Gmail scopes are restricted: past 100 users Google requires app verification and an annual CASA assessment.',
@@ -173,7 +170,7 @@ export const MCP_CATALOG: readonly McpCatalogEntry[] = [
     definition: google('google.gmail', 'Gmail served in-process by tm8 (first-party). Read and draft; sending is gated off.', { gmailSend: false }),
   },
   {
-    id: 'google.calendar', title: 'Google Calendar', logo: 'google-calendar', kind: 'first_party', available: true,
+    id: 'google.calendar', title: 'Google Calendar', logo: 'google-calendar', kind: 'first_party', available: true, category: 'Productivity', publisher: 'Google', setup: 'registration',
     docsUrl: 'https://developers.google.com/workspace/calendar/api/guides/overview',
     summary: 'List calendars and events, find free time, and create or update events.',
     requirement: GOOGLE_REQUIREMENT + ' Connecting Calendar after Gmail on the same account asks only for the Calendar scopes.',
@@ -181,44 +178,24 @@ export const MCP_CATALOG: readonly McpCatalogEntry[] = [
     definition: google('google.calendar', 'Google Calendar served in-process by tm8 (first-party).'),
   },
   {
-    id: 'google.drive', title: 'Google Drive', logo: 'google-drive', kind: 'first_party', available: true,
+    id: 'google.drive', title: 'Google Drive', logo: 'google-drive', kind: 'first_party', available: true, category: 'Productivity', publisher: 'Google', setup: 'registration',
     docsUrl: 'https://developers.google.com/workspace/drive/api/guides/about-sdk',
     summary: 'Search files, read documents and export them, in the files you open with tm8.',
     requirement: GOOGLE_REQUIREMENT + ' Drive access is limited to the files you open with tm8, not your whole Drive.',
     scopeLabels: ['Read files you open with tm8', 'Create files'],
     definition: google('google.drive', 'Google Drive served in-process by tm8 (first-party), limited to files opened with tm8.'),
   },
-  {
-    id: 'notion', title: 'Notion', logo: 'notion', kind: 'remote', available: true,
-    docsUrl: 'https://developers.notion.com/guides/mcp/get-started-with-mcp',
-    summary: 'Search, read, create and update pages and databases. Each member signs in with their own Notion workspace account.',
-    definition: remote('notion', 'notion', 'https://mcp.notion.com/mcp', { type: 'oauth2' },
-      'Notion remote MCP server (official). OAuth with dynamic client registration.'),
-  },
-  {
-    id: 'slack', title: 'Slack', logo: 'slack', kind: 'remote', available: true,
-    clientSecretEnv: 'TM8_MCP_CLIENT_SECRET_SLACK',
-    docsUrl: 'https://docs.slack.dev/ai/mcp-server/',
-    summary: 'Search messages and files, read channels and threads, send messages and manage canvases as the signed-in member.',
-    requirement: 'Slack admits only internal or directory-published Slack apps and has no dynamic client registration. Create a Slack app in your workspace, enable MCP for it, add <tm8 public origin>/mcp/oauth/callback as a redirect URL and the user scopes below, then enter its Client ID here. Put its Client Secret in the server environment as TM8_MCP_CLIENT_SECRET_SLACK and restart tm8.',
-    scopeLabels: ['Search messages, files and users', 'Read channel and thread history', 'Send messages', 'Read and write canvases and lists'],
-    // No `clientId`/`clientSecretEnv` in the DEFINITION, and that is not an
-    // omission: Slack has no dynamic registration, so the client id is the
-    // admin's own Slack app, and the secret variable they set rides on the entry
-    // (above) where it does not make the prefill an invalid definition.
-    definition: remote('slack', 'slack', 'https://mcp.slack.com/mcp',
-      // Slack's resource metadata names https://mcp.slack.com, not the /mcp URL, so the issuer is pinned instead of discovered.
-      { type: 'oauth2', issuer: 'https://mcp.slack.com', scopes: SLACK_SCOPES },
-      'Slack remote MCP server (official). Preregistered Slack app; client id and secret are set by an administrator.'),
-  },
-  {
-    id: 'figma', title: 'Figma', logo: 'figma', kind: 'remote', available: true,
-    docsUrl: 'https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/',
-    summary: 'Read design context, variables and screenshots from Figma files the signed-in member can open.',
-    requirement: 'Figma admits only MCP clients on its catalog allowlist. Until this tm8 deployment is approved through Figma\'s MCP client waitlist, Connect fails with "rejected by provider".',
-    definition: remote('figma', 'figma', 'https://mcp.figma.com/mcp', { type: 'oauth2' },
-      'Figma remote MCP server (official). OAuth; client must be on Figma\'s allowlist.'),
-  },
+  ...PROVIDERS.map((provider): McpCatalogEntry => ({
+    id: provider.id, title: provider.title, logo: provider.id, kind: 'remote', available: true,
+    docsUrl: provider.docsUrl, summary: provider.summary, category: provider.category, publisher: provider.publisher,
+    setup: provider.auth.kind === 'registered' ? 'registration' : provider.auth.kind === 'approved' ? 'approval' : 'ready',
+    ...(provider.requirement ? { requirement: provider.requirement } : {}),
+    definition: remote(provider.id, provider.id, provider.endpoint,
+      provider.auth.kind === 'none' ? { type: 'none' } : {
+        type: 'oauth2', ...('issuer' in provider.auth && provider.auth.issuer ? { issuer: provider.auth.issuer } : {}),
+        ...(provider.id === 'slack' ? { scopes: SLACK_SCOPES } : {}),
+      }, `${provider.publisher} official MCP server.`),
+  })),
 ];
 
 export function mcpCatalogEntry(catalogId: string): McpCatalogEntry | undefined {

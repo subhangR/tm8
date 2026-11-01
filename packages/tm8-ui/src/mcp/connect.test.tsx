@@ -14,11 +14,11 @@
  *    `provider_blocked` row.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { CollabError } from '@tm8/contract';
 import { ConnectorDrawer } from './ConnectorDrawer';
 import { connectFailure } from './errors';
-import { acceptOAuthMessage, returnToPath, OAUTH_MESSAGE_TYPE } from './useConnect';
+import { useConnect, acceptOAuthMessage, returnToPath, OAUTH_MESSAGE_TYPE } from './useConnect';
 import type { McpCatalog, McpPort, McpServer } from './port';
 
 afterEach(cleanup);
@@ -81,15 +81,13 @@ describe('§10.2 — the popup-blocked fallback', () => {
       run={async action => { await action(); }} onClose={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    fireEvent.change(screen.getByLabelText('Account label'), { target: { value: 'Work' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to sign-in' }));
 
     const link = await screen.findByRole('link', { name: 'Continue to Figma' });
     expect(link.getAttribute('href')).toBe('https://figma.example/oauth/authorize?state=s');
     expect(screen.getByRole('alert').textContent).toContain('blocked the sign-in window');
     // The same-tab path has no opener to message, so `returnTo` on the SERVER's
     // pending row is the only thing that gets the person back.
-    expect(live.startOAuth).toHaveBeenCalledWith(server().id, 'Work', 'member', returnToPath(window.location));
+    expect(live.startOAuth).toHaveBeenCalledWith(server().id, 'Figma', 'member', returnToPath(window.location));
     open.mockRestore();
   });
 
@@ -123,8 +121,6 @@ describe('§10.2 — the DCR 403 is the provider_blocked row', () => {
     render(<ConnectorDrawer server={server()} port={live} admin={false} busy={false}
       run={async action => { await action(); }} onClose={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    fireEvent.change(screen.getByLabelText('Account label'), { target: { value: 'Work' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to sign-in' }));
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain("hasn't approved tm8 as an MCP client yet"));
     // §10.0's row, which only a failed begin can produce.
@@ -132,4 +128,20 @@ describe('§10.2 — the DCR 403 is the provider_blocked row', () => {
     // No provider text crosses into the view for a member.
     expect(document.body.textContent).not.toContain('www.figma.com');
   });
+});
+
+
+it('opens the sign-in window during the click, before asynchronous discovery finishes', async () => {
+  let finish: (value: { authorizationUrl: string }) => void = () => {};
+  const pending = new Promise<{ authorizationUrl: string }>(resolve => { finish = resolve; });
+  const child = { close: vi.fn(), focus: vi.fn(), location: { href: 'about:blank' }, closed: false };
+  const open = vi.spyOn(window, 'open').mockReturnValue(child as unknown as Window);
+  const p = port({ startOAuth: vi.fn(() => pending) });
+  const { result, unmount } = renderHook(() => useConnect({ port: p, admin: true, onConnected: vi.fn() }));
+  let started: Promise<void> = Promise.resolve();
+  act(() => { started = result.current.start(server(), { label: 'Work', scope: 'member' }); });
+  expect(open).toHaveBeenCalledWith('about:blank', 'tm8-mcp-oauth', expect.any(String));
+  await act(async () => { finish({ authorizationUrl: 'https://figma.example/authorize' }); await started; });
+  expect(child.location.href).toBe('https://figma.example/authorize');
+  unmount(); open.mockRestore();
 });

@@ -5,18 +5,8 @@ import { localKeyProvider, mcpSecretBinding, type KeyProvider } from '../credent
 import { openSecret, sealSecret } from '../credentials/secret-box.js';
 
 export interface McpCredentialBinding { spaceId: string; serverId: string; credentialId: string }
-export interface McpOAuthSecret {
-  kind: 'oauth'; accessToken: string; refreshToken?: string; expiresAt?: number;
-  issuer: string; tokenEndpoint: string; revocationEndpoint?:string; resource: string; clientId: string;
-  clientSecret?: string; tokenEndpointAuthMethod?: 'none' | 'client_secret_basic' | 'client_secret_post';
-  /**
-   * First-party only: the scopes the provider reported for this token, so the
-   * host can offer exactly the tools they cover. With Google's incremental
-   * consent this is the account's whole grant; the host intersects it with the
-   * connector's own scopes before using it.
-   */
-  grantedScopes?: string[];
-}
+export type { McpOAuthSecret } from '@tm8/integrations';
+import type { McpOAuthSecret } from '@tm8/integrations';
 export type McpSecret = { kind: 'api_key'; value: string } | McpOAuthSecret;
 /** Why a refresh leaves a connection needing a reconnect (§7.2, B41). possible_reuse is the database's call, never the caller's. */
 export type McpRefreshFailure = 'invalid_grant' | 'scope_reduced';

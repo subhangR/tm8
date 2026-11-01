@@ -2,6 +2,7 @@ import { readActiveServerId } from '../servers/server-key';
 const PREFIX = 'tm8:mcp:oauth:';
 /** One-shot handoff for the §10.2 same-tab toast, read and cleared by the Connectors page. */
 const TOAST_KEY = 'tm8:mcp:connected';
+const FAILURE_KEY = 'tm8:mcp:connection-failed';
 
 export interface McpCallback {
   input: { state: string; code?: string; issuer?: string; error?: string };
@@ -72,4 +73,13 @@ export function parkConnectedToast(message: string, storage: Storage = sessionSt
 }
 export function takeConnectedToast(storage: Storage = sessionStorage): string | null {
   try { const value = storage.getItem(TOAST_KEY); storage.removeItem(TOAST_KEY); return value; } catch { return null; }
+}
+export function parkConnectionFailure(storage: Storage = sessionStorage) {
+  try { storage.setItem(FAILURE_KEY, '1'); } catch { /* Recovery still works without a notice. */ }
+}
+export function takeConnectionFailure(storage: Storage = sessionStorage): string | null {
+  try {
+    const failed = storage.getItem(FAILURE_KEY); storage.removeItem(FAILURE_KEY);
+    return failed ? 'Sign-in couldn’t finish. Choose the app and connect again.' : null;
+  } catch { return null; }
 }

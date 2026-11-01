@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { CollabError } from '@tm8/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ChatConnectorsSheet } from '../chat-home/composer/ChatConnectors';
 import { McpProvider } from './context';
 import { McpEquipment } from './McpEquipment';
@@ -50,6 +50,7 @@ describe('a re-read that fails, on a management surface', () => {
   });
   it('the Connectors table shows its error and holds no stale server version to act on', async () => {
     render(<McpProvider port={failingAfterFirst()}><McpSettings /></McpProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Your apps' }));
     await screen.findByRole('button', { name: 'Open Docs' });
     await refocus();
     await waitFor(() => expect(screen.getAllByRole('alert').some(a => a.textContent?.includes('Couldn’t load connectors'))).toBe(true));

@@ -1,3 +1,4 @@
+import { mcpResult } from '@tm8/integrations';
 import type { DbClaims } from '../db/types.js';
 import type { McpCredentialBinding, McpCredentialStore, McpOAuthSecret, McpRefreshFailure } from './credential-store.js';
 import { FirstPartyUnauthorized, type FirstPartyHost } from './first-party/host.js';
@@ -183,15 +184,7 @@ export class McpProxy {
         if(response.status<200 || response.status>=300)throw new Error('MCP upstream request failed');
         if(response.headers['mcp-session-id'])connection.upstreamSession=response.headers['mcp-session-id'];
         if(notification)return null;
-        let body=response.body;
-        if(response.headers['content-type']?.includes('text/event-stream')) {
-          const messages=body.split(/\r?\n\r?\n/).map(event=>event.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n')).filter(Boolean);
-          body=messages.find(message=>{try{return (JSON.parse(message) as {id?:unknown}).id===1;}catch{return false;}})??'';
-        }
-        let value:{id?:unknown;result?:unknown;error?:unknown};
-        try{value=JSON.parse(body) as typeof value;}catch{throw new Error('MCP response invalid');}
-        if(value.id!==1 || value.error || value.result===undefined)throw new Error('MCP upstream request failed');
-        return redactMcpResult(value.result,redactions);
+        return redactMcpResult(mcpResult(response, 1),redactions);
       };
       // §5.2 "Make the proxy write it": last_used_at is what the Connectors page
       // shows and what the reuse heuristic reads. Best-effort — a failed stamp

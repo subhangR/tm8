@@ -44,8 +44,6 @@ import type { McpSelection } from '../../mcp/port';
 import { ComposerIcon } from './ComposerIcons';
 import { ComposerPopover } from './ComposerPopover';
 
-/** G13. Codex lanes get no tm8 connectors yet, and the menu says so. */
-export const CODEX_CONNECTORS_REASON = 'Connectors aren’t available for Codex chats yet.';
 /** The §10.4 state for a thread opened through a Space link. */
 export const LINK_CONNECTORS_REASON = 'Chats opened through a Space link don’t get connectors.';
 

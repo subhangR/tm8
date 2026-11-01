@@ -48,7 +48,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
 }
 export function viewOf(server: McpServerView, accounts: McpCredentialView[]): McpServer {
   const d = server.definition;
-  return { id: server.id, version: server.version, title: d.name, description: d.provenance ?? '', source: d,
+  return { id: server.id, version: server.version, title: (d.catalogId ? mcpCatalogEntry(d.catalogId)?.title : undefined) ?? d.name, description: d.provenance ?? '', source: d,
     transport: d.transport, url: d.url, command: d.command, args: d.args, auth: d.auth.type === 'oauth2' ? 'oauth' : d.auth.type,
     approved: d.approved, enabled: d.enabled !== false, canApprove: server.allowed.approve,
     canManage: server.allowed.manage, canAttach: server.allowed.attach, health: server.health,

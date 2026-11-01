@@ -1,6 +1,5 @@
 import { McpPicker, usePickerGate } from '../mcp/McpPicker';
 import {
-  CODEX_CONNECTORS_REASON,
   ChatConnectorsSheet,
   ConnectorsChip,
   useChatConnectors,
@@ -1581,7 +1580,6 @@ export function ChatHomeScreen({
    * Codex — an unknown tool is unknown, and silently refusing connectors would
    * be the wrong way round for a Claude lane whose entry had not loaded.
    */
-  const codexChat = models.find((model) => model.model === shownModelId)?.agentTool === 'codex';
   const shownCredential = (selectedRootId ? credentialOverrides[selectedRootId] : undefined)
     ?? activeConfig?.credentialSelection ?? newCredential;
   useEffect(() => {
@@ -3253,36 +3251,24 @@ export function ChatHomeScreen({
                         extraLabel: `Coordinator team · ${teamSize(shownTeam)}`,
                       }
                     : {})}
-                  // §10.4: the ＋ sheet's Connectors section, for a NEW thread
-                  // and an existing one alike (G4) — the `newThread &&` that
-                  // used to be here IS the defect. G13 keeps the row on a Codex
-                  // lane and refuses it, naming the reason.
-                  {...(codexChat
-                    ? { connectorsReason: CODEX_CONNECTORS_REASON }
-                    : {
-                        connectors: (
-                          <ChatConnectorsSheet
-                            state={connectors}
-                            {...(aboutId ? { targetId: aboutId } : {})}
-                            {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
-                            streaming={thinking}
-                            disabled={busy}
-                          />
-                        ),
-                      })}
-                />
-                {/* The chip, beside the turn pills: `🔌 N` of what is on and
-                    ready. Hidden while a thread is on defaults with none on,
-                    so a Space without connectors adds no furniture here. */}
-                {codexChat ? null : (
-                  <ConnectorsChip
+                  connectors={<ChatConnectorsSheet
                     state={connectors}
                     {...(aboutId ? { targetId: aboutId } : {})}
                     {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
                     streaming={thinking}
                     disabled={busy}
-                  />
-                )}
+                  />}
+                />
+                {/* The chip, beside the turn pills: `🔌 N` of what is on and
+                    ready. Hidden while a thread is on defaults with none on,
+                    so a Space without connectors adds no furniture here. */}
+                <ConnectorsChip
+                  state={connectors}
+                  {...(aboutId ? { targetId: aboutId } : {})}
+                  {...(shownTeammateId ? { teamMemberId: shownTeammateId } : {})}
+                  streaming={thinking}
+                  disabled={busy}
+                />
                 {enabledSkills.length && !phoneCard ? (
                   <span className="tch-turnpills" data-testid="tch-turnpills">
                     {enabledSkills.map((id) => (

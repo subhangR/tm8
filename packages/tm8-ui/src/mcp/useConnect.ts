@@ -100,10 +100,10 @@ export function returnToPath(location: Pick<Location, 'pathname' | 'search' | 'h
 export type ConnectPhase =
   /** Nothing in flight. The row shows its ordinary §10.0 status. */
   | { kind: 'idle' }
-  /** `mcp.oauth.begin` is in flight; no window is open yet. */
+  /** `mcp.oauth.begin` is in flight; a blank popup is reserved by the click. */
   | { kind: 'starting'; provider: string }
   /** The popup is open. §10.2: "Waiting for Google…", with [Cancel]. */
-  | { kind: 'waiting'; provider: string }
+  | { kind: 'waiting'; provider: string; url: string }
   /** `window.open` returned null. §10.2: a same-tab link, with `returnTo` already stored. */
   | { kind: 'blocked'; provider: string; url: string }
   | { kind: 'failed'; provider: string; failure: ConnectFailure };
@@ -131,6 +131,7 @@ export interface ConnectOptions {
 export function useConnect({ port, admin, onConnected, view }: ConnectOptions): ConnectController {
   const [phase, setPhase] = useState<ConnectPhase>({ kind: 'idle' });
   const popup = useRef<Window | null>(null);
+  const generation = useRef(0);
   const provider = useRef('');
   // Read through refs so the `waiting` listener is installed ONCE per popup: a
   // caller that passes a fresh `onConnected` every render would otherwise tear the
@@ -142,6 +143,7 @@ export function useConnect({ port, admin, onConnected, view }: ConnectOptions): 
   const host = view ?? window;
 
   const shut = useCallback(() => {
+    generation.current += 1;
     const child = popup.current;
     popup.current = null;
     try { child?.close(); } catch { /* Already gone, or never ours to close. */ }
@@ -200,39 +202,51 @@ export function useConnect({ port, admin, onConnected, view }: ConnectOptions): 
     const name = server.title;
     provider.current = name;
     shut();
+    const attempt = generation.current;
+    let child: Window | null = null;
+    try { child = host.open('about:blank', 'tm8-mcp-oauth', popupFeatures(host)); } catch { child = null; }
+    popup.current = child;
     setPhase({ kind: 'starting', provider: name });
-    const fail = (error: unknown) => setPhase({ kind: 'failed', provider: name, failure: connectFailure(error, { name, admin: isAdmin.current }) });
+    const fail = (error: unknown) => {
+      if (attempt !== generation.current) return;
+      shut();
+      setPhase({ kind: 'failed', provider: name, failure: connectFailure(error, { name, admin: isAdmin.current }) });
+    };
 
     let authorizationUrl: string;
     try {
       ({ authorizationUrl } = await port.startOAuth(server.id, input.label, input.scope, returnToPath(host.location)));
     } catch (error) { fail(error); return; }
 
+    if (attempt !== generation.current) return;
+
     // The address came back from tm8, but it was BUILT from provider metadata,
     // so it is parsed and its scheme checked before a window is pointed at it.
     let url: URL;
     try { url = new URL(authorizationUrl); } catch {
+      shut();
       setPhase({ kind: 'failed', provider: name, failure: { message: `${name} returned an address tm8 will not open.`, retry: false } });
       return;
     }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      shut();
       setPhase({ kind: 'failed', provider: name, failure: { message: `${name} returned an address tm8 will not open.`, retry: false } });
       return;
     }
 
-    let child: Window | null = null;
-    // `window.open` is allowed to throw as well as to return null, and both
-    // mean the same thing to the person: no window appeared.
-    try { child = host.open(url.href, 'tm8-mcp-oauth', popupFeatures(host)); } catch { child = null; }
     if (!child) {
       // §10.2's popup-blocked row. `returnTo` is already on the pending row, so
       // the same-tab sign-in comes back to this screen by itself.
       setPhase({ kind: 'blocked', provider: name, url: url.href });
       return;
     }
-    popup.current = child;
+    try { child.location.href = url.href; } catch {
+      shut();
+      setPhase({ kind: 'blocked', provider: name, url: url.href });
+      return;
+    }
     try { child.focus(); } catch { /* Focus is a courtesy, not a requirement. */ }
-    setPhase({ kind: 'waiting', provider: name });
+    setPhase({ kind: 'waiting', provider: name, url: url.href });
   }, [port, host, shut]);
 
   const cancel = useCallback(() => { shut(); setPhase({ kind: 'idle' }); }, [shut]);
