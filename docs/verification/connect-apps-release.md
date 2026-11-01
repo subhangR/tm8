@@ -27,3 +27,5 @@ Migrations434/435 update curated endpoint identities and permit bounded larger p
 ## Validation on current main
 
 Reconciled against origin/main ee14112ca. Server/CLI builds and UI typecheck pass. Selected server OAuth, isolation, credential crypto and callback checks165pass; MCP bridge suite91pass; MCP/chat UI160pass; contract30pass; reusable integration core7pass; fresh-database MCP foundation/migration checks9pass. Total462checks passed. These are local code/fixture checks; live provider acceptance above remains separately scoped. No production database was migrated.
+
+CI wiring includes the new package in the affected graph, explicit typecheck catalog and small-package test job. Local affected-graph checks98pass and the real stage/job consistency check passes. GitHub Actions run41334874586 did not start any steps because repository billing/spending allowance is blocked; it provides no remote code-validation result. The existing CI wiring script's final negative control uses GNU-sed syntax and emits a BSD-sed warning locally; the workflow runs on Linux.

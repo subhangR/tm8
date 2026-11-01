@@ -320,7 +320,7 @@ jobs:
       - name: Gate
         run: >-
           bash tools/ci/check.sh --only
-          typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/contract,test:packages/jev,test:tools/conformance,test:packages/mcp,test:packages/prompt,test:packages/pty-protocol
+          typecheck:packages/integrations,typecheck:packages/contract,typecheck:packages/jev,typecheck:tools/conformance,test:packages/integrations,test:packages/contract,test:packages/jev,test:tools/conformance,test:packages/mcp,test:packages/prompt,test:packages/pty-protocol
       - uses: actions/upload-artifact@v4
         if: always()
         with:

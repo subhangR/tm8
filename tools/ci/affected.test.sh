@@ -163,6 +163,7 @@ expect "      same repo, working git -> server closure (the stubs are what fail)
 # ---- §3 table ---------------------------------------------------------------------------
 paths "$FIX" packages/server/src/x.ts;       expect "server -> cli, conformance" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/jev/src/x.ts;          expect "jev -> server, cli, conformance" '["typecheck","server","cli","small"]'
+paths "$FIX" packages/integrations/src/x.ts; expect "integrations -> consumers" '["typecheck","server","cli","execution","ui","small"]'
 paths "$FIX" packages/mcp/src/x.ts;          expect "mcp -> server, cli, conformance (mcp runs in small)" '["typecheck","server","cli","small"]'
 paths "$FIX" packages/cli/src/x.ts;          expect "cli -> execution, ui" '["typecheck","cli","execution","ui"]'
 paths "$FIX" packages/execution/src/x.ts;    expect "execution -> server, cli, ui (+conformance via server)" '["typecheck","server","cli","execution","ui","small"]'
