@@ -11,7 +11,7 @@ import { createBridgeCommandExecutor, type BridgeCommandExecutor } from './execu
 import { createBridgeSessionKeeper, type BridgeSessionKeeper } from '../runtime/keeper.js';
 import type { BridgeCommandPorts, BridgeGroupPort, BridgeGroupResult } from './ports.js';
 import type { BridgeRuntimeHub } from '../runtime/hub.js';
-import type { GroupFrame } from '@tm8/contract';
+import { CollabError, type GroupFrame } from '@tm8/contract';
 
 export { createBridgeCommandExecutor, VERB_TIER } from './executor.js';
 export type { BridgeCommandExecutor } from './executor.js';
@@ -30,8 +30,12 @@ export function bridgeGroupPort(db: Db, hub: () => BridgeRuntimeHub | undefined)
     return { hub: h, runtimeId };
   };
   const settled = (frame: GroupFrame): BridgeGroupResult => {
-    if ('error' in frame) throw new Error(frame.error);
-    return { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
+    if ('error' in frame) {
+      if (frame.code) throw new CollabError(frame.code === 'not_community_admin' ? 'not_community_admin' : 'upstream_unavailable', frame.error,
+        { retryable: false, details: { reason: frame.code, community: frame.community, ...(frame.createdConversationId ? { conversationId: frame.createdConversationId } : {}) } });
+      throw new Error(frame.error);
+    }
+    return { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink, community: frame.community ?? null };
   };
   return {
     async create(input) {

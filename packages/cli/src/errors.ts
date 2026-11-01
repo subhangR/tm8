@@ -54,6 +54,7 @@ export const EXIT_BY_COMMAND_ERROR: Record<CommandErrorCode, ExitCode> = {
   invalid_cursor: EXIT_USAGE,
   unauthenticated: EXIT_UNAUTHENTICATED,
   forbidden: EXIT_FORBIDDEN,
+  not_community_admin: EXIT_FORBIDDEN,
   not_found: EXIT_NOT_FOUND,
   version_conflict: EXIT_CONFLICT,
   conflict: EXIT_CONFLICT,

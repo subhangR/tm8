@@ -18,7 +18,7 @@ describe('bridge runtime protocol (D35)', () => {
   });
 
   it('is exported from @tm8/contract', () => {
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
     expect(WHATSAPP_CAPABILITIES.reactions).toBe(true);
   });
 });

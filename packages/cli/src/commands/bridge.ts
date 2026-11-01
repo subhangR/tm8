@@ -612,6 +612,7 @@ async function bridgeGroupFork(cmd: CommandContext): Promise<ExitCode> {
   });
   cmd.out.data(result, r => [
     `group ${r.group.conversationId} "${r.group.subject}" (fork ${r.forkId})`,
+    ...(r.group.community ? [`community ${r.group.community.id} "${r.group.community.name}"`] : []),
     ...r.group.results.map(p => `  ${p.id} ${p.status === 'invite_needed' ? 'not added (their privacy settings): send them the invite link' : p.status}`),
     ...(r.group.inviteLink ? [`invite link: ${r.group.inviteLink}`] : []),
     `bridge ${r.newBridgeId} → session ${r.sessionId}${r.handle ? ` (${r.handle})` : ''}`,

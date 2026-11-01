@@ -9,7 +9,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 import type { UserFacingSocketConfig, WAMessage } from '@whiskeysockets/baileys'
 import { Allowlist, OutboundRefused, bareJid } from '../src/runtime/allowlist.js'
-import { RuntimeConnection, baileysLogLevel, mediaHandle, type WaSocketLike } from '../src/runtime/connection.js'
+import { GroupCreationRefused, RuntimeConnection, baileysLogLevel, mediaHandle, type WaSocketLike } from '../src/runtime/connection.js'
 import type { RuntimeFrames, RuntimeRoute, ServerFrame } from '../src/runtime/protocol.js'
 import { Runtime, failure } from '../src/runtime/runtime.js'
 import { seal, unseal, useSealedAuthState } from '../src/runtime/sealed-auth.js'
@@ -56,6 +56,13 @@ class FakeSocket {
   private = new Set<string>()
   groupCreate = async (subject: string, participants: string[]) => {
     this.rec('groupCreate', [subject, participants])
+    return this.makeGroup(subject, participants)
+  }
+  communityCreateGroup = async (subject: string, participants: string[], parent: string) => {
+    this.rec('communityCreateGroup', [subject, participants, parent])
+    return { ...this.makeGroup(subject, participants), linkedParent: parent }
+  }
+  private makeGroup(subject: string, participants: string[]) {
     const id = `120363999${++this.n}@g.us`
     this.groups[id] = { id, subject, announce: false, participants: [{ id: ME, admin: 'superadmin' }, ...participants.filter((p) => !this.private.has(p)).map((p) => ({ id: p }))] }
     return this.groups[id]
@@ -134,8 +141,83 @@ describe('groups (the bridge makes and fills groups)', () => {
     assert.equal(g.subject, 'Release crew')
     assert.deepEqual(g.results, [{ id: ALICE, status: 'added' }, { id: CARA, status: 'invite_needed' }])
     assert.equal(g.inviteLink, 'https://chat.whatsapp.com/INVITE123')
+    assert.equal(g.community, null)
     // The new group is not connected: nothing may be sent there until the server pushes it on the list.
     await assert.rejects(conn.send({ type: 'send', outboxId: 'o', connectionId: CONN, conversationId: g.conversationId, text: 'hi' }), OutboundRefused)
+  })
+
+  const splitFrame = { type: 'group.create', requestId: 'split', connectionId: CONN, sourceConversationId: G1, subject: 'Design review', participants: [ALICE, ME] } as const
+  const split = { ...splitFrame, participants: [...splitFrame.participants] }
+
+  test('a split of a standalone group still uses groupCreate', async () => {
+    const { conn, sock } = await connection()
+    const g = await conn.createGroup(split)
+    assert.equal(g.community, null)
+    assert.equal(sock.calls.filter(c => c.fn === 'groupCreate').length, 1)
+    assert.equal(sock.calls.filter(c => c.fn === 'communityCreateGroup').length, 0)
+  })
+
+  for (const identity of [{ id: ME, admin: 'admin' }, { id: ME_LID, admin: 'superadmin' }, { id: 'other@lid', phoneNumber: '911111111111:7@s.whatsapp.net', admin: 'admin' }]) {
+    test(`a community split checks the parent's admin by PN/LID/phoneNumber (${JSON.stringify(identity)})`, async () => {
+      const { conn, sock } = await connection()
+      sock.groups[G1].linkedParent = 'c@g.us'
+      sock.groups['c@g.us'].participants = [identity]
+      sock.private.add(ALICE)
+      const g = await conn.createGroup(split)
+      assert.deepEqual(g.community, { id: 'c@g.us', name: 'A community' })
+      assert.deepEqual(sock.calls.find(c => c.fn === 'communityCreateGroup')!.args, ['Design review', [ALICE], 'c@g.us'])
+      assert.equal(sock.calls.filter(c => c.fn === 'groupCreate').length, 0)
+      assert.deepEqual(g.results, [{ id: ALICE, status: 'invite_needed' }])
+      assert.ok(g.inviteLink)
+      assert.equal(conn.allowlist.allows('c@g.us'), false)
+      assert.equal(conn.allowlist.allows(g.conversationId), false)
+    })
+  }
+
+  for (const participants of [[{ id: ME, admin: null }, { id: ALICE, admin: 'admin' }], [{ id: ALICE, admin: 'superadmin' }]]) {
+    test(`a non-admin or absent linked number is refused before any creation (${JSON.stringify(participants)})`, async () => {
+      const { conn, sock } = await connection()
+      sock.groups[G1].linkedParent = 'c@g.us'
+      // Admin of the source group is insufficient.
+      sock.groups[G1].participants[0].admin = 'admin'
+      sock.groups['c@g.us'].participants = participants
+      await assert.rejects(conn.createGroup(split), (e: unknown) => {
+        assert.ok(e instanceof GroupCreationRefused)
+        assert.equal(e.code, 'not_community_admin')
+        assert.deepEqual(e.community, { id: 'c@g.us', name: 'A community' })
+        assert.match(e.message, /Make the linked number a community admin/)
+        return true
+      })
+      assert.equal(sock.calls.filter(c => /^(groupCreate|communityCreateGroup|groupInviteCode)$/.test(c.fn)).length, 0)
+    })
+  }
+
+  for (const mode of ['reject', 'null', 'unlinked'] as const) {
+    test(`a community create ${mode} refuses without standalone fallback and reports uncertain/partial creation`, async () => {
+      const { conn, sock } = await connection()
+      sock.groups[G1].linkedParent = 'c@g.us'
+      sock.groups['c@g.us'].participants = [{ id: ME, admin: 'admin' }]
+      sock.communityCreateGroup = async () => {
+        if (mode === 'reject') throw new Error('403')
+        if (mode === 'null') return null
+        return { id: G2, subject: 'Design review', participants: [], linkedParent: undefined }
+      }
+      await assert.rejects(conn.createGroup(split), (e: unknown) => {
+        assert.ok(e instanceof GroupCreationRefused)
+        assert.equal(e.code, 'community_create_failed')
+        assert.match(e.message, /Check/)
+        assert.equal(e.createdConversationId, mode === 'unlinked' ? G2 : undefined)
+        return true
+      })
+      assert.equal(sock.calls.filter(c => c.fn === 'groupCreate').length, 0)
+    })
+  }
+
+  test('a split refuses an off-list source before metadata is read', async () => {
+    const { conn, sock } = await connection()
+    await assert.rejects(conn.createGroup({ ...split, sourceConversationId: G2 }), OutboundRefused)
+    assert.deepEqual(sock.touched(G2), [])
+    assert.equal(sock.calls.filter(c => c.fn === 'groupCreate').length, 0)
   })
 
   test('group.add adds to a connected group only, and reports each person', async () => {
@@ -540,6 +622,19 @@ describe('runtime', () => {
     const { rt, posts } = runtime({ connections: [] })
     await rt.onFrame({ type: 'group.create', requestId: 'r9', connectionId: CONN, subject: 'x', participants: [] })
     assert.deepEqual(posts.map((p) => [p.route, p.frame]), [['group', { requestId: 'r9', connectionId: CONN, error: 'unknown_connection' }]])
+  })
+
+  test('community refusal codes and names survive the runtime group route', async () => {
+    const { rt, posts, socks } = runtime({ connections: [] })
+    await rt.onFrame({ type: 'connect', connectionId: CONN, stateKey: k, authFlow: { kind: 'qr' }, allowlist: { type: 'allowlist', connectionId: CONN, version: 1, conversationIds: [G1] } })
+    socks[0]!.open()
+    socks[0]!.groups[G1].linkedParent = 'c@g.us'
+    await rt.onFrame({ type: 'group.create', requestId: 'community-refusal', connectionId: CONN, sourceConversationId: G1, subject: 'Review', participants: [ALICE] })
+    const refused = posts.find(p => p.route === 'group')!.frame
+    assert.equal(refused.code, 'not_community_admin')
+    assert.deepEqual(refused.community, { id: 'c@g.us', name: 'A community' })
+    assert.match(refused.error, /Can't split/)
+    assert.equal(socks[0]!.calls.filter(c => /^(groupCreate|communityCreateGroup)$/.test(c.fn)).length, 0)
   })
 
   test('a connection id that is not a uuid is refused (it names a directory)', async () => {

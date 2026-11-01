@@ -148,7 +148,7 @@ async function handle(
       const hello = frame as unknown as HelloFrame;
       const raw = await o.db.rpc<{ connections: { connectionId: string; allowlist: HelloReply['connections'][number]['allowlist'] }[] }>(
         claims, 'bridge_runtime_hello', [JSON.stringify(hello)]);
-      o.hub.noteHello(hello.runtimeId, hello.provider);
+      o.hub.noteHello(hello.runtimeId, hello.provider, hello.version);
       const connections = await Promise.all(raw.connections.map(async (c) => ({
         connectionId: c.connectionId, stateKey: await o.hub.stateKey(c.connectionId), allowlist: c.allowlist,
       })));

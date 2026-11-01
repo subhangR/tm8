@@ -34,6 +34,7 @@ import type {
   RuntimeFrames,
   RuntimeRoute,
   GroupMemberResult,
+  GroupCommunity,
   ServerFrame,
 } from './protocol.js'
 import { useSealedAuthState } from './sealed-auth.js'
@@ -44,9 +45,19 @@ export type Emit = <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) =
 export type WaSocketLike = Pick<
   WASocket,
   'ev' | 'user' | 'sendMessage' | 'sendPresenceUpdate' | 'readMessages' | 'groupMetadata' | 'groupFetchAllParticipating' | 'requestPairingCode' | 'logout' | 'end' | 'updateMediaMessage'
-  | 'groupCreate' | 'groupParticipantsUpdate' | 'groupInviteCode'
+  | 'groupCreate' | 'communityCreateGroup' | 'groupParticipantsUpdate' | 'groupInviteCode'
 >
 export type SocketFactory = (config: UserFacingSocketConfig) => WaSocketLike
+
+/** A community split must never fall back to a standalone group. */
+export class GroupCreationRefused extends Error {
+  constructor(
+    readonly code: 'not_community_admin' | 'community_create_failed',
+    message: string,
+    readonly community: GroupCommunity,
+    readonly createdConversationId?: string,
+  ) { super(message) }
+}
 
 /** Our own recent sends: Baileys' getMessage (retries) and poll vote keys. Memory only, bounded. */
 const SENT_CAP = 1000
@@ -410,7 +421,7 @@ export class RuntimeConnection {
   // groups: the live picker list and posting rights
   // ------------------------------------------------------------------------------------------------------------
 
-  /** The picker's list, fetched live and handed back; never cached or written (D28). Communities are out of scope. */
+  /** The picker's list, fetched live and handed back; never cached or written. Community/announcement groups stay out (D28). */
   async listConversations(): Promise<ConversationItem[]> {
     if (!this.sock || !this.open) throw new Error('WhatsApp is not connected')
     const groups = Object.values(await this.sock.groupFetchAllParticipating())
@@ -435,15 +446,47 @@ export class RuntimeConnection {
    * A new group with these people, the number its admin (the bridge's own group-making). The new group is not on the
    * allowlist: nothing in it is read or sent until the server connects it with a bridge and pushes the list.
    */
-  async createGroup(f: Extract<ServerFrame, { type: 'group.create' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }> {
+  async createGroup(f: Extract<ServerFrame, { type: 'group.create' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community: GroupCommunity | null }> {
     if (!this.sock || !this.open) throw new Error('WhatsApp is not connected')
     const subject = f.subject.trim().slice(0, 100)
     if (!subject) throw new Error('a group needs a name')
     const asked = [...new Set(f.participants.map((j) => bareJid(j)).filter((j) => !this.allowlist.isOwn(j)))]
-    const meta = await this.sock.groupCreate(subject, asked)
+    let community: GroupCommunity | null = null
+    if (f.sourceConversationId) {
+      // Read the parent's metadata only to check admin rights; its messages never enter the allowlist.
+      this.allowlist.check(f.sourceConversationId, 'group.create')
+      const parent = (await this.sock.groupMetadata(f.sourceConversationId)).linkedParent
+      if (parent) {
+        const metadata = await this.sock.groupMetadata(parent)
+        community = { id: parent, name: metadata.subject }
+        const admin = metadata.participants.some(p =>
+          (p.admin === 'admin' || p.admin === 'superadmin') && [p.id, p.lid, p.phoneNumber].some(j => !!j && this.allowlist.isOwn(j)))
+        if (!admin) throw new GroupCreationRefused('not_community_admin',
+          `Can't split: this group is in *${community.name}* and only a community admin can add groups to it. Make the linked number a community admin and try again.`, community)
+      }
+    }
+    let meta: GroupMetadata
+    if (community) {
+      // Baileys sends create + linked_parent in one request. Never create standalone and link afterwards.
+      let made: GroupMetadata | null
+      try {
+        made = await this.sock.communityCreateGroup(subject, asked, community.id)
+      } catch {
+        throw new GroupCreationRefused('community_create_failed',
+          `Can't split: WhatsApp did not confirm creating the group in *${community.name}*. Check the community in WhatsApp before trying again; a group may have been created.`, community)
+      }
+      // Baileys can return null when creation succeeded but the metadata fetch failed.
+      if (!made) throw new GroupCreationRefused('community_create_failed',
+        `Can't split: WhatsApp did not return the new group's details in *${community.name}*. Check the community in WhatsApp before trying again; a group may have been created.`, community)
+      if (made.linkedParent !== community.id) throw new GroupCreationRefused('community_create_failed',
+        `Can't split: WhatsApp created "${subject}" (${made.id}) but did not confirm its link to *${community.name}*. The group remains in WhatsApp and was not bridged. Check it before trying again.`, community, made.id)
+      meta = made
+    } else {
+      meta = await this.sock.groupCreate(subject, asked)
+    }
     const inGroup = new Set(meta.participants.flatMap((p) => [p.id, p.lid, p.phoneNumber]).filter((j): j is string => !!j).map((j) => bareJid(j)))
     const results: GroupMemberResult[] = asked.map((id) => ({ id, status: inGroup.has(id) ? 'added' : 'invite_needed' }))
-    return { conversationId: meta.id, subject: meta.subject ?? subject, results, inviteLink: await this.inviteLinkIf(meta.id, results) }
+    return { conversationId: meta.id, subject: meta.subject ?? subject, results, inviteLink: await this.inviteLinkIf(meta.id, results), community }
   }
 
   /** Add people to a connected group; WhatsApp answers per person (200 added, 409 already in, 403 privacy: invite). */

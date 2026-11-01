@@ -96,7 +96,9 @@ afterAll(async () => {
 interface Notice { messageId: string; text: string; replyToMessageId: string | null; key: string }
 let notices: Notice[] = [];
 let spawns: SpawnWorkerRequest[] = [];
-let creates: Array<{ subject: string; participants: string[] }> = [];
+let creates: Array<{ subject: string; participants: string[]; sourceConversationId: string }> = [];
+let groupCommunity: { id: string; name: string } | null = null;
+let groupRefusal: CollabError | null = null;
 const spawned = new Map<string, string>();
 let groupSeq = 0;
 
@@ -133,9 +135,11 @@ function makeExecutor(): BridgeCommandExecutor {
     workerHandle: async (_claims, _bridge, sessionId) => ({ handle: sessionId === forker ? 'infra-1' : 'triage-1', title: null }),
     groups: {
       async create(input) {
-        creates.push({ subject: input.subject, participants: input.participants });
+        if (groupRefusal) throw groupRefusal;
+        creates.push({ subject: input.subject, participants: input.participants, sourceConversationId: input.sourceConversationId });
         return {
           conversationId: `120363-fork-${++groupSeq}@g.us`, subject: input.subject,
+          community: groupCommunity,
           inviteLink: input.participants.includes(roster.rahul) ? 'https://chat.whatsapp.com/FORK' : null,
           results: input.participants.map(id => ({ id, status: id === roster.rahul ? 'invite_needed' as const : 'added' as const })),
         };
@@ -146,6 +150,7 @@ function makeExecutor(): BridgeCommandExecutor {
 }
 
 beforeEach(() => {
+  groupCommunity = null; groupRefusal = null;
   executor = makeExecutor();
   notices = []; spawns = []; creates = [];
 });
@@ -214,6 +219,8 @@ describe('the fork (ac3, ac4)', () => {
     });
     // The group keeps its name exactly as given.
     expect(creates[0]!.subject).toBe('bridge-bugs');
+    expect(creates[0]!.sourceConversationId).toBe('120363-infra@g.us');
+    expect(made.group.community).toBeNull();
     // Announced first, then the outcome as a reply, with the invite link.
     expect(notices[0]!.text).toBe('infra-1 is starting a new group "bridge-bugs" with Rahul');
     expect(notices[1]).toMatchObject({ replyToMessageId: notices[0]!.messageId });
@@ -254,4 +261,48 @@ describe('the fork (ac3, ac4)', () => {
     expect(notices).toEqual([]);
     expect(await count('select count(*) n from public.bridge_group_forks')).toBe(forks);
   });
+});
+
+describe('forking a community group', () => {
+  let sourceBridge: string;
+  const communityForker = randomUUID();
+  beforeAll(async () => {
+    await session(communityForker, 'Community (WhatsApp)');
+    const created = await db.rpc<{ entity: { id: string } }>(human, 'create_bridge',
+      [space, connection, '120363-community-source@g.us', JSON.stringify({ kind: 'group', title: 'Community source', memberCount: null }),
+        communityForker, JSON.stringify({}), persona, null, null, true, null, null, `community-bridge-${randomUUID()}`]);
+    sourceBridge = created.entity.id;
+    await asOwner(c => c.query(`insert into public.bridge_participants(bridge_id, external_id, display_name, first_seen_at, last_seen_at)
+      values ($1,$2,'Maya',now(),now())`, [sourceBridge, roster.maya]));
+  });
+
+  it('follows the source community and reports it on both creation and replay', async () => {
+    groupCommunity = { id: 'community@g.us', name: 'Acme Community' };
+    const input = { bridgeId: sourceBridge, clientMutationId: randomUUID() };
+    const made = await fork(agentOf(communityForker), input);
+    expect(creates[0]!.sourceConversationId).toBe('120363-community-source@g.us');
+    expect(made.group.community).toEqual(groupCommunity);
+    expect(notices.at(-1)!.text).toContain('in *Acme Community*');
+    const again = await fork(agentOf(communityForker), input);
+    expect(again.group.community).toEqual(groupCommunity);
+    expect(again.newBridgeId).toBe(made.newBridgeId);
+    expect(creates).toHaveLength(1);
+  });
+
+  for (const code of ['not_community_admin', 'community_create_failed'] as const) {
+    it(`returns a clear ${code} error, releases the rate reservation, and creates no group/session`, async () => {
+      groupRefusal = new CollabError(code === 'not_community_admin' ? code : 'upstream_unavailable',
+        "Can't split: this group is in *Acme Community*. Make the linked number a community admin and try again.",
+        { retryable: false, details: { reason: code, community: { id: 'community@g.us', name: 'Acme Community' } } });
+      const before = await count('select count(*) n from public.bridge_group_forks');
+      const error = await refusal(fork(agentOf(communityForker), { bridgeId: sourceBridge }));
+      expect(error).toBe(groupRefusal);
+      expect(error.retryable).toBe(false);
+      expect(error.details!.community).toEqual({ id: 'community@g.us', name: 'Acme Community' });
+      expect(notices.at(-1)!.text).toContain('Acme Community');
+      expect(creates).toEqual([]);
+      expect(spawns).toEqual([]);
+      expect(await count('select count(*) n from public.bridge_group_forks')).toBe(before);
+    });
+  }
 });

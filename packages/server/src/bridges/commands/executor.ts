@@ -909,22 +909,31 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     if (!ports.groups) throw new Refusal('this node cannot make groups yet');
     const { name, people } = parseSplit(args, body);
     if (!name) throw new Refusal('usage: /split <group name> with @someone @someone — @mention them, give a +number, a name, or everyone');
-    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null } | null>('bridge_split_of', [cmd.input.messageId]));
-    if (done?.bridgeId) return { text: `"${done.title}" is made and connected` };
+    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null; community: { id: string; name: string } | null } | null>('bridge_split_of', [cmd.input.messageId]));
+    if (done?.bridgeId) return { text: `"${done.title}" is made and connected${done.community ? ` in *${done.community.name}*` : ''}` };
 
     let title = name;
     let outcome = '';
     let size: number | null = null;
+    let community = done?.community ?? null;
     if (!done) {
       const { jids, unknown, roster } = await resolvePeople(cmd, claims, people);
       if (unknown.length) throw new Refusal(`I don't know ${unknown.join(', ')} in this group — @mention them or give a +number`);
       const me = roster.find(r => r.external_id === cmd.input.senderExternalId);
       jids.set(me ? addressOf(me) : cmd.input.senderExternalId, cmd.sender.displayName || 'you');
-      const g = await ports.groups.create({
-        connectionId: cmd.input.connectionId, subject: titleOf(name, 100), participants: [...jids.keys()], requestId: `${cmd.key}:split`,
-      });
+      let g: BridgeGroupResult;
+      try {
+        g = await ports.groups.create({
+          connectionId: cmd.input.connectionId, subject: titleOf(name, 100), participants: [...jids.keys()], requestId: `${cmd.key}:split`,
+          sourceConversationId: await sourceConversation(cmd, claims),
+        });
+      } catch (error) {
+        if (error instanceof CollabError && (error.code === 'not_community_admin' || error.details?.reason === 'community_create_failed')) throw new Refusal(error.message);
+        throw error;
+      }
       title = g.subject || name;
-      await exec(q => q.rpc('bridge_split_record', [cmd.input.messageId, cmd.input.bridgeId, g.conversationId, title]));
+      community = g.community ?? null;
+      await exec(q => q.rpc('bridge_split_record', [cmd.input.messageId, cmd.input.bridgeId, g.conversationId, title, JSON.stringify(community)]));
       outcome = groupOutcome(g, jids);
       size = g.results.filter(r => r.status === 'added').length + 1;
     } else {
@@ -934,7 +943,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [cmd.input.bridgeId]));
     const teammate = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId ?? facts?.teammateId ?? null;
     if (!teammate) {
-      return { text: `made "${title}"${outcome ? `: ${outcome}` : ''}. It isn't connected to tm8: this bridge has no teammate for its session — connect it in tm8` };
+      return { text: `made "${title}"${community ? ` in *${community.name}*` : ''}${outcome ? `: ${outcome}` : ''}. It isn't connected to tm8: this bridge has no teammate for its session — connect it in tm8` };
     }
     const provider = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
     const { sessionId } = await ports.spawnWorker(claims, {
@@ -944,8 +953,15 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     const connected = await exec(q => q.rpc<{ bridgeId: string }>('bridge_split_connect', [cmd.input.messageId, sessionId, cmd.sender.memberId, size]));
     const handle = await ports.workerHandle(claims, connected.bridgeId, sessionId).catch(() => null);
     return {
-      text: `made "${title}"${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
+      text: `made "${title}"${community ? ` in *${community.name}*` : ''}${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
     };
+  }
+
+  async function sourceConversation(cmd: Command, claims: DbClaims): Promise<string> {
+    const [row] = await ports.db.query<{ conv: string }>(claims,
+      'select external_conversation_id conv from public.bridges where entity_id = $1', [cmd.input.bridgeId]);
+    if (!row) throw new CollabError('not_found', 'this group is no longer connected to tm8');
+    return row.conv;
   }
 
   /** /invite <people> (426): add them to this group through the number (it must be the group's admin). */
@@ -1300,7 +1316,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     const messageId = announced.messageId;
     await exec(q => q.rpc('bridge_group_fork_record', [forkId, messageId, null, null, null]));
 
-    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null } | null>('bridge_split_of', [messageId]));
+    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null; community: { id: string; name: string } | null } | null>('bridge_split_of', [messageId]));
     let group: BridgeGroupForkResult['group'];
     let size: number | null = null;
     if (!done) {
@@ -1308,6 +1324,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       try {
         g = await ports.groups.create({
           connectionId: ctx.connectionId, subject: input.title.trim().slice(0, 100), participants: [...jids.keys()], requestId: `fork:${forkId}`,
+          sourceConversationId: await sourceConversation(cmd, claims),
         });
       } catch (error) {
         await exec(q => q.rpc('bridge_group_fork_release', [forkId]));
@@ -1319,13 +1336,13 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
         throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${errorText(error)}`, { details: { reason: 'runtime_error' } });
       }
       const subject = g.subject || input.title;
-      await exec(q => q.rpc('bridge_split_record', [messageId, input.bridgeId, g.conversationId, subject]));
+      await exec(q => q.rpc('bridge_split_record', [messageId, input.bridgeId, g.conversationId, subject, JSON.stringify(g.community ?? null)]));
       await exec(q => q.rpc('bridge_group_fork_record', [forkId, null, g.conversationId, null, null]));
-      group = { conversationId: g.conversationId, subject, results: g.results, inviteLink: g.inviteLink };
+      group = { conversationId: g.conversationId, subject, results: g.results, inviteLink: g.inviteLink, community: g.community ?? null };
       size = g.results.filter(r => r.status === 'added').length + 1;
     } else {
       // A retry: the group stands; who was added is not kept.
-      group = { conversationId: done.conversationId, subject: done.title, results: [], inviteLink: null };
+      group = { conversationId: done.conversationId, subject: done.title, results: [], inviteLink: null, community: done.community ?? null };
     }
 
     const provider = PROVIDER_NAMES[ctx.provider] ?? ctx.provider;
@@ -1355,7 +1372,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     try {
       const notice = await ports.postNotice(ports.db, {
         bridgeId: input.bridgeId, replyToMessageId: messageId, idempotencyKey: `fork:${input.bridgeId}:${input.clientMutationId}:done`,
-        text: `made "${group.subject}"${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
+        text: `made "${group.subject}"${group.community ? ` in *${group.community.name}*` : ''}${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
       });
       noticeMessageId = notice.delivery.status === 'pending' ? notice.messageId : null;
     } catch (error) {

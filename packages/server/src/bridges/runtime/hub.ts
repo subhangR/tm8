@@ -81,6 +81,7 @@ interface RuntimeLink {
   readonly runtimeId: string;
   readonly sink: EventSink;
   provider: string | null;
+  protocolVersion?: number;
 }
 
 interface Pending {
@@ -175,9 +176,9 @@ export class BridgeRuntimeHub {
   }
 
   /** Called by the `hello` door: which provider this runtime speaks for. */
-  noteHello(runtimeId: string, provider: string): void {
+  noteHello(runtimeId: string, provider: string, protocolVersion = 1): void {
     const link = this.runtimes.get(runtimeId);
-    if (link) link.provider = provider;
+    if (link) { link.provider = provider; link.protocolVersion = protocolVersion; }
     this.kick();
   }
 
@@ -245,9 +246,20 @@ export class BridgeRuntimeHub {
   }
 
   /** 426: make a group on the number (the bridge's /split). WhatsApp can take a while to answer. */
-  async createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[] },
+  async createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[]; sourceConversationId?: string },
     timeoutMs = 30_000): Promise<GroupFrame> {
-    return this.request(runtimeId, input.requestId, { type: 'group.create', ...input }, timeoutMs) as Promise<GroupFrame>;
+    if (input.sourceConversationId && (this.runtimes.get(runtimeId)?.protocolVersion ?? 1) < 2) {
+      return { requestId: input.requestId, connectionId: input.connectionId,
+        error: 'Cannot split until the WhatsApp runtime is upgraded to support community groups', code: 'community_create_failed' };
+    }
+    try {
+      return await this.request(runtimeId, input.requestId, { type: 'group.create', ...input }, timeoutMs) as GroupFrame;
+    } catch (error) {
+      if (!input.sourceConversationId) throw error;
+      // A lost answer can follow successful creation. Do not automatically create a second group on retry.
+      return { requestId: input.requestId, connectionId: input.connectionId, code: 'community_create_failed',
+        error: "Can't split: the WhatsApp runtime did not confirm creating the group. Check WhatsApp before trying again; a group may have been created." };
+    }
   }
 
   /** 426: add people to a connected group (the bridge's /invite). */
