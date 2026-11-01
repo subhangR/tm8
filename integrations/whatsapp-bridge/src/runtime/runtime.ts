@@ -98,7 +98,7 @@ export class Runtime {
       if (f.type === 'send' || f.type === 'react') await this.settle(f.outboxId, f.connectionId, { reason: 'unknown_connection', retryable: false })
       else if (f.type === 'conversation.list') await this.emit('conversations', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       else if (f.type === 'media.fetch') await this.emit('media', { requestId: f.requestId, error: 'unknown_connection' })
-      else if (f.type === 'group.create' || f.type === 'group.add') await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
+      else if (f.type === 'group.create' || f.type === 'group.add' || f.type === 'group.close') await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       return
     }
     switch (f.type) {
@@ -139,8 +139,9 @@ export class Runtime {
         return
       case 'group.create':
       case 'group.add':
+      case 'group.close':
         try {
-          const g = f.type === 'group.create' ? await c.createGroup(f) : await c.addToGroup(f)
+          const g = f.type === 'group.create' ? await c.createGroup(f) : f.type === 'group.add' ? await c.addToGroup(f) : await c.closeGroup(f)
           await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, ...g })
         } catch (e) {
           await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: (e as Error).message })

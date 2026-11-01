@@ -485,6 +485,32 @@ export interface BridgeConversationCreateInput extends BridgeCommand {
   /** Bridge the new group at once: `bridges.create`'s settings, minus the conversation (it is the new group). */
   bridge?: Omit<BridgeCreateInput, 'clientMutationId' | 'connectionId' | 'conversation'> & { spaceId: SpaceId };
 }
+/**
+ * `bridges.close` (433, D84): close a FORKED group — one a /split or an agent
+ * fork made. WhatsApp has no group delete, so the number posts the closing
+ * note, removes every participant and leaves; then the bridge ends with the
+ * same tombstone `bridges.remove` leaves, the session it landed on and its
+ * history are kept, and the group it was forked from gets a notice. An agent
+ * may call it: the session the fork lands on, the session of the group it was
+ * forked from, or the session that forked it; a human space admin too. Any
+ * other bridge is refused (`not_a_fork`) and stays human-only to remove.
+ */
+export interface BridgeCloseInput extends BridgeCommand {
+  bridgeId?: string;
+  expectedVersion: number;
+  /** Posted in the group before everyone is removed; a default naming the parent group when absent. */
+  note?: string;
+}
+export interface BridgeCloseResult {
+  bridge: BridgeView;
+  /** Each participant WhatsApp was asked to remove: `removed` or `failed`. */
+  results: GroupMemberResult[];
+  /** The note posted in the group before it was dissolved. */
+  note: string;
+  /** The group it was forked from, and whether it was told (null when that bridge has ended). */
+  parent: { bridgeId: string; title: string; noticeMessageId: string | null } | null;
+}
+
 export interface BridgeConversationCreateResult {
   connectionId: string;
   /**
@@ -670,6 +696,12 @@ export const BridgeUpdateInputSchema = z.object({
 
 export const BridgeRetargetInputSchema = z.object({ ...Versioned, targetId: Id }).strict();
 export const BridgeStateInputSchema = z.object(Versioned).strict();
+/** WhatsApp caps a message well above this; a closing note is a line or two. */
+export const BRIDGE_CLOSE_NOTE_MAX = 1000;
+export const BridgeCloseInputSchema = z.object({
+  ...Versioned,
+  note: z.string().trim().max(BRIDGE_CLOSE_NOTE_MAX).optional(),
+}).strict();
 export const BridgeHandleClaimInputSchema = z.object({
   spaceId: Id.optional(),
   title: z.string().trim().min(1).max(80)

@@ -37,7 +37,7 @@ export const LOOP_APPROVAL_GATED_OPERATIONS: ReadonlySet<OperationName> = new Se
   'spaces.members.updateRole', 'spaces.members.remove', 'spaces.invites.create', 'spaces.invites.revoke',
   'spaces.members.spacePassword.reset', 'spaces.members.spacePassword.lock', 'accounts.disable',
   // bridges (every mutating op but a session's own handle and wake level, D23/D34)
-  'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause', 'bridges.resume', 'bridges.remove',
+  'bridges.create', 'bridges.update', 'bridges.retarget', 'bridges.pause', 'bridges.resume', 'bridges.remove', 'bridges.close',
   // permissions (the other spaceLinks.*, mcp.tokens.* and credential sharing ops are humanOnly, so already refused to a session)
   'spaceLinks.remove', 'spaceLinks.inbound.grant', 'spaceLinks.inbound.revoke',
   'node.pathGrants.create', 'node.pathGrants.revoke',

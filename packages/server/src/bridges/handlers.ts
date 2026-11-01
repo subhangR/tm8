@@ -12,6 +12,9 @@
  * owns the number, and bridged in the same call only by one who may run
  * `bridges.create` in that space: an agent can neither make a group nor add
  * people to one.
+ * The one exception is closing a FORK (`bridges.close`, 433, D84): a group a
+ * /split or an agent fork made may be dissolved by the session it lands on,
+ * the session of the group it was forked from, or the session that forked it.
  */
 import {
   BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema,
@@ -27,7 +30,7 @@ import {
   type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
   type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
   BridgeConversationCreateInputSchema, bridgeParticipantJid, type BridgeConversationCreateInput,
-  type BridgeConversationCreateResult,
+  type BridgeConversationCreateResult, BridgeCloseInputSchema, type BridgeCloseResult,
 } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { BridgeRuntimeLink, ConnectionAuthRelay } from './connection-auth.js';
@@ -40,6 +43,7 @@ import { actorOf, loadActors } from '../facade/entity-read.js';
 import { bridgeMessageBadges } from '../db/bridge-badges.js';
 import type { Querier } from '../db/types.js';
 import { readBridgeChatSummary } from './summary.js';
+import { postBridgeNotice } from './outbox.js';
 import type { RequestContext } from '../http/types.js';
 
 const iso = (value: Date | string | null): string | null => (value === null ? null : new Date(value).toISOString());
@@ -269,6 +273,23 @@ export interface BridgeHandlerOptions {
   readonly connectionAuth?: ConnectionAuthRelay;
 }
 
+/** What public.bridge_close_plan answers (433). */
+interface ClosePlan {
+  bridgeId: string; spaceId: string; version: number; connectionId: string; runtimeId: string | null;
+  conversationId: string; title: string;
+  fromBridgeId: string | null; fromTitle: string; fromConversationId: string | null; fromLive: boolean;
+}
+
+const refusalReason = (error: unknown): string | undefined =>
+  error instanceof CollabError ? (error.details as { reason?: string } | undefined)?.reason : undefined;
+
+/** The note the group reads before it is dissolved, when the caller gives none. */
+export function defaultCloseNote(plan: Pick<ClosePlan, 'fromTitle' | 'fromLive'>): string {
+  return plan.fromLive && plan.fromTitle
+    ? `tm8: this group is closed. The discussion continues in "${plan.fromTitle}".`
+    : 'tm8: this group is closed.';
+}
+
 interface HandoverReceiving extends BridgeHandover {
   runtimeId: string | null; connectionStatus: string; conversationId: string;
 }
@@ -417,6 +438,66 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
     'bridges.pause': state('pause_bridge'),
     'bridges.resume': state('resume_bridge'),
     'bridges.remove': requireHumanSession(state('remove_bridge'), 'bridges.remove is for a human space admin'),
+    // 433 (D84): close a FORKED group. Not human-only: SQL admits the session the
+    // fork lands on, the session of its parent group, the session that forked it,
+    // and a space admin, and refuses any bridge no /split or agent fork made.
+    // WhatsApp first (the group must still be on the allowlist to be dissolved),
+    // then the tombstone; a refusal or a WhatsApp error leaves the bridge as it was.
+    'bridges.close': async (ctx): Promise<BridgeCloseResult> => {
+      const input = BridgeCloseInputSchema.parse(ctx.body);
+      const bridgeId = routeId(ctx, 'bridgeId');
+      const close = (result: object) => command(ctx, async q => {
+        await q.rpc('close_forked_bridge', [bridgeId, input.expectedVersion, JSON.stringify(result), input.actorId ?? null, input.clientMutationId]);
+        return loadBridgeView(q, bridgeId);
+      });
+      let plan: ClosePlan;
+      try {
+        plan = await read(ctx, q => q.rpc<ClosePlan>('bridge_close_plan', [bridgeId]));
+      } catch (error) {
+        // Already ended: the same clientMutationId answers its first call; any other is refused as ended.
+        if (refusalReason(error) !== 'bridge_ended') throw error;
+        return { bridge: await close({}), results: [], note: '', parent: null };
+      }
+      if (Number(plan.version) !== input.expectedVersion) {
+        throw new CollabError('conflict', `bridge is at version ${plan.version}, not ${input.expectedVersion}`,
+          { details: { reason: 'version_conflict', currentVersion: Number(plan.version) } });
+      }
+      if (!options.runtime || !plan.runtimeId) {
+        throw new CollabError('upstream_unavailable', 'this number must be linked and its runtime running to close the group',
+          { details: { reason: 'runtime_offline' } });
+      }
+      const note = input.note || defaultCloseNote(plan);
+      const frame = await options.runtime.closeGroup(plan.runtimeId, {
+        requestId: randomUUID(), connectionId: plan.connectionId, conversationId: plan.conversationId, note,
+        ...(plan.fromConversationId ? { backTo: plan.fromConversationId } : {}),
+      });
+      if (!frame) {
+        throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
+          { details: { reason: 'runtime_offline' } });
+      }
+      // not_in_group: an earlier call dissolved it and the tombstone didn't follow; finish it now.
+      const gone = 'error' in frame && frame.error.startsWith('not_in_group');
+      if ('error' in frame && !gone) {
+        throw new CollabError('upstream_unavailable', `WhatsApp did not close the group: ${frame.error}; the bridge is unchanged`,
+          { details: { reason: 'runtime_error' } });
+      }
+      const results = 'error' in frame ? [] : frame.results;
+      const removed = results.filter(r => r.status === 'removed').length;
+      const bridge = await close({ removed, failed: results.length - removed, note });
+      let parent: BridgeCloseResult['parent'] = null;
+      if (plan.fromBridgeId) {
+        parent = { bridgeId: plan.fromBridgeId, title: plan.fromTitle, noticeMessageId: null };
+        if (plan.fromLive) {
+          // Idempotent on the closed bridge: a retry never tells the parent twice.
+          const told = await postBridgeNotice(deps.db, {
+            bridgeId: plan.fromBridgeId, idempotencyKey: `bridges.close:${bridgeId}`,
+            text: `the group "${plan.title}" forked from here was closed: everyone was removed and the number left. Its session and history stay in tm8.`,
+          }).catch(() => null);
+          parent.noticeMessageId = told?.messageId ?? null;
+        }
+      }
+      return { bridge, results, note, parent };
+    },
     'bridges.participants.list': async ctx => read(ctx, q => readParticipants(q, requireUuidParam(ctx, 'bridgeId'))),
     'bridges.participants.update': requireHumanSession(async ctx => {
       const input = BridgeParticipantUpdateInputSchema.parse(ctx.body);

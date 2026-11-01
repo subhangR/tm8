@@ -256,6 +256,12 @@ export class BridgeRuntimeHub {
     return this.request(runtimeId, input.requestId, { type: 'group.add', ...input }, timeoutMs) as Promise<GroupFrame>;
   }
 
+  /** Dissolve a connected group (`bridges.close`): note, remove everyone but the number, leave. */
+  async closeGroup(runtimeId: string, input: { requestId: string; connectionId: string; conversationId: string; note: string; backTo?: string },
+    timeoutMs = 60_000): Promise<GroupFrame> {
+    return this.request(runtimeId, input.requestId, { type: 'group.close', ...input }, timeoutMs) as Promise<GroupFrame>;
+  }
+
   /** The `conversations`, `media` and `group` doors answer a request this hub made. */
   settleRequest(requestId: string, frame: unknown): boolean {
     const p = this.pending.get(requestId);
