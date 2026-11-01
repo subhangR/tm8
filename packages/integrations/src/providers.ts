@@ -18,6 +18,12 @@ export const ProviderSchema = z.object({
 }).strict();
 export type Provider = z.infer<typeof ProviderSchema>;
 
+/** Provider-owned protocol options, bound to the exact curated resource. Never accepts user-supplied headers. */
+export function providerRequestHeaders(catalogId: string | undefined, resource: string | undefined): Record<string, string> {
+  return catalogId === 'github' && resource === 'https://api.githubcopilot.com/mcp/'
+    ? { 'X-MCP-Toolsets': 'all' } : {};
+}
+
 /** Curated official endpoints. Registration policy is distinct from account consent. */
 export const PROVIDERS: readonly Provider[] = [
   { id: 'github', title: 'GitHub', publisher: 'GitHub', category: 'Development',

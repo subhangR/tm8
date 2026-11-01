@@ -6,6 +6,8 @@ This change supplies TM8-native branded app discovery/account management, deploy
 
 ## Verified account/runtime paths
 
+Expanded acceptance now verifies GitHub private repository/branch/file writes with exact file readback and issue creation; all111 provider tools are discoverable using GitHub's all-toolset option. Slack's30-scope grant exposes27tools; public/private channel, DM and group-DM history and message search succeed, as do disposable canvas creation/edit/readback and list creation/update/schema reads. Notion private page creation, content insertion and exact readback pass. Gmail message search and body reads pass; compose/send consent remains separate. These are representative functional checks, not proof that every listed tool has been invoked.
+
 Live isolated-node verification passed GitHub public profile reads, Slack custom emoji reads with its reviewed limited grant, Notion accessible-page listing and content fetch, and Gmail label reads. All four providers also passed tool discovery and reads through actual chat, work_session and Craft-context chat runtime bearers. Twelve matching successful audit rows retained the launching human's provenance. Removing each selection denied all twelve runtime/provider combinations. Temporary verification bearers were revoked and disposable fixtures soft-deleted.
 
 This is runtime access evidence, not a model-driven conversation or universal per-entity default inheritance. Existing entity attachment limits remain unchanged. Provider accounts/grants remain specific to each installation; these checks do not imply broad write access or webhooks.
@@ -13,7 +15,7 @@ This is runtime access evidence, not a model-driven conversation or universal pe
 ## Deliberate exclusions
 
 - Provider webhooks, WebSocket/Socket Mode delivery, always-on event agents and their permissions belong to the next iteration.
-- A separate Figma REST/native-MCP experiment authorized an account and read its profile, but design-file reads returned provider403. That host and its identity-changing migration are excluded here. Existing official Figma MCP remains catalogued with its pre-approved-client requirement; no live Figma design-read acceptance is claimed.
+- A separate Figma REST/native-MCP experiment now reads an own-team design after repairing OAuth reconnect. That host and its identity-changing migration remain excluded until its supported writes and permission coverage are verified. Existing official Figma MCP remains catalogued with its pre-approved-client requirement; REST credentials do not substitute for remote client approval.
 - Atlassian OAuth/tool discovery succeeded, but a Jira project read returned Site temporarily unavailable and the approved site's own UI was unavailable. No successful Jira data-read claim is made.
 - Calendar, Drive and Linear account consent/read acceptance was not completed.
 - No account credentials, private provider responses, task-specific acceptance scripts, account screenshots or live test identifiers are included in this PR.
@@ -25,6 +27,8 @@ Operators register their own provider clients when required and set TM8_MCP_CLIE
 The UI presents original provider artwork, bundled locally with source attribution under public/connector-logos/SOURCES.md. Original aspect ratios are retained; icon padding is removed and built-in asset whitespace is compensated so marks occupy their tiles.
 
 Migrations434/435 update curated endpoint identities and permit bounded larger provider tool catalogs. They do not rewrite existing connector definitions or account ciphertext. Notion's actual71-tool catalog exceeded the old256KiB health-cache cap; the new4MiB cache cap retains the2MiB upstream transport limit and member isolation.
+
+Migration436 permits reconnecting the same provider account in place. The server seals replacement tokens against the existing account ID; SQL rechecks the human owner or Space administrator, resource binding and current definition revision. Existing sharing and selections survive, concurrent consent is serialized, and a revoked account is never revived. Real Figma reconnect exposed the original duplicate-account failure. Scratch-database regression checks cover recovery, ownership, concurrent reconnects, unchanged shares and stale revisions.
 
 ## Validation on current main
 

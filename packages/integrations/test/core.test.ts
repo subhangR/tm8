@@ -1,9 +1,16 @@
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { ProviderCatalog, PROVIDERS, mcpHttp, mcpResult } from '../src/index.js';
+import { ProviderCatalog, PROVIDERS, mcpHttp, mcpResult, providerRequestHeaders } from '../src/index.js';
 
 describe('reusable integration runtime', () => {
+  it('enables all GitHub toolsets only at its reviewed resource identity', () => {
+    expect(providerRequestHeaders('github', 'https://api.githubcopilot.com/mcp/')).toEqual({ 'X-MCP-Toolsets': 'all' });
+    for (const resource of ['https://example.com/mcp/', 'https://api.githubcopilot.com/mcp/readonly', 'https://api.githubcopilot.com/mcp/?other=1']) {
+      expect(providerRequestHeaders('github', resource)).toEqual({});
+    }
+    expect(providerRequestHeaders(undefined, 'https://api.githubcopilot.com/mcp/')).toEqual({});
+  });
   it('accepts reviewed providers without adding enum cases, rejects duplicate identities', () => {
     const first = PROVIDERS[0];
     if (!first) throw new Error('Missing provider fixture');

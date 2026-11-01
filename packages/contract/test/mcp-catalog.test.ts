@@ -103,6 +103,16 @@ describe('the launch catalog', () => {
       expect(mcpServerKey(entry.definition), entry.id).toMatch(/^[a-z][a-z0-9_]*$/);
     }
   });
+
+  it('requests provider scopes needed for repository writes and conversation creation', () => {
+    const github = mcpCatalogEntry('github')?.definition?.auth;
+    const slack = mcpCatalogEntry('slack')?.definition?.auth;
+    expect(github?.type).toBe('oauth2');
+    expect(slack?.type).toBe('oauth2');
+    if (github?.type !== 'oauth2' || slack?.type !== 'oauth2') throw new Error('OAuth provider missing');
+    expect(github.scopes).toEqual(expect.arrayContaining(['repo', 'project', 'gist']));
+    expect(slack.scopes).toEqual(expect.arrayContaining(['channels:write', 'groups:write', 'im:write', 'mpim:write']));
+  });
 });
 
 describe('what a member may request', () => {

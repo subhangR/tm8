@@ -1,4 +1,4 @@
-import { mcpResult } from '@tm8/integrations';
+import { mcpResult, providerRequestHeaders } from '@tm8/integrations';
 import type { DbClaims } from '../db/types.js';
 import type { McpCredentialBinding, McpCredentialStore, McpOAuthSecret, McpRefreshFailure } from './credential-store.js';
 import { FirstPartyUnauthorized, type FirstPartyHost } from './first-party/host.js';
@@ -85,7 +85,7 @@ export class McpProxy {
     try {
       const current=await this.ports.authorize(claims,sessionId,serverId);
       if(JSON.stringify(current)!==JSON.stringify(grant))throw new Error('MCP session changed');
-      const headers:Record<string,string>={'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-03-26'};
+      const headers:Record<string,string>={'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-03-26',...providerRequestHeaders(definition.catalogId,definition.url)};
       const redactions:string[]=[];
       let connected:McpOAuthSecret|undefined;
       const loadAuthorization=async(forceToken?:string):Promise<boolean>=>{

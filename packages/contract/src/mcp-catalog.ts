@@ -159,16 +159,19 @@ const SLACK_SCOPES = [
   'channels:write', 'groups:write', 'im:write', 'mpim:write',
 ];
 
+/** GitHub MCP's official default OAuth scopes. Operators can request additional tool scopes in the connector. */
+const GITHUB_SCOPES = ['repo', 'read:org', 'read:user', 'user:email', 'read:packages', 'write:packages', 'read:project', 'project', 'gist', 'notifications'];
+
 /** Curated catalog. Provider adapters live in the reusable integrations package. */
 export const MCP_CATALOG: readonly McpCatalogEntry[] = [
   {
     id: 'google.gmail', title: 'Gmail', logo: 'google-gmail', kind: 'first_party', available: true, category: 'Productivity', publisher: 'Google', setup: 'registration',
     docsUrl: 'https://developers.google.com/workspace/gmail/api/guides',
-    summary: 'Search and read mail, and prepare drafts, as the signed-in Google account.',
+    summary: 'Search and read mail, prepare drafts, and send messages when enabled.',
     requirement: GOOGLE_REQUIREMENT + ' Gmail scopes are restricted: past 100 users Google requires app verification and an annual CASA assessment.',
     scopeLabels: ['Read your mail', 'Create drafts', 'Read your labels'],
     gates: { gmailSend: { label: 'Allow sending email', tools: ['send_message'] } },
-    definition: google('google.gmail', 'Gmail served in-process by tm8 (first-party). Read and draft; sending is gated off.', { gmailSend: false }),
+    definition: google('google.gmail', 'Read email, prepare drafts, and send messages when enabled.', { gmailSend: false }),
   },
   {
     id: 'google.calendar', title: 'Google Calendar', logo: 'google-calendar', kind: 'first_party', available: true, category: 'Productivity', publisher: 'Google', setup: 'registration',
@@ -195,6 +198,7 @@ export const MCP_CATALOG: readonly McpCatalogEntry[] = [
       provider.auth.kind === 'none' ? { type: 'none' } : {
         type: 'oauth2', ...('issuer' in provider.auth && provider.auth.issuer ? { issuer: provider.auth.issuer } : {}),
         ...(provider.id === 'slack' ? { scopes: SLACK_SCOPES } : {}),
+        ...(provider.id === 'github' ? { scopes: GITHUB_SCOPES } : {}),
       }, `${provider.publisher} official MCP server.`),
   })),
 ];

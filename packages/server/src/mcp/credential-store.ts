@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isHumanAuthKind, type McpCredentialScope } from '@tm8/contract';
+import { isHumanAuthKind, type McpCredentialScope, type McpCredentialView } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import { localKeyProvider, mcpSecretBinding, type KeyProvider } from '../credentials/key-provider.js';
 import { openSecret, sealSecret } from '../credentials/secret-box.js';
@@ -30,14 +30,29 @@ export class McpCredentialStore {
   }
   async create(claims: DbClaims, input: {spaceId: string; serverId: string; label: string; secret: McpSecret; expectedRevision?:number; scope?:McpCredentialScope; accountLabel?:string; grantedScopes?:string[]}): Promise<unknown> {
     if (!isHumanAuthKind(claims.authKind) || claims.viaLinkId) throw new Error('MCP credential writes require a human session');
-    const credentialId = randomUUID();
+    if (input.secret.kind === 'oauth' && input.accountLabel?.trim()) {
+      return this.db.tx(claims, async q => {
+        await q.query('select pg_advisory_xact_lock(hashtextextended($1, 297))', [input.serverId]);
+        const rows = await q.rpc<McpCredentialView[]>('list_mcp_credentials', [input.serverId]);
+        const account = input.accountLabel!.trim().toLowerCase();
+        const existing = rows.find(row => row.manageable && !row.revoked && row.authType === 'oauth2'
+          && (row.ownerId === null) === (input.scope === 'space') && row.accountLabel?.trim().toLowerCase() === account);
+        const bound: Db = { tx: async (_claims, work) => work(q), rpc: async (_claims, fn, args) => q.rpc(fn, args),
+          query: async (_claims, sql, args) => q.query(sql, args), end: async () => {} };
+        return new McpCredentialStore(bound, this.dataDir, this.keys).save(claims, input, existing?.id);
+      });
+    }
+    return this.save(claims, input);
+  }
+  private async save(claims: DbClaims, input: Parameters<McpCredentialStore['create']>[1], reconnectId?: string): Promise<unknown> {
+    const credentialId = reconnectId ?? randomUUID();
     const spaceId = input.spaceId.toLowerCase();
     // New rows are always sealed under the ACTIVE key and the keyed AAD; the
     // unkeyed form exists only to open what was written before migration 341.
     const keyId = this.keys.activeKeyId;
     const sealed = sealSecret(await this.keys.keyFor(keyId), JSON.stringify(input.secret), mcpSecretBinding({spaceId, credentialId}, keyId));
     const expected=input.expectedRevision ?? Number((await this.db.query<{mcp_security_revision:number}>(claims,'select mcp_security_revision from public.mcp_servers where entity_id=$1',[input.serverId]))[0]?.mcp_security_revision);
-    return this.db.rpc(claims, 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key',input.secret.kind==='oauth' && input.secret.expiresAt!==undefined?new Date(input.secret.expiresAt).toISOString():null,input.secret.kind==='oauth' && Boolean(input.secret.refreshToken),expected,input.scope??'member',keyId,input.accountLabel??null,normalizeScopes(input.grantedScopes)]);
+    return this.db.rpc(claims, reconnectId ? 'reconnect_mcp_credential' : 'create_mcp_credential', [credentialId,spaceId,input.serverId,input.label,sealed.ciphertext,sealed.nonce,input.secret.kind==='oauth'?'token':'api_key',input.secret.kind==='oauth' && input.secret.expiresAt!==undefined?new Date(input.secret.expiresAt).toISOString():null,input.secret.kind==='oauth' && Boolean(input.secret.refreshToken),expected,input.scope??'member',keyId,input.accountLabel??null,normalizeScopes(input.grantedScopes)]);
   }
   async rotate(claims:DbClaims,binding:McpCredentialBinding,value:string):Promise<void> {
     if(!isHumanAuthKind(claims.authKind) || claims.viaLinkId)throw new Error('MCP credential writes require a human session');
