@@ -84,12 +84,12 @@ interface McpProvenance {
  * a running child may be reused, and two copies of "which targets feed the
  * defaults" is two places for that comparison to go quietly wrong.
  */
-export async function chatMcpDefaultTargets(q: Querier, chatId: string, spaceId: string): Promise<string[]> {
+export async function contextMcpDefaultTargets(q: Querier, entityId: string, spaceId: string): Promise<string[]> {
   const about = await q.query<{ id: string }>(`select distinct e.dst_id as id from public.edges e
     join public.entities t on t.id=e.dst_id
     where e.src_id=$1 and e.type='about' and e.space_id=$2 and t.deleted_at is null
-      and t.kind in ('task','team_member','work_session') order by e.dst_id limit 33`, [chatId, spaceId]);
-  return about.map(row => row.id);
+      and t.space_id=$2 and internal.entity_readable(t.id) order by e.dst_id limit 33`, [entityId, spaceId]);
+  return [...new Set([entityId,...about.map(row => row.id)])];
 }
 
 /** The only writer of runtime grants. Graph metadata is never an authority source. */
@@ -211,15 +211,15 @@ export class McpSessionBindings {
           root?.chain ?? null, root?.chainSpaceIds ?? null]);
         return [];
       }
-      let targetIds = input.targetIds;
-      if (picks === undefined && targetIds === undefined && runtime.runtimeChatId === input.sessionId) {
-        targetIds = await chatMcpDefaultTargets(q, input.sessionId, input.spaceId);
-      }
+      const targetIds = input.targetIds;
+      const contextTargetIds = picks === undefined
+        ? await contextMcpDefaultTargets(q, input.sessionId, input.spaceId) : undefined;
       const resolved = await resolveMcpSelections(q, {
         spaceId: input.spaceId, teamMemberId: input.teamMemberId,
         ...(targetIds ? { targetIds } : {}),
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
       }, {
+        ...(contextTargetIds ? {contextTargetIds} : {}),
         ...(rootMemberId !== undefined ? { rootMemberId } : {}),
         ...(noHumanRoot ? { noHumanRoot: true } : {}),
       });
@@ -319,7 +319,7 @@ export class McpSessionBindings {
    * So this resolves and returns, and writes nothing: no mint, no
    * `bind_mcp_session`, no config file. It reads the stored row through the same
    * door `bind` uses and resolves defaults through the same
-   * `resolveMcpSelections` over the same `chatMcpDefaultTargets`, so it moves
+   * `resolveMcpSelections` over the same `contextMcpDefaultTargets`, so it moves
    * when and only when the bound set would move — a human's
    * `chat.setMcpSelections`, an admin flipping `defaultOn`, an `equips` change
    * on the chat's subject, a newly connected or revoked account.
@@ -346,13 +346,12 @@ export class McpSessionBindings {
     return this.db.tx(launcher, async q => {
       const stored = await q.rpc<unknown>('read_mcp_launch_selections', [input.chatId]);
       const picks = stored == null ? undefined : McpSelectionsSchema.parse(stored);
-      const targetIds = picks === undefined
-        ? await chatMcpDefaultTargets(q, input.chatId, input.spaceId) : undefined;
+      const contextTargetIds = picks === undefined
+        ? await contextMcpDefaultTargets(q, input.chatId, input.spaceId) : undefined;
       const resolved = await resolveMcpSelections(q, {
         spaceId: input.spaceId, teamMemberId: input.teamMemberId,
-        ...(targetIds ? { targetIds } : {}),
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
-      }, { ...(noHumanRoot ? { noHumanRoot: true } : {}) });
+      }, { ...(contextTargetIds ? {contextTargetIds} : {}), ...(noHumanRoot ? { noHumanRoot: true } : {}) });
       // Only what would actually be bound. An unready EXPLICIT pick makes the
       // next turn's `bind` refuse out loud; dropping it here keeps that refusal
       // from reading as "the selection changed" on every turn until it is fixed.

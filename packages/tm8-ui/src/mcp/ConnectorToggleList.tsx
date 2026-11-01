@@ -53,6 +53,7 @@ export interface ConnectorToggleListProps {
   layout?: 'list' | 'grid';
   /** "Reset to Space defaults" (chat) or "Reset to defaults" (launch). */
   resetLabel?: string;
+  contextualDefaults?: boolean;
   /** Drawn under the header: §10.5's harness ⓘ line, a save failure, a notice. */
   notice?: ReactNode;
   /** The explicit-selection problem `McpPicker` computed, shown at the foot. */
@@ -83,6 +84,7 @@ export function ConnectorToggleList({
   filterable = false,
   layout = 'list',
   resetLabel = 'Reset to defaults',
+  contextualDefaults = false,
   notice,
   problem,
   testId = 'mcp-toggles',
@@ -127,7 +129,7 @@ export function ConnectorToggleList({
     <div className="mcp-toggles" data-testid={testId} data-layout={layout}>
       <div className="mcp-toggles__head">
         <span className="mcp-toggles__using" data-testid={`${testId}-using`}>
-          {explicit ? 'Using: Custom' : 'Using: Space defaults'}
+          {explicit ? 'Using: Custom' : contextualDefaults ? 'Using: Context defaults' : 'Using: Space defaults'}
         </span>
         {/* S23 / §10.4: Reset sends `null` (here, `undefined`), which DELETES
             the stored row rather than writing the current defaults into it —
@@ -170,7 +172,8 @@ export function ConnectorToggleList({
           the words have to say whose decision the viewer is looking at. */}
       <p className="mcp-toggles__note" id={`${id}-help`}>
         {explicit
-          ? 'This selection replaces the Space’s defaults.'
+          ? 'This selection replaces the inherited defaults.'
+          : contextualDefaults ? 'Inherited from this entity, its ancestors, your teammate and Space settings.'
           : 'The connectors a Space admin switched on for everyone here.'}
       </p>
       {notice ? <p className="mcp-toggles__note" role="note">{notice}</p> : null}

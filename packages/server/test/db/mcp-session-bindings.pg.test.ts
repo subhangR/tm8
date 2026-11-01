@@ -359,10 +359,47 @@ it('chat about-task defaults honor omission and a new sender cannot inherit the 
  expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id,serverKey:'chatdefault'}]);
  const selected=randomUUID();
  await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Chat private fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
+ await db.rpc(auth,'update_chat_mcp_selections',[chatId,JSON.stringify([{serverId:server,credentialId:selected}])]);
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[{serverId:server,credentialId:selected}]});
  await expect(bindings.bind({...auth,identityId:otherIdentity},input)).rejects.toBeTruthy();
+ await db.rpc(auth,'update_chat_mcp_selections',[chatId,'[]']);
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[]});
  expect(await bindings.bind({...auth,identityId:otherIdentity},input)).toEqual([]);
+});
+
+it('Craft and chat context defaults reach the runtime while account ownership and deselection remain enforced',async()=>{
+ const made=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'craftDefault',auth:{type:'none'},headerKeys:[]}),null,randomUUID()]);
+ const privateMade=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'craftPrivate'}),null,randomUUID()]);
+ const privateCredential=randomUUID();
+ await db.rpc(auth,'create_mcp_credential',[privateCredential,space,privateMade.entity.id,'Craft private account',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
+ const craft=await db.rpc<{entity:{id:string}}>(auth,'create_craft_entity',[space,'MCP Craft defaults',null,'Disposable context fixture',null,null,randomUUID()]);
+ const skill=await db.rpc<{entity:{id:string}}>(auth,'create_skill_entity',[space,'Equipment isolation fixture',null,'','',null,null,randomUUID()]);
+ await expect(db.rpc(auth,'write_edge',[craft.entity.id,skill.entity.id,'equips','{}',null,randomUUID()])).rejects.toBeTruthy();
+ await expect(db.rpc(auth,'write_edge',[craft.entity.id,made.entity.id,'equips',JSON.stringify({credentialId:privateCredential}),null,randomUUID()])).rejects.toBeTruthy();
+ await db.rpc(auth,'write_edge',[craft.entity.id,made.entity.id,'equips','{}',null,randomUUID()]);
+ await db.rpc(auth,'write_edge',[craft.entity.id,privateMade.entity.id,'equips','{}',null,randomUUID()]);
+ const chatId=randomUUID();
+ await db.rpc(auth,'start_chat',[chatId,space,teammate,'claude-sonnet-4-5','anthropic','claude-code','craft','scratch',null,randomUUID(),'/tmp/mcp-chat-fixture','MCP Craft chat','Read selected sources',[],craft.entity.id,randomUUID()]);
+ const minted=await issueAgentRuntimeSession(db,auth,{chatId,teamMemberId:teammate});
+ const input={sessionId:chatId,spaceId:space,teamMemberId:teammate,agentToken:minted.token,resume:true};
+ expect(await bindings.bind(auth,input)).toEqual(expect.arrayContaining([{serverId:made.entity.id,serverKey:'craftdefault'},{serverId:privateMade.entity.id,credentialId:privateCredential,serverKey:'craftprivate'}]));
+ const other=await bindings.effectiveChatSelection({...auth,identityId:otherIdentity},{chatId,spaceId:space,teamMemberId:teammate});
+ expect(other).toEqual([{serverId:made.entity.id}]);
+ await db.rpc(auth,'write_edge',[chatId,made.entity.id,'equips','{}',null,randomUUID()]);
+ expect(await bindings.effectiveChatSelection(auth,{chatId,spaceId:space,teamMemberId:teammate})).toHaveLength(2);
+ await db.rpc(auth,'update_chat_mcp_selections',[chatId,'[]']);
+ expect(await bindings.bind(auth,input)).toEqual([]);
+ await expect(bindings.authorize({identityId:identity,authKind:'agent_runtime',authSessionId:minted.sessionId,sessionSpaceId:space},chatId,made.entity.id)).rejects.toBeTruthy();
+});
+
+it('work sessions inherit their actual about-entity defaults even when the spawner supplies task targets',async()=>{
+ const made=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'sessionContext',auth:{type:'none'},headerKeys:[]}),null,randomUUID()]);
+ const craft=await db.rpc<{entity:{id:string}}>(auth,'create_craft_entity',[space,'Session context defaults',null,'',null,null,randomUUID()]);
+ await db.rpc(auth,'write_edge',[craft.entity.id,made.entity.id,'equips','{}',null,randomUUID()]);
+ const r=await runtime();
+ await db.rpc(auth,'write_edge',[r.sessionId,craft.entity.id,'about','{}',null,randomUUID()]);
+ const picked=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,targetIds:[]});
+ expect(picked).toEqual(expect.arrayContaining([{serverId:made.entity.id,serverKey:'sessioncontext'}]));
 });
 
 it('a session started through a space link launches with no MCP servers; naming one is refused, and nothing is bound',async()=>{

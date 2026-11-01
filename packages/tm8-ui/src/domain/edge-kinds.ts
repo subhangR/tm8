@@ -182,9 +182,9 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     acyclic: false,
   },
   equips: {
-    src: ['task', 'team_member', 'work_session'],
+    src: ['*'],
     dst: ['spell', 'skill', 'mcp_server'],
-    description: 'This task, teammate or session is equipped with that skill, spell or MCP server.',
+    description: 'This entity supplies MCP connection defaults to its work; tasks, teammates and sessions can also equip skills and spells.',
     acyclic: false,
   },
   executes: { src: ['work_session'], dst: ['tool'], description: 'This work session executes that tool.', acyclic: false },
@@ -361,6 +361,7 @@ export interface KindRelation {
 }
 
 const WILD = '*';
+const SKILL_EQUIPMENT_SOURCES = ['task', 'team_member', 'work_session'];
 
 /**
  * Every relation a kind can hold, in registry order, outgoing before incoming.
@@ -377,10 +378,12 @@ export function relationsOf(kind: string): KindRelation[] {
     const srcWild = row.src.includes(WILD);
     const dstWild = row.dst.includes(WILD);
     if (srcNamed || srcWild) {
-      out.push({ type, direction: 'outgoing', peers: row.dst, viaWildcard: !srcNamed, description: row.description });
+      const peers=type==='equips'&&!SKILL_EQUIPMENT_SOURCES.includes(kind)?['mcp_server']:row.dst;
+      out.push({ type, direction: 'outgoing', peers, viaWildcard: !srcNamed, description: row.description });
     }
     if (dstNamed || dstWild) {
-      out.push({ type, direction: 'incoming', peers: row.src, viaWildcard: !dstNamed, description: row.description });
+      const peers=type==='equips'&&kind!=='mcp_server'?SKILL_EQUIPMENT_SOURCES:row.src;
+      out.push({ type, direction: 'incoming', peers, viaWildcard: !dstNamed, description: row.description });
     }
   }
   return out;

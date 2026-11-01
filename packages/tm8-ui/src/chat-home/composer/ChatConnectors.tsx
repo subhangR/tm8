@@ -184,7 +184,8 @@ export function ChatConnectorsSheet({
         onChange={state.change}
         disabled={disabled || state.busy}
         filterable
-        resetLabel="Reset to Space defaults"
+        resetLabel={targetId ? 'Reset to context defaults' : 'Reset to Space defaults'}
+        contextualDefaults={Boolean(targetId)}
         testId={`${testId}-toggles`}
         {...(streaming
           ? { notice: 'Applies to your next message — the turn now running keeps the connectors it started with.' }
