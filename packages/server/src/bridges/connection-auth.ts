@@ -16,7 +16,7 @@
  */
 import {
   BridgeConnectionAuthFrameSchema, type AuthFrame, type BridgeConnectionAuthFlow, type BridgeConnectionAuthFrame,
-  type ConversationsFrame,
+  type ConversationsFrame, type GroupFrame,
 } from '@tm8/contract';
 import type { DbClaims } from '../db/types.js';
 import { fanOutToIdentity, type IdentityAddress, type SubscriptionRegistry } from '../events/subscriptions.js';
@@ -35,6 +35,8 @@ export interface BridgeRuntimeLink {
   disconnect(connectionId: string, opts: { logout: boolean; runtimeId?: string | null }): Promise<boolean>;
   /** B1b-7: the runtime's live group list for one connection; never stored. Null when that runtime is not connected. */
   listConversations(runtimeId: string, connectionId: string, requestId: string): Promise<ConversationsFrame | null>;
+  /** 426's `group.create` for `bridges.conversations.create`: a new group on one connection; null when that runtime is not connected. */
+  createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[] }): Promise<GroupFrame | null>;
 }
 
 /** How long a begin waits for its runtime before the pending entry lapses on its own. */
@@ -102,5 +104,6 @@ export function lazyRuntimeLink(hub: () => BridgeRuntimeLink | undefined): Bridg
     disconnect: async (connectionId, opts) => (hub() ? hub()!.disconnect(connectionId, opts) : false),
     listConversations: async (runtimeId, connectionId, requestId) =>
       (hub() ? hub()!.listConversations(runtimeId, connectionId, requestId) : null),
+    createGroup: async (runtimeId, input) => (hub() ? hub()!.createGroup(runtimeId, input) : null),
   };
 }

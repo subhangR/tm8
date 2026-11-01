@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:f5e7e351a4ded91f7e9d5ec149adc2409905406f11240372bfd9982fc79226e3",
+  "catalogDigest": "sha256:90799d1d72d82d4831c6da5d8311dcf66c885cb6f3bfa8a760c48a66155bb761",
   "catalog": {
-    "total": 432,
-    "v1": 430,
+    "total": 433,
+    "v1": 431,
     "reserved": 2,
-    "http": 430,
+    "http": 431,
     "ws": 1,
-    "registerableV1Http": 428,
+    "registerableV1Http": 429,
     "methods": {
       "GET": 144,
-      "POST": 216,
+      "POST": 217,
       "PATCH": 25,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 151,
-      "command": 279,
+      "command": 280,
       "stream": 2
     },
-    "uniqueNames": 432,
-    "uniqueBindings": 431
+    "uniqueNames": 433,
+    "uniqueBindings": 432
   },
   "reservedOperations": [
     "search.query",
@@ -511,6 +511,13 @@
       {
         "operation": "bridges.conversations.list",
         "method": "GET",
+        "path": "/v2/me/bridge-connections/:connectionId/conversations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.conversations.create",
+        "method": "POST",
         "path": "/v2/me/bridge-connections/:connectionId/conversations",
         "status": "registered",
         "source": "server-router"
@@ -3428,7 +3435,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 400
+    "unimplementedV1Http": 401
   },
   "schemas": {
     "additive": {
@@ -4328,6 +4335,23 @@
           "bridges",
           "conversations",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.conversations.create",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.conversations.create",
+        "intentTags": [
+          "bridges",
+          "conversations",
+          "create"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

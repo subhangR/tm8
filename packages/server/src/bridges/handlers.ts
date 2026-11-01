@@ -8,6 +8,10 @@
  * call); the handle claim, the log read and listen take any session in the
  * space (D23). The People tab's write (participants.update, 420) is
  * human-only too: an assertion makes a number count as a person (D52).
+ * A new group (`bridges.conversations.create`) is made only by a human who
+ * owns the number, and bridged in the same call only by one who may run
+ * `bridges.create` in that space: an agent can neither make a group nor add
+ * people to one.
  */
 import {
   BridgeConnectionBeginInputSchema, BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema,
@@ -22,6 +26,8 @@ import {
   BridgeWorkStartInputSchema, type BridgeWorkStartResult, BRIDGE_MEMORY_PROPOSAL_STATUSES, type BridgeIdentityLink,
   type BridgeLinkCode, type BridgeLinksList, type BridgeMemoryProposal, type BridgeMemoryProposalListResult,
   type BridgeParticipant, type BridgeParticipantListResult, type BridgeParticipantUpdateResult,
+  BridgeConversationCreateInputSchema, bridgeParticipantJid, type BridgeConversationCreateInput,
+  type BridgeConversationCreateResult,
 } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { BridgeRuntimeLink, ConnectionAuthRelay } from './connection-auth.js';
@@ -293,6 +299,30 @@ async function liveGroupIds(options: BridgeHandlerOptions, receiving: HandoverRe
   return frame.items.map(item => item.conversationId);
 }
 
+type CreateBridgeSettings = NonNullable<BridgeConversationCreateInput['bridge']>;
+
+/** `create_bridge`'s arguments for a conversation; one list for the preflight and the real call. */
+function createBridgeArgs(connectionId: string, conversation: { externalId: string; title: string; memberCount: number | null },
+  b: CreateBridgeSettings, clientMutationId: string): unknown[] {
+  return [
+    b.spaceId, connectionId, conversation.externalId,
+    JSON.stringify({ kind: 'group', title: conversation.title, memberCount: conversation.memberCount }),
+    b.targetId, JSON.stringify(b.policy ?? {}), b.teammateId ?? null, b.purpose ?? null,
+    b.quietHours ? JSON.stringify(b.quietHours) : null, b.workerPosting ?? true,
+    b.retentionDays ?? null, b.actorId ?? null, clientMutationId,
+  ];
+}
+
+/** Thrown to roll the preflight's transaction back; carries a replayed bridge when the call already ran. */
+class PreflightPassed extends Error {
+  constructor(readonly replayed: BridgeView | null) { super('preflight passed'); }
+}
+
+/** A replayed create answers with the group as its bridge recorded it; who was added is not kept. */
+const recordedGroup = (b: BridgeView): BridgeConversationCreateResult['group'] => ({
+  conversationId: b.conversation.externalId, subject: b.conversation.title, results: [], inviteLink: null,
+});
+
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
   const value = ctx.query.get(name);
   if (value === null || value === '') return null;
@@ -548,6 +578,71 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
       // Answered as it came; nothing about it is kept.
       return { connectionId, items: frame.items };
     }, 'bridges.conversations.list is for a human: the number\'s owner'),
+    // A new group on the owner's number (D28: owner only, human only), bridged
+    // in the same call when `bridge` is given. Everything that could refuse the
+    // bridge is tried first, in a transaction that is rolled back, so a refusal
+    // never leaves a group on WhatsApp that nothing bridges.
+    'bridges.conversations.create': requireHumanSession(async (ctx): Promise<BridgeConversationCreateResult> => {
+      const input = BridgeConversationCreateInputSchema.parse(ctx.body);
+      const connectionId = routeId(ctx, 'connectionId');
+      const participants = input.participants.map((raw, i) => {
+        const jid = bridgeParticipantJid(raw);
+        if (!jid) {
+          throw new CollabError('invalid_input', `participant "${raw}" is not a phone number in international form (+91 98765 43210) or a WhatsApp user id`,
+            { details: { path: `participants.${i}` } });
+        }
+        return jid;
+      });
+      const conn = await read(ctx, q => q.rpc<{ id: string; status: string; runtimeId: string | null }>(
+        'bridge_connection_for_owner', [connectionId]));
+      const settings = input.bridge;
+      if (settings) {
+        const probe = { externalId: `tm8-preflight-${randomUUID()}@g.us`, title: input.title, memberCount: null };
+        try {
+          await command(ctx, async q => {
+            const result = await q.rpc<{ entity: { id: string } }>('create_bridge',
+              createBridgeArgs(connectionId, probe, settings, input.clientMutationId));
+            const view = await loadBridgeView(q, result.entity.id);
+            throw new PreflightPassed(view.conversation.externalId === probe.externalId ? null : view);
+          });
+        } catch (error) {
+          if (!(error instanceof PreflightPassed)) throw error;
+          // The same mutation id already made its group and bridge: answer that, make nothing.
+          if (error.replayed) return { connectionId, group: recordedGroup(error.replayed), bridge: error.replayed };
+        }
+      }
+      if (!options.runtime || !conn.runtimeId || conn.status !== 'linked') {
+        throw new CollabError('upstream_unavailable', 'this number must be linked and its runtime running to make a group; link it with `tm8 bridge connection begin`',
+          { details: { reason: 'runtime_offline' } });
+      }
+      const frame = await options.runtime.createGroup(conn.runtimeId,
+        { requestId: randomUUID(), connectionId, subject: input.title, participants });
+      if (!frame) {
+        throw new CollabError('upstream_unavailable', 'the bridge runtime holding this connection is not connected',
+          { details: { reason: 'runtime_offline' } });
+      }
+      if ('error' in frame) {
+        throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${frame.error}`,
+          { details: { reason: 'runtime_error' } });
+      }
+      const group = { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
+      if (!settings) return { connectionId, group, bridge: null };
+      // The number itself, and everyone WhatsApp added.
+      const memberCount = 1 + group.results.filter(r => r.status === 'added').length;
+      try {
+        const bridge = await command(ctx, async q => {
+          const result = await q.rpc<{ entity: { id: string } }>('create_bridge', createBridgeArgs(connectionId,
+            { externalId: group.conversationId, title: group.subject, memberCount }, settings, input.clientMutationId));
+          return loadBridgeView(q, result.entity.id);
+        });
+        return { connectionId, group, bridge };
+      } catch (error) {
+        // Something changed since the preflight: the group stands, so name it for `tm8 bridge create`.
+        if (!(error instanceof CollabError)) throw error;
+        throw new CollabError(error.code, `the group was made (${group.conversationId}) but not bridged: ${error.message}`,
+          { details: { ...(error.details ?? {}), conversationId: group.conversationId } });
+      }
+    }, 'bridges.conversations.create is for a human: the number\'s owner, at a keyboard'),
     'bridges.work.start': async (ctx): Promise<BridgeWorkStartResult> => {
       const input = BridgeWorkStartInputSchema.parse(ctx.body);
       const bridgeId = routeId(ctx, 'bridgeId');

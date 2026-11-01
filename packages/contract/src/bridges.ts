@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import type { ActorSummary, EntityId, SpaceId } from './contract.js';
-import type { ConversationItem } from './bridge-runtime-protocol.js';
+import type { ConversationItem, GroupMemberResult } from './bridge-runtime-protocol.js';
 
 export const BRIDGE_PROVIDERS = ['whatsapp', 'telegram', 'slack', 'discord', 'instagram', 'messenger'] as const;
 export type BridgeProvider = typeof BRIDGE_PROVIDERS[number];
@@ -469,6 +469,51 @@ export interface BridgeConnectionRemoveResult {
 /** The owner's live group list (§4.3, D28): asked of the runtime on each call, never stored. */
 export interface BridgeConversationListResult { connectionId: string; items: ConversationItem[] }
 
+/** WhatsApp caps a group's subject at 100 characters, and a new group's first participants at 256 here. */
+export const BRIDGE_GROUP_TITLE_MAX = 100;
+export const BRIDGE_GROUP_PARTICIPANTS_MAX = 256;
+
+/**
+ * `bridges.conversations.create`: a new group made on the caller's own number,
+ * and (with `bridge`) bridged in the same call. Human-only, the number's owner
+ * only (D28); with `bridge`, also a space admin of `bridge.spaceId`, checked
+ * before the group is made, so a refusal leaves no group behind.
+ */
+export interface BridgeConversationCreateInput {
+  clientMutationId: string;
+  connectionId?: string;
+  title: string;
+  /** Phone numbers in international form (`+91 98765 43210`) or WhatsApp user JIDs; the number itself is added anyway. */
+  participants: string[];
+  /** Bridge the new group at once: `bridges.create`'s settings, minus the conversation (it is the new group). */
+  bridge?: Omit<BridgeCreateInput, 'clientMutationId' | 'connectionId' | 'conversation'> & { spaceId: SpaceId };
+}
+export interface BridgeConversationCreateResult {
+  connectionId: string;
+  /**
+   * The group as WhatsApp answered it (the runtime's `group` frame, 426); its id
+   * is what `tm8 bridge create --conversation` takes. `inviteLink` is set only
+   * when someone's privacy settings refused the add.
+   */
+  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null };
+  /** The bridge made in the same call; null when none was asked for. */
+  bridge: BridgeView | null;
+}
+
+/**
+ * A participant as the runtime adds it: a user JID. Accepts `+91 98765 43210`
+ * (spaces, dashes, dots and brackets ignored) or a `…@s.whatsapp.net` / `…@lid`
+ * JID; null for anything else (a group, a short code, letters).
+ */
+export function bridgeParticipantJid(raw: string): string | null {
+  const text = raw.trim();
+  const jid = /^([0-9]{6,20})@(s\.whatsapp\.net|lid)$/.exec(text);
+  if (jid) return `${jid[1]}@${jid[2]}`;
+  if (!/^\+?[0-9][0-9 ().-]*$/.test(text)) return null;
+  const digits = text.replace(/[^0-9]/g, '');
+  return digits.length >= 6 && digits.length <= 15 ? `${digits}@s.whatsapp.net` : null;
+}
+
 /**
  * The QR or pairing code for a `bridges.connections.begin`, pushed by the
  * server to the begin caller's own human sockets only (selected by their
@@ -706,6 +751,15 @@ export const BridgeWorkStartInputSchema = z.object({
     project: OneLine(200).optional(),
     effort: z.enum(['low', 'high', 'max']).optional(),
   }).strict().optional(),
+}).strict();
+
+export const BridgeConversationCreateInputSchema = z.object({
+  clientMutationId: z.string().min(1),
+  connectionId: Id.optional(),
+  title: OneLine(BRIDGE_GROUP_TITLE_MAX),
+  participants: z.array(z.string().trim().min(1).max(64)).max(BRIDGE_GROUP_PARTICIPANTS_MAX),
+  bridge: BridgeCreateInputSchema.omit({ clientMutationId: true, connectionId: true, conversation: true, spaceId: true })
+    .extend({ spaceId: Id }).strict().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
