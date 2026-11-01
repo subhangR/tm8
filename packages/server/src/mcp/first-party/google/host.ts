@@ -92,7 +92,7 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
   async request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, connection: FirstPartyConnection): Promise<unknown> {
     const tools = this.tools(definition, connection.grantedScopes);
     if (method === 'tools/list') {
-      return { tools: tools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: jsonSchema(tool.input) })) };
+      return { tools: tools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: jsonSchema(tool.input), annotations: {readOnlyHint:tool.effect==='read',destructiveHint:tool.effect==='destructive',idempotentHint:tool.effect==='read',openWorldHint:true} })) };
     }
     const name = params.name;
     const tool = tools.find(candidate => candidate.name === name);

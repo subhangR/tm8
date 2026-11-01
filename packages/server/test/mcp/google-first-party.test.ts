@@ -586,3 +586,12 @@ describe('helpers', () => {
     expect(driveLiteral("a\\'b")).toBe("'a\\\\\\'b'");
   });
 });
+
+it('advertises Google reads separately from writes so native harnesses can apply their tool approval policy',async()=>{
+  const listed=await host().request(definition(gmail,{gates:{gmailSend:true}}),'tools/list',{}, {accessToken:'fixture',grantedScopes:[...gmail.scopes]});
+  expect(listed).toMatchObject({tools:expect.arrayContaining([
+    expect.objectContaining({name:'search_messages',annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true}}),
+    expect.objectContaining({name:'create_draft',annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true}}),
+    expect.objectContaining({name:'send_message',annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:true}}),
+  ])});
+});

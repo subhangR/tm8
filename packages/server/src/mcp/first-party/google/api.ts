@@ -93,6 +93,7 @@ export function segment(value: string): string {
 /** One tool the host exposes. `gate` names the definition gate that must be TRUE for it to exist. */
 export interface GoogleTool<I extends z.ZodTypeAny = z.ZodTypeAny> {
   name: string;
+  effect: 'read' | 'write' | 'destructive';
   description: string;
   input: I;
   gate?: string;

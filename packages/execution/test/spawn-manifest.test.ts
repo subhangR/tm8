@@ -613,7 +613,7 @@ describe('buildAgentCommand', () => {
     const loopback = CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
     const noUpdate = ['-c', CODEX_DISABLE_STARTUP_UPDATE_CHECK];
     const expected = (approval: 'never' | 'untrusted') => [
-      '-c', 'mcp_servers={}',
+      '-c', 'mcp_servers={}', '-c', 'features.apps=false', '-c', 'features.plugins=false',
       '--model',
       'gpt-5.6-sol',
       ...noUpdate,
@@ -638,7 +638,7 @@ describe('buildAgentCommand', () => {
       expected('untrusted'),
     );
     expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'bypassPermissions' })).toEqual([
-      '-c', 'mcp_servers={}',
+      '-c', 'mcp_servers={}', '-c', 'features.apps=false', '-c', 'features.plugins=false',
       '--model',
       'gpt-5.6-sol',
       ...noUpdate,
