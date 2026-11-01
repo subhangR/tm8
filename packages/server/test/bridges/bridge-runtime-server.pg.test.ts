@@ -11,17 +11,19 @@
  * dispatched on the socket signed with the teammate and settles `sent`.
  * ac10: messages.post answers a refused bridged post with its reason.
  * ac6: the watchdog job raises the fyi and reacts ⚠️ through the outbox.
+ * 431: an image posted in tm8 leaves as an image (`media`), captioned with the text.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { OPERATIONS, TM8_CLIENT_HEADER, TM8_CLIENT_HEADER_VALUE, type AllowlistFrame, type ServerFrame } from '@tm8/contract';
 
 import { createDb } from '../../src/db/client.js';
+import { createW2BlobStore } from '../../src/files/w2-blob-store.js';
 import type { Db } from '../../src/db/types.js';
 import { loadConfig } from '../../src/http/config.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
@@ -321,6 +323,45 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
     const edge = await database.query(`select 1 from public.edges where src_id = $1 and dst_id = $2 and type = 'attached_to'`,
       [fileId, r.body.messageId]);
     expect(edge).toHaveLength(1);
+  });
+
+  it('an image posted in tm8 leaves as an image captioned with the text; a second file is named (431)', async () => {
+    const { frames } = await runtimeSocket('wa-srv');
+    await hello('wa-srv');
+    // A real PNG header is enough: the hub sends bytes, it never decodes them.
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('pixels')]);
+    const blobs = createW2BlobStore({ dataDir });
+    // messages.attachments orders by file id, so the image gets the lower one.
+    const [imageId, docId] = [randomUUID(), randomUUID()].sort();
+    for (const [id, name, mime, bytes] of [[imageId!, 'screen.png', 'image/png', png], [docId!, 'notes.txt', 'text/plain', Buffer.from('notes')]] as const) {
+      const storagePath = blobs.storagePath(spaceId, randomUUID());
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      await blobs.writeUpload({ stream: (async function* () { yield bytes; })(), storagePath, expectedSpaceId: spaceId,
+        expectedSizeBytes: bytes.length, expectedChecksumSha256: sha256 });
+      await database.transaction(async (c) => {
+        await c.query('set local role tm8_graph_owner');
+        await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'file',$3)`, [id, spaceId, ownerMember]);
+        await c.query(`insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256) values ($1,$2,$3,$4,$5,$6)`,
+          [id, name, mime, bytes.length, storagePath, sha256]);
+      });
+    }
+    const r = await call('/v2/messages', browserToken, { anchorIds: [bridge], body: 'the error screen', attachmentIds: [imageId, docId],
+      clientMutationId: randomUUID() });
+    expect(r.status).toBe(200);
+    const data = r.body.data ?? r.body;
+    expect(data.bridgeDelivery).toEqual([expect.objectContaining({ bridgeId: bridge, status: 'pending' })]);
+    const send = await until(() => frames.find((f): f is Extract<ServerFrame, { type: 'send' }> =>
+      f.type === 'send' && f.media?.fileName === 'screen.png'));
+    expect(send.media).toMatchObject({ kind: 'image', mime: 'image/png', fileName: 'screen.png' });
+    expect(Buffer.from(send.media!.data, 'base64').equals(png)).toBe(true);
+    expect(send.media!.caption).toContain('the error screen');
+    expect(send.media!.caption).toContain('[notes.txt: in tm8]');
+    // The caption carries the text; storage paths never reach the runtime.
+    expect(send).not.toHaveProperty('text');
+    expect(send).not.toHaveProperty('files');
+    const sent = await call('/v2/bridge-runtime/sent', runtimeToken,
+      { outboxId: send.outboxId, connectionId: connection, externalMessageId: 'BAE5IMG1', message: { imageMessage: {} } });
+    expect(sent.body).toMatchObject({ status: 'sent' });
   });
 
   it('the watchdog job marks a silent runtime degraded with one fyi, and reacts ⚠️ on a failed turn (ac6)', async () => {

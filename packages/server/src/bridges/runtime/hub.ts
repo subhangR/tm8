@@ -12,6 +12,12 @@
  * second (§7.3 item 12 asks for 5). Every frame it sends carries a version the
  * database just bumped (D35), so versions only grow, across restarts too.
  *
+ * ATTACHMENTS (431). A send row's frame comes with a server-only `files` list:
+ * where each attached file's bytes are. The database cannot read blobs, so the
+ * hub reads the first one that it can, sends it as `media` with the text as its
+ * caption, and strips `files`. Any further attachment is named in the caption,
+ * because one outbox row settles one WhatsApp message.
+ *
  * WHAT IT NEVER DOES. It holds no queue of its own: an outbox row is taken
  * (`dispatching`) only while its runtime's socket is open, and a row a dead
  * socket swallowed returns to retry through the watchdog after two minutes.
@@ -24,6 +30,7 @@ import { CollabError } from '@tm8/contract';
 import type { AllowlistFrame, ConversationsFrame, GroupFrame, MediaFrame, ServerFrame } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../db/types.js';
+import type { W2BlobStore } from '../../files/w2-blob-store.js';
 import { createWsServer, type WsServer } from '../../events/ws-server.js';
 import type { EventSink } from '../../events/ws-connection.js';
 import type { RequestIdentity } from '../../http/types.js';
@@ -48,7 +55,27 @@ export interface BridgeRuntimeHubOptions {
   readonly log?: (line: string) => void;
   /** Poll period for allowlists and the outbox. Default 1000 ms. */
   readonly pollMs?: number;
+  /** Where attachment bytes are read for outbound `media` (431). Absent: attachments are named in the text only. */
+  readonly blobStore?: Pick<W2BlobStore, 'read'>;
 }
+
+/** 431: one attached file as `internal.bridge_outbox_take` describes it. Never sent to a runtime. */
+export interface OutboundFile {
+  fileEntityId: string;
+  spaceId: string;
+  storagePath: string;
+  name: string;
+  mime: string;
+  size: number | string;
+}
+
+type SendFrame = Extract<ServerFrame, { type: 'send' }>;
+
+/** What WhatsApp shows inline as an image; anything else goes as a document (Phase-1's IMAGE_MIMES). */
+const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+/** WhatsApp's ceilings: 16 MB for an image message, 100 MB for a document. */
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 
 interface RuntimeLink {
   readonly runtimeId: string;
@@ -296,12 +323,50 @@ export class BridgeRuntimeHub {
     }
     const sends = await this.o.db.rpc<{ runtimeId: string; frame: ServerFrame }[]>(
       bridgesWorkerClaims(), 'internal.bridge_outbox_take', [ids, 50]);
-    for (const { runtimeId, frame } of sends ?? []) {
+    for (const { runtimeId, frame: raw } of sends ?? []) {
+      const frame = raw.type === 'send' ? await this.withMedia(raw as SendFrame & { files?: OutboundFile[] | null }) : raw;
       try {
         this.send(runtimeId, frame);
       } catch {
         // Left `dispatching`; the watchdog returns it to retry after two minutes.
       }
     }
+  }
+
+  /**
+   * 431: a send row's attachments become the frame's `media`. The first file
+   * that can be read goes as the media message, captioned with the text; a file
+   * that cannot be read or is too large for WhatsApp, and any further file, is
+   * named in the caption instead, so nothing is dropped silently.
+   */
+  private async withMedia(frame: SendFrame & { files?: OutboundFile[] | null }): Promise<SendFrame> {
+    const { files, ...out } = frame;
+    if (!files || files.length === 0) return out;
+    const notes: string[] = [];
+    let media: SendFrame['media'];
+    for (const file of files) {
+      if (media) {
+        notes.push(`[${file.name}: in tm8]`);
+        continue;
+      }
+      const size = Number(file.size);
+      const image = IMAGE_MIMES.has(file.mime) && size <= MAX_IMAGE_BYTES;
+      if (!this.o.blobStore || size > MAX_DOCUMENT_BYTES) {
+        notes.push(`[${file.name}: in tm8]`);
+        continue;
+      }
+      try {
+        const bytes = await this.o.blobStore.read(file.storagePath, file.spaceId);
+        media = { kind: image ? 'image' : 'document', mime: file.mime, fileName: file.name, caption: '', data: bytes.toString('base64') };
+      } catch (err) {
+        this.o.log?.(`[bridges] outbox ${frame.outboxId}: could not read ${file.fileEntityId}: ${(err as Error).message}`);
+        notes.push(`[${file.name}: in tm8]`);
+      }
+    }
+    const text = [out.text ?? '', ...notes].filter((t) => t !== '').join('\n');
+    if (!media) return { ...out, text };
+    const sent: SendFrame = { ...out, media: { ...media, caption: text } };
+    delete sent.text;
+    return sent;
   }
 }

@@ -920,6 +920,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           return async () => { await client.end().catch(() => undefined); };
         },
         log: (line) => console.warn(line),
+        // 431: an image posted in tm8 goes to the group as an image.
+        ...(blobStore ? { blobStore } : {}),
       })
     : undefined;
   bridgeHubRef = bridgeHub || undefined;
