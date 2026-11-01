@@ -27,10 +27,16 @@ export function RoutingTab({
   onOpenEntity,
 }: {
   view: BridgeView;
-  port: Pick<BridgesPort, 'update' | 'retarget' | 'targets' | 'handles' | 'serves' | 'startSession'>;
+  port: Pick<BridgesPort, 'update' | 'retarget' | 'targets' | 'teammates' | 'handles' | 'serves' | 'startSession'>;
   onView(next: BridgeView): void;
   onOpenEntity?: (id: string) => void;
 }) {
+  const [teammates, setTeammates] = useState<EntitySummary[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void port.teammates(view.spaceId).then((t) => { if (live) setTeammates(t); }, () => { if (live) setTeammates([]); });
+    return () => { live = false; };
+  }, [port, view.spaceId]);
   const [draft, setDraft] = useState<RoutingDraft>(() => draftOf(view));
   const [confirm, setConfirm] = useState<{ title: string; lines: string[]; label: string; run: () => Promise<void> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +244,25 @@ export function RoutingTab({
               <span className="brg-hint">{pendingReason(port, 'bridges.history.import', 'Importing earlier messages')}</span>
             </div>
           </Group>
+
+          {view.target.kind !== 'channel' ? (
+            <label className="brg-form__line">
+              <span className="set-eyebrow">Teammate</span>
+              <select
+                aria-label="Teammate"
+                value={draft.teammateId}
+                onChange={(event) => set((d) => ({ ...d, teammateId: event.target.value }))}
+              >
+                <option value="">{`The ${TARGET_WORD[view.target.kind]}'s own teammate`}</option>
+                {/* The saved one, even before the list loads or when it is not in it. */}
+                {draft.teammateId && !(teammates ?? []).some((t) => t.id === draft.teammateId) ? (
+                  <option value={draft.teammateId}>{teammates === null ? 'Loading…' : 'A teammate not listed here'}</option>
+                ) : null}
+                {(teammates ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+              <span className="brg-hint">Who /work, /start and ＋ New session run as.</span>
+            </label>
+          ) : null}
 
           <Group title="Workers">
             <label className="brg-form__line">

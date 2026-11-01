@@ -123,10 +123,7 @@ export function AddBridgeWizard({
     void reloadConnections();
     void port.list(spaceId).then((rows) => setExisting(connectedHere(rows)), () => {});
     void port.targets(spaceId).then(setTargets, () => setTargets([]));
-    void port.teammates(spaceId).then((rows) => {
-      setTeammates(rows);
-      setTeammateId((id) => id || rows[0]?.id || '');
-    }, () => setTeammates([]));
+    void port.teammates(spaceId).then(setTeammates, () => setTeammates([]));
   }, [port, spaceId, reloadConnections]);
 
   /* A target handed in by the launcher picks its own kind. */
@@ -163,6 +160,9 @@ export function AddBridgeWizard({
 
   const canStartSession = !!port.startSession;
   const canStartChat = !!port.startChat;
+  /* A new session or chat must run as someone (the first teammate unless picked); an existing one may keep its own. */
+  const startsNew = targetId === NEW_SESSION || targetId === NEW_CHAT;
+  const runsAs = startsNew ? (teammateId || teammates?.[0]?.id || '') : teammateId;
   /* A different kind is a different set of defaults (R7): the choice re-derives them. */
   const chooseKind = (kind: BridgeTargetKind) => {
     setTargetKind(kind);
@@ -174,10 +174,10 @@ export function AddBridgeWizard({
     if (!connection || !conversation) return;
     const title = `${conversation.name} (${provider})`.slice(0, 80);
     const target = targetId === NEW_SESSION
-      ? await port.startSession!(spaceId, { teamMemberId: teammateId, title })
+      ? await port.startSession!(spaceId, { teamMemberId: runsAs, title })
       : targetId === NEW_CHAT
         ? await port.startChat!(spaceId, {
-          teammateId, model: chatModel, title,
+          teammateId: runsAs, model: chatModel, title,
           body: `This chat answers the ${provider} group "${conversation.name}". Messages there that mention @tm8 arrive here as turns, and your answers go back to the group. Say hello in one line.`,
         })
         : targetId;
@@ -190,6 +190,8 @@ export function AddBridgeWizard({
         memberCount: conversation.size,
       },
       targetId: target,
+      // The bridge's own teammate: who /work and /start run as. A channel has none.
+      teammateId: targetKind === 'channel' || runsAs === '' ? null : runsAs,
       policy: { ...policy, style: style.trim() === '' ? null : style.trim() },
       retentionDays: retention.forever ? null : retention.days,
     });
@@ -224,8 +226,8 @@ export function AddBridgeWizard({
   const targetChoices = (targets ?? []).filter((t) => t.kind === targetKind);
   /* D25: a target with a bridge cannot take another; say which, instead of refusing at Create. */
   const bridgedTo = useMemo(() => new Map([...existing.values()].map((b) => [b.target.id, b.conversation.title])), [existing]);
-  const targetReady = targetId === NEW_SESSION ? teammateId !== ''
-    : targetId === NEW_CHAT ? teammateId !== '' && chatModel !== ''
+  const targetReady = targetId === NEW_SESSION ? runsAs !== ''
+    : targetId === NEW_CHAT ? runsAs !== '' && chatModel !== ''
       : targetId !== '';
   /* The contract's bound (1–3650 days); Create waits until it holds (review #1447 r1). */
   const retentionProblem = !retention.forever && (!Number.isInteger(retention.days) || retention.days < 1 || retention.days > 3650)
@@ -374,13 +376,16 @@ export function AddBridgeWizard({
                 })}
               </select>
             </label>
-            {targetId === NEW_SESSION || targetId === NEW_CHAT ? (
+            {targetKind !== 'channel' ? (
               <label className="brg-form__line">
                 <span className="set-eyebrow">Runs as</span>
-                <select aria-label="Runs as" value={teammateId} onChange={(e) => setTeammateId(e.target.value)}>
-                  {(teammates ?? []).length === 0 ? <option value="">No teammate in this space yet</option> : null}
+                <select aria-label="Runs as" value={runsAs} onChange={(e) => setTeammateId(e.target.value)}>
+                  {!startsNew ? (
+                    <option value="">{`The ${TARGET_WORD[targetKind]}'s own teammate`}</option>
+                  ) : (teammates ?? []).length === 0 ? <option value="">No teammate in this space yet</option> : null}
                   {(teammates ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
                 </select>
+                <span className="brg-hint">Who /work and /start in the group run as. Change it later on the bridge's Routing tab.</span>
               </label>
             ) : null}
             {targetId === NEW_CHAT ? (
