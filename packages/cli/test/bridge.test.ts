@@ -1,7 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BridgeConnectionAuthFrame, BridgeConnectionView, BridgeDetailView } from '@tm8/contract';
+import {
+  BridgeConnectionOfferInputSchema, BridgeConnectionRemoveInputSchema, BridgeConnectionWithdrawInputSchema,
+  BridgeConversationCreateInputSchema, BridgeWorkStartInputSchema,
+  type BridgeConnectionAuthFrame, type BridgeConnectionView, type BridgeDetailView,
+} from '@tm8/contract';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,6 +77,8 @@ beforeAll(async () => {
       else if (url.pathname === '/v2/me/bridge-connections') data = { connection: connectionView('connecting'), runtime: beginRuntime };
       else if (url.pathname.endsWith('/offer')) data = { connection: connectionView('linked'), credentialId: CREDENTIAL };
       else if (url.pathname.endsWith('/remove')) data = { connection: { ...connectionView('linked'), status: 'removed', offers: [] }, endedBridgeIds: [BRIDGE], revokedCredentialIds: [CREDENTIAL], runtime: 'logged_out' };
+      else if (url.pathname.endsWith('/conversations') && req.method === 'POST') data = { connectionId: CONNECTION, bridge: null,
+        group: { conversationId: '1204@g.us', subject: body.title, results: [], inviteLink: null } };
       else if (url.pathname.endsWith('/conversations')) data = { connectionId: CONNECTION, items: [
         { conversationId: '1203@g.us', kind: 'group', name: 'Infra', size: 7, canSend: true, reason: null },
         { conversationId: '9999@g.us', kind: 'group', name: 'Announcements', size: 120, canSend: false, reason: 'admins_only' }] };
@@ -375,5 +381,34 @@ describe('tm8 bridge connection (B1b-5)', () => {
     expect(stdout).toMatch(/1203@g.us  group "Infra" · 7 members/);
     expect(stdout).toMatch(/read-only \(admins_only\)/);
     expect(await run(['bridge', 'conversations'])).toBe(2);
+  });
+
+  // An agent run always has an actor, and the CLI's mutation envelope carries it
+  // as `actorId`; the server validates each body against these strict schemas
+  // before it checks who is asking, so a schema without the envelope turned an
+  // agent's refusal into invalid_input (and refused any caller with an actor).
+  it('every bridge mutation body, actorId included, passes its contract input schema', async () => {
+    const ACTOR = '77777777-7777-7777-8777-777777777777';
+    vi.stubEnv('TM8_ACTOR_ID', ACTOR);
+    try {
+      const cases: Array<[string[], { safeParse(v: unknown): { success: boolean; error?: unknown } }]> = [
+        [['bridge', 'group', 'create', CONNECTION, '--title', 'bridges-test', '--participant', '+91 98765 43210'], BridgeConversationCreateInputSchema],
+        [['bridge', 'work', BRIDGE, '--item', 'fix the login timeout'], BridgeWorkStartInputSchema],
+        [['bridge', 'connection', 'offer', CONNECTION], BridgeConnectionOfferInputSchema],
+        [['bridge', 'connection', 'withdraw', CONNECTION], BridgeConnectionWithdrawInputSchema],
+        [['bridge', 'connection', 'remove', CONNECTION], BridgeConnectionRemoveInputSchema],
+      ];
+      for (const [argv, schema] of cases) {
+        expect(await run(argv), `${argv.join(' ')}: ${stderr}`).toBe(0);
+        const body = requests.at(-1)!.body;
+        expect(body.actorId, argv.join(' ')).toBe(ACTOR);
+        const parsed = schema.safeParse(body);
+        expect(parsed.success, `${argv.join(' ')}: ${JSON.stringify(parsed.error)}`).toBe(true);
+      }
+      expect(requests.at(0)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/conversations` });
+      expect(stdout).toMatch(/group 1204@g.us "bridges-test"/);
+    } finally {
+      vi.stubEnv('TM8_ACTOR_ID', '');
+    }
   });
 });
