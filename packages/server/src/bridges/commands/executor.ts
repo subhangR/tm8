@@ -63,8 +63,9 @@ export const VERB_TIER: Readonly<Record<BridgeVerb, 'everyone' | 'reader' | 'lin
   who: 'reader', bridge: 'everyone',
   mute: 'admin', unmute: 'admin', new: 'linked',
   start: 'linked', retry: 'linked', tell: 'linked', result: 'reader',
-  // 426: they act through the number owner's own WhatsApp, so a verified space admin only.
-  split: 'admin', invite: 'admin',
+  // 426 made these admin-only; Subhang widened them to any linked member of
+  // the group, a verified link or an admin's assertion alike (supersedes the 426 tier).
+  split: 'linked', invite: 'linked',
 };
 
 const LIVE_SESSION = new Set(['spawning', 'running', 'idle']);
@@ -140,6 +141,9 @@ interface ListRow {
 }
 
 const GUEST_FIRST = 'link your number first: ask a space admin in tm8 to link it. /whoami to check';
+/** A guest's /split or /invite: what it needs, and both ways to get there. */
+const GUEST_GROUPS = (verb: string) =>
+  `/${verb} is for linked members of this group, and your number isn't linked yet. Get a code in tm8 (Account → Linked identities) and send /link TM8-XXXXXX here, or ask a space admin in tm8 to link your number. /whoami to check`;
 
 /** A refusal the sender should read; never retried. */
 class Refusal extends Error {}
@@ -264,8 +268,8 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
   }
 
   // ---------------------------------------------------------------- tiers
-  const requireLinked = (cmd: Command): DbClaims => {
-    if (!cmd.claims || !cmd.sender.memberId) throw new Refusal(GUEST_FIRST);
+  const requireLinked = (cmd: Command, refusal = GUEST_FIRST): DbClaims => {
+    if (!cmd.claims || !cmd.sender.memberId) throw new Refusal(refusal);
     return cmd.claims;
   };
   const requireReader = (cmd: Command): void => {
@@ -307,7 +311,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     if (cmd.sender.admin && (t === '' || t.startsWith('admin') || t.startsWith('mute'))) {
       lines.push('/mute 1h · /unmute — hold tm8\'s posts here; commands keep working');
     }
-    if (cmd.sender.admin && (t.startsWith('admin') || t.startsWith('group') || t.startsWith('split') || t.startsWith('invite'))) {
+    if (cmd.sender.memberId && (t.startsWith('group') || t.startsWith('split') || t.startsWith('invite'))) {
       lines.push('/split <name> with @a @b — a new group with them, on its own session');
       lines.push('/invite @a +91… — add people to this group');
     }
@@ -1042,7 +1046,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     switch (VERB_TIER[verb]) {
       case 'everyone': break;
       case 'reader': requireReader(cmd); break;
-      case 'linked': requireLinked(cmd); break;
+      case 'linked': requireLinked(cmd, verb === 'split' || verb === 'invite' ? GUEST_GROUPS(verb) : GUEST_FIRST); break;
       case 'admin': requireAdminTier(cmd); break;
     }
     switch (verb) {
