@@ -31,7 +31,7 @@ export type BridgeAuthor =
       linkId: string;
       participant: { displayName: string };
     }
-  | { kind: 'bridge'; actorId: string; trust: 'guest'; participant: { displayName: string } };
+  | { kind: 'bridge'; actorId: string; trust: 'guest'; identityConflict?: boolean; participant: { displayName: string } };
 
 /** What `detect` may consult beyond the body, inside the inbound transaction. */
 export interface BridgeCommandDetectContext {

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bootstrap, type BootstrappedServer } from '../../src/main.js';
+import { bridgesWorkerClaims } from '../../src/bridges/outbox.js';
 import { loadConfig } from '../../src/http/config.js';
 import { formatToken, generateSecret, hashToken } from '../../src/identity/crypto.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
@@ -106,9 +107,11 @@ describe('ac6: main.ts injects the command executor', () => {
     const inbound = await post('inbound', {
       connectionId: connection, conversationId: GROUP, externalMessageId: `3EB0W${Date.now()}`,
       sender: { externalId: PHONE, altId: null, name: 'Owner', fromMe: false },
-      body: '/help', kind: 'text', media: [], replyTo: null, mentions: [], ts: Math.floor(Date.now() / 1000),
+      body: '/help', kind: 'text', media: [], replyTo: null, mentions: ['188888888888888@lid'], ts: Math.floor(Date.now() / 1000),
     });
     expect(inbound.status, JSON.stringify(inbound.json)).toBe(200);
+    const storedInput = await server.db!.rpc<any>(bridgesWorkerClaims(), 'bridge_command_input', [inbound.json.messageId]);
+    expect(storedInput.mentions).toEqual(['188888888888888@lid']);
     expect(inbound.json).toMatchObject({ status: 'stored', command: true });
     const messageId = inbound.json.messageId as string;
 

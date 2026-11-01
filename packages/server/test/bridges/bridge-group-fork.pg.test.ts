@@ -36,6 +36,7 @@ const roster = {
   quiet: '919000004444@s.whatsapp.net',
 };
 let bridgeId = '';
+let liveMembers: Array<{ ids: string[]; name: string | null }> = [];
 
 const human: DbClaims = { identityId: identity, nodeAdmin: false, authKind: 'cli', requestId: 'fork-human' };
 const agentOf = (session: string): DbClaims => ({
@@ -134,6 +135,7 @@ function makeExecutor(): BridgeCommandExecutor {
     resumeWorker: async (_claims, sessionId) => ({ sessionId }),
     workerHandle: async (_claims, _bridge, sessionId) => ({ handle: sessionId === forker ? 'infra-1' : 'triage-1', title: null }),
     groups: {
+      async members() { return { members: liveMembers, self: ['919000000999@s.whatsapp.net'] }; },
       async create(input) {
         if (groupRefusal) throw groupRefusal;
         creates.push({ subject: input.subject, participants: input.participants, sourceConversationId: input.sourceConversationId });
@@ -150,6 +152,7 @@ function makeExecutor(): BridgeCommandExecutor {
 }
 
 beforeEach(() => {
+  liveMembers = Object.values(roster).map(id => ({ ids: [id], name: null }));
   groupCommunity = null; groupRefusal = null;
   executor = makeExecutor();
   notices = []; spawns = []; creates = [];
@@ -201,6 +204,22 @@ describe('who may be added (ac2)', () => {
     expect(error.details).toMatchObject({ reason: 'not_in_group' });
     expect(error.message).toContain('"+91 98765 43210"');
     await nothingMade();
+  });
+
+  it('never matches a phone reference against equal LID digits', async () => {
+    liveMembers.push({ ids: ['919876543210@lid'], name: 'LID only' });
+    const error = await refusal(fork(agentOf(forker), { participants: ['+919876543210'] }));
+    expect(error.details).toMatchObject({ reason: 'not_in_group' });
+    await nothingMade();
+  });
+
+  it('everyone includes unspoken members and excludes own aliases and stale speakers', async () => {
+    const unspoken = '188888888888882@lid';
+    liveMembers = [{ ids: [roster.maya, '188888888888883@lid'], name: 'Maya' },
+      { ids: [unspoken], name: 'Never spoke' }, { ids: ['919000000999@s.whatsapp.net', '188888888888899@lid'], name: 'tm8' }];
+    const made = await fork(agentOf(forker), { participants: ['everyone', '188888888888883@lid'] });
+    expect(new Set(creates[0]!.participants)).toEqual(new Set([roster.maya, unspoken]));
+    await asOwner(c => c.query("update public.bridge_group_forks set created_at=now()-interval '2 days' where id=$1", [made.forkId]));
   });
 
   it('takes a name, a +number and the masked id the participants list shows', async () => {

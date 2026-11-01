@@ -29,6 +29,16 @@ server pushes (D28). The Phase-1 bridge above keeps running until the B1c cutove
 - `runtime.ts` the connections and frame handling · `link.ts` HTTP up, WebSocket down · `sealed-auth.ts` keys at rest
 - env: `TM8_SERVER_URL`, `TM8_BRIDGE_RUNTIME_TOKEN_FILE`, `WA_RUNTIME_ID`, `WA_RUNTIME_DATA_DIR`
 
+Protocol v3 adds `group.members`, a live identity lookup for an allowlisted source group. `/split`, `/invite`,
+and agent forks resolve native mentions against that metadata, including members who have never spoken.
+PN and LID aliases are joined only when WhatsApp confirms the mapping; explicit `+phone` input keeps its PN domain.
+`everyone` uses current members, excluding muted people and the linked number. Upgrade the runtime alongside the
+server: older runtimes receive a clear refusal before identity-dependent group operations.
+
+Group results retain the requested identity for correlation. Missing members after creation and missing or ambiguous
+add responses are failures without an assumed cause. A direct add refusal may offer an invite link; the reply never
+attributes it to privacy settings without evidence.
+
 ## In the tm8 repo
 
 This directory is a standalone package, deliberately outside the bun workspace (`packages/*`, `apps/*`, `tools/*`): it

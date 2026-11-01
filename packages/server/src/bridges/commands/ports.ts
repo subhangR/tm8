@@ -22,7 +22,7 @@
  * database with fakes for the PTY host and the outbox.
  */
 import type {
-  BridgeGroupForkInput, BridgeGroupForkResult, BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult,
+  BridgeGroupForkInput, BridgeGroupForkResult, BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult, GroupMemberIdentity,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
@@ -69,6 +69,8 @@ export interface BridgeCommandInput {
   messageId: string;
   externalMessageId: string;
   senderExternalId: string;
+  /** Native provider mentions, preserving PN/LID domains. */
+  mentions?: string[];
   author: BridgeAuthor;
   text: string;
   replyTo?: { externalMessageId: string; text?: string } | null;
@@ -97,6 +99,7 @@ export interface BridgeGroupResult {
 
 /** 426: the number's group powers, through its runtime. Absent where no runtime is wired. */
 export interface BridgeGroupPort {
+  members(input: { connectionId: string; conversationId: string; requestId: string }): Promise<{ members: GroupMemberIdentity[]; self: string[] }>;
   create(input: { connectionId: string; subject: string; participants: string[]; requestId: string; sourceConversationId: string }): Promise<BridgeGroupResult>;
   add(input: { connectionId: string; conversationId: string; participants: string[]; requestId: string }): Promise<BridgeGroupResult>;
 }

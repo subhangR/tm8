@@ -32,7 +32,7 @@ import type { BridgeRuntimeHub } from './hub.js';
 export const BRIDGE_RUNTIME_PATH_PREFIX = '/v2/bridge-runtime/';
 
 const ROUTES: readonly RuntimeRoute[] = [
-  'hello', 'state', 'auth', 'conversations', 'conversation-state', 'inbound', 'sent', 'heartbeat', 'media', 'group',
+  'hello', 'state', 'auth', 'conversations', 'conversation-state', 'inbound', 'sent', 'heartbeat', 'media', 'group', 'group-members',
 ];
 
 /** B1b-5's relay (packages/server/src/bridges/connection-auth.ts), kept structural here. */
@@ -169,7 +169,8 @@ async function handle(
     }
     case 'conversations':
     case 'media':
-    case 'group': {
+    case 'group':
+    case 'group-members': {
       o.hub.settleRequest(String(frame['requestId'] ?? ''), frame);
       return { status: 204 };
     }

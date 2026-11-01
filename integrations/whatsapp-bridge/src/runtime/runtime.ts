@@ -98,6 +98,7 @@ export class Runtime {
       if (f.type === 'send' || f.type === 'react') await this.settle(f.outboxId, f.connectionId, { reason: 'unknown_connection', retryable: false })
       else if (f.type === 'conversation.list') await this.emit('conversations', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       else if (f.type === 'media.fetch') await this.emit('media', { requestId: f.requestId, error: 'unknown_connection' })
+      else if (f.type === 'group.members') await this.emit('group-members', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       else if (f.type === 'group.create' || f.type === 'group.add') await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: 'unknown_connection' })
       return
     }
@@ -135,6 +136,13 @@ export class Runtime {
           await this.emit('conversations', { requestId: f.requestId, connectionId: f.connectionId, items: await c.listConversations() })
         } catch (e) {
           await this.emit('conversations', { requestId: f.requestId, connectionId: f.connectionId, error: (e as Error).message })
+        }
+        return
+      case 'group.members':
+        try {
+          await this.emit('group-members', { requestId: f.requestId, connectionId: f.connectionId, ...await c.groupMembers(f) })
+        } catch (e) {
+          await this.emit('group-members', { requestId: f.requestId, connectionId: f.connectionId, error: (e as Error).message })
         }
         return
       case 'group.create':
