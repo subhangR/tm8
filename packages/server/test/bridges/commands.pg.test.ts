@@ -21,6 +21,7 @@ import type { Db, DbClaims } from '../../src/db/types.js';
 import { bridgesWorkerClaims } from '../../src/bridges/outbox.js';
 import { createBridgeCommandExecutor, type BridgeCommandExecutor } from '../../src/bridges/commands/executor.js';
 import type { BridgeCommandOrigin, SpawnWorkerRequest } from '../../src/bridges/commands/ports.js';
+import { NEW_SESSION_USAGE } from '../../src/bridges/commands/parse.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 300_000 });
@@ -141,6 +142,8 @@ let failResume = false;
 
 /** One injected fault in the provenance write (a crash inside the task transaction). */
 let failNextOrigin = false;
+let failNextSpawn = false;
+let failNextBoot = false;
 
 let executor: BridgeCommandExecutor;
 function makeExecutor(): BridgeCommandExecutor {
@@ -167,6 +170,7 @@ function makeExecutor(): BridgeCommandExecutor {
       await q.rpc('record_bridge_provenance', [entityId, JSON.stringify([origin])]);
     },
     async spawnWorker(_claims, request) {
+      if (failNextSpawn) { failNextSpawn = false; throw new Error('injected spawn outage'); }
       // The spawn ledger replays a mutation id to the same session.
       const prior = spawned.get(request.clientMutationId);
       if (prior) return { sessionId: prior };
@@ -180,6 +184,8 @@ function makeExecutor(): BridgeCommandExecutor {
           [sessionId, space, creator]);
         await c.query("insert into public.work_sessions(entity_id,title,status,share_mode,started_at) values($1,$2,'running','none',now())",
           [sessionId, request.title]);
+        await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$4)",
+          [space, request.teamMemberId, sessionId, creator]);
         if (request.taskId) {
           await c.query('select internal.w1_set_writer($1)', ['entity_recorder']);
           await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'working_on',$4)",
@@ -188,6 +194,11 @@ function makeExecutor(): BridgeCommandExecutor {
       });
       await database.transaction(c => c.query('select public.record_bridge_provenance($1, $2::jsonb)', [sessionId, JSON.stringify(request.origins)]));
       spawned.set(request.clientMutationId, sessionId);
+      if (failNextBoot) {
+        failNextBoot = false;
+        await endWorkers(sessionId, 'spawn_failed');
+        throw new Error('injected boot failure after admission');
+      }
       return { sessionId };
     },
     async stopWorker(_claims, sessionId, input) {
@@ -899,7 +910,7 @@ describe('/new (R11, 425): the bridge starts its own session and moves to it', (
     expect((await command('guest', '/new session')).reply!.text).toMatch(/link your number first/);
     expect((await command('rahul', '/new')).reply!.text).toMatch(/new chat is started in tm8/);
     expect((await command('rahul', '/new chat')).reply!.text).toMatch(/new chat is started in tm8/);
-    expect((await command('rahul', '/new everything')).reply!.text).toBe('usage: /new, or /new session');
+    expect((await command('rahul', '/new everything')).reply!.text).toBe(NEW_SESSION_USAGE);
     expect(spawns.length).toBe(before);
     expect((await target()).target_id).toBe(chat);
   });
@@ -927,6 +938,181 @@ describe('/new (R11, 425): the bridge starts its own session and moves to it', (
       'retarget_bridge', [bridgeId, Number((await asOwner(c => c.query('select version from public.entities where id = $1', [bridgeId]))).rows[0].version),
         chat, null, `r11-back-${randomUUID()}`]);
     expect((await target()).target_id).toBe(chat);
+  });
+});
+
+describe('/new launch choices and durable retarget', () => {
+  const engineer = randomUUID(), reviewer = randomUUID(), hidden = randomUUID(), outside = randomUUID(), otherSpace = randomUUID(), otherMember = randomUUID();
+  const bridgeRow = async () => (await asOwner(c => c.query(
+    'select target_id::text, teammate_id::text from public.bridges where entity_id = $1', [bridgeId]))).rows[0];
+  const planCount = () => count('select count(*) n from internal.bridge_session_starts where bridge_id = $1', [bridgeId]);
+  const restore = async () => {
+    const version = (await asOwner(c => c.query('select version from public.entities where id = $1', [bridgeId]))).rows[0].version;
+    if ((await bridgeRow()).target_id !== chat) {
+      await db.rpc({ identityId: people.owner.identity, nodeAdmin: false, authKind: 'cli' }, 'retarget_bridge',
+        [bridgeId, Number(version), chat, null, `new-restore-${randomUUID()}`]);
+    }
+    await asOwner(c => c.query('update public.bridges set teammate_id = $2 where entity_id = $1', [bridgeId, persona]));
+  };
+  beforeAll(async () => {
+    await asOwner(async c => {
+      await c.query("insert into public.spaces(id,name,created_by_identity) values($1,'Other space',$2)", [otherSpace, people.owner.identity]);
+      await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'member',$1)", [otherMember, otherSpace]);
+      await c.query("insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,'owner','Owner elsewhere')",
+        [otherMember, otherSpace, people.owner.identity]);
+      for (const [id, name, visibility, sid] of [
+        [engineer, 'WhatsApp Bridge Engineer', 'space', space],
+        [reviewer, 'Bridge Review Engineer', 'space', space],
+        [hidden, 'Hidden Engineer', 'restricted', space],
+        [outside, 'Other Space Engineer', 'space', otherSpace],
+      ]) {
+        const owner = sid === otherSpace ? otherMember : people.owner.member;
+        await c.query("insert into public.entities(id,space_id,kind,created_by,visibility) values($1,$2,'team_member',$3,$4)",
+          [id, sid, owner, visibility]);
+        await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity,model,agent_tool) values($1,$2,$3,'','persona','claude-opus-5','claude-code')",
+          [id, owner, name]);
+      }
+    });
+  });
+  beforeEach(restore);
+  afterAll(restore);
+
+  it('model-only overrides infer OpenAI/Codex, change teammate, and subsequent /new uses it', async () => {
+    const before = spawns.length;
+    const { reply, messageId } = await command('rahul', '/new effort:xhigh teammate:"WhatsApp Bridge Engineer" model:gpt-6.1-sol');
+    expect(reply!.text).toMatch(/WhatsApp Bridge Engineer · openai · gpt-6.1-sol · effort xhigh/);
+    expect(spawns[before]).toMatchObject({ teamMemberId: engineer, model: 'gpt-6.1-sol', agentTool: 'codex', effort: 'xhigh', taskId: null });
+    expect(spawns[before]!.origins).toEqual([expect.objectContaining({ messageId, command: '/new', sender: { memberId: people.rahul.member } })]);
+    const first = await bridgeRow();
+    expect(first.teammate_id).toBe(engineer);
+    expect(first.target_id).not.toBe(chat);
+    const context = await db.rpc<any>(bridgesWorkerClaims(), 'bridge_command_context', [bridgeId, people.rahul.member, null]);
+    expect(context).toMatchObject({ teammateId: engineer, targetTeammateId: engineer });
+    // Omitted overrides follow teammate defaults, not the previous session's override.
+    await command('rahul', '/new');
+    expect(spawns.at(-1)).toMatchObject({ teamMemberId: engineer, model: 'claude-opus-5', agentTool: 'claude-code', effort: null });
+    expect(await count('select count(*) n from public.work_sessions where entity_id = $1 and status = \'running\'', [first.target_id])).toBe(1);
+  });
+
+  it.each([
+    ['/new session effort:medium', { effort: 'medium', model: 'sonnet' }],
+    ['/new session provider:openai', { model: 'gpt-6-astra', agentTool: 'codex', effort: null }],
+    ['/new session model:kimi-k3', { model: 'kimi-k3', agentTool: 'claude-code', effort: null }],
+    ['/new session provider:groq', { model: 'openai/gpt-oss-120b', agentTool: 'codex', effort: null }],
+  ])('supports independent partial selection %s on a chat target', async (text, expected) => {
+    const result = await command('maya', text);
+    expect(result.reply!.text).toMatch(/^new session started/);
+    expect(spawns.at(-1)).toMatchObject(expected);
+  });
+
+  it.each([
+    ['/new session teammate:"No such teammate"', /no teammate/],
+    ['/new session teammate:"Hidden Engineer"', /no teammate/],
+    ['/new session teammate:"Other Space Engineer"', /no teammate/],
+    ['/new session teammate:Engineer', /more than one teammate/],
+    ['/new session model:unknown', /unsupported model/],
+    ['/new session provider:whatsapp', /unsupported provider/],
+    ['/new session provider:anthropic model:gpt-6.1-sol', /belongs to openai/],
+    ['/new session model:kimi-k3 effort:high', /no supported tunable effort/],
+    ['/new session model:gpt-6.1-sol effort:ultra', /accepts effort/],
+    ['/new session model:gpt-6.1-sol model:claude-opus-5', /duplicate/],
+    ['/new session effort:high typo:yes', /unknown/],
+    ['/new session teammate:"unclosed', /unclosed/],
+    ['/new session\nmodel:gpt-6.1-sol', /no body lines/],
+    ['/new chat effort:high', /takes no session options/],
+  ])('refuses %s before saving a plan, spawning, or retargeting', async (text, reason) => {
+    const before = { spawns: spawns.length, plans: await planCount(), row: await bridgeRow() };
+    const { reply } = await command('rahul', text);
+    expect(reply!.text).toMatch(reason);
+    expect(spawns.length).toBe(before.spawns);
+    expect(await planCount()).toBe(before.plans);
+    expect(await bridgeRow()).toEqual(before.row);
+  });
+
+  it('requires active linked membership, even with explicit valid options', async () => {
+    const before = spawns.length, plans = await planCount();
+    expect((await command('guest', '/new model:gpt-6.1-sol')).reply!.text).toMatch(/link your number first/);
+    await asOwner(c => c.query("update public.members set status = 'left', left_at = now() where entity_id = $1", [people.rahul.member]));
+    try {
+      expect((await command('rahul', '/new session model:gpt-6.1-sol')).reply!.text).toMatch(/link your number first/);
+    } finally { await asOwner(c => c.query("update public.members set status = 'active', left_at = null where entity_id = $1", [people.rahul.member])); }
+    expect(spawns.length).toBe(before);
+    expect(await planCount()).toBe(plans);
+    expect((await bridgeRow()).target_id).toBe(chat);
+  });
+
+  it('a spawn failure keeps the bridge and teammate unchanged, then retries normally', async () => {
+    const before = spawns.length, row = await bridgeRow();
+    failNextSpawn = true;
+    const { messageId } = await command('rahul', '/new session model:gpt-6.1-sol');
+    expect(spawns.length).toBe(before);
+    expect(await bridgeRow()).toEqual(row);
+    executor = makeExecutor();
+    await executor.run(messageId);
+    expect(spawns.length).toBe(before + 1);
+    expect((await bridgeRow()).target_id).not.toBe(row.target_id);
+  });
+
+  it('a replayed spawn receipt for a failed boot cannot retarget the group', async () => {
+    const before = spawns.length, row = await bridgeRow();
+    failNextBoot = true;
+    const { messageId } = await command('rahul', '/new session model:gpt-6.1-sol');
+    expect(spawns.length).toBe(before + 1);
+    expect(await bridgeRow()).toEqual(row);
+    executor = makeExecutor();
+    await executor.run(messageId);
+    expect(spawns.length).toBe(before + 1);
+    expect(await bridgeRow()).toEqual(row);
+    expect(notices.find(n => n.replyToMessageId === messageId && !n.key.endsWith(':fault'))!.text).toMatch(/did not start successfully/);
+  });
+
+  it('retry after a retarget failure reuses the spawn and frozen choices', async () => {
+    const before = spawns.length;
+    await asOwner(async c => {
+      await c.query(`create function internal.test_fail_new_retarget() returns trigger language plpgsql as $$
+        begin raise exception 'injected retarget outage' using errcode = 'XX000'; end $$`);
+      await c.query('create trigger test_fail_new_retarget before update of target_id on public.bridges for each row execute function internal.test_fail_new_retarget()');
+    });
+    let messageId: string;
+    try {
+      ({ messageId } = await command('rahul', '/new session teammate:"WhatsApp Bridge Engineer" effort:high'));
+    } finally {
+      await asOwner(async c => {
+        await c.query('drop trigger test_fail_new_retarget on public.bridges');
+        await c.query('drop function internal.test_fail_new_retarget()');
+      });
+    }
+    expect(spawns.length).toBe(before + 1);
+    expect(await bridgeRow()).toMatchObject({ target_id: chat, teammate_id: persona });
+    const first = spawns.at(-1)!;
+    await asOwner(c => c.query("update public.team_members set model = 'gpt-6.1-sol', agent_tool = 'codex' where entity_id = $1", [engineer]));
+    try {
+      executor = makeExecutor();
+      await executor.run(messageId!);
+    } finally {
+      await asOwner(c => c.query("update public.team_members set model = 'claude-opus-5', agent_tool = 'claude-code' where entity_id = $1", [engineer]));
+    }
+    expect(spawns.length).toBe(before + 1);
+    expect((await bridgeRow()).target_id).toBe(spawned.get(first.clientMutationId));
+    expect((await bridgeRow()).teammate_id).toBe(engineer);
+    expect(notices.find(n => n.replyToMessageId === messageId && !n.key.endsWith(':fault'))!.text).toMatch(/anthropic · claude-opus-5 · effort high/);
+  });
+
+  it('a completed redelivery cannot create another session or undo a later /new', async () => {
+    const first = await command('rahul', '/new session model:gpt-6.1-sol');
+    await command('rahul', '/new session model:claude-opus-5');
+    const latest = await bridgeRow(), before = spawns.length, noticesBefore = notices.length;
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [first.messageId]));
+    executor = makeExecutor();
+    await executor.run(first.messageId);
+    expect(spawns.length).toBe(before);
+    expect(await bridgeRow()).toEqual(latest);
+    expect(notices.length).toBe(noticesBefore);
+  });
+
+  it('the new plan and finish doors refuse ordinary member claims', async () => {
+    await expect(db.rpc(memberClaims(people.rahul.identity), 'bridge_new_session_plan', [bridgeId, randomUUID(), null])).rejects.toThrow();
+    await expect(db.rpc(memberClaims(people.rahul.identity), 'bridge_new_session_finish', [bridgeId, randomUUID(), randomUUID(), people.rahul.member])).rejects.toThrow();
   });
 });
 

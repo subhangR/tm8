@@ -123,7 +123,8 @@ export function parseBridgeCommand(text: string): ParsedBridgeCommand {
   if (!head) return { kind: 'none' };
   const word = head[1]!.toLowerCase();
   const rest = first.slice(head[0].length);
-  const args = stripTail(rest);
+  // /new options are data: punctuation and polite words inside a value must survive.
+  const args = (ALIASES[word] ?? word) === 'new' ? rest.trim() : stripTail(rest);
   const body = lines.slice(firstIndex + 1).map(line => line.trim()).filter(line => line !== '');
 
   const verb = (BRIDGE_VERBS as readonly string[]).includes(word) ? word as BridgeVerb : ALIASES[word];
@@ -203,6 +204,59 @@ export function parseWorkItems(args: string, body: readonly string[]): WorkParse
   }
   if (items.length === 0) return { ok: false, reason: 'empty' };
   return { ok: true, items, options: head.options };
+}
+
+/** /new has no free text or body; every launch option is independently optional. */
+export interface NewSessionOptions { teammate?: string; provider?: string; model?: string; effort?: string }
+export const NEW_SESSION_USAGE = 'usage: /new session [teammate:"Name"] [provider:openai] [model:gpt-6.1-sol] [effort:xhigh]';
+export type NewSessionParse =
+  | { ok: true; target: 'session' | 'chat' | null; options: NewSessionOptions }
+  | { ok: false; error: string };
+
+export function parseNewSession(args: string, body: readonly string[]): NewSessionParse {
+  const refuse = (error: string): NewSessionParse => ({ ok: false, error });
+  if (body.length) return refuse('/new takes options on one line; no body lines');
+  let rest = args.trim();
+  let target: 'session' | 'chat' | null = null;
+  const head = /^(session|chat)(?=\s|$)/i.exec(rest);
+  if (head) { target = head[1]!.toLowerCase() as 'session' | 'chat'; rest = rest.slice(head[0].length).trim(); }
+  const options: NewSessionOptions = {};
+  while (rest) {
+    const keyMatch = /^([a-z][a-z0-9_-]*):/i.exec(rest);
+    if (!keyMatch) return refuse(NEW_SESSION_USAGE);
+    const key = keyMatch[1]!.toLowerCase();
+    if (!['teammate', 'provider', 'model', 'effort'].includes(key)) return refuse(`unknown /new option: ${key}`);
+    if (Object.hasOwn(options, key)) return refuse(`duplicate /new option: ${key}`);
+    rest = rest.slice(keyMatch[0].length);
+    let value = '';
+    if (rest.startsWith('"') || rest.startsWith("'")) {
+      const quote = rest[0]!;
+      let closed = false;
+      let index = 1;
+      for (; index < rest.length; index++) {
+        const char = rest[index]!;
+        if (char === quote) { closed = true; index++; break; }
+        if (char === '\\') {
+          const next = rest[++index];
+          if (next !== quote && next !== '\\') return refuse(`invalid escape in ${key}`);
+          value += next;
+        } else value += char;
+      }
+      if (!closed) return refuse(`unclosed quote in ${key}`);
+      rest = rest.slice(index);
+      if (rest && !/^\s/.test(rest)) return refuse(`expected a space after ${key}`);
+    } else {
+      const token = /^[^\s]+/.exec(rest)?.[0] ?? '';
+      if (/["']/.test(token)) return refuse(`quote the whole ${key} value`);
+      value = token;
+      rest = rest.slice(token.length);
+    }
+    if (!value.trim()) return refuse(`empty /new option: ${key}`);
+    options[key as keyof NewSessionOptions] = value.trim();
+    rest = rest.trimStart();
+  }
+  if (target === 'chat' && Object.keys(options).length) return refuse('/new chat takes no session options; use /new session');
+  return { ok: true, target, options };
 }
 
 /** A worker reference (§4.2): a handle, a `#n` from the last list, a title prefix, `all` or `mine`. */
