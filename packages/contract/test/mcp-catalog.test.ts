@@ -113,6 +113,12 @@ describe('the launch catalog', () => {
     expect(github.scopes).toEqual(expect.arrayContaining(['repo', 'project', 'gist']));
     expect(slack.scopes).toEqual(expect.arrayContaining(['channels:write', 'groups:write', 'im:write', 'mpim:write']));
   });
+  it('accepts larger provider scope sets while retaining a finite bound', () => {
+    const definition=mcpCatalogEntry('github')!.definition!;
+    const withScopes=(count:number)=>({...definition,auth:{type:'oauth2',scopes:Array.from({length:count},(_,i)=>`scope:${i}`)}});
+    expect(McpServerDefinitionSchema.safeParse(withScopes(64)).success).toBe(true);
+    expect(McpServerDefinitionSchema.safeParse(withScopes(65)).success).toBe(false);
+  });
 });
 
 describe('what a member may request', () => {

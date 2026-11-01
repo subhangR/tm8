@@ -65,6 +65,12 @@ it('SQL admits a preregistered client secret only as a TM8_MCP_CLIENT_SECRET_ va
   {clientId:'issued',clientSecret:'fixture-secret'},
  ]) await expect(create('secret-env-reject-'+randomUUID().slice(0,8),oauth(auth))).rejects.toBeTruthy();
 });
+it('accepts a complete provider scope set but rejects scope count and string overflow',async()=>{
+ const scoped=(count:number)=>({auth:{type:'oauth2',scopes:Array.from({length:count},(_,i)=>`scope:${i}`)}});
+ await expect(create('scope-capacity',scoped(64))).resolves.toBeTruthy();
+ await expect(create('scope-overflow',scoped(65))).rejects.toBeTruthy();
+ await expect(create('scope-string-overflow',{auth:{type:'oauth2',scopes:['x'.repeat(257)]}})).rejects.toBeTruthy();
+});
 it('equips defaults require approval; an account-less space resolves nothing; [] disables',async()=>{
  const c=await create('default');const denied=await create('unapproved');
  // 405 approves every connector on arrival; switching approval off is now the only way to hold one back.

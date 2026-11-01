@@ -60,7 +60,7 @@ export const McpAuthSchema = z.discriminatedUnion('type', [
     prefix: z.enum(['Bearer', 'none']).optional() }).strict(),
   z.object({ type: z.literal('oauth2'), issuer: PublicUrl.optional(), authorizationUrl: PublicUrl.optional(), tokenUrl: PublicUrl.optional(),
     clientId: z.string().min(1).max(512).optional(), clientSecretEnv: ClientSecretEnv.optional(),
-    scopes: z.array(z.string().min(1).max(256)).max(32).optional() }).strict(),
+    scopes: z.array(z.string().min(1).max(256)).max(64).optional() }).strict(),
 ]);
 
 /** Definition metadata only. Literal env/header values are never graph content. */
