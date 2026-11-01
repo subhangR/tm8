@@ -23,3 +23,7 @@ Operators register their own provider clients when required and set TM8_MCP_CLIE
 The UI presents original provider artwork, bundled locally with source attribution under public/connector-logos/SOURCES.md. Original aspect ratios are retained; icon padding is removed and built-in asset whitespace is compensated so marks occupy their tiles.
 
 Migrations434/435 update curated endpoint identities and permit bounded larger provider tool catalogs. They do not rewrite existing connector definitions or account ciphertext. Notion's actual71-tool catalog exceeded the old256KiB health-cache cap; the new4MiB cache cap retains the2MiB upstream transport limit and member isolation.
+
+## Validation on current main
+
+Reconciled against origin/main ee14112ca. Server/CLI builds and UI typecheck pass. Selected server OAuth, isolation, credential crypto and callback checks165pass; MCP bridge suite91pass; MCP/chat UI160pass; contract30pass; reusable integration core7pass; fresh-database MCP foundation/migration checks9pass. Total462checks passed. These are local code/fixture checks; live provider acceptance above remains separately scoped. No production database was migrated.

@@ -173,7 +173,8 @@ describe('a connector tool as a real MCP server lists it', () => {
   it('accepts the spec-added fields and strips keys tm8 does not know', () => {
     const parsed = McpToolSchema.parse(context7Tool);
     expect(parsed).toMatchObject({ name: 'resolve-library-id', title: 'Resolve Context7 Library ID', annotations: { readOnlyHint: true } });
-    expect('_meta' in parsed).toBe(false);
+    expect(parsed._meta).toEqual(context7Tool._meta);
+    expect(McpToolSchema.parse({ ...context7Tool, futureField: true })).not.toHaveProperty('futureField');
     expect(McpTestResultSchema.safeParse({ ready: true, reason: 'ready', tools: [context7Tool], checkedAt: new Date().toISOString() }).success).toBe(true);
   });
 });

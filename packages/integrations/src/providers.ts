@@ -63,8 +63,3 @@ export class ProviderCatalog {
   get(id: string): Provider | undefined { return this.providers.get(id); }
   list(): Provider[] { return [...this.providers.values()]; }
 }
-/** Native API identity for hosts that cannot enter Figma's remote MCP catalog. */
-export const FIGMA_NATIVE = {
-  catalogId: 'figma', resource: 'https://api.figma.com/v1',
-  scopes: ['current_user:read', 'file_content:read', 'file_metadata:read', 'file_comments:read', 'file_versions:read'],
-} as const;

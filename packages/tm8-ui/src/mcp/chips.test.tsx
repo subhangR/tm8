@@ -90,7 +90,7 @@ describe('the compact launch row', () => {
     // On by default, so pressed, and the account is the viewer's own.
     expect(notion.getAttribute('aria-pressed')).toBe('true');
     expect(notion.textContent).toBe('NotionWork');
-    expect(notion.querySelector('svg')).not.toBeNull();
+    expect(notion.querySelector('img')?.getAttribute('src')).toBe('/connector-logos/notion.png');
     expect(screen.getByTestId('mcp-chip-toggle-docs').getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByTestId('mcp-chip-toggle-docs').textContent).toBe('⧉Docs');
     // Not connected: the chip is the way to connect, not a dead switch.
