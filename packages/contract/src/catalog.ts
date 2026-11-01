@@ -114,8 +114,9 @@ export const OPERATIONS = [
   // group list is the owner's only, asked of the runtime live and never stored (D28).
   { name: 'bridges.connections.remove', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/remove', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'bridges.conversations.list', method: 'GET', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'read', status: 'v1', humanOnly: true },
-  // A new group on the owner's number, bridged in the same call when asked: owner only,
-  // and a space admin of the bridge's space, checked before the group is made.
+  // A new group on the owner's number, always bridged in the same call (to a target, or
+  // a new session for a teammate): owner only, and a space admin of the bridge's space,
+  // checked before the group is made.
   { name: 'bridges.conversations.create', method: 'POST', path: '/v2/me/bridge-connections/:connectionId/conversations', kind: 'command', status: 'v1', humanOnly: true },
   // Q7/Q8 (D55, D56; 424): hand a bridge to another member's connection. All
   // human-only (D9: never from a group). accept asks the receiving number's
@@ -131,6 +132,10 @@ export const OPERATIONS = [
   { name: 'labels.archive', method: 'POST', path: '/v2/labels/:labelId/archive', kind: 'command', status: 'v1' },
   // v2 §4.3: the agent's door to /work — the same server path, handles, provenance and announcement.
   { name: 'bridges.work.start', method: 'POST', path: '/v2/bridges/:bridgeId/work', kind: 'command', status: 'v1' },
+  // D83 (432): the session a bridge lands on forks its group into a new one on the
+  // same number, bridged to a new session. Not humanOnly: the owner's agentGroups
+  // opt-in, the source roster and rate limits are the guards (supersedes D28 here).
+  { name: 'bridges.groups.fork', method: 'POST', path: '/v2/bridges/:bridgeId/fork', kind: 'command', status: 'v1' },
   { name: 'bridges.memories.proposals.list', method: 'GET', path: '/v2/bridges/:bridgeId/memory-proposals', kind: 'read', status: 'v1' },
   { name: 'bridges.memories.proposals.resolve', method: 'POST', path: '/v2/bridges/:bridgeId/memory-proposals/:proposalId/resolve', kind: 'command', status: 'v1', humanOnly: true },
   // B3 (417, §4.6, D58): the caller's own identity links. Begin and revoke are

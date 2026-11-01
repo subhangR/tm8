@@ -3467,7 +3467,7 @@ export function createBridgeWorkerPort(deps: { db: Db; spawnService: SpawnServic
         reasoningEffort: request.effort,
         accessMode: null,
         title: request.title,
-        promptExtra: null,
+        promptExtra: request.promptExtra ?? null,
         clientMutationId: request.clientMutationId,
       }, { bridgeOrigins: request.origins }));
       return { sessionId: spawned.sessionId };

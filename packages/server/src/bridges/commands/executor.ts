@@ -28,7 +28,10 @@
  * and settles `done`; a fault settles back to `pending`, so 398's claim retries
  * it and turns it `failed` after its attempts run out.
  */
-import { CollabError, type BridgeWorkStartInput, type BridgeWorkStartResult } from '@tm8/contract';
+import {
+  CollabError, bridgeParticipantJid, type BridgeGroupForkInput, type BridgeGroupForkResult, type BridgeWorkStartInput,
+  type BridgeWorkStartResult,
+} from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import {
   isConfirmText, parseBridgeCommand, parseDuration, parsePeople, parseSplit, parseWorkItems, parseWorkerRef, stripTail, titleOf,
@@ -1195,8 +1198,181 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return { bridgeId: input.bridgeId, parentTaskId: work.parentTaskId, items: work.items, noticeMessageId };
   }
 
+  /**
+   * The people on a fork (D83), against the source group's roster only: a
+   * display name (exact, else a unique prefix), a +number or WhatsApp id, the
+   * masked id the participants list shows a non-admin (`…9494`, when unique),
+   * or `everyone`. Anyone else is refused before anything is made.
+   */
+  function forkPeople(roster: RosterRow[], refs: string[]): Map<string, string> {
+    const jids = new Map<string, string>();
+    const named = (r: RosterRow) => r.display_name || `…${r.external_id.replace(/@.*$/, '').slice(-4)}`;
+    const ids = (r: RosterRow) => [r.external_id, ...r.alt_external_ids];
+    const digitsOf = (j: string) => j.replace(/@.*$/, '');
+    const problems: string[] = [];
+    for (const raw of refs) {
+      const ref = raw.trim();
+      let hits: RosterRow[];
+      if (/^(everyone|everybody|all)$/i.test(ref)) {
+        for (const r of roster) if (!r.muted) jids.set(addressOf(r), named(r));
+        continue;
+      }
+      const masked = /^…\s*([0-9]{1,4})$/.exec(ref);
+      const jid = bridgeParticipantJid(ref);
+      if (masked) {
+        hits = roster.filter(r => ids(r).some(j => digitsOf(j).endsWith(masked[1]!)));
+      } else if (jid) {
+        hits = roster.filter(r => ids(r).some(j => j === jid || digitsOf(j) === digitsOf(jid)));
+      } else {
+        const want = ref.toLowerCase();
+        const exact = roster.filter(r => (r.display_name ?? '').toLowerCase() === want);
+        hits = exact.length ? exact : roster.filter(r => (r.display_name ?? '').toLowerCase().startsWith(want));
+      }
+      if (hits.length === 1) jids.set(addressOf(hits[0]!), named(hits[0]!));
+      else problems.push(hits.length > 1 ? `"${ref}" (several people)` : `"${ref}"`);
+    }
+    if (problems.length) {
+      throw new CollabError('invalid_input',
+        `a fork adds only people from this group; not found here: ${problems.join(', ')}. See tm8 bridge participants`,
+        { details: { reason: 'not_in_group' } });
+    }
+    if (jids.size === 0) throw new CollabError('invalid_input', 'name at least one person from this group', { details: { reason: 'not_in_group' } });
+    return jids;
+  }
+
+  /**
+   * bridges.groups.fork (D83, 432): /split for the session a bridge lands on.
+   * Every guard (that session, the owner's agentGroups, the roster, the rate
+   * limits) answers before anything is written. Then: the announcement in the
+   * source group (it keys 426's split doors, so a retry makes no second group),
+   * the group on the same number, a new session briefed with the topic and a
+   * link back, its bridge, and a `follows_up` edge to the forking session.
+   */
+  async function forkStart(claims: DbClaims, input: BridgeGroupForkInput & { bridgeId: string }): Promise<BridgeGroupForkResult> {
+    if (!ports.groups) throw new CollabError('not_implemented', 'this node cannot make groups (it runs no bridge runtime)');
+    const ctx = await ports.db.tx(claims, q => q.rpc<{
+      spaceId: string; connectionId: string; provider: string; title: string | null;
+      /** The forker: the bridge's target session, or its target chat (run by a chat runtime). */
+      sessionId: string; forkerKind: 'work_session' | 'chat'; memberId: string | null;
+    }>('bridge_group_fork_context', [input.bridgeId]));
+    const roster = await ports.db.query<RosterRow>(claims,
+      `select external_id, alt_external_ids, display_name, muted from public.bridge_participants where bridge_id = $1`, [input.bridgeId]);
+    const jids = forkPeople(roster, input.participants);
+    const actor = ctx.memberId;
+    const bridge = await loadFacts({ bridgeId: input.bridgeId, author: actor ? { kind: 'member', actorId: actor } : { kind: 'guest' } } as BridgeCommandInput);
+    if (!bridge) throw new CollabError('not_found', 'Bridge is unavailable');
+    const originKey = `api:fork:${input.clientMutationId}`;
+    const cmd = {
+      input: { bridgeId: input.bridgeId, spaceId: ctx.spaceId } as BridgeCommandInput,
+      bridge, claims, key: `bridge:${input.bridgeId}:${originKey}`,
+    } as Command;
+    let teammate: string;
+    try {
+      if (input.teammate) teammate = await resolveTeammate(cmd, claims, input.teammate);
+      else {
+        const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [input.bridgeId]));
+        const id = bridge.teammateId ?? bridge.targetTeammateId ?? facts?.teammateId ?? null;
+        if (!id) throw new Refusal('this bridge has no teammate to run the new session as: name one (teammate)');
+        teammate = id;
+      }
+    } catch (error) {
+      if (error instanceof Refusal) throw new CollabError('invalid_input', error.message);
+      throw error;
+    }
+
+    const begun = await ports.db.tx(claims, q => q.rpc<{ forkId: string; replayed: boolean } | { rateLimited: { retryAfterSeconds: number } }>(
+      'bridge_group_fork_begin', [input.bridgeId, input.clientMutationId, input.title, jids.size, teammate]));
+    if ('rateLimited' in begun) {
+      const seconds = begun.rateLimited.retryAfterSeconds;
+      throw new CollabError('rate_limited',
+        `too many groups forked lately (3 per group an hour, 10 per number a day); try again in ${Math.ceil(seconds / 60)} min`,
+        { details: { reason: 'rate_limited', retryAfterMs: seconds * 1000 } });
+    }
+    const forkId = begun.forkId;
+
+    // The announcement: who is forking, into what, with whom.
+    const forker = await ports.workerHandle(claims, input.bridgeId, ctx.sessionId).catch(() => null);
+    const names = [...jids.values()];
+    const announced = await ports.postNotice(ports.db, {
+      bridgeId: input.bridgeId, replyToMessageId: null, idempotencyKey: `fork:${input.bridgeId}:${input.clientMutationId}`,
+      text: `${forker?.handle ?? 'an agent session'} is starting a new group "${input.title}" with ${names.join(', ')}`,
+    });
+    const messageId = announced.messageId;
+    await exec(q => q.rpc('bridge_group_fork_record', [forkId, messageId, null, null, null]));
+
+    const done = await exec(q => q.rpc<{ conversationId: string; title: string; bridgeId: string | null } | null>('bridge_split_of', [messageId]));
+    let group: BridgeGroupForkResult['group'];
+    let size: number | null = null;
+    if (!done) {
+      let g: BridgeGroupResult;
+      try {
+        g = await ports.groups.create({
+          connectionId: ctx.connectionId, subject: input.title.trim().slice(0, 100), participants: [...jids.keys()], requestId: `fork:${forkId}`,
+        });
+      } catch (error) {
+        await exec(q => q.rpc('bridge_group_fork_release', [forkId]));
+        await ports.postNotice(ports.db, {
+          bridgeId: input.bridgeId, replyToMessageId: messageId, idempotencyKey: `fork:${input.bridgeId}:${input.clientMutationId}:failed`,
+          text: `couldn't make "${input.title}": ${errorText(error)}`,
+        }).catch(() => undefined);
+        if (error instanceof CollabError) throw error;
+        throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${errorText(error)}`, { details: { reason: 'runtime_error' } });
+      }
+      const subject = g.subject || input.title;
+      await exec(q => q.rpc('bridge_split_record', [messageId, input.bridgeId, g.conversationId, subject]));
+      await exec(q => q.rpc('bridge_group_fork_record', [forkId, null, g.conversationId, null, null]));
+      group = { conversationId: g.conversationId, subject, results: g.results, inviteLink: g.inviteLink };
+      size = g.results.filter(r => r.status === 'added').length + 1;
+    } else {
+      // A retry: the group stands; who was added is not kept.
+      group = { conversationId: done.conversationId, subject: done.title, results: [], inviteLink: null };
+    }
+
+    const provider = PROVIDER_NAMES[ctx.provider] ?? ctx.provider;
+    const source = ctx.title ? `"${ctx.title}"` : 'a bridged group';
+    const brief = [
+      `You run the ${provider} group "${group.subject}", forked from ${source} (bridge ${input.bridgeId}) by ${ctx.forkerKind === 'chat' ? 'chat' : 'session'} ${ctx.sessionId}.`,
+      ...(input.brief ? [`Topic: ${input.brief}`] : []),
+      `The source group's log: tm8 bridge log ${input.bridgeId}. Who forked it: tm8 entity context ${ctx.sessionId}.`,
+    ].join('\n');
+    const { sessionId } = await ports.spawnWorker(claims, {
+      spaceId: ctx.spaceId, teamMemberId: teammate, taskId: null, projectId: null, effort: null,
+      title: `${group.subject} (${provider})`.slice(0, 80), clientMutationId: `fork:${forkId}:spawn`,
+      origins: [{ bridgeId: input.bridgeId, messageId, providerMessageId: originKey, sender: actor ? { memberId: actor } : {}, command: '/split' }],
+      promptExtra: brief,
+    });
+    const connected = await exec(q => q.rpc<{ bridgeId: string }>('bridge_split_connect', [messageId, sessionId, actor, size]));
+    await exec(q => q.rpc('bridge_group_fork_record', [forkId, null, null, connected.bridgeId, sessionId]));
+    // follows_up joins two sessions; a chat's fork is linked by the spawn's bridge origin.
+    if (ctx.forkerKind === 'work_session') {
+      await ports.db.tx(claims, q => q.rpc('write_edge', [sessionId, ctx.sessionId, 'follows_up',
+        JSON.stringify({ note: `forked from ${source} into "${group.subject}"` }), null, `fork:${forkId}:follows_up`]));
+    }
+    const handle = await ports.workerHandle(claims, connected.bridgeId, sessionId).catch(() => null);
+
+    const outcome = groupOutcome(group, jids);
+    let noticeMessageId: string | null = null;
+    try {
+      const notice = await ports.postNotice(ports.db, {
+        bridgeId: input.bridgeId, replyToMessageId: messageId, idempotencyKey: `fork:${input.bridgeId}:${input.clientMutationId}:done`,
+        text: `made "${group.subject}"${outcome ? `: ${outcome}` : ''}. It has its own session${handle?.handle ? ` (${handle.handle})` : ''}; @tm8 there goes to it`,
+      });
+      noticeMessageId = notice.delivery.status === 'pending' ? notice.messageId : null;
+    } catch (error) {
+      ports.logger?.warn(`bridge ${input.bridgeId}: bridges.groups.fork could not announce: ${errorText(error)}`);
+    }
+    return {
+      bridgeId: input.bridgeId, forkId, group, newBridgeId: connected.bridgeId, sessionId,
+      handle: handle?.handle ?? null, noticeMessageId: noticeMessageId ?? (announced.delivery.status === 'pending' ? messageId : null),
+    };
+  }
+
   return {
     workStart,
+    forkStart,
+    // bridges.conversations.create with no target: the new group's own session, as the caller.
+    startSession: (claims, input) => ports.spawnWorker(claims, { ...input, taskId: null, projectId: null, effort: null, origins: [] }),
+    stopSession: (claims, sessionId, input) => ports.stopWorker(claims, sessionId, input),
     reset() { lists.clear(); windows.clear(); },
 
     async detect(text: string, ctx: BridgeCommandDetectContext): Promise<boolean> {

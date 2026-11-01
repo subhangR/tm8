@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:90799d1d72d82d4831c6da5d8311dcf66c885cb6f3bfa8a760c48a66155bb761",
+  "catalogDigest": "sha256:cc8c4c54cf88a7a21c32d103c16b26421bf5e96fa54c7491b70f030bf9d84a98",
   "catalog": {
-    "total": 433,
-    "v1": 431,
+    "total": 434,
+    "v1": 432,
     "reserved": 2,
-    "http": 431,
+    "http": 432,
     "ws": 1,
-    "registerableV1Http": 429,
+    "registerableV1Http": 430,
     "methods": {
       "GET": 144,
-      "POST": 217,
+      "POST": 218,
       "PATCH": 25,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 151,
-      "command": 280,
+      "command": 281,
       "stream": 2
     },
-    "uniqueNames": 433,
-    "uniqueBindings": 432
+    "uniqueNames": 434,
+    "uniqueBindings": 433
   },
   "reservedOperations": [
     "search.query",
@@ -582,6 +582,13 @@
         "operation": "bridges.work.start",
         "method": "POST",
         "path": "/v2/bridges/:bridgeId/work",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridges.groups.fork",
+        "method": "POST",
+        "path": "/v2/bridges/:bridgeId/fork",
         "status": "registered",
         "source": "server-router"
       },
@@ -3435,7 +3442,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 401
+    "unimplementedV1Http": 402
   },
   "schemas": {
     "additive": {
@@ -4501,6 +4508,23 @@
           "bridges",
           "work",
           "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridges.groups.fork",
+        "noun": "bridge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/bridges.groups.fork",
+        "intentTags": [
+          "bridges",
+          "groups",
+          "fork"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

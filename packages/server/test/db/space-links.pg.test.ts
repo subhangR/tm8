@@ -193,6 +193,8 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'internal.bridge_runtime_connect(uuid,text)': CONNECTIONS,
   // 423 (B1b-7): removing a number, and where its group list is asked.
   'remove_bridge_connection(uuid,text)': CONNECTIONS,
+  // 432 (D83): the owner turns agent group forks on or off for a space.
+  'set_bridge_offer_agent_groups(uuid,uuid,boolean)': CONNECTIONS,
   'bridge_connection_for_owner(uuid)': CONNECTIONS,
   // 424 (Q7/Q8, D55): the hand-over doors and their shared bodies.
   'offer_bridge_handover(uuid,uuid,text)': HANDOVERS,
@@ -451,9 +453,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === BRIDGES)).toHaveLength(5); // 395: create/retarget/remove_bridge + the shared state body; 420: update_bridge_participant
     expect(labels.filter((l) => l === BRIDGE_MEMORY)).toHaveLength(1); // 416: resolve_bridge_memory_proposal (D29: accepted in tm8 by a person)
     expect(labels.filter((l) => l === BRIDGE_LINKS)).toHaveLength(2); // 417: begin_bridge_link, revoke_bridge_link
-    expect(labels.filter((l) => l === CONNECTIONS)).toHaveLength(6); // 421: begin/offer/withdraw_bridge_connection; 422: internal.bridge_runtime_connect; 423: remove_bridge_connection, bridge_connection_for_owner
+    expect(labels.filter((l) => l === CONNECTIONS)).toHaveLength(7); // 421: begin/offer/withdraw_bridge_connection; 422: internal.bridge_runtime_connect; 423: remove_bridge_connection, bridge_connection_for_owner; 432: set_bridge_offer_agent_groups
     expect(labels.filter((l) => l === HANDOVERS)).toHaveLength(6); // 424: offer/accept/decline/withdraw, the receiving read, the shared close body
-    expect(labels).toHaveLength(95); // +6 bridge hand-over doors (424) // +2 bridge connection doors (423) // +1 bridge_runtime_connect's owner arm (422) +3 bridge connection writes (421) // +1 update_bridge_participant (420) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(96); // +1 set_bridge_offer_agent_groups (432) // +6 bridge hand-over doors (424) // +2 bridge connection doors (423) // +1 bridge_runtime_connect's owner arm (422) +3 bridge connection writes (421) // +1 update_bridge_participant (420) // +2 bridge link mint/unlink (417) // +1 resolve_bridge_memory_proposal (416) // +4 bridge lifecycle writes (395) // +1 revoke_all_mcp_credentials (377, revoke-all kill switch) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

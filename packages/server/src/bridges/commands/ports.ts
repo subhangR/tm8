@@ -21,7 +21,9 @@
  * Kept as a seam, not imports, so the executor is testable against a scratch
  * database with fakes for the PTY host and the outbox.
  */
-import type { BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult } from '@tm8/contract';
+import type {
+  BridgeGroupForkInput, BridgeGroupForkResult, BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult,
+} from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
 import type { BridgeAuthor } from '../runtime/command-hook.js';
@@ -53,6 +55,8 @@ export interface SpawnWorkerRequest {
   title: string;
   clientMutationId: string;
   origins: BridgeCommandOrigin[];
+  /** The session's brief, after its launch context (a fork's topic, D83). */
+  promptExtra?: string | null;
 }
 
 export type { BridgeAuthor, BridgeCommandDetectContext, BridgeCommandHook } from '../runtime/command-hook.js';
@@ -74,6 +78,12 @@ export interface BridgeCommandInput {
 /** bridges.work.start's door into the executor (v2 §4.3): the /work path, as the caller. */
 export interface BridgeWorkStarter {
   workStart(claims: DbClaims, input: BridgeWorkStartInput & { bridgeId: string }): Promise<BridgeWorkStartResult>;
+  /** bridges.groups.fork (D83, 432): /split's path, for the session the bridge lands on. */
+  forkStart?(claims: DbClaims, input: BridgeGroupForkInput & { bridgeId: string }): Promise<BridgeGroupForkResult>;
+  /** bridges.conversations.create with no target: a new session for a teammate, as the caller. */
+  startSession?(claims: DbClaims, input: { spaceId: string; teamMemberId: string; title: string; clientMutationId: string }): Promise<{ sessionId: string }>;
+  /** Ends a session startSession made whose bridge was then refused. */
+  stopSession?(claims: DbClaims, sessionId: string, input: { reason: string; clientMutationId: string }): Promise<void>;
 }
 
 /** What WhatsApp did on a group request (426): the group, and each person asked in. */

@@ -387,6 +387,8 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },
   // Stopping a turn acts on a running chat process, like the writes above.
   { prefix: 'chat.interrupt', kinds: 'all', reason: 'process_start', exact: true },
+  // D83 (432): a fork makes a WhatsApp group and starts a new session for it.
+  { prefix: 'bridges.groups.fork', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.submit', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'forms.responses.redeliver', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'containers.create', kinds: 'all', reason: 'process_start', exact: true },

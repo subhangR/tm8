@@ -1,7 +1,7 @@
 import {
   BridgeCreateInputSchema, BridgeUpdateInputSchema, BridgeRetargetInputSchema, BridgeStateInputSchema,
   BridgeHandleClaimInputSchema, BridgeListenInputSchema, BridgeConnectionBeginInputSchema,
-  BridgeConnectionOfferInputSchema, BridgeConnectionWithdrawInputSchema, BridgeConnectionRemoveInputSchema, BridgeConversationCreateInputSchema,
+  BridgeConnectionOfferInputSchema, BridgeConnectionWithdrawInputSchema, BridgeConnectionRemoveInputSchema, BridgeConversationCreateInputSchema, BridgeGroupForkInputSchema,
   BridgeHandoverOfferInputSchema, BridgeHandoverSettleInputSchema,
   BridgeInviteParticipantSchema, BridgeLinkBeginInputSchema, BridgeLinkRevokeInputSchema,
   BridgeMemoryProposalResolveInputSchema, BridgeParticipantUpdateInputSchema, BridgeWorkStartInputSchema,
@@ -295,6 +295,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'bridges.connections.withdraw': BridgeConnectionWithdrawInputSchema,
   'bridges.connections.remove': BridgeConnectionRemoveInputSchema,
   'bridges.conversations.create': BridgeConversationCreateInputSchema,
+  'bridges.groups.fork': BridgeGroupForkInputSchema,
   'bridges.handover.offer': BridgeHandoverOfferInputSchema,
   'bridges.handover.accept': BridgeHandoverSettleInputSchema,
   'bridges.handover.decline': BridgeHandoverSettleInputSchema,
