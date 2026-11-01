@@ -37,6 +37,7 @@ import {
   isConfirmText, parseBridgeCommand, parseDuration, parsePeople, parseSplit, parseWorkItems, parseWorkerRef, stripTail, titleOf,
   type BridgeVerb, type ParsedBridgeCommand, type PersonRef, type WorkItem, type WorkerRef,
 } from './parse.js';
+import { addressOf, groupRoster, idsOf, nameOf, resolveGroupPeople, userJid, type RosterRow } from './people.js';
 import { proposeBridgeMemory } from '../memory-proposals.js';
 import type {
   BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeGroupResult,
@@ -272,6 +273,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
 
   // ---------------------------------------------------------------- tiers
   const requireLinked = (cmd: Command, refusal = GUEST_FIRST): DbClaims => {
+    if (cmd.input.author.kind === 'bridge' && cmd.input.author.identityConflict) throw new Refusal('Cannot resolve your WhatsApp identity: conflicting aliases or links. Ask a space admin to check your linked identity before trying again');
     if (!cmd.claims || !cmd.sender.memberId) throw new Refusal(refusal);
     return cmd.claims;
   };
@@ -854,46 +856,37 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
   }
 
   // ---------------------------------------------------------------- groups (426)
-  interface RosterRow { external_id: string; alt_external_ids: string[]; display_name: string | null; muted: boolean }
-
-  /** A participant's best address to add to a group: their phone-number JID when known, else the id they used. */
-  const addressOf = (r: RosterRow): string =>
-    [r.external_id, ...r.alt_external_ids].find(j => j.endsWith('@s.whatsapp.net')) ?? r.external_id;
-
-  /** Names on a /split or /invite, against this group's roster (the people who have spoken here). */
-  async function resolvePeople(cmd: Command, claims: DbClaims, refs: PersonRef[]) {
-    const roster = await ports.db.query<RosterRow>(claims,
-      `select external_id, alt_external_ids, display_name, muted from public.bridge_participants where bridge_id = $1`,
-      [cmd.input.bridgeId]);
-    const jids = new Map<string, string>();  // address -> how to name it in the answer
-    const unknown: string[] = [];
-    const named = (r: RosterRow) => r.display_name || `…${r.external_id.replace(/@.*$/, '').slice(-4)}`;
-    for (const ref of refs) {
-      if (ref.kind === 'everyone') {
-        for (const r of roster) if (!r.muted) jids.set(addressOf(r), named(r));
-      } else if (ref.kind === 'mention' || ref.kind === 'phone') {
-        const hit = roster.find(r => [r.external_id, ...r.alt_external_ids].some(j => j.startsWith(`${ref.digits}@`)));
-        jids.set(hit ? addressOf(hit) : `${ref.digits}@s.whatsapp.net`, hit ? named(hit) : `+${ref.digits}`);
-      } else {
-        const want = ref.text.toLowerCase();
-        const exact = roster.filter(r => (r.display_name ?? '').toLowerCase() === want);
-        const prefix = exact.length ? exact : roster.filter(r => (r.display_name ?? '').toLowerCase().startsWith(want));
-        if (prefix.length === 1) jids.set(addressOf(prefix[0]!), named(prefix[0]!));
-        else unknown.push(prefix.length > 1 ? `"${ref.text}" (several people)` : `"${ref.text}"`);
-      }
+  async function liveRoster(claims: DbClaims, bridgeId: string, connectionId: string, conversationId: string, requestId: string): Promise<RosterRow[]> {
+    if (!ports.groups) throw new Refusal('this node cannot resolve group member identities');
+    const stored = await ports.db.query<RosterRow>(claims,
+      `select external_id, alt_external_ids, display_name, muted from public.bridge_participants where bridge_id = $1`, [bridgeId]);
+    try {
+      const { members, self } = await ports.groups.members({ connectionId, conversationId, requestId });
+      return groupRoster(members, stored, self);
+    } catch (error) {
+      throw new Refusal(`Cannot resolve this group's member identities: ${errorText(error)}`);
     }
-    return { jids, unknown, roster };
+  }
+
+  async function resolvePeople(cmd: Command, claims: DbClaims, refs: PersonRef[]) {
+    const roster = await liveRoster(claims, cmd.input.bridgeId, cmd.input.connectionId,
+      await sourceConversation(cmd.input.bridgeId, claims), `${cmd.key}:members`);
+    return { ...resolveGroupPeople(roster, refs, cmd.input.mentions), roster };
   }
 
   /** "added 3; Maya needs the invite link: https://…" — one line per outcome that happened. */
   function groupOutcome(g: BridgeGroupResult, names: Map<string, string>): string {
-    const who = (status: string) => g.results.filter(r => r.status === status).map(r => names.get(r.id) ?? `…${r.id.replace(/@.*$/, '').slice(-4)}`);
+    const outcomes = [...names].map(([id, name]) => {
+      const hits = g.results.filter(r => userJid(r.id) === userJid(id));
+      return { name, status: hits.length === 1 ? hits[0]!.status : 'failed' };
+    });
+    const who = (status: string) => outcomes.filter(r => r.status === status).map(r => r.name);
     const parts: string[] = [];
     const added = who('added'), already = who('already'), invite = who('invite_needed'), failed = who('failed');
     if (added.length) parts.push(`added ${added.join(', ')}`);
     if (already.length) parts.push(`already in: ${already.join(', ')}`);
-    if (invite.length) parts.push(`${invite.join(', ')} can't be added directly (their privacy settings)${g.inviteLink ? ` — send them ${g.inviteLink}` : ''}`);
-    if (failed.length) parts.push(`couldn't add ${failed.join(', ')}`);
+    if (invite.length) parts.push(`${invite.join(', ')} couldn't be added directly${g.inviteLink ? ` — send them ${g.inviteLink}` : ''}`);
+    if (failed.length) parts.push(`couldn't confirm adding ${failed.join(', ')}`);
     return parts.join('. ');
   }
 
@@ -919,13 +912,14 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     if (!done) {
       const { jids, unknown, roster } = await resolvePeople(cmd, claims, people);
       if (unknown.length) throw new Refusal(`I don't know ${unknown.join(', ')} in this group — @mention them or give a +number`);
-      const me = roster.find(r => r.external_id === cmd.input.senderExternalId);
-      jids.set(me ? addressOf(me) : cmd.input.senderExternalId, cmd.sender.displayName || 'you');
+      const me = roster.find(r => idsOf(r).includes(userJid(cmd.input.senderExternalId) ?? ''));
+      if (!me) throw new Refusal('Cannot resolve your identity in this group — nothing was created. Try again after group membership updates');
+      if (!me.self) jids.set(addressOf(me), cmd.sender.displayName || 'you');
       let g: BridgeGroupResult;
       try {
         g = await ports.groups.create({
           connectionId: cmd.input.connectionId, subject: titleOf(name, 100), participants: [...jids.keys()], requestId: `${cmd.key}:split`,
-          sourceConversationId: await sourceConversation(cmd, claims),
+          sourceConversationId: await sourceConversation(cmd.input.bridgeId, claims),
         });
       } catch (error) {
         if (error instanceof CollabError && (error.code === 'not_community_admin' || error.details?.reason === 'community_create_failed')) throw new Refusal(error.message);
@@ -957,9 +951,9 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     };
   }
 
-  async function sourceConversation(cmd: Command, claims: DbClaims): Promise<string> {
+  async function sourceConversation(bridgeId: string, claims: DbClaims): Promise<string> {
     const [row] = await ports.db.query<{ conv: string }>(claims,
-      'select external_conversation_id conv from public.bridges where entity_id = $1', [cmd.input.bridgeId]);
+      'select external_conversation_id conv from public.bridges where entity_id = $1', [bridgeId]);
     if (!row) throw new CollabError('not_found', 'this group is no longer connected to tm8');
     return row.conv;
   }
@@ -1222,29 +1216,29 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
    */
   function forkPeople(roster: RosterRow[], refs: string[]): Map<string, string> {
     const jids = new Map<string, string>();
-    const named = (r: RosterRow) => r.display_name || `…${r.external_id.replace(/@.*$/, '').slice(-4)}`;
-    const ids = (r: RosterRow) => [r.external_id, ...r.alt_external_ids];
+    const named = nameOf;
+    const ids = idsOf;
     const digitsOf = (j: string) => j.replace(/@.*$/, '');
     const problems: string[] = [];
     for (const raw of refs) {
       const ref = raw.trim();
       let hits: RosterRow[];
       if (/^(everyone|everybody|all)$/i.test(ref)) {
-        for (const r of roster) if (!r.muted) jids.set(addressOf(r), named(r));
+        for (const r of roster) if (!r.muted && !r.self) jids.set(addressOf(r), named(r));
         continue;
       }
       const masked = /^…\s*([0-9]{1,4})$/.exec(ref);
-      const jid = bridgeParticipantJid(ref);
+      const jid = userJid(ref) ?? bridgeParticipantJid(ref);
       if (masked) {
         hits = roster.filter(r => ids(r).some(j => digitsOf(j).endsWith(masked[1]!)));
       } else if (jid) {
-        hits = roster.filter(r => ids(r).some(j => j === jid || digitsOf(j) === digitsOf(jid)));
+        hits = roster.filter(r => ids(r).some(j => j === jid));
       } else {
         const want = ref.toLowerCase();
         const exact = roster.filter(r => (r.display_name ?? '').toLowerCase() === want);
         hits = exact.length ? exact : roster.filter(r => (r.display_name ?? '').toLowerCase().startsWith(want));
       }
-      if (hits.length === 1) jids.set(addressOf(hits[0]!), named(hits[0]!));
+      if (hits.length === 1) { if (!hits[0]!.self) jids.set(addressOf(hits[0]!), named(hits[0]!)); }
       else problems.push(hits.length > 1 ? `"${ref}" (several people)` : `"${ref}"`);
     }
     if (problems.length) {
@@ -1271,8 +1265,14 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       /** The forker: the bridge's target session, or its target chat (run by a chat runtime). */
       sessionId: string; forkerKind: 'work_session' | 'chat'; memberId: string | null;
     }>('bridge_group_fork_context', [input.bridgeId]));
-    const roster = await ports.db.query<RosterRow>(claims,
-      `select external_id, alt_external_ids, display_name, muted from public.bridge_participants where bridge_id = $1`, [input.bridgeId]);
+    let roster: RosterRow[];
+    try {
+      roster = await liveRoster(claims, input.bridgeId, ctx.connectionId,
+        await sourceConversation(input.bridgeId, claims), `fork:${input.clientMutationId}:members`);
+    } catch (error) {
+      if (error instanceof Refusal) throw new CollabError('invalid_input', error.message);
+      throw error;
+    }
     const jids = forkPeople(roster, input.participants);
     const actor = ctx.memberId;
     const bridge = await loadFacts({ bridgeId: input.bridgeId, author: actor ? { kind: 'member', actorId: actor } : { kind: 'guest' } } as BridgeCommandInput);
@@ -1324,7 +1324,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       try {
         g = await ports.groups.create({
           connectionId: ctx.connectionId, subject: input.title.trim().slice(0, 100), participants: [...jids.keys()], requestId: `fork:${forkId}`,
-          sourceConversationId: await sourceConversation(cmd, claims),
+          sourceConversationId: await sourceConversation(cmd.input.bridgeId, claims),
         });
       } catch (error) {
         await exec(q => q.rpc('bridge_group_fork_release', [forkId]));

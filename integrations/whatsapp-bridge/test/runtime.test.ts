@@ -133,17 +133,99 @@ describe('groups (the bridge makes and fills groups)', () => {
   const BOB = '933333333333@s.whatsapp.net'
   const CARA = '944444444444@s.whatsapp.net'
 
-  test('group.create makes a group with the people, leaves the number out of its own list, and links whoever needs an invite', async () => {
+  test('group.create leaves own identities out and reports missing members without assuming privacy', async () => {
     const { conn, sock } = await connection()
     sock.private.add(CARA)
     const g = await conn.createGroup({ type: 'group.create', requestId: 'g1', connectionId: CONN, subject: '  Release crew ', participants: [ALICE, CARA, ME, ALICE] })
     assert.deepEqual(sock.calls.find((c) => c.fn === 'groupCreate')!.args, ['Release crew', [ALICE, CARA]])
     assert.equal(g.subject, 'Release crew')
-    assert.deepEqual(g.results, [{ id: ALICE, status: 'added' }, { id: CARA, status: 'invite_needed' }])
-    assert.equal(g.inviteLink, 'https://chat.whatsapp.com/INVITE123')
+    assert.deepEqual(g.results, [{ id: ALICE, status: 'added' }, { id: CARA, status: 'failed' }])
+    assert.equal(g.inviteLink, null)
     assert.equal(g.community, null)
     // The new group is not connected: nothing may be sent there until the server pushes it on the list.
     await assert.rejects(conn.send({ type: 'send', outboxId: 'o', connectionId: CONN, conversationId: g.conversationId, text: 'hi' }), OutboundRefused)
+  })
+
+  test('group.members reads only allowlisted metadata and preserves PN/LID aliases for unspoken members', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    sock.groups[G1].participants.push({ id: lid, phoneNumber: BOB, notify: 'Never spoke' })
+    const g = await conn.groupMembers({ type: 'group.members', requestId: 'members', connectionId: CONN, conversationId: G1 })
+    assert(g.members.some(p => p.ids.includes(lid) && p.ids.includes(BOB) && p.name === 'Never spoke'))
+    const before = sock.calls.length
+    await assert.rejects(conn.groupMembers({ type: 'group.members', requestId: 'off-list', connectionId: CONN, conversationId: G2 }), OutboundRefused)
+    assert.equal(sock.calls.length, before)
+  })
+
+  test('create deduplicates PN/LID aliases, excludes own aliases, and recognizes LIDs in results', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    sock.groups[G1].participants.push({ id: lid, phoneNumber: BOB })
+    const original = sock.groupCreate
+    sock.groupCreate = async (subject, participants) => {
+      const meta = await original(subject, participants)
+      meta.participants = [{ id: lid, phoneNumber: BOB }]
+      return meta
+    }
+    const g = await conn.createGroup({ type: 'group.create', requestId: 'aliases', connectionId: CONN, sourceConversationId: G1,
+      subject: 'Aliases', participants: [lid, BOB, ME_LID, ME] })
+    assert.deepEqual(sock.calls.find(c => c.fn === 'groupCreate')!.args, ['Aliases', [BOB]])
+    assert.equal(g.results.length, 1)
+    assert.equal(g.results[0]!.status, 'added')
+  })
+
+  test('create preserves a LID-only identity instead of converting its digits to a phone', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    sock.groups[G1].participants.push({ id: lid })
+    await conn.createGroup({ type: 'group.create', requestId: 'lid', connectionId: CONN, sourceConversationId: G1, subject: 'LID', participants: [lid] })
+    assert.deepEqual(sock.calls.find(c => c.fn === 'groupCreate')!.args, ['LID', [lid]])
+  })
+
+  test('add correlates reordered alias results, reports omitted responses, and treats timeouts as failures', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    sock.groups[G1].participants.push({ id: lid, phoneNumber: BOB })
+    sock.groupParticipantsUpdate = async () => [
+      { jid: CARA, status: '408' }, { jid: lid, status: '200' }, { jid: '199999999999999@lid', status: '200' },
+    ]
+    const g = await conn.addToGroup({ type: 'group.add', requestId: 'correlation', connectionId: CONN, conversationId: G1, participants: [BOB, ALICE, CARA] })
+    assert.deepEqual(g.results, [{ id: BOB, status: 'added' }, { id: ALICE, status: 'failed' }, { id: CARA, status: 'failed' }])
+    assert.equal(g.inviteLink, null)
+  })
+
+  test('an equal numeric part in another identity domain cannot claim an add result', async () => {
+    const { conn, sock } = await connection()
+    sock.groupParticipantsUpdate = async () => [{ jid: BOB.replace('@s.whatsapp.net', '@lid'), status: '200' }]
+    const g = await conn.addToGroup({ type: 'group.add', requestId: 'domains', connectionId: CONN, conversationId: G1, participants: [BOB] })
+    assert.deepEqual(g.results, [{ id: BOB, status: 'failed' }])
+  })
+
+  test('connection identity mappings confirm PN/LID aliases when metadata carries only one', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    ;(sock as any).signalRepository = { lidMapping: {
+      getLIDForPN: async (id: string) => id === BOB ? lid : null,
+      getPNForLID: async (id: string) => id === lid ? BOB : null,
+    } }
+    const original = sock.groupCreate
+    sock.groupCreate = async (subject, participants) => {
+      const meta = await original(subject, participants)
+      meta.participants = [{ id: lid }]
+      return meta
+    }
+    const g = await conn.createGroup({ type: 'group.create', requestId: 'mapping', connectionId: CONN, subject: 'Mapping', participants: [BOB, lid] })
+    assert.deepEqual(sock.calls.find(c => c.fn === 'groupCreate')!.args, ['Mapping', [BOB]])
+    assert.deepEqual(g.results, [{ id: BOB, status: 'added' }])
+  })
+
+  test('an ambiguous result cannot report success for two different requested people', async () => {
+    const { conn, sock } = await connection()
+    const lid = '188888888888888@lid'
+    sock.groups[G1].participants.push({ id: lid, phoneNumber: CARA })
+    sock.groupParticipantsUpdate = async () => [{ jid: BOB, status: '200', content: { attrs: { lid } } } as any]
+    const g = await conn.addToGroup({ type: 'group.add', requestId: 'ambiguous', connectionId: CONN, conversationId: G1, participants: [BOB, CARA] })
+    assert.deepEqual(g.results, [{ id: BOB, status: 'failed' }, { id: CARA, status: 'failed' }])
   })
 
   const splitFrame = { type: 'group.create', requestId: 'split', connectionId: CONN, sourceConversationId: G1, subject: 'Design review', participants: [ALICE, ME] } as const
@@ -167,8 +249,8 @@ describe('groups (the bridge makes and fills groups)', () => {
       assert.deepEqual(g.community, { id: 'c@g.us', name: 'A community' })
       assert.deepEqual(sock.calls.find(c => c.fn === 'communityCreateGroup')!.args, ['Design review', [ALICE], 'c@g.us'])
       assert.equal(sock.calls.filter(c => c.fn === 'groupCreate').length, 0)
-      assert.deepEqual(g.results, [{ id: ALICE, status: 'invite_needed' }])
-      assert.ok(g.inviteLink)
+      assert.deepEqual(g.results, [{ id: ALICE, status: 'failed' }])
+      assert.equal(g.inviteLink, null)
       assert.equal(conn.allowlist.allows('c@g.us'), false)
       assert.equal(conn.allowlist.allows(g.conversationId), false)
     })
@@ -622,6 +704,20 @@ describe('runtime', () => {
     const { rt, posts } = runtime({ connections: [] })
     await rt.onFrame({ type: 'group.create', requestId: 'r9', connectionId: CONN, subject: 'x', participants: [] })
     assert.deepEqual(posts.map((p) => [p.route, p.frame]), [['group', { requestId: 'r9', connectionId: CONN, error: 'unknown_connection' }]])
+  })
+
+  test('group.members replies on its route for known, unknown and off-list requests', async () => {
+    const { rt, posts, socks } = runtime({ connections: [] })
+    await rt.onFrame({ type: 'group.members', requestId: 'unknown-members', connectionId: CONN, conversationId: G1 })
+    assert.deepEqual(posts.at(-1), { route: 'group-members', frame: { requestId: 'unknown-members', connectionId: CONN, error: 'unknown_connection' } })
+    await rt.onFrame({ type: 'connect', connectionId: CONN, stateKey: k, authFlow: { kind: 'qr' }, allowlist: { type: 'allowlist', connectionId: CONN, version: 1, conversationIds: [G1] } })
+    socks[0]!.open()
+    await rt.onFrame({ type: 'group.members', requestId: 'known-members', connectionId: CONN, conversationId: G1 })
+    const result = posts.find(p => p.route === 'group-members' && p.frame.requestId === 'known-members')!.frame
+    assert(result.members.some((p: any) => p.ids.includes(ALICE)))
+    await rt.onFrame({ type: 'group.members', requestId: 'off-list-members', connectionId: CONN, conversationId: G2 })
+    assert.match(posts.find(p => p.frame.requestId === 'off-list-members')!.frame.error, /not a connected conversation/)
+    assert.equal(socks[0]!.calls.filter(c => c.fn === 'groupMetadata' && c.args[0] === G2).length, 0)
   })
 
   test('community refusal codes and names survive the runtime group route', async () => {

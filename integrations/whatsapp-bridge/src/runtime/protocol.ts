@@ -9,8 +9,8 @@
 // and the server's rootDir cannot reach it. Edit both together: packages/contract/test/bridge-runtime-protocol.test.ts
 // fails when they differ. The module stays dependency-free.
 
-// v2: group.create follows sourceConversationId's community. Servers refuse source-based creates on v1 runtimes.
-export const PROTOCOL_VERSION = 2
+// v3: group.members resolves identities from an allowlisted source group's live metadata.
+export const PROTOCOL_VERSION = 3
 
 /** What the WhatsApp runtime can do, sent once in `hello`. The UI shows only what this sheet allows (§5). */
 export const WHATSAPP_CAPABILITIES = {
@@ -133,9 +133,15 @@ export type HeartbeatFrame = {
 
 export type MediaFrame = { requestId: string; mime: string | null; data: string } | { requestId: string; error: string; tooLarge?: boolean }
 
+/** Authoritative aliases for one member of a connected group; never inferred from matching digits. */
+export type GroupMemberIdentity = { ids: string[]; name: string | null }
+export type GroupMembersFrame =
+  | { requestId: string; connectionId: string; members: GroupMemberIdentity[]; self: string[] }
+  | { requestId: string; connectionId: string; error: string }
+
 /**
- * What happened to each person asked into a group (`group.create`, `group.add`). `invite_needed`: their privacy
- * settings refuse adds, so they need the group's invite link instead; `already`: in the group already.
+ * What happened to each person asked into a group (`group.create`, `group.add`). `invite_needed`: WhatsApp refused a direct
+ * add; offer the invite link without assuming why. Missing/unconfirmed results are `failed`.
  */
 export type GroupMemberResult = { id: string; status: 'added' | 'already' | 'invite_needed' | 'failed' }
 
@@ -146,7 +152,7 @@ export type GroupFrame =
   | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community?: GroupCommunity | null }
   | { requestId: string; connectionId: string; error: string; code?: 'not_community_admin' | 'community_create_failed'; community?: GroupCommunity; createdConversationId?: string }
 
-export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group'
+export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group' | 'group-members'
 
 export type RuntimeFrames = {
   hello: HelloFrame
@@ -159,6 +165,7 @@ export type RuntimeFrames = {
   heartbeat: HeartbeatFrame
   media: MediaFrame
   group: GroupFrame
+  'group-members': GroupMembersFrame
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -195,6 +202,8 @@ export type ServerFrame =
    * allowlist; its community is followed only when the linked number is a community admin, otherwise refused.
    */
   | { type: 'group.create'; requestId: string; connectionId: string; subject: string; participants: string[]; sourceConversationId?: string }
+  /** Read member identities only from a connected group, including members who have never spoken. */
+  | { type: 'group.members'; requestId: string; connectionId: string; conversationId: string }
   /** Add people to a connected group (the number must be its admin). */
   | { type: 'group.add'; requestId: string; connectionId: string; conversationId: string; participants: string[] }
 

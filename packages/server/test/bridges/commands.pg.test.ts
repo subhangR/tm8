@@ -15,7 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CollabError } from '@tm8/contract';
+import { CollabError, type GroupMemberIdentity, type GroupMemberResult } from '@tm8/contract';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
 import { bridgesWorkerClaims } from '../../src/bridges/outbox.js';
@@ -206,6 +206,7 @@ function makeExecutor(): BridgeCommandExecutor {
     workerHandle: async (claims, bridge, sessionId) =>
       db.rpc<{ handle: string; title: string | null }>(claims, 'bridge_poster_handle', [bridge, sessionId]),
     groups: {
+      async members() { return { members: liveMembers, self: ['919000000999@s.whatsapp.net'] }; },
       async create(input) {
         if (groupRefusal) throw groupRefusal;
         groupCalls.push({ op: 'create', ...input });
@@ -216,11 +217,13 @@ function makeExecutor(): BridgeCommandExecutor {
       async add(input) {
         groupCalls.push({ op: 'add', ...input });
         return { conversationId: input.conversationId, subject: 'Infra', inviteLink: input.participants.some(j => privateJids.has(j)) ? 'https://chat.whatsapp.com/INV' : null,
-          results: input.participants.map(id => ({ id, status: privateJids.has(id) ? 'invite_needed' as const : 'added' as const })) };
+          results: groupAddResults ?? input.participants.map(id => ({ id, status: privateJids.has(id) ? 'invite_needed' as const : 'added' as const })) };
       },
     },
   });
 }
+let liveMembers: GroupMemberIdentity[] = [];
+let groupAddResults: GroupMemberResult[] | null = null;
 const groupCalls: Array<{ op: 'create' | 'add'; participants: string[]; subject?: string; conversationId?: string; sourceConversationId?: string }> = [];
 let groupCommunity: { id: string; name: string } | null = null;
 let groupRefusal: CollabError | null = null;
@@ -228,19 +231,19 @@ const privateJids = new Set<string>();
 let groupSeq = 0;
 
 /** An inbound command as B1b-2 stores it: the message on the log, its origin, command_state pending. */
-async function inbound(sender: string, authorId: string, body: string, replyToExternalId: string | null = null): Promise<string> {
+async function inbound(sender: string, authorId: string, body: string, replyToExternalId: string | null = null, mentions: string[] = []): Promise<string> {
   const messageId = await storeMessage(authorId, body);
   await asOwner(c => c.query(`insert into public.message_origins(message_id, bridge_id, connection_id, direction,
-      external_message_id, external_conversation_id, external_sender_id, external_reply_to_id, command_state)
-      values ($1,$2,$3,'in',$4,'120363-infra@g.us',$5,$6,'pending')`,
-    [messageId, bridgeId, connection, `IN-${++inSeq}-${randomUUID().slice(0, 8)}`, sender, replyToExternalId]));
+      external_message_id, external_conversation_id, external_sender_id, external_reply_to_id, command_state, provider_payload)
+      values ($1,$2,$3,'in',$4,'120363-infra@g.us',$5,$6,'pending',$7::jsonb)`,
+    [messageId, bridgeId, connection, `IN-${++inSeq}-${randomUUID().slice(0, 8)}`, sender, replyToExternalId, JSON.stringify({ mentions })]));
   return messageId;
 }
 
-async function command(who: keyof typeof people | 'guest', body: string, replyTo: string | null = null): Promise<{ messageId: string; reply: Notice | undefined }> {
+async function command(who: keyof typeof people | 'guest', body: string, replyTo: string | null = null, mentions: string[] = []): Promise<{ messageId: string; reply: Notice | undefined }> {
   const sender = who === 'guest' ? guestPhone : people[who].phone;
   const author = who === 'guest' ? bridgeId : people[who].member;
-  const messageId = await inbound(sender, author, body, replyTo);
+  const messageId = await inbound(sender, author, body, replyTo, mentions);
   await executor.run(messageId);
   return { messageId, reply: notices.find(n => n.replyToMessageId === messageId) };
 }
@@ -253,6 +256,8 @@ const bridgeTasks = () => count(`select count(*) n from public.edges ed join pub
   where ed.type = 'authored_from' and ed.dst_id = $1 and e.kind = 'task'`, [bridgeId]);
 
 beforeEach(() => {
+  groupAddResults = null;
+  liveMembers = Object.values(people).map(p => ({ ids: [p.phone], name: null }));
   groupCommunity = null; groupRefusal = null;
   executor = makeExecutor();
 });
@@ -940,6 +945,65 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     });
   });
 
+  it('resolves native LID mentions for people who never spoke, without manufacturing phones', async () => {
+    const lid = '188888888888888@lid';
+    liveMembers.push({ ids: [lid], name: 'Tharak' });
+    const { messageId, reply } = await command('owner', '/split Identity crew with @188888888888888', null, [lid]);
+    expect((await db.rpc<any>(bridgesWorkerClaims(), 'bridge_command_input', [messageId])).mentions).toEqual([lid]);
+    expect(groupCalls.at(-1)!.participants).toEqual([lid, people.owner.phone]);
+    expect(reply!.text).toContain('added Tharak');
+    expect(await count('select count(*) n from public.bridge_participants where bridge_id=$1 and external_id=$2', [bridgeId, lid])).toBe(0);
+  });
+
+  it('refuses unknown mentions before creating or adding, while explicit phones remain phones', async () => {
+    const before = groupCalls.length;
+    for (const verb of ['split Unknown with', 'invite']) {
+      expect((await command('owner', `/${verb} @188888888888889`, null, ['188888888888889@lid'])).reply!.text).toContain("I don't know @188888888888889");
+    }
+    expect(groupCalls.length).toBe(before);
+    liveMembers.push({ ids: ['919000000066@lid'], name: 'Different person' });
+    await command('owner', '/invite +919000000066');
+    expect(groupCalls.at(-1)!.participants).toEqual(['919000000066@s.whatsapp.net']);
+  });
+
+  it('includes everyone from live metadata, excludes self, and deduplicates sender aliases', async () => {
+    const ownerLid = '188888888888881@lid';
+    const quietLid = '188888888888882@lid';
+    liveMembers[0]!.ids.push(ownerLid);
+    liveMembers.push({ ids: [quietLid], name: 'Never spoke' }, { ids: ['919000000999@s.whatsapp.net', '188888888888899@lid'], name: 'tm8' });
+    await asOwner(c => c.query('update public.bridge_participants set alt_external_ids=$3 where bridge_id=$1 and external_id=$2', [bridgeId, people.owner.phone, [ownerLid]]));
+    try {
+      const messageId = await inbound(ownerLid, people.owner.member, '/split All crew with everyone');
+      await executor.run(messageId);
+      expect(new Set(groupCalls.at(-1)!.participants)).toEqual(new Set([...Object.values(people).map(p => p.phone), quietLid]));
+    } finally {
+      await asOwner(c => c.query("update public.bridge_participants set alt_external_ids='{}' where bridge_id=$1 and external_id=$2", [bridgeId, people.owner.phone]));
+    }
+  });
+
+  it('refuses conflicting sender aliases instead of borrowing another linked identity', async () => {
+    const lid = '188888888888889@lid';
+    await asOwner(c => c.query('update public.bridge_participants set alt_external_ids=$3 where bridge_id=$1 and external_id=any($2)',
+      [bridgeId, [people.owner.phone, people.rahul.phone], [lid]]));
+    const before = groupCalls.length;
+    try {
+      const messageId = await inbound(lid, people.owner.member, '/split Conflicted with Maya');
+      await executor.run(messageId);
+      expect(notices.find(n => n.replyToMessageId === messageId)!.text).toContain('conflicting aliases or links');
+      expect(groupCalls.length).toBe(before);
+    } finally {
+      await asOwner(c => c.query("update public.bridge_participants set alt_external_ids='{}' where bridge_id=$1 and external_id=any($2)",
+        [bridgeId, [people.owner.phone, people.rahul.phone]]));
+    }
+  });
+
+  it('reports every requested person when the runtime omits an add result', async () => {
+    groupAddResults = [{ id: people.maya.phone.replace('@', ':7@'), status: 'added' }];
+    const { reply } = await command('owner', '/invite Maya and Rahul');
+    expect(reply!.text).toBe("added Maya. couldn't confirm adding Rahul");
+    expect(reply!.text).not.toContain('privacy');
+  });
+
   it('a guest is refused with how to link, and nothing is made', async () => {
     const before = groupCalls.length;
     for (const body of ['/split Crew with Maya', '/invite +919000000077']) {
@@ -1054,7 +1118,7 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     const call = groupCalls.at(-1)!;
     expect(call).toMatchObject({ op: 'add', conversationId: '120363-infra@g.us' });
     expect(call.participants).toEqual(['919000000088@s.whatsapp.net', '919000000077@s.whatsapp.net']);
-    expect(reply!.text).toBe("added +919000000088. +919000000077 can't be added directly (their privacy settings) — send them https://chat.whatsapp.com/INV");
+    expect(reply!.text).toBe("added +919000000088. +919000000077 couldn't be added directly — send them https://chat.whatsapp.com/INV");
     expect((await command('owner', '/invite everyone')).reply!.text).toMatch(/name who to add/);
   });
 });

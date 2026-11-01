@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CollabError, type GroupFrame, type ServerFrame } from '@tm8/contract';
+import { CollabError, type GroupFrame, type GroupMembersFrame, type ServerFrame } from '@tm8/contract';
 import { BridgeRuntimeHub } from '../../src/bridges/runtime/hub.js';
 import { bridgeGroupPort } from '../../src/bridges/commands/index.js';
 import type { Db } from '../../src/db/types.js';
@@ -8,7 +8,7 @@ import type { EventSink } from '../../src/events/ws-connection.js';
 const input = { connectionId: 'c1', requestId: 'r1', subject: 'Design review', participants: ['person@lid'], sourceConversationId: 'source@g.us' };
 const community = { id: 'community@g.us', name: 'Acme Community' };
 
-function runtime(version: number, answer: GroupFrame | null) {
+function runtime(version: number, answer: GroupFrame | GroupMembersFrame | null) {
   const sent: ServerFrame[] = [];
   const db = { rpc: async (_claims: unknown, fn: string) => fn === 'bridge_runtime_of' ? 'rt' : [] } as unknown as Db;
   const hub = new BridgeRuntimeHub({ db, nodeKey: async () => Buffer.alloc(32), authorize: async () => ({ kind: 'anonymous' }) });
@@ -17,7 +17,7 @@ function runtime(version: number, answer: GroupFrame | null) {
     send(text: string) {
       const frame = JSON.parse(text) as ServerFrame;
       sent.push(frame);
-      if (frame.type === 'group.create' && answer) hub.settleRequest(frame.requestId, answer);
+      if ((frame.type === 'group.create' || frame.type === 'group.members') && answer) hub.settleRequest(frame.requestId, answer);
     },
     close() {}, onMessage() {}, onClose() {},
   } as unknown as EventSink;
@@ -58,6 +58,25 @@ describe('community group creation through hub and command port', () => {
       expect(sent.filter(f => f.type === 'group.create')).toEqual([]);
       const { sourceConversationId: _source, ...plain } = input;
       await expect(hub.createGroup('rt', plain)).resolves.toMatchObject({ conversationId: 'standalone@g.us' });
+    } finally { await hub.stop(); }
+  });
+
+  it('forwards a scoped member identity request and returns PN/LID aliases', async () => {
+    const members = [{ ids: ['919000000001@s.whatsapp.net', '188888888888881@lid'], name: 'Maya' }];
+    const { hub, port, sent } = runtime(3, { requestId: 'members', connectionId: input.connectionId, members, self: [] });
+    try {
+      const request = { connectionId: input.connectionId, conversationId: input.sourceConversationId, requestId: 'members' };
+      await expect(port.members(request)).resolves.toEqual({ members, self: [] });
+      expect(sent.filter(f => f.type === 'group.members')).toEqual([{ type: 'group.members', ...request }]);
+    } finally { await hub.stop(); }
+  });
+
+  it('refuses identity resolution on older runtimes before sending anything', async () => {
+    const { hub, port, sent } = runtime(2, null);
+    try {
+      await expect(port.members({ connectionId: input.connectionId, conversationId: input.sourceConversationId, requestId: 'members' }))
+        .rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Upgrade') });
+      expect(sent.filter(f => f.type === 'group.members')).toEqual([]);
     } finally { await hub.stop(); }
   });
 

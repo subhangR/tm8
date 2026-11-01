@@ -27,7 +27,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 
 import { CollabError } from '@tm8/contract';
-import type { AllowlistFrame, ConversationsFrame, GroupFrame, MediaFrame, ServerFrame } from '@tm8/contract';
+import type { AllowlistFrame, ConversationsFrame, GroupFrame, GroupMembersFrame, MediaFrame, ServerFrame } from '@tm8/contract';
 
 import type { Db, DbClaims } from '../../db/types.js';
 import type { W2BlobStore } from '../../files/w2-blob-store.js';
@@ -260,6 +260,15 @@ export class BridgeRuntimeHub {
       return { requestId: input.requestId, connectionId: input.connectionId, code: 'community_create_failed',
         error: "Can't split: the WhatsApp runtime did not confirm creating the group. Check WhatsApp before trying again; a group may have been created." };
     }
+  }
+
+  async groupMembers(runtimeId: string, input: { requestId: string; connectionId: string; conversationId: string },
+    timeoutMs = 15_000): Promise<GroupMembersFrame> {
+    if ((this.runtimes.get(runtimeId)?.protocolVersion ?? 1) < 3) {
+      return { requestId: input.requestId, connectionId: input.connectionId,
+        error: 'Upgrade the WhatsApp runtime before resolving group member identities' };
+    }
+    return this.request(runtimeId, input.requestId, { type: 'group.members', ...input }, timeoutMs) as Promise<GroupMembersFrame>;
   }
 
   /** 426: add people to a connected group (the bridge's /invite). */

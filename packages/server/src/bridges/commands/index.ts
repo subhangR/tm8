@@ -38,6 +38,12 @@ export function bridgeGroupPort(db: Db, hub: () => BridgeRuntimeHub | undefined)
     return { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink, community: frame.community ?? null };
   };
   return {
+    async members(input) {
+      const { hub: h, runtimeId } = await runtimeOf(input.connectionId);
+      const frame = await h.groupMembers(runtimeId, input);
+      if ('error' in frame) throw new CollabError('invalid_input', `Cannot resolve this group's member identities: ${frame.error}`);
+      return { members: frame.members, self: frame.self };
+    },
     async create(input) {
       const { hub: h, runtimeId } = await runtimeOf(input.connectionId);
       return settled(await h.createGroup(runtimeId, input));

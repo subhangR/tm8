@@ -2,7 +2,7 @@
 // This is the runtime's half of the two independent checks; the server checks again on its side.
 import type { AllowlistFrame, CannotSendReason, DropCounters } from './protocol.js'
 
-export type OutboundKind = 'text' | 'media' | 'poll' | 'reaction' | 'typing' | 'read' | 'media.fetch' | 'group.add' | 'group.create'
+export type OutboundKind = 'text' | 'media' | 'poll' | 'reaction' | 'typing' | 'read' | 'media.fetch' | 'group.add' | 'group.create' | 'group.members'
 
 /** The frames that post into the conversation; an admins-only group refuses these and nothing else. */
 const POSTS: ReadonlySet<OutboundKind> = new Set(['text', 'media', 'poll'])

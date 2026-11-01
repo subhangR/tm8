@@ -36,7 +36,9 @@ import type {
   GroupMemberResult,
   GroupCommunity,
   ServerFrame,
+  GroupMemberIdentity,
 } from './protocol.js'
+import { identityIds, mergeIdentities, preferredId, userJid } from './identities.js'
 import { useSealedAuthState } from './sealed-auth.js'
 
 export type Emit = <R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]) => Promise<unknown>
@@ -46,7 +48,7 @@ export type WaSocketLike = Pick<
   WASocket,
   'ev' | 'user' | 'sendMessage' | 'sendPresenceUpdate' | 'readMessages' | 'groupMetadata' | 'groupFetchAllParticipating' | 'requestPairingCode' | 'logout' | 'end' | 'updateMediaMessage'
   | 'groupCreate' | 'communityCreateGroup' | 'groupParticipantsUpdate' | 'groupInviteCode'
->
+> & Partial<Pick<WASocket, 'signalRepository'>>
 export type SocketFactory = (config: UserFacingSocketConfig) => WaSocketLike
 
 /** A community split must never fall back to a standalone group. */
@@ -442,6 +444,48 @@ export class RuntimeConnection {
     return null
   }
 
+  /** Live identities, scoped to a source the server has connected. No messages or off-list groups are read. */
+  async groupMembers(f: Extract<ServerFrame, { type: 'group.members' }>): Promise<{ members: GroupMemberIdentity[]; self: string[] }> {
+    const sock = this.guard(f.conversationId, 'group.members')
+    if (!f.conversationId.endsWith('@g.us')) throw new Error('Member identities require a connected group')
+    const meta = await sock.groupMetadata(f.conversationId)
+    return { members: await this.memberIdentities(meta), self: [...this.allowlist.own] }
+  }
+
+  private async aliases(ids: string[]): Promise<string[]> {
+    // Metadata already supplies a complete pair; do not replace it with a stale connection mapping.
+    if (ids.some(j => j.endsWith('@lid')) && ids.some(j => j.endsWith('@s.whatsapp.net'))) return ids
+    const out = new Set(ids)
+    const mappings = this.sock?.signalRepository?.lidMapping
+    if (mappings) {
+      for (const id of ids) {
+        const alt = await (id.endsWith('@lid') ? mappings.getPNForLID(id) : mappings.getLIDForPN(id)).catch(() => null)
+        if (alt && userJid(alt)) out.add(userJid(alt)!)
+      }
+    }
+    return [...out]
+  }
+
+  private async memberIdentities(meta: GroupMetadata): Promise<GroupMemberIdentity[]> {
+    return mergeIdentities(await Promise.all(meta.participants.map(async p => ({
+      ids: await this.aliases(identityIds(p)), name: p.name ?? p.notify ?? null,
+    }))))
+  }
+
+  /** Preserve each request id for result correlation, and deduplicate only confirmed aliases. */
+  private async requestedPeople(participants: string[], members: GroupMemberIdentity[] = []) {
+    const rows = []
+    for (const raw of participants) {
+      const id = userJid(raw)
+      if (!id) throw new Error('Invalid WhatsApp participant identity; use a native mention or an explicit phone number')
+      const hits = members.filter(p => p.ids.includes(id))
+      const ids = await this.aliases([...new Set([id, ...hits.flatMap(p => p.ids)])])
+      if (ids.some(j => this.allowlist.isOwn(j))) continue
+      rows.push({ id, ids })
+    }
+    return mergeIdentities(rows).map(p => ({ ...p, address: preferredId(p.ids) }))
+  }
+
   /**
    * A new group with these people, the number its admin (the bridge's own group-making). The new group is not on the
    * allowlist: nothing in it is read or sent until the server connects it with a bridge and pushes the list.
@@ -450,12 +494,14 @@ export class RuntimeConnection {
     if (!this.sock || !this.open) throw new Error('WhatsApp is not connected')
     const subject = f.subject.trim().slice(0, 100)
     if (!subject) throw new Error('a group needs a name')
-    const asked = [...new Set(f.participants.map((j) => bareJid(j)).filter((j) => !this.allowlist.isOwn(j)))]
+    let members: GroupMemberIdentity[] = []
     let community: GroupCommunity | null = null
     if (f.sourceConversationId) {
       // Read the parent's metadata only to check admin rights; its messages never enter the allowlist.
       this.allowlist.check(f.sourceConversationId, 'group.create')
-      const parent = (await this.sock.groupMetadata(f.sourceConversationId)).linkedParent
+      const source = await this.sock.groupMetadata(f.sourceConversationId)
+      members = await this.memberIdentities(source)
+      const parent = source.linkedParent
       if (parent) {
         const metadata = await this.sock.groupMetadata(parent)
         community = { id: parent, name: metadata.subject }
@@ -465,6 +511,8 @@ export class RuntimeConnection {
           `Can't split: this group is in *${community.name}* and only a community admin can add groups to it. Make the linked number a community admin and try again.`, community)
       }
     }
+    const people = await this.requestedPeople(f.participants, members)
+    const asked = people.map(p => p.address)
     let meta: GroupMetadata
     if (community) {
       // Baileys sends create + linked_parent in one request. Never create standalone and link afterwards.
@@ -484,22 +532,37 @@ export class RuntimeConnection {
     } else {
       meta = await this.sock.groupCreate(subject, asked)
     }
-    const inGroup = new Set(meta.participants.flatMap((p) => [p.id, p.lid, p.phoneNumber]).filter((j): j is string => !!j).map((j) => bareJid(j)))
-    const results: GroupMemberResult[] = asked.map((id) => ({ id, status: inGroup.has(id) ? 'added' : 'invite_needed' }))
+    const actual = await this.memberIdentities(meta).catch(() => [])
+    const results: GroupMemberResult[] = people.map(p => ({ id: p.id,
+      status: actual.some(m => m.ids.some(id => p.ids.includes(id))) ? 'added' : 'failed' }))
     return { conversationId: meta.id, subject: meta.subject ?? subject, results, inviteLink: await this.inviteLinkIf(meta.id, results), community }
   }
 
-  /** Add people to a connected group; WhatsApp answers per person (200 added, 409 already in, 403 privacy: invite). */
+  /** Correlate each requested identity using confirmed aliases; never zip responses by position. */
   async addToGroup(f: Extract<ServerFrame, { type: 'group.add' }>): Promise<{ conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }> {
     const sock = this.guard(f.conversationId, 'group.add')
-    const asked = [...new Set(f.participants.map((j) => bareJid(j)).filter((j) => !this.allowlist.isOwn(j)))]
-    const answer = asked.length ? await sock.groupParticipantsUpdate(f.conversationId, asked, 'add') : []
-    const results: GroupMemberResult[] = answer.map((r) => ({
-      id: bareJid(r.jid ?? ''),
-      status: r.status === '200' ? 'added' : r.status === '409' ? 'already' : r.status === '403' || r.status === '408' ? 'invite_needed' : 'failed',
+    const before = await sock.groupMetadata(f.conversationId)
+    const members = await this.memberIdentities(before)
+    const people = await this.requestedPeople(f.participants, members)
+    const answer = people.length ? await sock.groupParticipantsUpdate(f.conversationId, people.map(p => p.address), 'add') : []
+    const after = await sock.groupMetadata(f.conversationId).catch(() => null)
+    const actual = after ? await this.memberIdentities(after).catch(() => members) : members
+    const responses = await Promise.all(answer.map(async r => ({
+      status: r.status,
+      ids: await this.aliases(identityIds({ id: r.jid ?? '', lid: r.content?.attrs.lid, phoneNumber: r.content?.attrs.phone_number })),
+    })))
+    const candidates = people.map(p => ({ ...p,
+      ids: [...new Set([...p.ids, ...actual.filter(m => m.ids.some(id => p.ids.includes(id))).flatMap(m => m.ids)])],
     }))
-    const meta = await sock.groupMetadata(f.conversationId).catch(() => null)
-    return { conversationId: f.conversationId, subject: meta?.subject ?? '', results, inviteLink: await this.inviteLinkIf(f.conversationId, results) }
+    const results: GroupMemberResult[] = candidates.map(p => {
+      const hits = responses.filter(r => {
+        const matches = candidates.filter(c => c.ids.some(id => r.ids.includes(id)))
+        return matches.length === 1 && matches[0] === p
+      })
+      const status = hits.length === 1 ? hits[0]!.status : null
+      return { id: p.id, status: status === '200' ? 'added' : status === '409' ? 'already' : status === '403' ? 'invite_needed' : 'failed' }
+    })
+    return { conversationId: f.conversationId, subject: after?.subject ?? before.subject, results, inviteLink: await this.inviteLinkIf(f.conversationId, results) }
   }
 
   private async inviteLinkIf(conversationId: string, results: GroupMemberResult[]): Promise<string | null> {
