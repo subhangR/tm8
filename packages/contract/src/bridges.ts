@@ -506,7 +506,7 @@ export interface BridgeConversationCreateResult {
    * is what `tm8 bridge create --conversation` takes. `inviteLink` is set only
    * when someone's privacy settings refused the add.
    */
-  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null };
+  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community: { id: string; name: string } | null };
   /** The bridge made in the same call. */
   bridge: BridgeView;
   /** The session started for the bridge when no `targetId` was given; null otherwise. */
@@ -521,6 +521,8 @@ export const BRIDGE_FORK_BRIEF_MAX = 2000;
  * group into a new WhatsApp group on the same number, bridged to a new
  * session. Only where the number's owner turned `agentGroups` on for the
  * space; people come from the source group's roster only; rate limited.
+ * Follows the source group's community, refusing with `not_community_admin`
+ * when the linked number is not an admin of that community (no standalone fallback).
  */
 export interface BridgeGroupForkInput extends BridgeCommand {
   bridgeId?: EntityId;
@@ -541,7 +543,7 @@ export interface BridgeGroupForkResult {
   bridgeId: EntityId;
   /** The fork's audit row (bridge_group_forks). */
   forkId: string;
-  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null };
+  group: { conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community: { id: string; name: string } | null };
   /** The new group's bridge and the session it lands on. */
   newBridgeId: EntityId;
   sessionId: EntityId;

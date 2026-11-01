@@ -92,11 +92,12 @@ export interface BridgeGroupResult {
   subject: string;
   results: GroupMemberResult[];
   inviteLink: string | null;
+  community?: { id: string; name: string } | null;
 }
 
 /** 426: the number's group powers, through its runtime. Absent where no runtime is wired. */
 export interface BridgeGroupPort {
-  create(input: { connectionId: string; subject: string; participants: string[]; requestId: string }): Promise<BridgeGroupResult>;
+  create(input: { connectionId: string; subject: string; participants: string[]; requestId: string; sourceConversationId: string }): Promise<BridgeGroupResult>;
   add(input: { connectionId: string; conversationId: string; participants: string[]; requestId: string }): Promise<BridgeGroupResult>;
 }
 

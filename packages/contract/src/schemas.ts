@@ -5744,6 +5744,7 @@ export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'version_conflict', 'conflict', 'invariant_violation',
   'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
+  'not_community_admin',
   'context_budget_too_small',
   'form_answers_invalid', 'form_not_open', 'form_structure_frozen',
   'form_response_limit', 'form_respondent_not_allowed',

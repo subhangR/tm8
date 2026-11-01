@@ -193,6 +193,7 @@ describe('bridges.conversations.create', () => {
     expect(started).toEqual([expect.objectContaining({ teamMemberId: persona, title: 'bridge-bugs (WhatsApp)', sessionId: made.sessionId })]);
     expect(made.group).toEqual({
       conversationId: expect.stringMatching(/@g\.us$/), subject: 'bridge-bugs', inviteLink: 'https://chat.whatsapp.com/INVITE',
+      community: null,
       results: [{ id: '919876543210@s.whatsapp.net', status: 'added' }, { id: '922222222222@s.whatsapp.net', status: 'invite_needed' }],
     });
     expect(made.bridge).toMatchObject({ teammateId: persona, target: { kind: 'work_session', id: made.sessionId },
@@ -202,6 +203,7 @@ describe('bridges.conversations.create', () => {
     expect(creates.length).toBe(asked);
     expect(started).toHaveLength(1);
     expect(again.bridge.id).toBe(made.bridge.id);
+    expect(again.group.community).toBeNull();
     expect(stopped).toEqual([]);
   });
 

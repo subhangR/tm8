@@ -3,7 +3,7 @@
 import path from 'node:path'
 import { TooLargeError } from '../media.js'
 import { OutboundRefused } from './allowlist.js'
-import { RuntimeConnection, type Emit, type SocketFactory } from './connection.js'
+import { GroupCreationRefused, RuntimeConnection, type Emit, type SocketFactory } from './connection.js'
 import { PROTOCOL_VERSION, WHATSAPP_CAPABILITIES, type HeartbeatFrame, type AllowlistFrame, type HelloReply, type RuntimeFrames, type RuntimeRoute, type ServerFrame } from './protocol.js'
 import { parseStateKey } from './sealed-auth.js'
 
@@ -143,7 +143,8 @@ export class Runtime {
           const g = f.type === 'group.create' ? await c.createGroup(f) : await c.addToGroup(f)
           await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, ...g })
         } catch (e) {
-          await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: (e as Error).message })
+          await this.emit('group', { requestId: f.requestId, connectionId: f.connectionId, error: (e as Error).message,
+            ...(e instanceof GroupCreationRefused ? { code: e.code, community: e.community, ...(e.createdConversationId ? { createdConversationId: e.createdConversationId } : {}) } : {}) })
         }
         return
       case 'media.fetch':

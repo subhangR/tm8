@@ -9,7 +9,8 @@
 // and the server's rootDir cannot reach it. Edit both together: packages/contract/test/bridge-runtime-protocol.test.ts
 // fails when they differ. The module stays dependency-free.
 
-export const PROTOCOL_VERSION = 1
+// v2: group.create follows sourceConversationId's community. Servers refuse source-based creates on v1 runtimes.
+export const PROTOCOL_VERSION = 2
 
 /** What the WhatsApp runtime can do, sent once in `hello`. The UI shows only what this sheet allows (§5). */
 export const WHATSAPP_CAPABILITIES = {
@@ -138,10 +139,12 @@ export type MediaFrame = { requestId: string; mime: string | null; data: string 
  */
 export type GroupMemberResult = { id: string; status: 'added' | 'already' | 'invite_needed' | 'failed' }
 
-/** The answer to `group.create` / `group.add`. `inviteLink` is set only when someone needs it. */
+export type GroupCommunity = { id: string; name: string }
+
+/** The answer to `group.create` / `group.add`. `community` is set on v2 creates; optional for adds and v1 runtimes. */
 export type GroupFrame =
-  | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null }
-  | { requestId: string; connectionId: string; error: string }
+  | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community?: GroupCommunity | null }
+  | { requestId: string; connectionId: string; error: string; code?: 'not_community_admin' | 'community_create_failed'; community?: GroupCommunity; createdConversationId?: string }
 
 export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group'
 
@@ -188,9 +191,10 @@ export type ServerFrame =
   | { type: 'media.fetch'; requestId: string; connectionId: string; conversationId: string; handle: string; maxBytes: number }
   /**
    * Make a new group on the number with these people (JIDs) in it; the number is its admin. It is not on the allowlist
-   * until the server connects it (a bridge), so nothing in it is read or sent before then.
+   * until the server connects it (a bridge), so nothing in it is read or sent before then. A source must be on the
+   * allowlist; its community is followed only when the linked number is a community admin, otherwise refused.
    */
-  | { type: 'group.create'; requestId: string; connectionId: string; subject: string; participants: string[] }
+  | { type: 'group.create'; requestId: string; connectionId: string; subject: string; participants: string[]; sourceConversationId?: string }
   /** Add people to a connected group (the number must be its admin). */
   | { type: 'group.add'; requestId: string; connectionId: string; conversationId: string; participants: string[] }
 

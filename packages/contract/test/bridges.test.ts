@@ -78,9 +78,10 @@ describe('catalog (§3.4)', () => {
       'bridges.resume', 'bridges.remove', 'bridges.participants.list', 'bridges.participants.update',
       'bridges.handles.list', 'bridges.handles.claim', 'bridges.log.read', 'bridges.listen',
       'bridges.connections.list', 'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
-      'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.connections.remove', 'bridges.conversations.list', 'bridges.conversations.create',
       'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.work.start', // B1b-6 (v2 §4.3)
+      'bridges.groups.fork', // D83 (432)
       // Bridges R (416): /remember proposals, listed and decided in tm8 (D29, D61-D63).
       'bridges.memories.proposals.list', 'bridges.memories.proposals.resolve',
       'bridges.links.begin', 'bridges.links.list', 'bridges.links.revoke',
@@ -90,7 +91,7 @@ describe('catalog (§3.4)', () => {
     expect(bridges.filter(op => op.humanOnly).map(op => op.name)).toEqual([
       'bridges.create', 'bridges.retarget', 'bridges.remove', 'bridges.participants.update',
       'bridges.connections.begin', 'bridges.connections.offer', 'bridges.connections.withdraw',
-      'bridges.connections.remove', 'bridges.conversations.list',
+      'bridges.connections.remove', 'bridges.conversations.list', 'bridges.conversations.create',
       'bridges.handover.offer', 'bridges.handover.accept', 'bridges.handover.decline', 'bridges.handover.withdraw', // Q7/Q8 (424)
       'bridges.memories.proposals.resolve', 'bridges.links.begin', 'bridges.links.revoke',
     ]);

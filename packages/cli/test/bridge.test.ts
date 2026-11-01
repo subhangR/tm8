@@ -80,7 +80,8 @@ beforeAll(async () => {
       else if (url.pathname.endsWith('/conversations') && req.method === 'POST') data = { connectionId: CONNECTION, bridge: view, sessionId: CHAT,
         group: { conversationId: '1204@g.us', subject: body.title, results: [], inviteLink: null } };
       else if (url.pathname.endsWith('/fork')) data = { bridgeId: BRIDGE, forkId: CHAT, newBridgeId: BRIDGE, sessionId: CHAT, handle: 'keen-otter',
-        noticeMessageId: CHAT, group: { conversationId: '1205@g.us', subject: body.title, results: [], inviteLink: null } };
+        noticeMessageId: CHAT, group: { conversationId: '1205@g.us', subject: body.title, results: [], inviteLink: null,
+          community: { id: 'community@g.us', name: 'Acme Community' } } };
       else if (url.pathname.endsWith('/conversations')) data = { connectionId: CONNECTION, items: [
         { conversationId: '1203@g.us', kind: 'group', name: 'Infra', size: 7, canSend: true, reason: null },
         { conversationId: '9999@g.us', kind: 'group', name: 'Announcements', size: 120, canSend: false, reason: 'admins_only' }] };
@@ -412,6 +413,7 @@ describe('tm8 bridge connection (B1b-5)', () => {
       expect(requests.at(0)).toMatchObject({ method: 'POST', path: `/v2/me/bridge-connections/${CONNECTION}/conversations` });
       expect(stdout).toMatch(/group 1204@g.us "bridges-test"/);
       expect(stdout).toMatch(/group 1205@g.us "bridge-bugs" \(fork /);
+      expect(stdout).toContain('community community@g.us "Acme Community"');
       expect(requests.find(r => r.path.endsWith('/fork'))).toMatchObject({ method: 'POST', path: `/v2/bridges/${BRIDGE}/fork` });
       expect(requests.find(r => r.path.endsWith('/offer') && r.body.agentGroups === true)).toBeTruthy();
     } finally {

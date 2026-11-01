@@ -36,7 +36,7 @@ export interface BridgeRuntimeLink {
   /** B1b-7: the runtime's live group list for one connection; never stored. Null when that runtime is not connected. */
   listConversations(runtimeId: string, connectionId: string, requestId: string): Promise<ConversationsFrame | null>;
   /** 426's `group.create` for `bridges.conversations.create`: a new group on one connection; null when that runtime is not connected. */
-  createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[] }): Promise<GroupFrame | null>;
+  createGroup(runtimeId: string, input: { requestId: string; connectionId: string; subject: string; participants: string[]; sourceConversationId?: string }): Promise<GroupFrame | null>;
 }
 
 /** How long a begin waits for its runtime before the pending entry lapses on its own. */

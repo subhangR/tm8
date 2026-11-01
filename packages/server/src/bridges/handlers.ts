@@ -322,7 +322,7 @@ class PreflightPassed extends Error {
 
 /** A replayed create answers with the group as its bridge recorded it; who was added is not kept. */
 const recordedGroup = (b: BridgeView): BridgeConversationCreateResult['group'] => ({
-  conversationId: b.conversation.externalId, subject: b.conversation.title, results: [], inviteLink: null,
+  conversationId: b.conversation.externalId, subject: b.conversation.title, results: [], inviteLink: null, community: null,
 });
 
 function optionalUuidQuery(ctx: RequestContext, name: string): string | null {
@@ -653,7 +653,7 @@ export function registerBridgeHandlers(registry: HandlerRegistry, deps: FacadeDe
           throw new CollabError('upstream_unavailable', `WhatsApp did not make the group: ${frame.error}`,
             { details: { reason: 'runtime_error' } });
         }
-        const group = { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink };
+        const group = { conversationId: frame.conversationId, subject: frame.subject, results: frame.results, inviteLink: frame.inviteLink, community: frame.community ?? null };
         // The number itself, and everyone WhatsApp added.
         const memberCount = 1 + group.results.filter(r => r.status === 'added').length;
         try {

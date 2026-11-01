@@ -15,6 +15,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CollabError } from '@tm8/contract';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
 import { bridgesWorkerClaims } from '../../src/bridges/outbox.js';
@@ -206,9 +207,10 @@ function makeExecutor(): BridgeCommandExecutor {
       db.rpc<{ handle: string; title: string | null }>(claims, 'bridge_poster_handle', [bridge, sessionId]),
     groups: {
       async create(input) {
+        if (groupRefusal) throw groupRefusal;
         groupCalls.push({ op: 'create', ...input });
         const conversationId = `120363-split-${++groupSeq}@g.us`;
-        return { conversationId, subject: input.subject, inviteLink: input.participants.some(j => privateJids.has(j)) ? 'https://chat.whatsapp.com/INV' : null,
+        return { conversationId, subject: input.subject, community: groupCommunity, inviteLink: input.participants.some(j => privateJids.has(j)) ? 'https://chat.whatsapp.com/INV' : null,
           results: input.participants.map(id => ({ id, status: privateJids.has(id) ? 'invite_needed' as const : 'added' as const })) };
       },
       async add(input) {
@@ -219,7 +221,9 @@ function makeExecutor(): BridgeCommandExecutor {
     },
   });
 }
-const groupCalls: Array<{ op: 'create' | 'add'; participants: string[]; subject?: string; conversationId?: string }> = [];
+const groupCalls: Array<{ op: 'create' | 'add'; participants: string[]; subject?: string; conversationId?: string; sourceConversationId?: string }> = [];
+let groupCommunity: { id: string; name: string } | null = null;
+let groupRefusal: CollabError | null = null;
 const privateJids = new Set<string>();
 let groupSeq = 0;
 
@@ -249,6 +253,7 @@ const bridgeTasks = () => count(`select count(*) n from public.edges ed join pub
   where ed.type = 'authored_from' and ed.dst_id = $1 and e.kind = 'task'`, [bridgeId]);
 
 beforeEach(() => {
+  groupCommunity = null; groupRefusal = null;
   executor = makeExecutor();
 });
 
@@ -963,7 +968,7 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     const { messageId, reply } = await command('owner', '/split Release crew with @919000000002 and maya');
     expect(reply!.text).toMatch(/^made "Release crew": added Rahul, Maya, Owner\. It has its own session/);
     const call = groupCalls.at(-1)!;
-    expect(call).toMatchObject({ op: 'create', subject: 'Release crew' });
+    expect(call).toMatchObject({ op: 'create', subject: 'Release crew', sourceConversationId: '120363-infra@g.us' });
     expect(new Set(call.participants)).toEqual(new Set([people.rahul.phone, people.maya.phone, people.owner.phone]));
     const [row] = (await asOwner(c => c.query(`select s.conversation_id, b.target_kind, b.policy, p.policy parent_policy, b.teammate_id::text,
         b.connection_id::text from public.bridge_splits s join public.bridges b on b.entity_id = s.bridge_id
@@ -998,11 +1003,43 @@ describe('/split and /invite (426): the bridge makes and fills groups on its num
     for (const claims of callers) {
       await expect(db.rpc(claims, 'bridge_split_of', [msg])).rejects.toMatchObject({ code: 'forbidden' });
       await expect(db.rpc(claims, 'bridge_split_record', [msg, bridgeId, '120363-door@g.us', 'Door check'])).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(db.rpc(claims, 'bridge_split_record', [msg, bridgeId, '120363-door@g.us', 'Door check',
+        JSON.stringify({ id: 'community@g.us', name: 'Acme Community' })])).rejects.toMatchObject({ code: 'forbidden' });
       await expect(db.rpc(claims, 'bridge_split_connect', [msg, session, people.owner.member, 2])).rejects.toMatchObject({ code: 'forbidden' });
       await expect(db.rpc(claims, 'bridge_runtime_of', [connection])).rejects.toMatchObject({ code: 'forbidden' });
     }
     expect((await asOwner(c => c.query('select count(*)::int n from public.bridge_splits where message_id = $1', [msg]))).rows[0].n).toBe(0);
   });
+
+  it('/split reports its community and preserves it when replayed', async () => {
+    groupCommunity = { id: 'community@g.us', name: 'Acme Community' };
+    const { messageId, reply } = await command('owner', '/split Design review with rahul');
+    expect(reply!.text).toContain('made "Design review" in *Acme Community*');
+    expect(groupCalls.at(-1)!.sourceConversationId).toBe('120363-infra@g.us');
+    const record = await db.rpc<any>(bridgesWorkerClaims(), 'bridge_split_of', [messageId]);
+    expect(record.community).toEqual(groupCommunity);
+    const made = groupCalls.length;
+    await asOwner(c => c.query("update public.message_origins set command_state = 'pending' where message_id = $1", [messageId]));
+    notices = notices.filter(n => n.replyToMessageId !== messageId);
+    await executor.run(messageId);
+    expect(notices.find(n => n.replyToMessageId === messageId)!.text).toContain('in *Acme Community*');
+    expect(groupCalls.length).toBe(made);
+  });
+
+  for (const code of ['not_community_admin', 'community_create_failed'] as const) {
+    it(`/split answers ${code} without creating a group, spawning a session, or retrying`, async () => {
+      groupRefusal = new CollabError(code === 'not_community_admin' ? code : 'upstream_unavailable',
+        "Can't split: this group is in *Acme Community*. Make the linked number a community admin and try again.",
+        { retryable: false, details: { reason: code, community: { id: 'community@g.us', name: 'Acme Community' } } });
+      const before = groupCalls.length, sessions = spawns.length;
+      const { messageId, reply } = await command('owner', '/split Refused with rahul');
+      expect(reply!.text).toBe(groupRefusal.message);
+      expect(groupCalls.length).toBe(before);
+      expect(spawns.length).toBe(sessions);
+      expect(await db.rpc(bridgesWorkerClaims(), 'bridge_split_of', [messageId])).toBeNull();
+      expect(await count("select count(*) n from public.message_origins where message_id = $1 and command_state = 'done'", [messageId])).toBe(1);
+    });
+  }
 
   it('/split refuses a name nobody here has, before anything is made', async () => {
     const before = groupCalls.length;
