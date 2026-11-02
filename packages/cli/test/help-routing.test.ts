@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createServer, type Server } from 'node:http';
 import { run } from '../src/run.js';
 import { nounHelp, rootHelp, searchHelp } from '../src/discovery/help.js';
-import { INTENT_ROUTES, matchIntent, rankAll, rankedLast } from '../src/discovery/search.js';
+import { INTENT_ROUTES, matchIntent, rankAll, rankedLast, tokenize } from '../src/discovery/search.js';
 import { commandDiscovery, type CommandDiscovery, type OperationDiscovery } from '../src/discovery/operations.js';
 import { CONTENT_STRING_CAP, boundEntityDetail, isEntityDetail } from '../src/entity-bounded.js';
 
@@ -293,9 +293,12 @@ describe('help --query: stopping a run never answers tool run; only a plain stop
 
   it('in the combined answer, tool run is never ahead of another match for a stop, block, skip, prevent or negation', () => {
     for (const q of NOT_RUNS) {
-      const commands = searchHelp(q).matches.map((m) => m.command);
+      const matches = searchHelp(q).matches;
+      const commands = matches.map((m) => m.command);
       const at = commands.indexOf('tool run');
-      expect(at === -1 || at === commands.length - 1, `${q}: ${commands.join(' | ')}`).toBe(true);
+      // Only other held-back operations may follow it (01a188d3-0526: a stop holds back what starts or destroys).
+      const tokens = tokenize(q);
+      expect(at === -1 || matches.slice(at + 1).every((m) => rankedLast(tokens, m.operation)), `${q}: ${commands.join(' | ')}`).toBe(true);
     }
   });
 

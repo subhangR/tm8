@@ -17,7 +17,7 @@
  * undiscoverable, which is the failure this whole surface exists to prevent —
  * but recommending them first would be answering a question with a dead end.
  */
-import type { CommandDiscovery, OperationDiscovery } from './operations.js';
+import { DISCOVERY, type CommandDiscovery, type OperationDiscovery, type SideEffect } from './operations.js';
 
 /**
  * Words that carry no intent. Without this list, "what can I do with all of
@@ -200,7 +200,7 @@ export function rank(
         b.score - a.score ||
         (order.get(a.row.operation) as number) - (order.get(b.row.operation) as number),
     );
-  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation)).slice(0, limit);
+  return keepRankedLast(scored, (s) => rankedLast(tokens, s.row.operation, s.row.sideEffect, s.row.command)).slice(0, limit);
 }
 
 /**
@@ -211,8 +211,131 @@ export function rank(
  * now", "don't run it now") never gets it first (task 01a187ed); "run the url-check tool" does.
  * RANKED_LAST holds for every query.
  */
-export function rankedLast(tokens: readonly string[], operation: string): boolean {
-  return RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)));
+export function rankedLast(
+  tokens: readonly string[],
+  operation: string,
+  sideEffect: SideEffect = catalogRow(operation)?.sideEffect ?? 'durable',
+  command: string | readonly string[] | null = catalogRow(operation)?.command ?? null,
+): boolean {
+  if (RANKED_LAST.has(operation) || (operation === 'tools.run' && tokens.some((t) => NOT_RUN_WORDS.has(t)))) return true;
+  if (sideEffect === 'none') return false;
+  const ending = endingKind(tokens);
+  return ending === 'negation' || (ending === 'stop' && !endsItself(tokens, verbOf(operation, command), nounsOf(operation, command)));
+}
+
+/**
+ * An ENDING query never gets a write that does anything but end something first (follow-up
+ * 01a188d3-0526). With `execution.terminate` held back, "kill it" answered `credentials.space.delete`
+ * and "cancel the recurring task" `loop create`; a verb denylist then promoted the writes it missed
+ * ("add a comment saying don't merge yet" answered `pr merge`). So it is an allowlist, as for the
+ * routes (#1405, round 5): every operation that writes (its catalog `sideEffect` is not `none`) is
+ * held back unless its own verb ends something. The query is ending only when its VERB, after the
+ * request words, ends or negates ("don't merge", "never resume it", "turn off the schedule"), never
+ * a word inside its object ("spawn a session to change the readme"). A negation holds back every
+ * write, an ending one too: "don't stop the loop" must not answer loop disable.
+ */
+function endingKind(tokens: readonly string[]): 'stop' | 'negation' | null {
+  let i = 0;
+  while (i < tokens.length && REQUEST_WORDS.has(tokens[i]!)) i++;
+  const verb = tokens[i];
+  // A negation rejects the very action it names ("don't merge", "don't stop the loop"): no write leads it.
+  if (NEGATIONS.has(verb ?? '')) return 'negation';
+  // A phrasal end: "turn / switch / power / call / shut / cut off" (never "kick off", which starts something).
+  if (OFF_VERBS.has(verb ?? '')) return tokens[i + 1] === 'off' || ENDING_VERBS.has(verb!) ? 'stop' : null;
+  return verb !== undefined && ENDING_VERBS.has(verb) ? 'stop' : null;
+}
+
+/**
+ * Write verbs that END something without destroying it (lead rulings 01a188fa-6dfa, 01a188fd-4c7c,
+ * 01a188ff-61a7, 01a1890c-a176, 01a18919-86ce). A pure stop leads a bare stop or one that names
+ * its own noun; the rest detach or close something, so they lead only when the query names THEIR OWN
+ * noun ("stop the token" is a token's revoke; "stop it" and "call off the deploy" are not), as
+ * `leave` leads only for "quit the space". Never discard, retire or resolve: they destroy or retire what persists,
+ * or answer a delete prompt.
+ */
+const PURE_STOP_OP_VERBS: ReadonlySet<string> = new Set(['stop', 'terminate', 'disable', 'pause', 'interrupt', 'cancel']);
+const DETACH_OP_VERBS: ReadonlySet<string> = new Set([
+  'revoke', 'unshare', 'unbind', 'unexpose', 'unset', 'logout', 'complete', 'finish', 'close', 'abort', 'release',
+  'withdraw', 'unlink', 'unequip',
+]);
+/** What a stop may say after its verb and still name nothing: "end everything", "kill it now". */
+const NAMES_NOTHING: ReadonlySet<string> = new Set([
+  'everything', 'anything', 'something', 'nothing', 'stuff', 'things', 'whatever', 'now', 'immediately', 'again',
+  'right', 'away', 'more',
+]);
+const NEGATIONS: ReadonlySet<string> = new Set(['don', 'dont', 'not', 'never']);
+
+/**
+ * What an operation does: its row's declared `does` when the name misleads (folderUploads.complete
+ * is a create), else its CLI command's last word, since commands are verb-last (`file upload
+ * abort`, `chat stop`, `collection add`), else its name's last segment or that segment's leading
+ * word (`credentials.space.delete`, `runNow`).
+ */
+function verbOf(operation: string, command: string | readonly string[] | null): string {
+  const declared = catalogRow(operation)?.does;
+  if (declared) return declared;
+  const words = typeof command === 'string' ? command.split(' ') : command;
+  if (words && words.length > 0) return words[words.length - 1]!;
+  return /^[a-z]+/.exec(operation.slice(operation.lastIndexOf('.') + 1))?.[0] ?? '';
+}
+
+/**
+ * What an operation acts on: its CLI command's words before the verb (`mcp tokens revoke` acts on a
+ * token, `credential unshare` on a credential), else its name's segment just before the verb, singular.
+ */
+function nounsOf(operation: string, command: string | readonly string[] | null): ReadonlySet<string> {
+  const path = typeof command === 'string' ? command.split(' ') : command;
+  // With no command, the object is the segment just before the verb (`folderUploads`), never a namespace (`projects`).
+  const words = path && path.length > 0 ? path.slice(0, -1) : operation.split('.').slice(-2, -1);
+  return new Set(words.flatMap((w) => w.split(/-|(?=[A-Z])/)).map(singular));
+}
+const singular = (word: string): string => {
+  const w = word.toLowerCase();
+  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+};
+
+/** That verb ends what this query names. A detach must name ITS OWN noun ("call off the deploy" is not a token's revoke). */
+function endsItself(tokens: readonly string[], verb: string, nouns: ReadonlySet<string>): boolean {
+  const objects = objectWords(tokens);
+  const namesIts = objects.some((t) => nouns.has(singular(t)));
+  // A pure stop leads a bare stop ("stop it", "cancel all") or one naming what it stops; never a
+  // stop of something else ("stop sharing the space" is no loop's stop; lead ruling 01a18919-86ce).
+  if (PURE_STOP_OP_VERBS.has(verb)) return objects.length === 0 || namesIts;
+  // Leaving is the end only of "quit the space" itself: never "stop sharing the space" or "quit it".
+  if (verb === 'leave') return queryVerb(tokens) === 'quit' && SPACE_WORDS.has(objects[0] ?? '');
+  return DETACH_OP_VERBS.has(verb) && namesIts;
+}
+
+const SPACE_WORDS: ReadonlySet<string> = new Set(['space', 'spaces', 'workspace']);
+
+/** The query's verb: its first word past the request words ("how do I", "can you"). */
+function queryVerb(tokens: readonly string[]): string | undefined {
+  return tokens.find((t) => !REQUEST_WORDS.has(t));
+}
+
+/** The query's words past its verb (and the verb a negation negates, and an off/down) that name something. */
+function objectWords(tokens: readonly string[]): string[] {
+  let i = 0;
+  while (i < tokens.length && REQUEST_WORDS.has(tokens[i]!)) i++;
+  let j = i + 1;
+  if (NEGATIONS.has(tokens[i] ?? '')) j++;
+  if (tokens[j] === 'off' || tokens[j] === 'down') j++;
+  return tokens.slice(j).filter((t) => !NAMES_NOTHING.has(t));
+}
+
+let SIDE_EFFECTS_BY_COMMAND: ReadonlyMap<string, SideEffect> | undefined;
+/** A route answers a write when its first candidate's command does (unknown: a write). */
+function routeWrites(route: IntentRoute): boolean {
+  SIDE_EFFECTS_BY_COMMAND ??= new Map(DISCOVERY.flatMap((row) => (row.command === null ? [] : [[row.command.join(' '), row.sideEffect] as const])));
+  const path = route.candidates[0]?.path.join(' ');
+  return path !== undefined && (SIDE_EFFECTS_BY_COMMAND.get(path) ?? 'durable') !== 'none';
+}
+
+let ROWS_BY_OPERATION: ReadonlyMap<string, OperationDiscovery> | undefined;
+/** A caller that passes no row (a test): the catalog's row for that operation. */
+function catalogRow(operation: string): OperationDiscovery | undefined {
+  ROWS_BY_OPERATION ??= new Map(DISCOVERY.map((row) => [row.operation, row]));
+  return ROWS_BY_OPERATION.get(operation);
 }
 
 /**
@@ -251,8 +374,9 @@ export function rankAll(
     ...rank(query, operations, limit).map((s) => ({ kind: 'operation' as const, score: s.score, entry: s })),
     ...rankCommands(query, aliases, limit).map((s) => ({ kind: 'alias' as const, score: s.score, entry: s })),
   ].sort((a, b) => b.score - a.score);
-  return keepRankedLast(combined, (e) =>
-    rankedLast(tokens, e.kind === 'operation' ? e.entry.row.operation : (e.entry.row.operations[0] ?? '')));
+  return keepRankedLast(combined, (e) => e.kind === 'operation'
+    ? rankedLast(tokens, e.entry.row.operation, e.entry.row.sideEffect, e.entry.row.command)
+    : rankedLast(tokens, e.entry.row.operations[0] ?? '', e.entry.row.sideEffect, e.entry.row.command));
 }
 
 /** Why this row surfaced, in one clause a reader can act on. */
@@ -312,6 +436,9 @@ const LOOP_ATTRIBUTE_WORDS = [
 const LOOP_REMOVAL_WORDS = ['delete', 'remove', 'archive', 'destroy', 'trash', 'drop', 'erase', 'purge', 'wipe', 'rid'];
 /** Words that say WHICH loop, never WHAT of it: the only words a loop's delete may carry besides the verb. */
 const WHICH_LOOP_WORDS = ['nightly', 'daily', 'weekly', 'hourly', 'monthly', 'old', 'stale', 'unused', 'test', 'broken', 'obsolete'];
+/** What a caller calls a loop when they don't say "loop": a recurring task or job. */
+const RECURRING_WORDS = ['recurring', 'recurrent'];
+const TASK_JOB_WORDS = ['task', 'tasks', 'job', 'jobs'];
 
 /** "Run it now" — the run-now route's words. */
 const LOOP_RUN_NOW_WORDS = ['run', 'fire', 'trigger', 'now', 'immediately', 'again', 'once'];
@@ -330,6 +457,9 @@ const NOT_RUN_WORDS: ReadonlySet<string> = new Set([
   ...STOP_WORDS, 'end', 'quit', 'cease', 'block', 'blocking', 'skip', 'skipping', 'prevent', 'preventing', 'avoid',
   'avoiding', 'pause', 'disable', 'suppress', 'don', 'dont', 'not', 'never',
 ]);
+/** A query whose VERB is one of these ends, prevents or negates something (`endingKind`). */
+const ENDING_VERBS: ReadonlySet<string> = new Set([...NOT_RUN_WORDS, 'close', 'closing', 'shut', 'shutdown', 'nuke', 'suspend']);
+const OFF_VERBS: ReadonlySet<string> = new Set(['turn', 'switch', 'power', 'call', 'shut', 'cut']);
 /** The plain words a request carries that name nothing: an `only` route always allows them. */
 const PLAIN_WORDS: ReadonlySet<string> = new Set([
   'the', 'an', 'my', 'our', 'your', 'this', 'that', 'these', 'those', 'all', 'please', 'we', 'you', 'can', 'could',
@@ -628,6 +758,24 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
   },
   {
+    // A recurring task or job IS a loop (follow-up 01a188d3-0526): its delete is the loop's, with the
+    // loop delete's allowlist ("remove the subject FROM the recurring task" is an edit, never this).
+    intent: 'delete a recurring task (its loop)',
+    all: [RECURRING_WORDS, TASK_JOB_WORDS, LOOP_REMOVAL_WORDS],
+    only: WHICH_LOOP_WORDS,
+    candidates: [{ path: ['entity', 'delete'], example: 'tm8 entity delete <loop-id>   (find it: tm8 loop list)' }],
+  },
+  {
+    // Stopping one ("cancel / kill / turn off the recurring task") disables its loop, never loop create.
+    // A run named ("cancel the recurring run") is the run stop's above.
+    intent: 'stop a recurring task (disable its loop)',
+    all: [RECURRING_WORDS, TASK_JOB_WORDS, [...LOOP_STOP_WORDS, 'turn', 'off', 'disable', 'deactivate']],
+    none: ['run', 'running', 'runs'],
+    // Only which one: "set up a recurring job that turns off idle sessions" sets one up (review of #1416).
+    only: WHICH_LOOP_WORDS,
+    candidates: [{ path: ['loop', 'disable'], example: 'tm8 loop disable <id|title> --expect-version <n>   (a live run: tm8 loop stop <run-id>)' }],
+  },
+  {
     // Before `list teammates`: "schedule a teammate" is a loop, not a roster read.
     // Only SETTING UP recurring work routes here: a cadence word AND a set-up
     // verb ("schedule" is both). A query that names a loop is the routes'
@@ -712,16 +860,20 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
 
 /** The first route whose token groups all match the query, or undefined. */
 export function matchIntent(query: string): IntentRoute | undefined {
-  const tokens = new Set(tokenize(query));
+  const tokenList = tokenize(query);
+  const tokens = new Set(tokenList);
   if (tokens.size === 0) return undefined;
   const words = queryWords(query);
+  // A negated query is never routed to a write: "don't enable the loop" is not `loop enable` (01a188d3-0526).
+  const negated = endingKind(tokenList) === 'negation';
   return INTENT_ROUTES.find(
     (r) =>
       r.all.every((group) => group.some((t) => tokens.has(t))) &&
       !(r.none ?? []).some((t) => tokens.has(t)) &&
       (r.only === undefined ||
         words.every((w) => PLAIN_WORDS.has(w) || r.only!.includes(w) || r.all.some((group) => group.includes(w)))) &&
-      (r.when === undefined || r.when(words)),
+      (r.when === undefined || r.when(words)) &&
+      !(negated && routeWrites(r)),
   );
 }
 
