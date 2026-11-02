@@ -10,7 +10,8 @@
 // fails when they differ. The module stays dependency-free.
 
 // v2: group.create follows sourceConversationId's community. Servers refuse source-based creates on v1 runtimes.
-export const PROTOCOL_VERSION = 2
+// v3: outbound attachments are authenticated HTTP streams, never whole-file WS frames.
+export const PROTOCOL_VERSION = 3
 
 /** What the WhatsApp runtime can do, sent once in `hello`. The UI shows only what this sheet allows (§5). */
 export const WHATSAPP_CAPABILITIES = {
@@ -146,7 +147,7 @@ export type GroupFrame =
   | { requestId: string; connectionId: string; conversationId: string; subject: string; results: GroupMemberResult[]; inviteLink: string | null; community?: GroupCommunity | null }
   | { requestId: string; connectionId: string; error: string; code?: 'not_community_admin' | 'community_create_failed'; community?: GroupCommunity; createdConversationId?: string }
 
-export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group'
+export type RuntimeRoute = 'hello' | 'state' | 'auth' | 'conversations' | 'conversation-state' | 'inbound' | 'sent' | 'heartbeat' | 'media' | 'group' | 'outbound-progress'
 
 export type RuntimeFrames = {
   hello: HelloFrame
@@ -159,6 +160,7 @@ export type RuntimeFrames = {
   heartbeat: HeartbeatFrame
   media: MediaFrame
   group: GroupFrame
+  'outbound-progress': { outboxId: string; connectionId: string }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -183,7 +185,7 @@ export type ServerFrame =
   | AllowlistFrame
   | { type: 'connect'; connectionId: string; stateKey: string; authFlow?: { kind: 'qr' } | { kind: 'pairing'; phone: string }; allowlist?: AllowlistFrame }
   | { type: 'disconnect'; connectionId: string; logout?: boolean }
-  | { type: 'send'; outboxId: string; connectionId: string; conversationId: string; text?: string; media?: { kind: 'image' | 'document'; mime: string; fileName: string; caption: string; data: string }; poll?: { name: string; values: string[]; selectableCount: number }; replyTo?: QuoteRef }
+  | { type: 'send'; outboxId: string; connectionId: string; conversationId: string; text?: string; media?: { kind: 'image' | 'document'; mime: string; fileName: string; caption: string; data?: string; fileEntityId?: string }; poll?: { name: string; values: string[]; selectableCount: number }; replyTo?: QuoteRef }
   | { type: 'react'; outboxId: string; connectionId: string; conversationId: string; target: QuoteRef; emoji: string }
   | { type: 'typing'; connectionId: string; conversationId: string; state: 'composing' | 'paused' }
   | { type: 'read'; connectionId: string; conversationId: string; messages: { externalMessageId: string; senderExternalId: string | null }[] }

@@ -2,6 +2,7 @@
 // WebSocket at the node's single upgrade path, told apart by `?bridgeRuntime=<runtimeId>` (the PTY's `?sessionId` idiom).
 // Both carry the runtime's `bridge_runtime` bearer. Nothing is queued to disk: a frame that can't be delivered after
 // its retries is dropped and logged by route only, never by content.
+import { Readable } from 'node:stream'
 import type { RuntimeFrames, RuntimeRoute, ServerFrame } from './protocol.js'
 import type { ServerLink } from './runtime.js'
 
@@ -56,6 +57,19 @@ export class HttpWsLink implements ServerLink {
     }
   }
 
+  /** A fresh stream on each attempt; neither side buffers the entire file. */
+  async openMedia(input: { outboxId: string; connectionId: string; fileEntityId: string }): Promise<Readable> {
+    const res = await fetch(new URL('/v2/bridge-runtime/outbound-media', this.o.serverUrl), {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${this.o.token()}` },
+      body: JSON.stringify(input),
+    })
+    if (!res.ok || !res.body) {
+      await res.body?.cancel()
+      throw new Error(`attachment download failed: HTTP ${res.status}`)
+    }
+    return Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>)
+  }
+
   start() {
     this.closed = false
     const url = new URL('/v2/ws', this.o.serverUrl)
@@ -64,13 +78,14 @@ export class HttpWsLink implements ServerLink {
     // Node's WebSocket (undici) takes headers in its init; the DOM type doesn't know that.
     const ws = new WebSocket(url, { headers: { authorization: `Bearer ${this.o.token()}` } } as unknown as string[])
     this.ws = ws
-    // Frames are applied in order: an allowlist change must not overtake a send queued behind it.
-    let chain = Promise.resolve()
+    // Each connection keeps its own order; revocations below can overtake a slow upload.
+    let ready = Promise.resolve()
+    const chains = new Map<string, Promise<void>>()
     let opened = false
     ws.onopen = () => {
       opened = true
       this.wsFailures = 0
-      chain = chain.then(() => this.o.onOpen()).catch((e) => this.o.log(`[link] hello failed: ${(e as Error).message}`))
+      ready = ready.then(() => this.o.onOpen()).catch((e) => this.o.log(`[link] hello failed: ${(e as Error).message}`))
     }
     ws.onmessage = (ev) => {
       let frame: ServerFrame
@@ -85,7 +100,11 @@ export class HttpWsLink implements ServerLink {
         void this.o.onFrame(frame).catch((e) => this.o.log(`[link] allowlist failed: ${(e as Error).message}`))
         return
       }
-      chain =chain.then(() => this.o.onFrame(frame)).catch((e) => this.o.log(`[link] ${frame.type} failed: ${(e as Error).message}`))
+      // A large upload on one number must not stall another number's lease.
+      const previous = chains.get(frame.connectionId) ?? ready
+      const chain = previous.then(() => this.o.onFrame(frame)).catch((e) => this.o.log(`[link] ${frame.type} failed: ${(e as Error).message}`))
+      chains.set(frame.connectionId, chain)
+      void chain.finally(() => { if (chains.get(frame.connectionId) === chain) chains.delete(frame.connectionId) })
     }
     ws.onerror = () => {}
     ws.onclose = () => {

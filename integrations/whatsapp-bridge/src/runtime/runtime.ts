@@ -1,6 +1,7 @@
 // The WhatsApp connector runtime (§2.5, D7): every linked number on this node on one process, speaking the connector
 // protocol to tm8-server. It routes nothing and stores nothing but each number's sealed keys; the server owns the rest.
 import path from 'node:path'
+import type { Readable } from 'node:stream'
 import { TooLargeError } from '../media.js'
 import { OutboundRefused } from './allowlist.js'
 import { GroupCreationRefused, RuntimeConnection, type Emit, type SocketFactory } from './connection.js'
@@ -10,6 +11,7 @@ import { parseStateKey } from './sealed-auth.js'
 /** How the runtime reaches the server; `post` answers with the server's JSON reply. */
 export interface ServerLink {
   post<R extends RuntimeRoute>(route: R, frame: RuntimeFrames[R]): Promise<unknown>
+  openMedia?(input: { outboxId: string; connectionId: string; fileEntityId: string }): Promise<Readable>
 }
 
 export const HEARTBEAT_MS = 30_000
@@ -17,6 +19,8 @@ const CONNECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 export class Runtime {
   readonly connections = new Map<string, RuntimeConnection>()
+  private receipts = new Map<string, { externalMessageId: string; message: unknown }>()
+  private outbound = new Map<string, Promise<void>>()
   /**
    * The newest allowlist pushed for a connection not running yet (its `connect` still queued behind a slow frame).
    * Allowlists jump the queue, so this is held and applied when the connection is made, and the newer list wins.
@@ -41,6 +45,10 @@ export class Runtime {
         authFlow,
         socketFactory: this.o.socketFactory,
         logLevel: this.o.logLevel,
+        openMedia: (input) => {
+          if (!this.o.link.openMedia) throw new Error('runtime attachment streaming is unavailable')
+          return this.o.link.openMedia(input)
+        },
       })
       this.connections.set(connectionId, c)
       const pending = this.pendingAllowlists.get(connectionId)
@@ -112,14 +120,14 @@ export class Runtime {
         this.connections.delete(f.connectionId)
         return
       case 'send':
-      case 'react':
-        try {
-          const r = f.type === 'send' ? await c.send(f) : await c.react(f)
-          await this.emit('sent', { outboxId: f.outboxId, connectionId: f.connectionId, externalMessageId: r.externalMessageId, message: r.message })
-        } catch (e) {
-          await this.settle(f.outboxId, f.connectionId, failure(e))
-        }
+      case 'react': {
+        const active = this.outbound.get(f.outboxId)
+        if (active) return active // reconnects can replay while the first upload is still running
+        const pending = this.sendOutbound(c, f)
+        this.outbound.set(f.outboxId, pending)
+        try { await pending } finally { this.outbound.delete(f.outboxId) }
         return
+      }
       case 'typing':
       case 'read':
         // Fire-and-forget frames: a refusal is counted by the guard and logged without content.
@@ -158,6 +166,32 @@ export class Runtime {
     }
   }
 
+  private async sendOutbound(c: RuntimeConnection, f: Extract<ServerFrame, { type: 'send' | 'react' }>): Promise<void> {
+    const progress = () => this.emit('outbound-progress', { outboxId: f.outboxId, connectionId: f.connectionId })
+    // The server admits one active row per connection. Renew while Baileys
+    // downloads/encrypts/uploads; a multi-GB file may take many minutes.
+    const timer = setInterval(() => void progress().catch((e) => this.o.log(`[outbound] lease renewal failed: ${(e as Error).message}`)), 30_000)
+    timer.unref()
+    try {
+      let r = this.receipts.get(f.outboxId)
+      if (!r) {
+        try {
+          r = f.type === 'send' ? await c.send(f) : await c.react(f)
+        } catch (e) {
+          await this.settle(f.outboxId, f.connectionId, failure(e))
+          return
+        }
+        this.receipts.set(f.outboxId, r)
+        while (this.receipts.size > 1000) this.receipts.delete(this.receipts.keys().next().value!)
+      }
+      // Failure to deliver a success receipt is NOT a provider failure.
+      // A replay in this process resends the receipt, not the attachment.
+      await this.emit('sent', { outboxId: f.outboxId, connectionId: f.connectionId, ...r })
+    } finally {
+      clearInterval(timer)
+    }
+  }
+
   private settle(outboxId: string, connectionId: string, failed: { reason: string; retryable: boolean }) {
     return this.emit('sent', { outboxId, connectionId, failed })
   }
@@ -184,6 +218,7 @@ export function failure(e: unknown): { reason: string; retryable: boolean } {
   if (e instanceof OutboundRefused) return { reason: e.reason, retryable: false }
   if (e instanceof TooLargeError) return { reason: 'too_large', retryable: false }
   const msg = (e as Error)?.message ?? String(e)
+  if (/attachment download failed: HTTP (408|429|5[0-9]{2})|fetch failed/i.test(msg)) return { reason: msg.slice(0, 200), retryable: true }
   if (/not connected|connection closed|timed out/i.test(msg)) return { reason: 'whatsapp_unavailable', retryable: true }
   return { reason: msg.slice(0, 200), retryable: false }
 }

@@ -13,9 +13,9 @@
  * ac6: the watchdog job raises the fyi and reacts ⚠️ through the outbox.
  * 431: an image posted in tm8 leaves as an image (`media`), captioned with the text.
  */
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, mkdir, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -82,7 +82,11 @@ function runtimeSocket(runtimeId: string): Promise<{ frames: ServerFrame[]; ws: 
   const ws = new WebSocket(url, { headers: { authorization: `Bearer ${runtimeToken}` } } as unknown as string[]);
   sockets.push(ws);
   const frames: ServerFrame[] = [];
-  ws.onmessage = (ev) => frames.push(JSON.parse(String(ev.data)) as ServerFrame);
+  ws.onmessage = (ev) => {
+    const frame = JSON.parse(String(ev.data)) as ServerFrame;
+    frames.push(frame);
+    if (frame.type === 'react') void call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: frame.outboxId, connectionId: frame.connectionId, externalMessageId: `react-${frame.outboxId}` });
+  };
   return new Promise((resolve, reject) => {
     ws.onopen = () => resolve({ frames, ws });
     ws.onerror = () => reject(new Error('runtime socket refused'));
@@ -99,8 +103,14 @@ async function until<T>(probe: () => T | undefined, ms = 5000): Promise<T> {
   }
 }
 
+async function download(frame: Extract<ServerFrame, { type: 'send' }>, token = runtimeToken, fileId = frame.media!.fileEntityId!) {
+  return fetch(new URL('/v2/bridge-runtime/outbound-media', server.url), { method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ outboxId: frame.outboxId, connectionId: frame.connectionId, fileEntityId: fileId }) });
+}
+
 const hello = (runtimeId: string) => call('/v2/bridge-runtime/hello', runtimeToken,
-  { provider: 'whatsapp', version: 1, runtimeId, capabilities: {} });
+  { provider: 'whatsapp', version: 3, runtimeId, capabilities: {} });
 
 beforeAll(async () => {
   database = await createW1ScratchDatabase('bridges_b1b2_srv');
@@ -325,11 +335,11 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
     expect(edge).toHaveLength(1);
   });
 
-  it('an image posted in tm8 leaves as an image captioned with the text; a second file is named (431)', async () => {
+  it('a multi-megabyte image leaves intact with its caption; a second file is named (431)', async () => {
     const { frames } = await runtimeSocket('wa-srv');
     await hello('wa-srv');
     // A real PNG header is enough: the hub sends bytes, it never decodes them.
-    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('pixels')]);
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(2 * 1024 * 1024, 0x61)]);
     const blobs = createW2BlobStore({ dataDir });
     // messages.attachments orders by file id, so the image gets the lower one.
     const [imageId, docId] = [randomUUID(), randomUUID()].sort();
@@ -353,7 +363,8 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
     const send = await until(() => frames.find((f): f is Extract<ServerFrame, { type: 'send' }> =>
       f.type === 'send' && f.media?.fileName === 'screen.png'));
     expect(send.media).toMatchObject({ kind: 'image', mime: 'image/png', fileName: 'screen.png' });
-    expect(Buffer.from(send.media!.data, 'base64').equals(png)).toBe(true);
+    expect(send.media).not.toHaveProperty('data');
+    expect(Buffer.from(await (await download(send)).arrayBuffer()).equals(png)).toBe(true);
     expect(send.media!.caption).toContain('the error screen');
     expect(send.media!.caption).toContain('[notes.txt: in tm8]');
     // The caption carries the text; storage paths never reach the runtime.
@@ -362,6 +373,93 @@ describe('a message end to end (ac1, ac10, ac6)', () => {
     const sent = await call('/v2/bridge-runtime/sent', runtimeToken,
       { outboxId: send.outboxId, connectionId: connection, externalMessageId: 'BAE5IMG1', message: { imageMessage: {} } });
     expect(sent.body).toMatchObject({ status: 'sent' });
+  });
+
+  it('retries a report-sized PDF on the same outbox row and keeps text flowing', async () => {
+    const { frames, ws } = await runtimeSocket('wa-srv');
+    await hello('wa-srv');
+    const bytes = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4_455_364, 0x61)]);
+    const blobs = createW2BlobStore({ dataDir });
+    const fileId = randomUUID();
+    const storagePath = blobs.storagePath(spaceId, randomUUID());
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    await blobs.writeUpload({ stream: (async function* () { yield bytes; })(), storagePath, expectedSpaceId: spaceId,
+      expectedSizeBytes: bytes.length, expectedChecksumSha256: sha256 });
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'file',$3)`, [fileId, spaceId, ownerMember]);
+      await c.query(`insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256)
+        values ($1,'report.pdf','application/pdf',$2,$3,$4)`, [fileId, bytes.length, storagePath, sha256]);
+    });
+    const post = { anchorIds: [bridge], body: 'the report', attachmentIds: [fileId], clientMutationId: randomUUID() };
+    expect((await call('/v2/messages', browserToken, post)).status).toBe(200);
+    const isReport = (f: ServerFrame): f is Extract<ServerFrame, { type: 'send' }> =>
+      f.type === 'send' && f.media?.fileName === 'report.pdf';
+    const first = await until(() => frames.find(isReport));
+    expect(first.media).toMatchObject({ kind: 'document', mime: 'application/pdf' });
+    expect(Buffer.from(await (await download(first)).arrayBuffer()).equals(bytes)).toBe(true);
+    expect((await download(first, browserToken)).status).toBe(403);
+    expect((await download(first, runtimeToken, randomUUID())).status).toBe(403);
+    await database.query(`update public.bridge_outbox set dispatched_at = now() - interval '3 minutes' where id = $1`, [first.outboxId]);
+    expect((await call('/v2/bridge-runtime/outbound-progress', runtimeToken,
+      { outboxId: first.outboxId, connectionId: connection })).body).toEqual({ renewed: true });
+    await bridgeWatchdogJob({ db }).run({ name: 'bridges.watchdog', firedAt: new Date(), logger: console as never, signal: new AbortController().signal });
+    expect((await database.query<{ status: string }>('select status from public.bridge_outbox where id = $1', [first.outboxId]))[0]!.status).toBe('dispatching');
+    // A definite provider failure is safe to retry. Advance its backoff only
+    // in this scratch database so the test does not wait for the retry timer.
+    expect((await call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: first.outboxId, connectionId: connection,
+      failed: { reason: 'whatsapp_unavailable', retryable: true } })).status).toBe(200);
+    await database.query(`update public.bridge_outbox set next_attempt_at = now() where id = $1`, [first.outboxId]);
+    const retry = await until(() => frames.filter(isReport)[1]);
+    expect(retry).toEqual(first);
+    expect(Buffer.from(await (await download(retry)).arrayBuffer()).equals(bytes)).toBe(true);
+    expect((await call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: retry.outboxId, connectionId: connection,
+      externalMessageId: 'BAE5PDF1', message: { documentMessage: {} } })).body).toMatchObject({ status: 'sent' });
+    expect((await call('/v2/messages', browserToken, post)).status).toBe(200);
+    const rows = await database.query<{ status: string; attempts: number }>(
+      `select status, attempts from public.bridge_outbox where id = $1`, [first.outboxId]);
+    expect(rows).toEqual([{ status: 'sent', attempts: 2 }]);
+    expect((await download(retry)).status).toBe(403);
+    await call('/v2/messages', browserToken, { anchorIds: [bridge], body: 'after the report', clientMutationId: randomUUID() });
+    const text = await until(() => frames.find((f): f is Extract<ServerFrame, { type: 'send' }> => f.type === 'send' && !!f.text?.includes('after the report')));
+    await call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: text.outboxId, connectionId: connection, externalMessageId: 'BAE5AFTER' });
+    expect(frames.filter(isReport)).toHaveLength(2);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it('streams a provider-sized 2 GB document with bounded chunks and a small control frame', async () => {
+    const { frames } = await runtimeSocket('wa-srv');
+    await hello('wa-srv');
+    const size = 2_000_000_000;
+    const fileId = randomUUID();
+    const blobs = createW2BlobStore({ dataDir });
+    const storagePath = blobs.storagePath(spaceId, randomUUID());
+    const diskPath = join(blobs.blobRoot, storagePath);
+    await mkdir(dirname(diskPath), { recursive: true });
+    // A sparse fixture avoids allocating 2 GB in JS or on disk. tm8 upload
+    // policy is separately configurable; this tests transport of stored bytes.
+    const handle = await open(diskPath, 'wx');
+    await handle.truncate(size);
+    await handle.close();
+    await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1,$2,'file',$3)`, [fileId, spaceId, ownerMember]);
+      await c.query(`insert into public.files(entity_id, name, mime_type, size_bytes, storage_path, checksum_sha256)
+        values ($1,'provider-sized.pdf','application/pdf',$2,$3,repeat('0',64))`, [fileId, size, storagePath]);
+    });
+    expect((await call('/v2/messages', browserToken, { anchorIds: [bridge], body: 'large document', attachmentIds: [fileId], clientMutationId: randomUUID() })).status).toBe(200);
+    const frame = await until(() => frames.find((f): f is Extract<ServerFrame, { type: 'send' }> =>
+      f.type === 'send' && f.media?.fileName === 'provider-sized.pdf'));
+    expect(JSON.stringify(frame).length).toBeLessThan(1024);
+    const response = await download(frame);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe(String(size));
+    let total = 0, maxChunk = 0;
+    for await (const chunk of response.body!) { total += chunk.length; maxChunk = Math.max(maxChunk, chunk.length); }
+    expect(total).toBe(size);
+    expect(maxChunk).toBeLessThan(1024 * 1024);
+    await call('/v2/bridge-runtime/sent', runtimeToken, { outboxId: frame.outboxId, connectionId: connection,
+      externalMessageId: 'BAE5LARGE', message: { documentMessage: {} } });
   });
 
   it('the watchdog job marks a silent runtime degraded with one fyi, and reacts ⚠️ on a failed turn (ac6)', async () => {

@@ -472,9 +472,18 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
     expect(ob!.payload.text).toBe('Infra Bot: Deployed at 10:40.');
     expect(ob!.payload.replyTo).toMatchObject({ fromMe: false, text: '@tm8 deploy status?', senderExternalId: RAHUL });
 
-    const frames = await worker<{ runtimeId: string; frame: Record<string, unknown> }[]>('internal.bridge_outbox_take', [['wa-test'], 10]);
-    const mine = frames.find(f => f.frame['outboxId'] === ob!.id)!;
-    expect(mine.frame).toMatchObject({ type: 'send', connectionId: connection, conversationId: GROUP, text: 'Infra Bot: Deployed at 10:40.' });
+    let mine: { runtimeId: string; frame: Record<string, unknown> } | undefined;
+    // Dispatch now waits for each connection's active row to settle. Act as
+    // the runtime for earlier reactions/notices before reaching this reply.
+    for (let n = 0; n < 50 && !mine; n++) {
+      const frames = await worker<{ runtimeId: string; frame: Record<string, unknown> }[]>('internal.bridge_outbox_take', [['wa-test'], 10]);
+      for (const f of frames) {
+        if (f.frame['outboxId'] === ob!.id) mine = f;
+        else await door('bridge_runtime_sent', JSON.stringify({ outboxId: f.frame['outboxId'], connectionId: f.frame['connectionId'], externalMessageId: `fixture-${n}` }));
+      }
+    }
+    expect(mine).toBeDefined();
+    expect(mine!.frame).toMatchObject({ type: 'send', connectionId: connection, conversationId: GROUP, text: 'Infra Bot: Deployed at 10:40.' });
     const updates = async (id: string) => (await owner<{ n: number }>(`select count(*)::int as n from public.workspace_events
       where event_type = 'message.updated' and subject_ids @> array[$1::uuid]`, [id]))[0]!.n;
     const before = await updates(answer);
