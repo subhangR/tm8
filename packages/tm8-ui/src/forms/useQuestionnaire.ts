@@ -123,6 +123,8 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
   // so a stale page never overwrites a newer read.
   const through = useRef<FormResponseView | null>(null);
   const fetchSeq = useRef(0);
+  /** Reloads only: "Load more" supersedes a page read, never the slot read. */
+  const mineSeq = useRef(0);
 
   /** Page 1, then on through `through`: what the reader had loaded, re-read. */
   const readLoaded = useCallback(async () => {
@@ -141,9 +143,12 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
 
   const reload = useCallback(async () => {
     const seq = ++fetchSeq.current;
+    const slotSeq = ++mineSeq.current;
     try {
       const [slot, page] = await Promise.all([port.mine(detail.id), readLoaded()]);
-      setMine(slot);
+      // A newer reload owns the slot: an older one landing late would show the
+      // viewer's pre-submit slot over the one they just submitted.
+      if (slotSeq === mineSeq.current) setMine(slot);
       if (seq !== fetchSeq.current) return;
       setResponses(page.items);
       setNextCursor(page.cursor);
@@ -175,13 +180,16 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     }
   }, [port, detail.id, nextCursor]);
 
-  const refetchForm = useCallback(async () => {
+  /** Re-read the form's detail. Resolves the form read, or null when the read failed. */
+  const refetchForm = useCallback(async (): Promise<FormState | null> => {
     try {
       const next = await port.form(detail.id);
       setWritten((w) => newer(w, next));
       setDetailError(null);
+      return next;
     } catch (e) {
       setDetailError(errorText(e));
+      return null;
     }
   }, [port, detail.id]);
 

@@ -516,6 +516,79 @@ describe('the save flow', () => {
 // The version conflict — a DESIGNED state, never a silent overwrite
 // ---------------------------------------------------------------------------
 
+describe('the save flow across time and selection', () => {
+  function HookProbe({ detail, commands, onHandle }: {
+    detail: EntityDetail | null;
+    commands: AuthoringCommands;
+    onHandle: (h: ReturnType<typeof useTaskSave>) => void;
+  }) {
+    onHandle(useTaskSave({ detail, commands }));
+    return null;
+  }
+
+  it('a draft staged on one task does not follow the selection to the next', async () => {
+    const { commands, calls } = scriptCommands({});
+    let save!: ReturnType<typeof useTaskSave>;
+    const other = taskAt(3, { id: 'other-task' as EntityDetail['id'] });
+    const { rerender } = render(<HookProbe detail={taskAt(3)} commands={commands} onHandle={(h) => (save = h)} />);
+    act(() => save.edit({ description: 'for the first task' }));
+    expect(save.dirty).toBe(true);
+    rerender(<HookProbe detail={other} commands={commands} onHandle={(h) => (save = h)} />);
+    expect(save.dirty).toBe(false);
+    await act(async () => { await save.save(); });
+    expect(calls.patch).toHaveLength(0);
+  });
+
+  it('a refetch that briefly drops the detail keeps the draft', () => {
+    const { commands } = scriptCommands({});
+    let save!: ReturnType<typeof useTaskSave>;
+    const { rerender } = render(<HookProbe detail={taskAt(3)} commands={commands} onHandle={(h) => (save = h)} />);
+    act(() => save.edit({ description: 'kept' }));
+    rerender(<HookProbe detail={null} commands={commands} onHandle={(h) => (save = h)} />);
+    rerender(<HookProbe detail={taskAt(3)} commands={commands} onHandle={(h) => (save = h)} />);
+    expect(save.edits.description).toBe('kept');
+  });
+
+  it('a second commit during an in-flight save goes out after it, at the version it wrote', async () => {
+    let land!: () => void;
+    const { commands, calls } = scriptCommands({
+      patchTask: (n, input) =>
+        n === 1
+          ? new Promise((resolve) => { land = () => resolve({ entity: taskAt(input.expectedVersion + 1), patches: [] } as CommandResult); })
+          : Promise.resolve({ entity: taskAt(input.expectedVersion + 1), patches: [] } as CommandResult),
+    });
+    let save!: ReturnType<typeof useTaskSave>;
+    render(<HookProbe detail={taskAt(3)} commands={commands} onHandle={(h) => (save = h)} />);
+    let first!: Promise<void>;
+    act(() => { first = save.commitNow({ title: 'renamed' }); });
+    await act(async () => { await save.commitNow({ status: 'done' }); });
+    expect(calls.patch, 'nothing goes out at the same base version').toHaveLength(1);
+    await act(async () => { land(); await first; });
+    expect(calls.patch).toHaveLength(2);
+    expect(calls.patch[1].input.expectedVersion).toBe(4);
+    expect(calls.patch[1].input.status).toBe('done');
+    expect(save.state.phase).toBe('clean');
+  });
+
+  it('an edit staged while a save is in flight survives it landing', async () => {
+    let land!: () => void;
+    const { commands, calls } = scriptCommands({
+      patchTask: () => new Promise((resolve) => { land = () => resolve({ entity: taskAt(4), patches: [] } as CommandResult); }),
+    });
+    let save!: ReturnType<typeof useTaskSave>;
+    render(<HookProbe detail={taskAt(3)} commands={commands} onHandle={(h) => (save = h)} />);
+    act(() => save.edit({ title: 'first' }));
+    let flight!: Promise<void>;
+    act(() => { flight = save.save(); });
+    act(() => save.edit({ description: 'typed meanwhile' }));
+    await act(async () => { land(); await flight; });
+    expect(calls.patch).toHaveLength(1);
+    expect(save.state.phase).toBe('dirty');
+    expect(save.edits.description).toBe('typed meanwhile');
+    expect(save.baseVersion).toBe(4);
+  });
+});
+
 describe('a version conflict', () => {
   async function intoConflict(current = 8) {
     const { commands, calls } = scriptCommands({

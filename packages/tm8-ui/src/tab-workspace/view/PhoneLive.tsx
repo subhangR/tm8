@@ -295,6 +295,8 @@ export function PhoneLiveDialog({
   const [saved, setSaved] = useState<{ name: string; note: string; error?: boolean } | null>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
+  /* Set on unmount: a terminal whose start lands after it is nobody's to watch. */
+  const closed = useRef(false);
   /* What the screen watches: this task's running test, else the app task's while the viewer runs nothing. */
   const shown = watch ?? (run || ownAsk ? null : liveTerminalOf(appDetail, true));
 
@@ -319,6 +321,7 @@ export function PhoneLiveDialog({
       ...(build ? { build } : {}),
     };
     setRun(next);
+    runRef.current = next;
     void commands
       .startTerminal({
         clientMutationId: `phone-live:${Date.now()}`,
@@ -329,6 +332,12 @@ export function PhoneLiveDialog({
       .then((result) => {
         gate.data.reconcileCommand(result);
         const id = (result as { entity?: { id?: string } }).entity?.id ?? null;
+        // Superseded (a newer run, an agent's run taking the screen) or closed
+        // while it started: end it, or it runs on with no screen and no stop.
+        if (closed.current || runRef.current !== next) {
+          stop(id);
+          return;
+        }
         setRun((was) => (was === next ? { ...next, terminalId: id, error: id ? null : 'The terminal did not start.' } : was));
       })
       .catch((error: unknown) => {
@@ -356,7 +365,13 @@ export function PhoneLiveDialog({
   }, [watchId]);
 
   /* Closing the phone ends the viewer's own terminal (never the agent's). */
-  useEffect(() => () => stop(runRef.current?.terminalId ?? null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+      stop(runRef.current?.terminalId ?? null);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Type the command once the shell has said something (its prompt). */
   const terminalId = run?.terminalId ?? null;

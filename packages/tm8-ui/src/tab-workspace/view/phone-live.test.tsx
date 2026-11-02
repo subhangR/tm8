@@ -97,6 +97,7 @@ beforeEach(() => {
   for (const id of Object.keys(signalTo)) delete signalTo[id];
   started = 0;
   startTerminal.mockClear();
+  startTerminal.mockImplementation(async () => ({ entity: { id: `term-${++started}` } }));
   terminate.mockClear();
   dispatch.mockClear();
   query.mockClear();
@@ -152,6 +153,27 @@ describe('the phone button', () => {
 
     fireEvent.click(view.getByTestId('phone-live-close'));
     expect(view.queryByTestId('phone-live')).toBeNull();
+    expect(terminate).toHaveBeenCalledWith('term-2', expect.objectContaining({ force: true }));
+  });
+
+  it('a run superseded or closed while its terminal starts ends that terminal', async () => {
+    window.localStorage.setItem('tm8.phoneLive.trusted', COMMAND);
+    const answers: Array<() => void> = [];
+    startTerminal.mockImplementation(
+      () => new Promise((resolve) => { const id = `term-${++started}`; answers.push(() => resolve({ entity: { id } })); }),
+    );
+    const view = render(<Strip d={task(`live: ${COMMAND}`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    await waitFor(() => expect(answers).toHaveLength(1));
+    // Android before the iPhone terminal has started: the first run is superseded.
+    fireEvent.click(view.getByTestId('phone-live-android'));
+    await waitFor(() => expect(answers).toHaveLength(2));
+    await act(async () => answers[0]!());
+    expect(terminate).toHaveBeenCalledWith('term-1', expect.objectContaining({ force: true }));
+
+    // Closed before the Android terminal has started.
+    fireEvent.click(view.getByTestId('phone-live-close'));
+    await act(async () => answers[1]!());
     expect(terminate).toHaveBeenCalledWith('term-2', expect.objectContaining({ force: true }));
   });
 

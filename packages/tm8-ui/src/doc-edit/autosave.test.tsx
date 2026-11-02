@@ -169,6 +169,27 @@ describe('autosave', () => {
   });
 });
 
+describe('switching documents in the same panel', () => {
+  it('sends the pending draft for the doc being left, to that doc, at its own base', async () => {
+    const { commands, sent } = scriptedCommands();
+    const patchEntity = (commands as unknown as { patchEntity: ReturnType<typeof vi.fn> }).patchEntity;
+    const view = mount(commands);
+    enterEdit();
+    typeBody('typed just before switching');
+    await pause(AUTOSAVE_DELAY_MS - 100);
+    expect(sent).toHaveLength(0);
+
+    const other = { ...docDetail('the other doc', 9), id: 'doc-other' } as EntityDetail;
+    view.rerender(<ReaderSurface detail={other} blocks={[]} historyUnavailableReason="" commands={commands} />);
+    await settle();
+
+    expect(sent).toHaveLength(1);
+    expect(patchEntity.mock.calls[0]![0]).toBe(DOC_ID);
+    expect(sent[0]!.expectedVersion).toBe(3);
+    expect((sent[0]!.content as { body: string }).body).toBe('typed just before switching');
+  });
+});
+
 describe('the device copy', () => {
   it('mirrors every edit with its base version, and drops it once the save lands', async () => {
     const { commands, answers } = scriptedCommands();
