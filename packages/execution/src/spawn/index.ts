@@ -39,6 +39,7 @@ export {
   memberLaunchPreferences,
   echoAgentPath,
   resolveLaunchConfig,
+  resolveModelConfig,
   resolveCommandNetworkPolicy,
   spawnLaunchFacts,
   resolveWorkdir,

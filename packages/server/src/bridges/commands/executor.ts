@@ -34,9 +34,10 @@ import {
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import {
-  isConfirmText, parseBridgeCommand, parseDuration, parsePeople, parseSplit, parseWorkItems, parseWorkerRef, stripTail, titleOf,
+  isConfirmText, parseBridgeCommand, parseNewSession, parseDuration, parsePeople, parseSplit, parseWorkItems, parseWorkerRef, stripTail, titleOf,
   type BridgeVerb, type ParsedBridgeCommand, type PersonRef, type WorkItem, type WorkerRef,
 } from './parse.js';
+import { resolveNewSessionLaunch, type NewSessionLaunch } from './new-session-launch.js';
 import { proposeBridgeMemory } from '../memory-proposals.js';
 import type {
   BridgeCommandDetectContext, BridgeCommandHook, BridgeCommandInput, BridgeCommandOrigin, BridgeCommandPorts, BridgeGroupResult,
@@ -309,7 +310,12 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       lines.push('/tasks [open] · /docs [artifacts|drawings] — what this group made');
     }
     if (cmd.sender.memberId && cmd.bridge.targetKind !== 'channel' && (t === '' || t.startsWith('new') || t.startsWith('session'))) {
-      lines.push('/new session — start a fresh session for this group; @tm8 goes there');
+      lines.push('/new session — fresh session; optional teammate:, provider:, model:, effort:');
+      if (t !== '') {
+        lines.push('/new session teammate:"WhatsApp Bridge Engineer" model:gpt-6.1-sol effort:xhigh');
+        lines.push('/new provider:openai · /new session effort:high');
+        lines.push('Options in any order; quote multiword names. /new chat: start it in tm8.');
+      }
     }
     if (cmd.sender.admin && (t === '' || t.startsWith('admin') || t.startsWith('mute'))) {
       lines.push('/mute 1h · /unmute — hold tm8\'s posts here; commands keep working');
@@ -393,16 +399,19 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
     return id;
   }
 
-  async function resolveTeammate(cmd: Command, claims: DbClaims, name: string | undefined): Promise<string> {
+  async function resolveTeammate(cmd: Command, claims: DbClaims, name: string | undefined, unambiguous = false): Promise<string> {
     if (name) {
-      const rows = await ports.db.query<{ id: string }>(claims,
-        `select tm.entity_id::text id
+      const rows = await ports.db.query<{ id: string; name: string }>(claims,
+        `select tm.entity_id::text id, tm.name
            from public.team_members tm join public.entities e on e.id = tm.entity_id
           where e.space_id = $1 and e.deleted_at is null
             and (lower(tm.name) = lower($2) or lower(tm.name) like lower($2) || '%' or lower(tm.name) like '%' || lower($2) || '%')
           order by (lower(tm.name) = lower($2)) desc, (lower(tm.name) like lower($2) || '%') desc, tm.name
           limit 2`, [cmd.input.spaceId, name]);
       if (!rows[0]) throw new Refusal(`no teammate called "${name}" in this space`);
+      if (unambiguous && rows[1] && (rows[0].name.toLowerCase() !== name.toLowerCase() || rows[1].name.toLowerCase() === name.toLowerCase())) {
+        throw new Refusal(`more than one teammate matches "${name}"; use the full unique name`);
+      }
       return rows[0].id;
     }
     const id = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId;
@@ -826,30 +835,61 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
    * started by a person in tm8 (chat.start is human-only), so `/new chat` and a
    * bare `/new` on a chat bridge say where to do that.
    */
-  async function newSession(cmd: Command, args: string): Promise<Answer> {
+  interface NewSessionPlan extends NewSessionLaunch {
+    teamMemberId: string;
+    teammateName: string;
+    targetId: string;
+    title: string;
+    appliedSessionId?: string | null;
+  }
+
+  async function newSession(cmd: Command, args: string, body: string[]): Promise<Answer> {
     const claims = requireLinked(cmd);
-    const word = stripTail(args).toLowerCase();
+    const parsed = parseNewSession(args, body);
+    if (!parsed.ok) throw new Refusal(parsed.error);
     if (cmd.bridge.targetKind === 'channel') {
       throw new Refusal('this group mirrors a tm8 channel, so there is no session to replace');
     }
-    if (word !== '' && word !== 'session' && word !== 'chat') throw new Refusal('usage: /new, or /new session');
-    if (word === 'chat' || (word === '' && cmd.bridge.targetKind === 'chat')) {
+    if (parsed.target === 'chat' || (parsed.target === null && Object.keys(parsed.options).length === 0 && cmd.bridge.targetKind === 'chat')) {
       throw new Refusal('a new chat is started in tm8: open this bridge → New chat. /new session starts a session from here');
     }
-    const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [cmd.input.bridgeId]));
-    const teammate = cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId ?? facts?.teammateId ?? null;
-    if (!teammate) throw new Refusal('this bridge has no teammate to run a session as: set one on the bridge in tm8');
-    const provider = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
-    const { sessionId } = await ports.spawnWorker(claims, {
-      spaceId: cmd.input.spaceId, teamMemberId: teammate, taskId: null, projectId: null, effort: null,
-      title: titleOf(`${cmd.bridge.title || 'Group'} (${provider})`, 80),
-      clientMutationId: `${cmd.key}:spawn:new`, origins: [cmd.origin('/new')],
-    });
-    await exec(q => q.rpc('bridge_managed_retarget', [cmd.input.bridgeId, sessionId, cmd.sender.memberId, 'new']));
+    // Retry the command's validated selection, even if defaults changed after
+    // spawn or retarget. A completed receipt never moves a newer target back.
+    let plan = await exec(q => q.rpc<NewSessionPlan | null>('bridge_new_session_plan', [cmd.input.bridgeId, cmd.input.messageId, null]));
+    if (!plan) {
+      const facts = await exec(q => q.rpc<{ teammateId: string | null } | null>('bridge_managed_context', [cmd.input.bridgeId]));
+      const teammate = parsed.options.teammate
+        ? await resolveTeammate(cmd, claims, parsed.options.teammate, true)
+        : cmd.bridge.teammateId ?? cmd.bridge.targetTeammateId ?? facts?.teammateId ?? null;
+      if (!teammate) throw new Refusal('this bridge has no teammate to run a session as: set one on the bridge in tm8, or use teammate:"Name"');
+      const [member] = await ports.db.query<{ name: string; model: string | null; agent_tool: string | null }>(claims,
+        `select tm.name, tm.model, tm.agent_tool from public.team_members tm join public.entities e on e.id = tm.entity_id
+          where tm.entity_id = $1 and e.space_id = $2 and e.deleted_at is null`, [teammate, cmd.input.spaceId]);
+      if (!member) throw new Refusal('the selected teammate is unavailable in this space');
+      const launch = resolveNewSessionLaunch(parsed.options, { model: member.model, agentTool: member.agent_tool });
+      const transport = PROVIDER_NAMES[cmd.bridge.provider] ?? cmd.bridge.provider;
+      const proposed: NewSessionPlan = {
+        ...launch, teamMemberId: teammate, teammateName: member.name, targetId: cmd.bridge.targetId,
+        title: titleOf(`${cmd.bridge.title || 'Group'} (${transport})`, 80),
+      };
+      // Every semantic refusal above precedes this first effect.
+      plan = await exec(q => q.rpc<NewSessionPlan>('bridge_new_session_plan', [cmd.input.bridgeId, cmd.input.messageId, JSON.stringify(proposed)]));
+    }
+    if (!plan.appliedSessionId && plan.targetId !== cmd.bridge.targetId) {
+      throw new Refusal('this bridge moved while /new was starting; send /new session again for its current target');
+    }
+    let sessionId = plan.appliedSessionId;
+    if (!sessionId) {
+      ({ sessionId } = await ports.spawnWorker(claims, {
+        spaceId: cmd.input.spaceId, teamMemberId: plan.teamMemberId, taskId: null, projectId: null,
+        model: plan.model, agentTool: plan.agentTool, effort: plan.effort, title: plan.title,
+        clientMutationId: `${cmd.key}:spawn:new`, origins: [cmd.origin('/new')],
+      }));
+      await exec(q => q.rpc('bridge_new_session_finish', [cmd.input.bridgeId, cmd.input.messageId, sessionId, cmd.sender.memberId]));
+    }
     const handle = await ports.workerHandle(claims, cmd.input.bridgeId, sessionId).catch(() => null);
-    const old = cmd.bridge.targetTitle ? `"${cmd.bridge.targetTitle}"` : `the old ${cmd.bridge.targetKind === 'chat' ? 'chat' : 'session'}`;
     return {
-      text: `new session started${handle?.handle ? ` (${handle.handle})` : ''} — @tm8 goes there now. ${old} keeps its history`,
+      text: `new session started${handle?.handle ? ` (${handle.handle})` : ''} — ${plan.teammateName} · ${plan.provider ?? plan.agentTool} · ${plan.model} · effort ${plan.effort ?? 'default'}. ${cmd.bridge.targetId === sessionId || !plan.appliedSessionId ? '@tm8 goes there now' : 'the bridge has since moved to a newer target'}; previous history is kept`,
     };
   }
 
@@ -1084,7 +1124,7 @@ export function createBridgeCommandExecutor(ports: BridgeCommandPorts): BridgeCo
       case 'bridge': return bridgeCard(cmd);
       case 'mute': return mute(cmd, parsed.args);
       case 'unmute': return unmute(cmd);
-      case 'new': return newSession(cmd, parsed.args);
+      case 'new': return newSession(cmd, parsed.args, parsed.body);
       case 'start': return start(cmd, parsed.args);
       case 'retry': return retry(cmd, parsed.args);
       case 'result': return result(cmd, parsed.args);

@@ -23,6 +23,7 @@
  */
 import type {
   BridgeGroupForkInput, BridgeGroupForkResult, BridgeWorkStartInput, BridgeWorkStartResult, GroupMemberResult,
+  LaunchModelEffort,
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../../db/types.js';
 import type { BridgeDeliveryResult } from '../outbox.js';
@@ -51,7 +52,9 @@ export interface SpawnWorkerRequest {
   /** Null for a session with no task: the bridge's own session (/new, the session keeper). */
   taskId: string | null;
   projectId: string | null;
-  effort: 'low' | 'high' | 'max' | null;
+  effort: LaunchModelEffort | null;
+  model?: string | null;
+  agentTool?: string | null;
   title: string;
   clientMutationId: string;
   origins: BridgeCommandOrigin[];

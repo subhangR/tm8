@@ -494,6 +494,16 @@ function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
   }
 }
 
+/** Model/tool precedence shared by spawn and preflight command validation. */
+export function resolveModelConfig(
+  request: Pick<SpawnRequest, 'model' | 'agentTool'>,
+  member: Pick<SpawnContext['teamMember'], 'model' | 'agentTool'>,
+): { model: string; agentTool: string } {
+  const model = request.model?.trim() || member.model?.trim() || DEFAULT_MODEL;
+  const agentTool = request.agentTool?.trim() || agentToolForModel(model) || member.agentTool?.trim() || DEFAULT_AGENT_TOOL;
+  return { model, agentTool };
+}
+
 /**
  * Precedence: explicit request > operator env > INHERITED PARENT POSTURE >
  * persona defaults > built-in default.
@@ -530,11 +540,7 @@ export function resolveLaunchConfig(
 
   const mode: AgentMode = asAgentMode(request.mode) ?? asAgentMode(member.mode) ?? 'worker';
 
-  const model = request.model?.trim() || member.model?.trim() || DEFAULT_MODEL;
-
-  // Model wins over the persona's declared tool — see agentToolForModel.
-  const agentTool =
-    request.agentTool?.trim() || agentToolForModel(model) || member.agentTool?.trim() || DEFAULT_AGENT_TOOL;
+  const { model, agentTool } = resolveModelConfig(request, member);
 
   // The env override is last and highest, mirroring old maestro's
   // MAESTRO_PERMISSION_MODE (manifest-generator.ts:814-817). It is how an
