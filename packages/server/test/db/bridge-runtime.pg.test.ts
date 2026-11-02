@@ -528,6 +528,27 @@ describe('the outbox (§2.3, §2.7, ac1, ac4, ac5)', () => {
       return rows[0].r as { status: string; reason?: string; retryAfterMs?: number };
     });
 
+  it('overlapping workers dispatch at most one row per connection', async () => {
+    await owner(`delete from public.bridge_outbox where connection_id = $1`, [connection]);
+    expect((await enqueue(infra, 'member')).status).toBe('pending');
+    expect((await enqueue(infra, 'member')).status).toBe('pending');
+    // Reactions avoid unrelated message-event locks, isolating dispatch
+    // admission itself while both transactions are open.
+    await owner(`update public.bridge_outbox set kind = 'react', reaction = '👍' where connection_id = $1`, [connection]);
+    try {
+      await db.tx(bridgesWorkerClaims(), async q => {
+        const first = await q.rpc<unknown[]>('internal.bridge_outbox_take', [['wa-test'], 1]);
+        expect(first).toHaveLength(1);
+        // Keep the first dispatch uncommitted while another worker takes the
+        // next unlocked outbox row for the same number.
+        const second = await worker<unknown[]>('internal.bridge_outbox_take', [['wa-test'], 1]);
+        expect(second).toEqual([]);
+      });
+    } finally {
+      await owner(`delete from public.bridge_outbox where connection_id = $1`, [connection]);
+    }
+  });
+
   it('the 7th un-directed post from one teammate in 10 minutes is refused rate_limited with retryAfterMs (ac5)', async () => {
     await owner(`delete from public.bridge_outbox where bridge_id = $1`, [gaming]);
     for (let i = 0; i < 6; i++) expect((await enqueue(gaming, 'worker')).status).toBe('pending');

@@ -735,6 +735,48 @@ describe('streamed outbound attachments', () => {
 })
 
 describe('server link', () => {
+  test('destroying an unread attachment stream cancels its HTTP response', async () => {
+    const http = await import('node:http')
+    const { HttpWsLink } = await import('../src/runtime/link.js')
+    let closed!: () => void
+    const responseClosed = new Promise<void>((resolve) => { closed = resolve })
+    const server = http.createServer((_req, res) => {
+      res.once('close', closed)
+      res.writeHead(200, { 'content-length': 1024 * 1024 })
+      res.write(Buffer.alloc(64 * 1024))
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const link = new HttpWsLink({ serverUrl: `http://127.0.0.1:${(server.address() as any).port}`, runtimeId: 'rt', token: () => 'token', log: () => {}, onOpen: async () => {}, onFrame: async () => {} })
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      const stream = await link.openMedia({ outboxId: 'out', connectionId: CONN, fileEntityId: 'file' })
+      stream.destroy()
+      await Promise.race([responseClosed, new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('attachment response was not cancelled')), 1000)
+      })])
+    } finally { clearTimeout(timeout); server.closeAllConnections(); server.close() }
+  })
+
+  test('an interrupted attachment HTTP body stays retryable and closes its stream', async () => {
+    const http = await import('node:http')
+    const { HttpWsLink } = await import('../src/runtime/link.js')
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-length': 1024 * 1024 })
+      res.write(Buffer.alloc(64 * 1024))
+      setTimeout(() => res.destroy(), 10)
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const link = new HttpWsLink({ serverUrl: `http://127.0.0.1:${(server.address() as any).port}`, runtimeId: 'rt', token: () => 'token', log: () => {}, onOpen: async () => {}, onFrame: async () => {} })
+    try {
+      const stream = await link.openMedia({ outboxId: 'out', connectionId: CONN, fileEntityId: 'file' })
+      await assert.rejects(async () => { for await (const _part of stream) { /* consume */ } }, (error) => {
+        assert.equal(failure(error).retryable, true)
+        return true
+      })
+      assert.equal(stream.destroyed, true)
+    } finally { server.close() }
+  })
+
   test('attachment HTTP bodies stream with the bearer and outbox scope', async () => {
     const http = await import('node:http')
     const { HttpWsLink } = await import('../src/runtime/link.js')

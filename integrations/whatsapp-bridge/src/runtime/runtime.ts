@@ -218,7 +218,7 @@ export function failure(e: unknown): { reason: string; retryable: boolean } {
   if (e instanceof OutboundRefused) return { reason: e.reason, retryable: false }
   if (e instanceof TooLargeError) return { reason: 'too_large', retryable: false }
   const msg = (e as Error)?.message ?? String(e)
-  if (/attachment download failed: HTTP (408|429|5[0-9]{2})|fetch failed/i.test(msg)) return { reason: msg.slice(0, 200), retryable: true }
+  if (/attachment download failed: (HTTP (408|429|5[0-9]{2})|stream interrupted)|fetch failed/i.test(msg)) return { reason: msg.slice(0, 200), retryable: true }
   if (/not connected|connection closed|timed out/i.test(msg)) return { reason: 'whatsapp_unavailable', retryable: true }
   return { reason: msg.slice(0, 200), retryable: false }
 }

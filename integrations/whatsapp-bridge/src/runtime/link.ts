@@ -67,7 +67,21 @@ export class HttpWsLink implements ServerLink {
       await res.body?.cancel()
       throw new Error(`attachment download failed: HTTP ${res.status}`)
     }
-    return Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>)
+    const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>)
+    const stream = Readable.from((async function* () {
+      try {
+        yield* body
+      } catch (cause) {
+        // Fetch can succeed before its body is cut short (for example during
+        // a server restart). Preserve that as a download failure for retry.
+        throw new Error('attachment download failed: stream interrupted', { cause })
+      } finally {
+        body.destroy()
+      }
+    })(), { objectMode: false })
+    // A provider may reject before reading even the first chunk.
+    stream.once('close', () => body.destroy())
+    return stream
   }
 
   start() {

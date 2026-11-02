@@ -65,6 +65,12 @@ begin
   loop
     -- Do not let queued frames expire behind a long media upload. One active
     -- send per connection; the runtime renews its lease until settlement.
+    -- Row locks alone protect only this outbox row. Another taker may have
+    -- locked a different row for the same number before either dispatch is
+    -- committed, so serialize admission per connection without waiting.
+    if not pg_try_advisory_xact_lock(hashtextextended('bridge-outbox-dispatch:' || r.connection_id::text, 0)) then
+      continue;
+    end if;
     if exists (select 1 from public.bridge_outbox active
                 where active.connection_id = r.connection_id and active.status = 'dispatching') then
       continue;
