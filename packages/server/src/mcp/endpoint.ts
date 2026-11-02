@@ -51,6 +51,12 @@ import { McpProxy, type McpProxyGrant, type McpProxyPorts } from './proxy.js';
  *
  * EVERY CALL IS AUDITED, denials included (§5.6), through
  * `record_mcp_token_call_audit` (357) — the external sibling of 346's writer.
+ * The `started` row is FAIL-CLOSED (B66, as B50 made it on the session path):
+ * it is written before anything reaches a provider, and a call whose row cannot
+ * be written is REFUSED rather than made unrecorded — §7.5 says every use of a
+ * tm8-held credential is recorded, and a best-effort row there would make that
+ * a hope. Every later row stays best-effort, because a row must never replace a
+ * refusal nor turn a call the provider already acted on into an error.
  */
 
 export const MCP_ENDPOINT_PATH = '/mcp';
@@ -119,6 +125,19 @@ export interface McpEndpointOptions {
 interface AdmittedSpace { spaceId: string; memberId: string }
 /** One connector offered to an external caller, with its assigned tool key. */
 interface OfferedConnector { spaceId: string; memberId: string; serverId: string; serverKey: string }
+
+/** One row 357's writer takes for an external call: no argument, no result. */
+interface ExternalAuditEntry {
+  method: 'tools/list' | 'tools/call';
+  tool: string | null;
+  outcome: 'started' | 'succeeded' | 'failed' | 'denied';
+  denyReason?: string;
+  requestBytes: number;
+  responseBytes?: number;
+  latencyMs?: number;
+}
+/** What `auditStarted` is given: the outcome and the timings are not its caller's. */
+type StartedAuditEntry = Pick<ExternalAuditEntry, 'method' | 'tool' | 'requestBytes'>;
 
 interface JsonRpcRequest { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
 
@@ -310,6 +329,11 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
     for (const connector of await offered(token, requestId)) {
       if (listed.length >= MAX_TOOLS) break;
       const began = performance.now();
+      // B66, before the send — and it refuses the whole request rather than
+      // dropping this connector. A connector left out is D8's answer to "you
+      // cannot use this"; it is NOT the answer to "tm8 cannot record what you
+      // are about to do", which is a fault of this server and is said out loud.
+      await auditStarted(token, connector, requestId, { method: 'tools/list', tool: null, requestBytes: 0 });
       let answer: unknown;
       try {
         answer = await proxy.request(claimsFor(token, requestId, connector.spaceId),
@@ -369,6 +393,8 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
     const began = performance.now();
     const base = { method: 'tools/call' as const, tool: mcpToolName('tools/call', callParams),
       requestBytes: byteSize(supplied) };
+    // B66: fail-closed, BEFORE the provider is reached.
+    await auditStarted(token, connector, requestId, base);
     try {
       const result = await proxy.request(claimsFor(token, requestId, spaceId),
         externalSessionId(token.tokenId, spaceId), connector.serverId, 'tools/call', callParams);
@@ -386,20 +412,57 @@ export function createMcpEndpointRoute(options: McpEndpointOptions): McpEndpoint
 
   /**
    * §5.6 for a caller with no session: 357's writer, under the token's own
-   * claims. Never throws — a refusal's row must not replace the refusal, and a
-   * succeeded row must not turn a call the provider already acted on into an
-   * error the caller might retry.
+   * claims. The raw write — it throws, and only `auditStarted` lets it.
+   */
+  function recordExternal(token: ResolvedMcpToken, connector: OfferedConnector, requestId: string,
+    entry: ExternalAuditEntry): Promise<unknown> {
+    return db.rpc(claimsFor(token, requestId, connector.spaceId), 'record_mcp_token_call_audit',
+      [token.tokenId, connector.spaceId, connector.serverId, null, entry.method, entry.tool, entry.outcome,
+       connector.memberId, entry.denyReason ?? null,
+       entry.latencyMs === undefined ? null : Math.max(0, Math.round(entry.latencyMs)),
+       entry.requestBytes, entry.responseBytes ?? null]);
+  }
+
+  /**
+   * B66 — THE ONE AUDIT WRITE THAT MAY FAIL THE CALL. It runs before anything
+   * reaches a provider, so failing closed costs nothing: nothing has happened
+   * yet that a refusal would misreport. The alternative is the hole this closes
+   * — an audit failure let an external call proceed with a tm8-held credential
+   * and leave no trace, which §7.5 forbids. #1321 made exactly this write
+   * throw on the session path (B50); this is the same rule for a caller with no
+   * session.
+   *
+   * It runs before `authorize`, unlike the session path, because here authorize
+   * is a port INSIDE `proxy.request` and the row has to precede the send. So a
+   * call the proxy then refuses leaves a `started` row AND a `denied` one. That
+   * over-records, which is the safe direction, and the row is attributable
+   * either way: `offered()` has already proved the token admits this Space and
+   * this connector.
+   *
+   * The database's own text is logged, never relayed (sendError says why): the
+   * caller is told what happened in tm8's words and learns nothing else.
+   */
+  async function auditStarted(token: ResolvedMcpToken, connector: OfferedConnector, requestId: string,
+    entry: StartedAuditEntry): Promise<void> {
+    try {
+      await recordExternal(token, connector, requestId, { ...entry, outcome: 'started' });
+    } catch (error) {
+      console.warn(`[tm8:mcp] external ${entry.method} on token ${token.tokenId} was REFUSED: `
+        + `its started audit row could not be written: ${String(error)}`);
+      throw new CollabError('invariant_violation',
+        'this call was not made: tm8 could not record it in the MCP call audit');
+    }
+  }
+
+  /**
+   * Every row AFTER the call has begun. Never throws — a refusal's row must not
+   * replace the refusal, and a succeeded row must not turn a call the provider
+   * already acted on into an error the caller might retry (a second email).
    */
   async function auditExternal(token: ResolvedMcpToken, connector: OfferedConnector, requestId: string,
-    entry: { method: 'tools/list' | 'tools/call'; tool: string | null;
-      outcome: 'succeeded' | 'failed' | 'denied'; denyReason?: string;
-      requestBytes: number; responseBytes?: number; latencyMs?: number }): Promise<void> {
+    entry: Omit<ExternalAuditEntry, 'outcome'> & { outcome: 'succeeded' | 'failed' | 'denied' }): Promise<void> {
     try {
-      await db.rpc(claimsFor(token, requestId, connector.spaceId), 'record_mcp_token_call_audit',
-        [token.tokenId, connector.spaceId, connector.serverId, null, entry.method, entry.tool, entry.outcome,
-         connector.memberId, entry.denyReason ?? null,
-         entry.latencyMs === undefined ? null : Math.max(0, Math.round(entry.latencyMs)),
-         entry.requestBytes, entry.responseBytes ?? null]);
+      await recordExternal(token, connector, requestId, entry);
     } catch (error) {
       // A call naming a Space the token does not list records nothing, by design
       // (357): writing "someone tried" into a stranger's Space would be a write
