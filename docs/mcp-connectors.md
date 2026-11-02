@@ -119,6 +119,10 @@ When a provider refuses a connection's refresh token (`invalid_grant`), tm8 mark
 
 Known limit: a backup taken before a disconnect still holds that connection's sealed token, and the key that opens it lives in the data directory. Keep backups and the data directory apart; see the operator guide, *Backups and restore*.
 
+### Slack accounts across workspaces
+
+A single-workspace Slack OAuth app admits accounts only in its owning workspace. To connect other workspaces with the same app, the operator must enable unlisted/public distribution and satisfy Slack’s HTTPS redirect requirements. Every workspace still has its own installation and account consent. Enabling multiple account rows in TM8 does not bypass provider installation rules. See [Slack app distribution](https://docs.slack.dev/app-management/distribution/).
+
 ### Figma API alongside remote MCP
 
 `figma` retains Figma’s official remote MCP endpoint and approved-client requirement. `figma.api` is a separate TM8-hosted MCP adapter over Figma’s OAuth and REST API. It reads profiles, files, nodes, metadata, versions, images, comments, libraries and folders, and exposes comment/reaction writes and development-link operations where the provider permits them. It does not grant Plugin API canvas-editing capabilities.
