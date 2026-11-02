@@ -37,6 +37,7 @@ import {
 } from '@tm8/contract';
 import {
   defaultWorkspaceState,
+  evictLeastRecent,
   inspect as inspectState,
   isWorkspaceKind,
   reduce,
@@ -646,7 +647,9 @@ export class WorkspaceService {
     const results: Result[] = [];
     let significant = false;
     for (const step of steps) {
-      const reduction = reduce(current, step, hooks);
+      // A batch evicts once, after its last step, so no step closes a tab an
+      // earlier one opened.
+      const reduction = reduce(current, step, hooks, batch ? { evict: false } : {});
       // Post-commit steps run here too; on the node every hook is inert except
       // `deleteDraft`, which queues the draft rows to drop with this commit.
       for (const commit of reduction.commits) for (const after of commit.after) after();
@@ -657,12 +660,27 @@ export class WorkspaceService {
       current = reduction.state;
       results.push(reduction.result);
     }
+    let evictedTabIds: string[] = [];
+    if (batch) {
+      const evicted = evictLeastRecent({ ...state, revision: loaded.revision }, current, WORKSPACE_TAB_HARD_CAP, hooks);
+      for (const after of evicted.after) after();
+      current = evicted.next;
+      evictedTabIds = evicted.evicted;
+    }
     // One commit is one revision, however many entities it opened.
     if (batch && significant) current = { ...current, revision: loaded.revision + 1 };
-    const reduction = { state: current, result: { ...batchResult(results, batch !== undefined), ...(batch ? { revision: current.revision } : {}) } };
+    const reduction = {
+      state: current,
+      result: {
+        ...batchResult(results, batch !== undefined),
+        ...(batch ? { revision: current.revision } : {}),
+        ...(evictedTabIds.length > 0 ? { evictedTabIds } : {}),
+      },
+    };
     if (!significant) {
       return this.answer(input, spaceId, claims, loaded.workspaceId, { ...reduction.result, revision: loaded.revision, workspace });
     }
+    // Only when too few tabs could be evicted (unsaved drafts, the active one).
     if (
       reduction.state.orderedTabIds.length > WORKSPACE_TAB_HARD_CAP &&
       reduction.state.orderedTabIds.length > state.orderedTabIds.length

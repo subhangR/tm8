@@ -10,7 +10,7 @@
  */
 import { findFileTab, findPreviewFileTab } from '../selectors.js';
 import { isFileTabPath, isFileTabProjectId, type FileTabRecord } from '../types.js';
-import { activate, afterActive, isRecord, reject, type Planner } from './shared.js';
+import { activate, afterActive, isRecord, openedInBackground, reject, type Planner } from './shared.js';
 
 export const openFile: Planner = ({ state, env, hooks }) => {
   const args = env.args;
@@ -41,7 +41,7 @@ export const openFile: Planner = ({ state, env, hooks }) => {
     ...state,
     tabs: { ...state.tabs, [record.id]: record },
     orderedTabIds: afterActive(state, record.id),
-    recency: shouldActivate || replaced ? state.recency : [...state.recency, record.id],
+    recency: shouldActivate || replaced ? state.recency : openedInBackground(state, record.id),
   };
   if (shouldActivate) next = activate(next, record.id, hooks);
   return { type: 'commit', next, result: { tabId: record.id, outcome: replaced ? 'reused' : 'created' } };

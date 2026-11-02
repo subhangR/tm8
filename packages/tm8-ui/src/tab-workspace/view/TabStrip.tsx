@@ -24,6 +24,7 @@ import { getKind, KindIcon, type ActionContext } from '../../domain';
 import { NOTICE_TTL_MS } from '../../shell';
 import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
+import { WORKSPACE_TAB_HARD_CAP } from '@tm8/contract/workspace';
 import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
 import { launchTabValues } from '../runtime/launchTabs';
@@ -552,9 +553,18 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   // ---- soft cap toast (a runtime effect, so every opener is covered) -------
   useEffect(
     () =>
-      runtime.registerEffect(({ env, prev, next }) => {
+      runtime.registerEffect(({ env, result, prev, next }) => {
         // A restored session is not "opening" tabs.
         if (env.source === 'restore') return;
+        /* At the hard cap the reducer closes the least recently used tabs
+           instead of refusing the open; say how many went. */
+        const evicted = result.evictedTabIds?.length ?? 0;
+        if (evicted > 0) {
+          runtime.hooks.toast({
+            text: `Closed ${evicted === 1 ? 'your least recently used tab' : `your ${evicted} least recently used tabs`} to stay under ${WORKSPACE_TAB_HARD_CAP}.`,
+          });
+          return;
+        }
         const before = prev.orderedTabIds.length;
         const after = next.orderedTabIds.length;
         if (before < SOFT_CAP && after >= SOFT_CAP) {

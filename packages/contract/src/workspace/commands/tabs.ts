@@ -11,6 +11,7 @@ import {
   isFiniteNumber,
   isNonEmptyString,
   isRecord,
+  openedInBackground,
   reject,
   removeTabs,
   replaceChooser,
@@ -113,7 +114,7 @@ export const open: Planner = ({ state, env, hooks }) => {
     ...state,
     tabs: { ...state.tabs, [record.id]: record },
     orderedTabIds: afterActive(state, record.id),
-    recency: shouldActivate ? state.recency : [...state.recency, record.id],
+    recency: shouldActivate ? state.recency : openedInBackground(state, record.id),
   };
   if (shouldActivate) next = activate(next, record.id, hooks);
   next = replaceChooser(next, args.replaceTabId, record.id, true, hooks);
